@@ -72,3 +72,5 @@ cargo build --release --manifest-path "${rustffi_dir}/Cargo.toml" --target "${ta
 
 mkdir -p "${rustffi_dir}/target/${target}/release"
 test -f "${rustffi_dir}/target/${target}/release/libbruin_rustsqlparser.a"
+mkdir -p "${rustffi_dir}/target/release"
+cp "${rustffi_dir}/target/${target}/release/libbruin_rustsqlparser.a" "${rustffi_dir}/target/release/libbruin_rustsqlparser.a"
