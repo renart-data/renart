@@ -252,7 +252,7 @@ export function WorkspaceEditorPane({
                 <TabsList
                   className={`@container/tabs-list grid w-full min-w-0 grid-cols-3 ${
                     helpMode && visualizationHighlighted
-                      ? "ring-2 ring-primary/70 ring-offset-2"
+                      ? "quickstart-tour-spotlight quickstart-tour-halo ring-2 ring-primary/70 ring-offset-2"
                       : ""
                   }`}
                   style={
@@ -269,9 +269,9 @@ export function WorkspaceEditorPane({
                     <Network className="size-4" />
                     <span className="truncate @max-[360px]/tabs-list:hidden">Dependencies</span>
                   </TabsTrigger>
-                  <TabsTrigger value="visualization">
+                  <TabsTrigger data-testid="editor-preview-tab" value="visualization">
                     <Eye className="size-4" />
-                    <span className="truncate @max-[360px]/tabs-list:hidden">Visualization</span>
+                    <span className="truncate @max-[360px]/tabs-list:hidden">Preview</span>
                   </TabsTrigger>
                 </TabsList>
 

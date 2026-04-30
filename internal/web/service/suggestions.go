@@ -406,7 +406,7 @@ func BuildWorkspacePathSuggestionItems(workspaceRoot, prefix string) ([]Suggesti
 	relativePrefix := strings.TrimPrefix(prefix, "./")
 	searchDir, typedDirectory, fragment := splitRelativePathLookup(workspaceRoot, relativePrefix, prefix)
 
-	entries, err := os.ReadDir(searchDir)
+	entries, err := afero.ReadDir(afero.NewOsFs(), searchDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []SuggestionItem{}, nil
@@ -448,7 +448,7 @@ func BuildWorkspacePathSuggestionItems(workspaceRoot, prefix string) ([]Suggesti
 func BuildAbsolutePathSuggestionItems(prefix string) ([]SuggestionItem, error) {
 	searchDir, displayDirectory, fragment := splitAbsolutePathLookup(prefix)
 
-	entries, err := os.ReadDir(searchDir)
+	entries, err := afero.ReadDir(afero.NewOsFs(), searchDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []SuggestionItem{}, nil

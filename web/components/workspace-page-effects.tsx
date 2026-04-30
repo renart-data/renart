@@ -1,7 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useRef } from "react";
 import { UseFormReturn } from "react-hook-form";
 
 import { AssetConfigForm } from "@/components/workspace-editor-pane";
@@ -26,8 +25,6 @@ type WorkspacePageEffectsProps = {
   selectedAsset: string | null;
   routeSelectedAsset: string | null;
   flushAssetSave: (assetId: string) => void;
-  sidebarOnboardingMount: HTMLDivElement | null;
-  onboardingContent: ReactNode;
 };
 
 export function WorkspacePageEffects({
@@ -43,8 +40,6 @@ export function WorkspacePageEffects({
   selectedAsset,
   routeSelectedAsset,
   flushAssetSave,
-  sidebarOnboardingMount,
-  onboardingContent,
 }: WorkspacePageEffectsProps) {
   useEffect(() => {
     if (!enrichedPipeline || enrichedPipeline.assets.length === 0) {
@@ -107,10 +102,5 @@ export function WorkspacePageEffects({
     }
     previousSelectedAssetRef.current = selectedAsset;
   }, [flushAssetSave, selectedAsset]);
-
-  if (!sidebarOnboardingMount) {
-    return null;
-  }
-
-  return createPortal(onboardingContent, sidebarOnboardingMount);
+  return null;
 }

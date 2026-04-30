@@ -4,8 +4,15 @@ import { DuckDBOnboardingForm } from "@/components/onboarding/duckdb-onboarding-
 import { GenericOnboardingForm } from "@/components/onboarding/generic-onboarding-form";
 import { OnboardingConnectionIcon } from "@/components/onboarding/connection-icons";
 import { PostgresOnboardingForm } from "@/components/onboarding/postgres-onboarding-form";
+import { AnsiOutput } from "@/components/ansi-output";
 import { useOnboardingFlow } from "@/hooks/use-onboarding-flow";
 import { Button } from "@/components/ui/button";
+import { LoaderCircle } from "lucide-react";
+import { Background, ReactFlow, type NodeTypes } from "reactflow";
+import "reactflow/dist/style.css";
+
+import { AssetNode } from "@/components/asset-node";
+import type { AssetNodeData } from "@/lib/graph";
 import {
   Card,
   CardContent,
@@ -22,6 +29,17 @@ import {
   OnboardingSessionState,
   WorkspaceConfigResponse,
 } from "@/lib/types";
+
+const IMPORT_STEPS = [
+  { key: "connection-config", label: "1. Validate access" },
+  { key: "import", label: "2. Choose database and import" },
+  { key: "success", label: "3. Done" },
+] as const;
+
+const QUICKSTART_STEPS = [
+  { key: "quickstart", label: "1. Create chess quickstart" },
+  { key: "success", label: "2. Open workspace" },
+] as const;
 
 type WorkspaceOnboardingProps = {
   workspaceConfig: WorkspaceConfigResponse;
@@ -84,7 +102,6 @@ export function WorkspaceOnboarding({
     selectedType,
     updateImportFormField,
     updateSelectedTables,
-    chooseQuickstart,
     chooseType,
     step,
   } = useOnboardingFlow({
@@ -98,17 +115,17 @@ export function WorkspaceOnboarding({
 
   return (
     <div data-testid="workspace-onboarding" className="flex min-h-screen flex-col bg-background">
-      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 py-8">
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-6 py-8">
         <div className="mb-8 flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
             <img src="/icons/icon.svg" alt="Renart" className="mt-0.5 size-12 shrink-0" />
             <div>
               <div className="text-sm font-medium text-muted-foreground">Welcome to Renart</div>
               <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-                Start from your data or try the DuckDB quickstart
+                Get started with Renart
               </h1>
               <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-                Import existing warehouse tables into a Bruin project, or create a local DuckDB sample pipeline and materialize it right away.
+                Create a chess playground and land on the canvas, or connect an existing warehouse.
               </p>
             </div>
           </div>
@@ -117,42 +134,82 @@ export function WorkspaceOnboarding({
           </Button>
         </div>
 
-        <div className="mb-6 flex gap-2 text-xs text-muted-foreground">
-          <StepPill active={step === "connection-type"}>1. Choose warehouse</StepPill>
-          <StepPill active={step === "connection-config"}>2. Validate access</StepPill>
-          <StepPill active={step === "import"}>3. Choose database and import</StepPill>
-          <StepPill active={step === "quickstart"}>Quickstart</StepPill>
-          <StepPill active={step === "success"}>4. Done</StepPill>
-        </div>
+        {step === "start" ? (
+          <div data-testid="onboarding-step-start" className="grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_1px_minmax(320px,0.85fr)]">
+            <Card className="overflow-hidden rounded-3xl border-primary/30 bg-primary/5 shadow-sm">
+              <CardHeader className="pb-4">
+                <div className="text-sm font-medium text-primary">Recommended</div>
+                <CardTitle className="text-2xl">Create a chess playground</CardTitle>
+                <CardDescription>
+                  Renart creates the Bruin chess pipeline, runs it, then opens the canvas so you can explore the DAG immediately.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <QuickstartDagPreview />
+                {importResult?.error ? (
+                  <div className="space-y-3">
+                    <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {importResult.error}
+                    </div>
+                    {importResult.output ? (
+                      <AnsiOutput
+                        output={importResult.output}
+                        className="max-h-44 overflow-auto rounded-md border bg-background/70 p-3 font-mono text-xs"
+                      />
+                    ) : null}
+                  </div>
+                ) : null}
+              </CardContent>
+              <CardFooter>
+                <Button data-testid="onboarding-quickstart-choice" onClick={() => void handleCreateQuickstart()} disabled={busy} size="lg">
+                  {busy ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : null}
+                  {busy ? "Creating playground..." : "Create playground"}
+                </Button>
+              </CardFooter>
+            </Card>
+            <div className="hidden bg-border lg:block" />
+            <div className="space-y-4">
+              <div data-testid="onboarding-import-choice">
+                <h2 className="text-lg font-semibold tracking-tight">Import an existing warehouse</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Choose a connection type and import tables into a visual Renart workspace.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                {featuredTypes.map((connectionType) => (
+                  <button
+                    key={connectionType.type_name}
+                    type="button"
+                    onClick={() => void chooseType(connectionType.type_name)}
+                    className="rounded-2xl border bg-card p-4 text-left transition hover:border-primary/60 hover:bg-muted/20"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex size-10 items-center justify-center rounded-xl border bg-background">
+                        <OnboardingConnectionIcon type={connectionType.type_name} />
+                      </span>
+                      <div>
+                        <div className="font-medium">{TYPE_LABELS[connectionType.type_name] ?? connectionType.type_name}</div>
+                        <div className="text-xs text-muted-foreground">Connect and import tables</div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {step === "connection-type" ? (
           <div data-testid="onboarding-step-connection-type" className="space-y-6">
+            {renderStepPills(step, IMPORT_STEPS)}
             <div className="grid gap-4 md:grid-cols-2">
               <Card className="rounded-2xl border shadow-sm">
                 <CardHeader>
                   <CardTitle>Import an existing warehouse</CardTitle>
                   <CardDescription>
-                    Connect to Postgres, DuckDB, Snowflake, BigQuery, Redshift, or Databricks and import real tables into a Renart workspace.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-sm text-muted-foreground">
                     Best when you already have a database or DuckDB file and want Renart to create assets from it.
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="rounded-2xl border border-primary/30 bg-primary/5 shadow-sm">
-                <CardHeader>
-                  <CardTitle>Try the DuckDB quickstart</CardTitle>
-                  <CardDescription>
-                    Create a local sample pipeline with customers, orders, and a downstream summary asset, then materialize it with Bruin.
                   </CardDescription>
                 </CardHeader>
-                <CardFooter>
-                  <Button data-testid="onboarding-quickstart-choice" onClick={() => void chooseQuickstart()}>
-                    Start quickstart
-                  </Button>
-                </CardFooter>
               </Card>
             </div>
             <div>
@@ -183,10 +240,13 @@ export function WorkspaceOnboarding({
 
         {step === "quickstart" ? (
           <Card className="max-w-2xl rounded-2xl border shadow-sm" data-testid="onboarding-step-quickstart">
+            <div className="px-6 pt-5">
+              {renderStepPills(step, QUICKSTART_STEPS)}
+            </div>
             <CardHeader className="border-b px-6 py-5">
               <CardTitle className="text-xl font-semibold tracking-tight">DuckDB quickstart</CardTitle>
               <CardDescription>
-                Renart will create a local DuckDB connection, write a sample Bruin pipeline, and materialize it.
+                Renart will create the Bruin chess quickstart project and materialize it locally.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5 px-6 py-5">
@@ -201,16 +261,24 @@ export function WorkspaceOnboarding({
                 />
               </div>
               <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
-                This creates `duckdb-files/renart_quickstart.duckdb` and three SQL assets: `quickstart.customers`, `quickstart.orders`, and `quickstart.customer_orders`.
+                This creates `duckdb-files/chess_playground.duckdb`, a `chess-default` source connection, and three sample assets: `quickstart.players`, `quickstart.player_stats`, and `my_python_asset`.
               </div>
               {importResult?.error ? (
-                <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {importResult.error}
+                <div className="space-y-3">
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {importResult.error}
+                  </div>
+                  {importResult.output ? (
+                    <AnsiOutput
+                      output={importResult.output}
+                      className="max-h-56 overflow-auto rounded-md border bg-muted/30 p-3 font-mono text-xs"
+                    />
+                  ) : null}
                 </div>
               ) : null}
             </CardContent>
             <CardFooter className="flex items-center justify-between gap-2 border-t px-6 py-4">
-              <Button variant="outline" onClick={() => void navigateToStep("connection-type")}>Back</Button>
+              <Button variant="outline" onClick={() => void navigateToStep("start")}>Back</Button>
               <Button data-testid="onboarding-create-quickstart" onClick={() => void handleCreateQuickstart()} disabled={busy || !importForm.pipelineName.trim()}>
                 {busy ? "Creating and materializing..." : "Create and materialize"}
               </Button>
@@ -220,6 +288,7 @@ export function WorkspaceOnboarding({
 
         {step === "connection-config" ? (
           <div data-testid="onboarding-step-connection-config" className="max-w-3xl space-y-4">
+            {renderStepPills(step, IMPORT_STEPS)}
             {selectedType === "postgres" ? (
               <PostgresOnboardingForm
                 busy={discoveryBusy}
@@ -267,6 +336,9 @@ export function WorkspaceOnboarding({
 
         {step === "import" ? (
           <Card className="max-w-2xl rounded-2xl border shadow-sm" data-testid="onboarding-step-import">
+            <div className="px-6 pt-5">
+              {renderStepPills(step, IMPORT_STEPS)}
+            </div>
             <CardHeader className="border-b px-6 py-5">
               <CardTitle className="text-xl font-semibold tracking-tight">Choose database and import</CardTitle>
               <CardDescription>
@@ -360,8 +432,16 @@ export function WorkspaceOnboarding({
               </div>
 
               {importResult?.error ? (
-                <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {importResult.error}
+                <div className="space-y-3">
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {importResult.error}
+                  </div>
+                  {importResult.output ? (
+                    <AnsiOutput
+                      output={importResult.output}
+                      className="max-h-56 overflow-auto rounded-md border bg-muted/30 p-3 font-mono text-xs"
+                    />
+                  ) : null}
                 </div>
               ) : null}
             </CardContent>
@@ -402,9 +482,10 @@ function renderOnboardingSuccess(importResult: { output?: string } | null) {
 	const summary = parseOnboardingImportSummary(importResult?.output);
 	if (!summary) {
 		return importResult?.output ? (
-			<pre className="max-h-64 overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
-				{importResult.output}
-			</pre>
+			<AnsiOutput
+				output={importResult.output}
+				className="max-h-64 overflow-auto rounded-md border bg-muted/30 p-3 font-mono text-xs"
+			/>
 		) : null;
 	}
 
@@ -433,12 +514,84 @@ function renderOnboardingSuccess(importResult: { output?: string } | null) {
 	);
 }
 
+function QuickstartDagPreview() {
+  const nodeTypes: NodeTypes = { assetNode: AssetNode };
+  const nodes = [
+    previewAssetNode("players", "quickstart.players", "ingestr", { x: 16, y: 24 }, { source_connection: "chess-default", source_table: "profiles", destination: "duckdb" }),
+    previewAssetNode("games", "quickstart.games", "ingestr", { x: 360, y: 24 }, { source_connection: "chess-default", source_table: "games", destination: "duckdb" }),
+    previewAssetNode("stats", "quickstart.player_stats", "duckdb.sql", { x: 188, y: 180 }, undefined, "table", 10),
+  ];
+  const edges = [
+    { id: "players-stats", source: "players", target: "stats", animated: true },
+    { id: "games-stats", source: "games", target: "stats", animated: true },
+  ];
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border bg-background p-5 shadow-inner">
+      <div className="mb-4 text-sm font-medium">This is what a Renart workspace looks like</div>
+      <div className="h-72 overflow-hidden rounded-xl border bg-muted/10">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable={false}
+          panOnDrag={false}
+          zoomOnScroll={false}
+          zoomOnPinch={false}
+          zoomOnDoubleClick={false}
+          fitView
+          fitViewOptions={{ padding: 0.24 }}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={24} size={1} />
+        </ReactFlow>
+      </div>
+    </div>
+  );
+}
+
+function previewAssetNode(
+  id: string,
+  name: string,
+  assetType: string,
+  position: { x: number; y: number },
+  parameters?: Record<string, string>,
+  materializedAs?: string,
+  rowCount?: number
+) {
+  return {
+    id,
+    type: "assetNode",
+    position,
+    data: {
+      name,
+      assetType,
+      parameters,
+      isMaterialized: true,
+      materializedAs,
+      rowCount,
+    } satisfies AssetNodeData,
+  };
+}
+
+function renderStepPills(activeStep: string, items: ReadonlyArray<{ key: string; label: string }>) {
+  return (
+    <div className="mb-6 flex gap-2 text-xs text-muted-foreground">
+      {items.map((item) => (
+        <StepPill key={item.key} active={activeStep === item.key}>{item.label}</StepPill>
+      ))}
+    </div>
+  );
+}
+
 function renderQuickstartSuccess(importResult: { output?: string; pipeline_path?: string; asset_paths?: string[] } | null) {
   return (
     <div className="space-y-4" data-testid="onboarding-quickstart-summary">
       <div className="grid gap-3 md:grid-cols-3">
         <SuccessMetric label="Pipeline" value={1} testId="onboarding-quickstart-pipelines" />
-        <SuccessMetric label="SQL assets" value={importResult?.asset_paths?.length ?? 3} testId="onboarding-quickstart-assets" />
+        <SuccessMetric label="Sample assets" value={importResult?.asset_paths?.length ?? 3} testId="onboarding-quickstart-assets" />
         <SuccessMetric label="Runs" value={1} testId="onboarding-quickstart-runs" />
       </div>
       <div className="rounded-xl border bg-muted/20 p-4 text-sm">
@@ -446,13 +599,15 @@ function renderQuickstartSuccess(importResult: { output?: string; pipeline_path?
         <div className="mt-2 space-y-1 text-muted-foreground">
           <div>Pipeline path: <span className="text-foreground">{importResult?.pipeline_path ?? "quickstart"}</span></div>
           <div>DuckDB connection: <span className="text-foreground">duckdb-default</span></div>
-          <div>Database file: <span className="text-foreground">duckdb-files/renart_quickstart.duckdb</span></div>
+          <div>Chess source connection: <span className="text-foreground">chess-default</span></div>
+          <div>Database file: <span className="text-foreground">duckdb-files/chess_playground.duckdb</span></div>
         </div>
       </div>
       {importResult?.output ? (
-        <pre className="max-h-56 overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
-          {importResult.output}
-        </pre>
+        <AnsiOutput
+          output={importResult.output}
+          className="max-h-56 overflow-auto rounded-md border bg-muted/30 p-3 font-mono text-xs"
+        />
       ) : null}
     </div>
   );

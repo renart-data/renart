@@ -305,7 +305,7 @@ test.describe("workspace live basic flows", () => {
     await page.goto(`${liveApp.baseURL}/`);
     await openCustomersEditor(page, liveApp.baseURL);
 
-    await page.getByRole("tab", { name: "Visualization" }).click();
+    await page.getByRole("tab", { name: "Preview" }).click();
 
     await page.getByRole("tab", { name: /^Chart$/ }).click();
     await expect(page.getByText("X Axis Column", { exact: true })).toBeVisible();

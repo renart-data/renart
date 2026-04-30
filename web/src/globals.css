@@ -201,3 +201,21 @@ body > .parameter-hints-widget {
     @apply bg-background text-foreground;
   }
 }
+@keyframes quickstart-tour-halo-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 0 rgba(59, 130, 246, 0));
+  }
+  50% {
+    filter: drop-shadow(0 0 18px rgba(59, 130, 246, 0.8));
+  }
+}
+
+.quickstart-tour-halo {
+  animation: quickstart-tour-halo-pulse 1.4s ease-in-out infinite;
+}
+
+.react-flow__edge.quickstart-tour-edge path {
+  stroke: var(--primary);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.8));
+}

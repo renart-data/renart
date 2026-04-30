@@ -42,6 +42,27 @@ func TestApplyManualAssetUpstreamsPreservesTrackedInferred(t *testing.T) {
 	assert.Equal(t, "analytics.orders", asset.Meta[renartInferredUpstreamsMetaKey])
 }
 
+func TestDeriveSQLAssetTypeForIngestrSourceUsesDestinationType(t *testing.T) {
+	t.Parallel()
+
+	assetType := deriveSQLAssetTypeForSource(&pipeline.Asset{
+		Type:       pipeline.AssetType("ingestr"),
+		Parameters: map[string]string{"destination": "duckdb"},
+	}, nil, "duckdb-default")
+
+	assert.Equal(t, "duckdb.sql", assetType)
+}
+
+func TestDeriveSQLAssetTypeForPythonSourceDoesNotUseConnectionNameAsType(t *testing.T) {
+	t.Parallel()
+
+	assetType := deriveSQLAssetTypeForSource(&pipeline.Asset{
+		Type: pipeline.AssetType("python"),
+	}, nil, "duckdb-default")
+
+	assert.Equal(t, "duckdb.sql", assetType)
+}
+
 func TestReconcileSQLAssetDependenciesRemovesOnlyTrackedInferred(t *testing.T) {
 	t.Parallel()
 
@@ -92,7 +113,7 @@ schedule: daily
 start_date: "2024-01-01"
 default_connections:
   duckdb: duckdb-default
-`) + "\n"), 0o644))
+`)+"\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "customers.sql"), []byte(strings.TrimSpace(`
 /* @bruin
 name: analytics.customers
@@ -103,7 +124,7 @@ materialization:
 
 select *
 from analytics.orders
-`) + "\n"), 0o644))
+`)+"\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "orders.sql"), []byte(strings.TrimSpace(`
 /* @bruin
 name: analytics.orders
@@ -113,7 +134,7 @@ materialization:
 @bruin */
 
 select 1 as order_id
-`) + "\n"), 0o644))
+`)+"\n"), 0o644))
 
 	buildPipeline := func(ctx context.Context, pipelinePath string) (*pipeline.Pipeline, error) {
 		osFS := afero.NewOsFs()
@@ -195,7 +216,7 @@ schedule: daily
 start_date: "2024-01-01"
 default_connections:
   duckdb: duckdb-default
-`) + "\n"), 0o644))
+`)+"\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "customers.sql"), []byte(strings.TrimSpace(`
 /* @bruin
 name: analytics.customers
@@ -205,7 +226,7 @@ materialization:
 @bruin */
 
 select 1 as customer_id
-`) + "\n"), 0o644))
+`)+"\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "manual_seed.sql"), []byte(strings.TrimSpace(`
 /* @bruin
 name: analytics.manual_seed
@@ -215,7 +236,7 @@ materialization:
 @bruin */
 
 select 1 as seed_id
-`) + "\n"), 0o644))
+`)+"\n"), 0o644))
 
 	buildPipeline := func(ctx context.Context, pipelinePath string) (*pipeline.Pipeline, error) {
 		osFS := afero.NewOsFs()
@@ -266,9 +287,9 @@ select 1 as seed_id
 	}
 
 	service := NewAssetService(AssetDependencies{
-		WorkspaceRoot:                              workspaceRoot,
-		ResolveAssetByID:                           resolveAssetByID,
-		SuppressWatcher:                            func(string) {},
+		WorkspaceRoot:    workspaceRoot,
+		ResolveAssetByID: resolveAssetByID,
+		SuppressWatcher:  func(string) {},
 		PushWorkspaceUpdateImmediateWithChangedIDs: func(context.Context, string, string, []string) {},
 	})
 
@@ -301,7 +322,7 @@ schedule: daily
 start_date: "2024-01-01"
 default_connections:
   duckdb: duckdb-default
-`) + "\n"), 0o644))
+`)+"\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "orders.sql"), []byte(strings.TrimSpace(`
 /* @bruin
 name: analytics.orders
@@ -311,7 +332,7 @@ materialization:
 @bruin */
 
 select 1 as order_id
-`) + "\n"), 0o644))
+`)+"\n"), 0o644))
 
 	buildPipeline := func(ctx context.Context, pipelinePath string) (*pipeline.Pipeline, error) {
 		osFS := afero.NewOsFs()
@@ -362,12 +383,12 @@ select 1 as order_id
 	}
 
 	service := NewAssetService(AssetDependencies{
-		WorkspaceRoot:        workspaceRoot,
-		ResolveAssetByID:     resolveAssetByID,
-		DefaultAssetContent:  DefaultAssetContent,
-		DerivedAssetContent:  DefaultDerivedSQLAssetContent,
-		EnsurePythonRequirements: func(string, string, string) error { return nil },
-		SuppressWatcher:      func(string) {},
+		WorkspaceRoot:                workspaceRoot,
+		ResolveAssetByID:             resolveAssetByID,
+		DefaultAssetContent:          DefaultAssetContent,
+		DerivedAssetContent:          DefaultDerivedSQLAssetContent,
+		EnsurePythonRequirements:     func(string, string, string) error { return nil },
+		SuppressWatcher:              func(string) {},
 		PushWorkspaceUpdateImmediate: func(context.Context, string, string) {},
 	})
 
@@ -404,7 +425,7 @@ schedule: daily
 start_date: "2024-01-01"
 default_connections:
   duckdb: duckdb-default
-`) + "\n"), 0o644))
+`)+"\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "orders.sql"), []byte(strings.TrimSpace(`
 /* @bruin
 name: analytics.orders
@@ -414,7 +435,7 @@ materialization:
 @bruin */
 
 select 1 as order_id
-`) + "\n"), 0o644))
+`)+"\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "customers.sql"), []byte(strings.TrimSpace(`
 /* @bruin
 name: analytics.customers
@@ -426,7 +447,7 @@ depends:
 @bruin */
 
 select 1 as customer_id
-`) + "\n"), 0o644))
+`)+"\n"), 0o644))
 
 	buildPipeline := func(ctx context.Context, pipelinePath string) (*pipeline.Pipeline, error) {
 		osFS := afero.NewOsFs()
@@ -477,9 +498,9 @@ select 1 as customer_id
 	}
 
 	service := NewAssetService(AssetDependencies{
-		WorkspaceRoot:                              workspaceRoot,
-		ResolveAssetByID:                           resolveAssetByID,
-		SuppressWatcher:                            func(string) {},
+		WorkspaceRoot:    workspaceRoot,
+		ResolveAssetByID: resolveAssetByID,
+		SuppressWatcher:  func(string) {},
 		PushWorkspaceUpdateImmediateWithChangedIDs: func(context.Context, string, string, []string) {},
 	})
 

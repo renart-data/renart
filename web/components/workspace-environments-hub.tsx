@@ -52,7 +52,7 @@ export function WorkspaceEnvironmentsHub() {
       title="Environments"
       description="Each environment has its own set of connections and configuration."
       actions={
-        <Button asChild type="button">
+        <Button asChild type="button" data-testid="environments-new-button">
           <Link to="/settings/environments/new">
             <Plus className="mr-2 size-4" />
             New Environment
@@ -80,7 +80,13 @@ export function WorkspaceEnvironmentsHub() {
             const expanded = environment.name === selectedEnvironmentId;
 
             return (
-              <Card key={environment.name} className="overflow-hidden">
+              <Card
+                key={environment.name}
+                className="overflow-hidden"
+                data-testid={
+                  environment.name === "default" ? "environment-card-default" : undefined
+                }
+              >
                 <CardHeader className="bg-muted/30 px-4 py-3 sm:px-5">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <button

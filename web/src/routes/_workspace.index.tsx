@@ -11,10 +11,16 @@ export const Route = createFileRoute("/_workspace/")({
     }
 
     switch (state.step) {
+      case "start":
+        throw redirect({ to: "/onboarding" });
+      case "connection-type":
+        throw redirect({ to: "/onboarding" });
       case "connection-config":
-        throw redirect({ to: "/onboarding/connection" });
+        throw redirect({ to: "/onboarding/import/connection" });
       case "import":
-        throw redirect({ to: "/onboarding/import" });
+        throw redirect({ to: "/onboarding/import/review" });
+      case "quickstart":
+        throw redirect({ to: "/onboarding" });
       case "success":
         throw redirect({ to: "/onboarding/success" });
       default:

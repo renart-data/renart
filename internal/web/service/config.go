@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -92,7 +91,7 @@ func (s *ConfigService) LoadForEditing() (*config.Config, string, error) {
 }
 
 func (s *ConfigService) Persist(cfg *config.Config) (string, error) {
-	if err := os.MkdirAll(filepath.Dir(s.configPath), 0o755); err != nil {
+	if err := afero.NewOsFs().MkdirAll(filepath.Dir(s.configPath), 0o755); err != nil {
 		return "", err
 	}
 	if err := cfg.Persist(); err != nil {

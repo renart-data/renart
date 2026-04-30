@@ -116,7 +116,7 @@ export type OnboardingSessionState = Omit<
   GeneratedOnboardingSessionState,
   "step" | "import_result"
 > & {
-  step?: "connection-type" | "connection-config" | "import" | "quickstart" | "success";
+  step?: "start" | "connection-type" | "connection-config" | "import" | "quickstart" | "success";
   import_result?: OnboardingImportResultState | null;
 };
 

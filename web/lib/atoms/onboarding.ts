@@ -1,4 +1,5 @@
 import { atom } from "jotai";
+import type { CSSProperties } from "react";
 
 import {
   OnboardingDiscoveryResponse,
@@ -6,7 +7,7 @@ import {
   OnboardingSessionState,
 } from "@/lib/types";
 
-export type OnboardingStep = "connection-type" | "connection-config" | "import" | "quickstart" | "success";
+export type OnboardingStep = "start" | "connection-type" | "connection-config" | "import" | "quickstart" | "success";
 
 export type OnboardingImportForm = {
   database: string;
@@ -16,7 +17,38 @@ export type OnboardingImportForm = {
   disableColumns: boolean;
 };
 
-export const onboardingStepAtom = atom<OnboardingStep>("connection-type");
+export type OnboardingRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+export type OnboardingTourState = {
+  quickstartStep: number | null;
+  environmentStepActive: boolean;
+  overlayVisible: boolean;
+  spotlightSelectors: string[];
+  spotlightRect: OnboardingRect | null;
+  cardStyle: CSSProperties;
+};
+
+export type OnboardingState = {
+  tour: OnboardingTourState;
+};
+
+export const onboardingAtom = atom<OnboardingState>({
+  tour: {
+    quickstartStep: null,
+    environmentStepActive: false,
+    overlayVisible: false,
+    spotlightSelectors: [],
+    spotlightRect: null,
+    cardStyle: { left: 16, top: 16, width: 360 },
+  },
+});
+
+export const onboardingStepAtom = atom<OnboardingStep>("start");
 export const onboardingSelectedTypeAtom = atom<string>("postgres");
 export const onboardingBusyAtom = atom(false);
 export const onboardingDiscoveryBusyAtom = atom(false);
@@ -40,7 +72,7 @@ export const onboardingImportResultAtom = atom<OnboardingImportResponse | null>(
 export const syncOnboardingAtomsAtom = atom(
   null,
   (get, set, session: OnboardingSessionState & { selected_type_fallback?: string }) => {
-    set(onboardingStepAtom, (session.step as OnboardingStep | undefined) ?? "connection-type");
+    set(onboardingStepAtom, (session.step as OnboardingStep | undefined) ?? "start");
     set(onboardingSelectedTypeAtom, session.selected_type || session.selected_type_fallback || "postgres");
 
     const nextDraftValues = normalizeDraftValues(session.draft_values);

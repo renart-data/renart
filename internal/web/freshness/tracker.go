@@ -7,6 +7,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 // AssetTimestamps stores freshness metadata for a single asset.
@@ -98,8 +100,9 @@ type runLogEntry struct {
 // LoadFromRunLogs scans <logsDir>/runs/<pipeline>/*.json and bootstraps
 // materialization timestamps from the latest run of each pipeline.
 func (t *Tracker) LoadFromRunLogs(logsDir string) error {
+	fs := afero.NewOsFs()
 	runsDir := filepath.Join(logsDir, "runs")
-	entries, err := os.ReadDir(runsDir)
+	entries, err := afero.ReadDir(fs, runsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -111,14 +114,14 @@ func (t *Tracker) LoadFromRunLogs(logsDir string) error {
 		if !entry.IsDir() {
 			continue
 		}
-		t.loadLatestRun(filepath.Join(runsDir, entry.Name()))
+		t.loadLatestRun(fs, filepath.Join(runsDir, entry.Name()))
 	}
 	return nil
 }
 
 // loadLatestRun reads the most-recent run log in a pipeline directory.
-func (t *Tracker) loadLatestRun(dir string) {
-	entries, err := os.ReadDir(dir)
+func (t *Tracker) loadLatestRun(fs afero.Fs, dir string) {
+	entries, err := afero.ReadDir(fs, dir)
 	if err != nil || len(entries) == 0 {
 		return
 	}
@@ -135,7 +138,7 @@ func (t *Tracker) loadLatestRun(dir string) {
 			continue
 		}
 
-		data, readErr := os.ReadFile(filepath.Join(dir, name))
+		data, readErr := afero.ReadFile(fs, filepath.Join(dir, name))
 		if readErr != nil {
 			continue
 		}

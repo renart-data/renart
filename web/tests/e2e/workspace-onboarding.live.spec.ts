@@ -24,7 +24,8 @@ test.describe("workspace onboarding live flows", () => {
     await page.reload();
 
     await expect(page.getByTestId("workspace-onboarding")).toBeVisible({ timeout: 15000 });
-
+    await page.getByTestId("onboarding-import-choice").click();
+    
     await page.getByRole("button", { name: /postgres/i }).click();
     await expect(page.getByTestId("onboarding-step-connection-config")).toBeVisible();
 
@@ -128,40 +129,57 @@ test.describe("workspace onboarding DuckDB quickstart", () => {
 
     await expect(page.getByTestId("workspace-onboarding")).toBeVisible({ timeout: 15000 });
     await page.getByTestId("onboarding-quickstart-choice").click();
-    await expect(page.getByTestId("onboarding-step-quickstart")).toBeVisible();
-
-    await page.getByTestId("onboarding-create-quickstart").click();
-    await expect(page.getByTestId("onboarding-step-success")).toBeVisible({
-      timeout: 60000,
-    });
-    await expect(page.getByTestId("onboarding-quickstart-summary")).toContainText("Quickstart complete");
-    await expect(page.getByTestId("onboarding-quickstart-assets")).toContainText("3");
+    await expect(page).toHaveURL(/\/(?:\?.*)?$/, { timeout: 60000 });
 
     const configAfterQuickstart = await readFile(join(liveApp.workspaceDir, ".bruin.yml"), "utf8");
     expect(configAfterQuickstart).toContain("duckdb-default");
-    expect(configAfterQuickstart).toContain("duckdb-files/renart_quickstart.duckdb");
+    expect(configAfterQuickstart).toContain("duckdb-files/chess_playground.duckdb");
+    expect(configAfterQuickstart).toContain("chess-default");
 
     const pipelineFile = await readFile(join(liveApp.workspaceDir, "quickstart", "pipeline.yml"), "utf8");
     expect(pipelineFile).toContain("name: quickstart");
     expect(pipelineFile).toContain("duckdb: duckdb-default");
 
-    const finalAsset = await readFile(
-      join(liveApp.workspaceDir, "quickstart", "assets", "customer_orders.sql"),
+    const playersAsset = await readFile(
+      join(liveApp.workspaceDir, "quickstart", "assets", "players.asset.yml"),
       "utf8"
     );
-    expect(finalAsset).toContain("quickstart.customer_orders");
-    expect(finalAsset).not.toContain("columns:");
-    expect(finalAsset).not.toContain("checks:");
+    expect(playersAsset).toContain("quickstart.players");
+    expect(playersAsset).toContain("source_connection: chess-default");
 
-    await access(join(liveApp.workspaceDir, "duckdb-files", "renart_quickstart.duckdb"));
+    const gamesAsset = await readFile(
+      join(liveApp.workspaceDir, "quickstart", "assets", "games.asset.yml"),
+      "utf8"
+    );
+    expect(gamesAsset).toContain("quickstart.games");
+    expect(gamesAsset).toContain("source_table: games");
 
-    await page.getByRole("button", { name: "Open workspace" }).click();
-    await expect(page).toHaveURL(/\/(?:\?.*)?$/, { timeout: 30000 });
+    const statsAsset = await readFile(
+      join(liveApp.workspaceDir, "quickstart", "assets", "player_stats.sql"),
+      "utf8"
+    );
+    expect(statsAsset).toContain("quickstart.player_stats");
+    expect(statsAsset).toContain("quickstart.games");
+    expect(statsAsset).toContain("players_white");
+    expect(statsAsset).toContain("players_black");
+    expect(statsAsset).toContain("games_white");
+    expect(statsAsset).toContain("games_black");
+    expect(statsAsset).not.toContain("columns:");
+    expect(statsAsset).not.toContain("checks:");
+
+    const pythonAsset = await readFile(
+      join(liveApp.workspaceDir, "quickstart", "assets", "my_python_asset.py"),
+      "utf8"
+    );
+    expect(pythonAsset).toContain("name: my_python_asset");
+
+    await access(join(liveApp.workspaceDir, "duckdb-files", "chess_playground.duckdb"));
+
     await expect
       .poll(async () => {
         const response = await page.request.get(`${liveApp.baseURL}/api/workspace`);
         const workspace = await response.json();
-        return JSON.stringify(workspace).includes("quickstart.customer_orders");
+        return JSON.stringify(workspace).includes("quickstart.player_stats");
       })
       .toBe(true);
   });

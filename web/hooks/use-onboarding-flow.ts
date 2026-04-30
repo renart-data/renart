@@ -113,14 +113,16 @@ export function useOnboardingFlow({
       setStep(nextStep);
       await persistState({ step: nextStep });
       const nextPath =
-        nextStep === "connection-type"
+        nextStep === "start"
           ? "/onboarding"
+          : nextStep === "connection-type"
+            ? "/onboarding/import"
           : nextStep === "connection-config"
-            ? "/onboarding/connection"
+            ? "/onboarding/import/connection"
             : nextStep === "import"
-              ? "/onboarding/import"
+              ? "/onboarding/import/review"
               : nextStep === "quickstart"
-                ? "/onboarding"
+                ? "/onboarding/quickstart"
               : "/onboarding/success";
       void navigate({ to: nextPath, replace: true });
     },
@@ -155,9 +157,8 @@ export function useOnboardingFlow({
         import_result: null,
       });
       void navigate({
-        to: "/onboarding/connection",
+        to: "/onboarding/import/connection",
         replace: true,
-        search: { pipeline: undefined, asset: undefined },
       });
     },
     [connectionTypes, importForm.pipelineName, navigate, persistState, setDiscoveryError, setDiscoveryState, setDraftValues, setImportResult, setSelectedTables, setSelectedType, setStep]
@@ -184,31 +185,32 @@ export function useOnboardingFlow({
       import_result: null,
     });
     void navigate({
-      to: "/onboarding",
+      to: "/onboarding/quickstart",
       replace: true,
-      search: { pipeline: undefined, asset: undefined },
     });
   }, [importForm.pipelineName, navigate, persistState, setDiscoveryError, setDiscoveryState, setImportForm, setImportResult, setSelectedTables, setSelectedType, setStep]);
 
   const handleCreateQuickstart = useCallback(async () => {
-    const pipelineName = importForm.pipelineName.trim() || "quickstart";
+    const pipelineName = "quickstart";
     setBusy(true);
     try {
+      setSelectedType("quickstart");
+      setImportResult(null);
       const response = await createDuckDBQuickstart({
         environment_name: defaultEnvironment,
         pipeline_name: pipelineName,
         connection_name: "duckdb-default",
-        database_path: "duckdb-files/renart_quickstart.duckdb",
+        database_path: "duckdb-files/chess_playground.duckdb",
         materialize: true,
       });
       setImportResult(response);
       if (response.status === "ok") {
         await onReloadConfig();
         await onReloadWorkspace?.();
-        setStep("success");
+        setStep("start");
         await updateOnboardingState({
-          active: true,
-          step: "success",
+          active: false,
+          step: "start",
           selected_type: "quickstart",
           environment_name: defaultEnvironment,
           import_form: {
@@ -223,10 +225,10 @@ export function useOnboardingFlow({
           },
         });
         void navigate({
-          to: "/onboarding/success",
+          to: "/",
           replace: true,
           search: {
-            pipeline: undefined,
+            pipeline: response.pipeline_path ?? pipelineName,
             asset: undefined,
             environment: routeSearch.environment,
           },
@@ -235,7 +237,7 @@ export function useOnboardingFlow({
     } finally {
       setBusy(false);
     }
-  }, [defaultEnvironment, importForm.pipelineName, navigate, onReloadConfig, onReloadWorkspace, routeSearch.environment, setBusy, setImportResult, setStep]);
+  }, [defaultEnvironment, navigate, onReloadConfig, onReloadWorkspace, routeSearch.environment, setBusy, setImportResult, setSelectedType, setStep]);
 
   const handleSaveAndImport = useCallback(async () => {
     if (!selectedType || !connectionName || (selectedType !== "duckdb" && !importForm.database.trim())) {

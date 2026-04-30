@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -1017,11 +1016,12 @@ func (s *ExecutionService) findDuckDBExecutionInfoByAsset(ctx context.Context, a
 		return nil, nil
 	}
 
-	if _, statErr := os.Stat(s.deps.ConfigPath); statErr != nil {
+	fs := afero.NewOsFs()
+	if exists, _ := afero.Exists(fs, s.deps.ConfigPath); !exists {
 		return nil, nil
 	}
 
-	cfg, cfgErr := config.LoadOrCreate(afero.NewOsFs(), s.deps.ConfigPath)
+	cfg, cfgErr := config.LoadOrCreate(fs, s.deps.ConfigPath)
 	if cfgErr != nil || cfg.SelectedEnvironment == nil || cfg.SelectedEnvironment.Connections == nil {
 		return nil, nil
 	}
@@ -1078,11 +1078,12 @@ func (s *ExecutionService) buildReadOnlyConfigFile(info *DuckDBExecutionInfo) (s
 	}
 	cfg.Environments[envName] = env
 
-	tempFile, err := os.CreateTemp("", "renart-readonly-*.yml")
+	fs := afero.NewOsFs()
+	tempFile, err := afero.TempFile(fs, "", "renart-readonly-*.yml")
 	if err != nil {
 		return "", nil, err
 	}
-	cleanup := func() { _ = os.Remove(tempFile.Name()) }
+	cleanup := func() { _ = fs.Remove(tempFile.Name()) }
 	if err := tempFile.Close(); err != nil {
 		cleanup()
 		return "", nil, err
@@ -1092,7 +1093,7 @@ func (s *ExecutionService) buildReadOnlyConfigFile(info *DuckDBExecutionInfo) (s
 		cleanup()
 		return "", nil, err
 	}
-	if err := os.WriteFile(tempFile.Name(), content, 0o600); err != nil {
+	if err := afero.WriteFile(fs, tempFile.Name(), content, 0o600); err != nil {
 		cleanup()
 		return "", nil, err
 	}

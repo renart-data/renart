@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -27,8 +26,9 @@ func (s *PipelineService) Create(ctx context.Context, relPath, name, content str
 	if err != nil {
 		return "", err
 	}
+	fs := afero.NewOsFs()
 
-	if err := os.MkdirAll(absPath, 0o755); err != nil {
+	if err := fs.MkdirAll(absPath, 0o755); err != nil {
 		return "", err
 	}
 
@@ -39,7 +39,7 @@ func (s *PipelineService) Create(ctx context.Context, relPath, name, content str
 		content = fmt.Sprintf("name: %s\n", name)
 	}
 
-	if err := os.WriteFile(filepath.Join(absPath, "pipeline.yml"), []byte(content), 0o644); err != nil {
+	if err := afero.WriteFile(fs, filepath.Join(absPath, "pipeline.yml"), []byte(content), 0o644); err != nil {
 		return "", err
 	}
 
@@ -74,7 +74,7 @@ func (s *PipelineService) Update(ctx context.Context, pipelineID, name, content 
 		return filepath.ToSlash(relPath), nil
 	}
 
-	if err := os.WriteFile(filepath.Join(absPath, "pipeline.yml"), []byte(content), 0o644); err != nil {
+	if err := afero.WriteFile(afero.NewOsFs(), filepath.Join(absPath, "pipeline.yml"), []byte(content), 0o644); err != nil {
 		return "", err
 	}
 
@@ -149,7 +149,7 @@ func (s *PipelineService) Delete(pipelineID string) (string, error) {
 		return "", err
 	}
 
-	if err := os.RemoveAll(absPath); err != nil {
+	if err := afero.NewOsFs().RemoveAll(absPath); err != nil {
 		return "", err
 	}
 

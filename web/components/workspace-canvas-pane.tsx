@@ -1,6 +1,6 @@
 "use client";
 
-import { CSSProperties, MutableRefObject } from "react";
+import { CSSProperties, MutableRefObject, ReactNode, useEffect } from "react";
 import { FilePenLine, LoaderCircle, Rows3 } from "lucide-react";
 import {
   Background,
@@ -15,7 +15,9 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 import { WorkspaceResultsPanel } from "@/components/workspace-results-panel";
 import { Button } from "@/components/ui/button";
+import { useOnboarding } from "@/hooks/use-onboarding";
 import { MaterializeHistoryEntry } from "@/lib/atoms/results";
+import type { OnboardingRect } from "@/lib/atoms/onboarding";
 import { AssetInspectResponse } from "@/lib/types";
 
 export type WorkspaceCanvasPaneProps = {
@@ -53,6 +55,17 @@ export type WorkspaceCanvasPaneProps = {
   showEditorButton?: boolean;
   isEditorButtonDisabled?: boolean;
   onOpenEditor?: () => void;
+  quickstartTour?: {
+    step: number;
+    title: string;
+    body: string;
+    actionLabel?: string;
+    onAction?: () => void;
+    onSkip: () => void;
+  } | null;
+  tourHighlightedNodeIds?: string[];
+  tourHighlightedEdgeIds?: string[];
+  tourSpotlightSelector?: string;
 };
 
 export function WorkspaceCanvasPane({
@@ -90,7 +103,23 @@ export function WorkspaceCanvasPane({
   showEditorButton = false,
   isEditorButtonDisabled = false,
   onOpenEditor,
+  quickstartTour,
+  tourHighlightedNodeIds = [],
+  tourHighlightedEdgeIds = [],
+  tourSpotlightSelector,
 }: WorkspaceCanvasPaneProps) {
+  const onboarding = useOnboarding({
+    spotlightActive: Boolean(quickstartTour),
+    spotlightSelectors: tourSpotlightSelector ? [tourSpotlightSelector] : [],
+  });
+
+  useEffect(() => {
+    if (!quickstartTour) {
+      return;
+    }
+    onboarding.pulseOverlay();
+  }, [quickstartTour?.step]);
+
   return (
     <Panel
       className={highlighted ? "ring-2 ring-primary/70 ring-inset" : ""}
@@ -108,6 +137,7 @@ export function WorkspaceCanvasPane({
                   size="sm"
                   type="button"
                   disabled={!canRunPipeline || pipelineMaterializeLoading}
+                  className={quickstartTour?.step === 2 ? "quickstart-tour-spotlight quickstart-tour-halo" : undefined}
                 >
                   {pipelineMaterializeLoading ? (
                     <LoaderCircle className="mr-2 size-3.5 animate-spin" />
@@ -139,9 +169,37 @@ export function WorkspaceCanvasPane({
                 Reload layout
               </Button>
             </div>
+            {onboarding.overlayVisible ? <QuickstartTourOverlay rect={onboarding.spotlightRect} /> : null}
+            {quickstartTour ? (
+              <QuickstartTourCard style={onboarding.cardStyle}>
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Quickstart tour
+                </div>
+                <div className="mt-1 font-semibold">{quickstartTour.title}</div>
+                <p className="mt-2 text-sm text-muted-foreground">{quickstartTour.body}</p>
+                <div className="mt-3 flex gap-2">
+                  {quickstartTour.actionLabel && quickstartTour.onAction ? (
+                    <Button size="sm" type="button" onClick={quickstartTour.onAction}>
+                      {quickstartTour.actionLabel}
+                    </Button>
+                  ) : null}
+                  <Button size="sm" type="button" variant="ghost" onClick={quickstartTour.onSkip}>
+                    Dismiss
+                  </Button>
+                </div>
+              </QuickstartTourCard>
+            ) : null}
             <ReactFlow
-              nodes={nodes}
-              edges={edges}
+              nodes={nodes.map((node) =>
+                tourHighlightedNodeIds.includes(node.id)
+                  ? { ...node, className: `${node.className ?? ""} quickstart-tour-spotlight quickstart-tour-halo`, zIndex: 40 }
+                  : node
+              )}
+              edges={edges.map((edge) =>
+                tourHighlightedEdgeIds.includes(edge.id)
+                  ? { ...edge, className: `${edge.className ?? ""} quickstart-tour-spotlight quickstart-tour-edge`, animated: true, zIndex: 40 }
+                  : edge
+              )}
               nodesDraggable
               nodeTypes={nodeTypes}
               panActivationKeyCode={null}
@@ -187,6 +245,39 @@ export function WorkspaceCanvasPane({
         )}
       </PanelGroup>
     </Panel>
+  );
+}
+
+function QuickstartTourOverlay({ rect }: { rect: OnboardingRect | null }) {
+  if (!rect) {
+    return <div className="pointer-events-none fixed inset-0 z-[60] bg-black/55" />;
+  }
+
+  const padding = 12;
+  return (
+    <div
+      className="pointer-events-none fixed z-[60] rounded-2xl border-2 border-primary/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.55),0_0_32px_rgba(59,130,246,0.75)]"
+      style={{
+        left: Math.max(8, rect.left - padding),
+        top: Math.max(8, rect.top - padding),
+        width: rect.width + padding * 2,
+        height: rect.height + padding * 2,
+      }}
+    />
+  );
+}
+
+function QuickstartTourCard({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style: CSSProperties;
+}) {
+  return (
+    <div className="fixed z-[70] max-w-[360px] rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg ring-4 ring-primary/20" style={style}>
+      {children}
+    </div>
   );
 }
 

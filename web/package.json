@@ -13,6 +13,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:live": "corepack pnpm build && PWTEST_CACHE_DIR=/dev/shm/bruin-playwright/cache playwright test --config=playwright.live.config.ts",
+    "docs:screenshots": "corepack pnpm build && node ./scripts/capture-onboarding-screenshots.mjs",
     "tutorial:quick-tour": "corepack pnpm build && node ./scripts/tutorials/render-tutorial.mjs ./scripts/tutorials/tutorial-01-quick-tour.json",
     "tutorial:build-pipeline": "corepack pnpm build && node ./scripts/tutorials/render-tutorial.mjs ./scripts/tutorials/tutorial-02-build-a-pipeline.json",
     "audit": "pnpm audit --audit-level=high"

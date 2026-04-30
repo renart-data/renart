@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
-	iofs "io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +14,7 @@ import (
 
 	bruinpath "github.com/bruin-data/bruin/pkg/path"
 	"github.com/fsnotify/fsnotify"
+	"github.com/spf13/afero"
 )
 
 // ChangeHandler is called when workspace changes are detected.
@@ -109,14 +109,15 @@ func (w *Watcher) watchFSNotify(ctx context.Context) error {
 		}
 	}
 
-	_ = filepath.WalkDir(w.config.WorkspaceRoot, func(path string, d iofs.DirEntry, err error) error {
+	fs := afero.NewOsFs()
+	_ = afero.Walk(fs, w.config.WorkspaceRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
-		if !d.IsDir() {
+		if !info.IsDir() {
 			return nil
 		}
-		if slicesContains(bruinpath.SkipDirs, d.Name()) {
+		if slicesContains(bruinpath.SkipDirs, info.Name()) {
 			return filepath.SkipDir
 		}
 		addDir(path)
@@ -136,12 +137,12 @@ func (w *Watcher) watchFSNotify(ctx context.Context) error {
 			}
 
 			if event.Op&fsnotify.Create == fsnotify.Create {
-				if fi, err := os.Stat(event.Name); err == nil && fi.IsDir() {
-					_ = filepath.WalkDir(event.Name, func(path string, d iofs.DirEntry, err error) error {
+				if fi, err := fs.Stat(event.Name); err == nil && fi.IsDir() {
+					_ = afero.Walk(fs, event.Name, func(path string, info os.FileInfo, err error) error {
 						if err != nil {
 							return nil
 						}
-						if d.IsDir() {
+						if info.IsDir() {
 							addDir(path)
 						}
 						return nil
@@ -203,21 +204,16 @@ func (w *Watcher) watchPoll(ctx context.Context) {
 func (w *Watcher) takeSnapshot() (Snapshot, error) {
 	snapshot := make(Snapshot)
 
-	err := filepath.WalkDir(w.config.WorkspaceRoot, func(path string, d iofs.DirEntry, err error) error {
+	err := afero.Walk(afero.NewOsFs(), w.config.WorkspaceRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
 
-		if d.IsDir() && slicesContains(bruinpath.SkipDirs, d.Name()) {
+		if info.IsDir() && slicesContains(bruinpath.SkipDirs, info.Name()) {
 			return filepath.SkipDir
 		}
 
-		if !d.IsDir() && !IsRelevantPath(path) {
-			return nil
-		}
-
-		info, infoErr := d.Info()
-		if infoErr != nil {
+		if !info.IsDir() && !IsRelevantPath(path) {
 			return nil
 		}
 
@@ -227,7 +223,7 @@ func (w *Watcher) takeSnapshot() (Snapshot, error) {
 		}
 
 		normalized := filepath.ToSlash(relPath)
-		fingerprint := fmt.Sprintf("%t:%d:%d:%s", d.IsDir(), info.Size(), info.ModTime().UnixNano(), info.Mode().String())
+		fingerprint := fmt.Sprintf("%t:%d:%d:%s", info.IsDir(), info.Size(), info.ModTime().UnixNano(), info.Mode().String())
 		snapshot[normalized] = fingerprint
 		return nil
 	})

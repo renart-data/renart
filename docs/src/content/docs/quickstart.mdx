@@ -3,7 +3,7 @@ title: Quickstart
 description: Create and run a local DuckDB sample pipeline in Renart.
 ---
 
-The fastest way to try Renart is the DuckDB quickstart. It creates a small Bruin project in your current Git workspace, adds a local DuckDB connection, and materializes a sample pipeline from the Renart onboarding flow.
+The fastest way to try Renart is the DuckDB quickstart. It creates the Bruin chess sample project in your current Git workspace, adds local DuckDB and chess connections, and materializes the sample pipeline from the Renart onboarding flow.
 
 ## Start Renart
 
@@ -17,27 +17,20 @@ If the workspace has no pipelines or connections yet, Renart opens onboarding au
 
 ## Choose The Quickstart
 
-On the welcome screen, choose **Try the DuckDB quickstart** instead of importing an existing warehouse.
+On the welcome screen, click **Create playground** in the quickstart card. Renart creates and runs the sample, then opens the workspace canvas directly.
 
-Renart will show what it is about to create:
-
-- `duckdb-files/renart_quickstart.duckdb`
-- a `quickstart` pipeline
-- `quickstart.customers`
-- `quickstart.orders`
-- `quickstart.customer_orders`
-
-Click **Create and materialize**.
+![Renart onboarding quickstart card with a chess DAG preview](/quickstart-onboarding.png)
 
 ## Explore The Pipeline
 
-When the quickstart finishes, click **Open workspace**.
+Use the canvas tour to inspect the sample data flow:
 
-You can now use the canvas to inspect the sample data flow:
+![Renart quickstart workspace canvas with chess assets](/quickstart-workspace.png)
 
-- `quickstart.customers` creates a tiny customer table.
-- `quickstart.orders` creates a tiny order table.
-- `quickstart.customer_orders` depends on both upstream assets and summarizes revenue by customer.
+- `dataset.players` is an ingestr asset that loads chess player profiles into DuckDB.
+- `quickstart.games` is an ingestr asset that loads chess games into DuckDB.
+- `dataset.player_stats` is a SQL asset that joins players to games and aggregates player counts.
+- `my_python_asset` is a tiny Python asset included in the Bruin default template.
 
 The pipeline has already been materialized, so the DuckDB database contains the sample tables.
 

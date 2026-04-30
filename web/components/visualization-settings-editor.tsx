@@ -276,11 +276,11 @@ export function VisualizationSettingsEditor({
     <div className="grid gap-2 ">
       <div className="grid gap-1">
         <Label>View Type</Label>
-        <Tabs
-          onValueChange={(value) => setView(value as VisualizationView)}
-          value={view}
-        >
-          <TabsList className="grid w-full grid-cols-4">
+          <Tabs
+            onValueChange={(value) => setView(value as VisualizationView)}
+            value={view}
+          >
+          <TabsList className="grid w-full grid-cols-4" data-testid="visualization-view-type-tabs">
             <TabsTrigger disabled={disabled} value="none">
               <EyeOff className="mr-1 size-3.5 text-zinc-500" />
               None

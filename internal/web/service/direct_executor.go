@@ -209,7 +209,11 @@ func (e *HybridBruinExecutor) RunPipeline(ctx context.Context, req RunPipelineRe
 		return nil, fmt.Errorf("direct pipeline run is not supported for one or more asset types")
 	}
 
-	configPath := filepath.Join(e.workspaceRoot, ".bruin.yml")
+	repoRoot, err := git.FindRepoFromPath(resolvedTarget)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find the git repository root: %w", err)
+	}
+	configPath := filepath.Join(repoRoot.Path, ".bruin.yml")
 	cfg, err := config.LoadOrCreate(afero.NewOsFs(), configPath)
 	if err != nil {
 		return nil, err

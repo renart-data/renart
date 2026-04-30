@@ -101,6 +101,7 @@ type OnboardingService struct {
 }
 
 const (
+	OnboardingStateStart      = "start"
 	OnboardingStateConnection = "connection-type"
 	OnboardingStateConfig     = "connection-config"
 	OnboardingStateImport     = "import"
@@ -131,10 +132,11 @@ func (s *OnboardingService) GetState() (OnboardingSessionState, error) {
 
 func (s *OnboardingService) UpdateState(state OnboardingSessionState) error {
 	normalized := normalizeOnboardingSessionState(state)
-	if err := os.MkdirAll(filepath.Dir(s.statePath), 0o755); err != nil {
+	fs := afero.NewOsFs()
+	if err := fs.MkdirAll(filepath.Dir(s.statePath), 0o755); err != nil {
 		return err
 	}
-	if err := git.EnsureGivenPatternIsInGitignore(afero.NewOsFs(), s.workspaceRoot, filepath.Base(s.statePath)); err != nil {
+	if err := git.EnsureGivenPatternIsInGitignore(fs, s.workspaceRoot, filepath.Base(s.statePath)); err != nil {
 		return err
 	}
 
@@ -143,7 +145,7 @@ func (s *OnboardingService) UpdateState(state OnboardingSessionState) error {
 		return err
 	}
 
-	return os.WriteFile(s.statePath, contents, 0o644)
+	return afero.WriteFile(fs, s.statePath, contents, 0o644)
 }
 
 func (s *OnboardingService) PreviewDiscovery(ctx context.Context, req OnboardingDiscoveryRequest) (OnboardingDiscoveryResult, int) {
@@ -258,7 +260,7 @@ func (s *OnboardingService) PreviewDiscovery(ctx context.Context, req Onboarding
 }
 
 func (s *OnboardingService) loadState() (OnboardingSessionState, error) {
-	contents, err := os.ReadFile(s.statePath)
+	contents, err := afero.ReadFile(afero.NewOsFs(), s.statePath)
 	if err != nil {
 		return OnboardingSessionState{}, err
 	}
@@ -275,7 +277,7 @@ func (s *OnboardingService) defaultState() OnboardingSessionState {
 	if s.shouldActivateByDefault() {
 		return OnboardingSessionState{
 			Active: true,
-			Step:   OnboardingStateConnection,
+			Step:   OnboardingStateStart,
 			ImportForm: OnboardingImportFormState{
 				PipelineName: "analytics",
 			},
@@ -291,8 +293,9 @@ func (s *OnboardingService) shouldActivateByDefault() bool {
 		return false
 	}
 
-	if _, err := os.Stat(s.configPath); err == nil {
-		cfg, cfgErr := config.LoadFromFileOrEnv(afero.NewOsFs(), s.configPath)
+	fs := afero.NewOsFs()
+	if exists, _ := afero.Exists(fs, s.configPath); exists {
+		cfg, cfgErr := config.LoadFromFileOrEnv(fs, s.configPath)
 		if cfgErr == nil {
 			for _, env := range cfg.Environments {
 				if env.Connections != nil && len(env.Connections.ConnectionsSummaryList()) > 0 {
@@ -312,9 +315,9 @@ func normalizeOnboardingSessionState(state OnboardingSessionState) OnboardingSes
 
 	step := strings.TrimSpace(state.Step)
 	switch step {
-	case OnboardingStateConnection, OnboardingStateConfig, OnboardingStateImport, OnboardingStateQuickstart, OnboardingStateSuccess:
+	case OnboardingStateStart, OnboardingStateConnection, OnboardingStateConfig, OnboardingStateImport, OnboardingStateQuickstart, OnboardingStateSuccess:
 	default:
-		step = OnboardingStateConnection
+		step = OnboardingStateStart
 	}
 
 	result := OnboardingSessionState{
@@ -389,18 +392,17 @@ func (s *OnboardingService) ImportDatabase(ctx context.Context, req OnboardingIm
 	}
 
 	if req.CreateIfMissing {
-		if err := os.MkdirAll(absPipelinePath, 0o755); err != nil {
+		fs := afero.NewOsFs()
+		if err := fs.MkdirAll(absPipelinePath, 0o755); err != nil {
 			return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 500}
 		}
 		pipelineFile := filepath.Join(absPipelinePath, "pipeline.yml")
-		if _, statErr := os.Stat(pipelineFile); statErr != nil {
-			if os.IsNotExist(statErr) {
-				content := fmt.Sprintf("name: %s\nschedule: daily\nstart_date: \"2024-01-01\"\n", filepath.Base(relPipelinePath))
-				if writeErr := os.WriteFile(pipelineFile, []byte(content), 0o644); writeErr != nil {
-					return OnboardingImportResult{Status: "error", Error: writeErr.Error(), HTTPCode: 500}
-				}
-			} else {
-				return OnboardingImportResult{Status: "error", Error: statErr.Error(), HTTPCode: 500}
+		if exists, statErr := afero.Exists(fs, pipelineFile); statErr != nil {
+			return OnboardingImportResult{Status: "error", Error: statErr.Error(), HTTPCode: 500}
+		} else if !exists {
+			content := fmt.Sprintf("name: %s\nschedule: daily\nstart_date: \"2024-01-01\"\n", filepath.Base(relPipelinePath))
+			if writeErr := afero.WriteFile(fs, pipelineFile, []byte(content), 0o644); writeErr != nil {
+				return OnboardingImportResult{Status: "error", Error: writeErr.Error(), HTTPCode: 500}
 			}
 		}
 	}
@@ -475,17 +477,18 @@ func (s *OnboardingService) CreateDuckDBQuickstart(ctx context.Context, req Onbo
 	if environmentName == "" {
 		environmentName = "default"
 	}
-	connectionName := strings.TrimSpace(req.ConnectionName)
-	if connectionName == "" {
-		connectionName = "duckdb-default"
+	duckDBConnectionName := strings.TrimSpace(req.ConnectionName)
+	if duckDBConnectionName == "" {
+		duckDBConnectionName = "duckdb-default"
 	}
+	chessConnectionName := "chess-default"
 	pipelineName := strings.Trim(strings.TrimSpace(req.PipelineName), `/\\`)
 	if pipelineName == "" {
 		pipelineName = "quickstart"
 	}
 	databasePath := filepath.ToSlash(strings.TrimSpace(req.DatabasePath))
 	if databasePath == "" {
-		databasePath = "duckdb-files/renart_quickstart.duckdb"
+		databasePath = "duckdb-files/chess_playground.duckdb"
 	}
 
 	relPipelinePath := filepath.ToSlash(pipelineName)
@@ -493,10 +496,11 @@ func (s *OnboardingService) CreateDuckDBQuickstart(ctx context.Context, req Onbo
 	if err != nil {
 		return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 400}
 	}
-	if _, err := os.Stat(absPipelinePath); err == nil {
+	fs := afero.NewOsFs()
+	if exists, statErr := afero.Exists(fs, absPipelinePath); statErr != nil {
+		return OnboardingImportResult{Status: "error", Error: statErr.Error(), HTTPCode: 500}
+	} else if exists {
 		return OnboardingImportResult{Status: "error", Error: fmt.Sprintf("pipeline %q already exists", relPipelinePath), HTTPCode: 400}
-	} else if !os.IsNotExist(err) {
-		return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 500}
 	}
 
 	configService := NewConfigService(s.workspaceRoot, s.configPath)
@@ -505,52 +509,77 @@ func (s *OnboardingService) CreateDuckDBQuickstart(ctx context.Context, req Onbo
 		return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 500}
 	}
 	if _, exists := cfg.Environments[environmentName]; exists {
-		if err := cfg.DeleteConnection(environmentName, connectionName); err != nil && !strings.Contains(err.Error(), "does not exist") {
+		if err := cfg.DeleteConnection(environmentName, duckDBConnectionName); err != nil && !strings.Contains(err.Error(), "does not exist") {
+			return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 400}
+		}
+		if err := cfg.DeleteConnection(environmentName, chessConnectionName); err != nil && !strings.Contains(err.Error(), "does not exist") {
 			return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 400}
 		}
 	}
-	if err := configService.AddConnection(cfg, UpsertWorkspaceConnectionParams{
-		EnvironmentName: environmentName,
-		Name:            connectionName,
-		Type:            "duckdb",
-		Values:          map[string]any{"path": databasePath},
-	}); err != nil {
+	if _, exists := cfg.Environments[environmentName]; !exists {
+		if err := cfg.AddEnvironment(environmentName, ""); err != nil {
+			return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 500}
+		}
+	}
+	if strings.TrimSpace(cfg.DefaultEnvironmentName) == "" {
+		cfg.DefaultEnvironmentName = environmentName
+	}
+	if strings.TrimSpace(cfg.SelectedEnvironmentName) == "" {
+		cfg.SelectedEnvironmentName = environmentName
+	}
+	if err := cfg.AddConnection(environmentName, duckDBConnectionName, "duckdb", map[string]any{"path": databasePath}); err != nil {
+		return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 400}
+	}
+	if err := cfg.AddConnection(environmentName, chessConnectionName, "chess", map[string]any{"players": []string{
+		"FabianoCaruana",
+		"Hikaru",
+		"MagnusCarlsen",
+		"GothamChess",
+		"DanielNaroditsky",
+		"AnishGiri",
+		"Firouzja2003",
+		"LevonAronian",
+		"WesleySo",
+		"GarryKasparov",
+	}}); err != nil {
 		return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 400}
 	}
 	if _, err := configService.Persist(cfg); err != nil {
 		return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 500}
 	}
 
-	if err := os.MkdirAll(filepath.Dir(filepath.Join(s.workspaceRoot, databasePath)), 0o755); err != nil {
+	if err := s.prepareQuickstartDuckDBPath(databasePath); err != nil {
 		return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 500}
 	}
 	assetsDir := filepath.Join(absPipelinePath, "assets")
-	if err := os.MkdirAll(assetsDir, 0o755); err != nil {
+	if err := fs.MkdirAll(assetsDir, 0o755); err != nil {
 		return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 500}
 	}
 
 	files := map[string]string{
-		"pipeline.yml":                                 quickstartPipelineYAML(filepath.Base(relPipelinePath), connectionName),
-		filepath.Join("assets", "customers.sql"):       quickstartCustomersSQL(),
-		filepath.Join("assets", "orders.sql"):          quickstartOrdersSQL(),
-		filepath.Join("assets", "customer_orders.sql"): quickstartCustomerOrdersSQL(),
+		"pipeline.yml": quickstartPipelineYAML(filepath.Base(relPipelinePath), duckDBConnectionName),
+		filepath.Join("assets", "players.asset.yml"):  quickstartPlayersAssetYAML(chessConnectionName),
+		filepath.Join("assets", "games.asset.yml"):    quickstartGamesAssetYAML(chessConnectionName),
+		filepath.Join("assets", "player_stats.sql"):   quickstartPlayerStatsSQL(),
+		filepath.Join("assets", "my_python_asset.py"): quickstartPythonAsset(),
 	}
 	for relPath, content := range files {
 		absPath := filepath.Join(absPipelinePath, relPath)
-		if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+		if err := fs.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
 			return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 500}
 		}
-		if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
+		if err := afero.WriteFile(fs, absPath, []byte(content), 0o644); err != nil {
 			return OnboardingImportResult{Status: "error", Error: err.Error(), HTTPCode: 500}
 		}
 	}
 
 	assetPaths := []string{
-		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "customers.sql")),
-		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "orders.sql")),
-		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "customer_orders.sql")),
+		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "players.asset.yml")),
+		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "games.asset.yml")),
+		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "player_stats.sql")),
+		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "my_python_asset.py")),
 	}
-	output := fmt.Sprintf("Created DuckDB quickstart pipeline at %s", relPipelinePath)
+	output := fmt.Sprintf("Created DuckDB chess quickstart pipeline at %s", relPipelinePath)
 	operation := runOperation(relPipelinePath, EncodeID(relPipelinePath), "", environmentName)
 	if req.Materialize {
 		runOutput, runErr := s.executor.RunPipeline(ctx, RunPipelineRequest{Target: relPipelinePath, Environment: environmentName}, nil)
@@ -578,67 +607,98 @@ func (s *OnboardingService) CreateDuckDBQuickstart(ctx context.Context, req Onbo
 	}
 }
 
+func (s *OnboardingService) prepareQuickstartDuckDBPath(databasePath string) error {
+	configDir := filepath.Dir(s.configPath)
+	if strings.TrimSpace(configDir) == "" {
+		configDir = s.workspaceRoot
+	}
+	absDatabasePath, err := SafeJoin(configDir, filepath.FromSlash(databasePath))
+	if err != nil {
+		return err
+	}
+	fs := afero.NewOsFs()
+	if err := fs.MkdirAll(filepath.Dir(absDatabasePath), 0o755); err != nil {
+		return err
+	}
+
+	info, err := fs.Stat(absDatabasePath)
+	if err == nil && !info.IsDir() && info.Size() == 0 {
+		return fs.Remove(absDatabasePath)
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	return nil
+}
+
 func quickstartPipelineYAML(name, connectionName string) string {
 	return fmt.Sprintf("name: %s\nschedule: daily\nstart_date: \"2024-01-01\"\n\ndefault_connections:\n  duckdb: %s\n", name, connectionName)
 }
 
-func quickstartCustomersSQL() string {
-	return `/* @bruin
-name: quickstart.customers
-type: duckdb.sql
-materialization:
-  type: table
-@bruin */
+func quickstartPlayersAssetYAML(connectionName string) string {
+	return fmt.Sprintf(`name: dataset.players
+type: ingestr
 
-SELECT *
-FROM (VALUES
-  (1, 'Ada Lovelace', 'London'),
-  (2, 'Grace Hopper', 'New York'),
-  (3, 'Katherine Johnson', 'Virginia')
-) AS customers(customer_id, customer_name, city)
-`
+parameters:
+  destination: duckdb
+  source_connection: %s
+  source_table: profiles
+`, connectionName)
 }
 
-func quickstartOrdersSQL() string {
-	return `/* @bruin
-name: quickstart.orders
-type: duckdb.sql
-materialization:
-  type: table
-@bruin */
+func quickstartGamesAssetYAML(connectionName string) string {
+	return fmt.Sprintf(`name: quickstart.games
+type: ingestr
 
-SELECT *
-FROM (VALUES
-  (101, 1, 120.50),
-  (102, 1, 89.90),
-  (103, 2, 250.00),
-  (104, 3, 74.25)
-) AS orders(order_id, customer_id, order_total)
-`
+parameters:
+  source_connection: %s
+  source_table: games
+  destination: duckdb
+`, connectionName)
 }
 
-func quickstartCustomerOrdersSQL() string {
+func quickstartPlayerStatsSQL() string {
 	return `/* @bruin
-name: quickstart.customer_orders
+name: dataset.player_stats
 type: duckdb.sql
 materialization:
   type: table
 depends:
-  - quickstart.customers
-  - quickstart.orders
+  - dataset.players
+  - quickstart.games
 @bruin */
 
+WITH players_white AS (
+    SELECT white->>'@id' AS player_id
+    FROM quickstart.games
+),
+
+players_black AS (
+    SELECT black->>'@id' AS player_id
+    FROM quickstart.games
+)
+
 SELECT
-  customers.customer_id,
-  customers.customer_name,
-  customers.city,
-  count(orders.order_id) AS order_count,
-  sum(orders.order_total) AS total_revenue
-FROM quickstart.customers AS customers
-JOIN quickstart.orders AS orders
-  ON customers.customer_id = orders.customer_id
-GROUP BY 1, 2, 3
-ORDER BY total_revenue DESC
+    name,
+    (
+        SELECT count(*) FROM players_white
+        WHERE dataset.players.aid = players_white.player_id
+    ) AS games_white,
+    (
+        SELECT count(*) FROM players_black
+        WHERE dataset.players.aid = players_black.player_id
+    ) as games_black
+FROM dataset.players
+`
+}
+
+func quickstartPythonAsset() string {
+	return `"""@bruin
+name: my_python_asset
+@bruin"""
+
+print('hello world')
 `
 }
 

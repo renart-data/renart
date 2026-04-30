@@ -2,20 +2,19 @@ package service
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"renart/internal/web/model"
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/git"
 	"github.com/bruin-data/bruin/pkg/glossary"
 	bruinpath "github.com/bruin-data/bruin/pkg/path"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/spf13/afero"
+	"renart/internal/web/model"
 )
 
 // PipelineDefinitionFiles are the filenames that define a pipeline.
@@ -108,8 +107,9 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 		Metadata:    map[string][]string{},
 	}
 
-	if _, err := os.Stat(s.configPath); err == nil {
-		cfg, cfgErr := config.LoadOrCreate(afero.NewOsFs(), s.configPath)
+	fs := afero.NewOsFs()
+	if exists, _ := afero.Exists(fs, s.configPath); exists {
+		cfg, cfgErr := config.LoadOrCreate(fs, s.configPath)
 		if cfgErr == nil {
 			state.SelectedEnvironment = cfg.SelectedEnvironmentName
 			if cfg.SelectedEnvironment != nil && cfg.SelectedEnvironment.Connections != nil {

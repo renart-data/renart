@@ -25,7 +25,7 @@ type Params = {
   setDraftValues: (value: Record<string, string | number | boolean>) => void;
   setImportForm: (value: { database: string; pipelineName: string; schema: string; pattern: string; disableColumns: boolean } | ((current: { database: string; pipelineName: string; schema: string; pattern: string; disableColumns: boolean }) => { database: string; pipelineName: string; schema: string; pattern: string; disableColumns: boolean })) => void;
   setSelectedTables: (value: string[]) => void;
-  setStep: (value: "connection-type" | "connection-config" | "import" | "success") => void;
+  setStep: (value: "start" | "connection-type" | "connection-config" | "import" | "quickstart" | "success") => void;
 };
 
 export function useOnboardingDiscovery({
@@ -142,7 +142,6 @@ export function useOnboardingDiscovery({
         void navigate({
           to: "/onboarding/import",
           replace: true,
-          search: { pipeline: undefined, asset: undefined },
         });
       } catch (error) {
         setDiscoveryState({ status: "ok", databases: [], tables: [] });

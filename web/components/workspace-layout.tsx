@@ -11,6 +11,7 @@ import {
   CSSProperties,
   Dispatch,
   SetStateAction,
+  ReactNode,
   useCallback,
   useContext,
   useEffect,
@@ -22,6 +23,7 @@ import { WorkspaceCommandPalette } from "@/components/workspace-command-palette"
 import { WorkspaceEnvironmentSwitcher } from "@/components/workspace-environment-switcher";
 import { WorkspacePipelineDialogs } from "@/components/workspace-pipeline-dialogs";
 import { WorkspaceSidebar } from "@/components/workspace-sidebar";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import {
   SidebarInset,
@@ -38,6 +40,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useWorkspaceSelection } from "@/hooks/use-workspace-selection";
 import { useWorkspaceSync } from "@/hooks/use-workspace-sync";
 import { useWorkspaceTheme } from "@/hooks/use-workspace-theme";
+import { useOnboarding } from "@/hooks/use-onboarding";
+import type { OnboardingRect } from "@/lib/atoms/onboarding";
 
 export type WorkspaceSidebarState = {
   highlighted?: boolean;
@@ -96,6 +100,13 @@ export function WorkspaceLayout() {
   const [sidebarState, setSidebarState] = useState<WorkspaceSidebarState>({});
   const [sidebarOnboardingMount, setSidebarOnboardingMount] =
     useState<HTMLDivElement | null>(null);
+  const onboarding = useOnboarding({
+    spotlightActive: routeState.pathname.startsWith("/settings/environments"),
+    spotlightSelectors: [
+      "[data-testid='environment-card-default']",
+      "[data-testid='environments-new-button']",
+    ],
+  });
 
   const currentView = useMemo<"workspace" | "environments" | "connections">(
     () => {
@@ -152,6 +163,15 @@ export function WorkspaceLayout() {
 
     document.title = documentTitle;
   }, [documentTitle]);
+
+  useEffect(() => {
+    if (currentView !== "environments") {
+      return;
+    }
+    onboarding.setEnvironmentStepActive(
+      window.localStorage.getItem("renart-quickstart-tour-environments") === "true"
+    );
+  }, [currentView]);
 
   const handleRunPipelineById = useCallback(
     (pipelineId: string) => {
@@ -408,6 +428,47 @@ export function WorkspaceLayout() {
           />
 
           <SidebarInset className="min-w-0 min-h-0">
+            {onboarding.environmentStepActive ? (
+              <div className="fixed inset-0 z-40">
+                <EnvironmentTourOverlay rect={onboarding.spotlightRect} />
+                <EnvironmentTourCard style={onboarding.cardStyle}>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Quickstart tour</div>
+                  <div className="mt-1 font-semibold">These are your connections</div>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    The playground configured DuckDB for local tables and chess for source data. Return to the workspace to keep exploring the DAG.
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        onboarding.setEnvironmentStepActive(false);
+                        void navigate({
+                          to: "/",
+                          search: {
+                            pipeline: activePipeline ?? undefined,
+                            asset: selectedAsset ?? undefined,
+                            environment: selectedEnvironment,
+                          },
+                        });
+                      }}
+                    >
+                      Back to workspace
+                    </Button>
+                    <Button
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                      onClick={() => {
+                        onboarding.setEnvironmentStepActive(false);
+                      }}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </EnvironmentTourCard>
+              </div>
+            ) : null}
             <header className="flex h-12 shrink-0 items-center gap-3 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
               <SidebarTrigger className="shrink-0" />
               <div className="min-w-0">
@@ -495,6 +556,39 @@ export function WorkspaceLayout() {
         `}</style>
       </div>
     </WorkspaceLayoutContext.Provider>
+  );
+}
+
+function EnvironmentTourOverlay({ rect }: { rect: OnboardingRect | null }) {
+  if (!rect) {
+    return <div className="pointer-events-none fixed inset-0 bg-black/55" />;
+  }
+
+  const padding = 12;
+  return (
+    <div
+      className="pointer-events-none fixed z-0 rounded-2xl border-2 border-primary shadow-[0_0_0_9999px_rgba(0,0,0,0.55),0_0_32px_rgba(59,130,246,0.8)]"
+      style={{
+        left: Math.max(8, rect.left - padding),
+        top: Math.max(8, rect.top - padding),
+        width: rect.width + padding * 2,
+        height: rect.height + padding * 2,
+      }}
+    />
+  );
+}
+
+function EnvironmentTourCard({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style: CSSProperties;
+}) {
+  return (
+    <div className="pointer-events-auto fixed max-w-[360px] rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg ring-4 ring-primary/20" style={style}>
+      {children}
+    </div>
   );
 }
 

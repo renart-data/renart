@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -132,7 +131,8 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 	if err != nil {
 		return nil, &AssetAPIError{Status: 400, Code: "invalid_asset_path", Message: err.Error()}
 	}
-	if err := os.MkdirAll(filepath.Dir(absAssetPath), 0o755); err != nil {
+	fs := afero.NewOsFs()
+	if err := fs.MkdirAll(filepath.Dir(absAssetPath), 0o755); err != nil {
 		return nil, &AssetAPIError{Status: 500, Code: "asset_dir_create_failed", Message: err.Error()}
 	}
 
@@ -157,7 +157,7 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 		}
 	}
 
-	if err := os.WriteFile(absAssetPath, []byte(content), 0o644); err != nil {
+	if err := afero.WriteFile(fs, absAssetPath, []byte(content), 0o644); err != nil {
 		return nil, &AssetAPIError{Status: 500, Code: "asset_write_failed", Message: err.Error()}
 	}
 	if err := s.deps.EnsurePythonRequirements(absAssetPath, assetType, relAssetPath); err != nil {
@@ -194,7 +194,8 @@ func (s *AssetService) Update(ctx context.Context, assetID string, req AssetUpda
 		return nil, &AssetAPIError{Status: 400, Code: "invalid_asset_path", Message: err.Error()}
 	}
 
-	originalBytes, err := os.ReadFile(absAssetPath)
+	fs := afero.NewOsFs()
+	originalBytes, err := afero.ReadFile(fs, absAssetPath)
 	if err != nil {
 		return nil, &AssetAPIError{Status: 500, Code: "asset_read_failed", Message: err.Error()}
 	}
@@ -268,12 +269,12 @@ func (s *AssetService) Update(ctx context.Context, assetID string, req AssetUpda
 		}
 	}
 
-	latestBytes, err := os.ReadFile(absAssetPath)
+	latestBytes, err := afero.ReadFile(fs, absAssetPath)
 	if err != nil {
 		return nil, &AssetAPIError{Status: 500, Code: "asset_read_failed", Message: err.Error()}
 	}
 	mergedContent := MergeExecutableContent(string(latestBytes), desiredExecutable)
-	if err := os.WriteFile(absAssetPath, []byte(mergedContent), 0o644); err != nil {
+	if err := afero.WriteFile(fs, absAssetPath, []byte(mergedContent), 0o644); err != nil {
 		return nil, &AssetAPIError{Status: 500, Code: "asset_write_failed", Message: err.Error()}
 	}
 
@@ -414,7 +415,7 @@ func (s *AssetService) Delete(ctx context.Context, assetID string) (map[string]s
 	if err != nil {
 		return nil, &AssetAPIError{Status: 400, Code: "invalid_asset_path", Message: err.Error()}
 	}
-	if err := os.Remove(absAssetPath); err != nil {
+	if err := afero.NewOsFs().Remove(absAssetPath); err != nil {
 		return nil, &AssetAPIError{Status: 500, Code: "asset_delete_failed", Message: err.Error()}
 	}
 	s.deps.SuppressWatcher(relAssetPath)
@@ -434,19 +435,20 @@ func (s *AssetService) FormatSQL(ctx context.Context, assetID string, req Format
 	if err != nil {
 		return FormatSQLAssetResponse{}, &AssetAPIError{Status: 400, Code: "invalid_asset_path", Message: err.Error()}
 	}
-	originalBytes, err := os.ReadFile(absAssetPath)
+	fs := afero.NewOsFs()
+	originalBytes, err := afero.ReadFile(fs, absAssetPath)
 	if err != nil {
 		return FormatSQLAssetResponse{}, &AssetAPIError{Status: 500, Code: "asset_read_failed", Message: err.Error()}
 	}
 	mergedContent := MergeExecutableContent(string(originalBytes), req.Content)
-	if err := os.WriteFile(absAssetPath, []byte(mergedContent), 0o644); err != nil {
+	if err := afero.WriteFile(fs, absAssetPath, []byte(mergedContent), 0o644); err != nil {
 		return FormatSQLAssetResponse{}, &AssetAPIError{Status: 500, Code: "asset_write_failed", Message: err.Error()}
 	}
 	output, err := s.deps.Executor.FormatAsset(ctx, FormatAssetRequest{AssetPath: relAssetPath, UseSQLFluff: true})
 	if err != nil {
 		return FormatSQLAssetResponse{Status: "error", AssetID: assetID, Content: req.Content, Error: strings.TrimSpace(string(output))}, nil
 	}
-	formattedBytes, err := os.ReadFile(absAssetPath)
+	formattedBytes, err := afero.ReadFile(fs, absAssetPath)
 	if err != nil {
 		return FormatSQLAssetResponse{}, &AssetAPIError{Status: 500, Code: "asset_read_failed", Message: err.Error()}
 	}
@@ -923,9 +925,12 @@ func deriveSQLAssetTypeForSource(sourceAsset *pipeline.Asset, parsedPipeline *pi
 		if strings.Contains(strings.ToLower(assetType), "sql") {
 			return assetType
 		}
-	}
-	if strings.TrimSpace(sourceConnectionName) != "" {
-		return strings.ToLower(sourceConnectionName) + ".sql"
+		if strings.EqualFold(assetType, "ingestr") {
+			destination := strings.TrimSpace(sourceAsset.Parameters["destination"])
+			if destination != "" {
+				return strings.ToLower(destination) + ".sql"
+			}
+		}
 	}
 	if parsedPipeline != nil {
 		for _, current := range parsedPipeline.Assets {
@@ -961,12 +966,13 @@ func EnsurePythonRequirementsFile(absAssetPath, assetType, relAssetPath string) 
 		return nil
 	}
 	requirementsPath := filepath.Join(filepath.Dir(absAssetPath), "requirements.txt")
-	if _, err := os.Stat(requirementsPath); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
+	fs := afero.NewOsFs()
+	if exists, err := afero.Exists(fs, requirementsPath); err != nil {
 		return err
+	} else if exists {
+		return nil
 	}
-	return os.WriteFile(requirementsPath, []byte("pandas\n"), 0o644)
+	return afero.WriteFile(fs, requirementsPath, []byte("pandas\n"), 0o644)
 }
 
 func defaultDerivedSQLAssetContent(assetName, assetType, assetPath, sourceAssetName, connectionName string) string {

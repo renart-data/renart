@@ -9,14 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as WorkspaceRouteImport } from './routes/_workspace'
+import { Route as OnboardingRouteRouteImport } from './routes/onboarding/route'
+import { Route as OnboardingIndexRouteImport } from './routes/onboarding/index'
 import { Route as WorkspaceIndexRouteImport } from './routes/_workspace.index'
 import { Route as OnboardingSuccessRouteImport } from './routes/onboarding.success'
-import { Route as OnboardingImportRouteImport } from './routes/onboarding.import'
-import { Route as OnboardingConnectionRouteImport } from './routes/onboarding.connection'
+import { Route as OnboardingQuickstartRouteImport } from './routes/onboarding/quickstart'
+import { Route as OnboardingImportRouteRouteImport } from './routes/onboarding/import/route'
 import { Route as WorkspaceSettingsRouteRouteImport } from './routes/_workspace/settings/route'
+import { Route as OnboardingImportIndexRouteImport } from './routes/onboarding/import/index'
 import { Route as WorkspaceSettingsIndexRouteImport } from './routes/_workspace/settings/index'
+import { Route as OnboardingImportReviewRouteImport } from './routes/onboarding/import/review'
+import { Route as OnboardingImportConnectionRouteImport } from './routes/onboarding/import/connection'
 import { Route as WorkspaceSettingsEnvironmentsRouteRouteImport } from './routes/_workspace/settings/environments/route'
 import { Route as WorkspacePipelinesPipelineIdRouteRouteImport } from './routes/_workspace/pipelines/$pipelineId/route'
 import { Route as WorkspaceSettingsEnvironmentsIndexRouteImport } from './routes/_workspace/settings/environments/index'
@@ -38,14 +42,19 @@ import { Route as WorkspaceSettingsEnvironmentsEnvironmentIdConnectionsConnectio
 import { Route as WorkspaceSettingsEnvironmentsEnvironmentIdConnectionsConnectionIdIndexRouteImport } from './routes/_workspace/settings/environments/$environmentId/connections/$connectionId/index'
 import { Route as WorkspaceSettingsEnvironmentsEnvironmentIdConnectionsConnectionIdEditRouteImport } from './routes/_workspace/settings/environments/$environmentId/connections/$connectionId/edit'
 
-const OnboardingRoute = OnboardingRouteImport.update({
+const WorkspaceRoute = WorkspaceRouteImport.update({
+  id: '/_workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingRouteRoute = OnboardingRouteRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WorkspaceRoute = WorkspaceRouteImport.update({
-  id: '/_workspace',
-  getParentRoute: () => rootRouteImport,
+const OnboardingIndexRoute = OnboardingIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OnboardingRouteRoute,
 } as any)
 const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
   id: '/',
@@ -55,28 +64,44 @@ const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
 const OnboardingSuccessRoute = OnboardingSuccessRouteImport.update({
   id: '/success',
   path: '/success',
-  getParentRoute: () => OnboardingRoute,
+  getParentRoute: () => OnboardingRouteRoute,
 } as any)
-const OnboardingImportRoute = OnboardingImportRouteImport.update({
+const OnboardingQuickstartRoute = OnboardingQuickstartRouteImport.update({
+  id: '/quickstart',
+  path: '/quickstart',
+  getParentRoute: () => OnboardingRouteRoute,
+} as any)
+const OnboardingImportRouteRoute = OnboardingImportRouteRouteImport.update({
   id: '/import',
   path: '/import',
-  getParentRoute: () => OnboardingRoute,
-} as any)
-const OnboardingConnectionRoute = OnboardingConnectionRouteImport.update({
-  id: '/connection',
-  path: '/connection',
-  getParentRoute: () => OnboardingRoute,
+  getParentRoute: () => OnboardingRouteRoute,
 } as any)
 const WorkspaceSettingsRouteRoute = WorkspaceSettingsRouteRouteImport.update({
   id: '/settings',
   path: '/settings',
   getParentRoute: () => WorkspaceRoute,
 } as any)
+const OnboardingImportIndexRoute = OnboardingImportIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OnboardingImportRouteRoute,
+} as any)
 const WorkspaceSettingsIndexRoute = WorkspaceSettingsIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => WorkspaceSettingsRouteRoute,
 } as any)
+const OnboardingImportReviewRoute = OnboardingImportReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
+  getParentRoute: () => OnboardingImportRouteRoute,
+} as any)
+const OnboardingImportConnectionRoute =
+  OnboardingImportConnectionRouteImport.update({
+    id: '/connection',
+    path: '/connection',
+    getParentRoute: () => OnboardingImportRouteRoute,
+  } as any)
 const WorkspaceSettingsEnvironmentsRouteRoute =
   WorkspaceSettingsEnvironmentsRouteRouteImport.update({
     id: '/environments',
@@ -209,15 +234,19 @@ const WorkspaceSettingsEnvironmentsEnvironmentIdConnectionsConnectionIdEditRoute
   )
 
 export interface FileRoutesByFullPath {
+  '/onboarding': typeof OnboardingRouteRouteWithChildren
   '/': typeof WorkspaceIndexRoute
-  '/onboarding': typeof OnboardingRouteWithChildren
   '/settings': typeof WorkspaceSettingsRouteRouteWithChildren
-  '/onboarding/connection': typeof OnboardingConnectionRoute
-  '/onboarding/import': typeof OnboardingImportRoute
+  '/onboarding/import': typeof OnboardingImportRouteRouteWithChildren
+  '/onboarding/quickstart': typeof OnboardingQuickstartRoute
   '/onboarding/success': typeof OnboardingSuccessRoute
+  '/onboarding/': typeof OnboardingIndexRoute
   '/pipelines/$pipelineId': typeof WorkspacePipelinesPipelineIdRouteRouteWithChildren
   '/settings/environments': typeof WorkspaceSettingsEnvironmentsRouteRouteWithChildren
+  '/onboarding/import/connection': typeof OnboardingImportConnectionRoute
+  '/onboarding/import/review': typeof OnboardingImportReviewRoute
   '/settings/': typeof WorkspaceSettingsIndexRoute
+  '/onboarding/import/': typeof OnboardingImportIndexRoute
   '/pipelines/$pipelineId/config': typeof WorkspacePipelinesPipelineIdConfigRouteRouteWithChildren
   '/settings/environments/$environmentId': typeof WorkspaceSettingsEnvironmentsEnvironmentIdRouteRouteWithChildren
   '/settings/environments/new': typeof WorkspaceSettingsEnvironmentsNewRoute
@@ -238,13 +267,15 @@ export interface FileRoutesByFullPath {
   '/settings/environments/$environmentId/connections/$connectionId/': typeof WorkspaceSettingsEnvironmentsEnvironmentIdConnectionsConnectionIdIndexRoute
 }
 export interface FileRoutesByTo {
-  '/onboarding': typeof OnboardingRouteWithChildren
-  '/onboarding/connection': typeof OnboardingConnectionRoute
-  '/onboarding/import': typeof OnboardingImportRoute
+  '/onboarding/quickstart': typeof OnboardingQuickstartRoute
   '/onboarding/success': typeof OnboardingSuccessRoute
   '/': typeof WorkspaceIndexRoute
+  '/onboarding': typeof OnboardingIndexRoute
   '/pipelines/$pipelineId': typeof WorkspacePipelinesPipelineIdRouteRouteWithChildren
+  '/onboarding/import/connection': typeof OnboardingImportConnectionRoute
+  '/onboarding/import/review': typeof OnboardingImportReviewRoute
   '/settings': typeof WorkspaceSettingsIndexRoute
+  '/onboarding/import': typeof OnboardingImportIndexRoute
   '/settings/environments/new': typeof WorkspaceSettingsEnvironmentsNewRoute
   '/settings/environments': typeof WorkspaceSettingsEnvironmentsIndexRoute
   '/settings/environments/$environmentId/connections': typeof WorkspaceSettingsEnvironmentsEnvironmentIdConnectionsRouteRouteWithChildren
@@ -263,16 +294,20 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/onboarding': typeof OnboardingRouteRouteWithChildren
   '/_workspace': typeof WorkspaceRouteWithChildren
-  '/onboarding': typeof OnboardingRouteWithChildren
   '/_workspace/settings': typeof WorkspaceSettingsRouteRouteWithChildren
-  '/onboarding/connection': typeof OnboardingConnectionRoute
-  '/onboarding/import': typeof OnboardingImportRoute
+  '/onboarding/import': typeof OnboardingImportRouteRouteWithChildren
+  '/onboarding/quickstart': typeof OnboardingQuickstartRoute
   '/onboarding/success': typeof OnboardingSuccessRoute
   '/_workspace/': typeof WorkspaceIndexRoute
+  '/onboarding/': typeof OnboardingIndexRoute
   '/_workspace/pipelines/$pipelineId': typeof WorkspacePipelinesPipelineIdRouteRouteWithChildren
   '/_workspace/settings/environments': typeof WorkspaceSettingsEnvironmentsRouteRouteWithChildren
+  '/onboarding/import/connection': typeof OnboardingImportConnectionRoute
+  '/onboarding/import/review': typeof OnboardingImportReviewRoute
   '/_workspace/settings/': typeof WorkspaceSettingsIndexRoute
+  '/onboarding/import/': typeof OnboardingImportIndexRoute
   '/_workspace/pipelines/$pipelineId/config': typeof WorkspacePipelinesPipelineIdConfigRouteRouteWithChildren
   '/_workspace/settings/environments/$environmentId': typeof WorkspaceSettingsEnvironmentsEnvironmentIdRouteRouteWithChildren
   '/_workspace/settings/environments/new': typeof WorkspaceSettingsEnvironmentsNewRoute
@@ -295,15 +330,19 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
     | '/onboarding'
+    | '/'
     | '/settings'
-    | '/onboarding/connection'
     | '/onboarding/import'
+    | '/onboarding/quickstart'
     | '/onboarding/success'
+    | '/onboarding/'
     | '/pipelines/$pipelineId'
     | '/settings/environments'
+    | '/onboarding/import/connection'
+    | '/onboarding/import/review'
     | '/settings/'
+    | '/onboarding/import/'
     | '/pipelines/$pipelineId/config'
     | '/settings/environments/$environmentId'
     | '/settings/environments/new'
@@ -324,13 +363,15 @@ export interface FileRouteTypes {
     | '/settings/environments/$environmentId/connections/$connectionId/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/onboarding'
-    | '/onboarding/connection'
-    | '/onboarding/import'
+    | '/onboarding/quickstart'
     | '/onboarding/success'
     | '/'
+    | '/onboarding'
     | '/pipelines/$pipelineId'
+    | '/onboarding/import/connection'
+    | '/onboarding/import/review'
     | '/settings'
+    | '/onboarding/import'
     | '/settings/environments/new'
     | '/settings/environments'
     | '/settings/environments/$environmentId/connections'
@@ -348,16 +389,20 @@ export interface FileRouteTypes {
     | '/settings/environments/$environmentId/connections/$connectionId'
   id:
     | '__root__'
-    | '/_workspace'
     | '/onboarding'
+    | '/_workspace'
     | '/_workspace/settings'
-    | '/onboarding/connection'
     | '/onboarding/import'
+    | '/onboarding/quickstart'
     | '/onboarding/success'
     | '/_workspace/'
+    | '/onboarding/'
     | '/_workspace/pipelines/$pipelineId'
     | '/_workspace/settings/environments'
+    | '/onboarding/import/connection'
+    | '/onboarding/import/review'
     | '/_workspace/settings/'
+    | '/onboarding/import/'
     | '/_workspace/pipelines/$pipelineId/config'
     | '/_workspace/settings/environments/$environmentId'
     | '/_workspace/settings/environments/new'
@@ -379,25 +424,32 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  OnboardingRouteRoute: typeof OnboardingRouteRouteWithChildren
   WorkspaceRoute: typeof WorkspaceRouteWithChildren
-  OnboardingRoute: typeof OnboardingRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/onboarding': {
-      id: '/onboarding'
-      path: '/onboarding'
-      fullPath: '/onboarding'
-      preLoaderRoute: typeof OnboardingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/_workspace': {
       id: '/_workspace'
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof WorkspaceRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding/': {
+      id: '/onboarding/'
+      path: '/'
+      fullPath: '/onboarding/'
+      preLoaderRoute: typeof OnboardingIndexRouteImport
+      parentRoute: typeof OnboardingRouteRoute
     }
     '/_workspace/': {
       id: '/_workspace/'
@@ -411,21 +463,21 @@ declare module '@tanstack/react-router' {
       path: '/success'
       fullPath: '/onboarding/success'
       preLoaderRoute: typeof OnboardingSuccessRouteImport
-      parentRoute: typeof OnboardingRoute
+      parentRoute: typeof OnboardingRouteRoute
+    }
+    '/onboarding/quickstart': {
+      id: '/onboarding/quickstart'
+      path: '/quickstart'
+      fullPath: '/onboarding/quickstart'
+      preLoaderRoute: typeof OnboardingQuickstartRouteImport
+      parentRoute: typeof OnboardingRouteRoute
     }
     '/onboarding/import': {
       id: '/onboarding/import'
       path: '/import'
       fullPath: '/onboarding/import'
-      preLoaderRoute: typeof OnboardingImportRouteImport
-      parentRoute: typeof OnboardingRoute
-    }
-    '/onboarding/connection': {
-      id: '/onboarding/connection'
-      path: '/connection'
-      fullPath: '/onboarding/connection'
-      preLoaderRoute: typeof OnboardingConnectionRouteImport
-      parentRoute: typeof OnboardingRoute
+      preLoaderRoute: typeof OnboardingImportRouteRouteImport
+      parentRoute: typeof OnboardingRouteRoute
     }
     '/_workspace/settings': {
       id: '/_workspace/settings'
@@ -434,12 +486,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceSettingsRouteRouteImport
       parentRoute: typeof WorkspaceRoute
     }
+    '/onboarding/import/': {
+      id: '/onboarding/import/'
+      path: '/'
+      fullPath: '/onboarding/import/'
+      preLoaderRoute: typeof OnboardingImportIndexRouteImport
+      parentRoute: typeof OnboardingImportRouteRoute
+    }
     '/_workspace/settings/': {
       id: '/_workspace/settings/'
       path: '/'
       fullPath: '/settings/'
       preLoaderRoute: typeof WorkspaceSettingsIndexRouteImport
       parentRoute: typeof WorkspaceSettingsRouteRoute
+    }
+    '/onboarding/import/review': {
+      id: '/onboarding/import/review'
+      path: '/review'
+      fullPath: '/onboarding/import/review'
+      preLoaderRoute: typeof OnboardingImportReviewRouteImport
+      parentRoute: typeof OnboardingImportRouteRoute
+    }
+    '/onboarding/import/connection': {
+      id: '/onboarding/import/connection'
+      path: '/connection'
+      fullPath: '/onboarding/import/connection'
+      preLoaderRoute: typeof OnboardingImportConnectionRouteImport
+      parentRoute: typeof OnboardingImportRouteRoute
     }
     '/_workspace/settings/environments': {
       id: '/_workspace/settings/environments'
@@ -583,6 +656,41 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface OnboardingImportRouteRouteChildren {
+  OnboardingImportConnectionRoute: typeof OnboardingImportConnectionRoute
+  OnboardingImportReviewRoute: typeof OnboardingImportReviewRoute
+  OnboardingImportIndexRoute: typeof OnboardingImportIndexRoute
+}
+
+const OnboardingImportRouteRouteChildren: OnboardingImportRouteRouteChildren = {
+  OnboardingImportConnectionRoute: OnboardingImportConnectionRoute,
+  OnboardingImportReviewRoute: OnboardingImportReviewRoute,
+  OnboardingImportIndexRoute: OnboardingImportIndexRoute,
+}
+
+const OnboardingImportRouteRouteWithChildren =
+  OnboardingImportRouteRoute._addFileChildren(
+    OnboardingImportRouteRouteChildren,
+  )
+
+interface OnboardingRouteRouteChildren {
+  OnboardingImportRouteRoute: typeof OnboardingImportRouteRouteWithChildren
+  OnboardingQuickstartRoute: typeof OnboardingQuickstartRoute
+  OnboardingSuccessRoute: typeof OnboardingSuccessRoute
+  OnboardingIndexRoute: typeof OnboardingIndexRoute
+}
+
+const OnboardingRouteRouteChildren: OnboardingRouteRouteChildren = {
+  OnboardingImportRouteRoute: OnboardingImportRouteRouteWithChildren,
+  OnboardingQuickstartRoute: OnboardingQuickstartRoute,
+  OnboardingSuccessRoute: OnboardingSuccessRoute,
+  OnboardingIndexRoute: OnboardingIndexRoute,
+}
+
+const OnboardingRouteRouteWithChildren = OnboardingRouteRoute._addFileChildren(
+  OnboardingRouteRouteChildren,
+)
 
 interface WorkspaceSettingsEnvironmentsEnvironmentIdConnectionsConnectionIdRouteRouteChildren {
   WorkspaceSettingsEnvironmentsEnvironmentIdConnectionsConnectionIdEditRoute: typeof WorkspaceSettingsEnvironmentsEnvironmentIdConnectionsConnectionIdEditRoute
@@ -744,25 +852,9 @@ const WorkspaceRouteWithChildren = WorkspaceRoute._addFileChildren(
   WorkspaceRouteChildren,
 )
 
-interface OnboardingRouteChildren {
-  OnboardingConnectionRoute: typeof OnboardingConnectionRoute
-  OnboardingImportRoute: typeof OnboardingImportRoute
-  OnboardingSuccessRoute: typeof OnboardingSuccessRoute
-}
-
-const OnboardingRouteChildren: OnboardingRouteChildren = {
-  OnboardingConnectionRoute: OnboardingConnectionRoute,
-  OnboardingImportRoute: OnboardingImportRoute,
-  OnboardingSuccessRoute: OnboardingSuccessRoute,
-}
-
-const OnboardingRouteWithChildren = OnboardingRoute._addFileChildren(
-  OnboardingRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
+  OnboardingRouteRoute: OnboardingRouteRouteWithChildren,
   WorkspaceRoute: WorkspaceRouteWithChildren,
-  OnboardingRoute: OnboardingRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

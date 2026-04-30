@@ -3,12 +3,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { OnboardingRoutePage } from "@/components/onboarding-route-page";
 import { loadOnboardingRouteContext } from "@/src/routes/-onboarding-shared";
 
-export const Route = createFileRoute("/onboarding/connection")({
+export const Route = createFileRoute("/onboarding/quickstart")({
   beforeLoad: loadOnboardingRouteContext,
-  component: OnboardingConnectionRouteComponent,
+  component: OnboardingQuickstartRouteComponent,
 });
 
-function OnboardingConnectionRouteComponent() {
+function OnboardingQuickstartRouteComponent() {
   const { onboardingState } = Route.useRouteContext();
   return <OnboardingRoutePage onboardingState={onboardingState} />;
 }

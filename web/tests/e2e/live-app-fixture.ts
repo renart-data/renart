@@ -149,6 +149,14 @@ export const liveTest = base.extend<{
     cpSync(fixtureRoot, workspaceDir, { recursive: true });
     mkdirSync(join(workspaceDir, ".git"));
     mkdirSync(join(workspaceDir, "duckdb-files"));
+    const configPath = join(workspaceDir, ".bruin.yml");
+    if (!existsSync(configPath) && !fixtureName.startsWith("empty-workspace")) {
+      writeFileSync(
+        configPath,
+        "environments:\n  default:\n    connections:\n      duckdb:\n        - name: duckdb-default\n          path: duckdb-files/local.db\n",
+        "utf8"
+      );
+    }
 
     const port = await getAvailablePort();
     const baseURL = `http://${host}:${port}`;
