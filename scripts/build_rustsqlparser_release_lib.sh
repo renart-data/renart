@@ -70,7 +70,9 @@ rm -f "${rustffi_dir}/target/release/libbruin_rustsqlparser.a"
 rustup target add "${target}"
 cargo build --release --manifest-path "${rustffi_dir}/Cargo.toml" --target "${target}" --target-dir "${rustffi_dir}/target"
 
-mkdir -p "${rustffi_dir}/target/${target}/release"
-test -f "${rustffi_dir}/target/${target}/release/libbruin_rustsqlparser.a"
-mkdir -p "${rustffi_dir}/target/release"
-cp "${rustffi_dir}/target/${target}/release/libbruin_rustsqlparser.a" "${rustffi_dir}/target/release/libbruin_rustsqlparser.a"
+target_archive="${rustffi_dir}/target/${target}/release/libbruin_rustsqlparser.a"
+generic_archive_dir="${rustffi_dir}/target/release"
+
+test -f "${target_archive}"
+mkdir -p "${generic_archive_dir}"
+cp "${target_archive}" "${generic_archive_dir}/libbruin_rustsqlparser.a"

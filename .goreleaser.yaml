@@ -4,6 +4,8 @@ builds:
   - id: renart
     binary: renart
     main: ./
+    env:
+      - CGO_ENABLED=0
     flags:
       - -trimpath
       - -tags=bruin_no_duckdb
