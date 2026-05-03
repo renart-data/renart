@@ -157,23 +157,27 @@ export function registerJinjaProviders(
         endLineNumber: position.lineNumber,
         endColumn: position.column,
       });
-
-      if (span.type === "statement") {
-        return { suggestions: statementSuggestions(monaco, range) };
-      }
+      const renderResult = getRenderResult();
+      const variables = renderResult?.variables ?? [];
 
       if (/\|\s*[A-Za-z_]*$/.test(before)) {
         return { suggestions: filterSuggestions(monaco, range) };
       }
 
       if (/\bvar\.[A-Za-z_]*$/.test(before)) {
-        return { suggestions: variablePropertySuggestions(monaco, getRenderResult()?.variables ?? [], range) };
+        return { suggestions: variablePropertySuggestions(monaco, variables, range) };
+      }
+
+      if (span.type === "statement") {
+        const statementBefore = before.replace(/^\{%[-]?\s*/, "");
+        const suggestions = statementExpressionSuggestions(monaco, variables, renderResult?.macros ?? [], range, statementBefore);
+        return { suggestions };
       }
 
       return {
         suggestions: [
           ...builtinVariableSuggestions(monaco, range),
-          ...macroSuggestions(monaco, getRenderResult()?.macros ?? [], range),
+          ...macroSuggestions(monaco, renderResult?.macros ?? [], range),
         ],
       };
     },
@@ -239,6 +243,51 @@ function variablePropertySuggestions(monaco: Monaco, variables: JinjaRenderVaria
     range,
     sortText: `0${variable.name}`,
   }));
+}
+
+function variableNamespaceSuggestions(monaco: Monaco, variables: JinjaRenderVariable[], range: MonacoNS.IRange) {
+  return variables.map((variable) => ({
+    label: `var.${variable.name}`,
+    kind: monaco.languages.CompletionItemKind.Variable,
+    detail: variable.type ? `${variable.type} pipeline variable` : "Pipeline variable",
+    documentation: variable.description,
+    insertText: `var.${variable.name}`,
+    range,
+    sortText: `0${variable.name}`,
+  }));
+}
+
+function statementExpressionSuggestions(
+  monaco: Monaco,
+  variables: JinjaRenderVariable[],
+  macros: JinjaRenderMacro[],
+  range: MonacoNS.IRange,
+  statementBefore: string,
+): MonacoNS.languages.CompletionItem[] {
+  const trimmed = statementBefore.trimStart();
+  const startsWithKeyword = /^(if|elif|for|set|macro)\b/.test(trimmed);
+  if (/\bfor\s+\w+\s+in\s+[\w.]*$/.test(trimmed)) {
+    return [
+      ...variableNamespaceSuggestions(monaco, variables, range),
+      ...builtinVariableSuggestions(monaco, range),
+      ...macroSuggestions(monaco, macros, range),
+    ];
+  }
+
+  const expressionSuggestions = [
+    ...builtinVariableSuggestions(monaco, range),
+    ...variableNamespaceSuggestions(monaco, variables, range),
+    ...macroSuggestions(monaco, macros, range),
+  ];
+
+  if (startsWithKeyword) {
+    return expressionSuggestions;
+  }
+
+  return [
+    ...statementSuggestions(monaco, range),
+    ...expressionSuggestions,
+  ];
 }
 
 function filterSuggestions(monaco: Monaco, range: MonacoNS.IRange): MonacoNS.languages.CompletionItem[] {

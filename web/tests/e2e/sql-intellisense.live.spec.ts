@@ -347,6 +347,62 @@ test.describe("sql intellisense live", () => {
     await expect(suggestWidget).toBeVisible();
     await expect(suggestWidget.getByText("run_mode", { exact: true })).toBeVisible();
   });
+
+  test("suggests Jinja expressions inside statement blocks", async ({
+    liveApp,
+    page,
+  }) => {
+    test.skip(test.info().project.name.includes("mobile"), "Desktop suggest widget exposes stable Monaco completion DOM.");
+
+    await writeFile(
+      join(liveApp.workspaceDir, "analytics", "pipeline.yml"),
+      [
+        "name: analytics",
+        "schedule: daily",
+        "start_date: \"2024-01-01\"",
+        "",
+        "default_connections:",
+        "  duckdb: duckdb-default",
+        "",
+        "variables:",
+        "  days:",
+        "    type: array",
+        "    default: [1, 3, 7]",
+        "  run_mode:",
+        "    type: string",
+        "    default: incremental",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+
+    await page.goto(`${liveApp.baseURL}/`);
+    await openCustomersEditor(page, liveApp.baseURL);
+
+    await replaceEditorContentByInsertText(page, "{% if start_date |  %}\nselect 1\n{% endif %}");
+    await setEditorPositionAfterText(page, "| ");
+    await page.keyboard.press("ControlOrMeta+Space");
+    let suggestWidget = page.locator(".suggest-widget.visible").first();
+    await expect(suggestWidget).toBeVisible();
+    await expect(suggestWidget.getByText("add_days", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await replaceEditorContentByInsertText(page, "{% if var. %}\nselect 1\n{% endif %}");
+    await setEditorPositionAfterText(page, "var.");
+    await page.keyboard.press("ControlOrMeta+Space");
+    suggestWidget = page.locator(".suggest-widget.visible").first();
+    await expect(suggestWidget).toBeVisible();
+    await expect(suggestWidget.getByText("run_mode", { exact: true })).toBeVisible();
+    await expect(suggestWidget.getByText("days", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await replaceEditorContentByInsertText(page, "{% for day in  %}\nselect {{ day }}\n{% endfor %}");
+    await setEditorPositionAfterText(page, "in ");
+    await page.keyboard.press("ControlOrMeta+Space");
+    suggestWidget = page.locator(".suggest-widget.visible").first();
+    await expect(suggestWidget).toBeVisible();
+    await expect(suggestWidget.getByText("var.days", { exact: true })).toBeVisible();
+  });
 });
 
 test.describe("sql intellisense ranking live", () => {
