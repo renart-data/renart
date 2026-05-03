@@ -1140,6 +1140,10 @@ export function registerSQLProviders(
         model: MonacoNS.editor.ITextModel,
         position: MonacoNS.Position,
       ) {
+        if (isInsideJinjaSpan(model, position)) {
+          return { suggestions: [] };
+        }
+
         const identifierInfo = identifierInfoAtPosition(model, position);
         const wordInfo = model.getWordUntilPosition(position);
         const range: MonacoNS.IRange = identifierInfo?.range ?? {
@@ -1699,4 +1703,28 @@ export function registerSQLProviders(
       }
     },
   };
+}
+
+function isInsideJinjaSpan(model: MonacoNS.editor.ITextModel, position: MonacoNS.Position) {
+  const offset = model.getOffsetAt(position);
+  const value = model.getValue();
+  const openers = ["{{", "{%", "{#"];
+  const closers = ["}}", "%}", "#}"];
+  let lastOpen = -1;
+  let expectedCloser = "";
+
+  for (let i = 0; i < openers.length; i++) {
+    const candidate = value.lastIndexOf(openers[i], offset);
+    if (candidate > lastOpen) {
+      lastOpen = candidate;
+      expectedCloser = closers[i] ?? "";
+    }
+  }
+
+  if (lastOpen < 0 || !expectedCloser) {
+    return false;
+  }
+
+  const lastClose = value.lastIndexOf(expectedCloser, offset);
+  return lastClose < lastOpen;
 }

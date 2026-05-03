@@ -38,7 +38,7 @@ export function useSQLParseContext(
       try {
         const response = await getSQLParseContext({
           assetId,
-          content,
+          content: jinjaSafeSQLForParsing(content),
           schema: schemaPayload,
           signal: controller.signal,
         });
@@ -72,4 +72,13 @@ export function useSQLParseContext(
   }, [assetId, content, hasContent, schemaKey, schemaPayload]);
 
   return data;
+}
+
+function jinjaSafeSQLForParsing(content: string) {
+  return content
+    .replace(/\{#[\s\S]*?#\}/g, "")
+    .replace(/'\s*\{\{[\s\S]*?\}\}\s*'/g, "'__renart_jinja_value__'")
+    .replace(/"\s*\{\{[\s\S]*?\}\}\s*"/g, '"__renart_jinja_value__"')
+    .replace(/\{\{[\s\S]*?\}\}/g, "'__renart_jinja_value__'")
+    .replace(/\{%[\s\S]*?%\}/g, "");
 }

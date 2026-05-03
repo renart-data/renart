@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useSQLIntellisense } from "@/hooks/use-sql-intellisense";
+import { useJinjaIntellisense } from "@/hooks/use-jinja-intellisense";
 import { useSQLFormatting } from "@/hooks/use-sql-formatting";
 import { useWorkspaceEditorDerivedState } from "@/hooks/use-workspace-editor-derived-state";
 import { useYAMLIntellisense } from "@/hooks/use-yaml-intellisense";
@@ -137,6 +138,7 @@ export function WorkspaceEditorPane({
     onGoToAsset,
     inspectDiagnosticSnapshot ?? null,
   );
+  useJinjaIntellisense(monacoInstance, editorInstance, asset, editorValue);
   useYAMLIntellisense(monacoInstance, editorInstance, asset);
 
   const { formatSQL, isSqlAsset, shortcutLabel } = useSQLFormatting(

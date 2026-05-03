@@ -274,6 +274,79 @@ test.describe("sql intellisense live", () => {
       }, { timeout: 15000 })
       .toEqual(expect.arrayContaining([expect.stringContaining("Catalog Error")]));
   });
+
+  test("renders Jinja ghost text and completions in the SQL editor", async ({
+    liveApp,
+    page,
+  }) => {
+    test.skip(test.info().project.name.includes("mobile"), "Monaco injected text DOM is only stable in the desktop editor.");
+
+    await writeFile(
+      join(liveApp.workspaceDir, "analytics", "pipeline.yml"),
+      [
+        "name: analytics",
+        "schedule: daily",
+        "start_date: \"2024-01-01\"",
+        "",
+        "default_connections:",
+        "  duckdb: duckdb-default",
+        "",
+        "variables:",
+        "  run_mode:",
+        "    type: string",
+        "    default: incremental",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+
+    await page.goto(`${liveApp.baseURL}/`);
+    await openCustomersEditor(page, liveApp.baseURL);
+
+    const renderResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/assets/") &&
+        response.url().includes("/render-jinja") &&
+        response.request().method() === "POST"
+    );
+
+    await replaceEditorContentByInsertText(
+      page,
+      "select * from analytics.orders\nwhere dt = '{{ end_date }}'\nand mode = '{{ var.run_mode }}'"
+    );
+    const response = await renderResponse;
+    const body = await response.json();
+    expect(body.status).toBe("ok");
+    expect(body.spans).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ expression: "end_date", rendered_text: expect.stringMatching(/\d{4}-\d{2}-\d{2}/) }),
+        expect.objectContaining({ expression: "var.run_mode", rendered_text: "incremental" }),
+      ])
+    );
+
+    await expect(page.locator(".bruin-jinja-rendered-ghost").first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator(".bruin-jinja-rendered-ghost").filter({ hasText: /\d{4}-\d{2}-\d{2}/ }).first()).toBeVisible();
+    await expect
+      .poll(async () => {
+        return await page.evaluate(() => {
+          const monaco = (window as typeof window & {
+            monaco?: any;
+          }).monaco;
+          const editor = monaco?.editor.getEditors?.()[0];
+          const model = editor?.getModel();
+          if (!monaco || !model) return [];
+          return monaco.editor.getModelMarkers({ resource: model.uri }).map((marker: { message: string }) => marker.message);
+        });
+      }, { timeout: 10000 })
+      .not.toEqual(expect.arrayContaining([expect.stringContaining("syntax error")]));
+
+    await replaceEditorContentByInsertText(page, "select '{{ var. }}'");
+    await setEditorPositionAfterText(page, "var.");
+    await page.keyboard.press("ControlOrMeta+Space");
+    const suggestWidget = page.locator(".suggest-widget.visible").first();
+    await expect(suggestWidget).toBeVisible();
+    await expect(suggestWidget.getByText("run_mode", { exact: true })).toBeVisible();
+  });
 });
 
 test.describe("sql intellisense ranking live", () => {
@@ -374,6 +447,33 @@ async function reopenCustomersEditor(page: Page, baseURL: string) {
 
   await page.getByRole("link", { name: "analytics.orders" }).click();
   await openCustomersEditor(page, baseURL);
+}
+
+async function replaceEditorContentByInsertText(
+  page: Page,
+  content: string
+) {
+  const editor = await waitForEditorReady(page);
+  await editor.click();
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.insertText(content);
+}
+
+async function setEditorPositionAfterText(page: Page, text: string) {
+  await page.evaluate((needle) => {
+    const monaco = (window as typeof window & {
+      monaco?: any;
+    }).monaco;
+    const editor = monaco?.editor.getEditors?.()[0];
+    const model = editor?.getModel();
+    if (!monaco || !editor || !model) return;
+    const value = model.getValue();
+    const offset = value.indexOf(needle);
+    if (offset < 0) return;
+    const position = model.getPositionAt(offset + needle.length);
+    editor.focus();
+    editor.setPosition(position);
+  }, text);
 }
 
 async function replaceEditorContent(

@@ -119,6 +119,7 @@ type webServer struct {
 	sqlSvc          *service.SQLService
 	suggestionsSvc  *service.SuggestionsService
 	parseContextSvc *service.ParseContextService
+	jinjaRenderSvc  *service.JinjaRenderService
 	runSvc          *service.RunService
 	onboardingSvc   *service.OnboardingService
 	workspaceCoord  *service.WorkspaceCoordinator
@@ -284,6 +285,9 @@ func Web() *cli.Command {
 			server.parseContextSvc = service.NewParseContextService(service.ParseContextDependencies{
 				ResolveAssetByID: server.resolveAssetByID,
 			})
+			server.jinjaRenderSvc = service.NewJinjaRenderService(service.JinjaRenderDependencies{
+				ResolveAssetByID: server.resolveAssetByID,
+			})
 
 			server.runSvc = service.NewRunService(service.RunDependencies{Executor: server.executor})
 			server.onboardingSvc = service.NewOnboardingService(absRoot, resolveConfigFilePath(absRoot), server.executor)
@@ -370,6 +374,7 @@ func (s *webServer) registerRoutes(router chi.Router) {
 	webhttpapi.RegisterSQLRoutes(router, &webhttpapi.SQLAPI{Service: s})
 	webhttpapi.RegisterSuggestionRoutes(router, &webhttpapi.SuggestionsAPI{Service: s})
 	webhttpapi.RegisterParseContextRoutes(router, &webhttpapi.ParseContextAPI{Service: s})
+	webhttpapi.RegisterJinjaRenderRoutes(router, &webhttpapi.JinjaRenderAPI{Service: s})
 	webhttpapi.RegisterRunRoutes(router, &webhttpapi.RunAPI{Service: s})
 	webhttpapi.RegisterOnboardingRoutes(router, &webhttpapi.OnboardingAPI{Service: s.onboardingSvc, Publisher: s})
 	router.Get("/api/assets/freshness", s.handleGetAssetFreshness)
@@ -1424,6 +1429,10 @@ func (s *webServer) SQLPath(ctx context.Context, assetID, prefix, environment st
 
 func (s *webServer) ParseContext(ctx context.Context, assetID, content string, schema []service.ParseContextSchemaTable) (service.ParseContextResult, *service.ParseContextAPIError) {
 	return s.parseContextSvc.Parse(ctx, assetID, content, schema)
+}
+
+func (s *webServer) RenderJinja(ctx context.Context, assetID string, req service.JinjaRenderRequest) (service.JinjaRenderResult, *service.JinjaRenderAPIError) {
+	return s.jinjaRenderSvc.Render(ctx, assetID, req)
 }
 
 func (s *webServer) Run(ctx context.Context, req service.RunRequest) service.RunResult {

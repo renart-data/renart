@@ -168,6 +168,22 @@
   font-weight: 600;
 }
 
+.monaco-editor .bruin-jinja-expression {
+  color: #8b5cf6 !important;
+  font-weight: 500;
+}
+
+.monaco-editor .bruin-jinja-statement {
+  color: #0d9488 !important;
+  font-weight: 500;
+}
+
+.monaco-editor .bruin-jinja-rendered-ghost {
+  color: #64748b !important;
+  font-style: italic;
+  opacity: 0.85;
+}
+
 .dark .monaco-editor .bruin-sql-token-schema {
   color: #d6b36d !important;
 }
@@ -182,6 +198,18 @@
 
 .dark .monaco-editor .bruin-sql-token-alias {
   color: #c4b5fd !important;
+}
+
+.dark .monaco-editor .bruin-jinja-expression {
+  color: #c4b5fd !important;
+}
+
+.dark .monaco-editor .bruin-jinja-statement {
+  color: #5eead4 !important;
+}
+
+.dark .monaco-editor .bruin-jinja-rendered-ghost {
+  color: #94a3b8 !important;
 }
 
 body > .monaco-editor .monaco-hover,
