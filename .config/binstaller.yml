@@ -3,7 +3,7 @@ schema: v1
 name: renart
 repo: renart-data/renart
 asset:
-  template: ${NAME}_${OS}_${ARCH}${EXT}
+  template: ${NAME}_${OS}_${ARCH}_duckdb${EXT}
   default_extension: .tar.gz
   rules:
   - when:
@@ -11,8 +11,8 @@ asset:
     arch: x86_64
   - when:
       env:
-        RENART_INSTALL_DUCKDB: "1"
-    template: ${NAME}_${OS}_${ARCH}_duckdb${EXT}
+        RENART_INSTALL_DUCKDB: "0"
+    template: ${NAME}_${OS}_${ARCH}${EXT}
   - when:
       os: windows
     ext: .zip
