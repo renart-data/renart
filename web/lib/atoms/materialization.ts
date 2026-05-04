@@ -16,6 +16,7 @@ export type MaterializationState = {
 export type MaterializationByAssetId = Record<string, MaterializationState>;
 
 export const materializationByAssetIdAtom = atom<MaterializationByAssetId>({});
+export const materializingAssetIdsAtom = atom<Set<string>>(new Set<string>());
 
 export const enrichedPipelineAtom = atom<WebPipeline | null>((get) => {
   const pipeline = get(pipelineAtom);

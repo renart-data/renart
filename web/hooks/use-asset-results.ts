@@ -8,6 +8,7 @@ import {
   assetResultsAtom,
   changedAssetIdsAtom,
   enrichedSelectedAssetAtom,
+  materializingAssetIdsAtom,
 } from "@/lib/atoms/domains/results";
 import {
   pipelineAtom,
@@ -63,6 +64,7 @@ export function useAssetResults() {
   const [pipelineMaterializeLoading, setPipelineMaterializeLoading] =
     useState(false);
   const [assetMaterializeLoading, setAssetMaterializeLoading] = useState(false);
+  const [materializingAssetIds, setMaterializingAssetIds] = useAtom(materializingAssetIdsAtom);
   const asset = useAtomValue(enrichedSelectedAssetAtom);
   const pipeline = useAtomValue(pipelineAtom);
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
@@ -201,6 +203,7 @@ export function useAssetResults() {
     const startedAt = Date.now();
 
     setAssetMaterializeLoading(true);
+    setMaterializingAssetIds((previous: Set<string>) => new Set([...previous, assetId]));
     upsertMaterializeEntry(entryId, () => ({
       ...createMaterializeEntry({
         id: entryId,
@@ -297,6 +300,11 @@ export function useAssetResults() {
       return null;
     } finally {
       setAssetMaterializeLoading(false);
+      setMaterializingAssetIds((previous: Set<string>) => {
+        const next = new Set(previous);
+        next.delete(assetId);
+        return next;
+      });
       if (refresh) {
         await refresh();
       }
@@ -311,6 +319,7 @@ export function useAssetResults() {
     const startedAt = Date.now();
 
     setPipelineMaterializeLoading(true);
+    setMaterializingAssetIds(new Set(pipeline?.assets.map((current) => current.id) ?? []));
     upsertMaterializeEntry(entryId, () => ({
       ...createMaterializeEntry({
         id: entryId,
@@ -400,6 +409,7 @@ export function useAssetResults() {
       return null;
     } finally {
       setPipelineMaterializeLoading(false);
+      setMaterializingAssetIds(new Set());
       if (refresh) {
         await refresh();
       }
@@ -463,6 +473,7 @@ export function useAssetResults() {
     inspectLoadingByAssetId,
     inspectLoading,
     materializeLoading: effectiveMaterializeLoading,
+    materializingAssetIds,
     pipelineMaterializeLoading,
     hasInspectData,
     hasMaterializeData: true,

@@ -141,24 +141,24 @@ test.describe("workspace onboarding DuckDB quickstart", () => {
     expect(pipelineFile).toContain("duckdb: duckdb-default");
 
     const playersAsset = await readFile(
-      join(liveApp.workspaceDir, "quickstart", "assets", "players.asset.yml"),
+      join(liveApp.workspaceDir, "quickstart", "assets", "quickstart", "players.asset.yml"),
       "utf8"
     );
-    expect(playersAsset).toContain("quickstart.players");
+    expect(playersAsset).not.toContain("name:");
     expect(playersAsset).toContain("source_connection: chess-default");
 
     const gamesAsset = await readFile(
-      join(liveApp.workspaceDir, "quickstart", "assets", "games.asset.yml"),
+      join(liveApp.workspaceDir, "quickstart", "assets", "quickstart", "games.asset.yml"),
       "utf8"
     );
-    expect(gamesAsset).toContain("quickstart.games");
+    expect(gamesAsset).not.toContain("name:");
     expect(gamesAsset).toContain("source_table: games");
 
     const statsAsset = await readFile(
-      join(liveApp.workspaceDir, "quickstart", "assets", "player_stats.sql"),
+      join(liveApp.workspaceDir, "quickstart", "assets", "quickstart", "player_stats.sql"),
       "utf8"
     );
-    expect(statsAsset).toContain("quickstart.player_stats");
+    expect(statsAsset).not.toContain("name:");
     expect(statsAsset).toContain("quickstart.games");
     expect(statsAsset).toContain("players_white");
     expect(statsAsset).toContain("players_black");
@@ -168,10 +168,10 @@ test.describe("workspace onboarding DuckDB quickstart", () => {
     expect(statsAsset).not.toContain("checks:");
 
     const pythonAsset = await readFile(
-      join(liveApp.workspaceDir, "quickstart", "assets", "my_python_asset.py"),
+      join(liveApp.workspaceDir, "quickstart", "assets", "quickstart", "my_python_asset.py"),
       "utf8"
     );
-    expect(pythonAsset).toContain("name: my_python_asset");
+    expect(pythonAsset).not.toContain("name:");
 
     await access(join(liveApp.workspaceDir, "duckdb-files", "chess_playground.duckdb"));
 

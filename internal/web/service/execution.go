@@ -131,6 +131,10 @@ func (s *ExecutionService) InspectAsset(ctx context.Context, assetID, limit, env
 		}
 	}
 
+	if result, ok := s.inspectMaterializedNonSQLAsset(ctx, assetID, relAssetPath, limit, environment); ok {
+		return result
+	}
+
 	duckDBInfo, infoErr := s.findDuckDBExecutionInfoByAsset(ctx, assetID)
 	if infoErr != nil {
 		return InspectResult{Status: "error", Error: infoErr.Error(), HTTPStatus: 400}
@@ -203,6 +207,70 @@ func (s *ExecutionService) InspectAsset(ctx context.Context, assetID, limit, env
 		Attempts:   attempts,
 		HTTPStatus: 200,
 	}
+}
+
+func (s *ExecutionService) inspectMaterializedNonSQLAsset(ctx context.Context, assetID, relAssetPath, limit, environment string) (InspectResult, bool) {
+	if s.deps.ResolveAssetByID == nil {
+		return InspectResult{}, false
+	}
+
+	_, parsedPipeline, asset, err := s.deps.ResolveAssetByID(ctx, assetID)
+	if err != nil || parsedPipeline == nil || asset == nil || asset.IsSQLAsset() {
+		return InspectResult{}, false
+	}
+
+	connectionName, err := parsedPipeline.GetConnectionNameForAsset(asset)
+	if err != nil || strings.TrimSpace(connectionName) == "" {
+		return InspectResult{}, false
+	}
+
+	rowLimit := normalizeInspectLimit(limit)
+	query := fmt.Sprintf("select * from %s limit %d", asset.Name, rowLimit)
+	operation := queryConnectionOperation(connectionName, query, environment)
+	operation.AssetPath = relAssetPath
+	operation.Target = relAssetPath
+	operation.Limit = limit
+
+	columns, rows, err := s.RunConnectionQueryForEnvironment(ctx, connectionName, environment, query)
+	if err != nil {
+		return InspectResult{
+			Status:     "error",
+			Columns:    []string{},
+			Rows:       []map[string]any{},
+			RawOutput:  err.Error(),
+			Operation:  operation,
+			Error:      fmt.Sprintf("No materialized table found for %s on connection %s. Materialize the asset first, then inspect again.", asset.Name, connectionName),
+			Attempts:   0,
+			Retryable:  false,
+			HTTPStatus: 400,
+		}, true
+	}
+
+	output, _ := json.Marshal(map[string]any{"columns": columns, "rows": rows})
+	return InspectResult{
+		Status:     "ok",
+		Columns:    columns,
+		Rows:       rows,
+		RawOutput:  string(output),
+		Operation:  operation,
+		Attempts:   1,
+		HTTPStatus: 200,
+	}, true
+}
+
+func normalizeInspectLimit(limit string) int {
+	trimmed := strings.TrimSpace(limit)
+	if trimmed == "" {
+		return 100
+	}
+	var value int
+	if _, err := fmt.Sscanf(trimmed, "%d", &value); err != nil || value <= 0 {
+		return 100
+	}
+	if value > 1000 {
+		return 1000
+	}
+	return value
 }
 
 func (s *ExecutionService) ensureAssetInspectable(ctx context.Context, assetID, environment string) error {

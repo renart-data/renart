@@ -928,7 +928,16 @@ func deriveSQLAssetTypeForSource(sourceAsset *pipeline.Asset, parsedPipeline *pi
 		if strings.EqualFold(assetType, "ingestr") {
 			destination := strings.TrimSpace(sourceAsset.Parameters["destination"])
 			if destination != "" {
-				return strings.ToLower(destination) + ".sql"
+				if assetType, ok := sqlAssetTypeForIngestrDestination(destination); ok {
+					return assetType
+				}
+				if assetType, ok := sqlAssetTypeForConnectionName(parsedPipeline, destination); ok {
+					return assetType
+				}
+			}
+			destinationConnection := strings.TrimSpace(sourceAsset.Parameters["destination_connection"])
+			if assetType, ok := sqlAssetTypeForConnectionName(parsedPipeline, destinationConnection); ok {
+				return assetType
 			}
 		}
 	}
@@ -944,6 +953,70 @@ func deriveSQLAssetTypeForSource(sourceAsset *pipeline.Asset, parsedPipeline *pi
 		}
 	}
 	return "duckdb.sql"
+}
+
+func sqlAssetTypeForIngestrDestination(destination string) (string, bool) {
+	assetType, ok := pipeline.IngestrTypeConnectionMapping[strings.ToLower(strings.TrimSpace(destination))]
+	if !ok {
+		return "", false
+	}
+
+	return string(assetType), true
+}
+
+func sqlAssetTypeForConnectionName(parsedPipeline *pipeline.Pipeline, connectionName string) (string, bool) {
+	if parsedPipeline == nil || strings.TrimSpace(connectionName) == "" {
+		return "", false
+	}
+
+	for connectionType, configuredName := range parsedPipeline.DefaultConnections {
+		if strings.EqualFold(strings.TrimSpace(configuredName), strings.TrimSpace(connectionName)) {
+			if assetType, ok := sqlAssetTypeForConnectionType(connectionType); ok {
+				return assetType, true
+			}
+		}
+	}
+
+	return "", false
+}
+
+func sqlAssetTypeForConnectionType(connectionType string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(connectionType)) {
+	case "athena":
+		return string(pipeline.AssetTypeAthenaQuery), true
+	case "bigquery", "google_cloud_platform", "gcp":
+		return string(pipeline.AssetTypeBigqueryQuery), true
+	case "clickhouse":
+		return string(pipeline.AssetTypeClickHouse), true
+	case "databricks":
+		return string(pipeline.AssetTypeDatabricksQuery), true
+	case "duckdb":
+		return string(pipeline.AssetTypeDuckDBQuery), true
+	case "fabric":
+		return string(pipeline.AssetTypeFabricQuery), true
+	case "motherduck":
+		return string(pipeline.AssetTypeMotherduckQuery), true
+	case "mssql":
+		return string(pipeline.AssetTypeMsSQLQuery), true
+	case "mysql":
+		return string(pipeline.AssetTypeMySQLQuery), true
+	case "oracle":
+		return string(pipeline.AssetTypeOracleQuery), true
+	case "postgres":
+		return string(pipeline.AssetTypePostgresQuery), true
+	case "redshift":
+		return string(pipeline.AssetTypeRedshiftQuery), true
+	case "snowflake":
+		return string(pipeline.AssetTypeSnowflakeQuery), true
+	case "synapse":
+		return string(pipeline.AssetTypeSynapseQuery), true
+	case "trino":
+		return string(pipeline.AssetTypeTrinoQuery), true
+	case "vertica":
+		return string(pipeline.AssetTypeVerticaQuery), true
+	default:
+		return "", false
+	}
 }
 
 func DefaultDerivedSQLAssetContent(assetName, assetType, assetPath, sourceAssetName, connectionName string) string {

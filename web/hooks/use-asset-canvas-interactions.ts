@@ -48,7 +48,6 @@ type UseAssetCanvasInteractionsInput = {
   ) => Promise<{ asset_id?: string } | null>;
   navigateSelection: (pipelineId: string, assetId: string | null) => void;
   inspectLoadingByAssetId?: Record<string, boolean>;
-  materializeLoading?: boolean;
   onInspectAsset?: (assetId: string) => void;
   onMaterializeAsset?: (assetId: string) => void;
   onDeleteAsset?: (assetId: string) => void;
@@ -83,7 +82,6 @@ export function useAssetCanvasInteractions({
   runCreateAsset,
   navigateSelection,
   inspectLoadingByAssetId,
-  materializeLoading = false,
   onInspectAsset,
   onMaterializeAsset,
   onDeleteAsset,
@@ -288,7 +286,7 @@ export function useAssetCanvasInteractions({
                 ? () => onDeleteAsset(node.id)
                 : undefined,
               inspectLoading: inspectLoadingByAssetId?.[node.id] ?? false,
-              materializeLoading,
+              materializeLoading: Boolean((node.data as { materializeLoading?: boolean }).materializeLoading),
             }
           : node.data,
       position: storedNodePositions[node.id] ?? node.position,
@@ -321,8 +319,8 @@ export function useAssetCanvasInteractions({
       });
     }
 
-    setNodes(mappedNodes);
-    setEdges(graphEdges);
+    setNodes((currentNodes) => mergeStableNodes(currentNodes, mappedNodes));
+    setEdges((currentEdges) => mergeStableEdges(currentEdges, graphEdges));
   }, [
     connectedNodeIDs,
     defaultAssetNamesByKind,
@@ -330,7 +328,6 @@ export function useAssetCanvasInteractions({
     graphNodes,
     handleCreateDownstreamAsset,
     inspectLoadingByAssetId,
-    materializeLoading,
     newAssetDraft,
     onDeleteAsset,
     onInspectAsset,
@@ -384,4 +381,93 @@ export function useAssetCanvasInteractions({
     handleNodeDragStop,
     handleNodeClick,
   };
+}
+
+function mergeStableNodes(currentNodes: Node[], nextNodes: Node[]) {
+  if (currentNodes.length === 0) {
+    return nextNodes;
+  }
+
+  const currentById = new Map(currentNodes.map((node) => [node.id, node]));
+  let changed = currentNodes.length !== nextNodes.length;
+  const merged = nextNodes.map((next) => {
+    const current = currentById.get(next.id);
+    if (!current) {
+      changed = true;
+      return next;
+    }
+
+    const same =
+      current.type === next.type &&
+      current.selected === next.selected &&
+      current.draggable === next.draggable &&
+      current.selectable === next.selectable &&
+      current.position.x === next.position.x &&
+      current.position.y === next.position.y &&
+      shallowEqual(current.data as Record<string, unknown>, next.data as Record<string, unknown>);
+    if (same) {
+      return current;
+    }
+
+    changed = true;
+    return {
+      ...current,
+      ...next,
+      measured: (current as NodeWithMeasuredHeight).measured,
+      height: current.height,
+      width: current.width,
+    };
+  });
+
+  return changed ? merged : currentNodes;
+}
+
+function mergeStableEdges(currentEdges: Edge[], nextEdges: Edge[]) {
+  if (currentEdges.length === 0) {
+    return nextEdges;
+  }
+
+  const currentById = new Map(currentEdges.map((edge) => [edge.id, edge]));
+  let changed = currentEdges.length !== nextEdges.length;
+  const merged = nextEdges.map((next) => {
+    const current = currentById.get(next.id);
+    if (!current) {
+      changed = true;
+      return next;
+    }
+
+    const same =
+      current.source === next.source &&
+      current.target === next.target &&
+      current.type === next.type &&
+      current.animated === next.animated &&
+      shallowEqual(current.data as Record<string, unknown>, next.data as Record<string, unknown>);
+    if (same) {
+      return current;
+    }
+
+    changed = true;
+    return { ...current, ...next };
+  });
+
+  return changed ? merged : currentEdges;
+}
+
+function shallowEqual(left?: Record<string, unknown>, right?: Record<string, unknown>) {
+  if (left === right) {
+    return true;
+  }
+  const leftKeys = Object.keys(left ?? {});
+  const rightKeys = Object.keys(right ?? {});
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+  return leftKeys.every((key) => {
+    const leftValue = left?.[key];
+    const rightValue = right?.[key];
+    if (typeof leftValue === "function" && typeof rightValue === "function") {
+      return true;
+    }
+    return leftValue === rightValue;
+  });
 }

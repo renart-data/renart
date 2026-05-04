@@ -32,12 +32,15 @@ export function buildCreateAssetInput(
 ): {
   name: string;
   type: string;
+  path?: string;
   content?: string;
 } {
+  const path = buildAssetPathFromName(name, kind);
   if (kind === "python") {
     return {
       name,
       type: "python",
+      path,
     };
   }
 
@@ -45,8 +48,8 @@ export function buildCreateAssetInput(
     return {
       name,
       type: "ingestr",
-      content: `name: ${name}
-type: ingestr
+      path,
+      content: `type: ingestr
 
 parameters:
   source_connection: your-source-connection
@@ -59,7 +62,19 @@ parameters:
   return {
     name,
     type: preferredSqlAssetType,
+    path,
   };
+}
+
+function buildAssetPathFromName(name: string, kind: NewAssetKind): string {
+  const parts = name.split(".").map((part) => slugifyPipelinePrefix(part));
+  const extensionByKind: Record<NewAssetKind, string> = {
+    sql: ".sql",
+    python: ".py",
+    ingestr: ".asset.yml",
+  };
+  const leaf = parts.pop() ?? "asset";
+  return ["assets", ...parts, `${leaf}${extensionByKind[kind]}`].join("/");
 }
 
 export function buildOnboardingPythonStarterQuery(): string {

@@ -42,7 +42,8 @@ export function buildFlowFromPipeline(
   inspectLoadingByAssetID?: Record<string, boolean>,
   positionsByAssetId?: Record<string, { x: number; y: number }>,
   canLoadMoreByAssetId?: Record<string, boolean>,
-  onLoadMorePreviewRows?: (assetId: string) => void
+  onLoadMorePreviewRows?: (assetId: string) => void,
+  materializingAssetIds?: Set<string>
 ): {
   nodes: Node[];
   edges: Edge[];
@@ -79,6 +80,9 @@ export function buildFlowFromPipeline(
         id: `${sourceId}->${asset.id}`,
         source: sourceId,
         target: asset.id,
+        animated: Boolean(
+          materializingAssetIds?.has(sourceId) && materializingAssetIds.has(asset.id)
+        ),
       });
     }
   }
@@ -168,6 +172,7 @@ export function buildFlowFromPipeline(
         freshnessStatus: asset.freshness_status,
         materializedAs: asset.materialized_as || asset.materialization_type,
         rowCount: asset.row_count,
+        materializeLoading: materializingAssetIds?.has(asset.id) === true,
         previewLoading: isPreviewLoading,
         canLoadMorePreviewRows: canLoadMoreByAssetId?.[asset.id] === true,
         onLoadMorePreviewRows: onLoadMorePreviewRows

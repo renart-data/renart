@@ -14,7 +14,7 @@ import {
   Trash2,
   Workflow,
 } from "lucide-react";
-import { CSSProperties, useEffect, useState } from "react";
+import { CSSProperties, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -40,7 +40,7 @@ import {
   SidebarMenuSubItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { WorkspaceState } from "@/lib/types";
+import { WebAsset, WorkspaceState } from "@/lib/types";
 
 type Props = {
   workspace: WorkspaceState | null;
@@ -91,6 +91,13 @@ export function WorkspaceSidebar({
   const [expandedPipelineIds, setExpandedPipelineIds] = useState<Set<string>>(
     () => new Set(activePipeline ? [activePipeline] : [])
   );
+  const [collapsedAssetGroups, setCollapsedAssetGroups] = useState<Set<string>>(
+    () => new Set()
+  );
+  const pipelineAssetGroups = useMemo(
+    () => buildPipelineAssetGroups(workspace),
+    [workspace]
+  );
 
   const shouldAutoCloseOnNavigate = isMobile && openMobile;
 
@@ -120,6 +127,29 @@ export function WorkspaceSidebar({
       return next;
     });
   }, [activePipeline]);
+
+  useEffect(() => {
+    if (!selectedAsset) {
+      return;
+    }
+
+    for (const [pipelineId, groups] of Object.entries(pipelineAssetGroups)) {
+      for (const group of groups) {
+        if (group.assets.some(({ asset }) => asset.id === selectedAsset)) {
+          const groupKey = `${pipelineId}:${group.prefix}`;
+          setCollapsedAssetGroups((previous) => {
+            if (!previous.has(groupKey)) {
+              return previous;
+            }
+            const next = new Set(previous);
+            next.delete(groupKey);
+            return next;
+          });
+          return;
+        }
+      }
+    }
+  }, [pipelineAssetGroups, selectedAsset]);
 
   return (
     <Sidebar
@@ -351,31 +381,70 @@ export function WorkspaceSidebar({
 
                     {isExpanded && (
                       <SidebarMenuSub>
-                        {assets.map((asset) => (
-                          <SidebarMenuSubItem key={asset.id}>
-                            <SidebarMenuSubButton
-                              asChild
-                              isActive={asset.id === selectedAsset}
-                              size="sm"
-                            >
-                              <Link
-                                to="/"
-                                search={{
-                                  pipeline: item.id,
-                                  asset: asset.id,
-                                  environment: connectionsEnvironment ?? undefined,
-                                }}
-                                activeOptions={{
-                                  exact: true,
-                                  includeSearch: false,
-                                }}
-                                onClick={closeSidebarAfterNavigation}
+                        {(pipelineAssetGroups[item.id] ?? []).map((group) => {
+                          const groupKey = `${item.id}:${group.prefix}`;
+                          const isGroupExpanded = !collapsedAssetGroups.has(groupKey);
+                          return (
+                            <SidebarMenuSubItem key={group.prefix}>
+                              <SidebarMenuSubButton
+                                asChild
+                                isActive={group.assets.some(({ asset }) => asset.id === selectedAsset)}
+                                size="sm"
                               >
-                                <span>{asset.name}</span>
-                              </Link>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                        ))}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCollapsedAssetGroups((previous) => {
+                                      const next = new Set(previous);
+                                      if (next.has(groupKey)) {
+                                        next.delete(groupKey);
+                                      } else {
+                                        next.add(groupKey);
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  <ChevronRight
+                                    className={`size-3 transition-transform ${
+                                      isGroupExpanded ? "rotate-90" : ""
+                                    }`}
+                                  />
+                                  <span>{group.prefix}</span>
+                                </button>
+                              </SidebarMenuSubButton>
+                              {isGroupExpanded && (
+                                <SidebarMenuSub className="ml-3">
+                                  {group.assets.map(({ asset, leaf }) => (
+                                    <SidebarMenuSubItem key={asset.id}>
+                                      <SidebarMenuSubButton
+                                        asChild
+                                        isActive={asset.id === selectedAsset}
+                                        size="sm"
+                                      >
+                                        <Link
+                                          to="/"
+                                          search={{
+                                            pipeline: item.id,
+                                            asset: asset.id,
+                                            environment: connectionsEnvironment ?? undefined,
+                                          }}
+                                          activeOptions={{
+                                            exact: true,
+                                            includeSearch: false,
+                                          }}
+                                          onClick={closeSidebarAfterNavigation}
+                                        >
+                                          <span>{leaf}</span>
+                                        </Link>
+                                      </SidebarMenuSubButton>
+                                    </SidebarMenuSubItem>
+                                  ))}
+                                </SidebarMenuSub>
+                              )}
+                            </SidebarMenuSubItem>
+                          );
+                        })}
                       </SidebarMenuSub>
                     )}
                   </SidebarMenuItem>
@@ -396,4 +465,37 @@ export function WorkspaceSidebar({
       </SidebarContent>
     </Sidebar>
   );
+}
+
+type AssetGroup = {
+  prefix: string;
+  assets: Array<{ asset: WebAsset; leaf: string }>;
+};
+
+function buildPipelineAssetGroups(workspace: WorkspaceState | null): Record<string, AssetGroup[]> {
+  const grouped: Record<string, AssetGroup[]> = {};
+  for (const pipeline of workspace?.pipelines ?? []) {
+    const groupsByPrefix = new Map<string, AssetGroup>();
+    for (const asset of pipeline.assets ?? []) {
+      const { prefix, leaf } = splitAssetName(asset.name);
+      const group = groupsByPrefix.get(prefix) ?? { prefix, assets: [] };
+      group.assets.push({ asset, leaf });
+      groupsByPrefix.set(prefix, group);
+    }
+    grouped[pipeline.id] = Array.from(groupsByPrefix.values()).sort((left, right) =>
+      left.prefix.localeCompare(right.prefix)
+    );
+  }
+  return grouped;
+}
+
+function splitAssetName(name: string): { prefix: string; leaf: string } {
+  const parts = name.split(".").filter(Boolean);
+  if (parts.length <= 1) {
+    return { prefix: "unprefixed", leaf: name };
+  }
+  return {
+    prefix: parts.slice(0, -1).join("."),
+    leaf: parts[parts.length - 1],
+  };
 }

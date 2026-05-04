@@ -53,6 +53,32 @@ func TestDeriveSQLAssetTypeForIngestrSourceUsesDestinationType(t *testing.T) {
 	assert.Equal(t, "duckdb.sql", assetType)
 }
 
+func TestDeriveSQLAssetTypeForIngestrSourceMapsDestinationConnectionName(t *testing.T) {
+	t.Parallel()
+
+	assetType := deriveSQLAssetTypeForSource(&pipeline.Asset{
+		Type:       pipeline.AssetType("ingestr"),
+		Parameters: map[string]string{"destination": "duckdb-default"},
+	}, &pipeline.Pipeline{
+		DefaultConnections: pipeline.EmptyStringMap{"duckdb": "duckdb-default"},
+	}, "duckdb-default")
+
+	assert.Equal(t, "duckdb.sql", assetType)
+}
+
+func TestDeriveSQLAssetTypeForIngestrSourceMapsDestinationConnectionField(t *testing.T) {
+	t.Parallel()
+
+	assetType := deriveSQLAssetTypeForSource(&pipeline.Asset{
+		Type:       pipeline.AssetType("ingestr"),
+		Parameters: map[string]string{"destination_connection": "warehouse"},
+	}, &pipeline.Pipeline{
+		DefaultConnections: pipeline.EmptyStringMap{"snowflake": "warehouse"},
+	}, "warehouse")
+
+	assert.Equal(t, "sf.sql", assetType)
+}
+
 func TestDeriveSQLAssetTypeForPythonSourceDoesNotUseConnectionNameAsType(t *testing.T) {
 	t.Parallel()
 

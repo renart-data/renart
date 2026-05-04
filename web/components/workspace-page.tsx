@@ -110,6 +110,7 @@ export function WorkspacePage() {
     selectedAssetId: selectedAsset,
     selectedInspectRows: assetResults.inspectResult?.rows,
     visualAssets,
+    materializingAssetIds: assetResults.materializingAssetIds,
   });
 
   const form = useForm<AssetConfigForm>({
@@ -219,7 +220,6 @@ export function WorkspacePage() {
     runCreateAsset: assetActions.runCreateAsset,
     navigateSelection,
     inspectLoadingByAssetId: assetResults.inspectLoadingByAssetId,
-    materializeLoading: assetResults.materializeLoading,
     onDeleteAsset: handleDeleteAssetFromNode,
     onInspectAsset: handleInspectAssetFromNode,
     onMaterializeAsset: handleMaterializeAssetFromNode,

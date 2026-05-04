@@ -24,6 +24,9 @@ type stubExecutionExecutor struct {
 	runPipelineErr    error
 	runPipelineChunks [][]byte
 	runPipelineReqs   []RunPipelineRequest
+	queryConnOutput   []byte
+	queryConnErr      error
+	queryConnReqs     []QueryConnectionRequest
 }
 
 func (s *stubExecutionExecutor) RunAsset(_ context.Context, req RunAssetRequest, onChunk func([]byte)) ([]byte, error) {
@@ -50,8 +53,9 @@ func (s *stubExecutionExecutor) QueryAsset(context.Context, QueryAssetRequest) (
 	return nil, nil
 }
 
-func (s *stubExecutionExecutor) QueryConnection(context.Context, QueryConnectionRequest) ([]byte, error) {
-	return nil, nil
+func (s *stubExecutionExecutor) QueryConnection(_ context.Context, req QueryConnectionRequest) ([]byte, error) {
+	s.queryConnReqs = append(s.queryConnReqs, req)
+	return s.queryConnOutput, s.queryConnErr
 }
 
 func (s *stubExecutionExecutor) FormatAsset(context.Context, FormatAssetRequest) ([]byte, error) {
@@ -318,4 +322,58 @@ copy (select * from analytics.customers) to 'danger.parquet'
 	assert.Equal(t, inspectReadOnlyErrorMessage, result.RawOutput)
 	assert.Empty(t, result.Rows)
 	assert.Empty(t, result.Columns)
+}
+
+func TestExecutionServiceInspectNonSQLAssetQueriesMaterializedTable(t *testing.T) {
+	t.Parallel()
+
+	executor := &stubExecutionExecutor{
+		queryConnOutput: []byte(`{"columns":["customer_id"],"rows":[{"customer_id":1}]}`),
+	}
+	svc := NewExecutionService(ExecutionDependencies{
+		Executor: executor,
+		ResolveAssetByID: func(context.Context, string) (string, *pipeline.Pipeline, *pipeline.Asset, error) {
+			return "analytics/assets/load_customers.yml", &pipeline.Pipeline{
+					DefaultConnections: pipeline.EmptyStringMap{"duckdb": "duckdb-default"},
+				}, &pipeline.Asset{
+					Name: "analytics.customers",
+					Type: pipeline.AssetTypeIngestr,
+					Parameters: map[string]string{
+						"destination": "duckdb",
+					},
+				}, nil
+		},
+	})
+
+	result := svc.InspectAsset(context.Background(), EncodeID("analytics/assets/load_customers.yml"), "25", "")
+
+	require.Len(t, executor.queryConnReqs, 1)
+	assert.Equal(t, "duckdb-default", executor.queryConnReqs[0].ConnectionName)
+	assert.Equal(t, "select * from analytics.customers limit 25", executor.queryConnReqs[0].Query)
+	assert.Equal(t, "ok", result.Status)
+	assert.Equal(t, []string{"customer_id"}, result.Columns)
+	assert.Equal(t, []map[string]any{{"customer_id": float64(1)}}, result.Rows)
+}
+
+func TestExecutionServiceInspectNonSQLAssetReportsMissingMaterializedTable(t *testing.T) {
+	t.Parallel()
+
+	executor := &stubExecutionExecutor{queryConnErr: errors.New("table not found")}
+	svc := NewExecutionService(ExecutionDependencies{
+		Executor: executor,
+		ResolveAssetByID: func(context.Context, string) (string, *pipeline.Pipeline, *pipeline.Asset, error) {
+			return "analytics/assets/task.py", &pipeline.Pipeline{
+					DefaultConnections: pipeline.EmptyStringMap{"duckdb": "duckdb-default"},
+				}, &pipeline.Asset{
+					Name: "analytics.python_task",
+					Type: pipeline.AssetTypePython,
+				}, nil
+		},
+	})
+
+	result := svc.InspectAsset(context.Background(), EncodeID("analytics/assets/task.py"), "25", "")
+
+	assert.Equal(t, "error", result.Status)
+	assert.Contains(t, result.Error, "Materialize the asset first")
+	require.Len(t, executor.queryConnReqs, 1)
 }

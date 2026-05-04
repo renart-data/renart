@@ -122,12 +122,15 @@ export function AssetNode({ id, data, selected }: NodeProps<AssetNodeData>) {
               setShowAddButton(event.clientY >= rect.bottom - 36);
             }}
           >
-            {data.isMaterialized && (
+            {(data.isMaterialized || data.materializeLoading) && (
               <span
+                aria-label={data.materializeLoading ? "Materializing" : "Materialized"}
                 className={`absolute top-2 right-2 size-2.5 rounded-full ${
-                  data.freshnessStatus === "stale"
-                    ? "bg-muted-foreground"
-                    : "bg-emerald-500"
+                  data.materializeLoading
+                    ? "animate-spin border border-emerald-500/30 border-t-emerald-500"
+                    : data.freshnessStatus === "stale"
+                      ? "bg-muted-foreground"
+                      : "bg-emerald-500"
                 }`}
               />
             )}

@@ -26,6 +26,7 @@ type UseWorkspaceGraphControllerParams = {
   selectedAssetId: string | null;
   selectedInspectRows?: Record<string, unknown>[] | null;
   visualAssets: WebAsset[];
+  materializingAssetIds?: Set<string>;
 };
 
 export function useWorkspaceGraphController({
@@ -34,6 +35,7 @@ export function useWorkspaceGraphController({
   selectedAssetId,
   selectedInspectRows,
   visualAssets,
+  materializingAssetIds,
 }: UseWorkspaceGraphControllerParams) {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -85,7 +87,8 @@ export function useWorkspaceGraphController({
         inspectLoadingByAssetId,
         storedNodePositions,
         canLoadMoreByAssetId,
-        loadMorePreviewRows
+        loadMorePreviewRows,
+        materializingAssetIds
       ),
     [
       canLoadMoreByAssetId,
@@ -93,6 +96,7 @@ export function useWorkspaceGraphController({
       inspectByAssetId,
       inspectLoadingByAssetId,
       loadMorePreviewRows,
+      materializingAssetIds,
       storedNodePositions,
     ]
   );

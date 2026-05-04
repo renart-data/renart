@@ -261,7 +261,7 @@ export function WorkspaceOnboarding({
                 />
               </div>
               <div className="rounded-xl border bg-muted/20 p-4 text-sm text-muted-foreground">
-                This creates `duckdb-files/chess_playground.duckdb`, a `chess-default` source connection, and three sample assets: `quickstart.players`, `quickstart.player_stats`, and `my_python_asset`.
+                This creates `duckdb-files/chess_playground.duckdb`, a `chess-default` source connection, and sample assets under the `quickstart` prefix.
               </div>
               {importResult?.error ? (
                 <div className="space-y-3">
