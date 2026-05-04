@@ -558,10 +558,10 @@ func (s *OnboardingService) CreateDuckDBQuickstart(ctx context.Context, req Onbo
 
 	files := map[string]string{
 		"pipeline.yml": quickstartPipelineYAML(filepath.Base(relPipelinePath), duckDBConnectionName),
-		filepath.Join("assets", "players.asset.yml"):  quickstartPlayersAssetYAML(chessConnectionName),
-		filepath.Join("assets", "games.asset.yml"):    quickstartGamesAssetYAML(chessConnectionName),
-		filepath.Join("assets", "player_stats.sql"):   quickstartPlayerStatsSQL(),
-		filepath.Join("assets", "my_python_asset.py"): quickstartPythonAsset(),
+		filepath.Join("assets", "quickstart", "players.asset.yml"):  quickstartPlayersAssetYAML(chessConnectionName),
+		filepath.Join("assets", "quickstart", "games.asset.yml"):    quickstartGamesAssetYAML(chessConnectionName),
+		filepath.Join("assets", "quickstart", "player_stats.sql"):   quickstartPlayerStatsSQL(),
+		filepath.Join("assets", "quickstart", "my_python_asset.py"): quickstartPythonAsset(),
 	}
 	for relPath, content := range files {
 		absPath := filepath.Join(absPipelinePath, relPath)
@@ -574,10 +574,10 @@ func (s *OnboardingService) CreateDuckDBQuickstart(ctx context.Context, req Onbo
 	}
 
 	assetPaths := []string{
-		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "players.asset.yml")),
-		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "games.asset.yml")),
-		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "player_stats.sql")),
-		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "my_python_asset.py")),
+		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "quickstart", "players.asset.yml")),
+		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "quickstart", "games.asset.yml")),
+		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "quickstart", "player_stats.sql")),
+		filepath.ToSlash(filepath.Join(relPipelinePath, "assets", "quickstart", "my_python_asset.py")),
 	}
 	output := fmt.Sprintf("Created DuckDB chess quickstart pipeline at %s", relPipelinePath)
 	operation := runOperation(relPipelinePath, EncodeID(relPipelinePath), "", environmentName)
@@ -637,8 +637,7 @@ func quickstartPipelineYAML(name, connectionName string) string {
 }
 
 func quickstartPlayersAssetYAML(connectionName string) string {
-	return fmt.Sprintf(`name: dataset.players
-type: ingestr
+	return fmt.Sprintf(`type: ingestr
 
 parameters:
   destination: duckdb
@@ -648,8 +647,7 @@ parameters:
 }
 
 func quickstartGamesAssetYAML(connectionName string) string {
-	return fmt.Sprintf(`name: quickstart.games
-type: ingestr
+	return fmt.Sprintf(`type: ingestr
 
 parameters:
   source_connection: %s
@@ -660,12 +658,11 @@ parameters:
 
 func quickstartPlayerStatsSQL() string {
 	return `/* @bruin
-name: dataset.player_stats
 type: duckdb.sql
 materialization:
   type: table
 depends:
-  - dataset.players
+  - quickstart.players
   - quickstart.games
 @bruin */
 
@@ -683,19 +680,19 @@ SELECT
     name,
     (
         SELECT count(*) FROM players_white
-        WHERE dataset.players.aid = players_white.player_id
+        WHERE quickstart.players.aid = players_white.player_id
     ) AS games_white,
     (
         SELECT count(*) FROM players_black
-        WHERE dataset.players.aid = players_black.player_id
+        WHERE quickstart.players.aid = players_black.player_id
     ) as games_black
-FROM dataset.players
+FROM quickstart.players
 `
 }
 
 func quickstartPythonAsset() string {
 	return `"""@bruin
-name: my_python_asset
+image: python:3.11
 @bruin"""
 
 print('hello world')

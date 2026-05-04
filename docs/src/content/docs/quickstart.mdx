@@ -27,10 +27,10 @@ Use the canvas tour to inspect the sample data flow:
 
 ![Renart quickstart workspace canvas with chess assets](/quickstart-workspace.png)
 
-- `dataset.players` is an ingestr asset that loads chess player profiles into DuckDB.
+- `quickstart.players` is an ingestr asset that loads chess player profiles into DuckDB.
 - `quickstart.games` is an ingestr asset that loads chess games into DuckDB.
-- `dataset.player_stats` is a SQL asset that joins players to games and aggregates player counts.
-- `my_python_asset` is a tiny Python asset included in the Bruin default template.
+- `quickstart.player_stats` is a SQL asset that joins players to games and aggregates player counts.
+- `quickstart.my_python_asset` is a tiny Python asset included in the Bruin default template.
 
 The pipeline has already been materialized, so the DuckDB database contains the sample tables.
 

@@ -53,10 +53,10 @@ func TestCreateDuckDBQuickstartCreatesBruinDefaultAssetsAndDatabaseFile(t *testi
 	require.Equal(t, "ok", result.Status)
 	assert.Equal(t, []string{"run", "quickstart", "--env", "default"}, runner.args)
 	assert.Equal(t, []string{
-		"quickstart/assets/players.asset.yml",
-		"quickstart/assets/games.asset.yml",
-		"quickstart/assets/player_stats.sql",
-		"quickstart/assets/my_python_asset.py",
+		"quickstart/assets/quickstart/players.asset.yml",
+		"quickstart/assets/quickstart/games.asset.yml",
+		"quickstart/assets/quickstart/player_stats.sql",
+		"quickstart/assets/quickstart/my_python_asset.py",
 	}, result.AssetPaths)
 
 	configContents, err := os.ReadFile(filepath.Join(workspaceRoot, ".bruin.yml"))
@@ -64,24 +64,24 @@ func TestCreateDuckDBQuickstartCreatesBruinDefaultAssetsAndDatabaseFile(t *testi
 	assert.Contains(t, string(configContents), "duckdb-files/chess_playground.duckdb")
 	assert.Contains(t, string(configContents), "chess-default")
 
-	playersAsset, err := os.ReadFile(filepath.Join(workspaceRoot, "quickstart", "assets", "players.asset.yml"))
+	playersAsset, err := os.ReadFile(filepath.Join(workspaceRoot, "quickstart", "assets", "quickstart", "players.asset.yml"))
 	require.NoError(t, err)
-	assert.Contains(t, string(playersAsset), "name: dataset.players")
+	assert.NotContains(t, string(playersAsset), "name:")
 	assert.Contains(t, string(playersAsset), "type: ingestr")
 	assert.Contains(t, string(playersAsset), "source_connection: chess-default")
 	assert.Contains(t, string(playersAsset), "source_table: profiles")
 
-	gamesAsset, err := os.ReadFile(filepath.Join(workspaceRoot, "quickstart", "assets", "games.asset.yml"))
+	gamesAsset, err := os.ReadFile(filepath.Join(workspaceRoot, "quickstart", "assets", "quickstart", "games.asset.yml"))
 	require.NoError(t, err)
-	assert.Contains(t, string(gamesAsset), "name: quickstart.games")
+	assert.NotContains(t, string(gamesAsset), "name:")
 	assert.Contains(t, string(gamesAsset), "source_table: games")
 
-	statsAsset, err := os.ReadFile(filepath.Join(workspaceRoot, "quickstart", "assets", "player_stats.sql"))
+	statsAsset, err := os.ReadFile(filepath.Join(workspaceRoot, "quickstart", "assets", "quickstart", "player_stats.sql"))
 	require.NoError(t, err)
-	assert.Contains(t, string(statsAsset), "name: dataset.player_stats")
+	assert.NotContains(t, string(statsAsset), "name:")
 	assert.Contains(t, string(statsAsset), "type: duckdb.sql")
 	assert.Contains(t, string(statsAsset), "depends:")
-	assert.Contains(t, string(statsAsset), "- dataset.players")
+	assert.Contains(t, string(statsAsset), "- quickstart.players")
 	assert.Contains(t, string(statsAsset), "- quickstart.games")
 	assert.Contains(t, string(statsAsset), "players_white")
 	assert.Contains(t, string(statsAsset), "players_black")
@@ -90,9 +90,9 @@ func TestCreateDuckDBQuickstartCreatesBruinDefaultAssetsAndDatabaseFile(t *testi
 	assert.NotContains(t, string(statsAsset), "columns:")
 	assert.NotContains(t, string(statsAsset), "custom_checks:")
 
-	pythonAsset, err := os.ReadFile(filepath.Join(workspaceRoot, "quickstart", "assets", "my_python_asset.py"))
+	pythonAsset, err := os.ReadFile(filepath.Join(workspaceRoot, "quickstart", "assets", "quickstart", "my_python_asset.py"))
 	require.NoError(t, err)
-	assert.Contains(t, string(pythonAsset), "name: my_python_asset")
+	assert.NotContains(t, string(pythonAsset), "name:")
 	assert.Contains(t, string(pythonAsset), "print('hello world')")
 
 	_, err = os.Stat(filepath.Join(workspaceRoot, "duckdb-files"))

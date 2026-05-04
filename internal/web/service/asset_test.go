@@ -131,7 +131,7 @@ func TestAssetServiceReconcileSQLAssetDependenciesPersistsInferredUpstreams(t *t
 
 	workspaceRoot := t.TempDir()
 	pipelineRoot := filepath.Join(workspaceRoot, "analytics")
-	assetsRoot := filepath.Join(pipelineRoot, "assets")
+	assetsRoot := filepath.Join(pipelineRoot, "assets", "analytics")
 	require.NoError(t, os.MkdirAll(assetsRoot, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(pipelineRoot, "pipeline.yml"), []byte(strings.TrimSpace(`
 name: analytics
@@ -142,7 +142,6 @@ default_connections:
 `)+"\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "customers.sql"), []byte(strings.TrimSpace(`
 /* @bruin
-name: analytics.customers
 type: duckdb.sql
 materialization:
   type: view
@@ -153,7 +152,6 @@ from analytics.orders
 `)+"\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "orders.sql"), []byte(strings.TrimSpace(`
 /* @bruin
-name: analytics.orders
 type: duckdb.sql
 materialization:
   type: view
@@ -180,13 +178,7 @@ select 1 as order_id
 			return "", nil, nil, err
 		}
 
-		assetPath, err := SafeJoin(workspaceRoot, relAssetPath)
-		if err != nil {
-			return "", nil, nil, err
-		}
-
-		pipelinePath := filepath.Dir(filepath.Dir(assetPath))
-		parsedPipeline, err := buildPipeline(ctx, pipelinePath)
+		parsedPipeline, err := buildPipeline(ctx, pipelineRoot)
 		if err != nil {
 			return "", nil, nil, err
 		}
@@ -215,14 +207,14 @@ select 1 as order_id
 		ResolveAssetByID: resolveAssetByID,
 	})
 
-	require.NoError(t, service.reconcileSQLAssetDependencies(context.Background(), "analytics/assets/customers.sql"))
+	require.NoError(t, service.reconcileSQLAssetDependencies(context.Background(), "analytics/assets/analytics/customers.sql"))
 
 	content, err := os.ReadFile(filepath.Join(assetsRoot, "customers.sql"))
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "depends:\n  - analytics.orders")
 	assert.Contains(t, string(content), "renart_inferred_upstreams: analytics.orders")
 
-	_, parsedPipeline, asset, err := resolveAssetByID(context.Background(), EncodeID("analytics/assets/customers.sql"))
+	_, parsedPipeline, asset, err := resolveAssetByID(context.Background(), EncodeID("analytics/assets/analytics/customers.sql"))
 	require.NoError(t, err)
 	require.NotNil(t, parsedPipeline)
 	assert.Equal(t, []string{"analytics.orders"}, upstreamValues(asset.Upstreams))
@@ -282,13 +274,7 @@ select 1 as seed_id
 			return "", nil, nil, err
 		}
 
-		assetPath, err := SafeJoin(workspaceRoot, relAssetPath)
-		if err != nil {
-			return "", nil, nil, err
-		}
-
-		pipelinePath := filepath.Dir(filepath.Dir(assetPath))
-		parsedPipeline, err := buildPipeline(ctx, pipelinePath)
+		parsedPipeline, err := buildPipeline(ctx, pipelineRoot)
 		if err != nil {
 			return "", nil, nil, err
 		}
@@ -340,7 +326,7 @@ func TestAssetServiceCreateReconcilesSQLDependenciesImmediately(t *testing.T) {
 
 	workspaceRoot := t.TempDir()
 	pipelineRoot := filepath.Join(workspaceRoot, "analytics")
-	assetsRoot := filepath.Join(pipelineRoot, "assets")
+	assetsRoot := filepath.Join(pipelineRoot, "assets", "analytics")
 	require.NoError(t, os.MkdirAll(assetsRoot, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(pipelineRoot, "pipeline.yml"), []byte(strings.TrimSpace(`
 name: analytics
@@ -378,13 +364,7 @@ select 1 as order_id
 			return "", nil, nil, err
 		}
 
-		assetPath, err := SafeJoin(workspaceRoot, relAssetPath)
-		if err != nil {
-			return "", nil, nil, err
-		}
-
-		pipelinePath := filepath.Dir(filepath.Dir(assetPath))
-		parsedPipeline, err := buildPipeline(ctx, pipelinePath)
+		parsedPipeline, err := buildPipeline(ctx, pipelineRoot)
 		if err != nil {
 			return "", nil, nil, err
 		}
@@ -419,15 +399,17 @@ select 1 as order_id
 	})
 
 	response, apiErr := service.Create(context.Background(), EncodeID("analytics"), CreateAssetParams{
-		SourceAssetID: EncodeID("analytics/assets/orders.sql"),
+		SourceAssetID: EncodeID("analytics/assets/analytics/orders.sql"),
 	})
 	require.Nil(t, apiErr)
 	require.Equal(t, "ok", response["status"])
-	require.Equal(t, "analytics/assets/analytics_orders_child_1.sql", response["asset_path"])
+	require.Equal(t, "analytics/assets/analytics/orders_child_1.sql", response["asset_path"])
 
 	assetPath := filepath.Join(workspaceRoot, filepath.FromSlash(response["asset_path"]))
 	content, err := os.ReadFile(assetPath)
 	require.NoError(t, err)
+	assert.NotContains(t, string(content), "name:")
+	assert.NotContains(t, string(content), "source connection:")
 	assert.Contains(t, string(content), "depends:\n  - analytics.orders")
 	assert.Contains(t, string(content), "renart_inferred_upstreams: analytics.orders")
 
@@ -436,6 +418,31 @@ select 1 as order_id
 	assert.Equal(t, []string{"analytics.orders"}, upstreamValues(asset.Upstreams))
 	assert.Equal(t, "analytics.orders", asset.Meta[renartInferredUpstreamsMetaKey])
 	assert.Equal(t, "analytics.orders_child_1", asset.Name)
+}
+
+func TestAssetServiceCreateRejectsUnprefixedAssetName(t *testing.T) {
+	t.Parallel()
+
+	workspaceRoot := t.TempDir()
+	pipelineRoot := filepath.Join(workspaceRoot, "analytics")
+	require.NoError(t, os.MkdirAll(filepath.Join(pipelineRoot, "assets"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(pipelineRoot, "pipeline.yml"), []byte("name: analytics\n"), 0o644))
+
+	service := NewAssetService(AssetDependencies{
+		WorkspaceRoot:                workspaceRoot,
+		DefaultAssetContent:          DefaultAssetContent,
+		DerivedAssetContent:          DefaultDerivedSQLAssetContent,
+		EnsurePythonRequirements:     func(string, string, string) error { return nil },
+		SuppressWatcher:              func(string) {},
+		PushWorkspaceUpdateImmediate: func(context.Context, string, string) {},
+	})
+
+	_, apiErr := service.Create(context.Background(), EncodeID("analytics"), CreateAssetParams{
+		Name: "orders",
+		Type: "duckdb.sql",
+	})
+	require.NotNil(t, apiErr)
+	assert.Equal(t, "missing_asset_prefix", apiErr.Code)
 }
 
 func TestAssetServiceUpdateReconcilesSQLDependenciesImmediately(t *testing.T) {

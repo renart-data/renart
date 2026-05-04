@@ -105,6 +105,9 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 	if assetName == "" && sourceAsset != nil {
 		assetName = deriveDownstreamAssetName(sourceAsset.Name, sourcePipeline)
 	}
+	if assetName != "" && !strings.Contains(assetName, ".") {
+		return nil, &AssetAPIError{Status: 400, Code: "missing_asset_prefix", Message: "asset name must include a prefix, for example analytics.orders"}
+	}
 
 	relAssetPath := req.Path
 	if relAssetPath == "" {
@@ -121,10 +124,13 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 			if assetTypeForPath == "" {
 				assetTypeForPath = deriveSQLAssetTypeForSource(sourceAsset, sourcePipeline, sourceConnectionName)
 			}
-			relAssetPath = filepath.ToSlash(filepath.Join(sourcePipelineRelativeDir, SlugUnderscore(assetName)+extensionForAssetType(assetTypeForPath)))
+			relAssetPath = filepath.ToSlash(filepath.Join(sourcePipelineRelativeDir, assetNameLeafPath(assetName)+extensionForAssetType(assetTypeForPath)))
 		} else {
-			relAssetPath = filepath.ToSlash(filepath.Join("assets", SlugUnderscore(assetName)+extensionForAssetType(req.Type)))
+			relAssetPath = assetPathForInferredName(assetName, extensionForAssetType(req.Type))
 		}
+	}
+	if inferredAssetNameFromPath(relAssetPath) == "" || !strings.Contains(inferredAssetNameFromPath(relAssetPath), ".") {
+		return nil, &AssetAPIError{Status: 400, Code: "missing_asset_prefix", Message: "asset path must infer a prefixed asset name under assets/<prefix>/"}
 	}
 
 	absAssetPath, err := SafeJoin(pipelinePath, relAssetPath)
@@ -147,9 +153,6 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 
 	content := req.Content
 	if content == "" {
-		if assetName == "" {
-			assetName = strings.TrimSuffix(filepath.Base(relAssetPath), filepath.Ext(relAssetPath))
-		}
 		if sourceAsset != nil {
 			content = s.deps.DerivedAssetContent(assetName, assetType, relAssetPath, sourceAsset.Name, sourceConnectionName)
 		} else {
@@ -580,11 +583,49 @@ func reconcileSQLAssetDependencies(ctx context.Context, asset *pipeline.Asset, p
 
 	asset.Upstreams = nextUpstreams
 	setRenartInferredUpstreams(&asset.Meta, nextInferred)
+	originalHadExplicitName := assetContentHasExplicitName(asset.ExecutableFile.Content)
 
 	if err := asset.Persist(afero.NewOsFs(), parsedPipeline); err != nil {
 		return fmt.Errorf("failed to persist asset '%s': %w", asset.Name, err)
 	}
+	if !originalHadExplicitName {
+		if err := removePersistedAssetNameField(asset); err != nil {
+			return err
+		}
+	}
 
+	return nil
+}
+
+func assetContentHasExplicitName(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "name:") {
+			return true
+		}
+	}
+	return false
+}
+
+func removePersistedAssetNameField(asset *pipeline.Asset) error {
+	path := asset.ExecutableFile.Path
+	if strings.TrimSpace(path) == "" {
+		path = asset.DefinitionFile.Path
+	}
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	fs := afero.NewOsFs()
+	contentBytes, err := afero.ReadFile(fs, path)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(contentBytes), "\n")
+	for index, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "name:") {
+			lines = append(lines[:index], lines[index+1:]...)
+			return afero.WriteFile(fs, path, []byte(strings.Join(lines, "\n")), 0o644)
+		}
+	}
 	return nil
 }
 
@@ -1020,16 +1061,45 @@ func sqlAssetTypeForConnectionType(connectionType string) (string, bool) {
 }
 
 func DefaultDerivedSQLAssetContent(assetName, assetType, assetPath, sourceAssetName, connectionName string) string {
-	header := fmt.Sprintf("/* @bruin\n\nname: %s\ntype: %s\nmaterialization:\n  type: view\n\n@bruin */\n\n", assetName, assetType)
+	header := fmt.Sprintf("/* @bruin\n\ntype: %s\nmaterialization:\n  type: view\n\n@bruin */\n\n", assetType)
 	queryTarget := sourceAssetName
 	if strings.TrimSpace(queryTarget) == "" {
 		queryTarget = strings.TrimSuffix(filepath.Base(assetPath), filepath.Ext(assetPath))
 	}
-	query := fmt.Sprintf("select * from %s\n", queryTarget)
-	if strings.TrimSpace(connectionName) != "" {
-		query += fmt.Sprintf("-- source connection: %s\n", connectionName)
+	return header + fmt.Sprintf("select * from %s\n", queryTarget)
+}
+
+func assetPathForInferredName(assetName, extension string) string {
+	parts := strings.Split(strings.TrimSpace(assetName), ".")
+	pathParts := make([]string, 0, len(parts)+1)
+	pathParts = append(pathParts, "assets")
+	for _, part := range parts {
+		pathParts = append(pathParts, SlugUnderscore(part))
 	}
-	return header + query
+	return filepath.ToSlash(filepath.Join(append(pathParts[:len(pathParts)-1], pathParts[len(pathParts)-1]+extension)...))
+}
+
+func assetNameLeafPath(assetName string) string {
+	parts := strings.Split(strings.TrimSpace(assetName), ".")
+	return SlugUnderscore(parts[len(parts)-1])
+}
+
+func inferredAssetNameFromPath(relAssetPath string) string {
+	clean := filepath.ToSlash(filepath.Clean(relAssetPath))
+	parts := strings.Split(clean, "/")
+	assetsIndex := -1
+	for index, part := range parts {
+		if part == "assets" {
+			assetsIndex = index
+			break
+		}
+	}
+	if assetsIndex < 0 || assetsIndex >= len(parts)-1 {
+		return ""
+	}
+	nameParts := append([]string(nil), parts[assetsIndex+1:]...)
+	nameParts[len(nameParts)-1] = strings.TrimSuffix(nameParts[len(nameParts)-1], filepath.Ext(nameParts[len(nameParts)-1]))
+	return strings.Join(nameParts, ".")
 }
 
 func EnsurePythonRequirementsFile(absAssetPath, assetType, relAssetPath string) error {

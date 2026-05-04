@@ -141,10 +141,8 @@ func MergeExecutableContent(currentFileContent, executableContent string) string
 // DefaultAssetContent generates default content for a new asset.
 func DefaultAssetContent(assetName, assetType, assetPath string) string {
 	if strings.HasSuffix(strings.ToLower(assetPath), ".py") {
-		return fmt.Sprintf(
-			`""" @bruin
+		return `""" @bruin
 
-name: %s
 image: python:3.11
 connection: duckdb-default
 
@@ -165,10 +163,10 @@ def materialize():
     })
 
     return df
-`, assetName)
+`
 	}
 
-	return fmt.Sprintf("/* @bruin\n\nname: %s\ntype: %s\n\n@bruin */\n", assetName, assetType)
+	return fmt.Sprintf("/* @bruin\n\ntype: %s\n\n@bruin */\n", assetType)
 }
 
 // NormalizeIdentifier normalizes a database identifier for comparison.
