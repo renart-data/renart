@@ -50,7 +50,7 @@
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.2.2",
-    "@tanstack/router-plugin": "^1.167.8",
+    "@tanstack/router-plugin": "^1.168.11",
     "@types/dagre": "^0.7.54",
     "@types/node": "^20.19.37",
     "@types/react": "^19.2.15",
