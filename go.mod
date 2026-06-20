@@ -3,7 +3,7 @@ module renart
 go 1.26
 
 require (
-	github.com/bruin-data/bruin v0.11.623
+	github.com/bruin-data/bruin v0.11.637
 	github.com/fatih/color v1.19.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.3.0
