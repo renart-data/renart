@@ -3,7 +3,7 @@ module renart
 go 1.26
 
 require (
-	github.com/bruin-data/bruin v0.11.623
+	github.com/bruin-data/bruin v0.11.651
 	github.com/fatih/color v1.19.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.3.0
@@ -46,7 +46,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/dataproc/v2 v2.11.2 // indirect
 	cloud.google.com/go/iam v1.5.2 // indirect
-	cloud.google.com/go/logging v1.13.0 // indirect
 	cloud.google.com/go/longrunning v0.6.7 // indirect
 	cloud.google.com/go/monitoring v1.24.2 // indirect
 	cloud.google.com/go/storage v1.56.0 // indirect
