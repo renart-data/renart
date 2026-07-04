@@ -11,7 +11,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1
-	github.com/urfave/cli/v3 v3.9.1
+	github.com/urfave/cli/v3 v3.10.1
 	go.uber.org/zap v1.28.0
 	golang.org/x/net v0.56.0
 	gopkg.in/yaml.v3 v3.0.1
