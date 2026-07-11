@@ -6,7 +6,7 @@ require (
 	github.com/bruin-data/bruin v0.11.623
 	github.com/fatih/color v1.19.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/go-chi/chi/v5 v5.3.0
+	github.com/go-chi/chi/v5 v5.3.1
 	github.com/kluctl/go-embed-python v0.0.0-3.14.5-20260510-2
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/afero v1.15.0
