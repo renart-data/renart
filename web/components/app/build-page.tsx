@@ -304,7 +304,9 @@ function fromUTCDateTimeInput(value: string) {
 function isValidExecutionWindow(start: string, end: string) {
   const startTimestamp = Date.parse(start);
   const endTimestamp = Date.parse(end);
-  return !Number.isNaN(startTimestamp) && !Number.isNaN(endTimestamp) && endTimestamp > startTimestamp;
+  return (
+    !Number.isNaN(startTimestamp) && !Number.isNaN(endTimestamp) && endTimestamp > startTimestamp
+  );
 }
 
 type BuildAsset = AppLineageCanvasAsset & {
@@ -1249,7 +1251,9 @@ export function AppBuildPage({
           <DialogContent>
             <DialogHeader>
               <DialogTitle>
-                {destructiveMaterializationPrompt?.kind === "backfill" ? "Backfill" : "Full refresh"}{" "}
+                {destructiveMaterializationPrompt?.kind === "backfill"
+                  ? "Backfill"
+                  : "Full refresh"}{" "}
                 {destructiveMaterializationPrompt?.assetName}?
               </DialogTitle>
               <DialogDescription>
@@ -1269,7 +1273,9 @@ export function AppBuildPage({
                     value={toUTCDateTimeInput(destructiveMaterializationPrompt.start)}
                     onChange={(event) =>
                       setDestructiveMaterializationPrompt((current) =>
-                        current ? { ...current, start: fromUTCDateTimeInput(event.target.value) } : current,
+                        current
+                          ? { ...current, start: fromUTCDateTimeInput(event.target.value) }
+                          : current,
                       )
                     }
                   />
@@ -1283,7 +1289,9 @@ export function AppBuildPage({
                     value={toUTCDateTimeInput(destructiveMaterializationPrompt.end)}
                     onChange={(event) =>
                       setDestructiveMaterializationPrompt((current) =>
-                        current ? { ...current, end: fromUTCDateTimeInput(event.target.value) } : current,
+                        current
+                          ? { ...current, end: fromUTCDateTimeInput(event.target.value) }
+                          : current,
                       )
                     }
                   />
@@ -1298,7 +1306,9 @@ export function AppBuildPage({
                 <Input
                   id="destructive-materialization-environment-confirmation"
                   value={destructiveMaterializationConfirmation}
-                  onChange={(event) => setDestructiveMaterializationConfirmation(event.target.value)}
+                  onChange={(event) =>
+                    setDestructiveMaterializationConfirmation(event.target.value)
+                  }
                   autoComplete="off"
                 />
               </div>
@@ -1320,7 +1330,10 @@ export function AppBuildPage({
                 }
                 onClick={confirmDestructiveMaterialization}
               >
-                Run {destructiveMaterializationPrompt?.kind === "backfill" ? "backfill" : "full refresh"}
+                Run{" "}
+                {destructiveMaterializationPrompt?.kind === "backfill"
+                  ? "backfill"
+                  : "full refresh"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -2236,9 +2249,9 @@ function EditorWorkspace({ asset, adhoc }: { asset: BuildAsset; adhoc: boolean }
       ? "Validate"
       : asset.kind === "sensor"
         ? "Check now"
-      : asset.kind === "ingestr" || asset.kind === "load"
-        ? "Run"
-        : "Materialize";
+        : asset.kind === "ingestr" || asset.kind === "load"
+          ? "Run"
+          : "Materialize";
   const filename =
     asset.path ?? `${asset.dir ? `${asset.dir}/` : ""}${asset.name}${kindMeta[asset.kind].ext}`;
 
@@ -2253,9 +2266,7 @@ function EditorWorkspace({ asset, adhoc }: { asset: BuildAsset; adhoc: boolean }
           onFullRefresh={
             asset.workspaceAsset?.supports_full_refresh ? fullRefreshSelectedAsset : undefined
           }
-          onBackfill={
-            asset.staleness?.backfill_safe ? backfillSelectedAsset : undefined
-          }
+          onBackfill={asset.staleness?.backfill_safe ? backfillSelectedAsset : undefined}
           onInspect={inspectSelectedAsset}
           runDisabled={materializeLoading || executionBlocked || !asset.workspaceAsset}
           runBlockedReason={
@@ -3449,10 +3460,7 @@ function NewAssetDialog({
     () => workspace?.asset_capabilities ?? [],
     [workspace?.asset_capabilities],
   );
-  const semanticConnections = useMemo(
-    () => workspace?.connections ?? {},
-    [workspace?.connections],
-  );
+  const semanticConnections = useMemo(() => workspace?.connections ?? {}, [workspace?.connections]);
   const connectionNames = useMemo(
     () => Object.keys(workspace?.connections ?? {}).sort((a, b) => a.localeCompare(b)),
     [workspace?.connections],
@@ -3503,9 +3511,7 @@ function NewAssetDialog({
     setSourceTable("");
     setDestinationObject("");
     setAPITemplate("openapi");
-    setSemanticDraft(
-      defaultSemanticAssetDraft("seed", semanticCapabilities, semanticConnections),
-    );
+    setSemanticDraft(defaultSemanticAssetDraft("seed", semanticCapabilities, semanticConnections));
     setError("");
   }, [open, isDownstream, semanticCapabilities, semanticConnections]);
   useEffect(() => {
@@ -3535,13 +3541,7 @@ function NewAssetDialog({
         defaultSemanticAssetDraft(semanticKind, semanticCapabilities, semanticConnections),
       );
     }
-  }, [
-    open,
-    semanticCapabilities,
-    semanticConnections,
-    semanticDraft.assetType,
-    semanticKind,
-  ]);
+  }, [open, semanticCapabilities, semanticConnections, semanticDraft.assetType, semanticKind]);
 
   const create = async () => {
     const trimmed = name.trim();
@@ -3612,11 +3612,7 @@ function NewAssetDialog({
     setCreating(true);
     setError("");
     try {
-      const response = await createAsset(
-        pipelineId,
-        input,
-        seedFile ? { seedFile } : undefined,
-      );
+      const response = await createAsset(pipelineId, input, seedFile ? { seedFile } : undefined);
       onOpenChange(false);
       if (response.asset_id) {
         onCreated?.(response.asset_id);
