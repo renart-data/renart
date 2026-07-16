@@ -10,6 +10,7 @@ the original.
 
 | Doc | Status |
 | --- | --- |
+| [security-and-build-vs-buy-audit.md](security-and-build-vs-buy-audit.md) | audit complete — reported security findings and phased remediation/library-adoption plan; critical and high actions open |
 | [dbt-assets.md](dbt-assets.md) | evaluation — enabling renart intelligence on existing dbt projects |
 | [materialization-reach.md](materialization-reach.md) | proposed reach — guided advanced SQL modes, coverage timeline, Python pre-run diagnostic |
 | [remote-table-intellisense.md](remote-table-intellisense.md) | proposal — surface warehouse tables with no backing asset via the LSP |
