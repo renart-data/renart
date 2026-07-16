@@ -29,7 +29,7 @@
     "@base-ui/react": "^1.6.0",
     "@monaco-editor/react": "^4.7.0",
     "@tanstack/react-form": "^1.33.1",
-    "@tanstack/react-router": "^1.170.17",
+    "@tanstack/react-router": "^1.170.18",
     "@tanstack/react-virtual": "^3.14.5",
     "ansi-to-html": "^0.7.2",
     "class-variance-authority": "^0.7.1",
