@@ -16,7 +16,7 @@ require (
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1
 	github.com/tetratelabs/wazero v1.12.0
-	github.com/tobilg/polyglot/packages/go v0.5.15
+	github.com/tobilg/polyglot/packages/go v0.6.2
 	github.com/urfave/cli/v3 v3.10.1
 	github.com/wailsapp/wails/v2 v2.13.0
 	go.uber.org/zap v1.28.0
