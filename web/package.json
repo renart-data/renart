@@ -41,7 +41,7 @@
     "radix-ui": "^1.6.2",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "react-hook-form": "^7.81.0",
+    "react-hook-form": "^7.82.0",
     "react-icons": "^5.7.0",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "^4.12.1",
