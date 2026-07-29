@@ -7,7 +7,7 @@ toolchain go1.26.5
 require (
 	filippo.io/age v1.3.1
 	github.com/alecthomas/chroma/v2 v2.23.1
-	github.com/bruin-data/bruin v0.11.691
+	github.com/bruin-data/bruin v0.11.700
 	github.com/fatih/color v1.19.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.3.1
