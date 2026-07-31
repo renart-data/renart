@@ -1,6 +1,16 @@
 package service
 
-import "testing"
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/bruin-data/bruin/pkg/config"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestParseLoadDiscoverStreamsJSON(t *testing.T) {
 	// The `-o json` form sling emits, prefixed with an ANSI-coloured log line.
@@ -79,21 +89,51 @@ func TestLoadSourceTargetArgsLocalFile(t *testing.T) {
 
 func TestLoadConnectionCategory(t *testing.T) {
 	cases := map[string]string{
-		"postgres":  LoadCategoryDatabase,
-		"Postgres":  LoadCategoryDatabase,
-		"snowflake": LoadCategoryDatabase,
-		"duckdb":    LoadCategoryDatabase,
-		"starrocks": LoadCategoryDatabase,
-		"s3":        LoadCategoryStorage,
-		"gcs":       LoadCategoryStorage,
-		"sftp":      LoadCategoryFile,
-		"stripe":    "",
-		"notion":    "",
-		"":          "",
+		"postgres":   LoadCategoryDatabase,
+		"Postgres":   LoadCategoryDatabase,
+		"snowflake":  LoadCategoryDatabase,
+		"duckdb":     LoadCategoryDatabase,
+		"starrocks":  LoadCategoryDatabase,
+		"databricks": LoadCategoryDatabase,
+		"s3":         LoadCategoryStorage,
+		"gcs":        LoadCategoryStorage,
+		"sftp":       LoadCategoryFile,
+		"stripe":     "",
+		"notion":     "",
+		"":           "",
 	}
 	for connType, want := range cases {
 		if got := loadConnectionCategory(connType); got != want {
 			t.Errorf("loadConnectionCategory(%q) = %q, want %q", connType, got, want)
 		}
 	}
+}
+
+func TestLoadDiscoverPassesDatabricksConnectionPayloadToSling(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	fakeSling := filepath.Join(workspaceRoot, "fake-sling")
+	require.NoError(t, os.WriteFile(fakeSling, []byte("#!/bin/sh\nprintf 'connection=%s\\n' \"$RENART_SLING_DISCOVER\"\nprintf '{\"fields\":[\"Schema\",\"Name\"],\"rows\":[[\"analytics\",\"orders\"]]}\\n'\n"), 0o755))
+	t.Setenv("RENART_SLING_BINARY", fakeSling)
+
+	service := NewLoadService(LoadDependencies{
+		WorkspaceRoot: workspaceRoot,
+		NewConnectionManager: func(context.Context, string) (config.ConnectionAndDetailsGetter, error) {
+			return databricksPATTestManager(), nil
+		},
+	})
+	result, apiErr := service.Discover(context.Background(), "databricks-default", "", "")
+	require.Nil(t, apiErr)
+	assert.Equal(t, "ok", result.Status)
+	assert.Equal(t, []LoadDiscoveryStream{{Name: "analytics.orders", Schema: "analytics"}}, result.Streams)
+
+	var payload string
+	for _, line := range strings.Split(result.RawOutput, "\n") {
+		if strings.HasPrefix(line, "connection=") {
+			payload = strings.TrimPrefix(line, "connection=")
+			break
+		}
+	}
+	require.NotEmpty(t, payload)
+	parsed := requireDatabricksSlingPayload(t, payload)
+	assert.Equal(t, "workspace.cloud.databricks.com:443", parsed.Host)
 }

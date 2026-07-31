@@ -1,7 +1,11 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import https from "node:https";
 import net from "node:net";
-import { resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { rootCertificates } from "node:tls";
 
 const webDir = resolve(__dirname, "..", "..");
 const repoRoot = resolve(webDir, "..");
@@ -12,6 +16,7 @@ const trinoCatalogDir = resolve(
   "multi-warehouse-workspace",
   "trino-catalog",
 );
+const databricksSailProxyDir = resolve(webDir, "tests", "e2e", "helpers", "databricks-sail-proxy");
 
 const POSTGRES_IMAGE = "postgres:16-alpine";
 const CLICKHOUSE_IMAGE = "clickhouse/clickhouse-server:25.8.28-alpine";
@@ -22,6 +27,13 @@ const MINIO_CLIENT_IMAGE = "quay.io/minio/mc:RELEASE.2025-05-21T01-59-54Z";
 const MINIO_ACCESS_KEY = "renart";
 const MINIO_SECRET_KEY = "renart-secret";
 const DUCKLAKE_BUCKET = "renart-ducklake";
+const PYSAIL_PACKAGE = "pysail==0.6.6";
+
+type ManagedProcess = {
+  child: ChildProcess;
+  command: string;
+  output: () => string;
+};
 
 export type LiveWarehouseMatrix = {
   postgresPort: number;
@@ -32,6 +44,8 @@ export type LiveWarehouseMatrix = {
   starrocksHTTPPort: number;
   starrocksStreamLoadPort: number;
   minioPort: number;
+  databricksPort: number;
+  databricksTrustBundle: string | null;
   dispose: () => Promise<void>;
 };
 
@@ -43,6 +57,7 @@ export async function createLiveWarehouseMatrix(
     "trino",
     "clickhouse",
     "starrocks",
+    "databricks",
   ],
 ): Promise<LiveWarehouseMatrix> {
   const enabled = new Set(enabledWarehouses);
@@ -62,16 +77,28 @@ export async function createLiveWarehouseMatrix(
     starrocksHTTPPort,
     starrocksStreamLoadPort,
     minioPort,
-  ] = await Promise.all(Array.from({ length: 8 }, () => getAvailablePort()));
+    databricksFlightPort,
+    databricksPort,
+  ] = await Promise.all(Array.from({ length: 10 }, () => getAvailablePort()));
 
   const containers: string[] = [];
+  const processes: ManagedProcess[] = [];
+  let databricksTempDir: string | null = null;
+  let databricksTLSDir: string | null = null;
+  let databricksTrustBundle: string | null = null;
   let networkCreated = false;
   const dispose = async () => {
+    for (const process of processes.reverse()) {
+      await stopManagedProcess(process);
+    }
     for (const container of containers.reverse()) {
       await runCommand(["docker", "rm", "-f", container], true);
     }
     if (networkCreated) {
       await runCommand(["docker", "network", "rm", networkName], true);
+    }
+    if (databricksTempDir) {
+      await rm(databricksTempDir, { recursive: true, force: true });
     }
   };
 
@@ -167,6 +194,75 @@ insert into analytics.customer_activity_source (customer_id, activity_score) val
   (4, 4),
   (5, 6);`,
     ]);
+
+    if (enabled.has("databricks")) {
+      databricksTempDir = await mkdtemp(join(tmpdir(), "renart-databricks-sail-"));
+      databricksTLSDir = join(databricksTempDir, "tls");
+      const proxyBinary = join(databricksTempDir, "databricks-sail-proxy");
+      await runCommand(
+        [
+          process.env.RENART_GO_BINARY ?? "go",
+          "-C",
+          databricksSailProxyDir,
+          "build",
+          "-o",
+          proxyBinary,
+          ".",
+        ],
+        false,
+      );
+
+      const sail = startManagedProcess(
+        [
+          process.env.RENART_UV_BINARY ?? "uv",
+          "tool",
+          "run",
+          "--no-config",
+          "--python",
+          "3.11",
+          "--from",
+          PYSAIL_PACKAGE,
+          "sail",
+          "flight",
+          "server",
+          "--ip",
+          "127.0.0.1",
+          "--port",
+          String(databricksFlightPort),
+        ],
+        databricksTempDir,
+      );
+      processes.push(sail);
+      await waitForTCP(databricksFlightPort, sail);
+
+      const proxy = startManagedProcess(
+        [
+          proxyBinary,
+          "--listen",
+          `127.0.0.1:${databricksPort}`,
+          "--flight-uri",
+          `grpc://127.0.0.1:${databricksFlightPort}`,
+          "--tls-dir",
+          databricksTLSDir,
+          "--schema",
+          "analytics",
+        ],
+        databricksTempDir,
+      );
+      processes.push(proxy);
+      await waitForHTTPS(
+        `https://127.0.0.1:${databricksPort}/healthz`,
+        join(databricksTLSDir, "ca.pem"),
+        proxy,
+      );
+      databricksTrustBundle = join(databricksTempDir, "trust-bundle.pem");
+      const testCA = await readFile(join(databricksTLSDir, "ca.pem"), "utf8");
+      await writeFile(
+        databricksTrustBundle,
+        [...rootCertificates, testCA].join("\n") + "\n",
+        "utf8",
+      );
+    }
 
     if (enabled.has("clickhouse")) {
       await runCommand([
@@ -333,12 +429,70 @@ insert into analytics.customer_activity_source (customer_id, activity_score) val
       starrocksHTTPPort,
       starrocksStreamLoadPort,
       minioPort,
+      databricksPort,
+      databricksTrustBundle,
       dispose,
     };
   } catch (error) {
     await dispose();
     throw error;
   }
+}
+
+async function waitForTCP(port: number, process?: ManagedProcess) {
+  const deadline = Date.now() + 180_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    throwIfExited(process);
+    try {
+      await new Promise<void>((resolveConnection, rejectConnection) => {
+        const socket = net.createConnection({ host: "127.0.0.1", port });
+        socket.setTimeout(1_000);
+        socket.once("connect", () => {
+          socket.destroy();
+          resolveConnection();
+        });
+        socket.once("timeout", () => {
+          socket.destroy();
+          rejectConnection(new Error(`Timed out connecting to 127.0.0.1:${port}`));
+        });
+        socket.once("error", rejectConnection);
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
+    }
+  }
+  throw processError(process, lastError ?? new Error(`Timed out waiting for 127.0.0.1:${port}`));
+}
+
+async function waitForHTTPS(url: string, caPath: string, process: ManagedProcess) {
+  const deadline = Date.now() + 180_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    throwIfExited(process);
+    try {
+      const ca = await readFile(caPath);
+      await new Promise<void>((resolveRequest, rejectRequest) => {
+        const request = https.get(url, { ca, timeout: 2_000 }, (response) => {
+          response.resume();
+          if (response.statusCode === 200) {
+            resolveRequest();
+            return;
+          }
+          rejectRequest(new Error(`${url} returned ${response.statusCode}`));
+        });
+        request.once("timeout", () => request.destroy(new Error(`${url} timed out`)));
+        request.once("error", rejectRequest);
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
+    }
+  }
+  throw processError(process, lastError ?? new Error(`Timed out waiting for ${url}`));
 }
 
 async function waitForCommand(args: string[]) {
@@ -417,5 +571,66 @@ function runCommand(args: string[], allowFailure = false) {
       );
     });
     child.on("error", rejectRun);
+  });
+}
+
+function startManagedProcess(args: string[], cwd: string): ManagedProcess {
+  const child = spawn(args[0], args.slice(1), {
+    cwd,
+    env: process.env,
+    stdio: "pipe",
+  });
+  let output = "";
+  const appendOutput = (chunk: unknown) => {
+    output = (output + String(chunk)).slice(-200_000);
+  };
+  child.stdout?.on("data", appendOutput);
+  child.stderr?.on("data", appendOutput);
+  return {
+    child,
+    command: args.join(" "),
+    output: () => output.trim(),
+  };
+}
+
+function throwIfExited(process?: ManagedProcess) {
+  if (process && (process.child.exitCode !== null || process.child.signalCode !== null)) {
+    throw processError(process, new Error("process exited before becoming ready"));
+  }
+}
+
+function processError(process: ManagedProcess | undefined, cause: unknown) {
+  if (!process) return cause instanceof Error ? cause : new Error(String(cause));
+  return new Error(
+    [
+      cause instanceof Error ? cause.message : String(cause),
+      process.output(),
+      `Command: ${process.command}`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  );
+}
+
+async function stopManagedProcess(process: ManagedProcess) {
+  if (process.child.exitCode !== null || process.child.signalCode !== null) return;
+  process.child.kill("SIGTERM");
+  if (await waitForProcessExit(process.child, 10_000)) return;
+  process.child.kill("SIGKILL");
+  await waitForProcessExit(process.child, 5_000);
+}
+
+function waitForProcessExit(child: ChildProcess, timeoutMs: number) {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+  return new Promise<boolean>((resolveExit) => {
+    const onExit = () => {
+      clearTimeout(timer);
+      resolveExit(true);
+    };
+    const timer = setTimeout(() => {
+      child.off("exit", onExit);
+      resolveExit(false);
+    }, timeoutMs);
+    child.once("exit", onExit);
   });
 }

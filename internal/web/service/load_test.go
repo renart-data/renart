@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,184 @@ func (m loadConnectionManagerWithDetails) GetConnection(string) any        { ret
 func (m loadConnectionManagerWithDetails) GetConnectionDetails(string) any { return m.details }
 func (m loadConnectionManagerWithDetails) GetConnectionType(string) string {
 	return m.connectionType
+}
+
+type slingDatabricksTestPayload struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+}
+
+func databricksPATTestManager() loadConnectionManagerWithDetails {
+	return loadConnectionManagerWithDetails{
+		connection:     "databricks connection",
+		connectionType: "databricks",
+		details: &config.DatabricksConnection{
+			ConnectionMetadata: config.ConnectionMetadata{Name: "databricks-default"},
+			Token:              "test-token",
+			Host:               "workspace.cloud.databricks.com",
+			Path:               "/sql/1.0/warehouses/test-warehouse",
+			Catalog:            "main",
+			Schema:             "analytics",
+		},
+	}
+}
+
+func requireDatabricksSlingPayload(t *testing.T, payload string) *url.URL {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(payload), &fields))
+	assert.NotContains(t, fields, "use_bulk", "use_bulk is a Sling target option, not a connection property")
+	var decoded slingDatabricksTestPayload
+	require.NoError(t, json.Unmarshal([]byte(payload), &decoded))
+	assert.Equal(t, "databricks", decoded.Type)
+	parsed, err := url.Parse(decoded.URL)
+	require.NoError(t, err)
+	return parsed
+}
+
+func TestSlingTargetOptionsArgs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("databricks disables bulk loading", func(t *testing.T) {
+		args, err := slingTargetOptionsArgs(databricksPATTestManager(), "databricks-default", nil)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"--tgt-options", `{"use_bulk":false}`}, args)
+	})
+
+	t.Run("databricks merges existing target options", func(t *testing.T) {
+		args, err := slingTargetOptionsArgs(
+			databricksPATTestManager(),
+			"databricks-default",
+			map[string]any{"column_casing": "snake"},
+		)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"--tgt-options", `{"column_casing":"snake","use_bulk":false}`}, args)
+	})
+
+	t.Run("other targets retain their explicit options", func(t *testing.T) {
+		manager := loadConnectionManagerWithDetails{connectionType: "postgres"}
+		args, err := slingTargetOptionsArgs(manager, "postgres-default", map[string]any{"column_casing": "snake"})
+		require.NoError(t, err)
+		assert.Equal(t, []string{"--tgt-options", `{"column_casing":"snake"}`}, args)
+	})
+
+	t.Run("other targets do not add an empty option payload", func(t *testing.T) {
+		manager := loadConnectionManagerWithDetails{connectionType: "postgres"}
+		args, err := slingTargetOptionsArgs(manager, "postgres-default", nil)
+		require.NoError(t, err)
+		assert.Nil(t, args)
+	})
+}
+
+func TestLoadConnectionURIUsesSlingDatabricksPATProperties(t *testing.T) {
+	t.Parallel()
+
+	manager := databricksPATTestManager()
+	connection := manager.details.(*config.DatabricksConnection)
+	connection.Token = "p@ss:/?&word"
+	connection.Path = "///sql/1.0/warehouses/test-warehouse"
+
+	payload, err := loadConnectionURI(manager, "databricks-default")
+	require.NoError(t, err)
+	parsed := requireDatabricksSlingPayload(t, payload)
+	assert.Equal(t, "databricks", parsed.Scheme)
+	assert.Equal(t, "workspace.cloud.databricks.com:443", parsed.Host)
+	assert.Equal(t, "/sql/1.0/warehouses/test-warehouse", parsed.Path)
+	assert.Equal(t, "main", parsed.Query().Get("catalog"))
+	assert.Equal(t, "analytics", parsed.Query().Get("schema"))
+	require.NotNil(t, parsed.User)
+	assert.Equal(t, "token", parsed.User.Username())
+	password, ok := parsed.User.Password()
+	require.True(t, ok)
+	assert.Equal(t, "p@ss:/?&word", password)
+	assert.Empty(t, parsed.Query().Get("http_path"))
+}
+
+func TestLoadConnectionURIUsesSlingDatabricksOAuthM2MProperties(t *testing.T) {
+	t.Parallel()
+
+	manager := loadConnectionManagerWithDetails{
+		connection:     "databricks connection",
+		connectionType: "databricks",
+		details: config.DatabricksConnection{
+			ConnectionMetadata: config.ConnectionMetadata{Name: "databricks-oauth"},
+			Token:              "ignored-token",
+			Host:               "workspace.cloud.databricks.com",
+			Port:               8443,
+			Path:               "/sql/1.0/warehouses/oauth-warehouse",
+			Catalog:            "catalog with spaces",
+			Schema:             "default",
+			ClientID:           "oauth-client",
+			ClientSecret:       "oauth-secret",
+		},
+	}
+
+	payload, err := loadConnectionURI(manager, "databricks-oauth")
+	require.NoError(t, err)
+	parsed := requireDatabricksSlingPayload(t, payload)
+	assert.Equal(t, "workspace.cloud.databricks.com:8443", parsed.Host)
+	assert.Equal(t, "/sql/1.0/warehouses/oauth-warehouse", parsed.Path)
+	assert.Nil(t, parsed.User)
+	assert.Equal(t, "OAuthM2M", parsed.Query().Get("authType"))
+	assert.Equal(t, "oauth-client", parsed.Query().Get("clientID"))
+	assert.Equal(t, "oauth-secret", parsed.Query().Get("clientSecret"))
+	assert.Equal(t, "catalog with spaces", parsed.Query().Get("catalog"))
+	assert.Equal(t, "default", parsed.Query().Get("schema"))
+	assert.NotContains(t, payload, "ignored-token")
+	assert.Empty(t, parsed.Query().Get("client_id"))
+	assert.Empty(t, parsed.Query().Get("client_secret"))
+}
+
+func TestSlingDatabricksConnectionPayloadValidatesConfiguration(t *testing.T) {
+	t.Parallel()
+
+	base := config.DatabricksConnection{
+		ConnectionMetadata: config.ConnectionMetadata{Name: "warehouse"},
+		Token:              "token",
+		Host:               "workspace.cloud.databricks.com",
+		Path:               "/sql/1.0/warehouses/test",
+	}
+	tests := []struct {
+		name       string
+		mutate     func(*config.DatabricksConnection)
+		errorMatch string
+	}{
+		{name: "missing host", mutate: func(connection *config.DatabricksConnection) {
+			connection.Host = ""
+		}, errorMatch: "requires a host"},
+		{name: "host includes scheme", mutate: func(connection *config.DatabricksConnection) {
+			connection.Host = "https://workspace.cloud.databricks.com"
+		}, errorMatch: "must be a hostname"},
+		{name: "host includes port", mutate: func(connection *config.DatabricksConnection) {
+			connection.Host = "workspace.cloud.databricks.com:443"
+		}, errorMatch: "must be a hostname"},
+		{name: "missing path", mutate: func(connection *config.DatabricksConnection) {
+			connection.Path = "///"
+		}, errorMatch: "requires an HTTP path"},
+		{name: "path includes query", mutate: func(connection *config.DatabricksConnection) {
+			connection.Path = "/sql/1.0/warehouses/test?debug=true"
+		}, errorMatch: "cannot contain a query"},
+		{name: "invalid port", mutate: func(connection *config.DatabricksConnection) {
+			connection.Port = 70000
+		}, errorMatch: "invalid port"},
+		{name: "missing authentication", mutate: func(connection *config.DatabricksConnection) {
+			connection.Token = " "
+		}, errorMatch: "requires a token or OAuth"},
+		{name: "incomplete OAuth client ID", mutate: func(connection *config.DatabricksConnection) {
+			connection.ClientID = "client"
+		}, errorMatch: "requires both client_id and client_secret"},
+		{name: "incomplete OAuth client secret", mutate: func(connection *config.DatabricksConnection) {
+			connection.ClientSecret = "secret"
+		}, errorMatch: "requires both client_id and client_secret"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			connection := base
+			tt.mutate(&connection)
+			_, err := slingDatabricksConnectionPayload(connection)
+			require.ErrorContains(t, err, tt.errorMatch)
+		})
+	}
 }
 
 func TestLoadConnectionURIUsesSlingTrinoProperties(t *testing.T) {
@@ -497,6 +676,104 @@ func TestHybridBruinExecutorRunsCanonicalLoadAssetWithCLI(t *testing.T) {
 	assert.Contains(t, string(output), "sling run --src-conn RENART_SLING_SOURCE --src-stream public.orders --tgt-conn RENART_SLING_TARGET --tgt-object analytics.orders")
 	assert.Contains(t, string(output), "source=postgresql://source target=duckdb://target")
 	assert.Contains(t, string(output), "loaded_at=false")
+}
+
+func TestHybridBruinExecutorPassesDatabricksPayloadToLoadCLI(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	fakeLoad := filepath.Join(workspaceRoot, "fake-sling")
+	require.NoError(t, os.WriteFile(fakeLoad, []byte("#!/bin/sh\nprintf 'args=%s\\nsource=%s\\ntarget=%s\\n' \"$*\" \"$RENART_SLING_SOURCE\" \"$RENART_SLING_TARGET\"\n"), 0o755))
+	t.Setenv("RENART_SLING_BINARY", fakeLoad)
+
+	executor := NewHybridBruinExecutor(workspaceRoot, "bruin", nil, nil)
+	output, err := executor.runLoadAsset(context.Background(), &pipeline.Pipeline{}, &pipeline.Asset{
+		Name:       "analytics.orders",
+		Type:       pipeline.AssetType("load"),
+		Connection: "databricks-default",
+		Parameters: pipeline.ParameterMap{
+			loadParamSourceConnection: "databricks-default",
+			loadParamSourceTable:      "main.analytics.orders_source",
+		},
+	}, databricksPATTestManager(), nil)
+	require.NoError(t, err)
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	require.Len(t, lines, 3)
+	assert.Contains(t, lines[0], "--src-conn "+slingSourceConnectionEnv)
+	assert.Contains(t, lines[0], "--tgt-conn "+slingTargetConnectionEnv)
+	assert.Contains(t, lines[0], `--tgt-options {"use_bulk":false}`)
+	assert.NotContains(t, lines[0], "test-token")
+	source := requireDatabricksSlingPayload(t, strings.TrimPrefix(lines[1], "source="))
+	target := requireDatabricksSlingPayload(t, strings.TrimPrefix(lines[2], "target="))
+	assert.Equal(t, source.String(), target.String())
+}
+
+func TestLoadPackageNamePinsCompatibleSlingVersion(t *testing.T) {
+	t.Setenv("RENART_SLING_PACKAGE", "")
+	assert.Equal(t, defaultSlingPackage, loadPackageName())
+
+	t.Setenv("RENART_SLING_PACKAGE", "sling-custom")
+	assert.Equal(t, "sling-custom", loadPackageName())
+}
+
+func TestSlingIntegrationAcceptsDatabricksConnectionPayloads(t *testing.T) {
+	if os.Getenv("RENART_RUN_DATABRICKS_SLING_CONTRACT") != "1" {
+		t.Skip("set RENART_RUN_DATABRICKS_SLING_CONTRACT=1 to run the pinned Sling parser contract")
+	}
+	t.Setenv("RENART_SLING_BINARY", "")
+	t.Setenv("SLING_BINARY", "")
+	t.Setenv("RENART_SLING_PACKAGE", defaultSlingPackage)
+
+	tests := []struct {
+		name       string
+		connection config.DatabricksConnection
+	}{
+		{
+			name: "PAT",
+			connection: config.DatabricksConnection{
+				ConnectionMetadata: config.ConnectionMetadata{Name: "databricks-pat"},
+				Token:              "fake-token",
+				Host:               "127.0.0.1",
+				Port:               1,
+				Path:               "/sql/1.0/warehouses/test",
+				Catalog:            "main",
+				Schema:             "default",
+			},
+		},
+		{
+			name: "OAuth M2M",
+			connection: config.DatabricksConnection{
+				ConnectionMetadata: config.ConnectionMetadata{Name: "databricks-oauth"},
+				Host:               "127.0.0.1",
+				Port:               1,
+				Path:               "/sql/1.0/warehouses/test",
+				Catalog:            "main",
+				Schema:             "default",
+				ClientID:           "fake-client",
+				ClientSecret:       "fake-secret",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload, err := slingDatabricksConnectionPayload(tt.connection)
+			require.NoError(t, err)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+			defer cancel()
+			writer := &streamCaptureWriter{buffer: bytes.NewBuffer(nil)}
+			cmdName, cmdArgs, err := loadCommand(ctx, []string{"conns", "test", loadDiscoverEnvName}, writer)
+			require.NoError(t, err)
+			cmd := newStreamingCommand(ctx, cmdName, cmdArgs, t.TempDir(), writer)
+			cmd.Env = append(cmd.Env, loadDiscoverEnvName+"="+payload)
+
+			err = runStreamingCommand(cmd, writer)
+			require.Error(t, err, "the closed localhost port must not connect")
+			output := writer.buffer.String()
+			assert.Contains(t, output, "host=127.0.0.1 port=1, httpPath=/sql/1.0/warehouses/test")
+			assert.NotContains(t, output, "invalid DSN")
+			assert.NotContains(t, output, "invalid connection")
+		})
+	}
 }
 
 func TestHybridBruinExecutorRunsLoadAssetThroughUvWhenNoBinaryOverrideExists(t *testing.T) {

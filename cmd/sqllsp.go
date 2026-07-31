@@ -28,6 +28,11 @@ func SQLLSP() *cli.Command {
 				Name:  "polyglot-cache-dir",
 				Usage: "directory for cached Polyglot native libraries",
 			},
+			&cli.BoolFlag{
+				Name:  "enable-filesystem-access",
+				Value: true,
+				Usage: "allow DuckDB SQL analysis to inspect local file-backed tables",
+			},
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
 			workspace := c.String("workspace")
@@ -53,6 +58,7 @@ func SQLLSP() *cli.Command {
 				fmt.Fprintf(os.Stderr, "renart sql-lsp: using Polyglot FFI %s\n", path)
 			}
 			server := sqllsp.NewWorkspaceServerWithLoader(workspace, graph, client, service.LoadSQLLSPGraph)
+			server.SetDuckDBFilesystemAccess(c.Bool("enable-filesystem-access"))
 			return server.Serve(ctx, os.Stdin, os.Stdout)
 		},
 	}

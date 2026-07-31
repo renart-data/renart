@@ -45,9 +45,10 @@ type SQLLSPResponse struct {
 }
 
 type SQLLSPDependencies struct {
-	WorkspaceRoot    string
-	CurrentState     func() model.WorkspaceState
-	ResolveAssetByID func(context.Context, string) (string, *pipeline.Pipeline, *pipeline.Asset, error)
+	WorkspaceRoot           string
+	DisableFilesystemAccess bool
+	CurrentState            func() model.WorkspaceState
+	ResolveAssetByID        func(context.Context, string) (string, *pipeline.Pipeline, *pipeline.Asset, error)
 	// PolyglotClient returns a shared SQL validation client, or nil when one is
 	// not (yet) available. It is consulted on every request so an
 	// asynchronously-loaded client is picked up as soon as it is ready. May be
@@ -70,6 +71,7 @@ type SQLLSPService struct {
 	assetCacheMu       sync.Mutex
 	assetCacheRevision int64
 	assetCacheEntries  map[string]*assetDiagnosticCacheEntry
+	duckDBFileSchemas  *sqllsp.DuckDBFileSchemaCache
 }
 
 type assetDiagnosticCacheEntry struct {
@@ -82,6 +84,7 @@ func NewSQLLSPService(deps SQLLSPDependencies) *SQLLSPService {
 	return &SQLLSPService{
 		deps:              deps,
 		assetCacheEntries: map[string]*assetDiagnosticCacheEntry{},
+		duckDBFileSchemas: sqllsp.NewDuckDBFileSchemaCache(),
 	}
 }
 
@@ -127,7 +130,7 @@ func (s *SQLLSPService) Diagnostics(ctx context.Context, req SQLLSPRequest) (SQL
 	if apiErr != nil {
 		return SQLLSPResponse{}, apiErr
 	}
-	engine := sqllsp.NewEngineWithPolyglot(graph, s.polyglotClient())
+	engine := s.newEngine(graph)
 	diagnostics := engine.DiagnosticsContext(ctx, doc)
 	documentContext := strings.ToLower(strings.TrimSpace(req.DocumentContext))
 	if documentContext == "adhoc" || documentContext == "custom_check" {
@@ -343,7 +346,9 @@ func (s *SQLLSPService) References(ctx context.Context, req SQLLSPRequest) (SQLL
 		content, _ = sqlLSPDocumentContent(asset)
 	}
 	doc := sqllsp.TextDocumentItem{URI: assetURI(s.deps.WorkspaceRoot, asset), LanguageID: "sql", Text: content}
-	engine := sqllsp.NewEngineWithPolyglot(s.graphForRequest(ctx, state, notebook), s.polyglotClient())
+	graph := s.graphForRequest(ctx, state, notebook)
+	graph = s.enrichDuckDBFileRelations(ctx, graph, doc, asset.Type)
+	engine := s.newEngine(graph)
 	docs := s.documentsForState(state, notebook, req.AssetID, content)
 	return SQLLSPResponse{Status: "ok", Locations: engine.WorkspaceReferences(doc, req.Position, docs, req.IncludeDeclaration)}, nil
 }
@@ -450,7 +455,7 @@ func (s *SQLLSPService) engineAndDocument(ctx context.Context, req SQLLSPRequest
 	if apiErr != nil {
 		return nil, sqllsp.TextDocumentItem{}, apiErr
 	}
-	return sqllsp.NewEngineWithPolyglot(graph, s.polyglotClient()), doc, nil
+	return s.newEngine(graph), doc, nil
 }
 
 func (s *SQLLSPService) graphAndDocument(ctx context.Context, req SQLLSPRequest) (sqllsp.CanonicalGraph, sqllsp.TextDocumentItem, *APIError) {
@@ -472,7 +477,26 @@ func (s *SQLLSPService) graphAndDocument(ctx context.Context, req SQLLSPRequest)
 	if connection := strings.TrimSpace(req.Connection); connection != "" {
 		graph = graphWithDocumentConnection(graph, doc.URI, connection)
 	}
+	graph = s.enrichDuckDBFileRelations(ctx, graph, doc, asset.Type)
 	return graph, doc, nil
+}
+
+func (s *SQLLSPService) newEngine(graph sqllsp.CanonicalGraph) *sqllsp.Engine {
+	return sqllsp.NewEngineWithPolyglotOptions(graph, s.polyglotClient(), sqllsp.EngineOptions{
+		DisableDuckDBFilesystemAccess: s.deps.DisableFilesystemAccess,
+	})
+}
+
+func (s *SQLLSPService) enrichDuckDBFileRelations(
+	ctx context.Context,
+	graph sqllsp.CanonicalGraph,
+	doc sqllsp.TextDocumentItem,
+	assetType string,
+) sqllsp.CanonicalGraph {
+	if s.deps.DisableFilesystemAccess || !strings.EqualFold(sqllsp.DialectFromAssetType(assetType), "duckdb") {
+		return graph
+	}
+	return sqllsp.EnrichDuckDBFileRelations(ctx, graph, doc, s.deps.WorkspaceRoot, s.duckDBFileSchemas)
 }
 
 // withJinjaProjection gives the live HTTP LSP fully rendered SQL from the same

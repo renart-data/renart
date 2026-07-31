@@ -96,7 +96,11 @@ func (o *slingSeedOperator) Run(ctx context.Context, instance scheduler.TaskInst
 		return err
 	}
 	args = append(args, materializationArgs...)
-	args = append(args, "--tgt-options", `{"column_casing":"snake"}`)
+	targetOptions, err := slingTargetOptionsArgs(o.manager, connectionName, map[string]any{"column_casing": "snake"})
+	if err != nil {
+		return err
+	}
+	args = append(args, targetOptions...)
 	columnArgs, err := slingSeedColumnArgs(asset)
 	if err != nil {
 		return err

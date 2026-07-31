@@ -776,6 +776,68 @@ custom_checks:
 	assert.NotContains(t, string(output), "--mode full-refresh")
 }
 
+func TestHybridBruinExecutorPassesDatabricksPayloadForAPIAsset(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	fakeSling := filepath.Join(workspaceRoot, "fake-sling")
+	require.NoError(t, os.WriteFile(fakeSling, []byte("#!/bin/sh\nprintf 'target=%s\\nargs=%s\\n' \"$RENART_SLING_TARGET\" \"$*\"\n"), 0o755))
+	t.Setenv("RENART_SLING_BINARY", fakeSling)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"items":[{"id":1}]}`))
+	}))
+	defer server.Close()
+
+	content := `type: api
+connection: databricks-default
+parameters:
+  request:
+    url: ` + server.URL + `
+  response:
+    records_path: items
+`
+	asset := &pipeline.Asset{
+		Name:       "quickstart.items",
+		Type:       pipeline.AssetType(apiAssetType),
+		Connection: "databricks-default",
+		Materialization: pipeline.Materialization{
+			Type:     pipeline.MaterializationTypeTable,
+			Strategy: pipeline.MaterializationStrategyCreateReplace,
+		},
+		ExecutableFile: pipeline.ExecutableFile{
+			Path:    filepath.Join(workspaceRoot, "quickstart", "assets", "items.asset.yml"),
+			Content: content,
+		},
+	}
+	pl := &pipeline.Pipeline{Name: "quickstart", Assets: []*pipeline.Asset{asset}}
+	executor := NewHybridBruinExecutor(workspaceRoot, "bruin", nil, nil)
+
+	output, err := executor.runAPIAsset(
+		context.Background(),
+		pl,
+		asset,
+		jinja.NewRendererWithYesterday("quickstart", "test"),
+		databricksPATTestManager(),
+		nil,
+	)
+	require.NoError(t, err)
+
+	var payload, args string
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.HasPrefix(line, "target=") {
+			payload = strings.TrimPrefix(line, "target=")
+		}
+		if strings.HasPrefix(line, "args=") {
+			args = strings.TrimPrefix(line, "args=")
+		}
+	}
+	require.NotEmpty(t, payload)
+	require.NotEmpty(t, args)
+	parsed := requireDatabricksSlingPayload(t, payload)
+	assert.Equal(t, "/sql/1.0/warehouses/test-warehouse", parsed.Path)
+	assert.Contains(t, args, `--tgt-options {"use_bulk":false}`)
+	assert.NotContains(t, args, "test-token")
+}
+
 func TestSlingIntegrationMergesNullableAPIJSONColumn(t *testing.T) {
 	if os.Getenv("RENART_RUN_SLING_INTEGRATION") != "1" {
 		t.Skip("set RENART_RUN_SLING_INTEGRATION=1 to run the real Sling integration")

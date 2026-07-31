@@ -244,3 +244,24 @@ func TestManagerRetriesExplicitTransactionConflict(t *testing.T) {
 		SQL: "CREATE TABLE analytics.verified AS SELECT * FROM analytics.retry",
 	}))
 }
+
+func TestManagerDisablesLocalFilesystemBeforeMaterialization(t *testing.T) {
+	root := t.TempDir()
+	var statements []string
+	manager := newWithOptions(options{
+		ExecuteStatement: func(ctx context.Context, connection adbc.Connection, sqlText string) error {
+			statements = append(statements, sqlText)
+			return executeStatement(ctx, connection, sqlText)
+		},
+	})
+
+	require.NoError(t, manager.Execute(t.Context(), Request{
+		Path:                    filepath.Join(root, "warehouse.duckdb"),
+		WorkspaceRoot:           root,
+		AssetName:               "policy_check",
+		SQL:                     "SELECT 1 AS value",
+		DisableFilesystemAccess: true,
+	}))
+	require.NotEmpty(t, statements)
+	assert.Equal(t, "SET disabled_filesystems = 'LocalFileSystem'", statements[0])
+}

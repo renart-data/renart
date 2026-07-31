@@ -7,6 +7,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	polyglot "github.com/tobilg/polyglot/packages/go"
@@ -48,7 +49,7 @@ const (
 
 var (
 	wordPattern         = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_$]*`)
-	relationPattern     = regexp.MustCompile(`(?i)\b(from|join|into|update|table|describe)\s+((?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)(?:\s+as\s+([A-Za-z_][\w$]*))?`)
+	relationPattern     = regexp.MustCompile(`(?i)\b(from|join|into|update|table|describe)\s+((?:"[^"]+"|'(?:''|[^'])+'|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)(?:\s+as\s+([A-Za-z_][\w$]*))?`)
 	insertValuesPattern = regexp.MustCompile(`(?is)\binsert\s+into\s+((?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)\s*(?:\(([^)]*)\))?\s*values\s*\(`)
 	dotColumnPattern    = regexp.MustCompile(`([A-Za-z_][\w$]*)\s*\.\s*([A-Za-z_][\w$]*)`)
 	refCallPattern      = regexp.MustCompile(`(?is)\{\{\s*(ref|source)\s*\(\s*['"]([^'"]*)`)
@@ -60,9 +61,14 @@ type scopeResolver interface {
 }
 
 type Engine struct {
-	graph CanonicalGraph
-	index graphIndex
-	poly  *polyglot.Client
+	graph                         CanonicalGraph
+	index                         graphIndex
+	poly                          *polyglot.Client
+	disableDuckDBFilesystemAccess bool
+}
+
+type EngineOptions struct {
+	DisableDuckDBFilesystemAccess bool
 }
 
 type graphIndex struct {
@@ -73,6 +79,10 @@ type graphIndex struct {
 }
 
 func NewEngine(graph CanonicalGraph) *Engine {
+	return NewEngineWithOptions(graph, EngineOptions{})
+}
+
+func NewEngineWithOptions(graph CanonicalGraph, options EngineOptions) *Engine {
 	idx := graphIndex{
 		assetsByName:        map[string]AssetNode{},
 		relationsByName:     map[string]RelationNode{},
@@ -95,11 +105,19 @@ func NewEngine(graph CanonicalGraph) *Engine {
 	for _, schema := range graph.Schemas {
 		idx.columnsByRelationID[schema.RelationID] = schema.Columns
 	}
-	return &Engine{graph: graph, index: idx}
+	return &Engine{
+		graph:                         graph,
+		index:                         idx,
+		disableDuckDBFilesystemAccess: options.DisableDuckDBFilesystemAccess,
+	}
 }
 
 func NewEngineWithPolyglot(graph CanonicalGraph, client *polyglot.Client) *Engine {
-	engine := NewEngine(graph)
+	return NewEngineWithPolyglotOptions(graph, client, EngineOptions{})
+}
+
+func NewEngineWithPolyglotOptions(graph CanonicalGraph, client *polyglot.Client, options EngineOptions) *Engine {
+	engine := NewEngineWithOptions(graph, options)
 	engine.poly = client
 	return engine
 }
@@ -115,10 +133,24 @@ func (e *Engine) DiagnosticsContext(ctx context.Context, doc TextDocumentItem) [
 	if !semanticOK {
 		diagnostics = e.polyglotDiagnostics(projection.doc)
 	}
+	duckDBFileRelations := e.duckDBFileRelationUses(projection.doc, analysis)
+	diagnostics = withoutUnresolvedDuckDBFileRelations(projection.doc.Text, diagnostics, duckDBFileRelations)
 	currentAsset := e.assetForURI(doc.URI)
 	diagnostics = appendUniqueDiagnostics(diagnostics, e.crossConnectionDiagnostics(projection.doc.Text, analysis, currentAsset)...)
 	for _, use := range analysis.relations {
 		if _, isCTE := analysis.ctes[strings.ToLower(use.name)]; isCTE || strings.HasPrefix(use.name, "{{") {
+			continue
+		}
+		if e.isDuckDBFileRelation(projection.doc, use.name) {
+			if e.disableDuckDBFilesystemAccess {
+				diagnostics = appendUniqueDiagnostics(diagnostics, Diagnostic{
+					Range:    RangeFromOffsets(projection.doc.Text, use.start, use.end),
+					Severity: diagnosticSeverityError,
+					Code:     authoringdiag.CodeDuckDBFilesystemAccessDisabled,
+					Source:   authoringdiag.SourceRenart,
+					Message:  "DuckDB filesystem access is disabled; file-backed relation " + strconv.Quote(use.name) + " is unavailable.",
+				})
+			}
 			continue
 		}
 		resolved := e.resolveRelation(use.name)
@@ -199,6 +231,53 @@ func (e *Engine) assetDiagnostics(doc TextDocumentItem) []Diagnostic {
 		result = append(result, diagnosticFromAuthoring(doc.Text, candidate.Diagnostic))
 	}
 	return result
+}
+
+func (e *Engine) isDuckDBFileRelation(doc TextDocumentItem, relation string) bool {
+	return strings.EqualFold(e.dialectForDocument(doc), "duckdb") && IsDuckDBLocalFileRelation(relation)
+}
+
+func (e *Engine) duckDBFileRelationUses(doc TextDocumentItem, analysis sqlAnalysis) []relationUse {
+	if !strings.EqualFold(e.dialectForDocument(doc), "duckdb") {
+		return nil
+	}
+	uses := make([]relationUse, 0)
+	for _, use := range analysis.relations {
+		if IsDuckDBLocalFileRelation(use.name) {
+			uses = append(uses, use)
+		}
+	}
+	return uses
+}
+
+func withoutUnresolvedDuckDBFileRelations(text string, diagnostics []Diagnostic, uses []relationUse) []Diagnostic {
+	if len(uses) == 0 {
+		return diagnostics
+	}
+	filtered := make([]Diagnostic, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code != authoringdiag.CodeUnresolvedRelation {
+			filtered = append(filtered, diagnostic)
+			continue
+		}
+		start := ByteOffset(text, diagnostic.Range.Start)
+		end := ByteOffset(text, diagnostic.Range.End)
+		matchesFileRelation := false
+		for _, use := range uses {
+			if rangesOverlap(start, end, use.start, use.end) || strings.Contains(strings.ToLower(diagnostic.Message), strings.ToLower(use.name)) {
+				matchesFileRelation = true
+				break
+			}
+		}
+		if !matchesFileRelation {
+			filtered = append(filtered, diagnostic)
+		}
+	}
+	return filtered
+}
+
+func rangesOverlap(leftStart, leftEnd, rightStart, rightEnd int) bool {
+	return leftStart < rightEnd && rightStart < leftEnd
 }
 
 func appendUniqueAssetDiagnostics(existing []Diagnostic, candidates ...Diagnostic) []Diagnostic {
@@ -643,6 +722,9 @@ func (e *Engine) Complete(doc TextDocumentItem, pos Position) []CompletionItem {
 	if inTemplateRef(doc.Text, offset) {
 		return e.assetCompletions()
 	}
+	if offsetInSingleQuotedString(doc.Text, offset) {
+		return nil
+	}
 	projection := e.renderDocument(doc)
 	renderedOffset := offset
 	if projection.changed {
@@ -671,6 +753,74 @@ func (e *Engine) Complete(doc TextDocumentItem, pos Position) []CompletionItem {
 		return columnCompletions(e.columnsForSelectAnalysis(analysis))
 	}
 	return append(e.keywordCompletions(), e.relationCompletions()...)
+}
+
+// offsetInSingleQuotedString reports whether offset is inside a SQL string
+// literal. Double quotes and backticks are identifiers in the dialects Renart
+// supports, so they intentionally do not suppress identifier completion.
+func offsetInSingleQuotedString(sql string, offset int) bool {
+	offset = min(max(offset, 0), len(sql))
+	inSingleQuote := false
+	inIdentifierQuote := byte(0)
+	lineComment := false
+	blockComment := false
+	for i := 0; i < offset; i++ {
+		ch := sql[i]
+		next := byte(0)
+		if i+1 < offset {
+			next = sql[i+1]
+		}
+		if lineComment {
+			if ch == '\n' {
+				lineComment = false
+			}
+			continue
+		}
+		if blockComment {
+			if ch == '*' && next == '/' {
+				blockComment = false
+				i++
+			}
+			continue
+		}
+		if inSingleQuote {
+			if ch == '\'' {
+				if next == '\'' {
+					i++
+					continue
+				}
+				inSingleQuote = false
+			}
+			continue
+		}
+		if inIdentifierQuote != 0 {
+			if ch == inIdentifierQuote {
+				if next == inIdentifierQuote {
+					i++
+					continue
+				}
+				inIdentifierQuote = 0
+			}
+			continue
+		}
+		if ch == '-' && next == '-' {
+			lineComment = true
+			i++
+			continue
+		}
+		if ch == '/' && next == '*' {
+			blockComment = true
+			i++
+			continue
+		}
+		switch ch {
+		case '\'':
+			inSingleQuote = true
+		case '"', '`':
+			inIdentifierQuote = ch
+		}
+	}
+	return inSingleQuote
 }
 
 func (e *Engine) Definition(doc TextDocumentItem, pos Position) []Location {
@@ -1861,7 +2011,7 @@ func splitQualifiedIdentifier(raw string) []byteRange {
 			}
 			continue
 		}
-		if ch == '"' || ch == '`' {
+		if ch == '\'' || ch == '"' || ch == '`' {
 			inQuote = ch
 			continue
 		}
@@ -3143,13 +3293,14 @@ func sortCompletionItems(items []CompletionItem) {
 
 func normalizeRelation(value string) string {
 	value = strings.ReplaceAll(value, " ", "")
-	value = strings.Trim(value, "`\"")
+	value = strings.Trim(value, "`\"'")
+	value = strings.ReplaceAll(value, "''", "'")
 	return value
 }
 
 func shortName(value string) string {
 	parts := strings.Split(value, ".")
-	return strings.Trim(parts[len(parts)-1], "`\"")
+	return strings.Trim(parts[len(parts)-1], "`\"'")
 }
 
 func isKeyword(value string) bool {

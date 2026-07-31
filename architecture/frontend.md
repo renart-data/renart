@@ -513,9 +513,13 @@ than hand-rolled `div` shells.
   intellisense. It scopes tables using only the effective connection resolved by
   the backend; it never guesses a connection from an asset type or selects an
   arbitrary same-platform connection.
-- [lib/api-asset-templates.ts](../web/lib/api-asset-templates.ts): the three
+- [lib/api-asset-templates.ts](../web/lib/api-asset-templates.ts): the four
   pattern-focused HTTP API starters used by the New asset dialog. The default
-  starter accepts the user's OpenAPI URL rather than embedding a demo service.
+  starter accepts the user's OpenAPI URL rather than embedding a demo service;
+  another starter demonstrates a nested JSON POST body. The guided editor finds
+  the `parameters:` span by the next plausible top-level YAML key, so malformed
+  pasted JSON braces remain visible and repairable instead of being hidden in an
+  uneditable file tail.
   API assets also have sampled response inference, OpenAPI/path diagnostics,
   relative `response.fields` completion below `records_path`, and persisted
   cursor controls in the guided editor; see

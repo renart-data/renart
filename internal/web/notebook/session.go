@@ -21,6 +21,9 @@ type SessionStore struct {
 	Root string
 	// WorkspaceRoot is the base directory for relative DuckDB file references.
 	WorkspaceRoot string
+	// DisableFilesystemAccess applies DuckDB's LocalFileSystem policy to every
+	// notebook connection. The zero value keeps access enabled.
+	DisableFilesystemAccess bool
 
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
@@ -74,7 +77,7 @@ func (s *SessionStore) Open(notebookUUID string) (*Session, error) {
 	lock.Lock()
 
 	path := s.DBPath(notebookUUID)
-	client, err := newNotebookDuckDBClient(context.Background(), path, s.WorkspaceRoot)
+	client, err := newNotebookDuckDBClient(context.Background(), path, s.WorkspaceRoot, s.DisableFilesystemAccess)
 	if err != nil {
 		lock.Unlock()
 		return nil, fmt.Errorf("failed to open notebook session db: %w", err)

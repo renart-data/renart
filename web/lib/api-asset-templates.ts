@@ -1,4 +1,4 @@
-export type APIAssetTemplateId = "openapi" | "paginated" | "pipedrive";
+export type APIAssetTemplateId = "openapi" | "paginated" | "request-body" | "pipedrive";
 
 export type APIAssetTemplate = {
   id: APIAssetTemplateId;
@@ -16,6 +16,11 @@ export const API_ASSET_TEMPLATES: APIAssetTemplate[] = [
     id: "paginated",
     label: "Paginated REST",
     description: "PokéAPI records with body-provided next-page URLs and no credentials.",
+  },
+  {
+    id: "request-body",
+    label: "JSON request body",
+    description: "A POST request with a nested JSON body and no credentials.",
   },
   {
     id: "pipedrive",
@@ -95,6 +100,34 @@ columns:
     primary_key: true
   - name: update_time
     type: timestamp
+`;
+  }
+
+  if (templateId === "request-body") {
+    return `type: api
+${connectionLine}
+materialization:
+  type: table
+  strategy: create+replace
+
+parameters:
+  request:
+    url: https://httpbin.org/anything
+    method: POST
+    headers:
+      Accept: application/json
+      Content-Type: application/json
+    body:
+      event: pipeline_preview
+      source:
+        application: renart
+        environment: local
+      tags:
+        - http-api
+        - request-body
+
+  response:
+    records_path: json
 `;
   }
 

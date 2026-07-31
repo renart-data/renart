@@ -214,7 +214,7 @@ round-trips unknown fields).
   preserved without becoming a guided user setting. Owned local seeds show
   `path`, `file_type`, and `enforce_schema` before one replacement textarea that
   accepts pasted text, dragged files, and file-picker selections. For local
-  UTF-8 CSV/JSON/JSONL/NDJSON files up to 1 MiB, that textarea first loads the
+  UTF-8 CSV/JSON/JSONL/NDJSON files up to 256 KiB, that textarea first loads the
   existing content through the path-derived `GET /api/assets/{assetID}/seed-file`
   contract. Remote, runtime-rendered, binary, non-UTF-8, and larger seeds stay
   replaceable without being read into the browser. Replacing the file uses

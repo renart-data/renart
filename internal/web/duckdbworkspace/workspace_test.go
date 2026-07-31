@@ -48,6 +48,24 @@ func TestClientResolvesRelativeFilesFromWorkspace(t *testing.T) {
 	require.Equal(t, [][]any{{int64(1)}}, result.Rows)
 }
 
+func TestClientDisablesLocalFilesystemAccessWithoutBreakingOrdinaryQueries(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(workspaceRoot, "rows.csv"), []byte("id,name\n1,Ada\n"), 0o600))
+
+	base, err := duck.NewClient(duck.Config{Path: ""})
+	require.NoError(t, err)
+	t.Cleanup(base.Close)
+	client := WrapClientWithFilesystemAccess(base, workspaceRoot, false)
+
+	_, err = client.SelectWithSchema(t.Context(), &query.Query{Query: `select * from './rows.csv'`})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "LocalFileSystem")
+
+	result, err := client.SelectWithSchema(t.Context(), &query.Query{Query: `select 1 as value`})
+	require.NoError(t, err)
+	require.Equal(t, []string{"value"}, result.Columns)
+}
+
 func TestManagerOnlyWrapsDuckDBConnections(t *testing.T) {
 	baseClient, err := duck.NewClient(duck.Config{Path: ""})
 	require.NoError(t, err)

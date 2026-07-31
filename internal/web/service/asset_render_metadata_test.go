@@ -146,7 +146,7 @@ func TestDirectMetadataPushBackendMatchesExecutorRegistry(t *testing.T) {
 		pipeline.AssetTypeSnowflakeTableSensor,
 	}
 
-	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, &pipeline.Pipeline{}, nil, nil, nil, nil, "", false, sensorModeOnce)
+	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, &pipeline.Pipeline{}, nil, nil, nil, nil, "", false, false, sensorModeOnce)
 	require.NoError(t, err)
 
 	for _, assetType := range postgresTypes {

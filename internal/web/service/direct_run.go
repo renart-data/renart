@@ -84,7 +84,7 @@ func (e *HybridBruinExecutor) RunAsset(ctx context.Context, req RunAssetRequest,
 			return printer.buffer.Bytes(), err
 		}
 	} else {
-		mainExecutors, err = buildDirectMainExecutors(manager, renderer, parser, pp.Pipeline, pp.Config, e.runRegistry, e.duckDBCoordinator, e.duckDBSessions, e.workspaceRoot, req.FullRefresh, effectiveSensorMode(req.SensorMode, false))
+		mainExecutors, err = buildDirectMainExecutors(manager, renderer, parser, pp.Pipeline, pp.Config, e.runRegistry, e.duckDBCoordinator, e.duckDBSessions, e.workspaceRoot, e.disableDuckDBFilesystemAccess, req.FullRefresh, effectiveSensorMode(req.SensorMode, false))
 		if err != nil {
 			return printer.buffer.Bytes(), err
 		}
@@ -287,7 +287,7 @@ func (e *HybridBruinExecutor) RunPipeline(ctx context.Context, req RunPipelineRe
 			return printer.buffer.Bytes(), err
 		}
 	}
-	mainExecutors, err := buildDirectMainExecutors(manager, renderer, parser, foundPipeline, cfg, e.runRegistry, e.duckDBCoordinator, e.duckDBSessions, e.workspaceRoot, req.FullRefresh, effectiveSensorMode(req.SensorMode, false))
+	mainExecutors, err := buildDirectMainExecutors(manager, renderer, parser, foundPipeline, cfg, e.runRegistry, e.duckDBCoordinator, e.duckDBSessions, e.workspaceRoot, e.disableDuckDBFilesystemAccess, req.FullRefresh, effectiveSensorMode(req.SensorMode, false))
 	if err != nil {
 		return printer.buffer.Bytes(), err
 	}
@@ -871,7 +871,7 @@ func (e *HybridBruinExecutor) runPlannedPipelineUnit(
 	} else {
 		mainExecutors, err = buildDirectMainExecutors(
 			manager, renderer, parser, pp.Pipeline, pp.Config, e.runRegistry, e.duckDBCoordinator,
-			e.duckDBSessions, sourceRoot, req.FullRefresh, effectiveSensorMode(req.SensorMode, false),
+			e.duckDBSessions, sourceRoot, e.disableDuckDBFilesystemAccess, req.FullRefresh, effectiveSensorMode(req.SensorMode, false),
 		)
 	}
 	if err != nil {

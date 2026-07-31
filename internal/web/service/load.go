@@ -25,6 +25,8 @@ import (
 
 const (
 	loadAssetType            = "load"
+	defaultSlingPackage      = "sling==1.5.22"
+	defaultDatabricksPort    = 443
 	slingLoadedAtColumn      = "_sling_loaded_at"
 	slingLoadedAtDisabledEnv = "SLING_LOADED_AT_COLUMN=false"
 	slingSourceConnectionEnv = "RENART_SLING_SOURCE"
@@ -84,6 +86,10 @@ func resolveLoadConnectionURI(manager config.ConnectionGetter, connectionName st
 			return slingClickHouseConnectionURI(*connection)
 		case config.ClickHouseConnection:
 			return slingClickHouseConnectionURI(connection)
+		case *config.DatabricksConnection:
+			return slingDatabricksConnectionPayload(*connection)
+		case config.DatabricksConnection:
+			return slingDatabricksConnectionPayload(connection)
 		case *config.DuckDBConnection:
 			if connection.Lakehouse != nil {
 				return slingDuckLakeConnectionURI(*connection)
@@ -116,6 +122,79 @@ func resolveLoadConnectionURI(manager config.ConnectionGetter, connectionName st
 		return strings.TrimSpace(raw), nil
 	}
 	return "", fmt.Errorf("connection %q cannot be converted to a Load connection URI", name)
+}
+
+// Bruin's ingestr URI uses Databricks' HTTP path as a query option and omits
+// the port. Sling's native Databricks driver expects the SQL warehouse or
+// cluster path in the DSN path and requires a port. Keep the driver-native URL
+// inside Sling's structured connection payload so PAT and OAuth M2M both work,
+// while target execution separately disables Sling bulk loading so ordinary
+// API, Seed, Load, and Python materialization flows do not require a Unity
+// Catalog staging volume.
+func slingDatabricksConnectionPayload(connection config.DatabricksConnection) (string, error) {
+	name := strings.TrimSpace(connection.Name)
+	host := strings.TrimSpace(connection.Host)
+	if host == "" {
+		return "", fmt.Errorf("Databricks connection %q requires a host for Sling", name)
+	}
+	if strings.Contains(host, "://") || strings.ContainsAny(host, ":/?#@") {
+		return "", fmt.Errorf("Databricks connection %q host must be a hostname without a scheme, port, or path", name)
+	}
+
+	path := strings.TrimLeft(strings.TrimSpace(connection.Path), "/")
+	if path == "" {
+		return "", fmt.Errorf("Databricks connection %q requires an HTTP path for Sling", name)
+	}
+	if strings.ContainsAny(path, "?#") {
+		return "", fmt.Errorf("Databricks connection %q HTTP path cannot contain a query or fragment", name)
+	}
+
+	port := connection.Port
+	if port == 0 {
+		port = defaultDatabricksPort
+	}
+	if port < 1 || port > 65535 {
+		return "", fmt.Errorf("Databricks connection %q has invalid port %d for Sling", name, port)
+	}
+
+	clientID := strings.TrimSpace(connection.ClientID)
+	clientSecret := strings.TrimSpace(connection.ClientSecret)
+	if (clientID == "") != (clientSecret == "") {
+		return "", fmt.Errorf("Databricks connection %q requires both client_id and client_secret for OAuth M2M", name)
+	}
+
+	u := &url.URL{
+		Scheme: "databricks",
+		Host:   net.JoinHostPort(host, strconv.Itoa(port)),
+		Path:   "/" + path,
+	}
+	query := url.Values{}
+	if catalog := strings.TrimSpace(connection.Catalog); catalog != "" {
+		query.Set("catalog", catalog)
+	}
+	if schema := strings.TrimSpace(connection.Schema); schema != "" {
+		query.Set("schema", schema)
+	}
+	if clientID != "" {
+		query.Set("authType", "OAuthM2M")
+		query.Set("clientID", clientID)
+		query.Set("clientSecret", clientSecret)
+	} else {
+		if strings.TrimSpace(connection.Token) == "" {
+			return "", fmt.Errorf("Databricks connection %q requires a token or OAuth M2M client credentials for Sling", name)
+		}
+		u.User = url.UserPassword("token", connection.Token)
+	}
+	u.RawQuery = query.Encode()
+
+	payload, err := json.Marshal(map[string]any{
+		"type": "databricks",
+		"url":  u.String(),
+	})
+	if err != nil {
+		return "", fmt.Errorf("encode Databricks connection %q for Sling: %w", name, err)
+	}
+	return string(payload), nil
 }
 
 // Sling's PostgreSQL driver does not accept libpq's opportunistic `allow`
@@ -583,7 +662,7 @@ func loadPackageName() string {
 	if value := strings.TrimSpace(os.Getenv("RENART_SLING_PACKAGE")); value != "" {
 		return value
 	}
-	return "sling"
+	return defaultSlingPackage
 }
 
 func loadUvBinaryPath(ctx context.Context, output io.Writer) (string, error) {
@@ -642,6 +721,29 @@ func slingCommandConnectionEnv(args []string) ([]string, []string) {
 		i++
 	}
 	return normalized, env
+}
+
+// slingTargetOptionsArgs applies destination-specific Sling behavior at the
+// target-options boundary. In particular, Databricks' default bulk path creates
+// and writes through a Unity Catalog volume. The ordinary Renart materializers
+// use batched INSERTs instead so connecting a SQL warehouse does not also
+// require volume privileges.
+func slingTargetOptionsArgs(manager config.ConnectionGetter, connectionName string, base map[string]any) ([]string, error) {
+	options := make(map[string]any, len(base)+1)
+	for key, value := range base {
+		options[key] = value
+	}
+	if details, ok := manager.(config.ConnectionDetailsGetter); ok && strings.EqualFold(details.GetConnectionType(connectionName), "databricks") {
+		options["use_bulk"] = false
+	}
+	if len(options) == 0 {
+		return nil, nil
+	}
+	payload, err := json.Marshal(options)
+	if err != nil {
+		return nil, fmt.Errorf("encode Sling target options: %w", err)
+	}
+	return []string{"--tgt-options", string(payload)}, nil
 }
 
 func loadRunModeArgs(ctx context.Context) []string {
@@ -798,6 +900,11 @@ func (e *HybridBruinExecutor) runLoadAsset(ctx context.Context, pl *pipeline.Pip
 		return writer.buffer.Bytes(), err
 	}
 	args = append(args, modeArgs...)
+	targetOptions, err := slingTargetOptionsArgs(manager, params.DestinationConnection, nil)
+	if err != nil {
+		return writer.buffer.Bytes(), err
+	}
+	args = append(args, targetOptions...)
 	args, connectionEnv := slingCommandConnectionEnv(args)
 
 	cmdName, cmdArgs, err := loadCommand(ctx, args, writer)

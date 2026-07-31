@@ -20,10 +20,21 @@ var exactSecretSymbolPattern = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*)
 // provider-backed values on a freshly loaded config and never changes process
 // environment variables or persists the resolved config.
 type ResolvedConnectionFactory struct {
-	workspaceRoot string
-	configPath    string
-	projectID     string
-	resolver      *secretstore.Resolver
+	workspaceRoot          string
+	configPath             string
+	projectID              string
+	resolver               *secretstore.Resolver
+	duckDBFilesystemAccess bool
+}
+
+type ResolvedConnectionFactoryOption func(*ResolvedConnectionFactory)
+
+// WithDuckDBFilesystemAccess controls LocalFileSystem access for every DuckDB
+// client produced by the factory. The default is enabled.
+func WithDuckDBFilesystemAccess(enabled bool) ResolvedConnectionFactoryOption {
+	return func(factory *ResolvedConnectionFactory) {
+		factory.duckDBFilesystemAccess = enabled
+	}
 }
 
 func NewResolvedConnectionFactory(
@@ -31,16 +42,24 @@ func NewResolvedConnectionFactory(
 	configPath string,
 	projectID string,
 	resolver *secretstore.Resolver,
+	options ...ResolvedConnectionFactoryOption,
 ) *ResolvedConnectionFactory {
 	if resolver == nil {
 		resolver = secretstore.NewDefaultResolver()
 	}
-	return &ResolvedConnectionFactory{
-		workspaceRoot: workspaceRoot,
-		configPath:    configPath,
-		projectID:     projectID,
-		resolver:      resolver,
+	factory := &ResolvedConnectionFactory{
+		workspaceRoot:          workspaceRoot,
+		configPath:             configPath,
+		projectID:              projectID,
+		resolver:               resolver,
+		duckDBFilesystemAccess: true,
 	}
+	for _, option := range options {
+		if option != nil {
+			option(factory)
+		}
+	}
+	return factory
 }
 
 func (f *ResolvedConnectionFactory) NewConnectionManager(
@@ -58,7 +77,7 @@ func (f *ResolvedConnectionFactory) NewConnectionManager(
 		environment,
 		secretstore.PurposeFromContext(ctx, secretstore.PurposeQuery),
 	)
-	return WrapConnectionManagerForWorkspace(manager, f.workspaceRoot), nil
+	return WrapConnectionManagerForWorkspaceWithFilesystemAccess(manager, f.workspaceRoot, f.duckDBFilesystemAccess), nil
 }
 
 type ResolvedConnectionConfig struct {

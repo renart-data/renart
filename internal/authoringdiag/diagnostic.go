@@ -58,6 +58,10 @@ const (
 	CodePythonUndeclaredQueryDependency = "python-undeclared-query-dependency"
 	CodeTemplateRenderFailed            = "template-render-failed"
 	CodeAssetDefinitionParseFailed      = "asset-definition-parse-failed"
+	// CodeDuckDBFilesystemAccessDisabled is an editor-only policy diagnostic.
+	// Pipeline type-checking does not emit it because the setting belongs to the
+	// running Renart process rather than the version-controlled asset.
+	CodeDuckDBFilesystemAccessDisabled = "duckdb-filesystem-access-disabled"
 )
 
 type Diagnostic struct {

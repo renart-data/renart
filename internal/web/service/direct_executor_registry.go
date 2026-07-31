@@ -38,7 +38,7 @@ import (
 	"renart/internal/web/runstate"
 )
 
-func buildDirectMainExecutors(manager config.ConnectionAndDetailsGetter, renderer *jinja.Renderer, parser *sqlparser.SQLParser, pl *pipeline.Pipeline, cfg *config.Config, registry *runstate.Registry, coordinator *duckcoord.Coordinator, sessions *duckdbsession.Manager, workspaceRoot string, fullRefresh bool, sensorMode string) (map[pipeline.AssetType]bruinexecutor.Config, error) {
+func buildDirectMainExecutors(manager config.ConnectionAndDetailsGetter, renderer *jinja.Renderer, parser *sqlparser.SQLParser, pl *pipeline.Pipeline, cfg *config.Config, registry *runstate.Registry, coordinator *duckcoord.Coordinator, sessions *duckdbsession.Manager, workspaceRoot string, disableDuckDBFilesystemAccess bool, fullRefresh bool, sensorMode string) (map[pipeline.AssetType]bruinexecutor.Config, error) {
 	executors := make(map[pipeline.AssetType]bruinexecutor.Config, len(bruinexecutor.DefaultExecutorsV2))
 	for assetType, cfg := range bruinexecutor.DefaultExecutorsV2 {
 		if cfg == nil {
@@ -96,7 +96,7 @@ func buildDirectMainExecutors(manager config.ConnectionAndDetailsGetter, rendere
 	executors[pipeline.AssetTypeDuckDBQuery][scheduler.TaskInstanceTypeMain] = &directDuckDBOperator{
 		manager: manager, extractor: wholeFileExtractor, materializer: duckDBMaterializer,
 		fallback: duckDBFallback, sessions: sessions, coordinator: coordinator,
-		cfg: cfg, workspaceRoot: workspaceRoot,
+		cfg: cfg, workspaceRoot: workspaceRoot, disableFilesystemAccess: disableDuckDBFilesystemAccess,
 	}
 	assignSeedExecutor(pipeline.AssetTypeDuckDBSeed)
 	ensureExecutorConfig(pipeline.AssetTypeMotherduckQuery)

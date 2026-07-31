@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/bruin-data/bruin/pkg/git"
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/stretchr/testify/require"
+	"github.com/urfave/cli/v3"
 )
 
 func TestResolveServerWorkspaceRootKeepsGitProject(t *testing.T) {
@@ -55,4 +57,29 @@ func TestCleanupServerBootstrapRemovesOnlyTemporaryRoot(t *testing.T) {
 
 	require.NoDirExists(t, bootstrap)
 	require.DirExists(t, root)
+}
+
+func TestServerFilesystemAccessFlagDefaultsOnAndCanBeDisabled(t *testing.T) {
+	project := t.TempDir()
+	_, err := gogit.PlainInit(project, false)
+	require.NoError(t, err)
+
+	parse := func(args ...string) serverConfig {
+		t.Helper()
+		var result serverConfig
+		command := &cli.Command{
+			Name:  "test-server-config",
+			Flags: serverFlags(),
+			Action: func(_ context.Context, command *cli.Command) error {
+				var configErr error
+				result, configErr = serverConfigFromCommand(command)
+				return configErr
+			},
+		}
+		require.NoError(t, command.Run(t.Context(), append([]string{"test-server-config"}, args...)))
+		return result
+	}
+
+	require.False(t, parse(project).disableFilesystemAccess)
+	require.True(t, parse("--enable-filesystem-access=false", project).disableFilesystemAccess)
 }

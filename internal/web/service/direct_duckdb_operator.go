@@ -27,14 +27,15 @@ type duckDBStringMaterializer interface {
 // Eligible assets execute through a shared Database instance; everything else
 // retains Bruin's established operator behind the whole-file lease.
 type directDuckDBOperator struct {
-	manager       config.ConnectionAndDetailsGetter
-	extractor     query.QueryExtractor
-	materializer  duckDBStringMaterializer
-	fallback      bruinexecutor.Operator
-	sessions      *duckdbsession.Manager
-	coordinator   *duckcoord.Coordinator
-	cfg           *config.Config
-	workspaceRoot string
+	manager                 config.ConnectionAndDetailsGetter
+	extractor               query.QueryExtractor
+	materializer            duckDBStringMaterializer
+	fallback                bruinexecutor.Operator
+	sessions                *duckdbsession.Manager
+	coordinator             *duckcoord.Coordinator
+	cfg                     *config.Config
+	workspaceRoot           string
+	disableFilesystemAccess bool
 }
 
 func (o *directDuckDBOperator) Run(ctx context.Context, instance scheduler.TaskInstance) error {
@@ -100,11 +101,12 @@ func (o *directDuckDBOperator) runConcurrent(
 		}
 	}
 	return o.sessions.Execute(ctx, duckdbsession.Request{
-		Path:          path,
-		WorkspaceRoot: o.workspaceRoot,
-		AssetName:     asset.Name,
-		SQL:           materialized,
-		Owner:         owner,
+		Path:                    path,
+		WorkspaceRoot:           o.workspaceRoot,
+		AssetName:               asset.Name,
+		SQL:                     materialized,
+		DisableFilesystemAccess: o.disableFilesystemAccess,
+		Owner:                   owner,
 	})
 }
 

@@ -16,17 +16,25 @@ import (
 // the search path is set in the same multi-statement query as the user SQL.
 type Client struct {
 	*duck.Client
-	workspaceRoot string
+	workspaceRoot           string
+	disableFilesystemAccess bool
 }
 
 // WrapClient applies workspace-relative file resolution to a Bruin DuckDB
 // client. An empty workspace root leaves the client unchanged.
 func WrapClient(client *duck.Client, workspaceRoot string) duck.DuckDBClient {
+	return WrapClientWithFilesystemAccess(client, workspaceRoot, true)
+}
+
+// WrapClientWithFilesystemAccess applies both the workspace search path and
+// the process-wide DuckDB local-filesystem policy to every ephemeral query
+// connection.
+func WrapClientWithFilesystemAccess(client *duck.Client, workspaceRoot string, filesystemAccessEnabled bool) duck.DuckDBClient {
 	root := cleanWorkspaceRoot(workspaceRoot)
-	if client == nil || root == "" {
+	if client == nil || (root == "" && filesystemAccessEnabled) {
 		return client
 	}
-	return &Client{Client: client, workspaceRoot: root}
+	return &Client{Client: client, workspaceRoot: root, disableFilesystemAccess: !filesystemAccessEnabled}
 }
 
 func (c *Client) RunQueryWithoutResult(ctx context.Context, q *query.Query) error {
@@ -47,7 +55,17 @@ func (c *Client) withWorkspace(q *query.Query, keepResultDispatch bool) *query.Q
 		return nil
 	}
 	clone := *q
-	root := strings.ReplaceAll(c.workspaceRoot, "'", "''")
+	settings := make([]string, 0, 2)
+	if c.disableFilesystemAccess {
+		settings = append(settings, "SET disabled_filesystems = 'LocalFileSystem';")
+	}
+	if c.workspaceRoot != "" {
+		root := strings.ReplaceAll(c.workspaceRoot, "'", "''")
+		settings = append(settings, "SET file_search_path = '"+root+"';")
+	}
+	if len(settings) == 0 {
+		return &clone
+	}
 	prefix := ""
 	if keepResultDispatch {
 		// Bruin dispatches SelectWithSchema by the first statement. Keep a
@@ -55,13 +73,14 @@ func (c *Client) withWorkspace(q *query.Query, keepResultDispatch bool) *query.Q
 		// statement's rows and schema.
 		prefix = "select null where false;\n"
 	}
-	clone.Query = prefix + "set file_search_path = '" + root + "';\n" + q.Query
+	clone.Query = prefix + strings.Join(settings, "\n") + "\n" + q.Query
 	return &clone
 }
 
 type manager struct {
 	config.ConnectionAndDetailsGetter
-	workspaceRoot string
+	workspaceRoot           string
+	disableFilesystemAccess bool
 
 	mu      sync.Mutex
 	clients map[string]*Client
@@ -70,13 +89,20 @@ type manager struct {
 // WrapManager applies workspace-relative file resolution to DuckDB
 // connections while transparently preserving every other connection.
 func WrapManager(base config.ConnectionAndDetailsGetter, workspaceRoot string) config.ConnectionAndDetailsGetter {
+	return WrapManagerWithFilesystemAccess(base, workspaceRoot, true)
+}
+
+// WrapManagerWithFilesystemAccess applies the local-filesystem policy only to
+// DuckDB connections while transparently preserving every other connection.
+func WrapManagerWithFilesystemAccess(base config.ConnectionAndDetailsGetter, workspaceRoot string, filesystemAccessEnabled bool) config.ConnectionAndDetailsGetter {
 	root := cleanWorkspaceRoot(workspaceRoot)
-	if base == nil || root == "" {
+	if base == nil || (root == "" && filesystemAccessEnabled) {
 		return base
 	}
 	return &manager{
 		ConnectionAndDetailsGetter: base,
 		workspaceRoot:              root,
+		disableFilesystemAccess:    !filesystemAccessEnabled,
 		clients:                    make(map[string]*Client),
 	}
 }
@@ -111,7 +137,11 @@ func (m *manager) wrapConnection(name string, raw any) any {
 	if wrapped, ok := m.clients[name]; ok && wrapped.Client == client {
 		return wrapped
 	}
-	wrapped := &Client{Client: client, workspaceRoot: m.workspaceRoot}
+	wrapped := &Client{
+		Client:                  client,
+		workspaceRoot:           m.workspaceRoot,
+		disableFilesystemAccess: m.disableFilesystemAccess,
+	}
 	m.clients[name] = wrapped
 	return wrapped
 }

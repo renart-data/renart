@@ -32,10 +32,11 @@ type SQLPathSuggestionsResult struct {
 }
 
 type SuggestionsDependencies struct {
-	WorkspaceRoot        string
-	ConfigPath           string
-	ResolveAssetByID     func(context.Context, string) (string, any, any, error)
-	NewConnectionManager func(context.Context, string) (config.ConnectionAndDetailsGetter, error)
+	WorkspaceRoot           string
+	ConfigPath              string
+	DisableFilesystemAccess bool
+	ResolveAssetByID        func(context.Context, string) (string, any, any, error)
+	NewConnectionManager    func(context.Context, string) (config.ConnectionAndDetailsGetter, error)
 }
 
 type SuggestionsService struct {
@@ -123,6 +124,11 @@ func (s *SuggestionsService) SQLPath(ctx context.Context, assetID, prefix, envir
 	}
 
 	result := SQLPathSuggestionsResult{Status: "ok", Suggestions: []SuggestionItem{}}
+	localFilesystemDisabled := s.deps.DisableFilesystemAccess &&
+		(strings.HasPrefix(prefix, "./") || strings.HasPrefix(prefix, "/"))
+	if localFilesystemDisabled {
+		return result, nil
+	}
 
 	switch {
 	case strings.HasPrefix(prefix, "s3://"):

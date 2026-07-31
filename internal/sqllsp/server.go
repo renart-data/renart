@@ -18,23 +18,26 @@ import (
 type Server struct {
 	// mu guards engine, docs, and graph, which are replaced or mutated when
 	// documents change and when the workspace graph is reloaded.
-	mu            sync.RWMutex
-	engine        *Engine
-	docs          map[URI]TextDocumentItem
-	graph         CanonicalGraph
-	poly          *polyglot.Client
-	workspaceRoot string
-	graphLoader   WorkspaceGraphLoader
+	mu                            sync.RWMutex
+	engine                        *Engine
+	docs                          map[URI]TextDocumentItem
+	graph                         CanonicalGraph
+	poly                          *polyglot.Client
+	workspaceRoot                 string
+	graphLoader                   WorkspaceGraphLoader
+	duckDBFileSchemas             *DuckDBFileSchemaCache
+	disableDuckDBFilesystemAccess bool
 }
 
 type WorkspaceGraphLoader func(context.Context, string) (CanonicalGraph, error)
 
 func NewServer(graph CanonicalGraph, poly *polyglot.Client) *Server {
 	return &Server{
-		engine: NewEngineWithPolyglot(graph, poly),
-		docs:   map[URI]TextDocumentItem{},
-		poly:   poly,
-		graph:  graph,
+		engine:            NewEngineWithPolyglot(graph, poly),
+		docs:              map[URI]TextDocumentItem{},
+		poly:              poly,
+		graph:             graph,
+		duckDBFileSchemas: NewDuckDBFileSchemaCache(),
 	}
 }
 
@@ -47,6 +50,17 @@ func NewWorkspaceServerWithLoader(workspaceRoot string, graph CanonicalGraph, po
 	server.workspaceRoot = workspaceRoot
 	server.graphLoader = loader
 	return server
+}
+
+// SetDuckDBFilesystemAccess controls both local-file schema discovery and the
+// diagnostic emitted for DuckDB direct-file relations. It defaults to enabled.
+func (s *Server) SetDuckDBFilesystemAccess(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.disableDuckDBFilesystemAccess = !enabled
+	s.engine = NewEngineWithPolyglotOptions(s.graph, s.poly, EngineOptions{
+		DisableDuckDBFilesystemAccess: !enabled,
+	})
 }
 
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
@@ -175,7 +189,7 @@ func (s *Server) handleContext(ctx context.Context, payload []byte) ([]byte, [][
 		if !ok {
 			return marshalRPC(msg.ID, []CompletionItem{}), nil, nil
 		}
-		return marshalRPC(msg.ID, s.currentEngine().Complete(doc, params.Position)), nil, nil
+		return marshalRPC(msg.ID, s.engineForDocument(ctx, doc).Complete(doc, params.Position)), nil, nil
 	case "textDocument/definition":
 		var params positionedDocument
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -185,7 +199,7 @@ func (s *Server) handleContext(ctx context.Context, payload []byte) ([]byte, [][
 		if !ok {
 			return marshalRPC(msg.ID, []Location{}), nil, nil
 		}
-		return marshalRPC(msg.ID, s.currentEngine().Definition(doc, params.Position)), nil, nil
+		return marshalRPC(msg.ID, s.engineForDocument(ctx, doc).Definition(doc, params.Position)), nil, nil
 	case "textDocument/hover":
 		var params positionedDocument
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -195,7 +209,7 @@ func (s *Server) handleContext(ctx context.Context, payload []byte) ([]byte, [][
 		if !ok {
 			return marshalRPC(msg.ID, nil), nil, nil
 		}
-		return marshalRPC(msg.ID, s.currentEngine().Hover(doc, params.Position)), nil, nil
+		return marshalRPC(msg.ID, s.engineForDocument(ctx, doc).Hover(doc, params.Position)), nil, nil
 	case "textDocument/signatureHelp":
 		var params positionedDocument
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -205,7 +219,7 @@ func (s *Server) handleContext(ctx context.Context, payload []byte) ([]byte, [][
 		if !ok {
 			return marshalRPC(msg.ID, nil), nil, nil
 		}
-		return marshalRPC(msg.ID, s.currentEngine().SignatureHelp(doc, params.Position)), nil, nil
+		return marshalRPC(msg.ID, s.engineForDocument(ctx, doc).SignatureHelp(doc, params.Position)), nil, nil
 	case "textDocument/formatting":
 		var params formattingDocument
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -215,7 +229,7 @@ func (s *Server) handleContext(ctx context.Context, payload []byte) ([]byte, [][
 		if !ok {
 			return marshalRPC(msg.ID, []TextEdit{}), nil, nil
 		}
-		formatted, err := sqlformat.Format(context.Background(), doc.Text, s.currentEngine().dialectForDocument(doc))
+		formatted, err := sqlformat.Format(context.Background(), doc.Text, s.engineForDocument(ctx, doc).dialectForDocument(doc))
 		if err != nil {
 			return marshalRPC(msg.ID, []TextEdit{}), nil, nil
 		}
@@ -229,7 +243,7 @@ func (s *Server) handleContext(ctx context.Context, payload []byte) ([]byte, [][
 		if !ok {
 			return marshalRPC(msg.ID, []Location{}), nil, nil
 		}
-		return marshalRPC(msg.ID, s.currentEngine().WorkspaceReferences(doc, params.Position, s.allDocuments(), params.Context.IncludeDeclaration)), nil, nil
+		return marshalRPC(msg.ID, s.engineForDocument(ctx, doc).WorkspaceReferences(doc, params.Position, s.allDocuments(), params.Context.IncludeDeclaration)), nil, nil
 	case "textDocument/rename":
 		var params renameDocument
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -239,7 +253,7 @@ func (s *Server) handleContext(ctx context.Context, payload []byte) ([]byte, [][
 		if !ok {
 			return marshalRPC(msg.ID, nil), nil, nil
 		}
-		edit, err := s.currentEngine().Rename(doc, params.Position, params.NewName)
+		edit, err := s.engineForDocument(ctx, doc).Rename(doc, params.Position, params.NewName)
 		if err != nil {
 			// -32803 is the LSP RequestFailed code; clients surface the message
 			// to the user instead of silently doing nothing.
@@ -255,7 +269,7 @@ func (s *Server) handleContext(ctx context.Context, payload []byte) ([]byte, [][
 		if !ok {
 			return marshalRPC(msg.ID, []CodeAction{}), nil, nil
 		}
-		return marshalRPC(msg.ID, s.currentEngine().CodeActions(doc)), nil, nil
+		return marshalRPC(msg.ID, s.engineForDocument(ctx, doc).CodeActions(doc)), nil, nil
 	case "textDocument/semanticTokens/full":
 		var params documentOnly
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -265,7 +279,7 @@ func (s *Server) handleContext(ctx context.Context, payload []byte) ([]byte, [][
 		if !ok {
 			return marshalRPC(msg.ID, SemanticTokens{}), nil, nil
 		}
-		return marshalRPC(msg.ID, s.currentEngine().SemanticTokens(doc)), nil, nil
+		return marshalRPC(msg.ID, s.engineForDocument(ctx, doc).SemanticTokens(doc)), nil, nil
 	case "textDocument/documentSymbol":
 		var params documentOnly
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -275,7 +289,7 @@ func (s *Server) handleContext(ctx context.Context, payload []byte) ([]byte, [][
 		if !ok {
 			return marshalRPC(msg.ID, []DocumentSymbol{}), nil, nil
 		}
-		return marshalRPC(msg.ID, s.currentEngine().DocumentSymbols(doc)), nil, nil
+		return marshalRPC(msg.ID, s.engineForDocument(ctx, doc).DocumentSymbols(doc)), nil, nil
 	case "workspace/symbol":
 		var params workspaceSymbolParams
 		if err := json.Unmarshal(msg.Params, &params); err != nil {
@@ -293,6 +307,31 @@ func (s *Server) currentEngine() *Engine {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.engine
+}
+
+func (s *Server) engineForDocument(ctx context.Context, doc TextDocumentItem) *Engine {
+	s.mu.RLock()
+	graph := s.graph
+	poly := s.poly
+	workspaceRoot := s.workspaceRoot
+	disableFilesystemAccess := s.disableDuckDBFilesystemAccess
+	cache := s.duckDBFileSchemas
+	s.mu.RUnlock()
+	if !disableFilesystemAccess && strings.EqualFold(dialectForDocumentInGraph(graph, doc.URI), "duckdb") {
+		graph = EnrichDuckDBFileRelations(ctx, graph, doc, workspaceRoot, cache)
+	}
+	return NewEngineWithPolyglotOptions(graph, poly, EngineOptions{
+		DisableDuckDBFilesystemAccess: disableFilesystemAccess,
+	})
+}
+
+func dialectForDocumentInGraph(graph CanonicalGraph, uri URI) string {
+	for _, asset := range graph.Assets {
+		if asset.URI == uri && asset.Dialect != "" {
+			return asset.Dialect
+		}
+	}
+	return "generic"
 }
 
 func (s *Server) reloadWorkspaceGraph() error {
@@ -314,7 +353,9 @@ func (s *Server) reloadWorkspaceGraphContext(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.graph = graph
-	s.engine = NewEngineWithPolyglot(graph, s.poly)
+	s.engine = NewEngineWithPolyglotOptions(graph, s.poly, EngineOptions{
+		DisableDuckDBFilesystemAccess: s.disableDuckDBFilesystemAccess,
+	})
 	return nil
 }
 
@@ -350,7 +391,7 @@ func (s *Server) publishDiagnosticsContext(ctx context.Context, uri URI) [][]byt
 	if !ok {
 		return nil
 	}
-	engine := s.currentEngine()
+	engine := s.engineForDocument(ctx, doc)
 	msg := struct {
 		JSONRPC string `json:"jsonrpc"`
 		Method  string `json:"method"`

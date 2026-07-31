@@ -18,9 +18,12 @@ export type ParametersSpan = {
 };
 
 /**
- * Locate the top-level `parameters:` block. The body is every following line
- * that is blank or indented, up to (but not including) the next top-level key.
- * Trailing blank lines are excluded from the block.
+ * Locate the top-level `parameters:` block. The body runs up to the next
+ * syntactically plausible plain top-level YAML key. Looking only for indentation
+ * is unsafe while editing: a pasted JSON object commonly leaves `{`, `}`, and
+ * quoted property lines at column zero. Those malformed lines must remain in
+ * Monaco so the user can repair them instead of becoming an invisible tail in
+ * the asset file.
  */
 export function findParametersBlock(content: string): ParametersSpan {
   const lines = content.split("\n");
@@ -36,7 +39,7 @@ export function findParametersBlock(content: string): ParametersSpan {
   }
 
   let end = start + 1;
-  while (end < lines.length && (lines[end].trim() === "" || /^\s/.test(lines[end]))) {
+  while (end < lines.length && !/^[A-Za-z_][A-Za-z0-9_-]*\s*:/.test(lines[end])) {
     end += 1;
   }
   // Don't swallow trailing blank lines that belong to the gap before the next key.

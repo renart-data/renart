@@ -21,7 +21,7 @@ import (
 
 const (
 	renartOwnedSeedFileMetaKey = "renart_seed_file"
-	maxSeedPreviewBytes        = 1 << 20
+	maxSeedPreviewBytes        = 256 << 10
 )
 
 // seedWorkspacePathParameter is accepted only by semantic seed creation. The

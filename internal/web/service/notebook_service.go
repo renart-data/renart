@@ -21,8 +21,9 @@ import (
 
 // NotebookDependencies wires the notebook service into the rest of the app.
 type NotebookDependencies struct {
-	WorkspaceRoot string
-	ConfigPath    string
+	WorkspaceRoot           string
+	ConfigPath              string
+	DisableFilesystemAccess bool
 	// CurrentState returns the latest workspace state (for pipeline asset
 	// lookups when importing upstream data).
 	CurrentState func() model.WorkspaceState
@@ -150,9 +151,11 @@ func (s *NotebookService) usedTables(sqlText, assetType string) ([]string, error
 // NewNotebookService constructs the service; session DBs live under
 // .renart/notebooks in the workspace.
 func NewNotebookService(deps NotebookDependencies) *NotebookService {
+	store := notebook.NewSessionStore(filepath.Join(deps.WorkspaceRoot, ".renart", "notebooks"), deps.WorkspaceRoot)
+	store.DisableFilesystemAccess = deps.DisableFilesystemAccess
 	return &NotebookService{
 		deps:          deps,
-		store:         notebook.NewSessionStore(filepath.Join(deps.WorkspaceRoot, ".renart", "notebooks"), deps.WorkspaceRoot),
+		store:         store,
 		cellEditLocks: make(map[string]*cellEditLock),
 		runtimes:      newNotebookRuntimes(),
 	}

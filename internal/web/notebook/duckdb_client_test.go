@@ -11,7 +11,7 @@ import (
 )
 
 func TestNotebookDuckDBClientCancelsActiveStatement(t *testing.T) {
-	client, err := newNotebookDuckDBClient(t.Context(), filepath.Join(t.TempDir(), "session.duckdb"), "")
+	client, err := newNotebookDuckDBClient(t.Context(), filepath.Join(t.TempDir(), "session.duckdb"), "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestNotebookDuckDBClientPreservesResultsAndWorkspaceFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "rows.csv"), []byte("id,name\n1,Ada\n2,Grace\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	client, err := newNotebookDuckDBClient(t.Context(), filepath.Join(root, "session.duckdb"), root)
+	client, err := newNotebookDuckDBClient(t.Context(), filepath.Join(root, "session.duckdb"), root, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,5 +74,27 @@ func TestNotebookDuckDBClientPreservesResultsAndWorkspaceFiles(t *testing.T) {
 	}
 	if got := result.Rows[0][3]; got != 12.34 {
 		t.Fatalf("decimal value = %#v, want 12.34", got)
+	}
+}
+
+func TestNotebookDuckDBClientCanDisableLocalFilesystemAccess(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "rows.csv"), []byte("id\n1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client, err := newNotebookDuckDBClient(t.Context(), filepath.Join(root, "session.duckdb"), root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := client.query(t.Context(), `select * from './rows.csv'`); err == nil || !strings.Contains(err.Error(), "LocalFileSystem") {
+		t.Fatalf("expected LocalFileSystem policy error, got %v", err)
+	}
+	result, err := client.query(t.Context(), `select 1 as value`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(result.Rows); got != "[[1]]" {
+		t.Fatalf("ordinary query result = %s, want [[1]]", got)
 	}
 }

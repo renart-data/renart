@@ -43,12 +43,13 @@ import (
 // serverConfig holds the validated settings shared by the web and
 // standalone entry points.
 type serverConfig struct {
-	workspaceRoot      string
-	staticDir          string
-	watchMode          string
-	watchPoll          time.Duration
-	schedulerEnabled   bool
-	schedulerStatePath string
+	workspaceRoot           string
+	staticDir               string
+	watchMode               string
+	watchPoll               time.Duration
+	schedulerEnabled        bool
+	schedulerStatePath      string
+	disableFilesystemAccess bool
 	// bootstrapRoot is a temporary Git-backed workspace used only when the
 	// no-argument launcher starts outside a project. It lets the welcome UI
 	// load without treating the launch directory as a project or writing
@@ -92,6 +93,11 @@ func serverFlags() []cli.Flag {
 			Name:  "scheduler-state",
 			Value: ".renart/state.db",
 			Usage: "local scheduler SQLite state path",
+		},
+		&cli.BoolFlag{
+			Name:  "enable-filesystem-access",
+			Value: true,
+			Usage: "allow DuckDB connections and SQL analysis to access local files",
 		},
 	}
 }
@@ -145,6 +151,7 @@ func serverConfigFromCommand(c *cli.Command) (serverConfig, error) {
 		watchPoll:                watchPoll,
 		schedulerEnabled:         c.Bool("scheduler"),
 		schedulerStatePath:       statePath,
+		disableFilesystemAccess:  !c.Bool("enable-filesystem-access"),
 		bootstrapRoot:            bootstrapRoot,
 		suggestedCreateParentDir: launchRoot,
 	}, nil
@@ -250,9 +257,11 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		configPath,
 		project.ID,
 		secretResolver,
+		service.WithDuckDBFilesystemAccess(!cfg.disableFilesystemAccess),
 	)
 
 	hybridExecutor := service.NewHybridBruinExecutor(absRoot, "", server.newConnectionManager, server.newPipelineBuilder)
+	hybridExecutor.SetDuckDBFilesystemAccess(!cfg.disableFilesystemAccess)
 	server.executor = hybridExecutor
 	server.policyLoader = policy.NewLoader(filepath.Join(absRoot, ".renart", "environments.yml"))
 
@@ -366,9 +375,10 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 	})
 
 	server.notebookSvc = service.NewNotebookService(service.NotebookDependencies{
-		WorkspaceRoot: absRoot,
-		ConfigPath:    resolveConfigFilePath(absRoot),
-		CurrentState:  func() service.WorkspaceState { return server.currentState() },
+		WorkspaceRoot:           absRoot,
+		ConfigPath:              resolveConfigFilePath(absRoot),
+		DisableFilesystemAccess: cfg.disableFilesystemAccess,
+		CurrentState:            func() service.WorkspaceState { return server.currentState() },
 		RunConnectionQuery: func(
 			ctx context.Context,
 			connection string,
@@ -392,8 +402,9 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 	})
 
 	server.suggestionsSvc = service.NewSuggestionsService(service.SuggestionsDependencies{
-		WorkspaceRoot: absRoot,
-		ConfigPath:    resolveConfigFilePath(absRoot),
+		WorkspaceRoot:           absRoot,
+		ConfigPath:              resolveConfigFilePath(absRoot),
+		DisableFilesystemAccess: cfg.disableFilesystemAccess,
 		ResolveAssetByID: func(ctx context.Context, assetID string) (string, any, any, error) {
 			path, parsed, asset, err := server.resolveAssetByID(ctx, assetID)
 			return path, parsed, asset, err
@@ -405,8 +416,9 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		ResolveAssetByID: server.resolveAssetByID,
 	})
 	server.sqlLSPSvc = service.NewSQLLSPService(service.SQLLSPDependencies{
-		WorkspaceRoot:    absRoot,
-		ResolveAssetByID: server.resolveAssetByID,
+		WorkspaceRoot:           absRoot,
+		DisableFilesystemAccess: cfg.disableFilesystemAccess,
+		ResolveAssetByID:        server.resolveAssetByID,
 		CurrentState: func() service.WorkspaceState {
 			return server.currentState()
 		},

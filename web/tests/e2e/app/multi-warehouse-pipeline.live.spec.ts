@@ -3,11 +3,11 @@ import { createServer, type Server } from "node:http";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { liveTest as test, type LiveApp } from "../live-app-fixture";
+import { liveTest, type LiveApp } from "../live-app-fixture";
 import { createLiveWarehouseMatrix, type LiveWarehouseMatrix } from "../live-warehouse-matrix";
 
 type WarehouseVariant = {
-  name: "duckdb" | "ducklake" | "postgres" | "trino" | "clickhouse" | "starrocks";
+  name: "duckdb" | "ducklake" | "postgres" | "trino" | "clickhouse" | "starrocks" | "databricks";
   connection: string;
   defaultConnectionType: string;
   seedType: string;
@@ -108,6 +108,14 @@ const variants: WarehouseVariant[] = [
     sensorType: "starrocks.sensor.query",
     sqlType: "starrocks.sql",
   },
+  {
+    name: "databricks",
+    connection: "databricks-matrix",
+    defaultConnectionType: "databricks",
+    seedType: "databricks.seed",
+    sensorType: "databricks.sensor.query",
+    sqlType: "databricks.sql",
+  },
 ];
 
 const requestedVariants = new Set(
@@ -120,6 +128,32 @@ const selectedVariants =
   requestedVariants.size === 0
     ? variants
     : variants.filter((variant) => requestedVariants.has(variant.name));
+
+const test = liveTest.extend<{ liveWarehouseMatrix: LiveWarehouseMatrix }>({
+  liveWarehouseMatrix: [
+    async (_fixtures, use) => {
+      const matrix = await createLiveWarehouseMatrix(
+        selectedVariants.map((variant) => variant.name),
+      );
+      try {
+        await use(matrix);
+      } finally {
+        await matrix.dispose();
+      }
+    },
+    { timeout: 10 * 60_000 },
+  ],
+  liveAppEnv: async ({ liveWarehouseMatrix }, use) => {
+    await use(
+      liveWarehouseMatrix.databricksTrustBundle
+        ? {
+            SSL_CERT_FILE: liveWarehouseMatrix.databricksTrustBundle,
+            UV_NATIVE_TLS: "true",
+          }
+        : {},
+    );
+  },
+});
 
 const expectedRows: FinalRow[] = [
   {
@@ -161,13 +195,15 @@ test.describe("multi-warehouse pipeline live", () => {
     "The backend warehouse matrix only needs one browser project.",
   );
 
-  test("produces identical results across the live warehouse matrix", async ({ liveApp, page }) => {
+  test("produces identical results across the live warehouse matrix", async ({
+    liveApp,
+    liveWarehouseMatrix,
+    page,
+  }) => {
     test.setTimeout(30 * 60_000);
     const api = await startRegionsAPI();
-    let warehouses: LiveWarehouseMatrix | undefined;
     try {
-      warehouses = await createLiveWarehouseMatrix(selectedVariants.map((variant) => variant.name));
-      await writeConnections(liveApp, warehouses);
+      await writeConnections(liveApp, liveWarehouseMatrix);
 
       const results = new Map<string, FinalRow[]>();
       for (const variant of selectedVariants) {
@@ -234,7 +270,6 @@ test.describe("multi-warehouse pipeline live", () => {
       );
       expect(api.requests).toBe(selectedVariants.length * runWindows.length);
     } finally {
-      if (warehouses) await warehouses.dispose();
       await new Promise<void>((resolveClose) => api.server.close(() => resolveClose()));
     }
   });
@@ -317,6 +352,14 @@ environments:
           username: root
           database: analytics
           replication_num: 1
+      databricks:
+        - name: databricks-matrix
+          token: local-e2e-token
+          host: 127.0.0.1
+          port: ${warehouses.databricksPort}
+          path: /sql/1.0/warehouses/renart-e2e
+          catalog: sail
+          schema: analytics
 `,
     "utf8",
   );
@@ -818,18 +861,28 @@ async function inspectFinalRows(page: Page, baseURL: string): Promise<FinalRow[]
   expect(body.status, body.error).toBe("ok");
   return (body.rows ?? [])
     .map((row) => ({
-      activity_score: Number(row.activity_score),
-      api_multiplier: Number(row.api_multiplier),
-      customer_count: Number(row.customer_count),
-      gross_amount: Number(row.gross_amount),
-      order_count: Number(row.order_count),
+      activity_score: numericInspectField(row, "activity_score"),
+      api_multiplier: numericInspectField(row, "api_multiplier"),
+      customer_count: numericInspectField(row, "customer_count"),
+      gross_amount: numericInspectField(row, "gross_amount"),
+      order_count: numericInspectField(row, "order_count"),
       region_name: String(row.region_name),
       segment: String(row.segment),
-      weighted_amount: Number(row.weighted_amount),
+      weighted_amount: numericInspectField(row, "weighted_amount"),
     }))
     .sort((left, right) =>
       `${left.segment}:${left.region_name}`.localeCompare(`${right.segment}:${right.region_name}`),
     );
+}
+
+function numericInspectField(row: Record<string, unknown>, field: string) {
+  const numeric = Number(row[field]);
+  if (Number.isNaN(numeric)) {
+    throw new Error(
+      `Inspect field ${field} is not numeric: ${JSON.stringify(row[field])}; row=${JSON.stringify(row)}`,
+    );
+  }
+  return numeric;
 }
 
 async function startRegionsAPI(): Promise<{ server: Server; url: string; requests: number }> {

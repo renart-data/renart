@@ -22,15 +22,16 @@ import (
 )
 
 type HybridBruinExecutor struct {
-	newConnectionManager func(context.Context, string) (config.ConnectionAndDetailsGetter, error)
-	newPipelineBuilder   func() *pipeline.Builder
-	workspaceRoot        string
-	logSink              ExecutionLogSink
-	duckDBCoordinator    *duckcoord.Coordinator
-	duckDBSessions       *duckdbsession.Manager
-	fingerprintEngine    *fingerprint.Engine
-	workspaceBudget      *executiongraph.Budget
-	directTaskGate       func(context.Context, bruinscheduler.TaskInstance) error
+	newConnectionManager          func(context.Context, string) (config.ConnectionAndDetailsGetter, error)
+	newPipelineBuilder            func() *pipeline.Builder
+	workspaceRoot                 string
+	logSink                       ExecutionLogSink
+	duckDBCoordinator             *duckcoord.Coordinator
+	duckDBSessions                *duckdbsession.Manager
+	disableDuckDBFilesystemAccess bool
+	fingerprintEngine             *fingerprint.Engine
+	workspaceBudget               *executiongraph.Budget
+	directTaskGate                func(context.Context, bruinscheduler.TaskInstance) error
 	// runRegistry tracks in-flight materializations across every run this
 	// executor performs, so the python run broker can wait on them.
 	runRegistry *runstate.Registry
@@ -95,6 +96,12 @@ func (e *HybridBruinExecutor) SetDuckDBCoordinator(coordinator *duckcoord.Coordi
 	}
 	e.duckDBCoordinator = coordinator
 	e.duckDBSessions = duckdbsession.New(coordinator)
+}
+
+// SetDuckDBFilesystemAccess controls LocalFileSystem access on native DuckDB
+// execution connections. It defaults to enabled.
+func (e *HybridBruinExecutor) SetDuckDBFilesystemAccess(enabled bool) {
+	e.disableDuckDBFilesystemAccess = !enabled
 }
 
 func (e *HybridBruinExecutor) SetExecutionWorkspaceBudget(budget *executiongraph.Budget) {

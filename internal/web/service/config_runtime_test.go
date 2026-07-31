@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -120,4 +121,54 @@ func TestApplySelectedEnvironmentRefreshRestrictionLeavesUnrestrictedAssetsAlone
 	asset := &pipeline.Asset{Name: "analytics.orders"}
 	applySelectedEnvironmentRefreshRestriction(&config.Config{}, []*pipeline.Asset{asset})
 	assert.Nil(t, asset.RefreshRestricted)
+}
+
+func TestNewConnectionManagerDefaultsDatabricksPortAtRuntime(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{SelectedEnvironment: &config.Environment{
+		Connections: &config.Connections{
+			Databricks: []config.DatabricksConnection{{
+				ConnectionMetadata: config.ConnectionMetadata{Name: "databricks-default"},
+				Token:              "test-token",
+				Host:               "workspace.cloud.databricks.com",
+				Path:               "/sql/1.0/warehouses/test",
+			}},
+		},
+	}}
+
+	manager, err := newConnectionManagerFromConfig(context.Background(), cfg)
+	require.NoError(t, err)
+	details, ok := manager.GetConnectionDetails("databricks-default").(*config.DatabricksConnection)
+	require.True(t, ok)
+	assert.Equal(t, defaultDatabricksPort, details.Port)
+	assert.Equal(t, defaultDatabricksPort, cfg.SelectedEnvironment.Connections.Databricks[0].Port)
+}
+
+func TestSelectedConfigDefaultsDatabricksPortWithoutRewritingConfig(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	configPath := filepath.Join(root, ".bruin.yml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+default_environment: default
+environments:
+  default:
+    connections:
+      databricks:
+        - name: databricks-default
+          token: test-token
+          host: workspace.cloud.databricks.com
+          path: /sql/1.0/warehouses/test
+`), 0o600))
+
+	cfg, err := loadSelectedConfig(configPath, "")
+	require.NoError(t, err)
+	require.Len(t, cfg.SelectedEnvironment.Connections.Databricks, 1)
+	assert.Equal(t, defaultDatabricksPort, cfg.SelectedEnvironment.Connections.Databricks[0].Port)
+	assert.Zero(t, cfg.Environments["default"].Connections.Databricks[0].Port)
+
+	authored, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(authored), "port:")
 }

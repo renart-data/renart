@@ -33,11 +33,12 @@ var defaultConflictRetryDelays = []time.Duration{
 // Request describes one independently materialized asset. Path may be
 // workspace-relative; Manager canonicalizes it before selecting a session.
 type Request struct {
-	Path          string
-	WorkspaceRoot string
-	AssetName     string
-	SQL           string
-	Owner         duckcoord.Owner
+	Path                    string
+	WorkspaceRoot           string
+	AssetName               string
+	SQL                     string
+	DisableFilesystemAccess bool
+	Owner                   duckcoord.Owner
 }
 
 type statementExecutor func(context.Context, adbc.Connection, string) error
@@ -243,6 +244,11 @@ func (m *Manager) executeAttempt(ctx context.Context, active *session, request R
 		}
 	}()
 
+	if request.DisableFilesystemAccess {
+		if err := m.executeStatement(ctx, connection, "SET disabled_filesystems = 'LocalFileSystem'"); err != nil {
+			return fmt.Errorf("disable DuckDB local filesystem access: %w", err)
+		}
+	}
 	if root := cleanWorkspaceRoot(request.WorkspaceRoot); root != "" {
 		escaped := strings.ReplaceAll(root, "'", "''")
 		if err := m.executeStatement(ctx, connection, "SET file_search_path = '"+escaped+"'"); err != nil {

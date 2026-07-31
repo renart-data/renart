@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -155,6 +158,74 @@ func TestSQLLSPServiceAllowsSelectedAssetReferencesInAdHocDocuments(t *testing.T
 	}
 	if diagnostic := findLSPDiagnosticByCode(customCheckResponse.Diagnostics, "circular-dependency"); diagnostic != nil {
 		t.Fatalf("custom check inherited the asset body's self-reference rule: %#v", diagnostic)
+	}
+}
+
+func TestSQLLSPServiceCompletesDuckDBFileColumnsAndHonorsDisabledPolicy(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "example.csv"), []byte("id,name\n1,Ada\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := model.WorkspaceState{Revision: 1, Pipelines: []model.Pipeline{{
+		ID: "pipeline",
+		Assets: []model.Asset{{
+			ID: "report", Name: "analytics.report", Type: "duckdb.sql", Path: "analytics/assets/report.sql",
+		}},
+	}}}
+	newService := func(disabled bool) *SQLLSPService {
+		return NewSQLLSPService(SQLLSPDependencies{
+			WorkspaceRoot:           root,
+			DisableFilesystemAccess: disabled,
+			CurrentState:            func() model.WorkspaceState { return state },
+		})
+	}
+	const sqlText = `select  from "./example.csv"`
+
+	enabled := newService(false)
+	completion, apiErr := enabled.Completions(context.Background(), SQLLSPRequest{
+		AssetID: "report", Content: sqlText, Position: sqllsp.Position{Line: 0, Character: len("select ")},
+	})
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	labels := make([]string, 0, len(completion.Completions))
+	for _, item := range completion.Completions {
+		labels = append(labels, item.Label)
+	}
+	for _, expected := range []string{"id", "name"} {
+		if !slices.Contains(labels, expected) {
+			t.Fatalf("expected file column %q in completions, got %#v", expected, labels)
+		}
+	}
+	diagnostics, apiErr := enabled.Diagnostics(context.Background(), SQLLSPRequest{AssetID: "report", Content: sqlText})
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	if diagnostic := findLSPDiagnosticByCode(diagnostics.Diagnostics, authoringdiag.CodeUnresolvedRelation); diagnostic != nil {
+		t.Fatalf("enabled file relation was unresolved: %#v", diagnostics.Diagnostics)
+	}
+
+	disabled := newService(true)
+	disabledCompletion, apiErr := disabled.Completions(context.Background(), SQLLSPRequest{
+		AssetID: "report", Content: sqlText, Position: sqllsp.Position{Line: 0, Character: len("select ")},
+	})
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	for _, item := range disabledCompletion.Completions {
+		if item.Label == "id" || item.Label == "name" {
+			t.Fatalf("disabled file schema leaked column completion: %#v", disabledCompletion.Completions)
+		}
+	}
+	diagnostics, apiErr = disabled.Diagnostics(context.Background(), SQLLSPRequest{AssetID: "report", Content: sqlText})
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	if diagnostic := findLSPDiagnosticByCode(diagnostics.Diagnostics, authoringdiag.CodeDuckDBFilesystemAccessDisabled); diagnostic == nil {
+		t.Fatalf("expected disabled filesystem diagnostic, got %#v", diagnostics.Diagnostics)
+	}
+	if diagnostic := findLSPDiagnosticByCode(diagnostics.Diagnostics, authoringdiag.CodeUnresolvedRelation); diagnostic != nil {
+		t.Fatalf("disabled policy should replace unresolved-relation noise: %#v", diagnostics.Diagnostics)
 	}
 }
 

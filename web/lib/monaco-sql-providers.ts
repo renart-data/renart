@@ -916,6 +916,67 @@ function isPositionInParserRange(
   );
 }
 
+export function isInsideSingleQuotedSQLString(sqlText: string, offset: number): boolean {
+  const end = Math.min(Math.max(offset, 0), sqlText.length);
+  let inSingleQuote = false;
+  let identifierQuote: '"' | "`" | null = null;
+  let lineComment = false;
+  let blockComment = false;
+
+  for (let index = 0; index < end; index += 1) {
+    const current = sqlText[index];
+    const next = index + 1 < end ? sqlText[index + 1] : "";
+    if (lineComment) {
+      if (current === "\n") lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (current === "*" && next === "/") {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (inSingleQuote) {
+      if (current === "'") {
+        if (next === "'") {
+          index += 1;
+          continue;
+        }
+        inSingleQuote = false;
+      }
+      continue;
+    }
+    if (identifierQuote) {
+      if (current === identifierQuote) {
+        if (next === identifierQuote) {
+          index += 1;
+          continue;
+        }
+        identifierQuote = null;
+      }
+      continue;
+    }
+    if (current === "-" && next === "-") {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+    if (current === "/" && next === "*") {
+      blockComment = true;
+      index += 1;
+      continue;
+    }
+    if (current === "'") {
+      inSingleQuote = true;
+    } else if (current === '"' || current === "`") {
+      identifierQuote = current;
+    }
+  }
+
+  return inSingleQuote;
+}
+
 function stripSQLCommentsAndStrings(sqlText: string): string {
   let result = "";
   let index = 0;
@@ -1450,6 +1511,9 @@ export function provideLocalSQLCompletionItems(
   if (isInsideJinjaSpan(model, position)) {
     return { suggestions: [] };
   }
+  if (isInsideSingleQuotedSQLString(model.getValue(), model.getOffsetAt(position))) {
+    return { suggestions: [] };
+  }
 
   const tables = entry.getTables();
   const upstreamNames = entry.getUpstreamNames();
@@ -1708,6 +1772,10 @@ export function registerSQLProviders(
           if (valueSuggestions.length > 0) {
             return { suggestions: preserveFocusedSuggestion(valueSuggestions) };
           }
+        }
+
+        if (isInsideSingleQuotedSQLString(model.getValue(), model.getOffsetAt(position))) {
+          return { suggestions: [] };
         }
 
         const dotPrefix = inTableCtx ? null : parseDotPrefix(textBeforeCursor);

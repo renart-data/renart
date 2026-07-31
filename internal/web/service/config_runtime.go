@@ -98,6 +98,7 @@ func selectConfigEnvironment(cfg *config.Config, requestedEnvironment string) (*
 	}
 
 	if environmentName == "" {
+		applyRuntimeConnectionDefaults(cfg)
 		return cfg, nil
 	}
 
@@ -105,6 +106,7 @@ func selectConfigEnvironment(cfg *config.Config, requestedEnvironment string) (*
 		return nil, err
 	}
 
+	applyRuntimeConnectionDefaults(cfg)
 	return cfg, nil
 }
 
@@ -125,6 +127,7 @@ func applySelectedEnvironmentRefreshRestriction(cfg *config.Config, assets []*pi
 }
 
 func newConnectionManagerFromConfig(ctx context.Context, cfg *config.Config) (config.ConnectionAndDetailsGetter, error) {
+	applyRuntimeConnectionDefaults(cfg)
 	manager, errs := connection.NewManagerFromConfigWithContext(ctx, cfg)
 	if len(errs) > 0 {
 		return nil, errs[0]
@@ -132,10 +135,50 @@ func newConnectionManagerFromConfig(ctx context.Context, cfg *config.Config) (co
 	return manager, nil
 }
 
+// JSON-schema defaults populate the settings UI, but hand-authored Bruin
+// configuration can omit them. Apply runtime-only defaults to the selected
+// environment copy so direct execution and Sling resolve the same Databricks
+// endpoint without rewriting the user's .bruin.yml.
+func applyRuntimeConnectionDefaults(cfg *config.Config) {
+	if cfg == nil || cfg.SelectedEnvironment == nil || cfg.SelectedEnvironment.Connections == nil {
+		return
+	}
+	connections := cfg.SelectedEnvironment.Connections
+	requiresCopy := false
+	for i := range connections.Databricks {
+		if connections.Databricks[i].Port == 0 {
+			requiresCopy = true
+			break
+		}
+	}
+	if !requiresCopy {
+		return
+	}
+
+	selectedEnvironment := *cfg.SelectedEnvironment
+	selectedConnections := *connections
+	selectedConnections.Databricks = append([]config.DatabricksConnection(nil), connections.Databricks...)
+	for i := range selectedConnections.Databricks {
+		if selectedConnections.Databricks[i].Port == 0 {
+			selectedConnections.Databricks[i].Port = defaultDatabricksPort
+		}
+	}
+	selectedEnvironment.Connections = &selectedConnections
+	cfg.SelectedEnvironment = &selectedEnvironment
+}
+
 // WrapConnectionManagerForWorkspace keeps DuckDB's relative file references
 // scoped to the workspace without changing the process-wide working directory.
 func WrapConnectionManagerForWorkspace(manager config.ConnectionAndDetailsGetter, workspaceRoot string) config.ConnectionAndDetailsGetter {
 	return duckdbworkspace.WrapManager(manager, workspaceRoot)
+}
+
+func WrapConnectionManagerForWorkspaceWithFilesystemAccess(
+	manager config.ConnectionAndDetailsGetter,
+	workspaceRoot string,
+	filesystemAccessEnabled bool,
+) config.ConnectionAndDetailsGetter {
+	return duckdbworkspace.WrapManagerWithFilesystemAccess(manager, workspaceRoot, filesystemAccessEnabled)
 }
 
 // resolveRuntimeConnection preserves connection-specific initialization errors

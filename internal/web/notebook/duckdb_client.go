@@ -24,15 +24,20 @@ import (
 // a stronger contract: Stop must invoke the thread-safe ADBC statement cancel
 // operation and wait until execution has unwound.
 type notebookDuckDBClient struct {
-	path          string
-	workspaceRoot string
+	path                    string
+	workspaceRoot           string
+	disableFilesystemAccess bool
 }
 
-func newNotebookDuckDBClient(ctx context.Context, path, workspaceRoot string) (*notebookDuckDBClient, error) {
+func newNotebookDuckDBClient(ctx context.Context, path, workspaceRoot string, disableFilesystemAccess bool) (*notebookDuckDBClient, error) {
 	if err := duck.EnsureADBCDriverInstalled(ctx); err != nil {
 		return nil, err
 	}
-	return &notebookDuckDBClient{path: path, workspaceRoot: cleanNotebookWorkspaceRoot(workspaceRoot)}, nil
+	return &notebookDuckDBClient{
+		path:                    path,
+		workspaceRoot:           cleanNotebookWorkspaceRoot(workspaceRoot),
+		disableFilesystemAccess: disableFilesystemAccess,
+	}, nil
 }
 
 func (c *notebookDuckDBClient) close() {}
@@ -104,11 +109,18 @@ func (c *notebookDuckDBClient) execute(ctx context.Context, sqlText string, retu
 }
 
 func (c *notebookDuckDBClient) withWorkspace(sqlText string) string {
-	if c.workspaceRoot == "" {
+	settings := make([]string, 0, 2)
+	if c.disableFilesystemAccess {
+		settings = append(settings, "SET disabled_filesystems = 'LocalFileSystem';")
+	}
+	if c.workspaceRoot != "" {
+		root := strings.ReplaceAll(c.workspaceRoot, "'", "''")
+		settings = append(settings, "SET file_search_path = '"+root+"';")
+	}
+	if len(settings) == 0 {
 		return sqlText
 	}
-	root := strings.ReplaceAll(c.workspaceRoot, "'", "''")
-	return "set file_search_path = '" + root + "';\n" + sqlText
+	return strings.Join(settings, "\n") + "\n" + sqlText
 }
 
 func cleanNotebookWorkspaceRoot(root string) string {

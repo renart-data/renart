@@ -57,7 +57,7 @@ func TestSensorCapabilitiesDeclareVariantParameters(t *testing.T) {
 
 func TestDirectSensorExecutorsReplaceNoOpsForChecks(t *testing.T) {
 	t.Parallel()
-	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, &pipeline.Pipeline{}, nil, nil, nil, nil, "", false, sensorModeWait)
+	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, &pipeline.Pipeline{}, nil, nil, nil, nil, "", false, false, sensorModeWait)
 	require.NoError(t, err)
 
 	for _, assetType := range []pipeline.AssetType{
@@ -97,7 +97,7 @@ func TestDirectSourceExecutorsPreserveBruinNoOp(t *testing.T) {
 		&pipeline.Pipeline{},
 	))
 
-	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, &pipeline.Pipeline{}, nil, nil, nil, nil, "", false, sensorModeWait)
+	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, &pipeline.Pipeline{}, nil, nil, nil, nil, "", false, false, sensorModeWait)
 	require.NoError(t, err)
 
 	operator := executors[pipeline.AssetTypePostgresSource][scheduler.TaskInstanceTypeMain]
@@ -106,7 +106,7 @@ func TestDirectSourceExecutorsPreserveBruinNoOp(t *testing.T) {
 
 func TestDirectIngestrExecutorUsesDestinationAwareQualityChecks(t *testing.T) {
 	t.Parallel()
-	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, &pipeline.Pipeline{}, nil, nil, nil, nil, "", false, sensorModeWait)
+	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, &pipeline.Pipeline{}, nil, nil, nil, nil, "", false, false, sensorModeWait)
 	require.NoError(t, err)
 
 	config := executors[pipeline.AssetTypeIngestr]
@@ -130,7 +130,7 @@ func TestDirectIngestrExecutorIsEnabledOnlyForExistingIngestrAssets(t *testing.T
 	withIngestr := &pipeline.Pipeline{Assets: []*pipeline.Asset{{Type: pipeline.AssetTypeIngestr}}}
 	assert.True(t, pipelineUsesIngestr(withIngestr))
 
-	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, withIngestr, nil, nil, nil, nil, "", false, sensorModeWait)
+	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, withIngestr, nil, nil, nil, nil, "", false, false, sensorModeWait)
 	require.NoError(t, err)
 	main := executors[pipeline.AssetTypeIngestr][scheduler.TaskInstanceTypeMain]
 	require.NotNil(t, main)

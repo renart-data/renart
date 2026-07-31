@@ -1438,6 +1438,63 @@ func TestEngineOffersKeywordCompletionsInGeneralPosition(t *testing.T) {
 	}
 }
 
+func TestEngineDoesNotCompleteColumnsInsideSingleQuotedStrings(t *testing.T) {
+	engine := NewEngine(CanonicalGraph{
+		Version:   1,
+		Relations: []RelationNode{{ID: "orders", Name: "orders"}},
+		Schemas: []SchemaLayer{{
+			RelationID: "orders",
+			Columns:    []ColumnInfo{{Name: "order_id"}},
+		}},
+	})
+
+	for _, text := range []string{
+		"select 'ord from orders",
+		"select 'Ada''s ord from orders",
+	} {
+		doc := TextDocumentItem{URI: "file:///query.sql", Text: text}
+		items := engine.Complete(doc, PositionAt(text, strings.Index(text, " from orders")))
+		if len(items) != 0 {
+			t.Fatalf("expected no completions inside %q, got %#v", text, items)
+		}
+	}
+
+	doc := TextDocumentItem{URI: "file:///query.sql", Text: `select "ord" from orders`}
+	items := engine.Complete(doc, PositionAt(doc.Text, strings.Index(doc.Text, `" from orders`)))
+	if !slices.Contains(completionLabels(items), "order_id") {
+		t.Fatalf("double-quoted identifiers must retain column completion, got %#v", items)
+	}
+}
+
+func TestEngineTreatsDuckDBFileRelationsAccordingToFilesystemPolicy(t *testing.T) {
+	const uri = URI("file:///workspace/query.sql")
+	doc := TextDocumentItem{URI: uri, Text: `select * from "./example.parquet"`}
+	graph := CanonicalGraph{
+		Version: 1,
+		Assets:  []AssetNode{{ID: "query", URI: uri, Dialect: "duckdb"}},
+	}
+
+	for _, diagnostic := range NewEngine(graph).Diagnostics(doc) {
+		if diagnostic.Code == authoringdiag.CodeUnresolvedRelation || diagnostic.Code == authoringdiag.CodeDuckDBFilesystemAccessDisabled {
+			t.Fatalf("enabled DuckDB file relation should not be rejected: %#v", diagnostic)
+		}
+	}
+
+	diagnostics := NewEngineWithOptions(graph, EngineOptions{DisableDuckDBFilesystemAccess: true}).Diagnostics(doc)
+	var disabled []Diagnostic
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code == authoringdiag.CodeUnresolvedRelation {
+			t.Fatalf("disabled mode must replace unknown-table noise: %#v", diagnostics)
+		}
+		if diagnostic.Code == authoringdiag.CodeDuckDBFilesystemAccessDisabled {
+			disabled = append(disabled, diagnostic)
+		}
+	}
+	if len(disabled) != 1 || !strings.Contains(disabled[0].Message, "./example.parquet") {
+		t.Fatalf("expected one clear filesystem-policy diagnostic, got %#v", diagnostics)
+	}
+}
+
 func completionLabels(items []CompletionItem) []string {
 	labels := make([]string, 0, len(items))
 	for _, item := range items {

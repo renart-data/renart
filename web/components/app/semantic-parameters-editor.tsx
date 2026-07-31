@@ -686,7 +686,7 @@ function seedPreviewDescription(preview: SeedFilePreview | null, loading: boolea
     case "binary_format":
       return "Binary seed content is not shown as text. Drop or choose a replacement file, or paste text to convert it.";
     case "too_large":
-      return `This seed is ${formatSeedFileSize(preview.size_bytes ?? 0)}, above the 1 MiB editor limit. Drop or choose a replacement file, or paste new text.`;
+      return `This seed is ${formatSeedFileSize(preview.size_bytes ?? 0)}, above the 256 KiB editor limit. Drop or choose a replacement file, or paste new text.`;
     case "non_utf8":
       return "This seed is not UTF-8 text, so its content is not shown. Drop or choose a replacement file.";
     case "missing_path":

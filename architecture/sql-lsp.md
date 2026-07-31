@@ -100,6 +100,11 @@ coordinator's `WorkspaceState` rather than the filesystem:
   generated SQL. The browser aborts superseded requests and checks the Monaco
   model version and content before installing markers, so response N cannot
   overwrite markers for N+1.
+- DuckDB documents get a request-local graph layer for direct local-file
+  relations such as `"./data.parquet"`. Renart resolves relative paths from the
+  workspace, asks DuckDB for the zero-row result schema, and caches columns by
+  file size and modification time. A missing or temporarily invalid file keeps
+  valid DuckDB relation syntax without becoming an unknown-table error.
 - The optional native Polyglot client is shared and loaded lazily; requests
   never wait for a native download before publishing embedded-WASM results.
 
@@ -273,6 +278,10 @@ the same cached-style asset/header findings used by the web service. The
 configured loader is reused on `workspace/didChangeWatchedFiles`, so reloads do
 not silently lose metadata diagnostics. A missing graph degrades to local
 syntax/tolerant analysis. Message size is capped at 64 MiB.
+The stdio command and web server both expose
+`--enable-filesystem-access` (default `true`). When disabled, the LSP does not
+open local files and replaces unknown-table noise with the stable
+`duckdb-filesystem-access-disabled` diagnostic on each file relation.
 
 ## 6. Completion & diagnostic surface (web editor)
 
@@ -293,7 +302,10 @@ to `parameters.query`, never to the raw YAML content.
   it inserts the effective alias plus `.` and Monaco immediately opens the
   corresponding column suggestions. It never substitutes the connection's full
   relation list or the underlying qualified name when an alias exists. The
-  client keeps only kinds it renders (columns, relations, keywords).
+  client keeps only kinds it renders (columns, relations, keywords). Column,
+  relation, and keyword completion is suppressed while the cursor is inside a
+  single-quoted SQL string; explicit path and data-value suggestion flows retain
+  their narrower behavior.
   Purely-remote warehouse tables (no backing asset) are
   not yet completed from the LSP — see `plans/remote-table-intellisense.md`.
 - **Diagnostics**: unresolved relation / alias / column (column checks only fire

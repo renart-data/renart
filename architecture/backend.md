@@ -759,6 +759,12 @@ connection/query as the requested SQL, so relative reads such as
 working directory. Notebook session clients use the same wrapper. This avoids a
 process-wide `chdir`, which would couple unrelated server filesystem operations
 to query execution; non-DuckDB connections are passed through unchanged.
+`--enable-filesystem-access` defaults to `true`. With the flag disabled, every
+web-server DuckDB connection path — resolved connection managers, native shared
+sessions, and notebook sessions — executes
+`SET disabled_filesystems = 'LocalFileSystem';` before user SQL. Local path
+suggestions and file-schema discovery are disabled under the same policy; remote
+filesystems such as S3 are not mislabeled as local-file relations.
 
 Physical-target recovery uses a separate per-workspace execution coordinator.
 Every non-dry `ExecutionService` path holds shared primary and compatibility
@@ -986,10 +992,25 @@ differs: Trino carries `catalog` and `schema` as query properties, ClickHouse
 uses the database path and exposes only the TLS flag as a query property,
 DuckLake translates catalog/storage settings to its `catalog_conn_string` and
 `data_path` contract, and StarRocks uses a structured payload so `fe_url` is a
-connection property rather than a MySQL session variable. Source and target
-connections are passed through per-process environment aliases instead of
-argv, which also allows structured payloads without exposing credentials to
-process listings. Because
+connection property rather than a MySQL session variable. Databricks also uses
+a structured payload: its URL includes port `443` by default and carries the
+configured SQL warehouse or cluster HTTP path as the driver path, with either
+PAT or OAuth M2M authentication. Per-run Sling target options set
+`use_bulk: false`, choosing Sling's cursor/batch path so a normal connection
+does not also require a Unity Catalog staging volume and its extra grants. This
+is the compatibility-first
+default for API, Seed, Load, and Python writes; it trades away Sling's
+volume-backed bulk throughput until Renart has an explicit, live-tested bulk
+opt-in. Hand-authored Databricks connections that omit the JSON-schema port
+default also receive port `443` in the runtime-selected environment copy, for
+both native and Sling execution, without rewriting `.bruin.yml`.
+
+Source and target connections are passed through per-process environment
+aliases instead of argv, which also allows structured payloads without exposing
+credentials to process listings. When no standalone Sling binary is configured,
+Renart runs the pinned `sling==1.5.22` package through uv; the
+`RENART_SLING_PACKAGE` override remains available for compatibility testing and
+emergency pin changes. Because
 Sling's PostgreSQL driver does not accept libpq's opportunistic `sslmode=allow`,
 the bridge changes that mode to `verify-ca` and emits a run-log warning asking
 the user to configure a supported mode explicitly. This compatibility rewrite
@@ -1013,7 +1034,7 @@ query, table, or S3-key conditions plus `poke_interval` and `timeout`.
 The guided editor reads existing seed content through
 `GET /api/assets/{assetID}/seed-file`; the server derives the path from the
 asset definition and returns only local UTF-8 CSV/JSON/JSONL/NDJSON files up to
-1 MiB. Remote, runtime-rendered, binary, non-UTF-8, and larger sources return a
+256 KiB. Remote, runtime-rendered, binary, non-UTF-8, and larger sources return a
 reason without content and remain replaceable through the multipart `POST` on
 the same route. Seed bytes are never added to the workspace DTO.
 
@@ -1079,16 +1100,22 @@ effective mode rather than relying on UI behavior. The default is derived from
 the server-owned scheduled origin, not from the presence of a durable run ID,
 because queued manual runs also have IDs.
 
-The live warehouse parity test runs the same nine-asset graph through DuckDB,
-DuckLake (DuckDB catalog plus S3-compatible object storage), PostgreSQL, Trino,
-ClickHouse, and StarRocks. It covers seed, API extraction, cross-database Load,
-SQL, a query sensor, Python materialization, checks, and final inspection. Every
+The live warehouse parity test runs the same up-to-eleven-asset graph through
+DuckDB, DuckLake (DuckDB catalog plus S3-compatible object storage), PostgreSQL,
+Trino, ClickHouse, StarRocks, and Databricks. It covers seed, API extraction,
+cross-database Load, SQL, a query sensor, Python materialization, checks, and
+final inspection. Every
 warehouse executes two explicit date windows, first as a full refresh and then
 as an incremental run; `truncate+insert`, `append`, and `time_interval`
 materializations verify both dependency-safe reloads and retained per-window
 rows. The fixture gives each process an isolated ADBC configuration directory
 so a stale developer-installed DuckDB driver cannot change the result; optional
 local warehouse filtering only shortens focused debugging and never narrows CI.
+The credential-free Databricks variant starts Apache Sail's Flight SQL server
+and a test-only HTTPS Thrift adapter implementing the Databricks SQL driver
+surface. It proves Renart's full connector and lifecycle contract locally; it is
+not presented as a substitute for a final live workspace run against the
+managed Databricks service.
 
 Python assets run through Renart's in-process operator
 (`service/python_operator.go`). Each task receives an embedded, version-locked

@@ -30,6 +30,7 @@ import { sqlDiscoveryColumnsAtom, sqlDiscoveryTablesAtom } from "@/lib/atoms/sql
 import { useSQLParseContext } from "@/hooks/use-sql-parse-context";
 import { fetchJSON } from "@/lib/api-core";
 import {
+  isInsideSingleQuotedSQLString,
   provideLocalSQLCompletionItems,
   schemaTablesReferencedAtPosition,
 } from "@/lib/monaco-sql-providers";
@@ -184,6 +185,11 @@ export function useSQLLSP(
               };
             }
           }
+        }
+        if (
+          isInsideSingleQuotedSQLString(currentModel.getValue(), currentModel.getOffsetAt(position))
+        ) {
+          return { suggestions: [] };
         }
         const dotPrefix = parseDotPrefix(textBeforeCursor);
         const response = await getSQLLSPCompletions({

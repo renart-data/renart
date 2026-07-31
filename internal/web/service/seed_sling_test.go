@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	bruinexecutor "github.com/bruin-data/bruin/pkg/executor"
@@ -63,6 +64,42 @@ func TestSlingSeedOperatorRunsSeedThroughSling(t *testing.T) {
 	assert.Contains(t, text, `--tgt-options {"column_casing":"snake"}`)
 	assert.Contains(t, text, `--select customer_id,customer_name --columns {"customer_id":"integer","customer_name":"string(100)"} --primary-key customer_id`)
 	assert.NotContains(t, text, "ingestr")
+}
+
+func TestSlingSeedOperatorPassesDatabricksConnectionPayload(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	assetDir := filepath.Join(workspaceRoot, "analytics", "assets")
+	require.NoError(t, os.MkdirAll(assetDir, 0o755))
+	seedPath := filepath.Join(assetDir, "customers.csv")
+	require.NoError(t, os.WriteFile(seedPath, []byte("customer_id\n1\n"), 0o644))
+
+	fakeSling := filepath.Join(workspaceRoot, "fake-sling")
+	require.NoError(t, os.WriteFile(fakeSling, []byte("#!/bin/sh\nprintf 'target=%s\\nargs=%s\\n' \"$RENART_SEED_TARGET\" \"$*\"\n"), 0o755))
+	t.Setenv("RENART_SLING_BINARY", fakeSling)
+
+	asset := &pipeline.Asset{
+		Name:           "analytics.customers",
+		Type:           pipeline.AssetType("databricks.seed"),
+		Connection:     "databricks-default",
+		Parameters:     pipeline.ParameterMap{"path": "./customers.csv", "file_type": "csv"},
+		ExecutableFile: pipeline.ExecutableFile{Path: filepath.Join(assetDir, "customers.asset.yml")},
+	}
+	instance := &scheduler.AssetInstance{
+		Pipeline: &pipeline.Pipeline{Assets: []*pipeline.Asset{asset}},
+		Asset:    asset,
+	}
+	operator := newSlingSeedOperator(databricksPATTestManager(), nil, workspaceRoot)
+
+	var output bytes.Buffer
+	ctx := context.WithValue(context.Background(), bruinexecutor.KeyPrinter, &output)
+	require.NoError(t, operator.Run(ctx, instance))
+
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	require.Len(t, lines, 2)
+	parsed := requireDatabricksSlingPayload(t, strings.TrimPrefix(lines[0], "target="))
+	assert.Equal(t, "workspace.cloud.databricks.com:443", parsed.Host)
+	assert.Contains(t, lines[1], `--tgt-options {"column_casing":"snake","use_bulk":false}`)
+	assert.NotContains(t, lines[1], "test-token")
 }
 
 func TestParsedSeedRetainsConfiguredMaterialization(t *testing.T) {
@@ -136,7 +173,7 @@ func TestSlingSeedColumnArgsCanDisableSchemaEnforcement(t *testing.T) {
 }
 
 func TestDirectSeedExecutorsAllUseSling(t *testing.T) {
-	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, &pipeline.Pipeline{}, nil, nil, nil, nil, "", false, sensorModeOnce)
+	executors, err := buildDirectMainExecutors(&stubConnectionManager{}, nil, nil, &pipeline.Pipeline{}, nil, nil, nil, nil, "", false, false, sensorModeOnce)
 	require.NoError(t, err)
 
 	for _, capability := range assetAuthoringCapabilities() {

@@ -744,6 +744,11 @@ func (o *renartPythonOperator) loadParquetViaSling(ctx context.Context, run pyth
 		"--tgt-object", run.asset.Name,
 	}
 	args = append(args, modeArgs...)
+	targetOptions, err := slingTargetOptionsArgs(o.manager, connectionName, nil)
+	if err != nil {
+		return err
+	}
+	args = append(args, targetOptions...)
 
 	cmdName, cmdArgs, err := loadCommand(ctx, args, writer)
 	if err != nil {
