@@ -1320,13 +1320,28 @@ test.describe("app notebooks live", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByText("Promote to pipeline")).toBeVisible();
     const downstreamCheckbox = dialog.getByRole("checkbox", { name: /Downstream assets/ });
-    await downstreamCheckbox.click();
+    await downstreamCheckbox.check();
     await expect(downstreamCheckbox).toBeChecked();
+    // Radix reports the controlled checked state before Playwright's next
+    // action, but give React a paint boundary so the Promote handler comes
+    // from the same committed render.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        }),
+    );
+    const promoteRequest = page.waitForRequest(
+      (request) =>
+        request.url().includes(`/cells/${baseCell}/promote`) && request.method() === "POST",
+      { timeout: 30000 },
+    );
     const promoteResponse = page.waitForResponse(
       (response) => response.url().includes(`/cells/${baseCell}/promote`) && response.ok(),
       { timeout: 30000 },
     );
     await dialog.getByRole("button", { name: "Promote", exact: true }).click();
+    expect((await promoteRequest).postDataJSON()).toMatchObject({ include_downstream: true });
     const result = (await (await promoteResponse).json()) as { promoted_count: number };
     expect(result.promoted_count).toBe(2);
 

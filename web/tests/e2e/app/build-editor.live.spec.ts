@@ -275,6 +275,16 @@ select customer_id, customer_name from analytics.customers
     await expect(dialog.getByRole("tab", { name: "Notifications" })).toHaveCount(0);
     await expect(dialog.getByText("Microsoft Teams")).toHaveCount(0);
 
+    // boundingBox() includes the dialog's opening zoom transform. Wait for
+    // that animation to finish before comparing the fixed-height sections.
+    await expect
+      .poll(() =>
+        dialog.evaluate((element) =>
+          element.getAnimations().every((animation) => animation.playState === "finished"),
+        ),
+      )
+      .toBe(true);
+
     const sidebar = dialog.getByRole("tablist", { name: "Pipeline settings sections" });
     const content = dialog.getByTestId("pipeline-settings-content");
     const generalDialogBounds = await dialog.boundingBox();
