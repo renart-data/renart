@@ -131,7 +131,7 @@ const selectedVariants =
 
 const test = liveTest.extend<{ liveWarehouseMatrix: LiveWarehouseMatrix }>({
   liveWarehouseMatrix: [
-    async (_fixtures, use) => {
+    async ({ browserName: _browserName }, use) => {
       const matrix = await createLiveWarehouseMatrix(
         selectedVariants.map((variant) => variant.name),
       );
