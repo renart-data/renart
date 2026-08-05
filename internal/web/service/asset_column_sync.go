@@ -50,7 +50,7 @@ func (s *AssetService) SyncAssetColumns(
 	}
 
 	capabilities := columnInferenceSourcesForPipelineAsset(asset, parsedPipeline)
-	meta := assetmeta.Parse(asset.Meta)
+	meta := assetmeta.ParseAsset(asset)
 	selected := make(map[string]struct{}, len(additionalSourceIDs))
 	explicitlySelected := make(map[string]struct{}, len(additionalSourceIDs))
 	for _, sourceID := range additionalSourceIDs {
@@ -91,14 +91,14 @@ func (s *AssetService) SyncAssetColumns(
 		}
 	}
 
-	snapshots := make([]webmodel.ColumnSchemaSourceSnapshot, 0, len(capabilities))
+	evidence := make([]SchemaEvidence, 0, len(capabilities))
 	notes := make([]string, 0)
 	for _, source := range capabilities {
 		_, sourceSelected := selected[source.ID]
 		if source.Category != "definition" && !sourceSelected {
 			continue
 		}
-		columns, sourceNotes, sampleRecords, apiErr := s.observeAssetColumnSource(
+		observation, apiErr := s.observeAssetColumnSource(
 			ctx,
 			assetID,
 			parsedPipeline,
@@ -120,38 +120,64 @@ func (s *AssetService) SyncAssetColumns(
 			}
 			return webmodel.ColumnSchemaSyncResult{}, apiErr
 		}
-		if columns == nil {
-			columns = []WorkspaceColumn{}
-		}
-		snapshot := webmodel.ColumnSchemaSourceSnapshot{
-			Source:        source,
-			Columns:       columns,
-			Notes:         sourceNotes,
-			SampleRecords: sampleRecords,
+		if observation.Columns == nil {
+			observation.Columns = []WorkspaceColumn{}
 		}
 		if source.ID == columnSourceMaterialized && s.deps.MaterializedSchemaFresh != nil {
 			fresh, freshErr := s.deps.MaterializedSchemaFresh(ctx, assetID, asset.Name, environment)
 			if freshErr != nil {
 				notes = append(notes, "Current-table freshness could not be verified, so its schema remains advisory.")
 			} else {
-				snapshot.Fresh = &fresh
+				observation.Fresh = &fresh
+				if fresh {
+					observation.AssetRevision = schemaAssetRevision(asset)
+				}
 			}
 		}
-		snapshots = append(snapshots, snapshot)
+		evidence = append(evidence, observation)
 		if _, automatic := provenanceSelected[source.ID]; automatic {
 			notes = append(notes, fmt.Sprintf("Included %s because it is the saved type source for one or more columns.", source.Label))
 		}
 	}
-	if len(snapshots) == 0 {
+	if len(evidence) == 0 {
 		return webmodel.ColumnSchemaSyncResult{}, badRequestError(
 			"column_source_required",
 			"select at least one available schema source",
 		)
 	}
 
-	analysis := analyzeColumnSchema(asset.Columns, meta, snapshots)
+	connectionName, _ := targetConnectionNameForAsset(asset, parsedPipeline)
+	requestedScope := SchemaEvidenceScope{
+		Environment: strings.TrimSpace(environment), Connection: strings.TrimSpace(connectionName), Relation: strings.TrimSpace(asset.Name),
+	}
+	resolvedEvidence := resolveSchemaEvidence(evidence, requestedScope)
+	excludedBySource := make(map[string]SchemaEvidenceExclusion, len(resolvedEvidence.Excluded))
+	for _, excluded := range resolvedEvidence.Excluded {
+		excludedBySource[excluded.Evidence.Source.ID] = excluded
+		notes = append(notes, fmt.Sprintf("Excluded %s as %s evidence: %s", excluded.Evidence.Source.Label, excluded.Classification, excluded.Reason))
+	}
+	allSnapshots := make([]webmodel.ColumnSchemaSourceSnapshot, 0, len(evidence))
+	for _, item := range evidence {
+		if excluded, ok := excludedBySource[item.Source.ID]; ok {
+			allSnapshots = append(allSnapshots, schemaEvidenceSnapshot(item, excluded.Classification, excluded.Reason))
+		} else {
+			allSnapshots = append(allSnapshots, schemaEvidenceSnapshot(item, "comparable", ""))
+		}
+	}
+	comparableSnapshots := make([]webmodel.ColumnSchemaSourceSnapshot, 0, len(resolvedEvidence.Comparable))
+	for _, item := range resolvedEvidence.Comparable {
+		comparableSnapshots = append(comparableSnapshots, schemaEvidenceSnapshot(item, "comparable", ""))
+	}
+	if len(comparableSnapshots) == 0 {
+		return webmodel.ColumnSchemaSyncResult{}, badRequestError(
+			"column_source_incomparable",
+			"none of the selected schema observations describe the current asset output",
+		)
+	}
+
+	analysis := analyzeColumnSchema(asset.Columns, meta, comparableSnapshots)
 	result := webmodel.ColumnSchemaSyncResult{
-		Sources:          snapshots,
+		Sources:          allSnapshots,
 		Rows:             analysis.rows,
 		ManagedColumns:   analysis.managedColumns,
 		CandidateColumns: analysis.candidateColumns,
@@ -327,7 +353,7 @@ func sameColumnSchema(current []pipeline.Column, expected []WorkspaceColumn) boo
 	}
 	for index := range current {
 		if columnNameKey(current[index].Name) != columnNameKey(expected[index].Name) ||
-			!equivalentColumnType(current[index].Type, expected[index].Type) {
+			!equivalentPipelineWorkspaceColumnType(current[index], expected[index]) {
 			return false
 		}
 	}
@@ -373,9 +399,9 @@ func analyzeColumnSchema(
 		if strings.TrimSpace(managed[index].Type) != "" {
 			managedTypeSources[key] = snapshots[primaryIndex].Source.ID
 		}
-		if strings.TrimSpace(managed[index].Type) == "" {
-			if inferredType, sourceID := firstKnownSourceType(key, snapshots, sourceMaps); inferredType != "" {
-				managed[index].Type = inferredType
+		if workspaceColumnType(managed[index]) == "" {
+			if inferredColumn, sourceID, ok := firstKnownSourceColumn(key, snapshots, sourceMaps); ok {
+				copyWorkspaceColumnType(&managed[index], inferredColumn)
 				managedTypeSources[key] = sourceID
 			}
 		}
@@ -395,13 +421,14 @@ func analyzeColumnSchema(
 			if _, present := managedIndex[key]; present {
 				continue
 			}
-			columnType, sourceID := firstKnownSourceType(key, snapshots, sourceMaps)
-			if columnType == "" {
-				columnType = currentColumn.Type
+			column, sourceID, hasSourceType := firstKnownSourceColumn(key, snapshots, sourceMaps)
+			if !hasSourceType {
+				column = PipelineColumnsToModelColumns([]pipeline.Column{currentColumn})[0]
 				sourceID = columnSourceIDForCode(columnSourceForColumn(meta.ColSource, key))
 			}
+			column.Name = currentColumn.Name
 			managedIndex[key] = len(managed)
-			managed = append(managed, WorkspaceColumn{Name: currentColumn.Name, Type: columnType})
+			managed = append(managed, column)
 			if sourceID != "" {
 				managedTypeSources[key] = sourceID
 			}
@@ -463,8 +490,8 @@ func analyzeColumnSchema(
 		// presence means an observed source supplied the last known value.
 		if proposedPresent && currentPresent && strings.TrimSpace(proposedColumn.Type) == "" &&
 			strings.TrimSpace(currentColumn.Type) != "" && provenanceSourceID != "" {
-			proposedColumn.Type = currentColumn.Type
-			managed[managedPosition].Type = currentColumn.Type
+			copyPipelineColumnType(&proposedColumn, currentColumn)
+			copyPipelineColumnType(&managed[managedPosition], currentColumn)
 			managedTypeSources[key] = provenanceSourceID
 			provenanceBacked = true
 		}
@@ -482,18 +509,18 @@ func analyzeColumnSchema(
 		}
 
 		sourceTypeConflict := sourceTypesConflict(key, sourceMaps)
-		if sourceTypeConflict && ownedType && currentPresent && currentMatchesAnySource(currentColumn.Type, key, sourceMaps) {
+		if sourceTypeConflict && ownedType && currentPresent && currentMatchesAnySource(currentColumn, key, sourceMaps) {
 			sourceTypeConflict = false
 		}
 		if sourceTypeConflict && proposedPresent && currentPresent && provenanceSourceID != "" {
-			if sourceType, fresh := freshProvenanceSourceType(provenanceSourceID, key, snapshots, sourceMaps); fresh && equivalentColumnType(currentColumn.Type, sourceType) {
+			if sourceColumn, fresh := freshProvenanceSourceColumn(provenanceSourceID, key, snapshots, sourceMaps); fresh && equivalentPipelineWorkspaceColumnType(currentColumn, sourceColumn) {
 				// A current materialization built from this source is stronger
 				// evidence than a conflicting static inference. Keep the observed
 				// type without a resolver round-trip; stale observations remain
 				// advisory and still surface the conflict.
 				sourceTypeConflict = false
-				proposedColumn.Type = sourceType
-				managed[managedPosition].Type = sourceType
+				copyWorkspaceColumnType(&proposedColumn, sourceColumn)
+				copyWorkspaceColumnType(&managed[managedPosition], sourceColumn)
 				managedTypeSources[key] = provenanceSourceID
 				provenanceBacked = true
 			}
@@ -514,9 +541,9 @@ func analyzeColumnSchema(
 		row := webmodel.ColumnSchemaMergeRow{
 			Column:          rowNames[key],
 			CurrentPresent:  currentPresent,
-			CurrentType:     currentColumn.Type,
+			CurrentType:     currentColumn.SQLType(),
 			ProposedPresent: proposedPresent,
-			ProposedType:    proposedColumn.Type,
+			ProposedType:    workspaceColumnType(proposedColumn),
 		}
 
 		switch {
@@ -524,7 +551,7 @@ func analyzeColumnSchema(
 			row.Kind = "manual"
 			row.Detail = "Kept as an explicit metadata column."
 			row.ProposedPresent = true
-			row.ProposedType = currentColumn.Type
+			row.ProposedType = currentColumn.SQLType()
 		case observedOnly:
 			row.Kind = "observed_only"
 			row.Detail = "An advisory source reports a column that the primary inference does not declare."
@@ -544,24 +571,24 @@ func analyzeColumnSchema(
 		case proposedPresent && currentPresent && ownedType:
 			row.Kind = "owned"
 			row.Detail = "The saved type is explicitly owned and remains unchanged."
-			row.ProposedType = currentColumn.Type
-		case proposedPresent && currentPresent && provenanceBacked && equivalentColumnType(currentColumn.Type, proposedColumn.Type):
+			row.ProposedType = currentColumn.SQLType()
+		case proposedPresent && currentPresent && provenanceBacked && equivalentPipelineWorkspaceColumnType(currentColumn, proposedColumn):
 			row.Kind = "provenance"
 			if provenanceSourceID == columnSourceMaterialized {
 				row.Detail = "The saved type comes from the current table; SQL does not provide stronger conflicting evidence."
 			} else {
 				row.Detail = "The saved type comes from a previously selected schema source; the definition does not provide a known type."
 			}
-		case proposedPresent && currentPresent && omittedByPartialPrimary && equivalentColumnType(currentColumn.Type, proposedColumn.Type):
+		case proposedPresent && currentPresent && omittedByPartialPrimary && equivalentPipelineWorkspaceColumnType(currentColumn, proposedColumn):
 			row.Kind = "partial_unobserved"
 			row.Detail = "The sampled source did not include this saved column, so it was retained."
-		case proposedPresent && currentPresent && equivalentColumnType(currentColumn.Type, proposedColumn.Type):
+		case proposedPresent && currentPresent && equivalentPipelineWorkspaceColumnType(currentColumn, proposedColumn):
 			row.Kind = "unchanged"
 			row.Detail = "The inferred and saved types match."
 			// Avoid cosmetic rewrites between equivalent aliases such as int32
 			// and integer.
 			managed[managedPosition].Type = currentColumn.Type
-			row.ProposedType = currentColumn.Type
+			row.ProposedType = currentColumn.SQLType()
 		case proposedPresent && currentPresent && strings.TrimSpace(currentColumn.Type) == "" && strings.TrimSpace(proposedColumn.Type) != "":
 			row.Kind = "type_filled"
 			row.Detail = "The previously unknown type can be filled automatically."
@@ -574,7 +601,7 @@ func analyzeColumnSchema(
 			row.Kind = "manual"
 			row.Detail = "Kept as an explicit metadata column."
 			row.ProposedPresent = true
-			row.ProposedType = currentColumn.Type
+			row.ProposedType = currentColumn.SQLType()
 		case currentPresent:
 			row.Kind = "removed"
 			row.Detail = "The primary inference no longer reports this saved column."
@@ -653,57 +680,78 @@ func columnsByName(columns []WorkspaceColumn) map[string]WorkspaceColumn {
 	return result
 }
 
-func firstKnownSourceType(
+func firstKnownSourceColumn(
 	key string,
 	snapshots []webmodel.ColumnSchemaSourceSnapshot,
 	sourceMaps []map[string]WorkspaceColumn,
-) (string, string) {
+) (WorkspaceColumn, string, bool) {
 	for index, sourceMap := range sourceMaps {
-		if column, ok := sourceMap[key]; ok && strings.TrimSpace(column.Type) != "" {
-			return column.Type, snapshots[index].Source.ID
+		if column, ok := sourceMap[key]; ok && workspaceColumnType(column) != "" {
+			return column, snapshots[index].Source.ID, true
 		}
 	}
-	return "", ""
+	return WorkspaceColumn{}, "", false
 }
 
-func freshProvenanceSourceType(
+func freshProvenanceSourceColumn(
 	sourceID, key string,
 	snapshots []webmodel.ColumnSchemaSourceSnapshot,
 	sourceMaps []map[string]WorkspaceColumn,
-) (string, bool) {
+) (WorkspaceColumn, bool) {
 	for index, snapshot := range snapshots {
 		if snapshot.Source.ID != sourceID || snapshot.Fresh == nil || !*snapshot.Fresh {
 			continue
 		}
-		if column, ok := sourceMaps[index][key]; ok && strings.TrimSpace(column.Type) != "" {
-			return column.Type, true
+		if column, ok := sourceMaps[index][key]; ok && workspaceColumnType(column) != "" {
+			return column, true
 		}
 	}
-	return "", false
+	return WorkspaceColumn{}, false
 }
 
 func sourceTypesConflict(key string, sourceMaps []map[string]WorkspaceColumn) bool {
-	known := make(map[string]struct{})
+	known := make([]WorkspaceColumn, 0, len(sourceMaps))
 	for _, sourceMap := range sourceMaps {
 		column, ok := sourceMap[key]
-		if !ok || strings.TrimSpace(column.Type) == "" {
+		if !ok || workspaceColumnType(column) == "" {
 			continue
 		}
-		known[canonicalColumnType(column.Type)] = struct{}{}
+		for _, existing := range known {
+			if !equivalentWorkspaceColumnType(existing, column) {
+				return true
+			}
+		}
+		known = append(known, column)
 	}
-	return len(known) > 1
+	return false
 }
 
-func currentMatchesAnySource(currentType, key string, sourceMaps []map[string]WorkspaceColumn) bool {
-	if strings.TrimSpace(currentType) == "" {
+func currentMatchesAnySource(current pipeline.Column, key string, sourceMaps []map[string]WorkspaceColumn) bool {
+	if strings.TrimSpace(current.SQLType()) == "" {
 		return false
 	}
 	for _, sourceMap := range sourceMaps {
-		if column, ok := sourceMap[key]; ok && strings.TrimSpace(column.Type) != "" && equivalentColumnType(currentType, column.Type) {
+		if column, ok := sourceMap[key]; ok && workspaceColumnType(column) != "" && equivalentPipelineWorkspaceColumnType(current, column) {
 			return true
 		}
 	}
 	return false
+}
+
+func copyWorkspaceColumnType(target *WorkspaceColumn, source WorkspaceColumn) {
+	target.Type = source.Type
+	target.Precision = cloneIntPointer(source.Precision)
+	target.Scale = cloneIntPointer(source.Scale)
+	target.Length = cloneIntPointer(source.Length)
+	target.Collation = source.Collation
+}
+
+func copyPipelineColumnType(target *WorkspaceColumn, source pipeline.Column) {
+	target.Type = source.Type
+	target.Precision = cloneIntPointer(source.Precision)
+	target.Scale = cloneIntPointer(source.Scale)
+	target.Length = cloneIntPointer(source.Length)
+	target.Collation = source.Collation
 }
 
 func columnTypeOwned(meta assetmeta.RenartMeta, key string) bool {

@@ -64,7 +64,7 @@ parameters:
 `},
 	}
 
-	columns := apiResponseFieldColumns(context.Background(), asset)
+	columns := apiDefinitionColumns(context.Background(), asset, true)
 	require.Len(t, columns, 3)
 	byName := map[string]string{}
 	for _, column := range columns {
@@ -230,7 +230,7 @@ parameters:
 	}
 
 	names := make([]string, 0)
-	for _, column := range apiInferredColumnsForDisplay(context.Background(), asset) {
+	for _, column := range newAssetDefinitionSchemaResolver(&pipeline.Pipeline{Assets: []*pipeline.Asset{asset}}).Generated(context.Background(), asset) {
 		names = append(names, column.Name)
 	}
 	assert.ElementsMatch(t, []string{"a", "c"}, names, "dropped column must not reappear via inference fallback")
@@ -765,7 +765,8 @@ custom_checks:
 	require.NoError(t, err)
 	assert.Equal(t, 1, requestCount, "scheduler check tasks must not rerun the API main request")
 	assert.Contains(t, string(output), "Fetched 1 records from API asset quickstart.players")
-	assert.Contains(t, string(output), "uv tool run --no-config --python 3.11 --from sling-test-package sling run --src-stream file://")
+	assert.Contains(t, string(output), "uv tool run --no-config --python 3.11 --from sling-test-package python -c")
+	assert.Contains(t, string(output), "run --src-stream file://")
 	assert.Contains(t, string(output), ".jsonl")
 	assert.Contains(t, string(output), "--src-options "+apiJSONLSourceOptions)
 	assert.Contains(t, string(output), "--tgt-conn RENART_SLING_TARGET")
@@ -903,7 +904,7 @@ columns:
 		require.NoError(t, commandErr)
 		queryWriter := &streamCaptureWriter{buffer: &queryOutput}
 		command := newStreamingCommand(context.Background(), commandName, commandArgs, workspaceRoot, queryWriter)
-		require.NoError(t, runStreamingCommand(command, queryWriter), queryOutput.String())
+		require.NoError(t, runStreamingCommand(context.Background(), command, queryWriter), queryOutput.String())
 		return queryOutput.String()
 	}
 

@@ -29,6 +29,7 @@ const sources = [
       "NotebookBlock",
       "Notebook",
       "EnvironmentPolicy",
+      "WorkspaceQueryConnection",
       "WorkspaceState",
     ],
   },

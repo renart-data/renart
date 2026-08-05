@@ -19,6 +19,12 @@ notebooks/
 - Filename = cell name; the frontmatter `id:` is authoritative and survives
   renames (the manifest references cells by id, so rename = rewrite sibling
   files + move the cell file, no manifest edit).
+- Newly created cells receive concise two-word identifier names such as
+  `quiet_river`. Generation starts at a cryptographically random pair, checks
+  sibling and pipeline-asset collisions, and has an exhaustive suffix fallback;
+  explicit names and all existing notebook files remain unchanged. Short logical
+  names keep sibling relations legible in completion lists while physical object
+  identity remains the durable cell id.
 - Prose blocks live in `notebook.yml`; they are not assets and have no
   fingerprints.
 - Cells may be SQL (`.sql`) or Python (`.py`). Python cells participate in the

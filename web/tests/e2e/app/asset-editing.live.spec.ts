@@ -41,6 +41,7 @@ type WorkspaceAsset = {
     primary_key?: boolean;
     update_on_merge?: boolean;
     merge_sql?: string;
+    meta?: Record<string, string>;
   }>;
   custom_checks?: Array<{
     name: string;
@@ -388,7 +389,7 @@ select customer_id from analytics.customers
     await txResponse;
 
     // It surfaces under Manual and is written to the asset's provenance.
-    await expect(properties.getByText("Manual")).toBeVisible({ timeout: 15000 });
+    await expect(properties.getByText("Manual", { exact: true })).toBeVisible({ timeout: 15000 });
     await expect(properties.getByText("analytics.orders").first()).toBeVisible();
 
     const customers = await pollAsset(liveApp, page.request, "analytics.customers", (a) =>
@@ -988,6 +989,75 @@ select customer_id, upper(customer_name) as shout from analytics.customers
     const byName = new Map(body.columns.map((c) => [c.name, (c.type ?? "").toUpperCase()]));
     expect(byName.get("customer_id")).toBe("INTEGER");
     expect(byName.get("shout")).toBe("VARCHAR");
+
+    const rangeCreate = await request.post(
+      `${liveApp.baseURL}/api/pipelines/${pipelineId}/assets`,
+      {
+        data: {
+          name: "analytics.range_arithmetic",
+          type: "duckdb.sql",
+          content: `/* @bruin
+type: duckdb.sql
+materialization:
+  type: table
+@bruin */
+
+select
+  range,
+  range * 2 as double_range
+from range(1, 2, 1)
+`,
+        },
+      },
+    );
+    expect(rangeCreate.ok()).toBe(true);
+    const rangeAssetID = Buffer.from("analytics/assets/analytics/range_arithmetic.sql").toString(
+      "base64url",
+    );
+    const rangeRefresh = await request.post(
+      `${liveApp.baseURL}/api/assets/${rangeAssetID}/columns/refresh-from-definition`,
+    );
+    expect(rangeRefresh.ok(), await rangeRefresh.text()).toBe(true);
+    const rangeBody = (await rangeRefresh.json()) as {
+      columns: Array<{ name: string; type?: string }>;
+    };
+    const rangeByName = new Map(
+      rangeBody.columns.map((column) => [column.name, column.type?.toUpperCase()]),
+    );
+    expect(rangeByName.get("range")).toBe("BIGINT");
+    expect(rangeByName.get("double_range")).toBe("BIGINT");
+  });
+
+  test("guided columns can add a manual column", async ({ liveApp, page }) => {
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
+    await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
+    const properties = await openAssetProperties(page);
+    const columnsCard = properties.getByRole("heading", { name: "Columns" }).locator("../..");
+
+    await columnsCard.getByRole("textbox", { name: "Add column" }).fill("manual_note");
+    const transactionResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/assets/${customersAssetId}/transactions`) &&
+        response.request().method() === "POST" &&
+        response.request().postDataJSON().type === "column.manual.add",
+      { timeout: 15000 },
+    );
+    await columnsCard.getByRole("button", { name: "Add column" }).click();
+    const transaction = await transactionResponse;
+    expect(transaction.ok(), await transaction.text()).toBe(true);
+
+    await expect(columnsCard.getByText("manual_note", { exact: true })).toBeVisible({
+      timeout: 15000,
+    });
+    const customers = await pollAsset(
+      liveApp,
+      page.request,
+      "analytics.customers",
+      (asset) => asset.columns?.some((column) => column.name === "manual_note") === true,
+    );
+    expect(customers.columns?.find((column) => column.name === "manual_note")?.meta).toMatchObject({
+      renart_manual: "true",
+    });
   });
 
   test("schema sync applies safe changes and opens the resolver for known type changes", async ({
@@ -1027,6 +1097,7 @@ select customer_id, upper(customer_name) as shout from analytics.customers
     const customerIDRow = resolver.getByRole("row").filter({ hasText: "customer_id" });
     await expect(customerIDRow).toContainText("INTEGER");
     await expect(customerIDRow).toContainText("BIGINT");
+    await expect(customerIDRow.getByRole("combobox")).toContainText("Use SQL query");
     await customerIDRow.getByRole("combobox").click();
     await page.getByRole("option", { name: "Use SQL query · customer_id: INTEGER" }).click();
 

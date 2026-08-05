@@ -5,6 +5,12 @@ import { join } from "node:path";
 import { liveTest as test } from "../live-app-fixture";
 
 type WorkspaceResponse = {
+  query_connections?: Array<{
+    name: string;
+    connection_type: string;
+    asset_type: string;
+    dialect: string;
+  }>;
   pipelines: Array<{
     id: string;
     name?: string;
@@ -1072,6 +1078,28 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
       "Explorer + top-bar ad-hoc affordances are desktop-only.",
     );
 
+    await writeFile(
+      join(liveApp.workspaceDir, ".bruin.yml"),
+      `environments:
+  default:
+    connections:
+      duckdb:
+        - name: duckdb-default
+          path: duckdb-files/local.db
+        - name: duckdb-adhoc
+          path: duckdb-files/adhoc.db
+`,
+      "utf8",
+    );
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${liveApp.baseURL}/api/workspace`);
+        if (!response.ok()) return [];
+        const workspace = (await response.json()) as WorkspaceResponse;
+        return (workspace.query_connections ?? []).map((connection) => connection.name);
+      })
+      .toEqual(["duckdb-adhoc", "duckdb-default"]);
+
     // Bare asset URLs open the split editor/canvas view by default.
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}`);
     await expect(page).toHaveURL(
@@ -1107,16 +1135,24 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     );
     await expect(page.getByRole("link", { name: "Ad-hoc" }).first()).toHaveClass(/ring-primary/);
 
+    const connectionSelect = page.getByRole("combobox", { name: "Ad-hoc connection" });
+    await expect(connectionSelect).toContainText("duckdb-default");
+    await connectionSelect.click();
+    await page.getByRole("option", { name: "duckdb-adhoc", exact: true }).click();
+    await expect(connectionSelect).toContainText("duckdb-adhoc");
+
     // The selected asset supplies dialect/graph context, but this document is
     // not the asset itself. Querying it must not manufacture a self-cycle.
     const selfQueryDiagnostics = page.waitForResponse(
       (response) => {
         if (!response.url().includes("/api/sql/lsp/diagnostics") || !response.ok()) return false;
         const body = response.request().postDataJSON() as {
+          connection?: string;
           content?: string;
           document_context?: string;
         };
         return (
+          body.connection === "duckdb-adhoc" &&
           body.document_context === "adhoc" &&
           body.content?.includes("analytics.customers") === true
         );
@@ -1140,7 +1176,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
 
     // The ad hoc editor reuses the SQL parse-context intellisense.
     const parseContextSeen = page.waitForResponse(
-      (response) => response.url().includes("/api/sql/parse-context") && response.ok(),
+      (response) => {
+        if (!response.url().includes("/api/sql/parse-context") || !response.ok()) return false;
+        const body = response.request().postDataJSON() as { connection?: string; content?: string };
+        return body.connection === "duckdb-adhoc" && body.content?.includes("adhoc_ok") === true;
+      },
       { timeout: 15000 },
     );
     await parseContextSeen;
@@ -1151,8 +1191,10 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     );
     await page.getByTitle("Run (⌘ + ↵)").click();
     const queryRequestBody = (await queryResponse).request().postDataJSON() as {
+      connection: string;
       query: string;
     };
+    expect(queryRequestBody.connection).toBe("duckdb-adhoc");
     // The Jinja template was rendered before execution.
     expect(queryRequestBody.query).not.toContain("{{");
     expect(queryRequestBody.query).toMatch(/\d{4}-\d{2}-\d{2}/);
@@ -1172,6 +1214,31 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(disclosure).toBeVisible();
     await expect(disclosure).toContainText("adhoc_ok");
     await expect(disclosure).not.toContainText("{{");
+
+    // Truncation is represented compactly in the rendered-query strip instead
+    // of obscuring the result table with a modal-style warning overlay.
+    await editor.click();
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.insertText("select range as value from range(0, 501)");
+    const truncatedResponse = page.waitForResponse(
+      (response) => response.url().includes("/api/sql/query") && response.ok(),
+      { timeout: 30000 },
+    );
+    await page.getByTitle("Run (⌘ + ↵)").click();
+    const truncatedPayload = (await (await truncatedResponse).json()) as {
+      rows: unknown[];
+      truncated?: boolean;
+    };
+    expect(truncatedPayload.truncated).toBe(true);
+    expect(truncatedPayload.rows).toHaveLength(500);
+    await expect(disclosure.getByLabel("Result limited to the first 500 rows")).toBeVisible();
+    await expect(disclosure).toContainText("LIMIT 500");
+    await expect(page.getByTestId("inspect-warning-banner")).toHaveCount(0);
+
+    const queryIcon = disclosure.getByTestId("rendered-query-icon");
+    await expect(queryIcon).toHaveAttribute("stroke-width", "1.5");
+    await disclosure.getByRole("button", { expanded: false }).click();
+    await expect(queryIcon).toHaveAttribute("stroke-width", "2.75");
   });
 
   test("converts an ad hoc query to an asset and a notebook cell", async ({ liveApp, page }) => {

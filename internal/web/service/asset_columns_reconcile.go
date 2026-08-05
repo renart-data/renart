@@ -54,7 +54,7 @@ func (s *AssetService) reconcileAssetColumns(
 	if err != nil {
 		return ColumnReconcileResult{}, badRequestError("asset_resolve_failed", err.Error())
 	}
-	meta := assetmeta.Parse(asset.Meta)
+	meta := assetmeta.ParseAsset(asset)
 	inferred, apiErr := buildInferred(asset, &meta)
 	if apiErr != nil {
 		return ColumnReconcileResult{}, apiErr
@@ -66,7 +66,7 @@ func (s *AssetService) reconcileAssetColumns(
 		Prev:     meta,
 	})
 	asset.Columns = final
-	asset.Meta = pipeline.EmptyStringMap(next.Apply(asset.Meta))
+	next.ApplyToAsset(asset)
 	if apiErr := loaderMaterializationAPIError(asset); apiErr != nil {
 		return ColumnReconcileResult{}, apiErr
 	}

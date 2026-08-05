@@ -20,6 +20,7 @@ import {
   SQLLSPCompletionItem,
   SQLLSPDocumentSymbol,
   SQLLSPRange,
+  SQLLSPRequest,
   SQLLSPSignatureHelp,
   SQLLSPWorkspaceEdit,
 } from "@/lib/api-sql-lsp";
@@ -63,8 +64,13 @@ export function useSQLLSP(
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
   const loadRemoteTables = useSetAtom(sqlDiscoveryTablesAtom);
   const loadRemoteColumns = useSetAtom(sqlDiscoveryColumnsAtom);
-  const parseContext = useSQLParseContext(asset, sqlContent, schemaTables);
   const connectionName = asset && workspace ? effectiveConnectionForAsset(asset) : null;
+  const parseContext = useSQLParseContext(
+    asset,
+    sqlContent,
+    schemaTables,
+    connectionName ?? undefined,
+  );
   const includeNotebookRuntimeColumns = options?.includeNotebookRuntimeColumns ?? false;
   const documentContext = options?.documentContext ?? "asset";
   const allowNonSQLDocument = options?.allowNonSQLDocument ?? false;
@@ -105,6 +111,15 @@ export function useSQLLSP(
       return;
     }
     const modelURI = model.uri.toString();
+    const lspDocumentRequest = (content: string): SQLLSPRequest => {
+      const current = providerStateRef.current;
+      return {
+        asset_id: current.asset?.id ?? asset.id,
+        content,
+        connection: current.connectionName ?? undefined,
+        document_context: documentContext,
+      };
+    };
 
     const completion = monaco.languages.registerCompletionItemProvider("sql", {
       triggerCharacters: [".", "/", '"', "'"],
@@ -121,7 +136,10 @@ export function useSQLLSP(
           currentModel.getLineContent(position.lineNumber),
           position,
         );
-        if (pathContext) {
+        const connectionType = providerStateRef.current.workspace
+          ? effectiveConnectionTypeForAsset(providerStateRef.current.workspace, asset)
+          : null;
+        if (pathContext && connectionType === "duckdb") {
           const response = await getSQLPathSuggestions({
             assetId: asset.id,
             prefix: pathContext.prefix,
@@ -148,9 +166,6 @@ export function useSQLLSP(
           .getLineContent(position.lineNumber)
           .slice(0, position.column - 1);
         const valueContext = parseEqualityValueContext(textBeforeCursor);
-        const connectionType = providerStateRef.current.workspace
-          ? effectiveConnectionTypeForAsset(providerStateRef.current.workspace, asset)
-          : null;
         if (valueContext && connectionName && parseContext && connectionType === "duckdb") {
           const resolvedTable = resolveValueSuggestionTable(
             parseContext,
@@ -193,9 +208,7 @@ export function useSQLLSP(
         }
         const dotPrefix = parseDotPrefix(textBeforeCursor);
         const response = await getSQLLSPCompletions({
-          asset_id: asset.id,
-          content: currentModel.getValue(),
-          document_context: documentContext,
+          ...lspDocumentRequest(currentModel.getValue()),
           position: monacoPositionToLSP(position),
         });
         const word = currentModel.getWordUntilPosition(position);
@@ -331,8 +344,7 @@ export function useSQLLSP(
           return [];
         }
         const response = await getSQLLSPDefinition({
-          asset_id: asset.id,
-          content: currentModel.getValue(),
+          ...lspDocumentRequest(currentModel.getValue()),
           position: monacoPositionToLSP(position),
         });
         const locations: MonacoNS.languages.Location[] = [];
@@ -375,8 +387,7 @@ export function useSQLLSP(
       event.event.preventDefault();
       event.event.stopPropagation();
       void getSQLLSPDefinition({
-        asset_id: asset.id,
-        content: model.getValue(),
+        ...lspDocumentRequest(model.getValue()),
         position: monacoPositionToLSP(position),
       })
         .then((response) => {
@@ -407,8 +418,7 @@ export function useSQLLSP(
           return [];
         }
         const response = await getSQLLSPReferences({
-          asset_id: asset.id,
-          content: currentModel.getValue(),
+          ...lspDocumentRequest(currentModel.getValue()),
           position: monacoPositionToLSP(position),
           include_declaration: context.includeDeclaration,
         });
@@ -424,8 +434,7 @@ export function useSQLLSP(
           return { edits: [], rejectReason: "Rename is only available in the active SQL asset." };
         }
         const response = await getSQLLSPRename({
-          asset_id: asset.id,
-          content: currentModel.getValue(),
+          ...lspDocumentRequest(currentModel.getValue()),
           position: monacoPositionToLSP(position),
           new_name: newName,
         });
@@ -445,10 +454,7 @@ export function useSQLLSP(
         if (currentModel.uri.toString() !== modelURI) {
           return { actions: [], dispose: () => undefined };
         }
-        const response = await getSQLLSPCodeActions({
-          asset_id: asset.id,
-          content: currentModel.getValue(),
-        });
+        const response = await getSQLLSPCodeActions(lspDocumentRequest(currentModel.getValue()));
         const markerRanges = new Set(context.markers.map(markerRangeKey));
         const actions = (response.code_actions ?? [])
           .filter((action) =>
@@ -470,8 +476,7 @@ export function useSQLLSP(
           return null;
         }
         const response = await getSQLLSPHover({
-          asset_id: asset.id,
-          content: currentModel.getValue(),
+          ...lspDocumentRequest(currentModel.getValue()),
           position: monacoPositionToLSP(position),
         });
         if (!response.hover) {
@@ -495,10 +500,9 @@ export function useSQLLSP(
         if (currentModel.uri.toString() !== modelURI) {
           return { data: new Uint32Array() };
         }
-        const response = await getSQLLSPSemanticTokens({
-          asset_id: asset.id,
-          content: currentModel.getValue(),
-        }).catch(() => null);
+        const response = await getSQLLSPSemanticTokens(
+          lspDocumentRequest(currentModel.getValue()),
+        ).catch(() => null);
         return { data: new Uint32Array(response?.tokens?.data ?? []) };
       },
       releaseDocumentSemanticTokens() {},
@@ -509,10 +513,9 @@ export function useSQLLSP(
         if (currentModel.uri.toString() !== modelURI) {
           return [];
         }
-        const response = await getSQLLSPDocumentSymbols({
-          asset_id: asset.id,
-          content: currentModel.getValue(),
-        }).catch(() => null);
+        const response = await getSQLLSPDocumentSymbols(
+          lspDocumentRequest(currentModel.getValue()),
+        ).catch(() => null);
         return (response?.symbols ?? []).map((symbol) => documentSymbolToMonaco(monaco, symbol));
       },
     });
@@ -523,8 +526,7 @@ export function useSQLLSP(
           return [];
         }
         const response = await getSQLLSPFormatting({
-          asset_id: asset.id,
-          content: currentModel.getValue(),
+          ...lspDocumentRequest(currentModel.getValue()),
           formatting_options: {
             tabSize: options.tabSize,
             insertSpaces: options.insertSpaces,
@@ -545,8 +547,7 @@ export function useSQLLSP(
           return null;
         }
         const response = await getSQLLSPSignatureHelp({
-          asset_id: asset.id,
-          content: currentModel.getValue(),
+          ...lspDocumentRequest(currentModel.getValue()),
           position: monacoPositionToLSP(position),
         }).catch(() => null);
         if (!response?.signature) {
@@ -603,6 +604,7 @@ export function useSQLLSP(
           {
             asset_id: asset.id,
             content: requestContent,
+            connection: connectionName ?? undefined,
             document_context: documentContext,
           },
           controller.signal,
@@ -640,7 +642,7 @@ export function useSQLLSP(
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [asset, documentContext, editor, monaco, sqlContent]);
+  }, [asset, connectionName, documentContext, editor, monaco, sqlContent]);
 }
 
 function isSQLAsset(asset: WebAsset) {

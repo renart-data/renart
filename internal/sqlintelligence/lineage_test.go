@@ -85,6 +85,50 @@ func TestAnnotateOutputColumnsDuckDBRangeTableFunction(t *testing.T) {
 	}
 }
 
+func TestAnnotateOutputColumnsDuckDBRangeArithmeticKeepsBigInt(t *testing.T) {
+	got, err := AnnotateOutputColumns(
+		context.Background(),
+		"select range, range * 2 as double_range from range(1, 2, 1)",
+		"duckdb",
+		Schema{},
+	)
+	if err != nil {
+		t.Fatalf("AnnotateOutputColumns: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("range arithmetic projection = %+v, want two columns", got)
+	}
+	if got[0].Name != "range" || got[0].Type != "BIGINT" {
+		t.Fatalf("range column = %+v, want range BIGINT", got[0])
+	}
+	if got[1].Name != "double_range" || got[1].Type != "BIGINT" {
+		t.Fatalf("range arithmetic = %+v, want double_range BIGINT", got[1])
+	}
+}
+
+func TestAnnotateOutputColumnsDuckDBIntegerLiteralDoesNotWidenTypedColumn(t *testing.T) {
+	for _, test := range []struct {
+		literal string
+		want    string
+	}{
+		{literal: "2", want: "TINYINT"},
+		{literal: "128", want: "INTEGER"},
+	} {
+		got, err := AnnotateOutputColumns(
+			context.Background(),
+			"select value * "+test.literal+" as doubled from input",
+			"duckdb",
+			Schema{"input": {"value": "TINYINT"}},
+		)
+		if err != nil {
+			t.Fatalf("AnnotateOutputColumns(%s): %v", test.literal, err)
+		}
+		if len(got) != 1 || got[0].Name != "doubled" || got[0].Type != test.want {
+			t.Fatalf("typed integer arithmetic with %s = %+v, want doubled %s", test.literal, got, test.want)
+		}
+	}
+}
+
 func TestAnnotateOutputColumnsDuckDBGenerateSeriesTableFunction(t *testing.T) {
 	got, err := AnnotateOutputColumns(
 		context.Background(),

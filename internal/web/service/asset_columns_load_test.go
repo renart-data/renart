@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
@@ -54,11 +55,7 @@ func TestInferLoadColumnsFromUpstream(t *testing.T) {
 	}
 	pl := &pipeline.Pipeline{Assets: []*pipeline.Asset{source, loadAsset}}
 
-	svc := &AssetService{}
-	columns, apiErr := svc.inferLoadColumnsFromUpstream(pl, loadAsset)
-	if apiErr != nil {
-		t.Fatalf("unexpected error: %+v", apiErr)
-	}
+	columns := newAssetDefinitionSchemaResolver(pl).Available(context.Background(), loadAsset)
 	if len(columns) != 2 {
 		t.Fatalf("expected 2 columns (blank-name skipped), got %d: %+v", len(columns), columns)
 	}
@@ -70,8 +67,7 @@ func TestInferLoadColumnsFromUpstream(t *testing.T) {
 func TestInferLoadColumnsFromUpstreamNoSource(t *testing.T) {
 	loadAsset := &pipeline.Asset{Name: "staging.users", Type: "load"}
 	pl := &pipeline.Pipeline{Assets: []*pipeline.Asset{loadAsset}}
-	svc := &AssetService{}
-	if _, apiErr := svc.inferLoadColumnsFromUpstream(pl, loadAsset); apiErr == nil {
-		t.Fatal("expected an error when no source asset can be resolved")
+	if columns := newAssetDefinitionSchemaResolver(pl).Available(context.Background(), loadAsset); len(columns) != 0 {
+		t.Fatalf("expected no schema when no source asset can be resolved, got %+v", columns)
 	}
 }

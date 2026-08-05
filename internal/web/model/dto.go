@@ -84,7 +84,18 @@ type ColumnSchemaSourceSnapshot struct {
 	// Fresh is set for materialized-table observations when Renart can compare
 	// the current pipeline fingerprint with its materialization record. It is
 	// runtime evidence only and is never persisted in asset metadata.
-	Fresh *bool `json:"fresh,omitempty"`
+	Fresh          *bool      `json:"fresh,omitempty"`
+	Stage          string     `json:"stage,omitempty"`
+	Completeness   string     `json:"completeness,omitempty"`
+	Confidence     string     `json:"confidence,omitempty"`
+	AssetRevision  string     `json:"asset_revision,omitempty"`
+	OutputIdentity string     `json:"output_identity,omitempty"`
+	Environment    string     `json:"environment,omitempty"`
+	Connection     string     `json:"connection,omitempty"`
+	Relation       string     `json:"relation,omitempty"`
+	ObservedAt     *time.Time `json:"observed_at,omitempty"`
+	Classification string     `json:"classification,omitempty"`
+	ExcludedReason string     `json:"excluded_reason,omitempty"`
 }
 
 // ColumnSchemaMergeRow describes how one column compares across the inferred
@@ -176,13 +187,20 @@ type Asset struct {
 // Column represents a column in an asset.
 type Column struct {
 	Name          string            `json:"name"`
+	SourceColumn  string            `json:"source_column,omitempty"`
 	Type          string            `json:"type,omitempty"`
+	Mask          string            `json:"mask,omitempty"`
 	Description   string            `json:"description,omitempty"`
 	Tags          []string          `json:"tags,omitempty"`
 	PrimaryKey    bool              `json:"primary_key,omitempty"`
 	UpdateOnMerge bool              `json:"update_on_merge,omitempty"`
 	MergeSQL      string            `json:"merge_sql,omitempty"`
 	Nullable      *bool             `json:"nullable,omitempty"`
+	Default       string            `json:"default,omitempty"`
+	Precision     *int              `json:"precision,omitempty"`
+	Scale         *int              `json:"scale,omitempty"`
+	Length        *int              `json:"length,omitempty"`
+	Collation     string            `json:"collation,omitempty"`
 	ForeignKey    *ColumnReference  `json:"foreign_key,omitempty"`
 	Owner         string            `json:"owner,omitempty"`
 	Domains       []string          `json:"domains,omitempty"`
@@ -265,11 +283,22 @@ type EnvironmentPolicy struct {
 	ConfirmDestructive bool `json:"confirm_destructive"`
 }
 
+// WorkspaceQueryConnection is one selected-environment connection that can
+// execute ad-hoc SQL. AssetType and Dialect are backend-derived so the editor
+// does not duplicate Bruin's connection-to-query-runtime mapping.
+type WorkspaceQueryConnection struct {
+	Name           string `json:"name"`
+	ConnectionType string `json:"connection_type"`
+	AssetType      string `json:"asset_type"`
+	Dialect        string `json:"dialect"`
+}
+
 // WorkspaceState represents the current state of a workspace.
 type WorkspaceState struct {
 	Pipelines           []Pipeline                   `json:"pipelines"`
 	Notebooks           []Notebook                   `json:"notebooks,omitempty"`
 	Connections         map[string]string            `json:"connections"`
+	QueryConnections    []WorkspaceQueryConnection   `json:"query_connections,omitempty"`
 	AssetCapabilities   []AssetAuthoringCapability   `json:"asset_capabilities,omitempty"`
 	SelectedEnvironment string                       `json:"selected_environment"`
 	EnvironmentPolicies map[string]EnvironmentPolicy `json:"environment_policies,omitempty"`

@@ -38,11 +38,14 @@ import type {
   ColumnSchemaSyncResult,
   WebColumn,
 } from "@/lib/generated/api-types";
+import {
+  CURRENT_SCHEMA_CHOICE,
+  defaultSchemaResolutionChoice,
+  REMOVE_SCHEMA_CHOICE,
+  SCHEMA_SOURCE_CHOICE_PREFIX,
+  schemaSourceChoice,
+} from "@/lib/schema-sync-resolution";
 import { cn } from "@/lib/utils";
-
-const CURRENT_CHOICE = "current";
-const REMOVE_CHOICE = "remove";
-const sourceChoice = (sourceID: string) => `source:${sourceID}`;
 
 type SchemaSyncDialogProps = {
   open: boolean;
@@ -79,7 +82,7 @@ export function SchemaSyncDialog({
     const next: Record<string, string> = {};
     for (const row of result.rows) {
       if (row.conflict) {
-        next[columnKey(row.column)] = defaultChoice(row, result.sources);
+        next[columnKey(row.column)] = defaultSchemaResolutionChoice(row, result.sources);
       }
     }
     setChoices(next);
@@ -183,7 +186,7 @@ export function SchemaSyncDialog({
                         <ResolutionSelect
                           row={row}
                           sources={result.sources}
-                          value={choices[columnKey(row.column)] ?? REMOVE_CHOICE}
+                          value={choices[columnKey(row.column)] ?? REMOVE_SCHEMA_CHOICE}
                           onValueChange={(value) =>
                             setChoices((current) => ({
                               ...current,
@@ -261,7 +264,7 @@ function resolutionOptions(row: ColumnSchemaMergeRow, sources: ColumnSchemaSourc
   const options: Array<{ value: string; label: string }> = [];
   if (row.current_present) {
     options.push({
-      value: CURRENT_CHOICE,
+      value: CURRENT_SCHEMA_CHOICE,
       label: `Keep saved · ${schemaValueLabel(row.column, row.current_type)}`,
     });
   }
@@ -269,27 +272,12 @@ function resolutionOptions(row: ColumnSchemaMergeRow, sources: ColumnSchemaSourc
     const column = sourceColumn(snapshot, row.column);
     if (!column) continue;
     options.push({
-      value: sourceChoice(snapshot.source.id),
+      value: schemaSourceChoice(snapshot.source.id),
       label: `Use ${snapshot.source.label} · ${schemaValueLabel(row.column, column.type)}`,
     });
   }
-  options.push({ value: REMOVE_CHOICE, label: "Remove column" });
+  options.push({ value: REMOVE_SCHEMA_CHOICE, label: "Remove column" });
   return options;
-}
-
-function defaultChoice(row: ColumnSchemaMergeRow, sources: ColumnSchemaSourceSnapshot[]) {
-  const primary =
-    sources.find((snapshot) => snapshot.source.category === "definition") ?? sources[0];
-  if (row.kind === "source_missing" && primary && sourceColumn(primary, row.column)) {
-    return sourceChoice(primary.source.id);
-  }
-  if (row.current_present) {
-    return CURRENT_CHOICE;
-  }
-  if (row.proposed_present && primary && sourceColumn(primary, row.column)) {
-    return sourceChoice(primary.source.id);
-  }
-  return REMOVE_CHOICE;
 }
 
 function resolutionForChoice(
@@ -297,11 +285,11 @@ function resolutionForChoice(
   choice: string | undefined,
   sources: ColumnSchemaSourceSnapshot[],
 ): ColumnSchemaResolution {
-  if (choice === CURRENT_CHOICE) {
+  if (choice === CURRENT_SCHEMA_CHOICE) {
     return { column: row.column, action: "use", source: "current", type: row.current_type };
   }
-  if (choice?.startsWith("source:")) {
-    const sourceID = choice.slice("source:".length);
+  if (choice?.startsWith(SCHEMA_SOURCE_CHOICE_PREFIX)) {
+    const sourceID = choice.slice(SCHEMA_SOURCE_CHOICE_PREFIX.length);
     const snapshot = sources.find((source) => source.source.id === sourceID);
     const column = snapshot ? sourceColumn(snapshot, row.column) : undefined;
     return {

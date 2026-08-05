@@ -193,13 +193,37 @@ func mergeColumn(current, inferred pipeline.Column, ownedFields []string, source
 // columnHasUserMetadata reports whether a column carries anything a user would
 // not want silently discarded.
 func columnHasUserMetadata(c pipeline.Column) bool {
-	return strings.TrimSpace(c.Description) != "" ||
+	return strings.TrimSpace(c.SourceColumn) != "" ||
+		strings.TrimSpace(c.Mask) != "" ||
+		strings.TrimSpace(c.Description) != "" ||
 		len(c.Checks) > 0 ||
 		c.PrimaryKey ||
 		c.UpdateOnMerge ||
 		len(c.Tags) > 0 ||
 		strings.TrimSpace(c.Owner) != "" ||
-		strings.TrimSpace(c.MergeSQL) != ""
+		strings.TrimSpace(c.MergeSQL) != "" ||
+		c.Nullable.Value != nil ||
+		strings.TrimSpace(c.Default) != "" ||
+		c.Precision != nil ||
+		c.Scale != nil ||
+		c.Length != nil ||
+		strings.TrimSpace(c.Collation) != "" ||
+		c.ForeignKey != nil ||
+		len(c.Domains) > 0 ||
+		columnHasUserMeta(c.Meta) ||
+		strings.TrimSpace(c.Extends) != ""
+}
+
+func columnHasUserMeta(meta pipeline.EmptyStringMap) bool {
+	for key := range meta {
+		key = strings.TrimSpace(key)
+		if !strings.EqualFold(key, ColumnKeyManual) &&
+			!strings.EqualFold(key, ColumnKeyOwned) &&
+			!strings.EqualFold(key, ColumnKeySource) {
+			return true
+		}
+	}
+	return false
 }
 
 // ColumnProjectionHash returns a stable checksum of the renart-managed column

@@ -128,6 +128,34 @@ columns:
 	assert.Equal(t, "numeric", result.Columns[0].Type)
 }
 
+func TestApplyTransactionColumnManualAddPersistsColumnLocalProvenance(t *testing.T) {
+	service, assetID, _ := newTransactionWorkspace(t, txCustomersHeader)
+
+	result, apiErr := service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type:      TxColumnManualAdd,
+		ColumnDef: &webmodel.Column{Name: "manual_note", Type: "VARCHAR"},
+	})
+	require.Nil(t, apiErr)
+	require.Len(t, result.Columns, 1)
+	assert.Equal(t, "manual_note", result.Columns[0].Name)
+
+	_, _, asset, err := service.deps.ResolveAssetByID(context.Background(), assetID)
+	require.NoError(t, err)
+	require.Len(t, asset.Columns, 1)
+	assert.Equal(t, "true", asset.Columns[0].Meta[assetmeta.ColumnKeyManual])
+	assert.NotContains(t, asset.Meta, assetmeta.KeyColAdd)
+
+	reconciled, reconcileErr := service.ReconcileAssetColumns(context.Background(), assetID, []webmodel.Column{
+		{Name: "order_id", Type: "INTEGER"},
+	})
+	require.Nil(t, reconcileErr)
+	require.Len(t, reconciled.Columns, 2)
+	assert.ElementsMatch(t, []string{"order_id", "manual_note"}, []string{
+		reconciled.Columns[0].Name,
+		reconciled.Columns[1].Name,
+	})
+}
+
 func TestApplyTransactionColumnDropAndDescription(t *testing.T) {
 	header := `/* @bruin
 name: analytics.customers

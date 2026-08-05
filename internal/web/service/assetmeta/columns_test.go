@@ -123,6 +123,22 @@ func TestReconcileColumnsStaleColumnFlagged(t *testing.T) {
 	}
 }
 
+func TestReconcileColumnsPreservesAllBruinColumnMetadata(t *testing.T) {
+	precision := 10
+	current := []pipeline.Column{{
+		Name: "amount", Type: "decimal", Precision: &precision,
+		Meta: pipeline.EmptyStringMap{"semantic_type": "currency"},
+	}}
+
+	final, items, _ := ReconcileColumns(ColumnReconcileInput{Current: current})
+	if len(items) != 1 || items[0].Column != "amount" {
+		t.Fatalf("column metadata should make a missing generated column stale: %#v", items)
+	}
+	if len(final) != 1 || final[0].Precision == nil || final[0].Meta["semantic_type"] != "currency" {
+		t.Fatalf("Bruin column metadata was dropped: %#v", final)
+	}
+}
+
 func TestReconcileColumnsDropsObsoleteGenerated(t *testing.T) {
 	// A generated column with no user metadata that is no longer inferred is
 	// silently dropped (no reconcile item).

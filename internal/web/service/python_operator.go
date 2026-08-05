@@ -758,7 +758,7 @@ func (o *renartPythonOperator) loadParquetViaSling(ctx context.Context, run pyth
 	cmd.Env = append(cmd.Env,
 		"RENART_PY_TARGET="+uri,
 	)
-	if err := runStreamingCommand(cmd, writer); err != nil {
+	if err := runStreamingCommand(ctx, cmd, writer); err != nil {
 		return fmt.Errorf("failed to load the data into %s: %w", run.asset.Name, err)
 	}
 	return nil

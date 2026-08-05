@@ -12,7 +12,7 @@ import (
 )
 
 type ParseContextHandlers interface {
-	Parse(ctx context.Context, assetID, content string, schema []service.ParseContextSchemaTable) (service.ParseContextResult, *service.APIError)
+	Parse(ctx context.Context, assetID, content string, schema []service.ParseContextSchemaTable, connection string) (service.ParseContextResult, *service.APIError)
 }
 
 type ParseContextAPI struct {
@@ -20,9 +20,10 @@ type ParseContextAPI struct {
 }
 
 type ParseContextRequest struct {
-	AssetID string                            `json:"asset_id"`
-	Content string                            `json:"content"`
-	Schema  []service.ParseContextSchemaTable `json:"schema"`
+	AssetID    string                            `json:"asset_id"`
+	Content    string                            `json:"content"`
+	Connection string                            `json:"connection,omitempty"`
+	Schema     []service.ParseContextSchemaTable `json:"schema"`
 }
 
 func RegisterParseContextRoutes(router chi.Router, handlers *ParseContextAPI) {
@@ -42,7 +43,7 @@ func (h *ParseContextAPI) HandleParseContext(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	result, apiErr := h.Service.Parse(r.Context(), assetID, req.Content, req.Schema)
+	result, apiErr := h.Service.Parse(r.Context(), assetID, req.Content, req.Schema, req.Connection)
 	if apiErr != nil {
 		webapi.WriteJSON(w, apiErr.Status, map[string]any{
 			"status": "error",

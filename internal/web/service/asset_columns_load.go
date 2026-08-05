@@ -6,29 +6,6 @@ import (
 	"github.com/bruin-data/bruin/pkg/pipeline"
 )
 
-// inferLoadColumnsFromUpstream derives a Load asset's columns from the declared
-// columns of its source asset — the same "declared columns are the source of
-// truth" model SQL assets use, but a Load asset simply mirrors its upstream
-// (there is no projection to type-annotate).
-func (s *AssetService) inferLoadColumnsFromUpstream(parsedPipeline *pipeline.Pipeline, asset *pipeline.Asset) ([]WorkspaceColumn, *APIError) {
-	source := resolveLoadSourceAsset(parsedPipeline, asset)
-	if source == nil {
-		return nil, badRequestError("load_source_unknown", "could not resolve a source asset; declare the source as a dependency to infer columns from it")
-	}
-
-	columns := make([]WorkspaceColumn, 0, len(source.Columns))
-	for _, column := range source.Columns {
-		if strings.TrimSpace(column.Name) == "" {
-			continue
-		}
-		columns = append(columns, WorkspaceColumn{Name: column.Name, Type: column.Type})
-	}
-	if len(columns) == 0 {
-		return nil, badRequestError("load_source_no_columns", "the source asset has no declared columns to infer from")
-	}
-	return columns, nil
-}
-
 // resolveLoadSourceAsset finds the asset a Load asset reads from: first by
 // matching the source_table parameter to an asset name, then by a single declared
 // upstream asset.

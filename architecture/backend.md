@@ -787,6 +787,15 @@ instead of turning a completed warehouse write into a false execution failure.
 Cancelled operators retain a cancelled terminal status through asset events,
 the materialization result, and scheduler finalization.
 
+After each successful main task with declared columns, the user-facing direct
+execution path performs a zero-row schema observation against the resolved
+target connection. Name or declared-type drift is emitted both as an
+asset-prefixed `WARNING:` log line and in the materialization result's warning
+list. Sling's legacy `_sling_loaded_at` field and materializer-owned SCD2 fields
+are excluded from the comparison. This observation is best-effort: unsupported
+metadata APIs and transient observation failures do not change the successful
+task status.
+
 The scheduler is built on River with the SQLite driver: `Store` owns
 persistence/migrations, `Service` owns orchestration (catch-up windows,
 uniqueness via `river:"unique"`), and execution is injected as a plain
@@ -1008,9 +1017,28 @@ both native and Sling execution, without rewriting `.bruin.yml`.
 Source and target connections are passed through per-process environment
 aliases instead of argv, which also allows structured payloads without exposing
 credentials to process listings. When no standalone Sling binary is configured,
-Renart runs the pinned `sling==1.5.22` package through uv; the
+Renart runs the pinned `sling==1.5.22` package through uv. It invokes a guarded
+Python bootstrap instead of the package's `sling` console entrypoint: the
+bootstrap imports the package's downloaded binary path, rejects a Python
+launcher/self fallback, and `exec`s the native binary in place. This prevents
+the upstream fallback (`which sling` inside its own uv environment) from
+recursively spawning hundreds of Python launchers when download or cache setup
+fails. A native binary whose runtime loader is unavailable now fails once with
+a NixOS-specific nix-ld/wrapper hint. The
 `RENART_SLING_PACKAGE` override remains available for compatibility testing and
-emergency pin changes. Because
+emergency pin changes. `SLING_BINARY` must name the native Sling executable;
+Renart rejects the uv-installed Python entrypoint there because Sling interprets
+the same variable as its child binary and would otherwise recursively launch
+itself. `RENART_SLING_BINARY` remains the explicit outer-launcher override, so a
+Nix wrapper can safely point `SLING_BINARY` at its distinct patched native
+binary. A process-wide gate also caps concurrent Sling launchers at the workspace
+execution limit, with a hard ceiling of eight.
+
+Every materialization and discovery launcher runs in a dedicated process group.
+Cancelling a request kills the complete uv/Python/Sling descendant tree. Output
+copying is owned by `os/exec`, so its bounded pipe-close fallback can release a
+cancelled run even if an escaped descendant retains a pipe. Python asset
+invocations use Bruin's equivalent process-tree cancellation. Because
 Sling's PostgreSQL driver does not accept libpq's opportunistic `sslmode=allow`,
 the bridge changes that mode to `verify-ca` and emits a run-log warning asking
 the user to configure a supported mode explicitly. This compatibility rewrite
@@ -1037,6 +1065,13 @@ asset definition and returns only local UTF-8 CSV/JSON/JSONL/NDJSON files up to
 256 KiB. Remote, runtime-rendered, binary, non-UTF-8, and larger sources return a
 reason without content and remain replaceable through the multipart `POST` on
 the same route. Seed bytes are never added to the workspace DTO.
+
+The workspace DTO also exposes a secret-free `query_connections` list for the
+selected environment. Each entry contains the configured name and normalized
+connection type plus the query asset type and dialect derived through the same
+Bruin mapping used by execution. The Build ad-hoc editor consumes this contract,
+so adding another supported query warehouse does not require a parallel
+TypeScript mapping.
 
 New asset creation has a broader pipeline/environment-scoped contract at
 `GET /api/pipelines/{pipelineID}/asset-creation-profile`. The response is
@@ -1186,7 +1221,15 @@ so absence in one API sample is not deletion evidence. The older one-source
 preview and direct reconcile routes remain compatibility APIs. Materialized
 Load/API observations ignore legacy `_sling_loaded_at` columns. DuckDB table
 observations use `DESCRIBE` so logical catalog types such as `JSON` survive the
-ADBC/Arrow result boundary. Sensors advertise no schema source.
+ADBC/Arrow result boundary. The provider interface returns a normalized evidence
+envelope with stage, scope, completeness, confidence, revision, output identity,
+time, columns, and diagnostics. The resolver partitions stale and differently
+scoped evidence before the conservative merge analyzer runs; type-check/LSP use
+the pure declaration-only request policy, schema sync opts into selected I/O,
+and post-run warnings use the same contract/evidence comparison boundary.
+Accepted existing-column provenance is stored in each Bruin column's `meta`
+(`renart_manual`, `renart_owned`, `renart_source`), with lossless reads of the
+schema-v2 asset-level representation. Sensors advertise no schema source.
 
 Full refresh is a run-scoped execution option shared by SQL, Python, Load, and
 API table assets. Direct SQL materializers are constructed with that option for

@@ -21,6 +21,7 @@ export function useSQLCanvasHover(
   monaco: typeof MonacoNS | null,
   editor: MonacoNS.editor.IStandaloneCodeEditor | null,
   asset: WebAsset | null,
+  options?: { documentContext?: "asset" | "adhoc" | "custom_check" },
 ) {
   const setHoveredAsset = useSetAtom(sqlHoveredAssetAtom);
 
@@ -69,6 +70,8 @@ export function useSQLCanvasHover(
         void getSQLLSPDefinition({
           asset_id: asset.id,
           content: model.getValue(),
+          connection: asset.connection?.trim() || undefined,
+          document_context: options?.documentContext ?? "asset",
           position: { line: position.lineNumber - 1, character: position.column - 1 },
         })
           .then((response) => {
@@ -92,5 +95,5 @@ export function useSQLCanvasHover(
       blur.dispose();
       modelChange.dispose();
     };
-  }, [asset, editor, monaco, setHoveredAsset]);
+  }, [asset, editor, monaco, options?.documentContext, setHoveredAsset]);
 }

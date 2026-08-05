@@ -33,7 +33,9 @@ Three concepts, of which only the first is committed:
    asset type, or warehouse introspection.
 3. **User intent** — manual additions, suppressions, overrides, ownership.
 
-Physically: `final Bruin definition + compact provenance keys`. Ownership is
+Physically: `final Bruin definition + compact provenance keys`. Existing-column
+provenance lives in that Bruin column's own `meta` map; intent that refers to an
+absent column or to the asset as a whole stays in the asset `meta`. Ownership is
 **field-level**: column names are hard-generated from SQL, column types are
 soft-generated (user-overridable, recorded as owned), descriptions/checks/
 materialization are user-owned, `depends` is inference + manual additions.
@@ -42,32 +44,36 @@ decorations.
 
 ## 3. Provenance storage (`internal/web/service/assetmeta`)
 
-The concept originally called for a nested `meta.renart` block; that does
-**not** survive Bruin, which parses `meta` as `map[string]string`
-(`pkg/pipeline/yaml.go`). Provenance is therefore stored as **flat string
-keys** under `meta:`, keeping every committed file loadable by plain bruin:
+Both asset and column `meta` are Bruin `map[string]string` values. Provenance
+therefore uses flat string keys, keeping every committed file loadable by plain
+Bruin. Schema v3 places provenance beside an existing column when possible:
 
 ```
+column.meta.renart_manual  true for a manually added column
+column.meta.renart_owned   generated fields the user owns (field|field)
+column.meta.renart_source  non-default type source (m or l)
+
 renart_v         schema version
 renart_g         generator version
 renart_sig_deps  checksum of the renart-managed dependency projection
 renart_sig_cols  checksum of the renart-managed column projection
 renart_dep_add   manual dependencies (keys: a:<asset>#<mode> / u:<uri>#<mode>)
 renart_dep_drop  inferred dependencies the user suppressed
-renart_col_add   manual columns (names)
 renart_col_drop  inferred columns the user omitted
-renart_col_own   generated columns whose fields the user owns (col:field|field;…)
-renart_col_src   non-default type sources (col:m;col2:l;…)
 renart_col_map   rename memory (e:<exprhash>:col); optional
 ```
 
 Only _exceptions_ are stored — inferred things are never listed; the file's
 real `depends:`/`columns:` plus these keys reconstruct intent on the next
 reconcile. SQL/definition inference is the implicit type source and therefore
-costs no metadata. `renart_col_src` records only exceptions: `m` means the
+costs no metadata. `renart_source` records only exceptions: `m` means the
 materialized/current table supplied the saved type and `l` means a live response
-did. The key strings and source codes are stable; changing one is a file-format
-migration. All `assetmeta` functions are pure and unit-tested.
+did. Schema v2's asset-level `renart_col_add`, `renart_col_own`, and
+`renart_col_src` are read for compatibility and migrate losslessly to column
+metadata on the next Renart write. `renart_col_drop` and `renart_col_map` remain
+asset-level because an omitted column cannot carry metadata. The key strings and
+source codes are stable; changing one is a file-format migration. All
+`assetmeta` functions are pure and unit-tested.
 
 ## 4. Reconciliation
 
@@ -171,7 +177,10 @@ round-trips unknown fields).
   sidebar next to the SQL editor: identity, materialization, dependencies
   (inferred / manual / ignored, with ignore/restore/remove actions), a column
   workbench (status markers for inferred/manual/stale/type-overridden,
-  checks, descriptions), custom SQL checks, and reconcile prompts. Custom
+  checks, descriptions, and direct manual-column creation), custom SQL checks,
+  and reconcile prompts. A manually added column records its provenance on the
+  Bruin column's own `meta` map and remains present across later inference
+  reconciliation. Custom
   checks open in a focused Monaco SQL dialog with named row-count or scalar
   expectations, descriptions, and blocking behavior; add/edit/remove actions
   use semantic asset transactions and keep the ordinary asset file as the only
@@ -253,12 +262,31 @@ round-trips unknown fields).
   connection under project settings.
 - The backend advertises each asset's available column sources through
   `column_inference_sources`, so schema synchronization is capability-driven
-  instead of branching on asset kinds in the inspector. Definition sources
+  instead of branching on asset kinds in the inspector. One backend provider
+  registry, backed by one asset-kind policy table, owns contract, SQL, API,
+  Load, local-Seed, sampled-live, and materialized-table capabilities. The same
+  providers serve explicit sync and the no-I/O authoring resolver; asset-specific
+  providers only collect normalized observations, while `asset_column_sync.go`
+  remains the single owner of precedence, freshness, and collision policy. Each observation
+  carries stage, completeness, confidence, environment/connection/relation
+  scope, asset revision, output identity, and observation time. Definition sources
   (SQL output, Load upstream, local seed file, or API fields/OpenAPI) are selected
-  automatically. Observed sources (a sampled API request and the current
+  automatically. External OpenAPI documents are fetched only by an explicit
+  network-enabled schema observation; workspace loading, type-check, and LSP
+  graph construction never fetch them. Observed sources (a sampled API request and the current
   materialized table) appear as optional advisory checkboxes. Sampled sources
   declare that they may omit columns, so a missing optional API field is not
-  mistaken for deletion evidence.
+  mistaken for deletion evidence. Relation/driver metadata remains complete
+  even when `SELECT ... WHERE 1 = 0` returns no rows; row-derived API evidence
+  remains partial regardless of the sample's row count.
+- Bruin's full authored column contract round-trips through the workspace and
+  transaction DTOs: `source_column`, `mask`, `default`, precision/scale/length,
+  collation, governance fields, checks, and column-local `meta` are preserved.
+  Logical type normalization is comparison-only and ephemeral; native Bruin
+  fields remain the persisted representation. Alias comparison uses Polyglot's
+  data-type parser, but precision, scale, length, nested element types, and
+  timezone structure must match losslessly before two evidence sources count as
+  the same known type.
 - `POST /columns/sync` observes the selected sources and owns the conservative
   merge policy. New columns and an unknown saved type becoming known are applied
   immediately through the provenance-aware reconciler. Deleting a saved column,
@@ -267,7 +295,10 @@ round-trips unknown fields).
   table with a column per source, saved metadata, and the selected result. Every
   cell repeats `column:type`; unknown values use `column:?` and absent values use
   a struck-through `column:------` so rows remain understandable without tracing
-  back to the first column;
+  back to the first column. The initial resolution is evidence-aware: a known
+  definition change is preferred over stale saved metadata, while a complete,
+  fresh materialized observation is preferred when otherwise comparable
+  sources disagree. The user must still explicitly apply every conflict;
   `POST /columns/sync/apply` persists those choices atomically while retaining
   descriptions, checks, manual columns, ignored columns, and type ownership.
   Selecting an observed source keeps the field generated and records its compact
@@ -275,9 +306,17 @@ round-trips unknown fields).
   re-observe only those recorded exception sources. If SQL can infer only an
   unknown type, a known table/live-derived saved type is retained without a
   conflict. A materialized observation's freshness is evaluated at sync time and
-  is never persisted: a fresh observation matching its saved provenance can beat
-  conflicting static inference, while a stale or unverifiable observation stays
-  advisory and opens the resolver.
+  is never persisted: a stale observation is classified as historical and
+  excluded before it can collide with the current definition. Differently scoped
+  environments, connections, revisions, and output identities are excluded for
+  the same reason; the response and notes explain every exclusion. An
+  unverifiable observation remains advisory and conservative. When the selected
+  configuration can prove a physical output, `OutputIdentity` is the existing
+  secret-free physical-target digest used by execution and staleness. Connection
+  aliases are never used as a substitute identity; unsupported/runtime-only
+  targets leave it unknown. Schema evidence is not retained in a second history
+  store: current sync snapshots plus existing bounded materialization facts are
+  the explanation boundary.
   Current-table observations for Load/API assets ignore the legacy Sling
   `_sling_loaded_at` column. DuckDB observations use logical catalog types, so a
   stored `JSON` column is not presented as `VARCHAR` merely because of the query
@@ -285,6 +324,12 @@ round-trips unknown fields).
   Editing SQL or API source does not implicitly rewrite column metadata; users
   choose when to run **Sync schema**, so an autosave cannot invalidate an
   already-open run or deployment review.
+  Local Seed definition inspection is content-fingerprinted, bounded in memory,
+  and single-flight: concurrent requests for the same bytes share one Sling
+  process, unchanged content reuses the result, and a content change creates a
+  new observation. Type-check and both LSP transports never launch Sling; a
+  local or remote Seed without committed columns therefore remains a
+  missing-declaration finding until an explicit import persists the schema.
   Sensors expose no schema source. `/columns/preview`, `/columns/reconcile`,
   `/columns/refresh-from-definition`, and SQL-specific `/fill-columns-from-db`
   remain compatibility routes; automatic seed replacement refreshes still use
@@ -296,7 +341,7 @@ round-trips unknown fields).
   typing across reloads). Canonical autosave exists; the volatile draft
   journal does not.
 - **Raw / detached mode** — granular "renart stops managing this field/asset"
-  detachment. `renart_col_own` covers field-level type ownership; whole-path
+  detachment. Column `meta.renart_owned` covers field-level type ownership; whole-path
   detachment is not implemented.
 - **Broader semantic diff prompts** outside schema-source synchronization;
   the schema resolver shows source and saved-metadata drift, while other

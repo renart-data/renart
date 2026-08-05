@@ -24,8 +24,8 @@
   },
   "pnpm": {
     "overrides": {
-      "fast-uri": "3.1.4",
-      "postcss": "8.5.18",
+      "fast-uri": "3.1.5",
+      "postcss": "8.5.23",
       "svgo": "4.0.2"
     }
   }

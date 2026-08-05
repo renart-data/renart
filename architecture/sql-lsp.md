@@ -1,6 +1,6 @@
 # SQL language server — current architecture
 
-Status: current state (July 2026).
+Status: current state (August 2026).
 A Go implementation in `internal/sqllsp` serving two frontends: a stdio
 JSON-RPC LSP server (`renart debug sql-lsp`) for external editors, and HTTP
 endpoints (`/api/sql/lsp/*`) consumed by the web UI's Monaco editors —
@@ -73,7 +73,8 @@ coordinator's `WorkspaceState` rather than the filesystem:
 
 - Every pipeline asset becomes an asset node + relation; declared
   `model.Column`s become a `declared` schema layer, including nullable,
-  primary-key, and foreign-key metadata.
+  primary-key, and foreign-key metadata. The provider-backed authoring resolver
+  also supplies pure API response-field and Load passthrough declarations.
 - Query sensors are SQL documents even though their definition path ends in
   `.asset.yml`: the HTTP/LSP adapter and pipeline type-check both project
   `parameters.query`, assign the dialect from the sensor provider, and validate
@@ -133,13 +134,16 @@ with ephemeral columns from a sibling's last notebook run, which the backend
 intentionally cannot see. The older schema-wide provider is not registered for
 notebook SQL models, so derived `VALUES`, `DESCRIBE`, CTE, and subquery scopes
 cannot be polluted by unrelated workspace columns.
-The Build ad-hoc editor also uses this LSP path (with its selected asset as the
-dialect and scope identity) instead of enabling the older global parse-context
-completion provider, so asset, query-sensor, and ad-hoc SQL agree on derived
-query semantics. It marks requests as an ad-hoc document: the selected asset is
-still borrowed for dialect and graph context, but asset/header diagnostics are
-not attached and a reference to that selected asset is not treated as the
-asset circularly referencing itself.
+The Build ad-hoc editor also uses this LSP path instead of enabling the older
+global parse-context completion provider, so asset, query-sensor, and ad-hoc SQL
+agree on derived query semantics. The selected pipeline asset is borrowed for
+graph and Jinja scope, while the independently selected query connection is
+sent on every LSP and parse-context request. The Go service clones the cached
+graph and derives the document dialect from that connection's backend-owned
+query asset mapping; formatting and DuckDB filesystem enrichment use the same
+overridden dialect. Ad-hoc requests do not attach asset/header diagnostics, and
+a reference to the context asset is not treated as the asset circularly
+referencing itself.
 
 The custom-check dialog uses the same hook for completion and diagnostics.
 Its Monaco model is independent from the asset body, so markers point at the
@@ -193,6 +197,31 @@ and CTEs. The tolerant Go projection analyzer is the final fallback for
 incomplete or unsupported SQL. Every schema layer records completeness and
 confidence explicitly; a partial layer contributes known columns but does not
 make the relation's full schema authoritative for unresolved-column checks.
+For DuckDB table functions, the AST fast path also reconciles direct integer
+arithmetic against known operand widths. This corrects narrow literal-led
+annotations such as `range * 2` from `INTEGER` to the `BIGINT` produced by
+DuckDB's `range()` relation without overriding unresolved or non-integer
+expressions.
+
+Non-SQL definition schemas enter that same snapshot through the schema-evidence
+provider registry and its central asset-kind policy. Explicit columns are
+authoritative contract evidence; local HTTP response fields and Load assets
+that mirror an upstream declaration are automatic pure providers. SQL inference
+and Load passthrough participate in one bounded feedback fixpoint, so a chain
+such as SQL -> Load -> SQL has the same columns in type-check, HTTP LSP, and
+filesystem/stdio LSP. The schema-provider request policy used by all three
+consumers disallows network, warehouse, file inspection, remote-file, and
+user-code access (DuckDB's separately gated local-file relation enrichment
+remains the explicit LSP exception described above).
+In particular, an external OpenAPI URL is not fetched while loading a workspace
+or typing; users explicitly import that schema first. Local Seed inspection is
+also explicit and content-fingerprint/single-flight cached, never launched by an
+authoring request. Runtime/materialized evidence therefore cannot make the
+revision-cached authoring graph nondeterministic. Any relation-producing asset whose committed definition has
+neither an explicit schema nor a supported derivation is an asset-level error
+in type-check, HTTP diagnostics, and the stdio LSP. This includes persisted
+Seed and Python outputs: runtime sampling is deliberately not used to make a
+revision-cached authoring graph nondeterministic.
 
 Declared SQL schemas are also an output contract. On the final executable
 query, the shared validator infers the projection with Polyglot. When every
@@ -209,6 +238,11 @@ Same-name columns are compared by type. Polyglot's standalone data-type parser
 canonicalizes dialect spellings (`INT`/`INTEGER`, `TEXT`/`VARCHAR`,
 `NUMERIC`/`DECIMAL`, timestamp timezone spellings, and parameterized types), so
 only meaningful differences produce `declared-column-type-drift` warnings.
+Schema-evidence reconciliation uses the strict form of that comparison:
+precision, scale, string length, nested element structure, and timezone
+structure cannot be discarded as aliases. Native Bruin type fields are retained
+for display and round-tripping; the logical form is not persisted as parallel
+metadata.
 Compact analysis also carries schema nullability through expressions, CTEs,
 and outer joins. If a projection is provably nullable while its declared
 contract is `nullable: false`, the validator emits
@@ -274,7 +308,8 @@ Design notes, in decreasing order of importance:
 
 `renart debug sql-lsp` (`cmd/sqllsp.go`) uses `LoadSQLLSPGraph`: the canonical
 filesystem loader indexes Bruin and dbt projects, then the Bruin adapter adds
-the same cached-style asset/header findings used by the web service. The
+the same cached-style asset/header findings and provider-backed pure declaration
+fixpoint used by the web service. The
 configured loader is reused on `workspace/didChangeWatchedFiles`, so reloads do
 not silently lose metadata diagnostics. A missing graph degrades to local
 syntax/tolerant analysis. Message size is capped at 64 MiB.

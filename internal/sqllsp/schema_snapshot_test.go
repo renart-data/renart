@@ -119,6 +119,27 @@ func TestInferSchemaSnapshotFallsBackForDuckDBTableFunctionType(t *testing.T) {
 	}
 }
 
+func TestInferSchemaSnapshotKeepsDuckDBRangeArithmeticBigInt(t *testing.T) {
+	graph := CanonicalGraph{
+		Assets: []AssetNode{{ID: "range-arithmetic", Name: "analytics.range_arithmetic", URI: "file:///range-arithmetic.sql"}},
+		Relations: []RelationNode{{
+			ID: "analytics.range_arithmetic", Name: "analytics.range_arithmetic", AssetID: "range-arithmetic",
+		}},
+	}
+	graph = InferSchemaSnapshot(context.Background(), graph, []InferenceAsset{{
+		ID: "range-arithmetic", Name: "analytics.range_arithmetic", URI: "file:///range-arithmetic.sql",
+		SQL: "select range, range * 2 as double_range from range(1, 2, 1)", Dialect: "duckdb",
+	}})
+
+	schema, _ := ValidationSchema(graph)
+	if got := schema["analytics.range_arithmetic"]["range"]; got != "BIGINT" {
+		t.Fatalf("range output type = %q, want BIGINT", got)
+	}
+	if got := schema["analytics.range_arithmetic"]["double_range"]; got != "BIGINT" {
+		t.Fatalf("double_range output type = %q, want BIGINT", got)
+	}
+}
+
 func TestValidationSchemaKeepsUnknownRelationExplicit(t *testing.T) {
 	graph := GraphFromRenartAssets("file:///workspace", []AssetNode{{ID: "python", Name: "analytics.python"}}, nil)
 	schema, confidence := ValidationSchema(graph)

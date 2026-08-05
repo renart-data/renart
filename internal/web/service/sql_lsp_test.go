@@ -16,8 +16,11 @@ import (
 	"time"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	polyglot "github.com/tobilg/polyglot/packages/go"
 	"renart/internal/authoringdiag"
+	"renart/internal/sqlintelligence"
 	"renart/internal/sqllsp"
 	"renart/internal/web/model"
 )
@@ -111,6 +114,87 @@ select a, b from a.example_asset
 	if httpDiagnostic.Range != wantRange || stdioDiagnostic.Range != wantRange {
 		t.Fatalf("diagnostic ranges differ: http=%#v stdio=%#v want=%#v", httpDiagnostic.Range, stdioDiagnostic.Range, wantRange)
 	}
+}
+
+func TestAuthoringSchemaParityAcrossTypeCheckHTTPAndFilesystemLSP(t *testing.T) {
+	parsed, root := writeTypeCheckWorkspace(t, `name: analytics
+default_connections:
+  duckdb: duckdb-default
+`, map[string]string{
+		"source.sql": `
+/* @bruin
+name: analytics.source
+type: duckdb.sql
+materialization:
+  type: view
+@bruin */
+select 1::BIGINT as id
+`,
+		"mirror.asset.yml": `
+name: analytics.mirror
+type: load
+depends:
+  - analytics.source
+parameters:
+  source_table: analytics.source
+  source_connection: duckdb-default
+  destination_connection: duckdb-default
+materialization:
+  type: table
+`,
+		"report.sql": `
+/* @bruin
+name: analytics.report
+type: duckdb.sql
+materialization:
+  type: view
+depends:
+  - analytics.mirror
+@bruin */
+select id, missing_column from analytics.mirror
+`,
+	})
+
+	report := runTypeCheck(t, parsed, root)
+	typecheckAsset := findAsset(t, report, "analytics.report")
+	assert.False(t, hasFinding(typecheckAsset, typeCheckSeverityError, "Unresolved column: id"), "%+v", typecheckAsset.Findings)
+	assert.True(t, hasFinding(typecheckAsset, typeCheckSeverityError, "Unresolved column: missing_column"), "%+v", typecheckAsset.Findings)
+
+	workspace := NewWorkspaceService(root, filepath.Join(root, ".bruin.yml"))
+	state, err := workspace.ComputeState(context.Background())
+	require.NoError(t, err)
+	var reportAsset model.Asset
+	for _, candidate := range state.Pipelines[0].Assets {
+		if candidate.Name == "analytics.report" {
+			reportAsset = candidate
+			break
+		}
+	}
+	require.NotEmpty(t, reportAsset.ID)
+	httpLSP := NewSQLLSPService(SQLLSPDependencies{
+		WorkspaceRoot: root,
+		CurrentState:  func() model.WorkspaceState { return state },
+	})
+	httpResult, apiErr := httpLSP.Diagnostics(context.Background(), SQLLSPRequest{
+		AssetID: reportAsset.ID,
+		Content: "select id, missing_column from analytics.mirror",
+	})
+	require.Nil(t, apiErr)
+	assert.Nil(t, findLSPDiagnosticByMessage(httpResult.Diagnostics, "Unresolved column: id"))
+	assert.NotNil(t, findLSPDiagnosticByMessage(httpResult.Diagnostics, "Unresolved column: missing_column"))
+
+	filesystemGraph, err := LoadSQLLSPGraph(context.Background(), root)
+	require.NoError(t, err)
+	validationSchema, confidence := sqllsp.ValidationSchema(filesystemGraph)
+	assert.Equal(t, "BIGINT", validationSchema["analytics.mirror"]["id"])
+	assert.Equal(t, sqlintelligence.RelationKnown, confidence["analytics.mirror"])
+	filesystemDiagnostics := sqllsp.NewEngine(filesystemGraph).Diagnostics(sqllsp.TextDocumentItem{
+		URI:        sqllsp.FileURI(filepath.Join(root, "analytics", "assets", "report.sql")),
+		LanguageID: "sql",
+		Text:       "select id, missing_column from analytics.mirror",
+	})
+	assert.Nil(t, findLSPDiagnosticByMessage(filesystemDiagnostics, "Unresolved column: id"))
+	assert.NotNil(t, findLSPDiagnosticByMessage(filesystemDiagnostics, "Unresolved column: missing_column"))
 }
 
 func TestSQLLSPServiceAllowsSelectedAssetReferencesInAdHocDocuments(t *testing.T) {
@@ -227,6 +311,48 @@ func TestSQLLSPServiceCompletesDuckDBFileColumnsAndHonorsDisabledPolicy(t *testi
 	if diagnostic := findLSPDiagnosticByCode(diagnostics.Diagnostics, authoringdiag.CodeUnresolvedRelation); diagnostic != nil {
 		t.Fatalf("disabled policy should replace unresolved-relation noise: %#v", diagnostics.Diagnostics)
 	}
+}
+
+func TestSQLLSPServiceUsesSelectedConnectionForDuckDBFileColumns(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "example.csv"), []byte("id,name\n1,Ada\n"), 0o600))
+	state := model.WorkspaceState{
+		Revision: 1,
+		Connections: map[string]string{
+			"postgres-default": "postgres",
+			"duckdb-adhoc":     "duckdb",
+		},
+		Pipelines: []model.Pipeline{{
+			ID: "pipeline",
+			Assets: []model.Asset{{
+				ID:         "report",
+				Name:       "analytics.report",
+				Type:       "pg.sql",
+				Path:       "analytics/assets/report.sql",
+				Connection: "postgres-default",
+			}},
+		}},
+	}
+	service := NewSQLLSPService(SQLLSPDependencies{
+		WorkspaceRoot: root,
+		CurrentState:  func() model.WorkspaceState { return state },
+	})
+	const sqlText = `select  from "./example.csv"`
+
+	response, apiErr := service.Completions(context.Background(), SQLLSPRequest{
+		AssetID:         "report",
+		Content:         sqlText,
+		Connection:      "duckdb-adhoc",
+		DocumentContext: "adhoc",
+		Position:        sqllsp.Position{Line: 0, Character: len("select ")},
+	})
+	require.Nil(t, apiErr)
+	labels := make([]string, 0, len(response.Completions))
+	for _, item := range response.Completions {
+		labels = append(labels, item.Label)
+	}
+	assert.Contains(t, labels, "id")
+	assert.Contains(t, labels, "name")
 }
 
 func TestAmbiguousJoinColumnParityAcrossTypeCheckHTTPAndStdio(t *testing.T) {
@@ -635,10 +761,96 @@ func TestLSPAssetAdapterCoversEveryRegisteredHeaderDiagnostic(t *testing.T) {
 	}
 }
 
+func TestMissingNonSQLSchemaIsAnErrorAcrossTypecheckAndLSP(t *testing.T) {
+	parsed, root := writeTypeCheckWorkspace(t, "name: analytics", map[string]string{
+		"events.py": `
+""" @bruin
+name: analytics.events
+type: python
+materialization:
+  type: table
+@bruin """
+
+def materialize():
+    return [{"id": 1}]
+`,
+	})
+	events := parsed.Assets[0]
+	assetID := assetReportID(root, events)
+
+	typecheck := runTypeCheck(t, parsed, root)
+	typecheckFinding := findTypeCheckFindingByCode(
+		findAsset(t, typecheck, events.Name).Findings,
+		authoringdiag.CodeMissingDeclaredColumns,
+	)
+	require.NotNil(t, typecheckFinding)
+	assert.Equal(t, typeCheckSeverityError, typecheckFinding.Severity)
+
+	state := model.WorkspaceState{Revision: 1, Pipelines: []model.Pipeline{{
+		ID: "analytics-pipeline",
+		Assets: []model.Asset{{
+			ID:      assetID,
+			Name:    events.Name,
+			Type:    string(events.Type),
+			Path:    events.ExecutableFile.Path,
+			Content: events.ExecutableFile.Content,
+		}},
+	}}}
+	service := NewSQLLSPService(SQLLSPDependencies{
+		WorkspaceRoot: root,
+		CurrentState:  func() model.WorkspaceState { return state },
+		ResolveAssetByID: func(_ context.Context, requested string) (string, *pipeline.Pipeline, *pipeline.Asset, error) {
+			require.Equal(t, assetID, requested)
+			return events.ExecutableFile.Path, parsed, events, nil
+		},
+	})
+	httpResponse, apiErr := service.Diagnostics(context.Background(), SQLLSPRequest{
+		AssetID: assetID,
+		Content: "select 1",
+	})
+	require.Nil(t, apiErr)
+	httpDiagnostic := findLSPDiagnosticByCode(httpResponse.Diagnostics, authoringdiag.CodeMissingDeclaredColumns)
+	require.NotNil(t, httpDiagnostic)
+	assert.Equal(t, 1, httpDiagnostic.Severity)
+	assert.Equal(t, string(authoringdiag.ScopeAsset), httpDiagnostic.Scope)
+
+	graph, err := LoadSQLLSPGraph(context.Background(), root)
+	require.NoError(t, err)
+	server := sqllsp.NewServer(graph, nil)
+	openPayload, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "textDocument/didOpen",
+		"params": map[string]any{"textDocument": map[string]any{
+			"uri": typeCheckAssetURI(root, events), "languageId": "python", "version": 1,
+			"text": events.ExecutableFile.Content,
+		}},
+	})
+	require.NoError(t, err)
+	var output bytes.Buffer
+	require.NoError(t, server.Serve(context.Background(), bytes.NewReader(sqllsp.EncodeMessage(openPayload)), &output))
+	stdioDiagnostic := findLSPDiagnosticByCode(
+		decodePublishedDiagnostics(t, output.Bytes()),
+		authoringdiag.CodeMissingDeclaredColumns,
+	)
+	require.NotNil(t, stdioDiagnostic)
+	assert.Equal(t, 1, stdioDiagnostic.Severity)
+	assert.Equal(t, typecheckFinding.Message, httpDiagnostic.Message)
+	assert.Equal(t, typecheckFinding.Message, stdioDiagnostic.Message)
+}
+
 func findLSPDiagnosticByCode(diagnostics []sqllsp.Diagnostic, code string) *sqllsp.Diagnostic {
 	for i := range diagnostics {
 		if diagnostics[i].Code == code {
 			return &diagnostics[i]
+		}
+	}
+	return nil
+}
+
+func findLSPDiagnosticByMessage(diagnostics []sqllsp.Diagnostic, message string) *sqllsp.Diagnostic {
+	for index := range diagnostics {
+		if strings.Contains(diagnostics[index].Message, message) {
+			return &diagnostics[index]
 		}
 	}
 	return nil
@@ -1082,6 +1294,10 @@ func TestSQLLSPServiceWarnsForCrossConnectionReference(t *testing.T) {
 
 func TestSQLLSPServiceUsesRequestConnectionForEmbeddedQuery(t *testing.T) {
 	state := model.WorkspaceState{
+		Connections: map[string]string{
+			"duckdb-default":   "duckdb",
+			"postgres-default": "postgres",
+		},
 		Pipelines: []model.Pipeline{{
 			ID:   "pipeline",
 			Name: "analytics",
@@ -1121,6 +1337,31 @@ func TestSQLLSPServiceUsesRequestConnectionForEmbeddedQuery(t *testing.T) {
 			t.Fatalf("request connection should match the referenced asset: %#v", response.Diagnostics)
 		}
 	}
+}
+
+func TestGraphWithDocumentConnectionOverridesConnectionAndDialect(t *testing.T) {
+	t.Parallel()
+
+	uri := sqllsp.URI("file:///workspace/analytics/report.sql")
+	graph := sqllsp.CanonicalGraph{Assets: []sqllsp.AssetNode{{
+		ID:         "report",
+		URI:        uri,
+		Connection: "duckdb-default",
+		Dialect:    "duckdb",
+	}}}
+
+	overridden := graphWithDocumentConnection(
+		graph,
+		uri,
+		"databricks-default",
+		map[string]string{"databricks-default": "databricks"},
+	)
+
+	require.Len(t, overridden.Assets, 1)
+	assert.Equal(t, "databricks-default", overridden.Assets[0].Connection)
+	assert.Equal(t, "databricks", overridden.Assets[0].Dialect)
+	assert.Equal(t, "duckdb-default", graph.Assets[0].Connection, "cached graph must remain unchanged")
+	assert.Equal(t, "duckdb", graph.Assets[0].Dialect, "cached graph must remain unchanged")
 }
 
 func TestSQLLSPServiceFindsReferencesAcrossWorkspaceAssets(t *testing.T) {

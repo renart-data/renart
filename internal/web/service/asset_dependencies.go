@@ -199,10 +199,10 @@ func (s *AssetService) reconcileLoadAssetDependencies(ctx context.Context, relAs
 		AssetName: asset.Name,
 		Inferred:  inferred,
 		Current:   asset.Upstreams,
-		Prev:      assetmeta.Parse(asset.Meta),
+		Prev:      assetmeta.ParseAsset(asset),
 	})
 	asset.Upstreams = final
-	asset.Meta = pipeline.EmptyStringMap(next.Apply(asset.Meta))
+	next.ApplyToAsset(asset)
 
 	if apiErr := s.persistYAMLAssetPreservingInferredName(asset); apiErr != nil {
 		return fmt.Errorf("persist load dependencies for %q: %s", asset.Name, apiErr.Message)
@@ -230,10 +230,10 @@ func reconcileSQLAssetDependenciesFS(ctx context.Context, fs afero.Fs, asset *pi
 		AssetName: asset.Name,
 		Inferred:  inferredUpstreams,
 		Current:   asset.Upstreams,
-		Prev:      assetmeta.Parse(asset.Meta),
+		Prev:      assetmeta.ParseAsset(asset),
 	})
 	asset.Upstreams = final
-	asset.Meta = pipeline.EmptyStringMap(next.Apply(asset.Meta))
+	next.ApplyToAsset(asset)
 	originalHadExplicitName := assetContentHasExplicitName(asset.ExecutableFile.Content)
 
 	if err := asset.Persist(fs, parsedPipeline); err != nil {
@@ -373,7 +373,7 @@ func applyManualAssetUpstreams(asset *pipeline.Asset, parsedPipeline *pipeline.P
 		return
 	}
 
-	prev := assetmeta.Parse(asset.Meta)
+	prev := assetmeta.ParseAsset(asset)
 	prevManual := make(map[string]struct{}, len(prev.DepAdd))
 	for _, key := range prev.DepAdd {
 		prevManual[assetmeta.DependencyMatchKey(key)] = struct{}{}
@@ -436,7 +436,7 @@ func applyManualAssetUpstreams(asset *pipeline.Asset, parsedPipeline *pipeline.P
 		depAdd = append(depAdd, assetmeta.DependencyKey(upstream))
 	}
 	next.DepAdd = depAdd
-	asset.Meta = pipeline.EmptyStringMap(next.Apply(asset.Meta))
+	next.ApplyToAsset(asset)
 }
 
 func getAssetByNameCaseInsensitiveLocal(parsedPipeline *pipeline.Pipeline, name string) *pipeline.Asset {

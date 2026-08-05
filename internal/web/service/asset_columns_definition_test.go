@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
@@ -205,4 +207,56 @@ printf '%s\n' '{"fields":["File","ID","Column","Native Type","General Type"],"ro
 	require.NoError(t, err)
 	assert.Contains(t, string(definition), "name: customer_id")
 	assert.Contains(t, string(definition), "type: bigint")
+}
+
+func TestSeedColumnDiscoveryIsContentCachedAndSingleFlight(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	seedPath := filepath.Join(workspaceRoot, "customers.csv")
+	require.NoError(t, os.WriteFile(seedPath, []byte("id,name\n1,Ada\n"), 0o644))
+	countPath := filepath.Join(workspaceRoot, "calls.txt")
+	fakeSling := filepath.Join(workspaceRoot, "fake-sling")
+	require.NoError(t, os.WriteFile(fakeSling, []byte(`#!/bin/sh
+printf x >> "$COUNT_PATH"
+sleep 0.2
+printf '%s\n' '{"fields":["Column","General Type"],"rows":[["id","bigint"],["name","text"]]}'
+`), 0o755))
+	t.Setenv("RENART_SLING_BINARY", fakeSling)
+	t.Setenv("COUNT_PATH", countPath)
+
+	service := NewAssetService(AssetDependencies{WorkspaceRoot: workspaceRoot})
+	const callers = 16
+	var wait sync.WaitGroup
+	wait.Add(callers)
+	errors := make(chan error, callers)
+	for range callers {
+		go func() {
+			defer wait.Done()
+			columns, _, err := service.discoverSeedColumns(context.Background(), seedPath)
+			if err == nil && len(columns) != 2 {
+				err = fmt.Errorf("expected two columns, got %d", len(columns))
+			}
+			errors <- err
+		}()
+	}
+	wait.Wait()
+	close(errors)
+	for err := range errors {
+		require.NoError(t, err)
+	}
+	count, err := os.ReadFile(countPath)
+	require.NoError(t, err)
+	assert.Equal(t, "x", string(count), "concurrent observations must share one Sling process")
+
+	_, _, err = service.discoverSeedColumns(context.Background(), seedPath)
+	require.NoError(t, err)
+	count, err = os.ReadFile(countPath)
+	require.NoError(t, err)
+	assert.Equal(t, "x", string(count), "unchanged content must use the cache")
+
+	require.NoError(t, os.WriteFile(seedPath, []byte("id,name\n2,Grace\n"), 0o644))
+	_, _, err = service.discoverSeedColumns(context.Background(), seedPath)
+	require.NoError(t, err)
+	count, err = os.ReadFile(countPath)
+	require.NoError(t, err)
+	assert.Equal(t, "xx", string(count), "changed content must be inspected again")
 }

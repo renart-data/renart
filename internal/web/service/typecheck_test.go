@@ -324,26 +324,30 @@ ORDER BY username, time_class, color, games DESC, score_percent DESC
 	assert.Empty(t, repertoire.Findings)
 }
 
-func TestCheckPipelineWarnsForUndeclaredNonSQLAssets(t *testing.T) {
+func TestCheckPipelineRequiresColumnsForUninferableNonSQLAssets(t *testing.T) {
 	t.Parallel()
 	parsed, root := writeTypeCheckWorkspace(t, "name: analytics", map[string]string{
 		"loader.py": `
 """ @bruin
 name: analytics.loader
 type: python
+materialization:
+  type: table
 @bruin """
-print("hi")
+
+def materialize():
+    return [{"id": 1}]
 `,
 	})
 
 	report := runTypeCheck(t, parsed, root)
 
 	loader := findAsset(t, report, "analytics.loader")
-	assert.Equal(t, typeCheckStatusWarning, loader.Status)
-	assert.True(t, hasFinding(loader, typeCheckSeverityWarning, "Declares no columns"),
-		"expected missing-columns warning, got %+v", loader.Findings)
-	assert.Equal(t, 1, report.Summary.Warnings)
-	assert.Equal(t, 0, report.Summary.Errors)
+	assert.Equal(t, typeCheckStatusError, loader.Status)
+	assert.True(t, hasFinding(loader, typeCheckSeverityError, "Output schema cannot be inferred"),
+		"expected missing-columns error, got %+v", loader.Findings)
+	assert.Equal(t, 0, report.Summary.Warnings)
+	assert.Equal(t, 1, report.Summary.Errors)
 }
 
 func TestCheckPipelineDoesNotWarnWhenNonSQLDeclaresColumns(t *testing.T) {
@@ -353,6 +357,8 @@ func TestCheckPipelineDoesNotWarnWhenNonSQLDeclaresColumns(t *testing.T) {
 """ @bruin
 name: analytics.loader
 type: python
+materialization:
+  type: table
 columns:
   - name: id
     type: BIGINT
@@ -365,6 +371,101 @@ print("hi")
 	loader := findAsset(t, report, "analytics.loader")
 	assert.Equal(t, typeCheckStatusOK, loader.Status)
 	assert.Empty(t, loader.Findings)
+}
+
+func TestCheckPipelineAcceptsNonSQLSchemaDerivedFromDefinition(t *testing.T) {
+	t.Parallel()
+	parsed, root := writeTypeCheckWorkspace(t, `
+name: analytics
+default_connections:
+  duckdb: duckdb-default
+`, map[string]string{
+		"source.sql": `
+/* @bruin
+name: analytics.source
+type: duckdb.sql
+materialization:
+  type: table
+columns:
+  - name: id
+    type: BIGINT
+@bruin */
+select 1 as id
+`,
+		"copy.asset.yml": `
+name: analytics.copy
+type: load
+connection: duckdb-default
+parameters:
+  source_connection: duckdb-default
+  source_table: analytics.source
+  destination_connection: duckdb-default
+  destination_object: analytics.copy
+materialization:
+  type: table
+  strategy: create+replace
+depends:
+  - analytics.source
+`,
+		"events.asset.yml": `
+name: analytics.events
+type: api
+connection: duckdb-default
+parameters:
+  request:
+    url: https://example.invalid/events
+  response:
+    fields:
+      id: id
+materialization:
+  type: table
+  strategy: create+replace
+`,
+	})
+
+	report := runTypeCheck(t, parsed, root)
+	for _, name := range []string{"analytics.copy", "analytics.events"} {
+		asset := findAsset(t, report, name)
+		assert.False(t, hasFinding(asset, typeCheckSeverityError, "Output schema cannot be inferred"),
+			"definition-derived asset %s was rejected: %+v", name, asset.Findings)
+	}
+}
+
+func TestCheckPipelineDoesNotRequireColumnsForNonMaterializingPythonAsset(t *testing.T) {
+	t.Parallel()
+	parsed, root := writeTypeCheckWorkspace(t, "name: analytics", map[string]string{
+		"notify.py": `
+""" @bruin
+name: analytics.notify
+type: python
+@bruin """
+print("done")
+`,
+	})
+
+	report := runTypeCheck(t, parsed, root)
+	notify := findAsset(t, report, "analytics.notify")
+	assert.Equal(t, typeCheckStatusOK, notify.Status)
+	assert.Empty(t, notify.Findings)
+}
+
+func TestCheckPipelineRequiresPersistedColumnsForSeedSchema(t *testing.T) {
+	t.Parallel()
+	parsed, root := writeTypeCheckWorkspace(t, "name: analytics", map[string]string{
+		"events.asset.yml": `
+name: analytics.events
+type: duckdb.seed
+parameters:
+  path: ./events.csv
+  file_type: csv
+`,
+		"events.csv": "id,name\n1,Ada\n",
+	})
+
+	report := runTypeCheck(t, parsed, root)
+	events := findAsset(t, report, "analytics.events")
+	assert.True(t, hasFinding(events, typeCheckSeverityError, "Output schema cannot be inferred"),
+		"seed without persisted columns should not silently disable downstream checks: %+v", events.Findings)
 }
 
 func TestCheckPipelineWarnsForUndeclaredPythonQueryAsset(t *testing.T) {
@@ -499,8 +600,12 @@ func TestCheckPipelineSuppressesCascadeFromUndeclaredUpstream(t *testing.T) {
 """ @bruin
 name: analytics.loader
 type: python
+materialization:
+  type: table
 @bruin """
-print("hi")
+
+def materialize():
+    return [{"some_unknowable_column": 1}]
 `,
 		"down.sql": `
 /* @bruin
@@ -517,14 +622,14 @@ select some_unknowable_column from analytics.loader
 
 	report := runTypeCheck(t, parsed, root)
 
-	// The producer is warned about; the consumer must NOT be hard-errored for
+	// The producer is rejected; the consumer must NOT receive a speculative
 	// columns we cannot verify against an undeclared upstream.
 	loader := findAsset(t, report, "analytics.loader")
-	assert.Equal(t, typeCheckStatusWarning, loader.Status)
+	assert.Equal(t, typeCheckStatusError, loader.Status)
 
 	down := findAsset(t, report, "analytics.down")
 	assert.Equal(t, typeCheckStatusOK, down.Status, "unexpected findings: %+v", down.Findings)
-	assert.Equal(t, 0, report.Summary.Errors)
+	assert.Equal(t, 1, report.Summary.Errors)
 }
 
 func TestCheckPipelineRendersJinjaVariablesAndDates(t *testing.T) {

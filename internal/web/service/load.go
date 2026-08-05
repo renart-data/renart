@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -31,7 +32,79 @@ const (
 	slingLoadedAtDisabledEnv = "SLING_LOADED_AT_COLUMN=false"
 	slingSourceConnectionEnv = "RENART_SLING_SOURCE"
 	slingTargetConnectionEnv = "RENART_SLING_TARGET"
+	maxConcurrentSlingRuns   = 8
 )
+
+// The Python package's `sling` console script is not a safe outer launcher.
+// When its native binary cannot be downloaded, sling.bin falls back to the
+// first `sling` on PATH. Inside a uv tool environment that is the console
+// script itself, so every Python process recursively starts another one. Use a
+// small bootstrap instead: importing sling.bin keeps the package's download and
+// cache behavior, but we validate the result before replacing the Python
+// process with the native executable.
+const slingUVBootstrap = `import errno, os, sys
+from sling.bin import SLING_BIN
+
+path = os.path.realpath(os.fspath(SLING_BIN or ""))
+try:
+    with open(path, "rb") as executable:
+        prefix = executable.read(512 * 1024)
+except OSError as error:
+    sys.exit(f"Renart could not resolve Sling's native binary {path!r}: {error}")
+
+if b"from sling import cli" in prefix:
+    sys.exit(
+        "Renart stopped Sling's Python launcher from recursively launching itself. "
+        "The native Sling binary could not be downloaded or resolved. "
+        "Check network/cache permissions, or set RENART_SLING_BINARY to a compatible executable."
+    )
+
+try:
+    os.execv(path, [path, *sys.argv[1:]])
+except OSError as error:
+    hint = ""
+    if error.errno == errno.ENOENT and os.path.exists(path):
+        hint = (
+            " The file exists, but its runtime loader is unavailable. On NixOS, enable nix-ld "
+            "or set RENART_SLING_BINARY to a Nix-compatible wrapper."
+        )
+    sys.exit(f"Renart could not execute Sling's native binary {path!r}: {error}.{hint}")
+`
+
+type slingProcessLimiter struct {
+	slots chan struct{}
+}
+
+func newSlingProcessLimiter(limit int) *slingProcessLimiter {
+	if limit < 1 {
+		limit = 1
+	}
+	return &slingProcessLimiter{slots: make(chan struct{}, limit)}
+}
+
+func (l *slingProcessLimiter) acquire(ctx context.Context) (func(), error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case l.slots <- struct{}{}:
+		return func() { <-l.slots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// Sling uses a Python launcher around its native binary when installed through
+// uv. Keep a hard process ceiling even when independent pipelines are admitted
+// concurrently, so a broken launcher or a burst of runs cannot exhaust the
+// workstation before cancellation propagates.
+var sharedSlingProcessLimiter = newSlingProcessLimiter(func() int {
+	limit := executionWorkspaceLimit()
+	if limit > maxConcurrentSlingRuns {
+		return maxConcurrentSlingRuns
+	}
+	return limit
+}())
 
 // ingestrURIConnection is the bruin connection capability that yields a standard
 // connection URI (e.g. postgresql://…, s3://…, duckdb://…). The method name comes
@@ -677,6 +750,12 @@ func loadUvBinaryPath(ctx context.Context, output io.Writer) (string, error) {
 
 func loadCommand(ctx context.Context, loadArgs []string, output io.Writer) (string, []string, error) {
 	if binaryPath := loadBinaryPath(); binaryPath != "" {
+		if slingBinaryWouldRecurse(binaryPath) {
+			return "", nil, fmt.Errorf(
+				"SLING_BINARY points to Sling's Python launcher %q, which would recursively launch itself; point SLING_BINARY at the native Sling binary, use RENART_SLING_BINARY for an external launcher, or unset it to let Renart use uv",
+				binaryPath,
+			)
+		}
 		return binaryPath, loadArgs, nil
 	}
 	uvBinaryPath, err := loadUvBinaryPath(ctx, output)
@@ -691,9 +770,88 @@ func loadCommand(ctx context.Context, loadArgs []string, output io.Writer) (stri
 		"3.11",
 		"--from",
 		loadPackageName(),
-		"sling",
+		"python",
+		"-c",
+		slingUVBootstrap,
 	}
 	return uvBinaryPath, append(cmdline, loadArgs...), nil
+}
+
+func slingBinaryWouldRecurse(commandPath string) bool {
+	override := strings.TrimSpace(os.Getenv("SLING_BINARY"))
+	return override != "" && isPythonSlingLauncher(commandPath) && isPythonSlingLauncher(override)
+}
+
+func isPythonSlingLauncher(commandPath string) bool {
+	commandPath = resolvedExecutablePath(commandPath)
+	if commandPath == "" {
+		return false
+	}
+	file, err := os.Open(commandPath)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	prefix, err := io.ReadAll(io.LimitReader(file, 512<<10))
+	if err != nil {
+		return false
+	}
+	return bytes.Contains(prefix, []byte("from sling import cli"))
+}
+
+func resolvedExecutablePath(raw string) string {
+	path := strings.TrimSpace(raw)
+	if path == "" {
+		return ""
+	}
+	if found, err := exec.LookPath(path); err == nil {
+		path = found
+	}
+	if absolute, err := filepath.Abs(path); err == nil {
+		path = absolute
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	return filepath.Clean(path)
+}
+
+func sameExecutablePath(left, right string) bool {
+	leftPath, rightPath := resolvedExecutablePath(left), resolvedExecutablePath(right)
+	if leftPath == "" || rightPath == "" {
+		return false
+	}
+	if leftInfo, leftErr := os.Stat(leftPath); leftErr == nil {
+		if rightInfo, rightErr := os.Stat(rightPath); rightErr == nil && os.SameFile(leftInfo, rightInfo) {
+			return true
+		}
+	}
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(leftPath, rightPath)
+	}
+	return leftPath == rightPath
+}
+
+func withoutSelfReferentialSlingBinary(env []string, commandPath string) []string {
+	override := ""
+	for _, entry := range env {
+		key, value, found := strings.Cut(entry, "=")
+		if found && strings.EqualFold(strings.TrimSpace(key), "SLING_BINARY") {
+			override = strings.TrimSpace(value)
+		}
+	}
+	if !sameExecutablePath(commandPath, override) {
+		return env
+	}
+	filtered := make([]string, 0, len(env))
+	for _, entry := range env {
+		key, _, found := strings.Cut(entry, "=")
+		if found && strings.EqualFold(strings.TrimSpace(key), "SLING_BINARY") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
 }
 
 // slingCommandConnectionEnv keeps credentials out of argv and lets Sling parse
@@ -802,8 +960,9 @@ func slingMaterializationArgs(ctx context.Context, asset *pipeline.Asset) ([]str
 
 func newStreamingCommand(ctx context.Context, name string, args []string, dir string, writer io.Writer) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
+	configureCommandProcessTree(cmd)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), loadRunEnv(ctx)...)
+	cmd.Env = withoutSelfReferentialSlingBinary(append(os.Environ(), loadRunEnv(ctx)...), cmd.Path)
 	return cmd
 }
 
@@ -832,38 +991,44 @@ func loadRunEnv(ctx context.Context) []string {
 	return env
 }
 
-func runStreamingCommand(cmd *exec.Cmd, writer *streamCaptureWriter) error {
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
+func runStreamingCommand(ctx context.Context, cmd *exec.Cmd, writer *streamCaptureWriter) error {
+	if cmd == nil {
+		return errors.New("Sling command is required")
 	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return err
+	if writer == nil {
+		return errors.New("Sling output writer is required")
 	}
 
-	if err := cmd.Start(); err != nil {
+	// Let os/exec own the copy goroutines. Calling Wait only after manually
+	// waiting for StdoutPipe/StderrPipe to close bypassed WaitDelay when an
+	// escaped descendant retained those pipes, leaving a cancelled run stuck.
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return runSlingCommand(ctx, cmd)
+}
+
+func runSlingCommand(ctx context.Context, cmd *exec.Cmd) error {
+	if cmd == nil {
+		return errors.New("Sling command is required")
+	}
+	release, err := sharedSlingProcessLimiter.acquire(ctx)
+	if err != nil {
 		return err
 	}
-	done := make(chan error, 2)
-	go func() {
-		_, copyErr := io.Copy(writer, stdout)
-		done <- copyErr
-	}()
-	go func() {
-		_, copyErr := io.Copy(writer, stderr)
-		done <- copyErr
-	}()
-	copyErr1 := <-done
-	copyErr2 := <-done
-	waitErr := cmd.Wait()
-	if copyErr1 != nil {
-		return copyErr1
+	defer release()
+	return cmd.Run()
+}
+
+func runSlingCombinedOutput(ctx context.Context, cmd *exec.Cmd) ([]byte, error) {
+	if cmd == nil {
+		return nil, errors.New("Sling command is required")
 	}
-	if copyErr2 != nil {
-		return copyErr2
+	release, err := sharedSlingProcessLimiter.acquire(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return waitErr
+	defer release()
+	return cmd.CombinedOutput()
 }
 
 func (e *HybridBruinExecutor) runLoadAsset(ctx context.Context, pl *pipeline.Pipeline, asset *pipeline.Asset, manager config.ConnectionGetter, onChunk func([]byte)) ([]byte, error) {
@@ -918,7 +1083,7 @@ func (e *HybridBruinExecutor) runLoadAsset(ctx context.Context, pl *pipeline.Pip
 		return writer.buffer.Bytes(), err
 	}
 	defer lease.Release()
-	if err := runStreamingCommand(cmd, writer); err != nil {
+	if err := runStreamingCommand(ctx, cmd, writer); err != nil {
 		return writer.buffer.Bytes(), err
 	}
 	return writer.buffer.Bytes(), nil

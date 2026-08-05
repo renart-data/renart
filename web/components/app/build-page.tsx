@@ -11,7 +11,6 @@ import {
   Bell,
   BookOpen,
   ChevronDown,
-  ChevronRight,
   ChevronUp,
   Columns2,
   Database,
@@ -91,6 +90,15 @@ import {
 import { Label } from "@/components/ui/label";
 import { deleteAsset } from "@/lib/api-assets";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -123,8 +131,15 @@ import {
 } from "@/lib/atoms/domains/workspace";
 import { renderJinjaAsset } from "@/lib/jinja-intellisense";
 import { effectiveConnectionForAsset } from "@/lib/sql-schema";
+import { withSQLPreviewLimit } from "@/lib/sql-query-preview";
 import { awaitWorkspaceSaves } from "@/lib/workspace-save-barrier";
-import type { AssetInspectResponse, SqlQueryResponse, WebAsset, WebPipeline } from "@/lib/types";
+import type {
+  AssetInspectResponse,
+  SqlQueryResponse,
+  WebAsset,
+  WebPipeline,
+  WorkspaceQueryConnection,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { deploymentLabel } from "@/lib/deployment-label";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
@@ -141,7 +156,7 @@ import {
 
 import { kindMeta } from "./app-data";
 import { AdhocToNotebookDialog } from "./adhoc-convert-dialog";
-import { AppAdhocEditor, useAdhocQueryDraft } from "./adhoc-editor";
+import { AppAdhocEditor, useAdhocConnectionSelection, useAdhocQueryDraft } from "./adhoc-editor";
 import { AppAssetEditor } from "./asset-editor";
 import { ApiParametersEditor } from "./api-parameters-editor";
 import { AssetGuidedCards, type QualityCheckFocus } from "./asset-guided-cards";
@@ -172,6 +187,7 @@ import {
 } from "./app-primitives";
 
 const WORKING_TREE_RUN_SOURCE: PipelineRunSource = { source: "working_tree" };
+const adhocQueryLimit = 500;
 
 export type AppBuildView = "canvas" | "split" | "code";
 export type AppResultTab = "inspect" | "render" | "materialize" | "query" | "typecheck";
@@ -271,6 +287,9 @@ type BuildContextValue = {
   convertAdhocToAsset: () => void;
   convertAdhocToNotebook: () => void;
   adhocContextAsset: WebAsset | null;
+  adhocConnections: WorkspaceQueryConnection[];
+  adhocConnection: WorkspaceQueryConnection | null;
+  setAdhocConnection: (connection: string) => void;
   adhocLoading: boolean;
   materializeLoading: boolean;
   inspectLoading: boolean;
@@ -449,6 +468,7 @@ export function AppBuildPage({
   const assetRenderRequestId = useRef(0);
   const assetRenderIdentityRef = useRef<string | null>(null);
   const [adhocQuery] = useAdhocQueryDraft(pipelineId);
+  const [storedAdhocConnection, storeAdhocConnection] = useAdhocConnectionSelection(pipelineId);
   const typeCheckErrorAssetIds = useMemo(
     () =>
       new Set(
@@ -896,32 +916,47 @@ export function AppBuildPage({
     // tab is active therefore loads the latest preview after typing settles.
     return () => window.clearTimeout(timer);
   }, [assetRenderSource?.identity, resultTab, selectedAssetRenderIdentity]);
-  // SQL context for the ad hoc editor: the selected asset when it is SQL,
-  // otherwise the first SQL asset of the pipeline (dialect + connection).
+  // Any pipeline asset can provide graph and Jinja scope. The separately
+  // selected query connection supplies the dialect and execution target.
   const adhocContextAsset = useMemo(() => {
     const candidates = activePipeline?.assets ?? [];
-    const isSql = (asset: WebAsset) =>
-      isSqlAssetType(asset.type) || asset.path.toLowerCase().endsWith(".sql");
     const selected = candidates.find((asset) => asset.id === effectiveSelectedAssetId);
-    if (selected && isSql(selected)) {
-      return selected;
-    }
-    return candidates.find(isSql) ?? null;
+    return selected ?? candidates[0] ?? null;
   }, [activePipeline?.assets, effectiveSelectedAssetId]);
+  const adhocConnections = workspace?.query_connections ?? [];
+  const adhocContextConnection = adhocContextAsset
+    ? effectiveConnectionForAsset(adhocContextAsset)
+    : null;
+  const adhocConnection =
+    adhocConnections.find((connection) => connection.name === storedAdhocConnection) ??
+    adhocConnections.find((connection) => connection.name === adhocContextConnection) ??
+    adhocConnections[0] ??
+    null;
+  const setAdhocConnection = useCallback(
+    (connection: string) => {
+      storeAdhocConnection(connection);
+      setAdhocRenderedQuery(null);
+      setAdhocResult(null);
+    },
+    [storeAdhocConnection],
+  );
+  useEffect(() => {
+    setAdhocRenderedQuery(null);
+    setAdhocResult(null);
+  }, [adhocConnection?.name, pipelineId]);
   const runAdhocQuery = async () => {
     if (!activePipeline) {
       return;
     }
     openBottom("query");
-    const connection = adhocContextAsset ? effectiveConnectionForAsset(adhocContextAsset) : null;
+    const connection = adhocConnection?.name ?? null;
     if (!connection || !adhocContextAsset) {
       setAdhocRenderedQuery(null);
       setAdhocResult({
         status: "error",
         columns: [],
         rows: [],
-        error:
-          "No SQL connection found for this pipeline; add a SQL asset or configure a connection first.",
+        error: "No query-capable connection is configured for this environment.",
       });
       return;
     }
@@ -957,7 +992,7 @@ export function AppBuildPage({
         connection,
         environment: selectedEnvironment,
         query: queryText,
-        limit: 500,
+        limit: adhocQueryLimit,
       });
       setAdhocResult(result);
     } catch (error) {
@@ -1069,9 +1104,7 @@ export function AppBuildPage({
     setDownstreamSource(null);
     setNewAssetPrefix(null);
     setNewAssetInitialExecutableContent(adhocQuery);
-    setNewAssetInitialConnection(
-      adhocContextAsset ? effectiveConnectionForAsset(adhocContextAsset) : null,
-    );
+    setNewAssetInitialConnection(adhocConnection?.name ?? null);
     setNewAssetOpen(true);
   };
 
@@ -1191,6 +1224,9 @@ export function AppBuildPage({
     convertAdhocToAsset,
     convertAdhocToNotebook: () => setAdhocNotebookOpen(true),
     adhocContextAsset,
+    adhocConnections,
+    adhocConnection,
+    setAdhocConnection,
     adhocLoading,
     materializeLoading: assetResults.materializeLoading,
     inspectLoading: assetResults.inspectLoading,
@@ -2528,6 +2564,9 @@ function AdhocEditor({ showActionLabels }: { showActionLabels: boolean }) {
     view,
     buildSearch,
     adhocContextAsset,
+    adhocConnections,
+    adhocConnection,
+    setAdhocConnection,
     adhocLoading,
     runAdhocQuery,
     convertAdhocToAsset,
@@ -2537,11 +2576,31 @@ function AdhocEditor({ showActionLabels }: { showActionLabels: boolean }) {
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <EditorFilenameHeader filename="Ad-hoc query">
+        <Select
+          value={adhocConnection?.name}
+          onValueChange={setAdhocConnection}
+          disabled={adhocLoading || adhocConnections.length === 0}
+        >
+          <SelectTrigger size="sm" className="min-w-32 max-w-48" aria-label="Ad-hoc connection">
+            <Database className="text-muted-foreground" />
+            <SelectValue placeholder="Connection" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectLabel>Query connection</SelectLabel>
+              {adhocConnections.map((connection) => (
+                <SelectItem key={connection.name} value={connection.name}>
+                  {connection.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
         <Button
           variant="outline"
           size={showActionLabels ? "sm" : "icon-sm"}
           onClick={convertAdhocToNotebook}
-          disabled={!adhocContextAsset}
+          disabled={!adhocContextAsset || !adhocConnection}
           aria-label="Convert to notebook cell"
           title="Convert to notebook cell"
         >
@@ -2552,7 +2611,7 @@ function AdhocEditor({ showActionLabels }: { showActionLabels: boolean }) {
           variant="outline"
           size={showActionLabels ? "sm" : "icon-sm"}
           onClick={convertAdhocToAsset}
-          disabled={!adhocContextAsset}
+          disabled={!adhocContextAsset || !adhocConnection}
           aria-label="Convert to asset"
           title="Convert to asset"
         >
@@ -2562,7 +2621,7 @@ function AdhocEditor({ showActionLabels }: { showActionLabels: boolean }) {
         <Button
           size={showActionLabels ? "sm" : "icon-sm"}
           onClick={runAdhocQuery}
-          disabled={adhocLoading || !adhocContextAsset}
+          disabled={adhocLoading || !adhocContextAsset || !adhocConnection}
           aria-label="Run"
           title="Run (⌘ + ↵)"
         >
@@ -2586,15 +2645,22 @@ function AdhocEditor({ showActionLabels }: { showActionLabels: boolean }) {
           />
         ) : null}
       </EditorFilenameHeader>
-      {adhocContextAsset ? (
+      {adhocContextAsset && adhocConnection ? (
         <AppAdhocEditor
           pipelineId={pipelineId}
           contextAsset={adhocContextAsset}
+          connection={adhocConnection}
           onRunQuery={runAdhocQuery}
           onGoToAsset={goToAsset}
         />
       ) : (
-        <ResultsEmpty label="Select an asset before opening an ad hoc query." />
+        <ResultsEmpty
+          label={
+            adhocContextAsset
+              ? "Configure a query-capable connection to run ad-hoc SQL."
+              : "Add an asset before opening an ad-hoc query."
+          }
+        />
       )}
     </div>
   );
@@ -2766,16 +2832,22 @@ function ResultsPanel({
             </div>
           ) : adhocResult ? (
             <>
-              <RenderedQueryDisclosure query={adhocRenderedQuery} />
+              <RenderedQueryDisclosure
+                query={
+                  adhocResult.truncated && adhocRenderedQuery
+                    ? withSQLPreviewLimit(adhocRenderedQuery, adhocQueryLimit)
+                    : adhocRenderedQuery
+                }
+                warning={
+                  adhocResult.truncated
+                    ? `Result limited to the first ${adhocQueryLimit} rows`
+                    : undefined
+                }
+              />
               <div className="min-h-0 flex-1">
                 <AssetInspectView
                   columns={adhocResult.columns ?? []}
                   rows={(adhocResult.rows ?? []) as Record<string, unknown>[]}
-                  warning={
-                    adhocResult.truncated
-                      ? "Result truncated; showing the first rows only."
-                      : undefined
-                  }
                   frameless
                 />
               </div>
@@ -2800,7 +2872,7 @@ function ResultsPanel({
 
 // RenderedQueryDisclosure shows the query that actually ran (post-Jinja) as a
 // single collapsed line above a results table, expandable to the full text.
-function RenderedQueryDisclosure({ query }: { query?: string | null }) {
+function RenderedQueryDisclosure({ query, warning }: { query?: string | null; warning?: string }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const trimmed = query?.trim();
@@ -2817,18 +2889,29 @@ function RenderedQueryDisclosure({ query }: { query?: string | null }) {
 
   return (
     <div className="shrink-0 border-b bg-muted/30" data-testid="rendered-query-disclosure">
-      <div className="flex min-w-0 items-center">
+      <div className="flex min-w-0 items-center transition-colors hover:bg-muted">
         <button
           type="button"
-          className="flex h-8 min-w-0 flex-1 items-center gap-1.5 px-2 text-left text-[11px] text-muted-foreground hover:bg-muted"
+          className="flex h-8 min-w-0 flex-1 items-center gap-1.5 px-2 text-left text-[11px] text-muted-foreground"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
         >
-          <ChevronRight
-            className={cn("size-3 shrink-0 transition-transform", open ? "rotate-90" : null)}
+          <Terminal
+            className="size-3 shrink-0"
+            strokeWidth={open ? 2.75 : 1.5}
+            data-testid="rendered-query-icon"
           />
-          <Terminal className="size-3 shrink-0" />
           <span className="shrink-0 font-semibold uppercase tracking-wide">Query</span>
+          {warning ? (
+            <span
+              role="img"
+              aria-label={warning}
+              title={warning}
+              className="shrink-0 text-muted-foreground"
+            >
+              <AlertTriangle className="size-3" />
+            </span>
+          ) : null}
           {!open ? (
             <span className="min-w-0 flex-1 truncate font-mono">
               {trimmed.replace(/\s+/g, " ")}

@@ -651,8 +651,11 @@ test.describe("app notebooks live", () => {
     page,
   }) => {
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Cell Creation");
+    const existingCellIDs = new Set(notebook.cells.map((cell) => cell.cell_id));
     for (let index = 0; index < 8; index += 1) {
-      await addCell(page.request, liveApp.baseURL, notebook.id, `existing_${index + 1}`);
+      existingCellIDs.add(
+        await addCell(page.request, liveApp.baseURL, notebook.id, `existing_${index + 1}`),
+      );
     }
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
@@ -707,7 +710,13 @@ test.describe("app notebooks live", () => {
 
       releaseRequest();
       released = true;
-      expect((await createResponse).ok()).toBe(true);
+      const response = await createResponse;
+      expect(response.ok()).toBe(true);
+      const updatedNotebook = ((await response.json()) as NotebookEnvelope).notebook;
+      const generatedCell = updatedNotebook.cells.find(
+        (cell) => !existingCellIDs.has(cell.cell_id),
+      );
+      expect(generatedCell?.name).toMatch(/^[a-z]+_[a-z]+$/);
       await expect(pending).toBeHidden();
 
       const created = page.locator("[data-notebook-cell-id]").last();

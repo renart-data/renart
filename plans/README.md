@@ -28,4 +28,5 @@ Recently folded away (git history keeps them): `docs-alpha.md` and
 `landing-page.md` → `architecture/docs.md`; `notebook-intellisense.md` →
 `architecture/sql-lsp.md`; `ingestr-feature-flag.md`,
 `project-settings-and-workspaces.md`, and `cli-v1.md` →
-`architecture/backend.md` + `architecture/frontend.md`.
+`architecture/backend.md` + `architecture/frontend.md`; `schema-derivation.md` →
+`architecture/asset-editing.md` + `architecture/sql-lsp.md`.

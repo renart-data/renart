@@ -715,6 +715,101 @@ func TestLoadPackageNamePinsCompatibleSlingVersion(t *testing.T) {
 	assert.Equal(t, "sling-custom", loadPackageName())
 }
 
+func TestLoadCommandUsesGuardedNativeBootstrapInsteadOfSlingEntrypoint(t *testing.T) {
+	t.Setenv("RENART_SLING_BINARY", "")
+	t.Setenv("SLING_BINARY", "")
+	t.Setenv("RENART_UV_BINARY", "uv-test")
+	t.Setenv("RENART_SLING_PACKAGE", "sling-test-package")
+
+	command, args, err := loadCommand(context.Background(), []string{"run", "--src-stream", "file:///tmp/input.csv"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "uv-test", command)
+	require.GreaterOrEqual(t, len(args), 10)
+	assert.Equal(t, []string{
+		"tool", "run", "--no-config", "--python", "3.11", "--from", "sling-test-package", "python", "-c",
+	}, args[:9])
+	assert.Equal(t, slingUVBootstrap, args[9])
+	assert.Equal(t, []string{"run", "--src-stream", "file:///tmp/input.csv"}, args[10:])
+	assert.NotContains(t, args[:10], "sling")
+}
+
+func TestLoadCommandRejectsSelfReferentialPythonSlingLauncher(t *testing.T) {
+	launcherContents := []byte(`#!/bin/sh
+'''exec' python "$0" "$@"
+' '''
+from sling import cli
+`)
+	launcher := filepath.Join(t.TempDir(), "sling")
+	require.NoError(t, os.WriteFile(launcher, launcherContents, 0o700))
+	t.Setenv("RENART_SLING_BINARY", "")
+	t.Setenv("SLING_BINARY", launcher)
+
+	_, _, err := loadCommand(context.Background(), []string{"run"}, nil)
+	require.ErrorContains(t, err, "would recursively launch itself")
+	require.ErrorContains(t, err, "native Sling binary")
+
+	t.Setenv("PATH", filepath.Dir(launcher)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SLING_BINARY", filepath.Base(launcher))
+	_, _, err = loadCommand(context.Background(), []string{"run"}, nil)
+	require.ErrorContains(t, err, "would recursively launch itself")
+
+	outerLauncher := filepath.Join(t.TempDir(), "sling-outer")
+	require.NoError(t, os.WriteFile(outerLauncher, launcherContents, 0o700))
+	t.Setenv("RENART_SLING_BINARY", outerLauncher)
+	t.Setenv("SLING_BINARY", launcher)
+	_, _, err = loadCommand(context.Background(), []string{"run"}, nil)
+	require.ErrorContains(t, err, "would recursively launch itself")
+
+	native := filepath.Join(t.TempDir(), "sling-native")
+	require.NoError(t, os.WriteFile(native, []byte("native"), 0o700))
+	t.Setenv("SLING_BINARY", native)
+	command, args, err := loadCommand(context.Background(), []string{"run"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, outerLauncher, command)
+	assert.Equal(t, []string{"run"}, args)
+}
+
+func TestNewStreamingCommandRemovesOnlySelfReferentialSlingBinary(t *testing.T) {
+	launcher := filepath.Join(t.TempDir(), "sling-launcher")
+	native := filepath.Join(t.TempDir(), "sling-native")
+	require.NoError(t, os.WriteFile(launcher, []byte("launcher"), 0o700))
+	require.NoError(t, os.WriteFile(native, []byte("native"), 0o700))
+
+	t.Run("same executable", func(t *testing.T) {
+		t.Setenv("SLING_BINARY", launcher)
+		cmd := newStreamingCommand(context.Background(), launcher, nil, t.TempDir(), nil)
+		assert.False(t, commandEnvContains(cmd.Env, "SLING_BINARY"))
+	})
+
+	t.Run("distinct underlying native binary", func(t *testing.T) {
+		t.Setenv("SLING_BINARY", native)
+		cmd := newStreamingCommand(context.Background(), launcher, nil, t.TempDir(), nil)
+		assert.True(t, commandEnvContains(cmd.Env, "SLING_BINARY"))
+	})
+}
+
+func TestSlingProcessLimiterHonorsCancellationWhileFull(t *testing.T) {
+	limiter := newSlingProcessLimiter(1)
+	release, err := limiter.acquire(context.Background())
+	require.NoError(t, err)
+	defer release()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = limiter.acquire(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func commandEnvContains(env []string, key string) bool {
+	for _, entry := range env {
+		name, _, found := strings.Cut(entry, "=")
+		if found && strings.EqualFold(strings.TrimSpace(name), key) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSlingIntegrationAcceptsDatabricksConnectionPayloads(t *testing.T) {
 	if os.Getenv("RENART_RUN_DATABRICKS_SLING_CONTRACT") != "1" {
 		t.Skip("set RENART_RUN_DATABRICKS_SLING_CONTRACT=1 to run the pinned Sling parser contract")
@@ -766,7 +861,7 @@ func TestSlingIntegrationAcceptsDatabricksConnectionPayloads(t *testing.T) {
 			cmd := newStreamingCommand(ctx, cmdName, cmdArgs, t.TempDir(), writer)
 			cmd.Env = append(cmd.Env, loadDiscoverEnvName+"="+payload)
 
-			err = runStreamingCommand(cmd, writer)
+			err = runStreamingCommand(ctx, cmd, writer)
 			require.Error(t, err, "the closed localhost port must not connect")
 			output := writer.buffer.String()
 			assert.Contains(t, output, "host=127.0.0.1 port=1, httpPath=/sql/1.0/warehouses/test")
@@ -801,6 +896,7 @@ func TestHybridBruinExecutorRunsLoadAssetThroughUvWhenNoBinaryOverrideExists(t *
 		},
 	}, nil, nil)
 	require.NoError(t, err)
-	assert.Contains(t, string(output), "uv tool run --no-config --python 3.11 --from sling-test-package sling run --src-stream file://"+filepath.ToSlash(filepath.Join(workspaceRoot, "analytics/data/orders.csv")))
+	assert.Contains(t, string(output), "uv tool run --no-config --python 3.11 --from sling-test-package python -c")
+	assert.Contains(t, string(output), "run --src-stream file://"+filepath.ToSlash(filepath.Join(workspaceRoot, "analytics/data/orders.csv")))
 	assert.Contains(t, string(output), "--tgt-object file://"+filepath.ToSlash(filepath.Join(workspaceRoot, "analytics/data/orders-copy.csv")))
 }

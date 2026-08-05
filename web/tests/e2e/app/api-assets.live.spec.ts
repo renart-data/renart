@@ -106,7 +106,10 @@ parameters:
     }
   });
 
-  test("OpenAPI columns feed workspace and SQL parse-context", async ({ liveApp, page }) => {
+  test("explicit OpenAPI schema sync feeds workspace and SQL parse-context", async ({
+    liveApp,
+    page,
+  }) => {
     const specServer = await startOpenAPIServer();
     try {
       await writeFile(
@@ -125,6 +128,16 @@ parameters:
 `,
         "utf8",
       );
+
+      const beforeSync = await waitForWorkspaceAsset(page, liveApp.baseURL, apiAssetId);
+      expect(beforeSync.columns ?? []).toEqual([]);
+      const syncResponse = await page.request.post(
+        `${liveApp.baseURL}/api/assets/${apiAssetId}/columns/sync`,
+        { data: { additional_sources: [] } },
+      );
+      const syncBody = (await syncResponse.json()) as { status?: string; message?: string };
+      expect(syncResponse.ok(), JSON.stringify(syncBody)).toBe(true);
+      expect(syncBody.status).toBe("applied");
 
       await expect
         .poll(

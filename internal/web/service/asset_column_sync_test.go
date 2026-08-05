@@ -290,6 +290,36 @@ columns:
 	})
 }
 
+func TestSyncAssetColumnsExcludesStaleMaterializationFromDefinitionCollision(t *testing.T) {
+	header := strings.TrimSpace(`
+/* @bruin
+name: analytics.customers
+type: duckdb.sql
+materialization:
+  type: view
+columns:
+  - name: order_id
+    type: INTEGER
+@bruin */`)
+	service, assetID, _ := newColumnReconcileWorkspace(t, header)
+	service.deps.Executor = &stubRunRunner{output: []byte(`{"columns":[{"name":"order_id","type":"BIGINT"}]}`)}
+	service.deps.MaterializedSchemaFresh = func(context.Context, string, string, string) (bool, error) {
+		return false, nil
+	}
+
+	result, apiErr := service.SyncAssetColumns(
+		context.Background(), assetID, []string{columnSourceMaterialized}, "dev",
+	)
+	require.Nil(t, apiErr)
+	assert.Equal(t, columnSyncStatusUnchanged, result.Status)
+	require.Len(t, result.Sources, 2)
+	assert.Equal(t, "comparable", result.Sources[0].Classification)
+	assert.Equal(t, "stale", result.Sources[1].Classification)
+	assert.Contains(t, result.Sources[1].ExcludedReason, "older asset fingerprint")
+	require.Len(t, result.Rows, 1)
+	assert.Equal(t, "unchanged", result.Rows[0].Kind)
+}
+
 func TestApplyAssetColumnSchemaResolutionPersistsTheChoice(t *testing.T) {
 	header := strings.TrimSpace(`
 /* @bruin
@@ -322,7 +352,9 @@ columns:
 
 	_, _, asset, err := service.deps.ResolveAssetByID(context.Background(), assetID)
 	require.NoError(t, err)
-	assert.Equal(t, map[string][]string{"order_id": {"type"}}, assetmeta.Parse(asset.Meta).ColOwn)
+	assert.Equal(t, map[string][]string{"order_id": {"type"}}, assetmeta.ParseAsset(asset).ColOwn)
+	assert.NotContains(t, asset.Meta, assetmeta.KeyColOwn)
+	assert.Equal(t, "type", asset.Columns[0].Meta[assetmeta.ColumnKeyOwned])
 }
 
 func TestApplyAssetColumnSchemaResolutionTracksAdvisoryOnlyColumnSource(t *testing.T) {
@@ -357,10 +389,12 @@ columns:
 
 	_, _, asset, err := service.deps.ResolveAssetByID(context.Background(), assetID)
 	require.NoError(t, err)
-	meta := assetmeta.Parse(asset.Meta)
+	meta := assetmeta.ParseAsset(asset)
 	assert.Empty(t, meta.ColAdd)
 	assert.Empty(t, meta.ColOwn)
 	assert.Equal(t, map[string]string{"warehouse_only": columnSourceCodeMaterialized}, meta.ColSource)
+	assert.NotContains(t, asset.Meta, assetmeta.KeyColSource)
+	assert.Equal(t, columnSourceCodeMaterialized, asset.Columns[1].Meta[assetmeta.ColumnKeySource])
 }
 
 func TestApplyAssetColumnSchemaResolutionUsesAdvisoryTypeForExistingColumn(t *testing.T) {
@@ -392,9 +426,11 @@ columns:
 
 	_, _, asset, err := service.deps.ResolveAssetByID(context.Background(), assetID)
 	require.NoError(t, err)
-	meta := assetmeta.Parse(asset.Meta)
+	meta := assetmeta.ParseAsset(asset)
 	assert.Empty(t, meta.ColOwn)
 	assert.Equal(t, map[string]string{"order_id": columnSourceCodeMaterialized}, meta.ColSource)
+	assert.NotContains(t, asset.Meta, assetmeta.KeyColSource)
+	assert.Equal(t, columnSourceCodeMaterialized, asset.Columns[0].Meta[assetmeta.ColumnKeySource])
 }
 
 func TestApplyAssetColumnSchemaResolutionRejectsStaleSavedSchema(t *testing.T) {

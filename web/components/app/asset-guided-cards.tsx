@@ -30,6 +30,12 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -758,6 +764,7 @@ function fallbackColumnInferenceSources(asset: WebAsset): ColumnInferenceSource[
 
 function ColumnsCard({ asset }: { asset: WebAsset }) {
   const schemaSourceIdPrefix = `${useId()}-schema-source`;
+  const manualColumnInputId = `${schemaSourceIdPrefix}-manual-column`;
   const environment = useAtomValue(selectedEnvironmentAtom);
   const sources = useMemo(
     () =>
@@ -768,7 +775,10 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
   );
   const isSQLMerge =
     isSqlAssetType(asset.type) && asset.materialization_strategy?.toLowerCase() === "merge";
-  const provenance = useMemo(() => parseAssetProvenance(asset.meta), [asset.meta]);
+  const provenance = useMemo(
+    () => parseAssetProvenance(asset.meta, asset.columns),
+    [asset.meta, asset.columns],
+  );
   const columns = asset.columns ?? [];
   const definitionSources = useMemo(
     () => sources.filter((source) => source.category === "definition"),
@@ -788,6 +798,8 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
   const [resolverOpen, setResolverOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [applying, setApplying] = useState(false);
+  const [manualColumnName, setManualColumnName] = useState("");
+  const [addingManualColumn, setAddingManualColumn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -800,6 +812,8 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
     setSelectedAdvisorySources([]);
     setSyncResult(null);
     setResolverOpen(false);
+    setManualColumnName("");
+    setAddingManualColumn(false);
     setError(null);
     setNotice(null);
   }, [asset.id]);
@@ -844,6 +858,30 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
       setError(e instanceof Error ? e.message : "Failed to apply schema resolution");
     } finally {
       setApplying(false);
+    }
+  };
+
+  const addManualColumn = async () => {
+    const name = manualColumnName.trim();
+    if (!name || addingManualColumn) return;
+    if (columns.some((column) => column.name.trim().toLowerCase() === name.toLowerCase())) {
+      setError(`Column ${name} already exists.`);
+      return;
+    }
+    setAddingManualColumn(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await applyAssetTransaction(asset.id, {
+        type: "column.manual.add",
+        column_def: { name },
+      });
+      setManualColumnName("");
+      setNotice(`Added manual column ${name}.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Failed to add column");
+    } finally {
+      setAddingManualColumn(false);
     }
   };
 
@@ -976,7 +1014,7 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
 
       {columns.length === 0 ? (
         <p className="text-[11px] text-muted-foreground">
-          No columns. Sync schema to infer them from the asset definition.
+          No columns. Add one manually or sync the schema from an available source.
         </p>
       ) : (
         <div className="divide-y rounded-md border">
@@ -996,6 +1034,40 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
           ))}
         </div>
       )}
+
+      <Field className="gap-1.5">
+        <FieldLabel htmlFor={manualColumnInputId} className="text-[11px] font-normal">
+          Add column
+        </FieldLabel>
+        <InputGroup>
+          <InputGroupInput
+            id={manualColumnInputId}
+            value={manualColumnName}
+            placeholder="Column name"
+            disabled={addingManualColumn}
+            onChange={(event) => setManualColumnName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              void addManualColumn();
+            }}
+          />
+          <InputGroupAddon align="inline-end">
+            <InputGroupButton
+              aria-label="Add column"
+              disabled={!manualColumnName.trim() || addingManualColumn}
+              onClick={() => void addManualColumn()}
+            >
+              {addingManualColumn ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <Plus data-icon="inline-start" />
+              )}
+              Add
+            </InputGroupButton>
+          </InputGroupAddon>
+        </InputGroup>
+      </Field>
 
       {ignored.length > 0 ? (
         <DepSection label="Ignored">

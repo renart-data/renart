@@ -8,6 +8,7 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"renart/internal/sqlintelligence"
+	"renart/internal/web/model"
 )
 
 var assetTypeDialectMap = map[pipeline.AssetType]string{
@@ -119,6 +120,7 @@ type ParseContextResult struct {
 
 type ParseContextDependencies struct {
 	ResolveAssetByID func(context.Context, string) (string, *pipeline.Pipeline, *pipeline.Asset, error)
+	CurrentState     func() model.WorkspaceState
 }
 
 type ParseContextService struct {
@@ -129,13 +131,25 @@ func NewParseContextService(deps ParseContextDependencies) *ParseContextService 
 	return &ParseContextService{deps: deps}
 }
 
-func (s *ParseContextService) Parse(ctx context.Context, assetID, content string, schemaTables []ParseContextSchemaTable) (ParseContextResult, *APIError) {
+func (s *ParseContextService) Parse(
+	ctx context.Context,
+	assetID, content string,
+	schemaTables []ParseContextSchemaTable,
+	connection string,
+) (ParseContextResult, *APIError) {
 	_, parsedPipeline, asset, err := s.deps.ResolveAssetByID(ctx, assetID)
 	if err != nil {
 		return ParseContextResult{}, &APIError{Status: 400, Code: "asset_not_found", Message: err.Error()}
 	}
 
-	dialect, err := AssetTypeToDialect(asset.Type)
+	assetType := asset.Type
+	if s.deps.CurrentState != nil {
+		connectionName := strings.TrimSpace(connection)
+		if queryType, ok := queryAssetTypeForConnectionType(s.deps.CurrentState().Connections[connectionName]); ok {
+			assetType = queryType
+		}
+	}
+	dialect, err := AssetTypeToDialect(assetType)
 	if err != nil {
 		return ParseContextResult{
 			Status:  "ok",
@@ -356,6 +370,7 @@ func ApplyAssetSQLDefinitionColumns(ctx context.Context, parsedPipeline *pipelin
 		return
 	}
 
+	definitionSchemas := newAssetDefinitionSchemaResolver(parsedPipeline)
 	for _, asset := range parsedPipeline.Assets {
 		if asset == nil || strings.TrimSpace(asset.Name) == "" {
 			continue
@@ -363,38 +378,10 @@ func ApplyAssetSQLDefinitionColumns(ctx context.Context, parsedPipeline *pipelin
 		if currentAsset != nil && strings.EqualFold(strings.TrimSpace(asset.Name), strings.TrimSpace(currentAsset.Name)) {
 			continue
 		}
-		if isAPIAsset(asset) {
-			declaredColumns := apiResponseFieldColumns(ctx, asset)
-			if len(declaredColumns) == 0 {
-				continue
-			}
-			schemaColumns := schema[asset.Name]
-			if schemaColumns == nil {
-				schemaColumns = map[string]string{}
-			}
-			sourceColumns := sources[asset.Name]
-			if sourceColumns == nil {
-				sourceColumns = map[string][]string{}
-			}
-			for _, column := range declaredColumns {
-				columnName := strings.TrimSpace(column.Name)
-				if columnName == "" {
-					continue
-				}
-				if _, exists := schemaColumns[columnName]; !exists {
-					schemaColumns[columnName] = strings.TrimSpace(column.Type)
-				}
-				sourceColumns[columnName] = mergeStringSlices(sourceColumns[columnName], []string{"workspace-load"})
-			}
-			schema[asset.Name] = schemaColumns
-			sources[asset.Name] = sourceColumns
-			continue
-		}
-
 		// SQL definition columns can only be read from SQL assets; non-SQL
 		// assets (Python, ingestr, ...) that materialize a table are still
 		// valid references and must be registered below.
-		declaredColumns := asset.Columns
+		declaredColumns := definitionSchemas.Available(ctx, asset)
 		var definitionColumns []string
 		if _, err := AssetTypeToDialect(asset.Type); err == nil {
 			definitionColumns = ExtractSQLDefinitionColumns(asset.ExecutableFile.Content)

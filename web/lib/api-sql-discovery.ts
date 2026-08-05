@@ -88,6 +88,7 @@ export async function runSQLQuery(options: {
 export async function getSQLParseContext(options: {
   assetId: string;
   content: string;
+  connection?: string;
   schema?: Array<{
     name: string;
     columns: Array<{ name: string; type?: string }>;
@@ -104,6 +105,7 @@ export async function getSQLParseContext(options: {
     body: JSON.stringify({
       asset_id: options.assetId,
       content: options.content,
+      connection: options.connection,
       schema: options.schema ?? [],
     }),
   });

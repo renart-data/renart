@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"renart/internal/sqlintelligence"
+	"renart/internal/web/model"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/stretchr/testify/assert"
@@ -52,6 +54,33 @@ func TestAssetTypeToDialect_Unsupported(t *testing.T) {
 	_, err := AssetTypeToDialect(pipeline.AssetTypePython)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported asset type")
+}
+
+func TestParseContextServiceUsesSelectedConnectionDialect(t *testing.T) {
+	t.Parallel()
+
+	service := NewParseContextService(ParseContextDependencies{
+		ResolveAssetByID: func(_ context.Context, _ string) (string, *pipeline.Pipeline, *pipeline.Asset, error) {
+			return "", nil, &pipeline.Asset{Type: pipeline.AssetTypeDuckDBQuery}, nil
+		},
+		CurrentState: func() model.WorkspaceState {
+			return model.WorkspaceState{Connections: map[string]string{
+				"databricks-default": "databricks",
+			}}
+		},
+	})
+
+	result, apiError := service.Parse(
+		context.Background(),
+		"asset-id",
+		"select 1",
+		nil,
+		"databricks-default",
+	)
+
+	require.Nil(t, apiError)
+	assert.Equal(t, "ok", result.Status)
+	assert.Equal(t, "databricks", result.Dialect)
 }
 
 func TestBuildParseContextSchema_MergesSuggestedAndAssetColumns(t *testing.T) {
@@ -601,6 +630,7 @@ select range, schabla, (select test from quickstart.test), bla from blub`,
 				},
 			},
 		},
+		"",
 	)
 	require.Nil(t, apiError)
 	assert.Empty(t, result.Errors)
@@ -646,6 +676,7 @@ select bla from blub`,
 				},
 			},
 		},
+		"",
 	)
 	require.Nil(t, apiError)
 	assert.Empty(t, result.Errors)
@@ -682,6 +713,7 @@ func TestParseContextService_SQLDefinitionColumnsFromResolvedPipelineWarnWhenMis
 				},
 			},
 		},
+		"",
 	)
 	require.Nil(t, apiError)
 	assert.Empty(t, result.Errors)
@@ -721,6 +753,7 @@ parameters:
 		"asset-id",
 		`select white_username, black_username from quickstart.games`,
 		nil,
+		"",
 	)
 	require.Nil(t, apiError)
 	assert.Empty(t, result.Errors)
@@ -729,8 +762,10 @@ parameters:
 	assert.NotContains(t, diagnostics, "Unresolved column: white_username")
 }
 
-func TestParseContextService_APIOpenAPIColumnsResolveWorkspaceAssets(t *testing.T) {
+func TestParseContextService_DoesNotFetchOpenAPIForPureAuthoring(t *testing.T) {
+	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
 		_, _ = w.Write([]byte(`openapi: 3.0.3
 paths:
   /players/{username}:
@@ -780,13 +815,15 @@ parameters:
 		"asset-id",
 		`select username, rating from quickstart.players`,
 		nil,
+		"",
 	)
 	require.Nil(t, apiError)
 	assert.Empty(t, result.Errors)
 	diagnostics := diagnosticMessagesFromService(result.Diagnostics)
 	assert.NotContains(t, diagnostics, "Unresolved table: quickstart.players")
-	assert.NotContains(t, diagnostics, "Unresolved column: username")
-	assert.NotContains(t, diagnostics, "Unresolved column: rating")
+	assert.Contains(t, diagnostics, "Unresolved column: username")
+	assert.Contains(t, diagnostics, "Unresolved column: rating")
+	assert.Equal(t, int32(0), requests.Load())
 }
 
 func TestParseContextService_SQLDefinitionColumnsWarnWhenMissingFromMaterializedWorkspaceColumns(t *testing.T) {
@@ -820,6 +857,7 @@ func TestParseContextService_SQLDefinitionColumnsWarnWhenMissingFromMaterialized
 				},
 			},
 		},
+		"",
 	)
 	require.Nil(t, apiError)
 	assert.Empty(t, result.Errors)

@@ -396,7 +396,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		// Validate cells for server-side auto-recompute with the same
 		// parse-context the editor uses (constructed below; referenced lazily).
 		ValidateSQL: func(ctx context.Context, assetID, content string, schemaTables []service.ParseContextSchemaTable) (service.ParseContextResult, *service.APIError) {
-			return server.parseContextSvc.Parse(ctx, assetID, content, schemaTables)
+			return server.parseContextSvc.Parse(ctx, assetID, content, schemaTables, "")
 		},
 		PublishEvent: func(payload any) { server.hub.PublishImmediate(payload) },
 	})
@@ -414,6 +414,9 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 
 	server.parseContextSvc = service.NewParseContextService(service.ParseContextDependencies{
 		ResolveAssetByID: server.resolveAssetByID,
+		CurrentState: func() service.WorkspaceState {
+			return server.currentState()
+		},
 	})
 	server.sqlLSPSvc = service.NewSQLLSPService(service.SQLLSPDependencies{
 		WorkspaceRoot:           absRoot,

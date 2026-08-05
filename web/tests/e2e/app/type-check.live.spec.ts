@@ -42,12 +42,14 @@ columns:
 `,
     "utf8",
   );
-  // A Python asset with no declared columns -> warning.
+  // A table-producing Python asset with no declared columns -> error.
   await writeFile(
     join(assetsDir, "py_metric.py"),
     `""" @bruin
 name: analytics.py_metric
 type: python
+materialization:
+  type: table
 @bruin """
 
 print("hello")
@@ -147,11 +149,13 @@ test.describe("app pipeline type check live", () => {
 
     const byName = new Map(report.assets.map((asset) => [asset.name, asset]));
 
-    // Undeclared Python asset -> warning about missing columns.
+    // Undeclared table-producing Python asset -> missing-contract error.
     const py = byName.get("analytics.py_metric");
-    expect(py?.status).toBe("warning");
+    expect(py?.status).toBe("error");
     expect(
-      py?.findings.some((f) => f.severity === "warning" && /no columns/i.test(f.message)),
+      py?.findings.some(
+        (f) => f.severity === "error" && /Output schema cannot be inferred/i.test(f.message),
+      ),
     ).toBe(true);
 
     // Downstream selecting a non-existent column of a known upstream -> error.
@@ -240,6 +244,8 @@ test.describe("app pipeline type check live", () => {
       timeout: 15000,
     });
     await expect(page.getByText(/Unresolved column/i).first()).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText(/no columns/i).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/Output schema cannot be inferred/i).first()).toBeVisible({
+      timeout: 15000,
+    });
   });
 });

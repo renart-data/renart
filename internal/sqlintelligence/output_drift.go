@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -253,6 +254,29 @@ func dataTypesEquivalent(ctx context.Context, left, right, dialect string) (equi
 	return comparableDataTypeValues(leftType, rightType), true, nil
 }
 
+// StrictDataTypesEquivalent compares the full canonical logical type rather
+// than treating a missing modifier as a wildcard. It is used when deciding
+// whether two schema-evidence sources agree: precision, scale, length, nested
+// element types, and timezone structure must round-trip losslessly to compare
+// equal. Native spellings remain available to callers for display/persistence.
+func StrictDataTypesEquivalent(ctx context.Context, left, right, dialect string) (equivalent, comparable bool, err error) {
+	if normalizedTypeText(left) == normalizedTypeText(right) {
+		return true, true, nil
+	}
+	leftType, leftOK, err := parseComparableDataType(ctx, left, dialect)
+	if err != nil {
+		return false, false, err
+	}
+	rightType, rightOK, err := parseComparableDataType(ctx, right, dialect)
+	if err != nil {
+		return false, false, err
+	}
+	if !leftOK || !rightOK {
+		return false, false, nil
+	}
+	return reflect.DeepEqual(leftType, rightType), true, nil
+}
+
 func parseComparableDataType(ctx context.Context, value, dialect string) (map[string]any, bool, error) {
 	key := strings.ToLower(strings.TrimSpace(dialect)) + "\x00" + normalizedTypeText(value)
 	if cached, ok := parsedDataTypes.Load(key); ok {
@@ -308,9 +332,6 @@ func canonicalDataTypeMap(value map[string]any) (map[string]any, bool) {
 			continue
 		}
 		if rawKind == "custom" && key == "name" {
-			continue
-		}
-		if kind == "string" && key == "length" {
 			continue
 		}
 		result[key] = canonicalDataTypeValue(child)

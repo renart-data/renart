@@ -490,14 +490,15 @@ func assetLevelTypeCheckFindings(ctx context.Context, asset *pipeline.Asset, pp 
 	if includeDocumentFindings {
 		findings = append(findings, pythonQueryDependencyFindings(ctx, asset, pp)...)
 	}
-	// Non-SQL asset: we cannot infer its output schema. Warn when a
-	// table-producing asset declares no columns so the gap is visible.
-	if nonSQLColumnsExpected(asset) && !assetHasDeclaredColumns(ctx, asset) {
+	// A relation whose output cannot be derived from its committed definition
+	// needs an explicit schema contract. This is an error: downstream column
+	// validation would otherwise be silently disabled for that branch.
+	if assetProducesSchemaContract(asset) && len(asset.Columns) == 0 && !assetSchemaAutomaticallyInferable(ctx, pp, asset) {
 		findings = append(findings, TypeCheckFinding{
 			Code:       authoringdiag.CodeMissingDeclaredColumns,
 			Source:     authoringdiag.SourceRenart,
-			Severity:   typeCheckSeverityWarning,
-			Message:    "Declares no columns; types cannot be inferred for " + string(asset.Type) + " assets. Declare columns to enable downstream type checking.",
+			Severity:   typeCheckSeverityError,
+			Message:    "Output schema cannot be inferred from this " + string(asset.Type) + " asset definition. Declare columns so downstream assets can be type checked.",
 			Scope:      string(authoringdiag.ScopeAsset),
 			Confidence: string(authoringdiag.ConfidenceHigh),
 		})
@@ -532,6 +533,7 @@ func buildTypeCheckSchemaSnapshot(ctx context.Context, fs afero.Fs, pp *pipeline
 	nodes := make([]sqllsp.AssetNode, 0, len(assets))
 	columns := make(map[string][]sqllsp.ColumnInfo, len(assets))
 	inferenceAssets := make([]sqllsp.InferenceAsset, 0, len(assets))
+	definitionSchemas := newAssetDefinitionSchemaResolver(pp)
 	for _, asset := range assets {
 		if asset == nil || strings.TrimSpace(asset.Name) == "" {
 			continue
@@ -551,10 +553,7 @@ func buildTypeCheckSchemaSnapshot(ctx context.Context, fs afero.Fs, pp *pipeline
 		}
 		nodes = append(nodes, node)
 
-		declaredColumns := asset.Columns
-		if len(declaredColumns) == 0 && isAPIAsset(asset) {
-			declaredColumns = apiResponseFieldColumns(ctx, asset)
-		}
+		declaredColumns := definitionSchemas.Available(ctx, asset)
 		for _, column := range declaredColumns {
 			if strings.TrimSpace(column.Name) != "" {
 				columns[asset.Name] = append(columns[asset.Name], columnInfoFromPipelineColumn(column))
@@ -595,7 +594,7 @@ func buildTypeCheckSchemaSnapshot(ctx context.Context, fs afero.Fs, pp *pipeline
 	}
 
 	snapshot.Graph = sqllsp.GraphFromRenartAssets(sqllsp.FileURI(workspaceRoot), nodes, columns)
-	snapshot.Graph = sqllsp.InferSchemaSnapshot(ctx, snapshot.Graph, inferenceAssets)
+	snapshot.Graph = resolveAuthoringSchemaGraph(ctx, snapshot.Graph, pp, inferenceAssets)
 	snapshot.Schema, snapshot.Constraints, snapshot.Confidence = sqllsp.ValidationSchemaWithConstraints(snapshot.Graph)
 	return snapshot
 }
@@ -906,22 +905,4 @@ func assetReportID(workspaceRoot string, asset *pipeline.Asset) string {
 		rel = path
 	}
 	return EncodeID(filepath.ToSlash(rel))
-}
-
-func nonSQLColumnsExpected(asset *pipeline.Asset) bool {
-	if isAPIAsset(asset) || isLoadAsset(asset) {
-		return true
-	}
-	assetType := strings.ToLower(string(asset.Type))
-	return strings.Contains(assetType, "python") || strings.Contains(assetType, "ingestr")
-}
-
-func assetHasDeclaredColumns(ctx context.Context, asset *pipeline.Asset) bool {
-	if len(asset.Columns) > 0 {
-		return true
-	}
-	if isAPIAsset(asset) && len(apiResponseFieldColumns(ctx, asset)) > 0 {
-		return true
-	}
-	return false
 }

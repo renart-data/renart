@@ -20,12 +20,12 @@
 //	renart_sig_cols  checksum of the renart-managed column projection
 //	renart_dep_add   manual dependencies (keys: a:<asset>#<mode> / u:<uri>#<mode>)
 //	renart_dep_drop  inferred dependencies the user suppressed (same key form)
-//	renart_col_add   manual columns (names)
+//	renart_col_add   legacy manual columns (names), read only after schema v3
 //	renart_col_drop  inferred columns the user omitted (names)
-//	renart_col_own   generated columns whose fields the user now owns
+//	renart_col_own   legacy generated-column ownership, read only after schema v3
 //	                 (col:field|field;col2:field)
-//	renart_col_src   non-default type sources (col:m;col2:l); SQL/definition
-//	                 inference is the implicit default and is never listed
+//	renart_col_src   legacy non-default type sources (col:m;col2:l), read only
+//	                 after schema v3; new values live in each column's meta map
 //	renart_col_map   rename memory (e:<exprhash>:col); optional
 //
 // All functions in this package are pure: they operate on values, never touch
@@ -36,6 +36,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/bruin-data/bruin/pkg/pipeline"
 )
 
 // Flat meta keys. Stable strings — changing one is a file-format migration.
@@ -52,6 +54,14 @@ const (
 	KeyColSource = "renart_col_src"
 	KeyColMap    = "renart_col_map"
 
+	// Existing-column provenance lives beside the Bruin column it describes.
+	// The aggregate asset keys remain read-only v2 migration sources. Drop and
+	// rename memory necessarily stays asset-level because no column exists to
+	// carry metadata after removal.
+	ColumnKeyManual = "renart_manual"
+	ColumnKeyOwned  = "renart_owned"
+	ColumnKeySource = "renart_source"
+
 	// KeyLegacyInferredUpstreams is the pre-provenance key that listed the
 	// inferred (renart-managed) upstream names directly. It is read for
 	// back-compat and cleared once an asset is migrated to the new model.
@@ -60,7 +70,7 @@ const (
 
 // Schema and generator versions written into freshly reconciled assets.
 const (
-	SchemaVersion    = 2
+	SchemaVersion    = 3
 	GeneratorVersion = 1
 )
 
@@ -125,6 +135,124 @@ func Parse(meta map[string]string) RenartMeta {
 		LegacyInferred: splitList(meta[KeyLegacyInferredUpstreams]),
 	}
 	return m
+}
+
+// ParseAsset overlays column-local provenance on the legacy asset-level
+// record. Column metadata wins when both formats are present, allowing a
+// normal asset write to migrate v2 files without losing their saved source.
+func ParseAsset(asset *pipeline.Asset) RenartMeta {
+	if asset == nil {
+		return RenartMeta{}
+	}
+	result := Parse(asset.Meta)
+	if result.ColSource == nil {
+		result.ColSource = make(map[string]string)
+	}
+	if result.ColOwn == nil {
+		result.ColOwn = make(map[string][]string)
+	}
+	manual := lowerSet(result.ColAdd)
+	for _, column := range asset.Columns {
+		name := strings.ToLower(strings.TrimSpace(column.Name))
+		if name == "" {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(column.Meta[ColumnKeyManual]), "true") {
+			manual[name] = struct{}{}
+		}
+		if raw := strings.TrimSpace(column.Meta[ColumnKeyOwned]); raw != "" {
+			fields := splitOwnedFields(raw)
+			if len(fields) > 0 {
+				result.ColOwn[name] = fields
+			}
+		}
+		source := strings.TrimSpace(column.Meta[ColumnKeySource])
+		if source != "" {
+			result.ColSource[name] = source
+		}
+	}
+	result.ColAdd = make([]string, 0, len(manual))
+	for _, column := range asset.Columns {
+		if _, ok := manual[strings.ToLower(strings.TrimSpace(column.Name))]; ok {
+			result.ColAdd = append(result.ColAdd, column.Name)
+		}
+	}
+	if len(result.ColOwn) == 0 {
+		result.ColOwn = nil
+	}
+	if len(result.ColSource) == 0 {
+		result.ColSource = nil
+	}
+	return result
+}
+
+// ApplyToAsset writes source provenance beside each Bruin column and clears
+// the legacy aggregate key. Unknown column metadata and unrelated asset meta
+// keys are preserved.
+func (m RenartMeta) ApplyToAsset(asset *pipeline.Asset) {
+	if asset == nil {
+		return
+	}
+	sources := cloneStringMapLower(m.ColSource)
+	manual := lowerSet(m.ColAdd)
+	owned := cloneOwn(m.ColOwn)
+	for index := range asset.Columns {
+		column := &asset.Columns[index]
+		name := strings.ToLower(strings.TrimSpace(column.Name))
+		meta := make(map[string]string, len(column.Meta)+3)
+		for key, value := range column.Meta {
+			meta[key] = value
+		}
+		delete(meta, ColumnKeyManual)
+		delete(meta, ColumnKeyOwned)
+		delete(meta, ColumnKeySource)
+		if _, ok := manual[name]; ok {
+			meta[ColumnKeyManual] = "true"
+		}
+		if fields := splitOwnedFields(strings.Join(owned[name], "|")); len(fields) > 0 {
+			meta[ColumnKeyOwned] = strings.Join(fields, "|")
+		}
+		if source := strings.TrimSpace(sources[name]); source != "" {
+			meta[ColumnKeySource] = source
+		}
+		if len(meta) == 0 {
+			column.Meta = nil
+		} else {
+			column.Meta = pipeline.EmptyStringMap(meta)
+		}
+	}
+
+	if m.Version > 0 || len(sources) > 0 || len(manual) > 0 || len(owned) > 0 {
+		m.Version = SchemaVersion
+		if m.Generator == 0 {
+			m.Generator = GeneratorVersion
+		}
+	}
+	// Apply still understands the legacy format for pure compatibility callers;
+	// asset writes deliberately omit it after copying the values to columns.
+	m.ColAdd = nil
+	m.ColOwn = nil
+	m.ColSource = nil
+	asset.Meta = pipeline.EmptyStringMap(m.Apply(asset.Meta))
+}
+
+func splitOwnedFields(raw string) []string {
+	seen := make(map[string]struct{})
+	fields := make([]string, 0)
+	for _, field := range strings.Split(raw, "|") {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		key := strings.ToLower(field)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		fields = append(fields, field)
+	}
+	sort.SliceStable(fields, func(i, j int) bool { return strings.ToLower(fields[i]) < strings.ToLower(fields[j]) })
+	return fields
 }
 
 // Apply writes the provenance back into a copy of meta, setting non-empty keys

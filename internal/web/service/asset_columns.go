@@ -111,10 +111,9 @@ func (s *AssetService) InferAssetColumns(ctx context.Context, assetID string) (i
 		return 0, nil, badRequestError("asset_resolve_failed", err.Error())
 	}
 	if isAPIAsset(asset) {
-		columns := apiResponseFieldColumns(ctx, asset)
-		inferred := make([]WorkspaceColumn, 0, len(columns))
-		for _, column := range columns {
-			inferred = append(inferred, WorkspaceColumn{Name: column.Name, Type: column.Type})
+		inferred, apiErr := s.InferAssetColumnsFromDefinition(ctx, assetID)
+		if apiErr != nil {
+			return apiErr.Status, nil, apiErr
 		}
 		if len(inferred) == 0 {
 			return http.StatusBadRequest, map[string]any{

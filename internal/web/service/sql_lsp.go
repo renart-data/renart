@@ -336,20 +336,17 @@ func (s *SQLLSPService) Definition(ctx context.Context, req SQLLSPRequest) (SQLL
 }
 
 func (s *SQLLSPService) References(ctx context.Context, req SQLLSPRequest) (SQLLSPResponse, *APIError) {
+	graph, doc, apiErr := s.graphAndDocument(ctx, req)
+	if apiErr != nil {
+		return SQLLSPResponse{}, apiErr
+	}
 	state := s.deps.CurrentState()
-	asset, notebook, ok := s.selectedAsset(state, req.AssetID)
+	_, notebook, ok := s.selectedAsset(state, req.AssetID)
 	if !ok {
 		return SQLLSPResponse{}, &APIError{Status: 400, Code: "asset_not_found", Message: "asset not found"}
 	}
-	content := req.Content
-	if strings.TrimSpace(content) == "" {
-		content, _ = sqlLSPDocumentContent(asset)
-	}
-	doc := sqllsp.TextDocumentItem{URI: assetURI(s.deps.WorkspaceRoot, asset), LanguageID: "sql", Text: content}
-	graph := s.graphForRequest(ctx, state, notebook)
-	graph = s.enrichDuckDBFileRelations(ctx, graph, doc, asset.Type)
 	engine := s.newEngine(graph)
-	docs := s.documentsForState(state, notebook, req.AssetID, content)
+	docs := s.documentsForState(state, notebook, req.AssetID, doc.Text)
 	return SQLLSPResponse{Status: "ok", Locations: engine.WorkspaceReferences(doc, req.Position, docs, req.IncludeDeclaration)}, nil
 }
 
@@ -405,11 +402,11 @@ func (s *SQLLSPService) DocumentSymbols(ctx context.Context, req SQLLSPRequest) 
 }
 
 func (s *SQLLSPService) Formatting(ctx context.Context, req SQLLSPRequest) (SQLLSPResponse, *APIError) {
-	_, doc, apiErr := s.engineAndDocument(ctx, req)
+	graph, doc, apiErr := s.graphAndDocument(ctx, req)
 	if apiErr != nil {
 		return SQLLSPResponse{}, apiErr
 	}
-	formatted, err := sqlformat.Format(ctx, doc.Text, s.dialectForDocument(doc))
+	formatted, err := sqlformat.Format(ctx, doc.Text, graphDocumentDialect(graph, doc.URI))
 	if err != nil {
 		return SQLLSPResponse{Status: "error", Error: err.Error()}, nil
 	}
@@ -429,25 +426,6 @@ func (s *SQLLSPService) SignatureHelp(ctx context.Context, req SQLLSPRequest) (S
 		return SQLLSPResponse{}, apiErr
 	}
 	return SQLLSPResponse{Status: "ok", Signature: engine.SignatureHelp(doc, req.Position)}, nil
-}
-
-func (s *SQLLSPService) dialectForDocument(doc sqllsp.TextDocumentItem) string {
-	state := s.deps.CurrentState()
-	for _, pipeline := range state.Pipelines {
-		for _, asset := range pipeline.Assets {
-			if assetURI(s.deps.WorkspaceRoot, asset) == doc.URI {
-				return sqllsp.DialectFromAssetType(asset.Type)
-			}
-		}
-	}
-	for _, notebook := range state.Notebooks {
-		for _, cell := range notebook.Cells {
-			if assetURI(s.deps.WorkspaceRoot, cell) == doc.URI {
-				return sqllsp.DialectFromAssetType(cell.Type)
-			}
-		}
-	}
-	return sqlformat.DialectGeneric
 }
 
 func (s *SQLLSPService) engineAndDocument(ctx context.Context, req SQLLSPRequest) (*sqllsp.Engine, sqllsp.TextDocumentItem, *APIError) {
@@ -475,9 +453,9 @@ func (s *SQLLSPService) graphAndDocument(ctx context.Context, req SQLLSPRequest)
 		graph = graphWithCustomCheckDialect(graph, doc.URI, asset, state.Connections)
 	}
 	if connection := strings.TrimSpace(req.Connection); connection != "" {
-		graph = graphWithDocumentConnection(graph, doc.URI, connection)
+		graph = graphWithDocumentConnection(graph, doc.URI, connection, state.Connections)
 	}
-	graph = s.enrichDuckDBFileRelations(ctx, graph, doc, asset.Type)
+	graph = s.enrichDuckDBFileRelations(ctx, graph, doc, graphDocumentDialect(graph, doc.URI))
 	return graph, doc, nil
 }
 
@@ -491,9 +469,9 @@ func (s *SQLLSPService) enrichDuckDBFileRelations(
 	ctx context.Context,
 	graph sqllsp.CanonicalGraph,
 	doc sqllsp.TextDocumentItem,
-	assetType string,
+	dialect string,
 ) sqllsp.CanonicalGraph {
-	if s.deps.DisableFilesystemAccess || !strings.EqualFold(sqllsp.DialectFromAssetType(assetType), "duckdb") {
+	if s.deps.DisableFilesystemAccess || !strings.EqualFold(dialect, "duckdb") {
 		return graph
 	}
 	return sqllsp.EnrichDuckDBFileRelations(ctx, graph, doc, s.deps.WorkspaceRoot, s.duckDBFileSchemas)
@@ -568,24 +546,41 @@ func graphWithCustomCheckDialect(
 	return graph
 }
 
-// graphWithDocumentConnection gives an embedded SQL query its runtime-selected
-// connection without mutating the revision-cached workspace graph. Python's
-// renart.query(..., connection="...") is the current caller; ordinary SQL
-// assets omit the override and retain their saved connection identity.
+// graphWithDocumentConnection gives an embedded or ad-hoc SQL query its
+// runtime-selected connection and matching dialect without mutating the
+// revision-cached workspace graph. Ordinary SQL assets omit the override and
+// retain their saved connection identity.
 func graphWithDocumentConnection(
 	graph sqllsp.CanonicalGraph,
 	documentURI sqllsp.URI,
 	connection string,
+	connectionTypes map[string]string,
 ) sqllsp.CanonicalGraph {
+	dialect := ""
+	if queryType, ok := queryAssetTypeForConnectionType(connectionTypes[connection]); ok {
+		dialect = sqllsp.DialectFromAssetType(string(queryType))
+	}
 	assets := append([]sqllsp.AssetNode(nil), graph.Assets...)
 	for index := range assets {
 		if assets[index].URI == documentURI {
 			assets[index].Connection = connection
+			if dialect != "" && dialect != sqlformat.DialectGeneric {
+				assets[index].Dialect = dialect
+			}
 			break
 		}
 	}
 	graph.Assets = assets
 	return graph
+}
+
+func graphDocumentDialect(graph sqllsp.CanonicalGraph, documentURI sqllsp.URI) string {
+	for _, asset := range graph.Assets {
+		if asset.URI == documentURI && strings.TrimSpace(asset.Dialect) != "" {
+			return asset.Dialect
+		}
+	}
+	return sqlformat.DialectGeneric
 }
 
 // selectedAsset finds the asset an LSP request targets: a pipeline asset or a
@@ -689,7 +684,12 @@ func (s *SQLLSPService) buildGraph(ctx context.Context, state model.WorkspaceSta
 	}
 	nodes, columns := s.graphAssetNodes(pipelineAssets)
 	graph := sqllsp.GraphFromRenartAssets(sqllsp.FileURI(s.deps.WorkspaceRoot), nodes, columns)
-	return sqllsp.InferSchemaSnapshot(ctx, graph, inferenceAssetsFromModels(s.deps.WorkspaceRoot, pipelineAssets))
+	return resolveAuthoringSchemaGraph(
+		ctx,
+		graph,
+		pipelineFromSchemaModels(pipelineAssets),
+		inferenceAssetsFromModels(s.deps.WorkspaceRoot, pipelineAssets),
+	)
 }
 
 // graphForRequest returns the revision-cached pipeline graph, extended with the
@@ -737,7 +737,12 @@ func (s *SQLLSPService) graphWithNotebookCells(ctx context.Context, base sqllsp.
 		}
 	}
 
-	return sqllsp.InferSchemaSnapshot(ctx, merged, inferenceAssetsFromModels(s.deps.WorkspaceRoot, notebook.Cells))
+	return resolveAuthoringSchemaGraph(
+		ctx,
+		merged,
+		pipelineFromSchemaModels(notebook.Cells),
+		inferenceAssetsFromModels(s.deps.WorkspaceRoot, notebook.Cells),
+	)
 }
 
 // graphAssetNodes converts workspace assets (pipeline assets or notebook cells)

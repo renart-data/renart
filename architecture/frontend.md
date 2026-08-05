@@ -114,9 +114,20 @@ not underscore-flattened route hacks.
   queries preserve code/split layout and add the editor beside a canvas-only
   view. The ad-hoc editor can copy its current draft into a new or existing
   notebook cell, or open the New asset dialog as a SQL asset with the draft
-  prefilled. Both conversions use the normal Go mutation APIs and keep the
-  in-memory draft intact. The first asset selection from a pipeline-only canvas
-  opens the split view; after an asset is present in the route, later selections
+  prefilled. A shadcn connection selector is populated from the backend's
+  `query_connections` workspace contract rather than a frontend warehouse
+  allowlist. Its pipeline-scoped selection controls execution, schema
+  discovery, parse context, formatting, the complete SQL LSP surface, and the
+  connection preselected when converting to an asset; the selected pipeline
+  asset supplies only graph and Jinja scope. Both conversions use the normal Go
+  mutation APIs and keep the in-memory draft intact. Ad-hoc results keep the
+  effective rendered query in a compact disclosure above the table. When the
+  response is capped, that strip shows a warning icon and appends the effective
+  row cap as `LIMIT <n>` to the preview; the table remains unobscured. The
+  terminal icon indicates expanded state through its stroke weight, and the
+  disclosure hover surface includes its copy action. The first asset selection
+  from a pipeline-only canvas opens the split view; after an asset is present in
+  the route, later selections
   preserve the explicit code/split/canvas layout. A DAG that fits at the default
   zoom is horizontally centered on initial render, while a wider DAG keeps its layout
   origin so it remains predictable to pan. Layer-band layout reserves deterministic
@@ -251,13 +262,15 @@ not underscore-flattened route hacks.
   columns and checks for relation-producing assets; sensors omit columns and
   checks because they do not materialize a relation. Custom SQL checks remain
   available for other supported asset types even when they do not expose a
-  column workbench. The Columns card's single
+  column workbench. The Columns card's
   **Sync schema** action automatically uses the asset definition and places
   backend-advertised observed sources beside it as optional checkboxes (for
   example **Live request** and **Current table**). Safe additions and type fills
   finish inline. Conflicts open a wide, scrollable shadcn dialog whose table
   compares each source, saved metadata, and the chosen result without replacing
-  the inspector with asset-kind-specific controls.
+  the inspector with asset-kind-specific controls. The same card can add a
+  declared column manually; that edit uses the semantic transaction API and
+  column-local provenance rather than relying on the hidden raw YAML editor.
 - The Build view's **New pipeline** dialog loads the backend template catalog
   and presents the blank option plus feature-focused runnable starters in the
   same compact catalog used by onboarding. Category headings organize one

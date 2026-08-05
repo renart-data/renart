@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"net/http"
 	"os"
@@ -295,12 +297,14 @@ func (s *NotebookService) Create(req CreateNotebookRequest) (model.Notebook, *AP
 		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "notebook_create_failed", Message: err.Error()}
 	}
 
-	// Seed a small example cell so a new notebook is immediately runnable.
+	// Seed a small example cell so a new notebook is immediately runnable. Its
+	// concise generated name keeps relation completion readable from the start.
 	exampleID := notebook.NewCellID()
+	exampleName := nextCellAutoname(&notebook.Notebook{}, s.pipelineAssetNameSet())
 	exampleContent := fmt.Sprintf(
 		"/* @bruin\nid: %s\ntype: %s\nclass: %s\n@bruin */\n\nselect 'hello' as greeting, 42 as answer\n",
 		exampleID, notebook.DefaultCellType, notebook.ClassNotebook)
-	if err := os.WriteFile(filepath.Join(absDir, "example.sql"), []byte(exampleContent), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(absDir, exampleName+".sql"), []byte(exampleContent), 0o644); err != nil {
 		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "notebook_create_failed", Message: err.Error()}
 	}
 	manifest := fmt.Sprintf("title: %s\nblocks:\n  - cell: %s\n", title, exampleID)
@@ -373,7 +377,7 @@ func (s *NotebookService) CreateCell(notebookID string, req CreateCellRequest) (
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		name = nextCellAutoname(nb)
+		name = nextCellAutoname(nb, s.pipelineAssetNameSet())
 	}
 	if !cellNamePattern.MatchString(name) {
 		return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_cell_name", Message: "cell names may only contain letters, digits, and underscores"}
@@ -975,10 +979,46 @@ func (s *NotebookService) selectRunCells(nb *notebook.Notebook, req RunNotebookR
 	return result, nil
 }
 
-func nextCellAutoname(nb *notebook.Notebook) string {
-	for index := len(nb.Cells) + 1; ; index++ {
-		candidate := fmt.Sprintf("cell_%d", index)
-		if nb.CellByName(candidate) == nil {
+var cellNameAdjectives = [...]string{
+	"amber", "brisk", "calm", "clever", "cozy", "crisp", "eager", "gentle",
+	"golden", "happy", "hidden", "kind", "lively", "lucid", "merry", "nimble",
+	"quiet", "rapid", "ready", "silver", "smooth", "steady", "sunny", "swift",
+	"tidy", "vivid", "warm", "wise", "bright", "fresh", "playful", "soft",
+}
+
+var cellNameNouns = [...]string{
+	"badger", "beacon", "brook", "cedar", "comet", "coral", "dune", "ember",
+	"fern", "fox", "grove", "harbor", "heron", "hill", "iris", "lake",
+	"maple", "meadow", "moon", "otter", "pine", "river", "robin", "sparrow",
+	"stone", "summit", "tiger", "valley", "willow", "wren", "orchid", "pebble",
+}
+
+func nextCellAutoname(nb *notebook.Notebook, pipelineAssetNames map[string]bool) string {
+	var random [8]byte
+	seed := uint64(time.Now().UnixNano())
+	if _, err := cryptorand.Read(random[:]); err == nil {
+		seed = binary.LittleEndian.Uint64(random[:])
+	}
+	return cellAutonameFromSeed(nb, pipelineAssetNames, seed)
+}
+
+func cellAutonameFromSeed(nb *notebook.Notebook, pipelineAssetNames map[string]bool, seed uint64) string {
+	total := len(cellNameAdjectives) * len(cellNameNouns)
+	start := int(seed % uint64(total))
+	for attempt := 0; attempt < total; attempt++ {
+		index := (start + attempt) % total
+		candidate := cellNameAdjectives[index/len(cellNameNouns)] + "_" + cellNameNouns[index%len(cellNameNouns)]
+		if notebook.ValidateCellName(nb, candidate, "", pipelineAssetNames) == "" {
+			return candidate
+		}
+	}
+
+	// Exhausting all 1,024 pairs is improbable, but a suffix keeps the function
+	// total and collision-safe for generated or adversarial workspaces.
+	base := cellNameAdjectives[start/len(cellNameNouns)] + "_" + cellNameNouns[start%len(cellNameNouns)]
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s_%d", base, suffix)
+		if notebook.ValidateCellName(nb, candidate, "", pipelineAssetNames) == "" {
 			return candidate
 		}
 	}

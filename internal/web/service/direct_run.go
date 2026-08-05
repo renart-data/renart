@@ -1102,6 +1102,9 @@ func (e *HybridBruinExecutor) runDirectTask(
 	if runErr == nil && callbackErr != nil {
 		runErr = callbackErr
 	}
+	if runErr == nil && instance.GetType() == scheduler.TaskInstanceTypeMain {
+		e.warnOnDeclaredSchemaDrift(taskCtx, pl, asset, manager, assetWriter)
+	}
 	if flushErr := assetWriter.Flush(); runErr == nil && flushErr != nil {
 		runErr = flushErr
 	}

@@ -62,6 +62,17 @@ export type ColumnSchemaSourceSnapshot = {
   notes?: string[];
   sample_records?: number;
   fresh?: boolean;
+  stage?: string;
+  completeness?: string;
+  confidence?: string;
+  asset_revision?: string;
+  output_identity?: string;
+  environment?: string;
+  connection?: string;
+  relation?: string;
+  observed_at?: string;
+  classification?: string;
+  excluded_reason?: string;
 };
 
 export type ColumnSchemaMergeRow = {
@@ -116,13 +127,20 @@ export type ColumnReference = {
 
 export type WebColumn = {
   name: string;
+  source_column?: string;
   type?: string;
+  mask?: string;
   description?: string;
   tags?: string[];
   primary_key?: boolean;
   update_on_merge?: boolean;
   merge_sql?: string;
   nullable?: boolean;
+  default?: string;
+  precision?: number;
+  scale?: number;
+  length?: number;
+  collation?: string;
   foreign_key?: ColumnReference;
   owner?: string;
   domains?: string[];
@@ -198,10 +216,18 @@ export type EnvironmentPolicy = {
   confirm_destructive: boolean;
 };
 
+export type WorkspaceQueryConnection = {
+  name: string;
+  connection_type: string;
+  asset_type: string;
+  dialect: string;
+};
+
 export type WorkspaceState = {
   pipelines: WebPipeline[];
   notebooks?: WebNotebook[];
   connections: Record<string, string>;
+  query_connections?: WorkspaceQueryConnection[];
   asset_capabilities?: AssetAuthoringCapability[];
   selected_environment: string;
   environment_policies?: Record<string, EnvironmentPolicy>;

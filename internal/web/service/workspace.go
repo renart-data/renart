@@ -134,6 +134,7 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 	state := model.WorkspaceState{
 		Pipelines:         make([]model.Pipeline, 0),
 		Connections:       map[string]string{},
+		QueryConnections:  make([]model.WorkspaceQueryConnection, 0),
 		AssetCapabilities: assetAuthoringCapabilities(),
 		Errors:            make([]string, 0),
 		UpdatedAt:         time.Now().UTC(),
@@ -154,6 +155,7 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 			state.Errors = append(state.Errors, "config parse error: "+cfgErr.Error())
 		}
 	}
+	state.QueryConnections = workspaceQueryConnections(state.Connections)
 
 	if project, projectErr := identity.LoadProject(fs, filepath.Join(s.workspaceRoot, ".renart", "project.yml")); projectErr == nil {
 		state.Features = project.Features
@@ -227,6 +229,7 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 			pSummary.Name = filepath.Base(pPath)
 		}
 
+		definitionSchemas := newAssetDefinitionSchemaResolver(parsed)
 		for _, asset := range parsed.Assets {
 			assetPath := asset.ExecutableFile.Path
 			if assetPath == "" {
@@ -270,10 +273,7 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 				capabilityAsset.RefreshRestricted = &restricted
 			}
 			materializationProfile := materializationProfileFor(capabilityAsset, destinationType)
-			columns := asset.Columns
-			if isAPIAsset(asset) && len(columns) == 0 {
-				columns = apiInferredColumnsForDisplay(ctx, asset)
-			}
+			columns := definitionSchemas.Available(ctx, asset)
 
 			// A placeholder emitted by the tolerant builder carries its parse error
 			// in meta; lift it into a first-class field and keep it out of the meta map.
@@ -332,6 +332,30 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 	state.Metadata["asset_directories"] = AssetsDirectoryNames
 
 	return state, nil
+}
+
+func workspaceQueryConnections(connections map[string]string) []model.WorkspaceQueryConnection {
+	result := make([]model.WorkspaceQueryConnection, 0, len(connections))
+	for name, connectionType := range connections {
+		assetType, ok := queryAssetTypeForConnectionType(connectionType)
+		if !ok {
+			continue
+		}
+		dialect, err := AssetTypeToDialect(assetType)
+		if err != nil {
+			continue
+		}
+		result = append(result, model.WorkspaceQueryConnection{
+			Name:           name,
+			ConnectionType: normalizeConnectionType(connectionType),
+			AssetType:      string(assetType),
+			Dialect:        dialect,
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
+	})
+	return result
 }
 
 func parameterStrings(parameters pipeline.ParameterMap) map[string]string {
@@ -490,13 +514,20 @@ func PipelineColumnsToModelColumns(columns []pipeline.Column) []model.Column {
 
 		result = append(result, model.Column{
 			Name:          column.Name,
+			SourceColumn:  column.SourceColumn,
 			Type:          column.Type,
+			Mask:          column.Mask,
 			Description:   column.Description,
 			Tags:          column.Tags,
 			PrimaryKey:    column.PrimaryKey,
 			UpdateOnMerge: column.UpdateOnMerge,
 			MergeSQL:      column.MergeSQL,
 			Nullable:      nullable,
+			Default:       column.Default,
+			Precision:     cloneIntPointer(column.Precision),
+			Scale:         cloneIntPointer(column.Scale),
+			Length:        cloneIntPointer(column.Length),
+			Collation:     column.Collation,
 			ForeignKey:    foreignKey,
 			Owner:         column.Owner,
 			Domains:       column.Domains,
@@ -527,13 +558,20 @@ func ModelColumnsToPipelineColumns(columns []model.Column) []pipeline.Column {
 
 		result = append(result, pipeline.Column{
 			Name:          column.Name,
+			SourceColumn:  column.SourceColumn,
 			Type:          column.Type,
+			Mask:          column.Mask,
 			Description:   column.Description,
 			Tags:          column.Tags,
 			PrimaryKey:    column.PrimaryKey,
 			UpdateOnMerge: column.UpdateOnMerge,
 			MergeSQL:      column.MergeSQL,
 			Nullable:      pipeline.DefaultTrueBool{Value: column.Nullable},
+			Default:       column.Default,
+			Precision:     cloneIntPointer(column.Precision),
+			Scale:         cloneIntPointer(column.Scale),
+			Length:        cloneIntPointer(column.Length),
+			Collation:     column.Collation,
 			ForeignKey:    foreignKey,
 			Owner:         column.Owner,
 			Domains:       column.Domains,
@@ -542,6 +580,14 @@ func ModelColumnsToPipelineColumns(columns []model.Column) []pipeline.Column {
 		})
 	}
 	return result
+}
+
+func cloneIntPointer(value *int) *int {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 func PipelineCustomChecksToModelCustomChecks(checks []pipeline.CustomCheck) []model.CustomCheck {

@@ -246,6 +246,10 @@ type AssetService struct {
 	pythonTySessionMu       sync.Mutex
 	pythonTySessionFiles    map[string]string
 	pythonTyCallCount       int
+	seedSchemaMu            sync.Mutex
+	seedSchemaCache         map[string][]WorkspaceColumn
+	seedSchemaCacheOrder    []string
+	seedSchemaInflight      map[string]*seedSchemaDiscoveryCall
 }
 
 func NewAssetService(deps AssetDependencies) *AssetService {
@@ -254,6 +258,8 @@ func NewAssetService(deps AssetDependencies) *AssetService {
 		assetFileLocks:          make(map[string]*sync.Mutex),
 		pythonPackageMountCache: make(map[string]pythonPackageMountCacheEntry),
 		pythonTySessionFiles:    make(map[string]string),
+		seedSchemaCache:         make(map[string][]WorkspaceColumn),
+		seedSchemaInflight:      make(map[string]*seedSchemaDiscoveryCall),
 	}
 }
 

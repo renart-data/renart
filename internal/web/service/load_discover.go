@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
@@ -104,17 +102,13 @@ func runLoadConnsDiscover(ctx context.Context, workspaceRoot, connectionURI, pat
 		return "", err
 	}
 
-	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
-	if strings.TrimSpace(workspaceRoot) != "" {
-		cmd.Dir = workspaceRoot
-	}
-	cmd.Env = append(os.Environ(), loadBaseEnv()...)
+	cmd := newStreamingCommand(ctx, cmdName, cmdArgs, workspaceRoot, nil)
 	cmd.Env = append(cmd.Env, loadDiscoverEnvName+"="+connectionURI)
 
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
-	runErr := cmd.Run()
+	runErr := runSlingCommand(ctx, cmd)
 	return buf.String(), runErr
 }
 

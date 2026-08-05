@@ -577,7 +577,8 @@ export function useSQLIntellisense(
   const sqlDiscoveryCache = useAtomValue(sqlDiscoveryCacheAtom);
   const loadSQLDiscoveryColumns = useSetAtom(sqlDiscoveryColumnsAtom);
   const loadSQLDiscoveryTables = useSetAtom(sqlDiscoveryTablesAtom);
-  const parseContext = useSQLParseContext(asset, sqlContent, tables);
+  const connectionName = asset && workspace ? effectiveConnectionForAsset(asset) : null;
+  const parseContext = useSQLParseContext(asset, sqlContent, tables, connectionName ?? undefined);
   const lastGoodParseContextRef = useRef<typeof parseContext>(null);
   const parseContextHasErrors = !!parseContext?.errors?.length;
   const parseContextHasRangedDiagnostics = !!parseContext?.diagnostics?.some(
@@ -601,7 +602,6 @@ export function useSQLIntellisense(
 
   useSQLSemanticDecorations(registerSemanticDecorations ? editor : null, activeParseContext);
 
-  const connectionName = asset && workspace ? effectiveConnectionForAsset(asset) : null;
   const currentPipelineId = asset
     ? ((workspace?.pipelines ?? []).find((pipeline) =>
         pipeline.assets.some((candidate) => candidate.id === asset.id),

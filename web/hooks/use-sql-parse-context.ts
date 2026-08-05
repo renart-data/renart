@@ -11,6 +11,7 @@ export function useSQLParseContext(
   asset: WebAsset | null,
   content: string,
   schemaTables: SchemaTable[],
+  connection?: string,
 ) {
   // Parse context is a SQL-only concept; never hit the endpoint for
   // Python/YAML/ingestr assets.
@@ -50,6 +51,7 @@ export function useSQLParseContext(
         const response = await getSQLParseContext({
           assetId,
           content: jinjaSafeSQLForParsing(content),
+          connection,
           schema: schemaPayload,
           signal: controller.signal,
         });
@@ -81,7 +83,7 @@ export function useSQLParseContext(
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [assetId, content, hasContent, schemaKey, schemaPayload]);
+  }, [assetId, connection, content, hasContent, schemaKey, schemaPayload]);
 
   return data;
 }

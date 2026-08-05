@@ -92,13 +92,13 @@ func (s *AssetService) ApplyAssetTransaction(ctx context.Context, assetID string
 		return AssetTransactionResult{}, badRequestError("asset_resolve_failed", err.Error())
 	}
 
-	meta := assetmeta.Parse(asset.Meta)
+	meta := assetmeta.ParseAsset(asset)
 	if apiErr := applyTransactionToAsset(asset, &meta, tx); apiErr != nil {
 		return AssetTransactionResult{}, apiErr
 	}
 	meta.Version = assetmeta.SchemaVersion
 	meta.Generator = assetmeta.GeneratorVersion
-	asset.Meta = pipeline.EmptyStringMap(meta.Apply(asset.Meta))
+	meta.ApplyToAsset(asset)
 	if apiErr := loaderMaterializationAPIError(asset); apiErr != nil {
 		return AssetTransactionResult{}, apiErr
 	}

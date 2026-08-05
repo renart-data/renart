@@ -2,15 +2,27 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/bruin-data/bruin/pkg/jinja"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 )
+
+const maxSeedSchemaCacheEntries = 64
+
+type seedSchemaDiscoveryCall struct {
+	done    chan struct{}
+	columns []WorkspaceColumn
+	output  []byte
+	err     error
+}
 
 // inferSeedColumnsFromSource asks Sling for the schema of a local seed file.
 // Unlike warehouse-backed non-SQL assets, a seed has a complete definition-time
@@ -61,7 +73,7 @@ func (s *AssetService) inferSeedColumnsFromSource(
 	}
 
 	pattern := filepath.FromSlash(strings.TrimPrefix(sourceStream, "file://"))
-	output, runErr := runSlingSeedColumnDiscovery(ctx, s.deps.WorkspaceRoot, pattern)
+	columns, output, runErr := s.discoverSeedColumns(ctx, pattern)
 	if runErr != nil {
 		message := strings.TrimSpace(string(output))
 		if message == "" {
@@ -69,7 +81,6 @@ func (s *AssetService) inferSeedColumnsFromSource(
 		}
 		return nil, badRequestError("seed_column_inference_failed", message)
 	}
-	columns := parseSlingSeedColumns(string(output))
 	if len(columns) == 0 {
 		return nil, badRequestError(
 			"seed_column_inference_failed",
@@ -77,6 +88,107 @@ func (s *AssetService) inferSeedColumnsFromSource(
 		)
 	}
 	return columns, nil
+}
+
+// discoverSeedColumns deduplicates Sling discovery by the local input's
+// content fingerprint. Pure typecheck/LSP paths never call this function; an
+// explicit filesystem-enabled schema observation is the only entry point.
+func (s *AssetService) discoverSeedColumns(ctx context.Context, pattern string) ([]WorkspaceColumn, []byte, error) {
+	key, err := seedSchemaFingerprint(pattern)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	s.seedSchemaMu.Lock()
+	if s.seedSchemaCache == nil {
+		s.seedSchemaCache = make(map[string][]WorkspaceColumn)
+	}
+	if s.seedSchemaInflight == nil {
+		s.seedSchemaInflight = make(map[string]*seedSchemaDiscoveryCall)
+	}
+	if columns, ok := s.seedSchemaCache[key]; ok {
+		result := append([]WorkspaceColumn(nil), columns...)
+		s.seedSchemaMu.Unlock()
+		return result, nil, nil
+	}
+	if call, ok := s.seedSchemaInflight[key]; ok {
+		s.seedSchemaMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, nil, ctx.Err()
+		case <-call.done:
+			return append([]WorkspaceColumn(nil), call.columns...), append([]byte(nil), call.output...), call.err
+		}
+	}
+	call := &seedSchemaDiscoveryCall{done: make(chan struct{})}
+	s.seedSchemaInflight[key] = call
+	s.seedSchemaMu.Unlock()
+
+	call.output, call.err = runSlingSeedColumnDiscovery(ctx, s.deps.WorkspaceRoot, pattern)
+	if call.err == nil {
+		call.columns = parseSlingSeedColumns(string(call.output))
+	}
+
+	s.seedSchemaMu.Lock()
+	delete(s.seedSchemaInflight, key)
+	if call.err == nil && len(call.columns) > 0 {
+		if _, exists := s.seedSchemaCache[key]; !exists {
+			if len(s.seedSchemaCacheOrder) >= maxSeedSchemaCacheEntries {
+				oldest := s.seedSchemaCacheOrder[0]
+				s.seedSchemaCacheOrder = s.seedSchemaCacheOrder[1:]
+				delete(s.seedSchemaCache, oldest)
+			}
+			s.seedSchemaCacheOrder = append(s.seedSchemaCacheOrder, key)
+		}
+		s.seedSchemaCache[key] = append([]WorkspaceColumn(nil), call.columns...)
+	}
+	close(call.done)
+	s.seedSchemaMu.Unlock()
+
+	return append([]WorkspaceColumn(nil), call.columns...), append([]byte(nil), call.output...), call.err
+}
+
+func seedSchemaFingerprint(pattern string) (string, error) {
+	pattern = filepath.Clean(strings.TrimSpace(pattern))
+	if pattern == "" || pattern == "." {
+		return "", fmt.Errorf("seed path is empty")
+	}
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return "", err
+	}
+	if len(matches) == 0 {
+		matches = []string{pattern}
+	}
+	sort.Strings(matches)
+
+	digest := sha256.New()
+	_, _ = io.WriteString(digest, "renart-seed-schema-v1\x00")
+	for _, match := range matches {
+		info, statErr := os.Stat(match)
+		if statErr != nil {
+			return "", statErr
+		}
+		if !info.Mode().IsRegular() {
+			return "", fmt.Errorf("seed schema input %s is not a regular file", match)
+		}
+		_, _ = io.WriteString(digest, filepath.Clean(match))
+		_, _ = io.WriteString(digest, "\x00")
+		file, openErr := os.Open(match)
+		if openErr != nil {
+			return "", openErr
+		}
+		_, copyErr := io.Copy(digest, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return "", copyErr
+		}
+		if closeErr != nil {
+			return "", closeErr
+		}
+		_, _ = io.WriteString(digest, "\x00")
+	}
+	return hex.EncodeToString(digest.Sum(nil)), nil
 }
 
 func runSlingSeedColumnDiscovery(ctx context.Context, workspaceRoot, pattern string) ([]byte, error) {
@@ -90,12 +202,8 @@ func runSlingSeedColumnDiscovery(ctx context.Context, workspaceRoot, pattern str
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
-	if strings.TrimSpace(workspaceRoot) != "" {
-		cmd.Dir = workspaceRoot
-	}
-	cmd.Env = append(os.Environ(), loadBaseEnv()...)
-	return cmd.CombinedOutput()
+	cmd := newStreamingCommand(ctx, cmdName, cmdArgs, workspaceRoot, nil)
+	return runSlingCombinedOutput(ctx, cmd)
 }
 
 // parseSlingSeedColumns reads `sling conns discover LOCAL --columns -o json`.

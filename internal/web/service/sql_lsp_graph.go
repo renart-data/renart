@@ -34,6 +34,7 @@ func LoadSQLLSPGraph(ctx context.Context, workspaceRoot string) (sqllsp.Canonica
 	}
 	fsys := afero.NewOsFs()
 	builder := NewRenartPipelineBuilder(fsys)
+	parsedPipelines := make([]*pipeline.Pipeline, 0, len(pipelineDirs))
 	for _, pipelineDir := range pipelineDirs {
 		if ctx.Err() != nil {
 			return graph, ctx.Err()
@@ -45,6 +46,7 @@ func LoadSQLLSPGraph(ctx context.Context, workspaceRoot string) (sqllsp.Canonica
 			// pipeline must not take the whole language server offline.
 			continue
 		}
+		parsedPipelines = append(parsedPipelines, parsed)
 		tw, windowErr := ResolveExecutionTimeWindow(string(parsed.Schedule), "", "", time.Now().UTC())
 		if windowErr != nil {
 			continue
@@ -81,6 +83,9 @@ func LoadSQLLSPGraph(ctx context.Context, workspaceRoot string) (sqllsp.Canonica
 				})
 			}
 		}
+	}
+	for _, parsed := range parsedPipelines {
+		graph = resolveAuthoringSchemaGraph(ctx, graph, parsed, nil)
 	}
 	return graph, nil
 }

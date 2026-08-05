@@ -113,7 +113,7 @@ func (o *slingSeedOperator) Run(ctx context.Context, instance scheduler.TaskInst
 	}
 	cmd := newStreamingCommand(ctx, cmdName, cmdArgs, o.workspaceRoot, writer)
 	cmd.Env = append(cmd.Env, seedTargetConnectionEnv+"="+targetURI)
-	if err := runStreamingCommand(cmd, writer); err != nil {
+	if err := runStreamingCommand(ctx, cmd, writer); err != nil {
 		return fmt.Errorf("failed to load seed %s with Sling: %w", asset.Name, err)
 	}
 	return nil

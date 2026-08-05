@@ -14,6 +14,9 @@ export const RENART_META = {
   colDrop: "renart_col_drop",
   colOwn: "renart_col_own",
   colSource: "renart_col_src",
+  columnManual: "renart_manual",
+  columnOwned: "renart_owned",
+  columnSource: "renart_source",
 } as const;
 
 export type DependencyMode = "full" | "symbolic";
@@ -91,8 +94,11 @@ function parseMap(raw?: string): Map<string, string> {
   return out;
 }
 
-export function parseAssetProvenance(meta?: Record<string, string>): AssetProvenance {
-  return {
+export function parseAssetProvenance(
+  meta?: Record<string, string>,
+  columns?: WebAsset["columns"],
+): AssetProvenance {
+  const provenance = {
     depAdd: splitList(meta?.[RENART_META.depAdd]).map(parseDependencyKey),
     depDrop: splitList(meta?.[RENART_META.depDrop]).map(parseDependencyKey),
     colAdd: new Set(splitList(meta?.[RENART_META.colAdd]).map((n) => n.toLowerCase())),
@@ -100,6 +106,27 @@ export function parseAssetProvenance(meta?: Record<string, string>): AssetProven
     colOwn: parseOwn(meta?.[RENART_META.colOwn]),
     colSource: parseMap(meta?.[RENART_META.colSource]),
   };
+  for (const column of columns ?? []) {
+    const lower = column.name.toLowerCase();
+    if (column.meta?.[RENART_META.columnManual]?.trim().toLowerCase() === "true") {
+      provenance.colAdd.add(lower);
+    }
+    const owned = column.meta?.[RENART_META.columnOwned]?.trim();
+    if (owned) {
+      provenance.colOwn.set(
+        lower,
+        new Set(
+          owned
+            .split("|")
+            .map((field) => field.trim())
+            .filter(Boolean),
+        ),
+      );
+    }
+    const source = column.meta?.[RENART_META.columnSource]?.trim();
+    if (source) provenance.colSource.set(lower, source);
+  }
+  return provenance;
 }
 
 export type DependencyRow = {

@@ -23,8 +23,11 @@ func TestColumnInferenceSourcesAreAssetCapabilities(t *testing.T) {
 		want       []string
 	}{
 		{
-			name:       "sql definition and current table",
-			asset:      &pipeline.Asset{Type: pipeline.AssetTypeDuckDBQuery},
+			name: "sql definition and current table",
+			asset: &pipeline.Asset{
+				Type:            pipeline.AssetTypeDuckDBQuery,
+				Materialization: pipeline.Materialization{Type: pipeline.MaterializationTypeView},
+			},
 			connection: "warehouse",
 			want:       []string{columnSourceDefinition, columnSourceMaterialized},
 		},
@@ -33,6 +36,12 @@ func TestColumnInferenceSourcesAreAssetCapabilities(t *testing.T) {
 			asset:      &pipeline.Asset{Type: pipeline.AssetType("api")},
 			connection: "warehouse",
 			want:       []string{columnSourceDefinition, columnSourceLiveResponse, columnSourceMaterialized},
+		},
+		{
+			name:       "load source and current table",
+			asset:      &pipeline.Asset{Type: pipeline.AssetType(loadAssetType)},
+			connection: "warehouse",
+			want:       []string{columnSourceDefinition, columnSourceMaterialized},
 		},
 		{
 			name:       "local seed file and current table",
@@ -47,6 +56,21 @@ func TestColumnInferenceSourcesAreAssetCapabilities(t *testing.T) {
 			want:       []string{columnSourceMaterialized},
 		},
 		{
+			name: "python table only has current table evidence",
+			asset: &pipeline.Asset{
+				Type:            pipeline.AssetTypePython,
+				Materialization: pipeline.Materialization{Type: pipeline.MaterializationTypeTable},
+			},
+			connection: "warehouse",
+			want:       []string{columnSourceMaterialized},
+		},
+		{
+			name:       "source anchor has no output schema",
+			asset:      &pipeline.Asset{Type: pipeline.AssetTypePostgresSource},
+			connection: "warehouse",
+			want:       []string{},
+		},
+		{
 			name:       "sensor has no schema",
 			asset:      &pipeline.Asset{Type: pipeline.AssetTypePostgresQuerySensor},
 			connection: "warehouse",
@@ -56,6 +80,15 @@ func TestColumnInferenceSourcesAreAssetCapabilities(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			assetContext := AssetSchemaContext{Asset: tt.asset, ConnectionName: tt.connection}
+			definitionMatches := 0
+			for _, provider := range assetSchemaSourceProviders() {
+				if provider.ID() == columnSourceDefinition && provider.Matches(assetContext) {
+					definitionMatches++
+				}
+			}
+			assert.LessOrEqual(t, definitionMatches, 1, "one registry provider must own an asset's definition schema")
+
 			sources := columnInferenceSourcesForAsset(tt.asset, tt.connection)
 			ids := make([]string, 0, len(sources))
 			for _, source := range sources {
@@ -146,7 +179,10 @@ materialization:
 
 	_, _, syncedAsset, err := service.deps.ResolveAssetByID(context.Background(), EncodeID("analytics/assets/api.asset.yml"))
 	require.NoError(t, err)
-	assert.Equal(t, map[string]string{"id": columnSourceCodeMaterialized}, assetmeta.Parse(syncedAsset.Meta).ColSource)
+	assert.Equal(t, map[string]string{"id": columnSourceCodeMaterialized}, assetmeta.ParseAsset(syncedAsset).ColSource)
+	assert.NotContains(t, syncedAsset.Meta, assetmeta.KeyColSource)
+	require.Len(t, syncedAsset.Columns, 1)
+	assert.Equal(t, columnSourceCodeMaterialized, syncedAsset.Columns[0].Meta[assetmeta.ColumnKeySource])
 
 	// Once the exception is recorded, a normal sync re-observes its source even
 	// when the UI does not explicitly select Current table again.
@@ -185,6 +221,30 @@ func TestCompareColumnSchemasReportsMeaningfulDrift(t *testing.T) {
 		{Column: "created_at", Kind: "added", InferredType: "TIMESTAMP"},
 		{Column: "legacy", Kind: "removed", CurrentType: "TEXT"},
 	}, drift.Items)
+}
+
+func TestCompareColumnSchemasPreservesStructuredTypeDetails(t *testing.T) {
+	precision := 18
+	declaredScale := 4
+	matchingScale := 4
+	differentScale := 2
+	current := []pipeline.Column{{
+		Name: "amount", Type: "decimal", Precision: &precision, Scale: &declaredScale,
+	}}
+
+	drift := compareColumnSchemas(current, []WorkspaceColumn{{
+		Name: "amount", Type: "numeric", Precision: &precision, Scale: &matchingScale,
+	}})
+	assert.Equal(t, 1, drift.Unchanged)
+	assert.Zero(t, drift.TypeChanged)
+
+	drift = compareColumnSchemas(current, []WorkspaceColumn{{
+		Name: "amount", Type: "numeric", Precision: &precision, Scale: &differentScale,
+	}})
+	assert.Equal(t, 1, drift.TypeChanged)
+	require.Len(t, drift.Items, 1)
+	assert.Equal(t, "decimal(18, 4)", drift.Items[0].CurrentType)
+	assert.Equal(t, "numeric(18, 2)", drift.Items[0].InferredType)
 }
 
 func TestPreviewAssetColumnsDoesNotPersistUntilApplied(t *testing.T) {

@@ -6,8 +6,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+
+	"renart/internal/web/notebook"
 )
 
 func writeWorkspaceFile(t *testing.T, root, rel, content string) {
@@ -127,9 +130,9 @@ func TestNotebookServiceLifecycle(t *testing.T) {
 	}
 	notebookID := created.ID
 
-	// A new notebook seeds one runnable example cell.
-	if len(created.Cells) != 1 || created.Cells[0].Name != "example" {
-		t.Fatalf("expected one seeded example cell, got %+v", created.Cells)
+	// A new notebook seeds one runnable cell with a concise two-word name.
+	if len(created.Cells) != 1 || !regexp.MustCompile(`^[a-z]+_[a-z]+$`).MatchString(created.Cells[0].Name) {
+		t.Fatalf("expected one seeded two-word cell, got %+v", created.Cells)
 	}
 	if _, apiErr := svc.DeleteCell(notebookID, created.Cells[0].CellID); apiErr != nil {
 		t.Fatalf("delete example failed: %+v", apiErr)
@@ -210,6 +213,22 @@ func TestNotebookServiceLifecycle(t *testing.T) {
 	}
 	if _, err := os.Stat(svc.SessionStore().DBPath(uuid)); !os.IsNotExist(err) {
 		t.Fatal("session db still exists")
+	}
+}
+
+func TestGeneratedNotebookCellNamesAreConciseAndCollisionSafe(t *testing.T) {
+	nb := &notebook.Notebook{}
+	first := cellAutonameFromSeed(nb, nil, 42)
+	if !regexp.MustCompile(`^[a-z]+_[a-z]+$`).MatchString(first) {
+		t.Fatalf("generated name is not a two-word identifier: %q", first)
+	}
+
+	second := cellAutonameFromSeed(nb, map[string]bool{first: true}, 42)
+	if second == first {
+		t.Fatalf("pipeline asset collision was not avoided: %q", second)
+	}
+	if !regexp.MustCompile(`^[a-z]+_[a-z]+$`).MatchString(second) {
+		t.Fatalf("collision fallback lost the two-word form: %q", second)
 	}
 }
 

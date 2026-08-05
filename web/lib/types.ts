@@ -59,6 +59,7 @@ import type {
   WorkspaceConfigResponse as GeneratedWorkspaceConfigResponse,
   WorkspaceEnvironmentPolicyResponse as GeneratedWorkspaceEnvironmentPolicyResponse,
   WorkspaceEvent as GeneratedWorkspaceEvent,
+  WorkspaceQueryConnection,
   WorkspaceState as GeneratedWorkspaceState,
 } from "@/lib/generated/api-types";
 
@@ -95,6 +96,7 @@ export type {
   WorkspaceConfigConnection,
   WorkspaceConfigSecretField,
   WorkspaceConfigEnvironment,
+  WorkspaceQueryConnection,
 };
 
 export type WorkspaceConfigFieldType = "string" | "int" | "bool" | "string_array";

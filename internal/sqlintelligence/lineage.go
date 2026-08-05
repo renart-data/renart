@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 
 	"renart/internal/sqlcatalog"
@@ -100,7 +101,7 @@ func annotateOutputColumns(ctx context.Context, query, dialect string, schema Sc
 		}
 		columns = appendUniqueSchemaColumn(columns, SchemaColumn{
 			Name: name,
-			Type: outputColumnType(expression, sourceTables, schema),
+			Type: outputColumnType(expression, sourceTables, schema, dialect),
 		})
 	}
 	return columns, completeNames && len(columns) > 0, nil
@@ -158,15 +159,15 @@ func outputColumnSourceSchema(selectNode map[string]any, dialect string, schema 
 // outputColumnType resolves a projected expression's type: the annotated
 // inferred_type for a computed expression, otherwise a schema lookup for a
 // (possibly aliased) bare column reference.
-func outputColumnType(expression any, sourceTables []string, schema Schema) string {
+func outputColumnType(expression any, sourceTables []string, schema Schema, dialect string) string {
 	mapExpression, ok := expression.(map[string]any)
 	if !ok {
 		return ""
 	}
 
 	if aliasNode, ok := mapExpression["alias"].(map[string]any); ok {
-		if t := inferredTypeName(aliasNode["inferred_type"]); t != "" {
-			return t
+		if inferred := inferredTypeName(aliasNode["inferred_type"]); inferred != "" {
+			return reconcileDuckDBAnnotatedIntegerExpression(inferred, aliasNode["this"], sourceTables, schema, dialect)
 		}
 		// An alias over a bare column carries no inferred_type; resolve the
 		// underlying column against the schema.
@@ -187,6 +188,128 @@ func outputColumnType(expression any, sourceTables []string, schema Schema) stri
 		}
 	}
 	return ""
+}
+
+// Polyglot currently types an arithmetic expression from an integer literal
+// before it resolves an unqualified DuckDB table-function column. For example,
+// `range * 2` is annotated as INTEGER even though range() yields BIGINT and
+// DuckDB coerces fitting integer literals to a typed column (so TINYINT * 2
+// stays TINYINT), and otherwise promotes to the wider operand (so BIGINT * 2
+// stays BIGINT). Reconcile only direct integer arithmetic where every operand
+// can be resolved; all other expressions retain Polyglot's annotation.
+func reconcileDuckDBAnnotatedIntegerExpression(
+	annotated string,
+	expression any,
+	sourceTables []string,
+	schema Schema,
+	dialect string,
+) string {
+	if !strings.EqualFold(strings.TrimSpace(dialect), "duckdb") {
+		return annotated
+	}
+	if _, _, annotatedOK := integerTypeWidth(annotated); !annotatedOK {
+		return annotated
+	}
+	summary, ok := summarizeDuckDBIntegerExpression(expression, sourceTables, schema)
+	if !ok || !summary.hasColumn {
+		return annotated
+	}
+	for _, literal := range summary.literals {
+		if !integerLiteralFitsType(literal, summary.columnType) {
+			return annotated
+		}
+	}
+	return summary.columnType
+}
+
+type duckDBIntegerExpressionSummary struct {
+	columnType string
+	columnRank int
+	hasColumn  bool
+	literals   []string
+}
+
+func summarizeDuckDBIntegerExpression(expression any, sourceTables []string, schema Schema) (duckDBIntegerExpressionSummary, bool) {
+	node, ok := expression.(map[string]any)
+	if !ok {
+		return duckDBIntegerExpressionSummary{}, false
+	}
+	if column := underlyingColumnName(node); column != "" {
+		columnType, columnRank, resolved := integerTypeWidth(schemaColumnType(column, sourceTables, schema))
+		return duckDBIntegerExpressionSummary{
+			columnType: columnType,
+			columnRank: columnRank,
+			hasColumn:  resolved,
+		}, resolved
+	}
+	if literal, resolved := integerLiteralValue(node); resolved {
+		return duckDBIntegerExpressionSummary{literals: []string{literal}}, true
+	}
+	for _, operator := range []string{"add", "sub", "mul", "mod"} {
+		operation, ok := node[operator].(map[string]any)
+		if !ok {
+			continue
+		}
+		left, leftOK := summarizeDuckDBIntegerExpression(operation["left"], sourceTables, schema)
+		right, rightOK := summarizeDuckDBIntegerExpression(operation["right"], sourceTables, schema)
+		if !leftOK || !rightOK {
+			return duckDBIntegerExpressionSummary{}, false
+		}
+		result := left
+		if right.columnRank > result.columnRank {
+			result.columnType = right.columnType
+			result.columnRank = right.columnRank
+		}
+		result.hasColumn = left.hasColumn || right.hasColumn
+		result.literals = append(result.literals, right.literals...)
+		return result, true
+	}
+	return duckDBIntegerExpressionSummary{}, false
+}
+
+func integerLiteralValue(node map[string]any) (string, bool) {
+	literal, ok := node["literal"].(map[string]any)
+	if !ok || literal["literal_type"] != "number" {
+		return "", false
+	}
+	value, ok := literal["value"].(string)
+	return strings.TrimSpace(value), ok && !strings.ContainsAny(value, ".eE")
+}
+
+func integerLiteralFitsType(value, dataType string) bool {
+	number, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return false
+	}
+	switch strings.ToUpper(strings.TrimSpace(dataType)) {
+	case "TINYINT":
+		return number >= -128 && number <= 127
+	case "SMALLINT":
+		return number >= -32768 && number <= 32767
+	case "INTEGER":
+		return number >= -2147483648 && number <= 2147483647
+	case "BIGINT", "HUGEINT":
+		return true
+	default:
+		return false
+	}
+}
+
+func integerTypeWidth(value string) (string, int, bool) {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "TINYINT", "INT8":
+		return "TINYINT", 1, true
+	case "SMALLINT", "INT16":
+		return "SMALLINT", 2, true
+	case "INTEGER", "INT", "INT32":
+		return "INTEGER", 3, true
+	case "BIGINT", "INT64":
+		return "BIGINT", 4, true
+	case "HUGEINT", "INT128":
+		return "HUGEINT", 5, true
+	default:
+		return "", 0, false
+	}
 }
 
 func underlyingColumnName(node any) string {

@@ -22,8 +22,6 @@ import (
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
-
-	"renart/internal/web/service/assetmeta"
 )
 
 const apiAssetType = "api"
@@ -376,35 +374,11 @@ func apiTargetObjectName(asset *pipeline.Asset, spec nativeAPISpec) string {
 	return strings.TrimSpace(spec.Load.Object)
 }
 
-// apiInferredColumnsForDisplay returns an API asset's spec-inferred columns for
-// the workspace preview, minus any the user has explicitly dropped
-// (renart_col_drop). The preview only falls back to inference when the asset
-// carries no declared columns yet, so honouring drops here keeps a dropped
-// column from reappearing once the file's column set is emptied out.
-func apiInferredColumnsForDisplay(ctx context.Context, asset *pipeline.Asset) []pipeline.Column {
-	columns := apiResponseFieldColumns(ctx, asset)
-	if len(columns) == 0 || asset == nil {
-		return columns
-	}
-	dropped := assetmeta.Parse(asset.Meta).ColDrop
-	if len(dropped) == 0 {
-		return columns
-	}
-	dropSet := make(map[string]bool, len(dropped))
-	for _, name := range dropped {
-		dropSet[strings.ToLower(strings.TrimSpace(name))] = true
-	}
-	filtered := make([]pipeline.Column, 0, len(columns))
-	for _, column := range columns {
-		if dropSet[strings.ToLower(strings.TrimSpace(column.Name))] {
-			continue
-		}
-		filtered = append(filtered, column)
-	}
-	return filtered
-}
-
-func apiResponseFieldColumns(ctx context.Context, asset *pipeline.Asset) []pipeline.Column {
+// apiDefinitionColumns derives the declarative API output contract. Authoring
+// callers pass allowNetwork=false: response.fields remains usable without I/O,
+// while an external OpenAPI document is only fetched by an explicit schema
+// observation that opted into network access.
+func apiDefinitionColumns(ctx context.Context, asset *pipeline.Asset, allowNetwork bool) []pipeline.Column {
 	if asset == nil {
 		return nil
 	}
@@ -416,8 +390,10 @@ func apiResponseFieldColumns(ctx context.Context, asset *pipeline.Asset) []pipel
 	if err != nil {
 		return nil
 	}
-	if columns, openAPIErr := apiOpenAPIColumns(ctx, spec); openAPIErr == nil && len(columns) > 0 {
-		return columns
+	if allowNetwork {
+		if columns, openAPIErr := apiOpenAPIColumns(ctx, spec); openAPIErr == nil && len(columns) > 0 {
+			return columns
+		}
 	}
 	if len(spec.Response.Fields) == 0 {
 		return nil
@@ -428,6 +404,17 @@ func apiResponseFieldColumns(ctx context.Context, asset *pipeline.Asset) []pipel
 		columns = append(columns, pipeline.Column{Name: fieldName})
 	}
 	return columns
+}
+
+func apiDefinitionNeedsNetwork(asset *pipeline.Asset) bool {
+	if asset == nil || strings.TrimSpace(asset.ExecutableFile.Content) == "" {
+		return false
+	}
+	spec, _, err := parseNativeAPIAssetSpec(asset.ExecutableFile.Content, asset, nil)
+	if err != nil {
+		return false
+	}
+	return apiOpenAPIURL(spec) != "" && len(spec.Response.Fields) == 0
 }
 
 func (s *AssetService) InferAPIAsset(ctx context.Context, assetID string) (int, APIInferResult, *APIError) {
@@ -588,7 +575,7 @@ func (e *HybridBruinExecutor) runAPIAsset(ctx context.Context, pl *pipeline.Pipe
 		return writer.buffer.Bytes(), err
 	}
 	defer lease.Release()
-	if err := runStreamingCommand(cmd, writer); err != nil {
+	if err := runStreamingCommand(ctx, cmd, writer); err != nil {
 		return writer.buffer.Bytes(), err
 	}
 	return writer.buffer.Bytes(), nil
