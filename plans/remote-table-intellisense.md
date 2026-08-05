@@ -1,155 +1,230 @@
-# Remote-table intellisense in the SQL LSP
+# Remote-table intelligence and external source nodes
 
-Status: proposal (investigation done; not yet implemented)
+Status: partial client support shipped — server/LSP integration proposed
 
 ## Goal
 
-Surface **warehouse tables that have no backing Bruin asset** (e.g. a raw
-`public.events` table that exists in the connected database but isn't a
-pipeline asset) in the SQL editor's FROM-clause completions — through the LSP,
-consistent with how asset relations already complete.
+Surface warehouse relations that have no backing Bruin asset everywhere users
+need them:
 
-Hard requirements (from the maintainer):
-- **Defined assets always take precedence over purely remote tables.** On a name
-  collision the asset wins; in ranking, assets sort above remote tables.
-- **Modular and decoupled.** Remote-table discovery must be an optional,
-  isolated component. If it is not configured, not yet loaded, errors, or
-  hangs, the rest of the LSP (asset completions, diagnostics, hover, …) must
-  keep working exactly as today. Discovery must never block a completion
-  request.
+- relation and column completion in SQL editors;
+- presence-aware diagnostics without treating an unavailable catalog as proof
+  that a table is missing;
+- automatically inferred external-source nodes on the asset canvas; and
+- a type-check resolution that imports the relation as a version-controlled
+  Bruin source-placeholder asset.
 
-## Current state
+Defined assets always take precedence over live catalog relations. Discovery
+is optional and must never block or disable asset-only LSP behavior.
 
-- **Discovery is client-side and connection-live.** The client fetches
-  `/api/sql/tables` (`SQLService.Tables` → `conn.GetTablesWithSchemas`, a live
-  query, *no cache*) and memoizes it in `sqlDiscoveryTablesAtom`.
-- **The client already merges remote tables with asset precedence**, but only in
-  a bare `from `/`join ` position (`isTableCompletionContext` in
-  `web/hooks/use-sql-lsp.ts`, deduped against local asset names). It does not
-  fire for partial prefixes (`from ord…`) or the `from schema.` case, and it is
-  separate from the LSP's relation completions.
-- **The LSP is a pure, static-graph engine.** `internal/sqllsp` takes a
-  `CanonicalGraph` (built only from workspace assets + inferred columns, cached
-  by workspace revision in `SQLLSPService.graphForState`) and returns
-  completions/diagnostics. It has **no connection access** — `SQLLSPService`
-  deps are `WorkspaceRoot`, `CurrentState`, `PolyglotClient`.
-- `relationCompletions` / `relationCompletionsInSchema` (added for asset
-  relations) and unresolved-relation resolution all read `graph.Relations`.
+## Current state (August 2026)
 
-## Proposed design
+### What is already shipped
 
-Inject remote tables as **extra relation nodes** into the graph the LSP service
-hands the engine, sourced from a decoupled, cached provider. This reuses the
-existing relation-completion and relation-resolution machinery instead of adding
-a parallel path, and the precedence/dedup falls out of graph construction.
+- `/api/sql/databases`, `/api/sql/tables`, and `/api/sql/columns` perform live
+  discovery for an explicit connection/environment.
+- `sqlDiscoveryTablesAtom` and `sqlDiscoveryColumnsAtom` deduplicate in-flight
+  requests and cache successful results for the browser session.
+- `use-sql-lsp.ts` supplements LSP results client-side:
+  - remote tables are added in a narrow bare `FROM`/`JOIN` completion context,
+    ranked below known schema tables;
+  - after `table.`, live columns are fetched when the LSP has no local-scope
+    column result;
+  - asset/schema suggestions win deduplication.
+- The older parse-context provider also consumes the same discovery cache on
+  surfaces that still enable it.
+- Every SQL LSP request already carries an effective or explicitly selected
+  connection. The workspace carries the selected environment.
+- The canonical LSP graph is revision-cached and intentionally contains only
+  deterministic workspace/notebook relations (plus the explicitly gated
+  DuckDB local-file layer). Pure remote warehouse tables are not graph nodes.
 
-### 1. `RemoteTableProvider` — isolated, cached, non-blocking
+### Gaps
 
-New component (own file, e.g. `internal/web/service/remote_table_cache.go`),
-injected into `SQLLSPService` as an **optional** dependency:
+- The first remote completion awaits live discovery and can feel stalled.
+- The session cache has no TTL, invalidation, bounded catalog size, or stale
+  provenance.
+- Partial prefixes and `FROM schema.` do not consistently use remote tables;
+  completion, hover, diagnostics, and navigation see different relation sets.
+- Remote columns are a client-only fallback, so SQL validation cannot use a
+  confirmed live schema.
+- The canvas and type-check report have no external-relation model or import
+  action.
+- Stdio LSP has no connection manager and must remain deterministic/offline.
 
-```
-type RemoteTable struct { Schema, Name, QualifiedName string }
+## Proposed architecture
 
-type RemoteTableProvider interface {
-    // Returns the last-known tables for (connection, environment) immediately,
-    // never blocking. Triggers a background refresh when the entry is missing
-    // or stale. Returns nil when discovery is disabled/unavailable.
-    Tables(connection, environment string) []RemoteTable
+### 1. Optional non-blocking catalog provider
+
+Introduce a provider independent from the LSP engine:
+
+```go
+type CatalogScope struct {
+    Connection  string
+    Environment string
+    Database    string
+}
+
+type RemoteRelation struct {
+    QualifiedName string
+    Schema        string
+    Name          string
+    Columns       []RemoteColumn
+    ColumnsKnown  bool
+}
+
+type RemoteCatalogSnapshot struct {
+    Relations  []RemoteRelation
+    Complete   bool
+    ObservedAt time.Time
+    Stale      bool
+}
+
+type RemoteCatalogProvider interface {
+    Snapshot(scope CatalogScope) RemoteCatalogSnapshot // immediate, no I/O
+    Refresh(scope CatalogScope)                           // single-flight background work
 }
 ```
 
-- Backing cache keyed by `(connection, environment)`, each entry `{tables,
-  fetchedAt, refreshing}`, guarded by a mutex/`sync.Map`.
-- `Tables()` returns the cached slice synchronously (possibly empty/stale) and,
-  if missing or older than a TTL (say 60s), spawns **one** background refresh
-  (dedup via the `refreshing` flag).
-- Refresh calls the existing discovery (`SQLService.Tables` /
-  `fetchObjectsForConnection`) under a short `context.WithTimeout` (say 3–5s).
-  Failures/timeouts are logged and leave the previous entry intact (or empty);
-  they never surface to the caller.
-- `SQLLSPService` holds `RemoteTables RemoteTableProvider` (nil = feature off).
-  Nil / empty results ⇒ asset-only behavior, unchanged. This is the whole
-  "decoupled, degrades gracefully" contract.
+The implementation reuses the existing backend connection discovery, keyed by
+connection/environment/database. It returns cached-or-empty immediately and
+starts at most one bounded refresh for a missing/stale scope. Failures retain
+the previous snapshot and are rate-limited in logs. Entries have a TTL, maximum
+relation/column counts, and explicit completeness; a partial catalog can prove
+presence but never absence.
 
-### 2. Wire discovery into the graph per request
+No provider means current asset-only behavior. The stdio server uses no
+provider unless a future host explicitly supplies one.
 
-In `SQLLSPService.graphForRequest` (or a thin wrapper around it), after building
-the revision-cached asset graph:
+### 2. Per-request graph overlay
 
-1. Resolve the target asset's **connection + environment** (server-side
-   `pipeline.GetConnectionNameForAsset` + the selected environment).
-2. `remote := deps.RemoteTables?.Tables(conn, env)` — non-blocking.
-3. Append a `RelationNode` per remote table **whose qualified name is not
-   already an asset relation** (asset precedence on collision). Tag them so they
-   can be ranked below assets — e.g. a `Kind: "remote"` marker on `RelationNode`
-   or a separate `graph.RemoteRelations` slice.
+After cloning the revision-cached canonical graph, `SQLLSPService` resolves the
+request's effective connection/environment and overlays the latest catalog
+snapshot:
 
-The asset graph stays revision-cached; only the (small) remote overlay is added
-per request, so we don't pollute or churn the shared cache.
+1. Skip any remote relation colliding case-insensitively with a logical asset
+   relation or query-local relation.
+2. Tag nodes `Provenance.Kind = remote_catalog` plus connection, environment,
+   observation time, and schema completeness.
+3. Rank remote relations below assets but above generic keywords.
+4. Apply known remote columns with live/low-confidence provenance. Unknown
+   columns keep the relation resolvable without enabling unresolved-column
+   checks.
 
-### 3. Ranking + dedup (asset precedence)
+This makes partial prefixes, `FROM schema.`, aliases, hover, and semantic tokens
+use one relation model. Once the overlay is complete, remove both client-side
+remote table and column merge branches from `use-sql-lsp.ts`; the browser keeps
+the discovery APIs for catalog/settings/object pickers.
 
-- **Collision:** skip a remote table whose lowercased qualified name equals an
-  existing asset relation → the asset relation is the only completion, and
-  `resolveRelation` keeps resolving to the asset.
-- **Ranking:** give remote-relation completions a SortText that sorts *after*
-  asset/relation completions (extend `relationCompletions` /
-  `relationCompletionsInSchema` to emit a lower rank for remote-tagged nodes).
-  Result: `analytics.customers` (asset) always appears above `public.events`
-  (remote) in the popup.
+Only positive observations affect diagnostics. A relation found in a snapshot
+may satisfy `unresolved-relation`; a relation absent from a stale, partial, or
+unavailable snapshot must not create a “table does not exist” error. LSP detail
+and hover should label live catalog evidence and its age.
 
-### 4. Side effect: fewer false unresolved-relations (optional, gated)
+### 3. External source nodes
 
-If remote relations are in the graph, `resolveRelation` also resolves them, so
-`select * from public.events` stops being flagged "Unresolved relation" when the
-table really exists remotely. This is desirable but couples diagnostics to
-discovery. Recommend gating it: only treat remote relations as
-resolution-satisfying, never as a source of *new* diagnostics, and keep the
-current behavior when discovery is unavailable. (Decision below.)
+Add a workspace-level, ephemeral external-relation DTO rather than pretending a
+remote table is an authored asset:
 
-### 5. Client cleanup
+```text
+(connection, environment, qualified relation)
+    -> referenced by asset IDs
+    -> latest catalog observation/schema confidence
+    -> optional imported asset ID
+```
 
-Once the LSP owns remote-table completion, remove the client-side remote-table
-merge in `use-sql-lsp.ts` (the `isTableCompletionContext` + `loadRemoteTables`
-block) so there is a single source of truth. The client keeps `/api/sql/tables`
-for the settings/catalog UIs.
+Build it from unresolved SQL relation references joined with positive provider
+observations. The canvas renders a distinct read-only source node and edges it
+to every referencing asset. It is not written to Jotai as authoritative state,
+does not participate in execution selection, and disappears when the reference
+or observation disappears. Local assets still win collisions.
 
-## Resilience checklist
+The node should expose connection, physical relation, observation age, and an
+“Import as asset” action. Catalog state changes arrive through normal workspace
+SSE reconciliation or a dedicated event, never polling.
 
-- Provider nil / not configured → asset-only, no errors. (tests, misconfigured
-  projects, connections without discovery support.)
-- Discovery query errors / times out / connection down → cached-or-empty, logged
-  once, completions unaffected.
-- Cold cache (first keystroke) → returns empty immediately, refreshes in the
-  background; remote tables appear on a later keystroke. Never blocks.
-- Large warehouses → cap the number of remote relations injected (e.g. top N by
-  name match against the typed prefix, computed in the provider or the overlay
-  step) so we don't push thousands of items per request.
+### 4. Type-check warning and import resolution
 
-## Open questions / decisions
+When a SQL reference is confirmed by the provider but has no asset, add a
+non-blocking warning such as:
 
-1. **Diagnostics coupling (§4):** let remote tables satisfy unresolved-relation
-   checks, or keep completion-only for now? (Lean: completion-only first, add
-   resolution behind the same provider once it's proven.)
-2. **Schema/db scoping:** discovery is per database; `SQLService.Tables` takes a
-   `databaseName`. Which database(s) do we enumerate for an asset's connection —
-   the default, or all? Affects payload size and the `schema.` completion set.
-3. **TTL / limits:** 60s TTL and 3–5s refresh timeout are guesses; confirm.
-4. **Where the provider lives:** `service` package (reuses `SQLService`/
-   `ExecutionService`) vs a new small package. Reuse is simpler; a package makes
-   the "decoupled" boundary explicit.
+```text
+External relation public.events exists on warehouse-prod but is not represented by an asset.
+```
 
-## Rollout steps
+This is a catalog/source-governance warning, not an unresolved-relation error.
+It should be emitted only from an already available snapshot; type-check must
+not initiate warehouse I/O. Offline/CLI results therefore remain deterministic
+and simply omit this live enrichment.
 
-1. `RemoteTableProvider` + cache (own file) with unit tests (TTL, dedup,
-   error/timeout → empty, single-flight refresh).
-2. Add the optional dep to `SQLLSPService`; overlay remote relations in
-   `graphForRequest`; tag + rank them below assets. Engine unit tests:
-   asset-precedence collision, remote-below-asset ranking, empty provider ⇒
-   unchanged output.
-3. Live e2e: a fixture with a materialized table that has no asset →
-   `from <schema>.` and partial prefixes complete it, ranked under assets.
-4. Remove the client-side remote-table merge; keep `/api/sql/tables` for UIs.
-5. Fold the as-built summary into `architecture/` (SQL intellisense doc) and
-   delete this plan.
+Offer a structured resolution, “Import source asset”. Bruin already provides
+`bruin import database --connection ... --schema ...` and generates
+source-placeholder assets with optional columns. Extract that logic behind a
+Bruin library API and call it from a scoped Renart endpoint; do not shell out or
+reimplement warehouse-specific import rules. The endpoint must:
+
+- pin connection, environment, schema, and one table;
+- preview the proposed file/name/columns and reject collisions;
+- write through the Go server under the workspace lease;
+- emit the ordinary workspace SSE update; and
+- rerun type-check so the warning resolves and the ephemeral node becomes an
+  authored asset.
+
+The current type-check resolution payload supports semantic edits to one asset.
+Extend it with a separately typed server action before adding import; do not
+encode file creation as an `AssetTransaction`.
+
+Bruin's importer currently names a placeholder after the physical
+`schema.table`. Supporting a different logical name depends on
+`physical-output-names.md` and should not be improvised here.
+
+## Resilience and security
+
+- nil provider, cold cache, timeout, auth failure, or unsupported connector:
+  asset-only LSP continues unchanged;
+- one refresh per scope, short timeout, bounded entries, cancellation on
+  server shutdown, and no unbounded goroutines;
+- connection secrets stay backend-only and never enter graph provenance;
+- environment changes use a distinct cache scope and invalidate visible
+  external nodes;
+- a stale snapshot may support completion with an age label but never proves
+  non-existence;
+- imported files require normal conflict checks and protected-environment
+  policy; discovery itself is read-only.
+
+## Validation
+
+- provider unit tests: TTL, single-flight, timeout/error retention, bounds,
+  completeness, environment/database separation;
+- LSP tests: asset collision precedence, ranking, partial prefix,
+  `FROM schema.`, alias columns, unknown-column suppression, nil provider;
+- freshness of overlay: cached base graph is never mutated across requests;
+- canvas tests: one external node shared by multiple consumers, removal after
+  import/reference deletion, environment switch;
+- import tests: exact proposed Bruin source asset, columns, collision refusal,
+  SSE reconciliation, and warning removal;
+- live DuckDB/Postgres test with a table created outside the pipeline, plus one
+  credential failure proving asset completions stay responsive.
+
+## Rollout
+
+1. Add the provider/cache and observability with no LSP consumers.
+2. Overlay remote relations/columns per request and remove client-side merge
+   paths after parity tests pass.
+3. Add the external-relation workspace DTO and canvas nodes.
+4. Extract Bruin's single-table import library API; add preview/confirm endpoint
+   and structured type-check resolution.
+5. Add live tests, document shipped behavior, fold it into
+   `architecture/sql-lsp.md`, and delete this plan.
+
+## Decisions required before implementation
+
+1. Catalog TTL, result caps, and whether stale entries remain visible by
+   default. Suggested starting point: 60 seconds, 5-second refresh timeout, and
+   an explicit cap with prefix-filtered follow-up discovery.
+2. Default database scope for engines exposing multiple databases/catalogs.
+3. Whether external nodes appear immediately from SQL text as “unverified” or
+   only after a positive catalog observation. Recommended: positive observation
+   only for the first release.
+4. Whether “Import source asset” imports columns by default. Recommended: yes,
+   with a review preview and a no-columns escape hatch.

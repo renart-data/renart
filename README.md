@@ -1,5 +1,12 @@
 # Renart
 
+<p align="center">
+  <a href="https://github.com/renart-data/renart/blob/main/LICENSE"><img alt="Apache License 2.0" src="https://img.shields.io/github/license/renart-data/renart" /></a>
+  <a href="https://github.com/renart-data/renart/tags"><img alt="Latest version" src="https://img.shields.io/github/v/tag/renart-data/renart?label=version" /></a>
+  <a href="https://github.com/renart-data/renart/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/renart-data/renart/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="https://github.com/renart-data/renart/actions/workflows/e2e-live.yml"><img alt="Live end-to-end test status" src="https://github.com/renart-data/renart/actions/workflows/e2e-live.yml/badge.svg" /></a>
+</p>
+
 Renart is an open-source, local-first, all-in-one IDE for building and running
 data pipelines from a Git repository.
 
