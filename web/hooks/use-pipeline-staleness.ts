@@ -6,6 +6,7 @@ import { stalenessEventAtom } from "@/lib/atoms/domains/results";
 import {
   selectedEnvironmentAtom,
   selectedExecutionTimeWindowAtom,
+  workspaceReconnectSequenceAtom,
 } from "@/lib/atoms/domains/workspace";
 
 export type PipelineStaleness = {
@@ -68,6 +69,7 @@ function sameInstant(a?: string, b?: string) {
 export function usePipelinesStaleness(pipelineIds: string[]): PipelinesStaleness {
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
   const selectedTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
+  const workspaceReconnectSequence = useAtomValue(workspaceReconnectSequenceAtom);
   const stalenessEvent = useAtomValue(stalenessEventAtom);
   // Atom values retain the last push. Only consume a newly delivered value;
   // changing selection must not replay an old event ahead of its fresh HTTP
@@ -191,6 +193,7 @@ export function usePipelinesStaleness(pipelineIds: string[]): PipelinesStaleness
     selectedEnvironment,
     selectedTimeWindow?.start,
     selectedTimeWindow?.end,
+    workspaceReconnectSequence,
   ]);
 
   useEffect(() => {

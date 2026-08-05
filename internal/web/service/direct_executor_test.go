@@ -683,6 +683,93 @@ select 1 as customer_id, 'seeded' as source_label
 	assert.Equal(t, float64(1), directDuckDBCount(t, executor))
 }
 
+func TestDirectPipelineRunAppliesEnvironmentSchemaPrefix(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(workspaceRoot, ".git"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(workspaceRoot, "duckdb-files"), 0o755))
+	assetsRoot := filepath.Join(workspaceRoot, "analytics", "assets")
+	require.NoError(t, os.MkdirAll(assetsRoot, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workspaceRoot, ".bruin.yml"), []byte(strings.TrimSpace(`
+default_environment: default
+environments:
+  default:
+    connections:
+      duckdb:
+        - name: duckdb-default
+          path: duckdb-files/local.db
+  dev:
+    schema_prefix: dev_
+    connections:
+      duckdb:
+        - name: duckdb-default
+          path: duckdb-files/local.db
+`)+"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workspaceRoot, "analytics", "pipeline.yml"), []byte(strings.TrimSpace(`
+id: prefixed-pipeline
+name: analytics
+default_connections:
+  duckdb: duckdb-default
+`)+"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "source.sql"), []byte(strings.TrimSpace(`
+/* @bruin
+name: analytics.source
+type: duckdb.sql
+materialization:
+  type: table
+@bruin */
+
+select 21::bigint as value
+`)+"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "output.sql"), []byte(strings.TrimSpace(`
+/* @bruin
+name: analytics.output
+type: duckdb.sql
+depends:
+  - analytics.source
+materialization:
+  type: table
+@bruin */
+
+select value * 2 as doubled from analytics.source
+`)+"\n"), 0o644))
+
+	configPath := filepath.Join(workspaceRoot, ".bruin.yml")
+	executor := newCompatDirectExecutor(workspaceRoot, "")
+	executor.newConnectionManager = func(ctx context.Context, environment string) (config.ConnectionAndDetailsGetter, error) {
+		cfg, err := loadSelectedConfig(configPath, environment)
+		if err != nil {
+			return nil, err
+		}
+		return newConnectionManagerFromConfig(ctx, cfg)
+	}
+	var events []ExecutionAssetEvent
+	_, err := executor.RunPipeline(context.Background(), RunPipelineRequest{
+		Target:      "analytics",
+		Environment: "dev",
+		AssetEvent: func(event ExecutionAssetEvent) error {
+			events = append(events, event)
+			return nil
+		},
+	}, nil)
+	require.NoError(t, err)
+
+	output, err := executor.QueryConnection(context.Background(), QueryConnectionRequest{
+		ConnectionName: "duckdb-default",
+		Environment:    "dev",
+		Query:          "select doubled from dev_analytics.output",
+		Output:         "json",
+	})
+	require.NoError(t, err)
+	var payload struct {
+		Rows [][]any `json:"rows"`
+	}
+	require.NoError(t, json.Unmarshal(output, &payload))
+	assert.Equal(t, [][]any{{float64(42)}}, payload.Rows)
+	for _, event := range events {
+		assert.NotContains(t, event.Asset, "dev_", "runtime events keep logical asset identity")
+	}
+}
+
 func TestDirectRunAssetTimeIntervalRendersExecutionWindow(t *testing.T) {
 	workspaceRoot, assetPath := createSuccessfulDuckDBWorkspace(t)
 	configPath := filepath.Join(workspaceRoot, ".bruin.yml")

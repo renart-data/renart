@@ -174,6 +174,13 @@ func concurrentNativeDuckDBPath(
 		connection,
 		asset.Name,
 	)
+	// The concurrent native path intentionally executes already-materialized
+	// SQL and therefore bypasses Bruin's developer-environment query modifier.
+	// Use the established operator whenever a schema prefix is active so
+	// references to existing/pipeline tables are rewritten consistently.
+	if cfg != nil && cfg.SelectedEnvironment != nil && strings.TrimSpace(cfg.SelectedEnvironment.SchemaPrefix) != "" {
+		return coordinates.FilePath, false
+	}
 	if !exact || !isConcurrentNativeDuckDBTarget(cfg, asset, connection, coordinates) {
 		return coordinates.FilePath, false
 	}

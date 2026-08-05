@@ -45,6 +45,9 @@ func (e *HybridBruinExecutor) dryRunPipeline(ctx context.Context, foundPipeline 
 
 	runCtx := context.WithValue(ctx, pipeline.RunConfigRunID, "renart-dry-run")
 	runCtx = context.WithValue(runCtx, pipeline.RunConfigFullRefresh, false)
+	runCtx = context.WithValue(runCtx, config.EnvironmentContextKey, cfg.SelectedEnvironment)
+	restoreAssets := applyDeveloperEnvironmentPipelineIdentity(runCtx, foundPipeline)
+	defer restoreAssets()
 	issues, err := lint.RunLintRulesOnPipeline(runCtx, foundPipeline, rules, nil)
 	if err != nil {
 		return printer.buffer.Bytes(), err

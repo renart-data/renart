@@ -60,6 +60,70 @@ async function editAssetAndSettle(page: Page, liveApp: LiveApp, content: string,
     .toContain(marker);
 }
 
+async function installReconnectableWorkspaceEventSource(page: Page) {
+  await page.addInitScript(() => {
+    const NativeEventSource = window.EventSource;
+
+    class ReconnectableEventSource {
+      static readonly CONNECTING = NativeEventSource.CONNECTING;
+      static readonly OPEN = NativeEventSource.OPEN;
+      static readonly CLOSED = NativeEventSource.CLOSED;
+
+      readonly CONNECTING = NativeEventSource.CONNECTING;
+      readonly OPEN = NativeEventSource.OPEN;
+      readonly CLOSED = NativeEventSource.CLOSED;
+      readonly url: string;
+      readonly withCredentials: boolean;
+      onopen: ((this: EventSource, event: Event) => unknown) | null = null;
+      onmessage: ((this: EventSource, event: MessageEvent) => unknown) | null = null;
+      onerror: ((this: EventSource, event: Event) => unknown) | null = null;
+      private source: EventSource | null = null;
+
+      constructor(url: string | URL, init?: EventSourceInit) {
+        this.url = String(url);
+        this.withCredentials = init?.withCredentials ?? false;
+        this.connect();
+        if (this.url.includes("/api/events")) {
+          (
+            window as typeof window & {
+              __renartWorkspaceEventSource?: ReconnectableEventSource;
+            }
+          ).__renartWorkspaceEventSource = this;
+        }
+      }
+
+      get readyState() {
+        return this.source?.readyState ?? NativeEventSource.CLOSED;
+      }
+
+      close() {
+        this.source?.close();
+      }
+
+      disconnectForTest() {
+        this.close();
+      }
+
+      reconnectForTest() {
+        this.close();
+        this.connect();
+      }
+
+      private connect() {
+        const source = new NativeEventSource(this.url, {
+          withCredentials: this.withCredentials,
+        });
+        this.source = source;
+        source.onopen = (event) => this.onopen?.call(this as unknown as EventSource, event);
+        source.onmessage = (event) => this.onmessage?.call(this as unknown as EventSource, event);
+        source.onerror = (event) => this.onerror?.call(this as unknown as EventSource, event);
+      }
+    }
+
+    window.EventSource = ReconnectableEventSource as unknown as typeof EventSource;
+  });
+}
+
 test.describe("app freshness failure states live", () => {
   test.use({ fixtureName: "configured-workspace" });
 
@@ -120,6 +184,105 @@ test.describe("app freshness failure states live", () => {
       timeout: 20000,
     });
     await expect(customersNode.locator('[data-last-run="failed"]')).toHaveText("Build failed");
+  });
+
+  test("reconciles freshness after an SSE reconnect without a page refresh", async ({
+    liveApp,
+    page,
+    request,
+  }) => {
+    test.skip(
+      test.info().project.name.includes("mobile"),
+      "The freshness badge is a desktop sidebar/canvas affordance.",
+    );
+
+    await installReconnectableWorkspaceEventSource(page);
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
+    await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
+      timeout: 15000,
+    });
+
+    const materialize = page.waitForResponse(
+      (response) => response.url().includes(`/api/assets/${customersAssetId}/materialize/stream`),
+      { timeout: 30000 },
+    );
+    await page.getByRole("button", { name: "Materialize", exact: true }).click();
+    await materialize;
+    await expect
+      .poll(
+        async () => {
+          const response = await request.get(
+            `${liveApp.baseURL}/api/pipelines/${pipelineId}/staleness?environment=default`,
+          );
+          if (!response.ok()) return "";
+          const body = (await response.json()) as {
+            assets: Array<{ asset_name: string; status: string }>;
+          };
+          return (
+            body.assets.find((asset) => asset.asset_name === "analytics.customers")?.status ?? ""
+          );
+        },
+        { timeout: 20000 },
+      )
+      .toBe("fresh");
+
+    const disconnected = page.waitForEvent("requestfailed", {
+      predicate: (request) => request.url().includes("/api/events"),
+      timeout: 10000,
+    });
+    await page.evaluate(() => {
+      const source = (
+        window as typeof window & {
+          __renartWorkspaceEventSource?: { disconnectForTest(): void };
+        }
+      ).__renartWorkspaceEventSource;
+      if (!source) throw new Error("Workspace EventSource was not captured");
+      source.disconnectForTest();
+    });
+    await disconnected;
+    await writeFile(
+      join(liveApp.workspaceDir, "analytics", "assets", "analytics", "customers.sql"),
+      validEdit,
+      "utf8",
+    );
+
+    // Prove the server observed the change while the browser could not receive
+    // its staleness.updated event.
+    await expect
+      .poll(
+        async () => {
+          const response = await request.get(
+            `${liveApp.baseURL}/api/pipelines/${pipelineId}/staleness?environment=default`,
+          );
+          if (!response.ok()) return "";
+          const body = (await response.json()) as {
+            assets: Array<{ asset_name: string; status: string }>;
+          };
+          return (
+            body.assets.find((asset) => asset.asset_name === "analytics.customers")?.status ?? ""
+          );
+        },
+        { timeout: 20000 },
+      )
+      .toBe("stale_edited");
+
+    const reconnected = page.waitForResponse(
+      (response) => response.url().includes("/api/events") && response.ok(),
+      { timeout: 10000 },
+    );
+    await page.evaluate(() => {
+      const source = (
+        window as typeof window & {
+          __renartWorkspaceEventSource?: { reconnectForTest(): void };
+        }
+      ).__renartWorkspaceEventSource;
+      if (!source) throw new Error("Workspace EventSource was not captured");
+      source.reconnectForTest();
+    });
+    await reconnected;
+    await expect(page.locator('[title="Staleness: Edited"]').first()).toBeVisible({
+      timeout: 20000,
+    });
   });
 
   test("keeps a successful write fresh when checks fail and opens the failed check", async ({

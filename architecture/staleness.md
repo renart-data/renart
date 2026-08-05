@@ -305,6 +305,13 @@ presented as a failure of newly edited SQL. Recompute triggers: selection change
 the touched assets), and `TargetWriteChanged` (publish the fail-closed claim
 state).
 
+The workspace EventSource has no replay/`Last-Event-ID` contract. On every SSE
+reconnect after the initial open, the browser therefore reloads the canonical
+workspace snapshot and increments a reconnect sequence consumed by the
+staleness hook. Freshness then refetches its canonical HTTP snapshot even when
+the disconnect was shorter than the offline-overlay grace period, so a missed
+`staleness.updated` event cannot leave canvas badges stale until a page reload.
+
 | Status             | Meaning                                                                                                      |
 | ------------------ | ------------------------------------------------------------------------------------------------------------ |
 | `fresh`            | coverage exists for current fp + vars + range                                                                |

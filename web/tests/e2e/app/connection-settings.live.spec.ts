@@ -91,3 +91,32 @@ test("keeps long connection forms scrollable and puts tuning fields last", async
     expect(Math.abs(sheetBox!.width - page.viewportSize()!.width)).toBeLessThanOrEqual(1);
   }
 });
+
+test("creates an environment with an explained schema prefix", async ({ page, liveApp }) => {
+  await page.goto(`${liveApp.baseURL}/project/environments`);
+  await page.getByRole("button", { name: "New environment" }).click();
+
+  const sheet = page.getByRole("dialog", { name: "New environment" });
+  await expect(sheet).toContainText(
+    "dev_ turns analytics.orders into dev_analytics.orders while the asset name stays unchanged.",
+  );
+  await sheet.getByPlaceholder("prod").fill("dev");
+  await sheet.getByPlaceholder("analytics_").fill("dev_");
+  await sheet.getByRole("button", { name: "Create environment" }).click();
+
+  await expect(sheet).toBeHidden();
+  const environment = page.getByRole("button").filter({
+    has: page.getByText("Schema prefix: dev_", { exact: true }),
+  });
+  await expect(environment.getByText("dev", { exact: true })).toBeVisible();
+  await expect(environment).toBeVisible();
+
+  const response = await page.request.get(`${liveApp.baseURL}/api/config`);
+  expect(response.ok()).toBe(true);
+  const config = (await response.json()) as {
+    environments: Array<{ name: string; schema_prefix?: string }>;
+  };
+  expect(config.environments.find((candidate) => candidate.name === "dev")?.schema_prefix).toBe(
+    "dev_",
+  );
+});

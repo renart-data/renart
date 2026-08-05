@@ -725,6 +725,17 @@ output is one stdout/stderr stream: lifecycle messages remain run-scoped, while
 task output passes through a line-aware asset writer that adds a timestamp,
 deterministically colored asset label, and `>>` marker to every logical line.
 
+For an environment with `schema_prefix`, each physical task temporarily applies
+Bruin's developer-environment asset-name and upstream-name rewrite while the
+scheduler, durable events, fingerprints, and UI continue to use logical asset
+identity. This makes materializers, checks, Seed/Load/API, and Python target the
+prefixed relation without leaking the prefix into committed source or run-step
+keys. Native concurrent DuckDB execution deliberately falls back to Bruin's
+established DuckDB operator in this mode because that operator also rewrites
+query references and maintains its per-run developer-schema cache. Render and
+target snapshots remain conservative (`runtime_only`) where resolving the exact
+prefixed physical identity would require live catalog state.
+
 Local DuckDB files use the coordinator in `internal/web/duckcoord`. Connection
 paths are made absolute, symlink-resolved, deduplicated, and sorted before an
 exclusive lease is acquired. A process-local keyed lock coordinates goroutines

@@ -1053,6 +1053,8 @@ func (e *HybridBruinExecutor) runDirectTask(
 	asset := instance.GetAsset()
 	assetWriter := newDirectAssetLogWriter(printer, pl, asset)
 	taskCtx := context.WithValue(runCtx, bruinexecutor.KeyPrinter, assetWriter)
+	restoreAsset := applyDeveloperEnvironmentAssetIdentity(taskCtx, asset)
+	defer restoreAsset()
 
 	var callbackErr error
 	forward := func(chunk []byte) {
@@ -1109,6 +1111,45 @@ func (e *HybridBruinExecutor) runDirectTask(
 		runErr = flushErr
 	}
 	return runErr
+}
+
+// applyDeveloperEnvironmentAssetIdentity mirrors Bruin's run-command asset
+// mutator for the duration of one physical task. Scheduler events, run-state,
+// fingerprints, and authored DAG identity stay logical because callers emit
+// them before/after this function, while materializers, checks, Seed/Load/API,
+// and Python see the prefixed physical relation expected by Bruin operators.
+func applyDeveloperEnvironmentAssetIdentity(ctx context.Context, asset *pipeline.Asset) func() {
+	if ctx == nil || asset == nil {
+		return func() {}
+	}
+	environment, _ := ctx.Value(config.EnvironmentContextKey).(*config.Environment)
+	if environment == nil || strings.TrimSpace(environment.SchemaPrefix) == "" {
+		return func() {}
+	}
+
+	originalName := asset.Name
+	originalUpstreams := append([]pipeline.Upstream(nil), asset.Upstreams...)
+	asset.PrefixSchema(environment.SchemaPrefix)
+	asset.PrefixUpstreams(environment.SchemaPrefix)
+	return func() {
+		asset.Name = originalName
+		asset.Upstreams = originalUpstreams
+	}
+}
+
+func applyDeveloperEnvironmentPipelineIdentity(ctx context.Context, pl *pipeline.Pipeline) func() {
+	if pl == nil {
+		return func() {}
+	}
+	restores := make([]func(), 0, len(pl.Assets))
+	for _, asset := range pl.Assets {
+		restores = append(restores, applyDeveloperEnvironmentAssetIdentity(ctx, asset))
+	}
+	return func() {
+		for index := len(restores) - 1; index >= 0; index-- {
+			restores[index]()
+		}
+	}
 }
 
 func directTaskOwnsDuckDBCoordination(instance scheduler.TaskInstance) bool {

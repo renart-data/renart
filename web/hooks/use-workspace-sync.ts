@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import {
   serverOnlineAtom,
   workspaceAtom,
+  workspaceReconnectSequenceAtom,
   workspaceSyncSourceAtom,
 } from "@/lib/atoms/domains/workspace";
 import { getWorkspace } from "@/lib/api-workspace";
@@ -145,6 +146,7 @@ export function useWorkspaceSync() {
   const setStalenessEvent = useSetAtom(stalenessEventAtom);
   const setNotebookRuntimeEvents = useSetAtom(notebookRuntimeEventsAtom);
   const setWorkspaceSyncSource = useSetAtom(workspaceSyncSourceAtom);
+  const setWorkspaceReconnectSequence = useSetAtom(workspaceReconnectSequenceAtom);
   const setServerOnline = useSetAtom(serverOnlineAtom);
 
   useEffect(() => {
@@ -156,6 +158,7 @@ export function useWorkspaceSync() {
     // workspace so state that changed while we were away is picked up.
     let offlineTimer: ReturnType<typeof setTimeout> | null = null;
     let offline = false;
+    let opened = false;
 
     const clearOfflineTimer = () => {
       if (offlineTimer) {
@@ -182,10 +185,15 @@ export function useWorkspaceSync() {
       clearOfflineTimer();
       if (!mounted) return;
       setServerOnline(true);
-      if (offline) {
-        offline = false;
+      if (opened) {
+        // There is no Last-Event-ID/replay contract on the workspace stream.
+        // Even a reconnect shorter than the offline-overlay grace period may
+        // have missed workspace or freshness events, so always reconcile.
         reloadWorkspace();
+        setWorkspaceReconnectSequence((sequence) => sequence + 1);
       }
+      opened = true;
+      offline = false;
     };
 
     const markOfflineSoon = () => {
@@ -274,6 +282,7 @@ export function useWorkspaceSync() {
     setServerOnline,
     setStalenessEvent,
     setWorkspace,
+    setWorkspaceReconnectSequence,
     setWorkspaceSyncSource,
   ]);
 

@@ -745,6 +745,13 @@ function EnvironmentSheet({
                 }
                 placeholder="analytics_"
               />
+              <p className="text-xs text-muted-foreground">
+                Prepended to schema names at runtime. For example,
+                <span className="font-mono"> dev_</span> turns
+                <span className="font-mono"> analytics.orders</span> into
+                <span className="font-mono"> dev_analytics.orders</span> while the asset name stays
+                unchanged.
+              </p>
             </PlainField>
             <Field orientation="horizontal">
               <FieldContent>
@@ -1628,7 +1635,9 @@ function EnvironmentRow({
           ) : null}
         </div>
         <div className="mt-1 truncate text-xs text-muted-foreground">
-          {environment.schema_prefix || "No schema prefix"}
+          {environment.schema_prefix
+            ? `Schema prefix: ${environment.schema_prefix}`
+            : "No schema prefix"}
         </div>
       </div>
       <span className="shrink-0 text-xs text-muted-foreground">
