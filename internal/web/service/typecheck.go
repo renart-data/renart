@@ -60,16 +60,31 @@ const (
 // trustworthy render/source mapping exists, or the Python source for Python
 // findings. Generated SQL without a defensible mapping remains range-less.
 type TypeCheckFinding struct {
-	Code       string `json:"code"`
-	Source     string `json:"source"`
-	Severity   string `json:"severity"`
-	Message    string `json:"message"`
-	Line       int    `json:"line,omitempty"`
-	Column     int    `json:"column,omitempty"`
-	EndLine    int    `json:"end_line,omitempty"`
-	EndColumn  int    `json:"end_column,omitempty"`
-	Scope      string `json:"scope,omitempty"`
-	Confidence string `json:"confidence,omitempty"`
+	Code        string                `json:"code"`
+	Source      string                `json:"source"`
+	Severity    string                `json:"severity"`
+	Message     string                `json:"message"`
+	Line        int                   `json:"line,omitempty"`
+	Column      int                   `json:"column,omitempty"`
+	EndLine     int                   `json:"end_line,omitempty"`
+	EndColumn   int                   `json:"end_column,omitempty"`
+	Scope       string                `json:"scope,omitempty"`
+	Confidence  string                `json:"confidence,omitempty"`
+	Resolutions []TypeCheckResolution `json:"resolutions,omitempty"`
+}
+
+// TypeCheckResolution is a safe semantic edit Renart can offer for a finding.
+// The transaction payload deliberately contains only fields used by currently
+// supported resolutions; the asset transaction endpoint remains authoritative.
+type TypeCheckResolution struct {
+	ID          string                         `json:"id"`
+	Title       string                         `json:"title"`
+	Transaction TypeCheckResolutionTransaction `json:"transaction"`
+}
+
+type TypeCheckResolutionTransaction struct {
+	Type   string `json:"type"`
+	Column string `json:"column,omitempty"`
 }
 
 // TypeCheckAsset is the per-asset result of a pipeline type check.
@@ -649,14 +664,15 @@ func materializationTypeCheckFindings(asset *pipeline.Asset, pl ...*pipeline.Pip
 			Confidence: string(authoringdiag.ConfidenceHigh),
 		})
 	}
-	addWarning := func(message string) {
+	addWarning := func(message string, resolutions ...TypeCheckResolution) {
 		findings = append(findings, TypeCheckFinding{
-			Code:       authoringdiag.CodeInactiveMaterialization,
-			Source:     authoringdiag.SourceRenart,
-			Severity:   typeCheckSeverityWarning,
-			Message:    message,
-			Scope:      string(authoringdiag.ScopeAsset),
-			Confidence: string(authoringdiag.ConfidenceHigh),
+			Code:        authoringdiag.CodeInactiveMaterialization,
+			Source:      authoringdiag.SourceRenart,
+			Severity:    typeCheckSeverityWarning,
+			Message:     message,
+			Scope:       string(authoringdiag.ScopeAsset),
+			Confidence:  string(authoringdiag.ConfidenceHigh),
+			Resolutions: resolutions,
 		})
 	}
 
@@ -724,15 +740,43 @@ func materializationTypeCheckFindings(asset *pipeline.Asset, pl ...*pipeline.Pip
 		addError("Invalid materialization: time granularity must be date or timestamp")
 	}
 	if capabilityKnown && strings.TrimSpace(asset.Materialization.PartitionBy) != "" && !capability.SupportsPartitionBy {
-		addWarning("Inactive materialization metadata: partition_by is not used by the selected strategy and destination")
+		addWarning(
+			"Inactive materialization metadata: partition_by is not used by the selected strategy and destination",
+			TypeCheckResolution{
+				ID:    "delete-inactive-partition-by",
+				Title: "Delete inactive partition setting",
+				Transaction: TypeCheckResolutionTransaction{
+					Type: TxMaterializationPartitionByClear,
+				},
+			},
+		)
 	}
 	if capabilityKnown && len(asset.Materialization.ClusterBy) > 0 && !capability.SupportsClusterBy {
-		addWarning("Inactive materialization metadata: cluster_by is not used by the selected strategy and destination")
+		addWarning(
+			"Inactive materialization metadata: cluster_by is not used by the selected strategy and destination",
+			TypeCheckResolution{
+				ID:    "delete-inactive-cluster-by",
+				Title: "Delete inactive clustering settings",
+				Transaction: TypeCheckResolutionTransaction{
+					Type: TxMaterializationClusterByClear,
+				},
+			},
+		)
 	}
 
 	for _, column := range asset.Columns {
 		if strategy != "merge" && (column.UpdateOnMerge || strings.TrimSpace(column.MergeSQL) != "") {
-			addWarning("Inactive materialization metadata: column " + column.Name + " keeps merge-only settings that will be used if merge is selected again")
+			addWarning(
+				"Inactive materialization metadata: column "+column.Name+" keeps merge-only settings that will be used if merge is selected again",
+				TypeCheckResolution{
+					ID:    "delete-inactive-merge-settings-" + column.Name,
+					Title: "Delete inactive merge settings",
+					Transaction: TypeCheckResolutionTransaction{
+						Type:   TxColumnMergeSettingsClear,
+						Column: column.Name,
+					},
+				},
+			)
 		}
 	}
 	return findings

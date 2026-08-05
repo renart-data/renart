@@ -125,7 +125,10 @@ export function AssetConnectionField({
               onChange(nextValue === PIPELINE_DEFAULT_VALUE ? "" : nextValue);
             }}
           >
-            <SelectTrigger id={id} className="w-full">
+            <SelectTrigger
+              id={id}
+              className="min-w-0 w-full overflow-hidden [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:overflow-hidden"
+            >
               <SelectValue placeholder={role ? "Choose a connection" : "Loading connections…"} />
             </SelectTrigger>
             <SelectContent>

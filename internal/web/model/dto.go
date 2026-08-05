@@ -148,6 +148,8 @@ type Asset struct {
 	Meta                   map[string]string       `json:"meta,omitempty"`
 	Columns                []Column                `json:"columns,omitempty"`
 	CustomChecks           []CustomCheck           `json:"custom_checks,omitempty"`
+	PreHooks               []string                `json:"pre_hooks,omitempty"`
+	PostHooks              []string                `json:"post_hooks,omitempty"`
 	ColumnInferenceSources []ColumnInferenceSource `json:"column_inference_sources,omitempty"`
 	// Connection is the effective target connection after applying pipeline
 	// defaults; ExplicitConnection is the persisted asset-level override used by

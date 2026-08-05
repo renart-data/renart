@@ -173,7 +173,14 @@ const sources = [
   },
   {
     file: resolve(repoRoot, "internal", "web", "service", "typecheck.go"),
-    types: ["TypeCheckFinding", "TypeCheckAsset", "TypeCheckSummary", "TypeCheckReport"],
+    types: [
+      "TypeCheckResolutionTransaction",
+      "TypeCheckResolution",
+      "TypeCheckFinding",
+      "TypeCheckAsset",
+      "TypeCheckSummary",
+      "TypeCheckReport",
+    ],
   },
   {
     file: resolve(repoRoot, "internal", "web", "service", "pipeline_plan.go"),

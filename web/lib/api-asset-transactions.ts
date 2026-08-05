@@ -19,6 +19,8 @@ export type AssetTransactionResult = {
   upstreams: string[];
   columns: WebColumn[];
   custom_checks: WebCustomCheck[];
+  pre_hooks: string[];
+  post_hooks: string[];
   reconcile_items?: AssetReconcileItem[];
 };
 
@@ -47,7 +49,17 @@ export type AssetTransaction =
       custom_check_name?: string;
       custom_check: WebCustomCheck;
     }
-  | { type: "custom_check.remove"; custom_check_name: string };
+  | { type: "custom_check.remove"; custom_check_name: string }
+  | { type: "column.merge_settings.clear"; column: string }
+  | { type: "materialization.partition_by.clear" }
+  | { type: "materialization.cluster_by.clear" }
+  | {
+      type: "hook.upsert";
+      hook_phase: "pre" | "post";
+      hook_index?: number;
+      hook_query: string;
+    }
+  | { type: "hook.remove"; hook_phase: "pre" | "post"; hook_index: number };
 
 /** Apply a single semantic transaction to an asset. */
 export async function applyAssetTransaction(assetId: string, tx: AssetTransaction) {

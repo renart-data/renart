@@ -51,6 +51,8 @@ type WorkspaceAsset = {
     blocking?: boolean;
     query: string;
   }>;
+  pre_hooks?: string[];
+  post_hooks?: string[];
 };
 type WorkspaceResponse = { pipelines: Array<{ id: string; assets: WorkspaceAsset[] }> };
 
@@ -281,6 +283,53 @@ select customer_id from analytics.customers
     await expect(page.getByRole("dialog", { name: "duckdb-default" })).toBeVisible({
       timeout: 15000,
     });
+  });
+
+  test("long connection names do not make asset properties scroll horizontally", async ({
+    liveApp,
+    page,
+  }) => {
+    const connectionName =
+      "duckdb-connection-with-an-intentionally-long-name-for-the-asset-properties-pane";
+    const createConnection = await page.request.post(`${liveApp.baseURL}/api/config/connections`, {
+      data: {
+        environment_name: "default",
+        name: connectionName,
+        type: "duckdb",
+        values: { path: "duckdb-files/long-name.db" },
+      },
+    });
+    expect(createConnection.ok()).toBe(true);
+    const update = await page.request.put(
+      `${liveApp.baseURL}/api/pipelines/${pipelineId}/assets/${customersAssetId}`,
+      { data: { connection: connectionName } },
+    );
+    expect(update.ok()).toBe(true);
+    await pollAsset(
+      liveApp,
+      page.request,
+      "analytics.customers",
+      (asset) => asset.explicit_connection === connectionName,
+    );
+
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
+    const properties = await openAssetProperties(page);
+    const connection = properties.getByRole("combobox", { name: "Connection" });
+    await expect(connection).toContainText(connectionName, { timeout: 15000 });
+
+    const overflow = await connection.evaluate((trigger) => {
+      const viewport = trigger.closest('[data-slot="scroll-area-viewport"]');
+      if (!(viewport instanceof HTMLElement)) {
+        throw new Error("Asset properties scroll viewport was not found");
+      }
+      return {
+        viewportClientWidth: viewport.clientWidth,
+        viewportScrollWidth: viewport.scrollWidth,
+        triggerWidth: trigger.getBoundingClientRect().width,
+      };
+    });
+    expect(overflow.viewportScrollWidth).toBeLessThanOrEqual(overflow.viewportClientWidth + 1);
+    expect(overflow.triggerWidth).toBeLessThanOrEqual(overflow.viewportClientWidth);
   });
 
   test("keeps asset descriptions left of connections on both canvases", async ({
@@ -1237,6 +1286,69 @@ from range(1, 2, 1)
     await expect(card.getByRole("button", { name: "Remove not_null from customer_id" })).toBeHidden(
       { timeout: 15000 },
     );
+  });
+
+  test("SQL hooks are authored in focused pre and post editors", async ({ liveApp, page }) => {
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
+    await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
+    const properties = await openAssetProperties(page);
+    const hooks = properties.getByTestId("asset-hooks");
+    await expect(properties.getByRole("heading", { name: "SQL hooks" })).toBeVisible();
+
+    const addHook = async (phase: "pre" | "post", query: string) => {
+      const label = phase === "pre" ? "Before materialization" : "After materialization";
+      const phaseSection = hooks.getByText(label, { exact: true }).locator("..");
+      const diagnostics = page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/sql/lsp/diagnostics") &&
+          response.request().method() === "POST" &&
+          response.request().postDataJSON()?.document_context === "hook",
+        { timeout: 15000 },
+      );
+      await phaseSection.getByRole("button", { name: "Add", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: `Add ${phase}-hook` });
+      await expect(dialog.locator(".monaco-editor")).toBeVisible({ timeout: 15000 });
+      expect((await diagnostics).ok()).toBe(true);
+      await page.evaluate(
+        ({ phase, query }) => {
+          const monaco = (window as typeof window & { monaco?: any }).monaco;
+          const model = monaco?.editor
+            .getModels?.()
+            .find(
+              (candidate: any) =>
+                candidate.uri?.toString?.().includes(`/hooks/`) &&
+                candidate.uri?.toString?.().includes(`/${phase}/`),
+            );
+          if (!model) throw new Error(`${phase}-hook Monaco model is not ready`);
+          model.setValue(query);
+        },
+        { phase, query },
+      );
+      const saved = page.waitForResponse(
+        (response) =>
+          response.url().includes(`/api/assets/${customersAssetId}/transactions`) && response.ok(),
+        { timeout: 15000 },
+      );
+      await dialog.getByRole("button", { name: "Save hook" }).click();
+      await saved;
+    };
+
+    await addHook("pre", "create table if not exists hook_audit(id bigint)");
+    await addHook("post", "insert into hook_audit values (1)");
+
+    const asset = await pollAsset(
+      liveApp,
+      page.request,
+      "analytics.customers",
+      (candidate) =>
+        candidate.pre_hooks?.[0] === "create table if not exists hook_audit(id bigint)" &&
+        candidate.post_hooks?.[0] === "insert into hook_audit values (1)",
+    );
+    expect(asset.pre_hooks).toEqual(["create table if not exists hook_audit(id bigint)"]);
+    expect(asset.post_hooks).toEqual(["insert into hook_audit values (1)"]);
+    await expect(hooks.getByText("insert into hook_audit values (1)")).toBeVisible({
+      timeout: 15000,
+    });
   });
 
   test("quality checks card authors a custom SQL check", async ({ liveApp, page }) => {

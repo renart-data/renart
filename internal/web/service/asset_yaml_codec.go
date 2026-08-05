@@ -34,6 +34,7 @@ var baseManagedYAMLAssetKeys = []string{
 	"depends",
 	"columns",
 	"custom_checks",
+	"hooks",
 	"materialization",
 	"meta",
 }

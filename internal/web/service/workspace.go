@@ -302,6 +302,8 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 				Meta:                        assetMeta,
 				Columns:                     PipelineColumnsToModelColumns(columns),
 				CustomChecks:                PipelineCustomChecksToModelCustomChecks(asset.CustomChecks),
+				PreHooks:                    pipelineHookQueries(asset.Hooks.Pre),
+				PostHooks:                   pipelineHookQueries(asset.Hooks.Post),
 				ColumnInferenceSources:      columnInferenceSourcesForAsset(asset, connectionName),
 				Connection:                  connectionName,
 				ExplicitConnection:          strings.TrimSpace(asset.Connection),
@@ -602,6 +604,16 @@ func PipelineCustomChecksToModelCustomChecks(checks []pipeline.CustomCheck) []mo
 			Query:       check.Query,
 			Retries:     check.Retries,
 		})
+	}
+	return result
+}
+
+func pipelineHookQueries(hooks []pipeline.Hook) []string {
+	result := make([]string, 0, len(hooks))
+	for _, hook := range hooks {
+		if query := strings.TrimSpace(hook.Query); query != "" {
+			result = append(result, query)
+		}
 	}
 	return result
 }

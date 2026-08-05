@@ -6,7 +6,16 @@ import { liveTest as test, type LiveApp } from "../live-app-fixture";
 
 const pipelineId = Buffer.from("analytics").toString("base64url");
 
-type TypeCheckFinding = { severity: string; message: string; line?: number };
+type TypeCheckFinding = {
+  severity: string;
+  message: string;
+  line?: number;
+  resolutions?: Array<{
+    id: string;
+    title: string;
+    transaction: { type: string; column?: string };
+  }>;
+};
 type TypeCheckAsset = {
   id?: string;
   name: string;
@@ -247,5 +256,82 @@ test.describe("app pipeline type check live", () => {
     await expect(page.getByText(/Output schema cannot be inferred/i).first()).toBeVisible({
       timeout: 15000,
     });
+  });
+
+  test("offers and applies a safe resolution for inactive merge metadata", async ({
+    liveApp,
+    page,
+  }) => {
+    await seedTypeCheckAssets(liveApp);
+    const assetsDir = join(liveApp.workspaceDir, "analytics", "assets", "analytics");
+    const assetPath = join(assetsDir, "inactive_merge.sql");
+    const assetId = Buffer.from("analytics/assets/analytics/inactive_merge.sql").toString(
+      "base64url",
+    );
+    await writeFile(
+      assetPath,
+      `/* @bruin
+name: analytics.inactive_merge
+type: duckdb.sql
+materialization:
+  type: table
+  strategy: create+replace
+columns:
+  - name: id
+    type: bigint
+    update_on_merge: true
+    merge_sql: source.id
+@bruin */
+
+select 1::bigint as id
+`,
+      "utf8",
+    );
+    await pollTypeCheck(liveApp, page.request);
+
+    const typeCheckResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/pipelines/${pipelineId}/type-check`) && response.ok(),
+      { timeout: 30000 },
+    );
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${assetId}/canvas`);
+    await typeCheckResponse;
+    await page.getByRole("tab", { name: /Type check/ }).click();
+
+    const assetSection = page
+      .getByText("analytics.inactive_merge", { exact: true })
+      .locator("../..");
+    const resolution = assetSection.getByRole("button", {
+      name: "Delete inactive merge settings",
+    });
+    await expect(resolution).toBeVisible({ timeout: 15000 });
+
+    const transaction = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/assets/${assetId}/transactions`) &&
+        response.request().method() === "POST",
+      { timeout: 15000 },
+    );
+    await resolution.click();
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    const transactionResponse = await transaction;
+    expect(transactionResponse.ok()).toBe(true);
+    expect(transactionResponse.request().postDataJSON()).toEqual({
+      type: "column.merge_settings.clear",
+      column: "id",
+    });
+
+    await expect
+      .poll(async () => {
+        const report = await pollTypeCheck(liveApp, page.request);
+        return (
+          report.assets
+            .find((asset) => asset.name === "analytics.inactive_merge")
+            ?.findings.some((finding) =>
+              /Inactive materialization metadata/.test(finding.message),
+            ) ?? false
+        );
+      })
+      .toBe(false);
   });
 });

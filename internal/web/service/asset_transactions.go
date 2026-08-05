@@ -33,6 +33,12 @@ type AssetTransaction struct {
 	// current check for updates/removals so its display name can be changed.
 	CustomCheckName string                `json:"custom_check_name,omitempty"`
 	CustomCheck     *webmodel.CustomCheck `json:"custom_check,omitempty"`
+
+	// Asset-level SQL hook transactions. A nil HookIndex appends on upsert;
+	// otherwise it identifies the existing hook within the selected phase.
+	HookPhase string `json:"hook_phase,omitempty"`
+	HookIndex *int   `json:"hook_index,omitempty"`
+	HookQuery string `json:"hook_query,omitempty"`
 }
 
 // TransactionDependency describes a dependency to add manually.
@@ -49,25 +55,32 @@ type AssetTransactionResult struct {
 	Upstreams      []string                  `json:"upstreams"`
 	Columns        []WorkspaceColumn         `json:"columns"`
 	CustomChecks   []webmodel.CustomCheck    `json:"custom_checks"`
+	PreHooks       []string                  `json:"pre_hooks"`
+	PostHooks      []string                  `json:"post_hooks"`
 	ReconcileItems []assetmeta.ReconcileItem `json:"reconcile_items,omitempty"`
 }
 
 // Supported transaction types.
 const (
-	TxDependencyManualAdd       = "dependency.manual.add"
-	TxDependencyManualRemove    = "dependency.manual.remove"
-	TxDependencyInferredIgnore  = "dependency.inferred.ignore"
-	TxDependencyInferredRestore = "dependency.inferred.restore"
-	TxColumnManualAdd           = "column.manual.add"
-	TxColumnInferredDrop        = "column.inferred.drop"
-	TxColumnInferredRestore     = "column.inferred.restore"
-	TxColumnFieldOwn            = "column.field.own"
-	TxColumnFieldDisown         = "column.field.disown"
-	TxColumnCheckAdd            = "column.check.add"
-	TxColumnCheckRemove         = "column.check.remove"
-	TxColumnDescriptionSet      = "column.description.set"
-	TxCustomCheckUpsert         = "custom_check.upsert"
-	TxCustomCheckRemove         = "custom_check.remove"
+	TxDependencyManualAdd             = "dependency.manual.add"
+	TxDependencyManualRemove          = "dependency.manual.remove"
+	TxDependencyInferredIgnore        = "dependency.inferred.ignore"
+	TxDependencyInferredRestore       = "dependency.inferred.restore"
+	TxColumnManualAdd                 = "column.manual.add"
+	TxColumnInferredDrop              = "column.inferred.drop"
+	TxColumnInferredRestore           = "column.inferred.restore"
+	TxColumnFieldOwn                  = "column.field.own"
+	TxColumnFieldDisown               = "column.field.disown"
+	TxColumnCheckAdd                  = "column.check.add"
+	TxColumnCheckRemove               = "column.check.remove"
+	TxColumnDescriptionSet            = "column.description.set"
+	TxCustomCheckUpsert               = "custom_check.upsert"
+	TxCustomCheckRemove               = "custom_check.remove"
+	TxColumnMergeSettingsClear        = "column.merge_settings.clear"
+	TxMaterializationPartitionByClear = "materialization.partition_by.clear"
+	TxMaterializationClusterByClear   = "materialization.cluster_by.clear"
+	TxHookUpsert                      = "hook.upsert"
+	TxHookRemove                      = "hook.remove"
 )
 
 // ApplyAssetTransaction applies a single semantic transaction to an asset,
@@ -117,6 +130,8 @@ func (s *AssetService) ApplyAssetTransaction(ctx context.Context, assetID string
 		Upstreams:    upstreamNames(asset.Upstreams),
 		Columns:      PipelineColumnsToModelColumns(asset.Columns),
 		CustomChecks: PipelineCustomChecksToModelCustomChecks(asset.CustomChecks),
+		PreHooks:     pipelineHookQueries(asset.Hooks.Pre),
+		PostHooks:    pipelineHookQueries(asset.Hooks.Post),
 	}, nil
 }
 
@@ -241,10 +256,75 @@ func applyTransactionToAsset(asset *pipeline.Asset, meta *assetmeta.RenartMeta, 
 			return badRequestError("unknown_custom_check", fmt.Sprintf("custom check %q not found", name))
 		}
 
+	case TxColumnMergeSettingsClear:
+		name := strings.TrimSpace(tx.Column)
+		if name == "" {
+			return badRequestError("invalid_transaction", "column is required")
+		}
+		found := false
+		for index := range asset.Columns {
+			if !strings.EqualFold(strings.TrimSpace(asset.Columns[index].Name), name) {
+				continue
+			}
+			asset.Columns[index].UpdateOnMerge = false
+			asset.Columns[index].MergeSQL = ""
+			found = true
+			break
+		}
+		if !found {
+			return badRequestError("unknown_column", fmt.Sprintf("column %q not found", name))
+		}
+
+	case TxMaterializationPartitionByClear:
+		asset.Materialization.PartitionBy = ""
+
+	case TxMaterializationClusterByClear:
+		asset.Materialization.ClusterBy = nil
+
+	case TxHookUpsert:
+		hooks, apiErr := hooksForTransactionPhase(asset, tx.HookPhase)
+		if apiErr != nil {
+			return apiErr
+		}
+		query := strings.TrimSpace(tx.HookQuery)
+		if query == "" {
+			return badRequestError("invalid_transaction", "hook_query is required")
+		}
+		if tx.HookIndex == nil {
+			*hooks = append(*hooks, pipeline.Hook{Query: query})
+			break
+		}
+		if *tx.HookIndex < 0 || *tx.HookIndex >= len(*hooks) {
+			return badRequestError("unknown_hook", "hook_index is out of range")
+		}
+		(*hooks)[*tx.HookIndex].Query = query
+
+	case TxHookRemove:
+		hooks, apiErr := hooksForTransactionPhase(asset, tx.HookPhase)
+		if apiErr != nil {
+			return apiErr
+		}
+		if tx.HookIndex == nil || *tx.HookIndex < 0 || *tx.HookIndex >= len(*hooks) {
+			return badRequestError("unknown_hook", "hook_index is required and must be in range")
+		}
+		index := *tx.HookIndex
+		*hooks = append((*hooks)[:index], (*hooks)[index+1:]...)
+
 	default:
 		return badRequestError("unknown_transaction", fmt.Sprintf("unknown transaction type %q", tx.Type))
 	}
 	return nil
+}
+
+func hooksForTransactionPhase(asset *pipeline.Asset, phase string) (*[]pipeline.Hook, *APIError) {
+	switch strings.ToLower(strings.TrimSpace(phase)) {
+	case "pre":
+		return &asset.Hooks.Pre, nil
+	case "post":
+		return &asset.Hooks.Post, nil
+	default:
+		return nil, badRequestError("invalid_transaction", "hook_phase must be pre or post")
+	}
 }
 
 func upsertCustomCheck(asset *pipeline.Asset, existingName string, check webmodel.CustomCheck) *APIError {

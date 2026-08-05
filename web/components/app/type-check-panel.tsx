@@ -1,10 +1,35 @@
-import { AlertTriangle, Bell, CheckCircle2, Loader2, RotateCw, XCircle } from "lucide-react";
+import { useState } from "react";
+import {
+  AlertTriangle,
+  Bell,
+  CheckCircle2,
+  Loader2,
+  RotateCw,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
-import type { PipelineTypeCheckReport } from "@/lib/api-pipelines";
+import { applyAssetTransaction } from "@/lib/api-asset-transactions";
+import type {
+  PipelineTypeCheckFinding,
+  PipelineTypeCheckReport,
+  PipelineTypeCheckResolution,
+} from "@/lib/api-pipelines";
 
 export function TypeCheckPanel({
   report,
@@ -19,6 +44,29 @@ export function TypeCheckPanel({
   onRun?: () => void;
   onSelectAsset?: (assetId: string) => void;
 }) {
+  const [resolving, setResolving] = useState("");
+  const [resolutionError, setResolutionError] = useState<string | null>(null);
+
+  const resolveFinding = async (
+    assetId: string,
+    finding: PipelineTypeCheckFinding,
+    resolution: PipelineTypeCheckResolution,
+  ) => {
+    const key = `${assetId}:${finding.code}:${resolution.id}`;
+    setResolving(key);
+    setResolutionError(null);
+    try {
+      await applyAssetTransaction(assetId, resolution.transaction);
+      onRun?.();
+    } catch (cause) {
+      setResolutionError(
+        cause instanceof Error ? cause.message : "The suggested change could not be applied.",
+      );
+    } finally {
+      setResolving("");
+    }
+  };
+
   if (loading && !report) {
     return <TypeCheckLoading />;
   }
@@ -76,6 +124,13 @@ export function TypeCheckPanel({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
+      {resolutionError ? (
+        <Alert variant="destructive" className="m-2 shrink-0 w-auto">
+          <AlertTriangle />
+          <AlertTitle>Resolution failed</AlertTitle>
+          <AlertDescription>{resolutionError}</AlertDescription>
+        </Alert>
+      ) : null}
       <ScrollArea
         className="min-h-0 flex-1"
         viewportClassName="h-full"
@@ -116,7 +171,58 @@ export function TypeCheckPanel({
                         ) : (
                           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
                         )}
-                        <span className="min-w-0 flex-1">{finding.message}</span>
+                        <div className="min-w-0 flex-1">
+                          <p>{finding.message}</p>
+                          {asset.id && finding.resolutions?.length ? (
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              {finding.resolutions.map((resolution) => {
+                                const resolutionKey = `${asset.id}:${finding.code}:${resolution.id}`;
+                                return (
+                                  <AlertDialog key={resolution.id}>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="xs"
+                                        disabled={Boolean(resolving)}
+                                      >
+                                        {resolving === resolutionKey ? (
+                                          <Loader2 className="animate-spin" />
+                                        ) : (
+                                          <Trash2 />
+                                        )}
+                                        {resolution.title}
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent size="sm">
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>
+                                          Delete inactive metadata?
+                                        </AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          This removes the saved settings described by this warning.
+                                          You can add them again later if the materialization
+                                          changes.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction
+                                          variant="destructive"
+                                          onClick={() =>
+                                            void resolveFinding(asset.id!, finding, resolution)
+                                          }
+                                        >
+                                          Delete
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
                         {finding.line ? (
                           <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                             L{finding.line}:C{finding.column}

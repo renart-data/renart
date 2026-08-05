@@ -63,6 +63,7 @@ import { cn } from "@/lib/utils";
 import { WebAsset, WebColumn } from "@/lib/types";
 import { AssetConnectionEditor } from "./asset-connection-editor";
 import { AssetCustomChecks } from "./asset-custom-checks";
+import { AssetHooks } from "./asset-hooks";
 import { MultiValueInput } from "./multi-value-input";
 import { SchemaSyncDialog } from "./schema-sync-dialog";
 
@@ -96,6 +97,11 @@ export function AssetGuidedCards({
       <div className="divide-y px-3">
         <IdentityCard asset={asset} pipelineId={pipelineId} />
         <MaterializationCard asset={asset} pipelineId={pipelineId} />
+        {isSqlAssetType(asset.type) ? (
+          <GuidedCard title="SQL hooks">
+            <AssetHooks asset={asset} />
+          </GuidedCard>
+        ) : null}
         <DependenciesCard asset={asset} />
         {supportsColumns ? <ColumnsCard asset={asset} /> : null}
         {supportsColumns ? (

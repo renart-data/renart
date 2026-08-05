@@ -21,7 +21,7 @@ export function useSQLCanvasHover(
   monaco: typeof MonacoNS | null,
   editor: MonacoNS.editor.IStandaloneCodeEditor | null,
   asset: WebAsset | null,
-  options?: { documentContext?: "asset" | "adhoc" | "custom_check" },
+  options?: { documentContext?: "asset" | "adhoc" | "custom_check" | "hook" },
 ) {
   const setHoveredAsset = useSetAtom(sqlHoveredAssetAtom);
 

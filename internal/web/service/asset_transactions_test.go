@@ -305,6 +305,99 @@ custom_checks:
 	assert.Equal(t, "duplicate_custom_check", apiErr.Code)
 }
 
+func TestApplyTransactionHookAddUpdateAndRemove(t *testing.T) {
+	service, assetID, absPath := newTransactionWorkspace(t, txCustomersHeader)
+
+	res, apiErr := service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type:      TxHookUpsert,
+		HookPhase: "pre",
+		HookQuery: "create table if not exists audit_log(id bigint)",
+	})
+	require.Nil(t, apiErr)
+	require.Equal(t, []string{"create table if not exists audit_log(id bigint)"}, res.PreHooks)
+	assert.Empty(t, res.PostHooks)
+
+	index := 0
+	res, apiErr = service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type:      TxHookUpsert,
+		HookPhase: "pre",
+		HookIndex: &index,
+		HookQuery: "delete from audit_log",
+	})
+	require.Nil(t, apiErr)
+	assert.Equal(t, []string{"delete from audit_log"}, res.PreHooks)
+
+	res, apiErr = service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type:      TxHookUpsert,
+		HookPhase: "post",
+		HookQuery: "insert into audit_log values (1)",
+	})
+	require.Nil(t, apiErr)
+	assert.Equal(t, []string{"insert into audit_log values (1)"}, res.PostHooks)
+
+	res, apiErr = service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type:      TxHookRemove,
+		HookPhase: "pre",
+		HookIndex: &index,
+	})
+	require.Nil(t, apiErr)
+	assert.Empty(t, res.PreHooks)
+
+	content, err := os.ReadFile(absPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(content), "delete from audit_log")
+	assert.Contains(t, string(content), "post:")
+	assert.Contains(t, string(content), "insert into audit_log values (1)")
+}
+
+func TestApplyTransactionClearsInactiveMaterializationMetadata(t *testing.T) {
+	header := `/* @bruin
+name: analytics.customers
+type: duckdb.sql
+materialization:
+  type: table
+  strategy: create+replace
+  partition_by: event_date
+  cluster_by:
+    - customer_id
+columns:
+  - name: customer_id
+    type: bigint
+    update_on_merge: true
+    merge_sql: source.customer_id
+@bruin */`
+	service, assetID, absPath := newTransactionWorkspace(t, header)
+
+	_, apiErr := service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type:   TxColumnMergeSettingsClear,
+		Column: "customer_id",
+	})
+	require.Nil(t, apiErr)
+	_, apiErr = service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type: TxMaterializationPartitionByClear,
+	})
+	require.Nil(t, apiErr)
+	_, apiErr = service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type: TxMaterializationClusterByClear,
+	})
+	require.Nil(t, apiErr)
+
+	_, _, asset, err := service.deps.ResolveAssetByID(context.Background(), assetID)
+	require.NoError(t, err)
+	require.Len(t, asset.Columns, 1)
+	assert.False(t, asset.Columns[0].UpdateOnMerge)
+	assert.Empty(t, asset.Columns[0].MergeSQL)
+	assert.Empty(t, asset.Materialization.PartitionBy)
+	assert.Empty(t, asset.Materialization.ClusterBy)
+
+	content, err := os.ReadFile(absPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(content), "update_on_merge")
+	assert.NotContains(t, string(content), "merge_sql")
+	assert.NotContains(t, string(content), "partition_by")
+	assert.NotContains(t, string(content), "cluster_by")
+}
+
 func TestApplyTransactionUnknownTypeErrors(t *testing.T) {
 	service, assetID, _ := newTransactionWorkspace(t, txCustomersHeader)
 	_, apiErr := service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{Type: "bogus.tx"})

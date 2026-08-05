@@ -908,6 +908,10 @@ func TestMaterializationTypeCheckFindings(t *testing.T) {
 		require.Len(t, findings, 1)
 		assert.Equal(t, typeCheckSeverityWarning, findings[0].Severity)
 		assert.Contains(t, findings[0].Message, "Inactive materialization metadata")
+		require.Len(t, findings[0].Resolutions, 1)
+		assert.Equal(t, "Delete inactive merge settings", findings[0].Resolutions[0].Title)
+		assert.Equal(t, TxColumnMergeSettingsClear, findings[0].Resolutions[0].Transaction.Type)
+		assert.Equal(t, "id", findings[0].Resolutions[0].Transaction.Column)
 	})
 
 	t.Run("time interval requires a key and granularity", func(t *testing.T) {
@@ -957,7 +961,11 @@ func TestMaterializationTypeCheckFindings(t *testing.T) {
 		require.Len(t, findings, 2)
 		assert.Equal(t, typeCheckSeverityWarning, findings[0].Severity)
 		assert.Contains(t, findings[0].Message, "partition_by")
+		require.Len(t, findings[0].Resolutions, 1)
+		assert.Equal(t, TxMaterializationPartitionByClear, findings[0].Resolutions[0].Transaction.Type)
 		assert.Contains(t, findings[1].Message, "cluster_by")
+		require.Len(t, findings[1].Resolutions, 1)
+		assert.Equal(t, TxMaterializationClusterByClear, findings[1].Resolutions[0].Transaction.Type)
 	})
 }
 

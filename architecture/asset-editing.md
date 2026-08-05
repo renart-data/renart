@@ -102,7 +102,8 @@ default.
 
 UI surfaces never write YAML. Every edit is a semantic `AssetTransaction`
 (dependency.manual.add/remove, dependency.inferred.ignore/restore,
-column.check.add, column.description.set, column ownership, …) POSTed to
+column.check.add, column.description.set, column ownership, SQL hook
+upsert/remove, and safe inactive-materialization cleanup) POSTed to
 `/api/assets/{assetID}/transactions`. The handler read-locks the file (a
 per-file lock serializes concurrent read-modify-write — fast editing used to
 race and drop content), parses the current definition, applies the
@@ -192,7 +193,10 @@ round-trips unknown fields).
   retains only the failed check identity for
   the latest run; a current-content canvas warning can open this card and
   highlight the matching custom or column check without exposing query or error
-  text in workspace metadata. Merge editing includes
+  text in workspace metadata. SQL assets also expose their ordered pre- and
+  post-materialization hooks in focused Monaco SQL dialogs. Hook statements use
+  the owning asset's dialect, graph, Jinja context, and the same semantic
+  transaction/write path as the rest of the guided editor. Merge editing includes
   column-scoped primary keys, `update_on_merge`, custom `merge_sql`, and a
   column-backed update-key combobox where the active execution path supports
   one. The backend-provided per-asset capability profile drives the available
@@ -334,6 +338,12 @@ round-trips unknown fields).
   `/columns/refresh-from-definition`, and SQL-specific `/fill-columns-from-db`
   remain compatibility routes; automatic seed replacement refreshes still use
   the definition reconciler.
+- **Type-check resolutions:** findings may carry backend-authored semantic
+  resolutions instead of asking the browser to infer a YAML edit. The shipped
+  destructive resolutions remove inactive `partition_by`, `cluster_by`, or
+  column merge-only metadata after an explicit confirmation, apply through the
+  asset transaction endpoint, and immediately rerun the report. Findings
+  without a proven safe edit remain explanatory only.
 
 ## 7. Not built (still intent, from the original concept)
 

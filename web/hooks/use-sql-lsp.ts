@@ -56,7 +56,7 @@ export function useSQLLSP(
   onGoToCell?: (cellId: string) => void,
   options?: {
     includeNotebookRuntimeColumns?: boolean;
-    documentContext?: "asset" | "adhoc" | "custom_check";
+    documentContext?: "asset" | "adhoc" | "custom_check" | "hook";
     allowNonSQLDocument?: boolean;
   },
 ) {

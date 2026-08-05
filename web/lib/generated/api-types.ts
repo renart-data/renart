@@ -160,6 +160,8 @@ export type WebAsset = {
   meta?: Record<string, string>;
   columns?: WebColumn[];
   custom_checks?: WebCustomCheck[];
+  pre_hooks?: string[];
+  post_hooks?: string[];
   column_inference_sources?: ColumnInferenceSource[];
   connection?: string;
   explicit_connection?: string;
@@ -862,6 +864,17 @@ export type PipelineAssetRenderComparison = {
   summary: AssetRenderComparisonSummary;
 };
 
+export type TypeCheckResolutionTransaction = {
+  type: string;
+  column?: string;
+};
+
+export type TypeCheckResolution = {
+  id: string;
+  title: string;
+  transaction: TypeCheckResolutionTransaction;
+};
+
 export type TypeCheckFinding = {
   code: string;
   source: string;
@@ -873,6 +886,7 @@ export type TypeCheckFinding = {
   end_column?: number;
   scope?: string;
   confidence?: string;
+  resolutions?: TypeCheckResolution[];
 };
 
 export type TypeCheckAsset = {

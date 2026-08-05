@@ -13,6 +13,13 @@ import {
   UpdatePipelineConfigRequest,
   UpdatePipelinePythonDependenciesRequest,
 } from "@/lib/types";
+import type { AssetTransaction } from "@/lib/api-asset-transactions";
+
+export type PipelineTypeCheckResolution = {
+  id: string;
+  title: string;
+  transaction: AssetTransaction;
+};
 
 export async function getPipelineTemplates() {
   return fetchJSON<PipelineTemplatesResponse>("/api/pipelines/templates", {
@@ -57,6 +64,7 @@ export type PipelineTypeCheckFinding = {
   end_column?: number;
   scope?: "document" | "asset" | "pipeline";
   confidence?: "high" | "medium" | "low";
+  resolutions?: PipelineTypeCheckResolution[];
 };
 
 export type PipelineTypeCheckAsset = {

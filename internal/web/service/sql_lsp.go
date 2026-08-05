@@ -133,7 +133,7 @@ func (s *SQLLSPService) Diagnostics(ctx context.Context, req SQLLSPRequest) (SQL
 	engine := s.newEngine(graph)
 	diagnostics := engine.DiagnosticsContext(ctx, doc)
 	documentContext := strings.ToLower(strings.TrimSpace(req.DocumentContext))
-	if documentContext == "adhoc" || documentContext == "custom_check" {
+	if documentContext == "adhoc" || documentContext == "custom_check" || documentContext == "hook" {
 		diagnostics = diagnosticsWithoutCode(diagnostics, "circular-dependency")
 	} else {
 		diagnostics = appendUniqueServiceDiagnostics(diagnostics, s.assetDiagnostics(ctx, req.AssetID, doc)...)
@@ -449,7 +449,7 @@ func (s *SQLLSPService) graphAndDocument(ctx context.Context, req SQLLSPRequest)
 	doc := sqllsp.TextDocumentItem{URI: assetURI(s.deps.WorkspaceRoot, asset), LanguageID: "sql", Text: content}
 	doc = s.withJinjaProjection(ctx, req.AssetID, doc)
 	graph := s.graphForRequest(ctx, state, notebook)
-	if strings.EqualFold(strings.TrimSpace(req.DocumentContext), "custom_check") {
+	if strings.EqualFold(strings.TrimSpace(req.DocumentContext), "custom_check") || strings.EqualFold(strings.TrimSpace(req.DocumentContext), "hook") {
 		graph = graphWithCustomCheckDialect(graph, doc.URI, asset, state.Connections)
 	}
 	if connection := strings.TrimSpace(req.Connection); connection != "" {
