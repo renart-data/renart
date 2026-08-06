@@ -395,6 +395,10 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		},
 	})
 	server.sqlSvc.SetRemoteCatalogObserver(remoteCatalog)
+	server.pipelineSvc.SetRemoteCatalogProvider(
+		remoteCatalog,
+		func() string { return server.currentState().SelectedEnvironment },
+	)
 
 	server.loadSvc = service.NewLoadService(service.LoadDependencies{
 		WorkspaceRoot:        absRoot,

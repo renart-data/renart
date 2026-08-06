@@ -136,10 +136,12 @@ uses the same default-parent resolution as project creation, and
 `POST /api/projects/directories` creates one visible child folder selected by
 the user. `.renart/project.yml` also carries project-scoped feature
 flags (`internal/web/identity`): `features.ingestr` re-enables the ingestr
-surfaces the UI hides by default — `/api/config` filters ingestr source
-connection types out unless the flag is set, and the frontend
-(`web/lib/features.ts`) additionally shows them when the workspace already
-contains ingestr assets. Direct execution likewise leaves Bruin's Ingestr main
+surfaces the UI hides by default. The config contract classifies SQL-capable
+connections as `warehouse`, S3/GCS as `storage`, and remaining connector/API
+types as `source`; project settings always expose warehouse and storage types,
+while the frontend (`web/lib/features.ts`) shows source types only when the flag
+is set or the workspace already contains ingestr assets. Direct execution
+likewise leaves Bruin's Ingestr main
 operator disabled unless the parsed pipeline already contains an Ingestr
 asset. Ordinary Renart pipelines therefore do not initialize Ingestr or cause
 its Python package to be resolved; an existing Ingestr asset enables the

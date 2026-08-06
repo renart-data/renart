@@ -216,6 +216,54 @@ select order_id from analytics.orders
 	assert.GreaterOrEqual(t, report.Summary.Warnings, 1)
 }
 
+func TestInteractiveTypeCheckWarnsForCachedExternalRelationWithoutRefreshing(t *testing.T) {
+	t.Parallel()
+	parsed, root := writeTypeCheckWorkspace(t, "name: analytics", map[string]string{
+		"report.sql": `
+/* @bruin
+name: analytics.report
+type: duckdb.sql
+connection: duckdb-default
+materialization:
+  type: view
+@bruin */
+select order_id from external.orders
+`,
+	})
+	provider := &stubRemoteCatalogProvider{snapshot: RemoteCatalogSnapshot{Relations: []RemoteCatalogRelation{{
+		QualifiedName: "external.orders",
+		ShortName:     "orders",
+		SchemaName:    "external",
+		ColumnsKnown:  true,
+		Columns:       []SQLColumn{{Name: "order_id", Type: "bigint"}},
+	}}}}
+	tw, err := ResolveExecutionTimeWindow(string(parsed.Schedule), "", "", time.Now().UTC())
+	require.NoError(t, err)
+	report := checkPipelineAt(
+		context.Background(),
+		afero.NewOsFs(),
+		parsed,
+		root,
+		tw,
+		time.Now().UTC(),
+		typeCheckOptions{RemoteCatalog: provider, Environment: "dev"},
+	)
+
+	asset := findAsset(t, report, "analytics.report")
+	assert.Equal(t, typeCheckStatusWarning, asset.Status)
+	assert.True(t, hasFinding(asset, typeCheckSeverityWarning, `External relation "external.orders" exists on connection "duckdb-default"`),
+		"expected cached external-relation warning, got %+v", asset.Findings)
+	for _, finding := range asset.Findings {
+		assert.NotEqual(t, authoringdiag.CodeUnresolvedRelation, finding.Code, finding.Message)
+		assert.NotEqual(t, authoringdiag.CodeUnresolvedColumn, finding.Code, finding.Message)
+	}
+	provider.mu.Lock()
+	require.NotEmpty(t, provider.snapshotScopes)
+	assert.Equal(t, RemoteCatalogScope{Connection: "duckdb-default", Environment: "dev"}, provider.snapshotScopes[0])
+	assert.Empty(t, provider.refreshScopes, "type-check must not trigger warehouse discovery")
+	provider.mu.Unlock()
+}
+
 func TestCheckPipelineValidatesQuerySensorParameterSQL(t *testing.T) {
 	t.Parallel()
 	parsed, root := writeTypeCheckWorkspace(t, "name: analytics", map[string]string{

@@ -40,7 +40,14 @@ func (s *PipelineService) TypeCheck(ctx context.Context, pipelineID, startDate, 
 		return TypeCheckReport{}, &APIError{Status: 400, Code: "invalid_time_window", Message: err.Error()}
 	}
 
-	report := CheckPipeline(ctx, afero.NewOsFs(), parsed, s.workspaceRoot, tw)
+	environment := ""
+	if s.selectedEnvironment != nil {
+		environment = strings.TrimSpace(s.selectedEnvironment())
+	}
+	report := checkPipelineAt(ctx, afero.NewOsFs(), parsed, s.workspaceRoot, tw, time.Now().UTC(), typeCheckOptions{
+		RemoteCatalog: s.remoteCatalog,
+		Environment:   environment,
+	})
 	report.PipelineID = pipelineID
 	return report, nil
 }
@@ -144,6 +151,23 @@ func CheckPipelineAt(
 	tw ExecutionTimeWindow,
 	executionTime time.Time,
 ) TypeCheckReport {
+	return checkPipelineAt(ctx, fs, pp, workspaceRoot, tw, executionTime, typeCheckOptions{})
+}
+
+type typeCheckOptions struct {
+	RemoteCatalog RemoteCatalogProvider
+	Environment   string
+}
+
+func checkPipelineAt(
+	ctx context.Context,
+	fs afero.Fs,
+	pp *pipeline.Pipeline,
+	workspaceRoot string,
+	tw ExecutionTimeWindow,
+	executionTime time.Time,
+	options typeCheckOptions,
+) TypeCheckReport {
 	now := executionTime.UTC()
 	macroContent, _ := jinja.LoadMacros(fs, pp.MacrosPath)
 	renderer := jinja.NewRendererWithStartEndDatesAndMacros(
@@ -166,10 +190,10 @@ func CheckPipelineAt(
 	sort.SliceStable(assets, func(i, j int) bool { return assets[i].Name < assets[j].Name })
 
 	snapshot := buildTypeCheckSchemaSnapshot(ctx, fs, pp, workspaceRoot, renderer, now, tw, assets)
-	connectionEngine := sqllsp.NewEngine(snapshot.Graph)
-
 	for _, asset := range assets {
-		ac := checkAsset(ctx, pp, workspaceRoot, asset, snapshot, connectionEngine)
+		assetSnapshot := typeCheckSnapshotWithRemoteCatalog(snapshot, pp, asset, options)
+		connectionEngine := sqllsp.NewEngine(assetSnapshot.Graph)
+		ac := checkAsset(ctx, pp, workspaceRoot, asset, assetSnapshot, connectionEngine)
 		report.Assets = append(report.Assets, ac)
 		report.Summary.Assets++
 		for _, finding := range ac.Findings {
@@ -190,6 +214,30 @@ func CheckPipelineAt(
 		report.Status = typeCheckStatusError
 	}
 	return report
+}
+
+func typeCheckSnapshotWithRemoteCatalog(
+	snapshot typeCheckSchemaSnapshot,
+	pp *pipeline.Pipeline,
+	asset *pipeline.Asset,
+	options typeCheckOptions,
+) typeCheckSchemaSnapshot {
+	if options.RemoteCatalog == nil || asset == nil {
+		return snapshot
+	}
+	connection, err := targetConnectionNameForAsset(asset, pp)
+	if err != nil || strings.TrimSpace(connection) == "" {
+		return snapshot
+	}
+	environment := strings.TrimSpace(options.Environment)
+	scope := RemoteCatalogScope{Connection: connection, Environment: environment}
+	graph := graphWithRemoteCatalogSnapshot(snapshot.Graph, scope, options.RemoteCatalog.Snapshot(scope))
+	if len(graph.Relations) == len(snapshot.Graph.Relations) {
+		return snapshot
+	}
+	snapshot.Graph = graph
+	snapshot.Schema, snapshot.Constraints, snapshot.Confidence = sqllsp.ValidationSchemaWithConstraints(graph)
+	return snapshot
 }
 
 type typeCheckSchemaSnapshot struct {
@@ -234,6 +282,13 @@ func checkAsset(ctx context.Context, pp *pipeline.Pipeline, workspaceRoot string
 	for unitIndex, unit := range units {
 		renderedQuery := unit.RenderedSQL
 		for _, diagnostic := range connectionEngine.CrossConnectionDiagnostics(sqllsp.TextDocumentItem{
+			URI:        typeCheckAssetURI(workspaceRoot, asset),
+			LanguageID: "sql",
+			Text:       renderedQuery,
+		}) {
+			ac.Findings = append(ac.Findings, findingFromMappedLSPDiagnostic(sourceText, unit, renderedQuery, diagnostic))
+		}
+		for _, diagnostic := range connectionEngine.ExternalRelationDiagnostics(sqllsp.TextDocumentItem{
 			URI:        typeCheckAssetURI(workspaceRoot, asset),
 			LanguageID: "sql",
 			Text:       renderedQuery,
@@ -353,6 +408,16 @@ func customCheckTypeCheckFindings(
 				Code:       diagnostic.Code,
 				Source:     diagnostic.Source,
 				Severity:   severity,
+				Message:    prefix + diagnostic.Message,
+				Scope:      string(authoringdiag.ScopeDocument),
+				Confidence: diagnostic.Confidence,
+			})
+		}
+		for _, diagnostic := range connectionEngine.ExternalRelationDiagnostics(doc) {
+			findings = append(findings, TypeCheckFinding{
+				Code:       diagnostic.Code,
+				Source:     diagnostic.Source,
+				Severity:   typeCheckSeverityWarning,
 				Message:    prefix + diagnostic.Message,
 				Scope:      string(authoringdiag.ScopeDocument),
 				Confidence: diagnostic.Confidence,

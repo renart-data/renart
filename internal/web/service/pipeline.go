@@ -19,13 +19,23 @@ import (
 )
 
 type PipelineService struct {
-	workspaceRoot string
+	workspaceRoot       string
+	remoteCatalog       RemoteCatalogProvider
+	selectedEnvironment func() string
 }
 
 var ErrInvalidPipelineDefaultConnection = errors.New("invalid pipeline default connection")
 
 func NewPipelineService(workspaceRoot string) *PipelineService {
 	return &PipelineService{workspaceRoot: workspaceRoot}
+}
+
+// SetRemoteCatalogProvider wires optional, process-local catalog evidence into
+// interactive type-checking. The provider snapshot is read without I/O; CLI
+// and execution-planning type checks deliberately remain provider-free.
+func (s *PipelineService) SetRemoteCatalogProvider(provider RemoteCatalogProvider, selectedEnvironment func() string) {
+	s.remoteCatalog = provider
+	s.selectedEnvironment = selectedEnvironment
 }
 
 func (s *PipelineService) resolver() *WorkspaceResolver {

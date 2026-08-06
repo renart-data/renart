@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"renart/internal/authoringdiag"
 	"renart/internal/sqllsp"
 	"renart/internal/web/model"
 )
@@ -15,13 +16,15 @@ import (
 type stubRemoteCatalogProvider struct {
 	mu             sync.Mutex
 	snapshot       RemoteCatalogSnapshot
+	snapshotScopes []RemoteCatalogScope
 	refreshScopes  []RemoteCatalogScope
 	columnRequests []string
 }
 
-func (p *stubRemoteCatalogProvider) Snapshot(RemoteCatalogScope) RemoteCatalogSnapshot {
+func (p *stubRemoteCatalogProvider) Snapshot(scope RemoteCatalogScope) RemoteCatalogSnapshot {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.snapshotScopes = append(p.snapshotScopes, scope)
 	return cloneRemoteCatalogSnapshot(p.snapshot)
 }
 
@@ -95,10 +98,17 @@ func TestSQLLSPServiceCompletesRemoteCatalogRelationsAndColumns(t *testing.T) {
 		Content: "select o.order_id from analytics.orders o",
 	})
 	require.Nil(t, apiErr)
+	var externalWarning *sqllsp.Diagnostic
 	for _, diagnostic := range diagnostics.Diagnostics {
 		assert.NotEqual(t, "unresolved-relation", diagnostic.Code, diagnostic.Message)
 		assert.NotEqual(t, "unresolved-column", diagnostic.Code, diagnostic.Message)
+		if diagnostic.Code == authoringdiag.CodeExternalRelation {
+			externalWarning = &diagnostic
+		}
 	}
+	require.NotNil(t, externalWarning)
+	assert.Equal(t, 2, externalWarning.Severity)
+	assert.Contains(t, externalWarning.Message, `connection "warehouse"`)
 
 	provider.mu.Lock()
 	require.NotEmpty(t, provider.refreshScopes)

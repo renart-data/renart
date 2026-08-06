@@ -173,6 +173,7 @@ func (e *Engine) DiagnosticsContext(ctx context.Context, doc TextDocumentItem) [
 	diagnostics = withoutUnresolvedDuckDBFileRelations(projection.doc.Text, diagnostics, duckDBFileRelations)
 	currentAsset := e.assetForURI(doc.URI)
 	diagnostics = appendUniqueDiagnostics(diagnostics, e.crossConnectionDiagnostics(projection.doc.Text, analysis, currentAsset)...)
+	diagnostics = appendUniqueDiagnostics(diagnostics, e.externalRelationDiagnostics(projection.doc.Text, analysis)...)
 	for _, use := range analysis.relations {
 		if _, isCTE := analysis.ctes[strings.ToLower(use.name)]; isCTE || strings.HasPrefix(use.name, "{{") {
 			continue
@@ -438,6 +439,49 @@ func (e *Engine) CrossConnectionDiagnostics(doc TextDocumentItem) []Diagnostic {
 		for i := range diagnostics {
 			diagnostics[i].Range = projection.rendered.TemplateRangeForGenerated(doc.Text, diagnostics[i].Range)
 		}
+	}
+	return diagnostics
+}
+
+// ExternalRelationDiagnostics reports positively observed warehouse relations
+// that resolve through the live catalog but do not have a backing authored
+// asset. It is public so interactive pipeline type-checking can reuse the same
+// warning without invoking the rest of the editor diagnostics pipeline.
+func (e *Engine) ExternalRelationDiagnostics(doc TextDocumentItem) []Diagnostic {
+	projection := e.renderDocument(doc)
+	analysis := analyzeSQLWithResolver(projection.doc.Text, e)
+	diagnostics := e.externalRelationDiagnostics(projection.doc.Text, analysis)
+	if projection.changed {
+		for i := range diagnostics {
+			diagnostics[i].Range = projection.rendered.TemplateRangeForGenerated(doc.Text, diagnostics[i].Range)
+		}
+	}
+	return diagnostics
+}
+
+func (e *Engine) externalRelationDiagnostics(sql string, analysis sqlAnalysis) []Diagnostic {
+	var diagnostics []Diagnostic
+	for _, use := range analysis.relations {
+		if _, isCTE := analysis.ctes[strings.ToLower(use.name)]; isCTE || strings.HasPrefix(use.name, "{{") {
+			continue
+		}
+		resolved := e.resolveRelation(use.name)
+		if resolved == nil || !isRemoteCatalogRelation(*resolved) {
+			continue
+		}
+		message := "External relation " + strconv.Quote(use.name) + " exists in the remote warehouse catalog but is not represented by an asset."
+		if connection := remoteCatalogConnection(*resolved); connection != "" {
+			message = "External relation " + strconv.Quote(use.name) + " exists on connection " + strconv.Quote(connection) + " but is not represented by an asset."
+		}
+		diagnostics = append(diagnostics, Diagnostic{
+			Range:      RangeFromOffsets(sql, use.start, use.end),
+			Severity:   diagnosticSeverityWarn,
+			Code:       authoringdiag.CodeExternalRelation,
+			Source:     authoringdiag.SourceRenart,
+			Message:    message,
+			Scope:      string(authoringdiag.ScopeDocument),
+			Confidence: string(authoringdiag.ConfidenceLow),
+		})
 	}
 	return diagnostics
 }

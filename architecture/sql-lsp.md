@@ -104,7 +104,12 @@ coordinator's `WorkspaceState` rather than the filesystem:
   without enabling unknown-column checks. Authored relations win exact-name
   collisions, remote completions rank below authored relations, and ambiguous
   remote short names require qualification. The stdio LSP supplies no provider
-  and remains deterministic/offline. Connection secrets never enter the graph.
+  and remains deterministic/offline. A positively observed remote relation is
+  resolved for SQL validation but receives an `external-relation` warning at
+  each document reference until an authored asset represents it. Interactive
+  pipeline type-check reads the same already-cached snapshot without scheduling
+  discovery; CLI and execution-planning type-checks remain deterministic and
+  omit this live enrichment. Connection secrets never enter the graph.
 - Asset/header rules shared with type-check (dependency existence,
   materialization metadata, missing output declarations, render failures, and
   resilient asset-parse failures) run once per `(revision, pipeline)` through
@@ -372,7 +377,8 @@ to `parameters.query`, never to the raw YAML content.
   unsafe nullability drift warnings,
   **circular self-reference** (a used relation that resolves to the current
   asset), **cross-connection asset references** (warning when both assets have
-  known, different effective connection names), template-projected diagnostics,
+  known, different effective connection names), **external relations** (warning
+  only after a positive remote-catalog observation), template-projected diagnostics,
   and parser syntax errors. Qualified and unqualified column resolution comes
   from the same semantic validator as pipeline type-check. Saved asset/header
   findings are merged without manufacturing SQL-token ranges. Static Python

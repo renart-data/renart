@@ -50,6 +50,7 @@ const (
 	CodeDeclaredColumnNullabilityDrift  = "declared-column-nullability-drift"
 	CodeUnmaterializedColumn            = "unmaterialized-column"
 	CodeCrossConnectionReference        = "cross-connection-reference"
+	CodeExternalRelation                = "external-relation"
 	CodeDependencyValidationFailed      = "dependency-validation-failed"
 	CodeMissingDependency               = "missing-dependency"
 	CodeInvalidMaterialization          = "invalid-materialization"
@@ -109,6 +110,7 @@ var typeCheckDelivery = map[string]EditorDelivery{
 	CodeDeclaredColumnNullabilityDrift:  DeliveryAssetHeader,
 	CodeUnmaterializedColumn:            DeliveryDocument,
 	CodeCrossConnectionReference:        DeliveryDocument,
+	CodeExternalRelation:                DeliveryDocument,
 	CodeDependencyValidationFailed:      DeliveryAssetHeader,
 	CodeMissingDependency:               DeliveryAssetHeader,
 	CodeInvalidMaterialization:          DeliveryAssetHeader,

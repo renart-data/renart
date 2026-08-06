@@ -519,9 +519,10 @@ than hand-rolled `div` shells.
   server's default project via the unprefixed alias. Two tabs can work on
   different projects against one server.
 - [lib/features.ts](../web/lib/features.ts): project-scoped feature flags.
-  Ingestr surfaces (source connection types, asset kinds) render only when
-  `.renart/project.yml` sets `features.ingestr` or the workspace already
-  contains ingestr assets (see [backend.md](backend.md) §2).
+  Warehouse and S3/GCS object-storage connection types stay configurable in
+  project settings. Ingestr-only source connection types and asset kinds render
+  only when `.renart/project.yml` sets `features.ingestr` or the workspace
+  already contains ingestr assets (see [backend.md](backend.md) §2).
 - [lib/sql-schema.ts](../web/lib/sql-schema.ts): schema context for SQL
   intellisense. It scopes tables using only the effective connection resolved by
   the backend; it never guesses a connection from an asset type or selects an

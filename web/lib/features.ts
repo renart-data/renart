@@ -23,8 +23,8 @@ export function useIngestrEnabled(
 }
 
 /**
- * Connection types offered in pickers: warehouse types always; ingestr/SaaS
- * source types only when the ingestr feature is enabled.
+ * Connection types offered in settings: warehouse and object-storage types
+ * always; ingestr/SaaS source types only when the ingestr feature is enabled.
  */
 export function visibleConnectionTypes(
   types: WorkspaceConfigConnectionType[],

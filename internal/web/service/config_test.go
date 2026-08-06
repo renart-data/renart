@@ -280,6 +280,19 @@ func TestConnectionFieldsPutDetailsBeforeCredentialsAndTuningLast(t *testing.T) 
 	assert.Less(t, indexByName["password"], indexByName["pool_max_conns"])
 }
 
+func TestConnectionTypeCategoriesExposeObjectStorageWithoutIngestr(t *testing.T) {
+	t.Parallel()
+	categories := make(map[string]string)
+	for _, connectionType := range BuildWorkspaceConfigConnectionTypes() {
+		categories[connectionType.TypeName] = connectionType.Category
+	}
+
+	assert.Equal(t, "storage", categories["s3"])
+	assert.Equal(t, "storage", categories["gcs"])
+	assert.Equal(t, "warehouse", categories["postgres"])
+	assert.Equal(t, "source", categories["stripe"])
+}
+
 func TestWorkspaceConnectionErrorsAreRedacted(t *testing.T) {
 	t.Parallel()
 	cfg := &config.Config{

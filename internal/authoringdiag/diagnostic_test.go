@@ -18,6 +18,7 @@ func TestTypeCheckDiagnosticRegistryHasEditorDelivery(t *testing.T) {
 		CodeDeclaredColumnNullabilityDrift,
 		CodeUnmaterializedColumn,
 		CodeCrossConnectionReference,
+		CodeExternalRelation,
 		CodeDependencyValidationFailed,
 		CodeMissingDependency,
 		CodeInvalidMaterialization,

@@ -43,8 +43,9 @@ type WorkspaceConfigConnectionType struct {
 	TypeName string                    `json:"type_name"`
 	Fields   []WorkspaceConfigFieldDef `json:"fields"`
 	// Category is "warehouse" for connection types that can run SQL assets;
-	// everything else (ingestr source connections, SaaS APIs) is "source".
-	// The UI hides "source" types unless the ingestr feature is enabled.
+	// "storage" for object stores usable by native Load/Seed flows; everything
+	// else (ingestr source connections, SaaS APIs) is "source". The UI hides
+	// only "source" types unless the ingestr feature is enabled.
 	Category string `json:"category"`
 }
 
@@ -932,6 +933,8 @@ func BuildWorkspaceConfigConnectionTypes() []WorkspaceConfigConnectionType {
 		category := "source"
 		if warehouse[typeName] {
 			category = "warehouse"
+		} else if loadConnectionCategory(typeName) == LoadCategoryStorage {
+			category = "storage"
 		}
 		items = append(items, WorkspaceConfigConnectionType{
 			TypeName: typeName,
