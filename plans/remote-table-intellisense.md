@@ -1,6 +1,6 @@
 # Remote-table intelligence and external source nodes
 
-Status: partial client support shipped — server/LSP integration proposed
+Status: server/LSP catalog overlay shipped — external nodes and import proposed
 
 ## Goal
 
@@ -21,7 +21,7 @@ is optional and must never block or disable asset-only LSP behavior.
 
 ### What is already shipped
 
-- `/api/sql/databases`, `/api/sql/tables`, and `/api/sql/columns` perform live
+- `/api/sql/databases`, `/api/sql/tables`, and `/api/sql/table-columns` perform live
   discovery for an explicit connection/environment.
 - `sqlDiscoveryTablesAtom` and `sqlDiscoveryColumnsAtom` deduplicate in-flight
   requests and cache successful results for the browser session.
@@ -33,43 +33,57 @@ is optional and must never block or disable asset-only LSP behavior.
   - asset/schema suggestions win deduplication.
 - The older parse-context provider also consumes the same discovery cache on
   surfaces that still enable it.
-- Every SQL LSP request already carries an effective or explicitly selected
-  connection. The workspace carries the selected environment.
+- Every SQL LSP request carries an effective or explicitly selected connection
+  and the selected environment.
 - The canonical LSP graph is revision-cached and intentionally contains only
   deterministic workspace/notebook relations (plus the explicitly gated
-  DuckDB local-file layer). Pure remote warehouse tables are not graph nodes.
+  DuckDB local-file layer).
+- A process-local server catalog cache discovers remote databases/tables in
+  single-flight background work, scoped by connection and environment. It uses
+  a 60-second TTL, five-second timeout, and caps of 32 databases, 2,000
+  relations, and 512 columns per relation. Failed refreshes retain stale
+  positive observations, while failed or partial catalog/column refreshes are
+  retry-limited for ten seconds.
+- Each HTTP LSP request clones relation/schema slices and overlays the immediate
+  snapshot with `remote_catalog` provenance. Authored exact-name collisions
+  win; remote relations rank below authored relations; ambiguous short names
+  require qualification; known columns feed diagnostics/completion/hover and
+  unknown schemas remain non-authoritative.
+- Column discovery is lazy for relations referenced by the current document.
+  The stdio LSP has no provider and remains offline.
 
 ### Gaps
 
 - The first remote completion awaits live discovery and can feel stalled.
-- The session cache has no TTL, invalidation, bounded catalog size, or stale
-  provenance.
-- Partial prefixes and `FROM schema.` do not consistently use remote tables;
-  completion, hover, diagnostics, and navigation see different relation sets.
-- Remote columns are a client-only fallback, so SQL validation cannot use a
-  confirmed live schema.
+- The browser session cache still has no TTL because it remains as a
+  transitional cold-first-completion fallback. Remove it only after live parity
+  proves the server refresh reliably wakes every editor surface.
+- A cold LSP request returns asset-only results immediately; no catalog-ready
+  event currently asks Monaco to rerun an unchanged diagnostic request.
+- Remote navigation has no authored definition target, and observation age is
+  not yet shown in completion/hover detail.
 - The canvas and type-check report have no external-relation model or import
   action.
 - Stdio LSP has no connection manager and must remain deterministic/offline.
 
-## Proposed architecture
+## Shipped foundation and proposed product layers
 
-### 1. Optional non-blocking catalog provider
+### 1. Optional non-blocking catalog provider — shipped
 
 Introduce a provider independent from the LSP engine:
 
 ```go
-type CatalogScope struct {
+type RemoteCatalogScope struct {
     Connection  string
     Environment string
     Database    string
 }
 
-type RemoteRelation struct {
+type RemoteCatalogRelation struct {
     QualifiedName string
     Schema        string
     Name          string
-    Columns       []RemoteColumn
+    Columns       []SQLColumn
     ColumnsKnown  bool
 }
 
@@ -81,22 +95,25 @@ type RemoteCatalogSnapshot struct {
 }
 
 type RemoteCatalogProvider interface {
-    Snapshot(scope CatalogScope) RemoteCatalogSnapshot // immediate, no I/O
-    Refresh(scope CatalogScope)                           // single-flight background work
+    Snapshot(scope RemoteCatalogScope) RemoteCatalogSnapshot // immediate, no I/O
+    Refresh(ctx context.Context, scope RemoteCatalogScope)    // schedules background work
+    RefreshColumns(ctx context.Context, scope RemoteCatalogScope, relation string)
 }
 ```
 
 The implementation reuses the existing backend connection discovery, keyed by
 connection/environment/database. It returns cached-or-empty immediately and
 starts at most one bounded refresh for a missing/stale scope. Failures retain
-the previous snapshot and are rate-limited in logs. Entries have a TTL, maximum
+the previous snapshot and retries are rate-limited. Entries have a TTL, maximum
 relation/column counts, and explicit completeness; a partial catalog can prove
 presence but never absence.
 
 No provider means current asset-only behavior. The stdio server uses no
-provider unless a future host explicitly supplies one.
+provider unless a future host explicitly supplies one. The first version spans
+all discovered databases for the connection and uses fixed safe caps rather
+than prefix pagination.
 
-### 2. Per-request graph overlay
+### 2. Per-request graph overlay — shipped, cleanup remaining
 
 After cloning the revision-cached canonical graph, `SQLLSPService` resolves the
 request's effective connection/environment and overlays the latest catalog
@@ -104,15 +121,15 @@ snapshot:
 
 1. Skip any remote relation colliding case-insensitively with a logical asset
    relation or query-local relation.
-2. Tag nodes `Provenance.Kind = remote_catalog` plus connection, environment,
-   observation time, and schema completeness.
+2. Tag nodes with `Provenance.Provider = remote_catalog`, the safe connection
+   name, and low confidence; observation age is still a follow-up.
 3. Rank remote relations below assets but above generic keywords.
 4. Apply known remote columns with live/low-confidence provenance. Unknown
    columns keep the relation resolvable without enabling unresolved-column
    checks.
 
 This makes partial prefixes, `FROM schema.`, aliases, hover, and semantic tokens
-use one relation model. Once the overlay is complete, remove both client-side
+use one relation model. Once live parity is complete, remove both client-side
 remote table and column merge branches from `use-sql-lsp.ts`; the browser keeps
 the discovery APIs for catalog/settings/object pickers.
 
@@ -174,9 +191,11 @@ The current type-check resolution payload supports semantic edits to one asset.
 Extend it with a separately typed server action before adding import; do not
 encode file creation as an `AssetTransaction`.
 
-Bruin's importer currently names a placeholder after the physical
-`schema.table`. Supporting a different logical name depends on
-`physical-output-names.md` and should not be improvised here.
+Bruin's importer currently proposes the physical `schema.table` as the asset
+name. A different logical name can use Bruin's native explicit `name:` while
+the generated file stays in a separately chosen folder; see
+`asset-name-path-independence.md`. This does not create a second physical
+output identity.
 
 ## Resilience and security
 
@@ -208,23 +227,23 @@ Bruin's importer currently names a placeholder after the physical
 
 ## Rollout
 
-1. Add the provider/cache and observability with no LSP consumers.
-2. Overlay remote relations/columns per request and remove client-side merge
-   paths after parity tests pass.
+1. **Done:** add the bounded provider/cache and tests.
+2. **Mostly done:** overlay remote relations/columns per request. Add a
+   catalog-ready invalidation/live test, then remove client-side merge paths.
 3. Add the external-relation workspace DTO and canvas nodes.
 4. Extract Bruin's single-table import library API; add preview/confirm endpoint
    and structured type-check resolution.
 5. Add live tests, document shipped behavior, fold it into
    `architecture/sql-lsp.md`, and delete this plan.
 
-## Decisions required before implementation
+## Decisions for the remaining phases
 
-1. Catalog TTL, result caps, and whether stale entries remain visible by
-   default. Suggested starting point: 60 seconds, 5-second refresh timeout, and
-   an explicit cap with prefix-filtered follow-up discovery.
-2. Default database scope for engines exposing multiple databases/catalogs.
-3. Whether external nodes appear immediately from SQL text as “unverified” or
+The catalog foundation uses the accepted starting defaults: 60-second TTL,
+five-second timeout, stale-positive retention, explicit caps, and all discovered
+databases within the cap. Prefix pagination remains follow-up work.
+
+1. Whether external nodes appear immediately from SQL text as “unverified” or
    only after a positive catalog observation. Recommended: positive observation
    only for the first release.
-4. Whether “Import source asset” imports columns by default. Recommended: yes,
+2. Whether “Import source asset” imports columns by default. Recommended: yes,
    with a review preview and a no-columns escape hatch.

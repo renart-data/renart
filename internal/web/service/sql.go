@@ -71,11 +71,19 @@ type SQLDependencies struct {
 }
 
 type SQLService struct {
-	deps SQLDependencies
+	deps            SQLDependencies
+	catalogObserver RemoteCatalogObserver
 }
 
 func NewSQLService(deps SQLDependencies) *SQLService {
 	return &SQLService{deps: deps}
+}
+
+// SetRemoteCatalogObserver is server-startup wiring. It is called before the
+// HTTP server accepts requests so explicit table/column discovery can warm the
+// LSP's process-local catalog without a second warehouse round trip.
+func (s *SQLService) SetRemoteCatalogObserver(observer RemoteCatalogObserver) {
+	s.catalogObserver = observer
 }
 
 func (s *SQLService) ColumnValues(ctx context.Context, connectionName, environment, query string) SQLColumnValuesResult {
@@ -188,13 +196,20 @@ func (s *SQLService) Tables(ctx context.Context, connectionName, databaseName, e
 		return SQLTableDiscoveryResult{}, &APIError{Status: http.StatusBadRequest, Code: "connection_type_not_supported", Message: fmt.Sprintf("connection '%s' does not support table discovery", connectionName)}
 	}
 
-	return SQLTableDiscoveryResult{
+	result := SQLTableDiscoveryResult{
 		Status:         "ok",
 		ConnectionName: connectionName,
 		ConnectionType: strings.TrimSpace(manager.GetConnectionType(connectionName)),
 		Database:       databaseName,
 		Tables:         tables,
-	}, nil
+	}
+	if s.catalogObserver != nil {
+		s.catalogObserver.ObserveTables(RemoteCatalogScope{
+			Connection:  connectionName,
+			Environment: environment,
+		}, tables)
+	}
+	return result, nil
 }
 
 func (s *SQLService) TableColumns(ctx context.Context, connectionName, tableName, environment string) (SQLTableColumnsResult, int) {
@@ -218,14 +233,22 @@ func (s *SQLService) TableColumns(ctx context.Context, connectionName, tableName
 		}, http.StatusBadRequest
 	}
 
-	return SQLTableColumnsResult{
+	columns := InferSQLColumnsFromQueryOutput(output)
+	result := SQLTableColumnsResult{
 		Status:         "ok",
 		ConnectionName: connectionName,
 		Table:          tableName,
-		Columns:        InferSQLColumnsFromQueryOutput(output),
+		Columns:        columns,
 		RawOutput:      string(output),
 		Operation:      operation,
-	}, http.StatusOK
+	}
+	if s.catalogObserver != nil {
+		s.catalogObserver.ObserveColumns(RemoteCatalogScope{
+			Connection:  connectionName,
+			Environment: environment,
+		}, tableName, columns)
+	}
+	return result, http.StatusOK
 }
 
 func BuildSQLDiscoveryTableItems(databaseName string, tables map[string][]string) []SQLDiscoveryTableItem {

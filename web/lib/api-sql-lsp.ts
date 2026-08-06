@@ -90,6 +90,7 @@ export type SQLLSPRequest = {
   asset_id: string;
   content: string;
   connection?: string;
+  environment?: string;
   document_context?: "asset" | "adhoc" | "custom_check" | "hook";
   position?: SQLLSPPosition;
   include_declaration?: boolean;

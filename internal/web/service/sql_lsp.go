@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +16,7 @@ import (
 
 	"renart/internal/authoringdiag"
 	"renart/internal/sqlformat"
+	"renart/internal/sqlintelligence"
 	"renart/internal/sqllsp"
 	"renart/internal/web/model"
 )
@@ -22,6 +25,7 @@ type SQLLSPRequest struct {
 	AssetID            string                   `json:"asset_id"`
 	Content            string                   `json:"content"`
 	Connection         string                   `json:"connection,omitempty"`
+	Environment        string                   `json:"environment,omitempty"`
 	DocumentContext    string                   `json:"document_context,omitempty"`
 	Position           sqllsp.Position          `json:"position,omitempty"`
 	IncludeDeclaration bool                     `json:"include_declaration,omitempty"`
@@ -49,6 +53,7 @@ type SQLLSPDependencies struct {
 	DisableFilesystemAccess bool
 	CurrentState            func() model.WorkspaceState
 	ResolveAssetByID        func(context.Context, string) (string, *pipeline.Pipeline, *pipeline.Asset, error)
+	RemoteCatalog           RemoteCatalogProvider
 	// PolyglotClient returns a shared SQL validation client, or nil when one is
 	// not (yet) available. It is consulted on every request so an
 	// asynchronously-loaded client is picked up as soon as it is ready. May be
@@ -455,8 +460,166 @@ func (s *SQLLSPService) graphAndDocument(ctx context.Context, req SQLLSPRequest)
 	if connection := strings.TrimSpace(req.Connection); connection != "" {
 		graph = graphWithDocumentConnection(graph, doc.URI, connection, state.Connections)
 	}
+	graph = s.enrichRemoteCatalog(ctx, graph, doc, req.Environment, state.SelectedEnvironment)
 	graph = s.enrichDuckDBFileRelations(ctx, graph, doc, graphDocumentDialect(graph, doc.URI))
 	return graph, doc, nil
+}
+
+const maxRemoteCatalogColumnRefreshesPerRequest = 8
+
+// enrichRemoteCatalog overlays only the provider's immediate snapshot onto a
+// fresh request graph. Refreshes are scheduled in the background, so a cold or
+// failing warehouse never delays asset-only LSP behavior. The revision-cached
+// graph is never mutated.
+func (s *SQLLSPService) enrichRemoteCatalog(
+	ctx context.Context,
+	graph sqllsp.CanonicalGraph,
+	doc sqllsp.TextDocumentItem,
+	requestEnvironment string,
+	selectedEnvironment string,
+) sqllsp.CanonicalGraph {
+	provider := s.deps.RemoteCatalog
+	connection := graphDocumentConnection(graph, doc.URI)
+	if provider == nil || connection == "" {
+		return graph
+	}
+	environment := strings.TrimSpace(requestEnvironment)
+	if environment == "" {
+		environment = strings.TrimSpace(selectedEnvironment)
+	}
+	scope := RemoteCatalogScope{Connection: connection, Environment: environment}
+	snapshot := provider.Snapshot(scope)
+	provider.Refresh(ctx, scope)
+
+	if len(snapshot.Relations) > 0 {
+		query := doc.Text
+		if doc.Projection != nil && strings.TrimSpace(doc.Projection.RenderedSQL) != "" {
+			query = doc.Projection.RenderedSQL
+		}
+		if relations, err := sqlintelligence.UsedTablesContext(ctx, query, graphDocumentDialect(graph, doc.URI)); err == nil {
+			for index, relation := range relations {
+				if index >= maxRemoteCatalogColumnRefreshesPerRequest {
+					break
+				}
+				provider.RefreshColumns(ctx, scope, relation)
+			}
+		}
+	}
+
+	return graphWithRemoteCatalogSnapshot(graph, scope, snapshot)
+}
+
+func graphDocumentConnection(graph sqllsp.CanonicalGraph, documentURI sqllsp.URI) string {
+	for _, asset := range graph.Assets {
+		if asset.URI == documentURI {
+			return strings.TrimSpace(asset.Connection)
+		}
+	}
+	return ""
+}
+
+func graphWithRemoteCatalogSnapshot(
+	graph sqllsp.CanonicalGraph,
+	scope RemoteCatalogScope,
+	snapshot RemoteCatalogSnapshot,
+) sqllsp.CanonicalGraph {
+	if len(snapshot.Relations) == 0 {
+		return graph
+	}
+	result := graph
+	result.Relations = append([]sqllsp.RelationNode(nil), graph.Relations...)
+	result.Schemas = append([]sqllsp.SchemaLayer(nil), graph.Schemas...)
+
+	knownNames := make(map[string]struct{}, len(graph.Relations))
+	for _, relation := range graph.Relations {
+		knownNames[strings.ToLower(strings.TrimSpace(relation.Name))] = struct{}{}
+	}
+	remoteAliasCounts := make(map[string]int)
+	remoteFullNames := make(map[string]struct{}, len(snapshot.Relations))
+	for _, remote := range snapshot.Relations {
+		spellings := remoteCatalogRelationSpellings(remote)
+		if len(spellings) > 0 {
+			remoteFullNames[strings.ToLower(spellings[0])] = struct{}{}
+		}
+		for _, alias := range spellings[1:] {
+			remoteAliasCounts[strings.ToLower(alias)]++
+		}
+	}
+	for _, remote := range snapshot.Relations {
+		name := strings.TrimSpace(remote.QualifiedName)
+		if name == "" {
+			continue
+		}
+		relationID := remoteCatalogRelationID(scope, name)
+		provenance := []sqllsp.Provenance{{
+			Provider:   "remote_catalog",
+			ProviderID: scope.Connection,
+			Confidence: "low",
+		}}
+		added := false
+		for spellingIndex, spelling := range remoteCatalogRelationSpellings(remote) {
+			normalized := strings.ToLower(spelling)
+			if spellingIndex > 0 {
+				if remoteAliasCounts[normalized] != 1 {
+					continue
+				}
+				if _, collidesWithFullName := remoteFullNames[normalized]; collidesWithFullName {
+					continue
+				}
+			}
+			if _, collides := knownNames[normalized]; collides {
+				continue
+			}
+			knownNames[normalized] = struct{}{}
+			result.Relations = append(result.Relations, sqllsp.RelationNode{
+				ID:         relationID,
+				Name:       spelling,
+				Provenance: provenance,
+			})
+			added = true
+		}
+		if !added {
+			continue
+		}
+		columns := make([]sqllsp.ColumnInfo, 0, len(remote.Columns))
+		for _, column := range remote.Columns {
+			if columnName := strings.TrimSpace(column.Name); columnName != "" {
+				columns = append(columns, sqllsp.ColumnInfo{Name: columnName, Type: strings.TrimSpace(column.Type)})
+			}
+		}
+		completeness := "unknown"
+		if remote.ColumnsKnown {
+			completeness = "complete"
+		}
+		result.Schemas = append(result.Schemas, sqllsp.SchemaLayer{
+			RelationID:   relationID,
+			SourceKind:   "live",
+			Completeness: completeness,
+			Confidence:   "low",
+			Columns:      columns,
+			Provenance:   provenance,
+		})
+	}
+	return result
+}
+
+func remoteCatalogRelationSpellings(relation RemoteCatalogRelation) []string {
+	qualified := strings.TrimSpace(relation.QualifiedName)
+	result := []string{qualified}
+	schema := strings.TrimSpace(relation.SchemaName)
+	short := strings.TrimSpace(relation.ShortName)
+	if schema != "" && short != "" {
+		schemaQualified := schema + "." + short
+		if !strings.EqualFold(schemaQualified, qualified) {
+			result = append(result, schemaQualified)
+		}
+	}
+	return result
+}
+
+func remoteCatalogRelationID(scope RemoteCatalogScope, name string) string {
+	digest := sha256.Sum256([]byte(strings.ToLower(scope.Connection) + "\x00" + strings.ToLower(scope.Environment) + "\x00" + strings.ToLower(name)))
+	return "relation:remote_catalog:" + hex.EncodeToString(digest[:12])
 }
 
 func (s *SQLLSPService) newEngine(graph sqllsp.CanonicalGraph) *sqllsp.Engine {

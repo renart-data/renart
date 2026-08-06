@@ -96,10 +96,46 @@ func NewEngineWithOptions(graph CanonicalGraph, options EngineOptions) *Engine {
 		idx.assetsByName[strings.ToLower(path.Base(asset.Name))] = asset
 	}
 	for _, relation := range graph.Relations {
-		idx.relationsByName[strings.ToLower(relation.Name)] = relation
-		idx.relationsByName[strings.ToLower(shortName(relation.Name))] = relation
+		key := strings.ToLower(relation.Name)
+		if current, exists := idx.relationsByName[key]; !exists || (isRemoteCatalogRelation(current) && !isRemoteCatalogRelation(relation)) {
+			idx.relationsByName[key] = relation
+		}
 		if asset, ok := assetsByID[relation.AssetID]; ok {
 			idx.assetByRelationID[relation.ID] = asset
+		}
+	}
+	shortCandidates := make(map[string][]RelationNode)
+	for _, relation := range graph.Relations {
+		key := strings.ToLower(shortName(relation.Name))
+		duplicateAlias := false
+		for _, current := range shortCandidates[key] {
+			if relation.ID != "" && current.ID == relation.ID {
+				duplicateAlias = true
+				break
+			}
+		}
+		if !duplicateAlias {
+			shortCandidates[key] = append(shortCandidates[key], relation)
+		}
+	}
+	for key, candidates := range shortCandidates {
+		// A relation whose full name is already this key is the least ambiguous
+		// interpretation. Otherwise a unique authored relation wins over live
+		// catalog entries. Ambiguous remote short names require qualification.
+		if _, exact := idx.relationsByName[key]; exact {
+			continue
+		}
+		var authored []RelationNode
+		for _, candidate := range candidates {
+			if !isRemoteCatalogRelation(candidate) {
+				authored = append(authored, candidate)
+			}
+		}
+		switch {
+		case len(authored) == 1:
+			idx.relationsByName[key] = authored[0]
+		case len(authored) == 0 && len(candidates) == 1:
+			idx.relationsByName[key] = candidates[0]
 		}
 	}
 	for _, schema := range graph.Schemas {
@@ -1634,7 +1670,19 @@ func (e *Engine) assetCompletions() []CompletionItem {
 func (e *Engine) relationCompletions() []CompletionItem {
 	items := make([]CompletionItem, 0, len(e.graph.Relations))
 	for _, relation := range e.graph.Relations {
-		items = append(items, CompletionItem{Label: relation.Name, Kind: completionKindReference, Detail: "relation", InsertText: relation.Name})
+		detail := "relation"
+		sortPrefix := "0"
+		if isRemoteCatalogRelation(relation) {
+			detail = "remote warehouse relation"
+			sortPrefix = "1"
+		}
+		items = append(items, CompletionItem{
+			Label:      relation.Name,
+			Kind:       completionKindReference,
+			Detail:     detail,
+			InsertText: relation.Name,
+			SortText:   sortPrefix + strings.ToLower(relation.Name),
+		})
 	}
 	sortCompletionItems(items)
 	return items
@@ -1655,11 +1703,18 @@ func (e *Engine) relationCompletionsInSchema(schema string) []CompletionItem {
 		if !strings.HasPrefix(strings.ToLower(relation.Name), prefix) {
 			continue
 		}
+		detail := "relation"
+		sortPrefix := "0"
+		if isRemoteCatalogRelation(relation) {
+			detail = "remote warehouse relation"
+			sortPrefix = "1"
+		}
 		items = append(items, CompletionItem{
 			Label:      relation.Name,
 			Kind:       completionKindReference,
-			Detail:     "relation",
+			Detail:     detail,
 			InsertText: relation.Name[len(prefix):],
+			SortText:   sortPrefix + strings.ToLower(relation.Name),
 		})
 	}
 	sortCompletionItems(items)
@@ -1857,6 +1912,14 @@ func (e *Engine) aliasHover(alias string, ref aliasRef) string {
 func (e *Engine) relationHover(relation RelationNode) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "**%s**", relation.Name)
+	if isRemoteCatalogRelation(relation) {
+		connection := remoteCatalogConnection(relation)
+		if connection == "" {
+			b.WriteString("\n\nRemote warehouse catalog")
+		} else {
+			fmt.Fprintf(&b, "\n\nRemote warehouse catalog on `%s`", connection)
+		}
+	}
 	columns := e.columnsForRelation(relation.ID)
 	if len(columns) > 0 {
 		b.WriteString("\n\n**Columns**")
@@ -1868,6 +1931,24 @@ func (e *Engine) relationHover(relation RelationNode) string {
 		}
 	}
 	return b.String()
+}
+
+func isRemoteCatalogRelation(relation RelationNode) bool {
+	for _, provenance := range relation.Provenance {
+		if strings.EqualFold(strings.TrimSpace(provenance.Provider), "remote_catalog") {
+			return true
+		}
+	}
+	return false
+}
+
+func remoteCatalogConnection(relation RelationNode) string {
+	for _, provenance := range relation.Provenance {
+		if strings.EqualFold(strings.TrimSpace(provenance.Provider), "remote_catalog") {
+			return strings.TrimSpace(provenance.ProviderID)
+		}
+	}
+	return ""
 }
 
 func columnHover(source string, column ColumnInfo) string {

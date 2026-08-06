@@ -90,6 +90,21 @@ coordinator's `WorkspaceState` rather than the filesystem:
   every mutation). Editing issues LSP requests per keystroke against the same
   saved state, so rebuilding per request was wasted work. `Revision == 0`
   (unmanaged/initial state) is never cached.
+- The HTTP adapter has an optional process-local **remote catalog cache** keyed
+  by connection and environment. Every request reads its snapshot without I/O,
+  schedules a single-flight background refresh when it is cold or older than
+  60 seconds, and overlays positively observed relations onto fresh relation
+  and schema slices. Refreshes time out after five seconds and are bounded to
+  32 databases, 2,000 relations, and 512 columns per relation; a failed refresh
+  retains the previous stale snapshot, and failed/partial catalog or column
+  discovery is retry-limited for ten seconds so editor requests cannot fan out
+  warehouse work. Known columns participate in the same
+  completion, hover, and semantic validation paths as authored schemas, while
+  an observed relation whose columns have not been fetched remains resolvable
+  without enabling unknown-column checks. Authored relations win exact-name
+  collisions, remote completions rank below authored relations, and ambiguous
+  remote short names require qualification. The stdio LSP supplies no provider
+  and remains deterministic/offline. Connection secrets never enter the graph.
 - Asset/header rules shared with type-check (dependency existence,
   materialization metadata, missing output declarations, render failures, and
   resilient asset-parse failures) run once per `(revision, pipeline)` through
@@ -344,8 +359,12 @@ to `parameters.query`, never to the raw YAML content.
   relation, and keyword completion is suppressed while the cursor is inside a
   single-quoted SQL string; explicit path and data-value suggestion flows retain
   their narrower behavior.
-  Purely-remote warehouse tables (no backing asset) are
-  not yet completed from the LSP — see `plans/remote-table-intellisense.md`.
+  Purely-remote warehouse tables (no backing asset) come from the optional
+  backend catalog overlay. The browser temporarily retains its older live
+  discovery fallback for a cold first request; warm relation and column results
+  are served by the LSP and deduplicate ahead of that fallback. External canvas
+  nodes and source-asset import remain in
+  `plans/remote-table-intellisense.md`.
 - **Diagnostics**: unresolved relation / alias / column (column checks only fire
   when the relation's columns are known from asset SQL or declared metadata),
   ambiguous unqualified columns in multi-relation scopes, Polyglot expression

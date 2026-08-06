@@ -117,6 +117,7 @@ export function useSQLLSP(
         asset_id: current.asset?.id ?? asset.id,
         content,
         connection: current.connectionName ?? undefined,
+        environment: current.selectedEnvironment,
         document_context: documentContext,
       };
     };

@@ -368,6 +368,33 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		NewConnectionManager: server.newConnectionManager,
 		RunConnectionQuery:   server.executionSvc.RunConnectionQueryForEnvironment,
 	})
+	remoteCatalog := service.NewRemoteCatalogCache(service.RemoteCatalogDependencies{
+		DiscoverDatabases: func(ctx context.Context, connection, environment string) ([]string, error) {
+			result, apiErr := server.sqlSvc.Databases(ctx, connection, environment)
+			if apiErr != nil {
+				return nil, errors.New(apiErr.Message)
+			}
+			return result.Databases, nil
+		},
+		DiscoverTables: func(ctx context.Context, connection, database, environment string) ([]service.SQLDiscoveryTableItem, error) {
+			result, apiErr := server.sqlSvc.Tables(ctx, connection, database, environment)
+			if apiErr != nil {
+				return nil, errors.New(apiErr.Message)
+			}
+			return result.Tables, nil
+		},
+		DiscoverColumns: func(ctx context.Context, connection, table, environment string) ([]service.SQLColumn, error) {
+			result, status := server.sqlSvc.TableColumns(ctx, connection, table, environment)
+			if status < http.StatusOK || status >= http.StatusMultipleChoices || result.Status != "ok" {
+				if strings.TrimSpace(result.Error) != "" {
+					return nil, errors.New(result.Error)
+				}
+				return nil, fmt.Errorf("column discovery failed with status %d", status)
+			}
+			return result.Columns, nil
+		},
+	})
+	server.sqlSvc.SetRemoteCatalogObserver(remoteCatalog)
 
 	server.loadSvc = service.NewLoadService(service.LoadDependencies{
 		WorkspaceRoot:        absRoot,
@@ -425,6 +452,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		CurrentState: func() service.WorkspaceState {
 			return server.currentState()
 		},
+		RemoteCatalog:  remoteCatalog,
 		PolyglotClient: service.NewLazyPolyglotClient(),
 	})
 	sqlformat.PrewarmPolyglotCompiler()
