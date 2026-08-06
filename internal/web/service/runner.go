@@ -116,6 +116,8 @@ type ImportDatabaseRequest struct {
 	Schemas        []string
 	Tables         []string
 	DisableColumns bool
+	PreviewOnly    bool
+	RejectExisting bool
 	Environment    string
 	ConfigFilePath string
 }

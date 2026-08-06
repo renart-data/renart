@@ -109,7 +109,11 @@ import { WorkspaceMaterializeOutputView } from "@/components/workspace-materiali
 import { Spinner } from "@/components/ui/spinner";
 import { runSQLQuery } from "@/lib/api-sql-discovery";
 import type { PipelineRunSource } from "@/lib/api-scheduler";
-import { typeCheckPipeline, type PipelineTypeCheckReport } from "@/lib/api-pipelines";
+import {
+  typeCheckPipeline,
+  type PipelineTypeCheckExternalRelation,
+  type PipelineTypeCheckReport,
+} from "@/lib/api-pipelines";
 import { renderPipelineAsset, type AssetRenderResult } from "@/lib/api-asset-render";
 import { assetPresentationFields } from "@/lib/asset-presentation";
 import {
@@ -177,6 +181,7 @@ import {
 import { NewNotebookDialog } from "./new-notebook-dialog";
 import { PipelineSettingsDialog, type PipelineSettingsSection } from "./pipeline-settings-dialog";
 import { TypeCheckPanel } from "./type-check-panel";
+import { ExternalRelationImportDialog } from "./external-relation-import-dialog";
 import {
   AppPage,
   AppPanel,
@@ -246,6 +251,8 @@ type BuildAsset = AppLineageCanvasAsset & {
   type?: string;
   connection?: string;
   upstreams?: string[];
+  readOnly?: boolean;
+  externalRelation?: PipelineTypeCheckExternalRelation;
 };
 
 type AssetRenderSourceState = {
@@ -277,6 +284,7 @@ type BuildContextValue = {
   createDownstreamAsset: (source: { id: string; name: string }) => void;
   openInspector: () => void;
   reviewFailedCheck: (assetId: string) => void;
+  importExternalRelation: (relationId: string) => void;
   openBottom: (tab: AppResultTab) => void;
   materializeSelectedAsset: () => void;
   fullRefreshSelectedAsset: () => void;
@@ -458,6 +466,7 @@ export function AppBuildPage({
   const [typeCheckReport, setTypeCheckReport] = useState<PipelineTypeCheckReport | null>(null);
   const [typeCheckLoading, setTypeCheckLoading] = useState(false);
   const [typeCheckError, setTypeCheckError] = useState<string | null>(null);
+  const [externalRelationImportId, setExternalRelationImportId] = useState<string | null>(null);
   const [adhocResult, setAdhocResult] = useState<SqlQueryResponse | null>(null);
   const [adhocRenderedQuery, setAdhocRenderedQuery] = useState<string | null>(null);
   const [adhocLoading, setAdhocLoading] = useState(false);
@@ -478,18 +487,61 @@ export function AppBuildPage({
       ),
     [typeCheckReport],
   );
-  const displayedPipelineAssets = useMemo(
-    () =>
-      pipelineAssets.map((asset) => ({
-        ...asset,
-        status: materializationStatusByAssetId[asset.id]?.status ?? asset.status,
-        materializedAt: labelForAppMaterializationState(materializationStatusByAssetId[asset.id]),
-        staleness: staleness.byAssetName[asset.name],
-        hasTypeCheckError:
-          typeCheckErrorAssetIds.has(asset.id) || typeCheckErrorAssetIds.has(asset.name),
-      })),
-    [materializationStatusByAssetId, pipelineAssets, staleness.byAssetName, typeCheckErrorAssetIds],
-  );
+  const displayedPipelineAssets = useMemo(() => {
+    const authored = pipelineAssets.map((asset) => ({
+      ...asset,
+      status: materializationStatusByAssetId[asset.id]?.status ?? asset.status,
+      materializedAt: labelForAppMaterializationState(materializationStatusByAssetId[asset.id]),
+      staleness: staleness.byAssetName[asset.name],
+      hasTypeCheckError:
+        typeCheckErrorAssetIds.has(asset.id) || typeCheckErrorAssetIds.has(asset.name),
+    }));
+    const externalRelations = typeCheckReport?.external_relations ?? [];
+    if (externalRelations.length === 0) return authored;
+
+    const externalByConsumer = new Map<string, string[]>();
+    for (const relation of externalRelations) {
+      for (const id of relation.referenced_by_asset_ids) {
+        externalByConsumer.set(id, [...(externalByConsumer.get(id) ?? []), relation.id]);
+      }
+      for (const name of relation.referenced_by_asset_names) {
+        externalByConsumer.set(name, [...(externalByConsumer.get(name) ?? []), relation.id]);
+      }
+    }
+    const consumers = authored.map((asset) => ({
+      ...asset,
+      upstreams: [
+        ...(asset.upstreams ?? []),
+        ...(externalByConsumer.get(asset.id) ?? externalByConsumer.get(asset.name) ?? []),
+      ],
+    }));
+    const externalNodes: BuildAsset[] = externalRelations.map((relation) => ({
+      id: relation.id,
+      name: relation.qualified_name,
+      displayName: relation.name || relation.qualified_name,
+      prefix: `External · ${relation.connection}`,
+      group: `External · ${relation.connection}`,
+      kind: "source",
+      integration: relation.connection,
+      description: `Observed on ${relation.connection}${relation.environment ? ` in ${relation.environment}` : ""}`,
+      status: "unknown",
+      materializedAt: relation.stale ? "stale catalog observation" : "remote catalog",
+      connection: relation.connection,
+      upstreams: [],
+      readOnly: true,
+      isExternal: true,
+      externalRelation: relation,
+      x: 0,
+      y: 0,
+    }));
+    return [...consumers, ...externalNodes];
+  }, [
+    materializationStatusByAssetId,
+    pipelineAssets,
+    staleness.byAssetName,
+    typeCheckErrorAssetIds,
+    typeCheckReport?.external_relations,
+  ]);
   // Transitive stale upstreams of an asset, walked over the dependency graph.
   // Materializing an asset while these are stale reads their outdated tables, so
   // the asset cannot become fresh — we warn before building (§9 / §17).
@@ -1214,6 +1266,7 @@ export function AppBuildPage({
     createDownstreamAsset,
     openInspector: () => setInspectorOpen(true),
     reviewFailedCheck,
+    importExternalRelation: setExternalRelationImportId,
     openBottom,
     materializeSelectedAsset,
     fullRefreshSelectedAsset,
@@ -1323,6 +1376,7 @@ export function AppBuildPage({
                 typeCheckError={typeCheckError}
                 onRunTypeCheck={() => void runTypeCheck(false)}
                 onSelectAsset={selectAsset}
+                onImportExternalRelation={setExternalRelationImportId}
                 inspectResult={assetResults.inspectResult}
                 inspectLoading={assetResults.inspectLoading}
                 renderResult={visibleAssetRenderResult}
@@ -1458,6 +1512,14 @@ export function AppBuildPage({
           pipelineId={pipelineId}
           initialSection={pipelineSettingsSection}
           highlightedVariable={pipelineSettingsVariable}
+        />
+        <ExternalRelationImportDialog
+          pipelineId={activePipeline.id}
+          relationId={externalRelationImportId}
+          onOpenChange={(open) => {
+            if (!open) setExternalRelationImportId(null);
+          }}
+          onImported={() => runTypeCheck(false)}
         />
         <Dialog
           open={destructiveMaterializationPrompt !== null}
@@ -1932,10 +1994,11 @@ function Explorer({
   const [assetFilter, setAssetFilter] = useState("");
   const normalizedAssetFilter = assetFilter.trim().toLowerCase();
   const filteredAssets = useMemo(() => {
+    const authoredAssets = pipelineAssets.filter((asset) => !asset.readOnly);
     if (!normalizedAssetFilter) {
-      return pipelineAssets;
+      return authoredAssets;
     }
-    return pipelineAssets.filter((asset) =>
+    return authoredAssets.filter((asset) =>
       [
         asset.name,
         asset.displayName,
@@ -2222,6 +2285,7 @@ function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) =>
     goToCatalog,
     openPipelineConnections,
     reviewFailedCheck,
+    importExternalRelation,
   } = useBuildContext();
   const sqlHoveredAssetId = useAtomValue(sqlHoveredAssetAtom);
   return (
@@ -2236,6 +2300,7 @@ function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) =>
       onGoToAsset={(assetId) => goToCatalog(assetId)}
       onAssetConnectionClick={() => openPipelineConnections()}
       onReviewFailedCheck={reviewFailedCheck}
+      onImportExternalRelation={importExternalRelation}
       goToLabel="Open in catalog"
       onCreateAsset={({ prefix }) => openNewAssetInGroup(prefix)}
       onCreateDownstream={(assetId) => {
@@ -2677,6 +2742,7 @@ function ResultsPanel({
   typeCheckError,
   onRunTypeCheck,
   onSelectAsset,
+  onImportExternalRelation,
   inspectResult,
   inspectLoading,
   renderResult,
@@ -2702,6 +2768,7 @@ function ResultsPanel({
   typeCheckError?: string | null;
   onRunTypeCheck?: () => void;
   onSelectAsset?: (assetId: string) => void;
+  onImportExternalRelation?: (relationId: string) => void;
   inspectResult: AssetInspectResponse | null;
   inspectLoading: boolean;
   renderResult: AssetRenderResult | null;
@@ -2863,6 +2930,7 @@ function ResultsPanel({
             error={typeCheckError ?? null}
             onRun={onRunTypeCheck}
             onSelectAsset={onSelectAsset}
+            onResolutionAction={(action) => onImportExternalRelation?.(action.relation_id)}
           />
         </TabsContent>
       </Tabs>

@@ -230,13 +230,17 @@ materialization:
 select order_id from external.orders
 `,
 	})
-	provider := &stubRemoteCatalogProvider{snapshot: RemoteCatalogSnapshot{Relations: []RemoteCatalogRelation{{
-		QualifiedName: "external.orders",
-		ShortName:     "orders",
-		SchemaName:    "external",
-		ColumnsKnown:  true,
-		Columns:       []SQLColumn{{Name: "order_id", Type: "bigint"}},
-	}}}}
+	observedAt := time.Date(2026, 8, 7, 8, 30, 0, 0, time.UTC)
+	provider := &stubRemoteCatalogProvider{snapshot: RemoteCatalogSnapshot{
+		ObservedAt: observedAt,
+		Relations: []RemoteCatalogRelation{{
+			QualifiedName: "external.orders",
+			ShortName:     "orders",
+			SchemaName:    "external",
+			ColumnsKnown:  true,
+			Columns:       []SQLColumn{{Name: "order_id", Type: "bigint"}},
+		}},
+	}}
 	tw, err := ResolveExecutionTimeWindow(string(parsed.Schedule), "", "", time.Now().UTC())
 	require.NoError(t, err)
 	report := checkPipelineAt(
@@ -257,6 +261,29 @@ select order_id from external.orders
 		assert.NotEqual(t, authoringdiag.CodeUnresolvedRelation, finding.Code, finding.Message)
 		assert.NotEqual(t, authoringdiag.CodeUnresolvedColumn, finding.Code, finding.Message)
 	}
+	externalFinding := asset.Findings[0]
+	for _, finding := range asset.Findings {
+		if finding.Code == authoringdiag.CodeExternalRelation {
+			externalFinding = finding
+			break
+		}
+	}
+	require.Len(t, externalFinding.Resolutions, 1)
+	require.NotNil(t, externalFinding.Resolutions[0].Action)
+	assert.Equal(t, typeCheckResolutionActionImportExternalRelation, externalFinding.Resolutions[0].Action.Type)
+	require.Len(t, report.ExternalRelations, 1)
+	external := report.ExternalRelations[0]
+	assert.Equal(t, externalFinding.Resolutions[0].Action.RelationID, external.ID)
+	assert.Equal(t, "duckdb-default", external.Connection)
+	assert.Equal(t, "dev", external.Environment)
+	assert.Equal(t, "external.orders", external.QualifiedName)
+	assert.Equal(t, "external", external.SchemaName)
+	assert.Equal(t, "orders", external.Name)
+	assert.True(t, external.ColumnsKnown)
+	assert.Equal(t, []SQLColumn{{Name: "order_id", Type: "bigint"}}, external.Columns)
+	assert.Equal(t, observedAt.Format(time.RFC3339Nano), external.ObservedAt)
+	assert.Equal(t, []string{"analytics.report"}, external.ReferencedByAssetNames)
+	require.Len(t, external.ReferencedByAssetIDs, 1)
 	provider.mu.Lock()
 	require.NotEmpty(t, provider.snapshotScopes)
 	assert.Equal(t, RemoteCatalogScope{Connection: "duckdb-default", Environment: "dev"}, provider.snapshotScopes[0])

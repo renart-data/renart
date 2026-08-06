@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Bell,
   CheckCircle2,
+  Download,
   Loader2,
   RotateCw,
   Trash2,
@@ -37,12 +38,14 @@ export function TypeCheckPanel({
   error,
   onRun,
   onSelectAsset,
+  onResolutionAction,
 }: {
   report: PipelineTypeCheckReport | null;
   loading: boolean;
   error: string | null;
   onRun?: () => void;
   onSelectAsset?: (assetId: string) => void;
+  onResolutionAction?: (action: NonNullable<PipelineTypeCheckResolution["action"]>) => void;
 }) {
   const [resolving, setResolving] = useState("");
   const [resolutionError, setResolutionError] = useState<string | null>(null);
@@ -56,6 +59,9 @@ export function TypeCheckPanel({
     setResolving(key);
     setResolutionError(null);
     try {
+      if (!resolution.transaction) {
+        throw new Error("This suggested metadata edit is unavailable.");
+      }
       await applyAssetTransaction(assetId, resolution.transaction);
       onRun?.();
     } catch (cause) {
@@ -173,10 +179,26 @@ export function TypeCheckPanel({
                         )}
                         <div className="min-w-0 flex-1">
                           <p>{finding.message}</p>
-                          {asset.id && finding.resolutions?.length ? (
+                          {finding.resolutions?.length ? (
                             <div className="mt-1.5 flex flex-wrap gap-1.5">
                               {finding.resolutions.map((resolution) => {
-                                const resolutionKey = `${asset.id}:${finding.code}:${resolution.id}`;
+                                const resolutionKey = `${asset.id ?? asset.name}:${finding.code}:${resolution.id}`;
+                                if (resolution.action?.type === "import-external-relation") {
+                                  return (
+                                    <Button
+                                      key={resolution.id}
+                                      type="button"
+                                      variant="outline"
+                                      size="xs"
+                                      disabled={!onResolutionAction}
+                                      onClick={() => onResolutionAction?.(resolution.action!)}
+                                    >
+                                      <Download />
+                                      {resolution.title}
+                                    </Button>
+                                  );
+                                }
+                                if (!asset.id || !resolution.transaction) return null;
                                 return (
                                   <AlertDialog key={resolution.id}>
                                     <AlertDialogTrigger asChild>

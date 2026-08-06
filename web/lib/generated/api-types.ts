@@ -869,10 +869,16 @@ export type TypeCheckResolutionTransaction = {
   column?: string;
 };
 
+export type TypeCheckResolutionAction = {
+  type: string;
+  relation_id: string;
+};
+
 export type TypeCheckResolution = {
   id: string;
   title: string;
-  transaction: TypeCheckResolutionTransaction;
+  transaction?: TypeCheckResolutionTransaction;
+  action?: TypeCheckResolutionAction;
 };
 
 export type TypeCheckFinding = {
@@ -904,6 +910,21 @@ export type TypeCheckSummary = {
   warnings: number;
 };
 
+export type TypeCheckExternalRelation = {
+  id: string;
+  connection: string;
+  environment?: string;
+  qualified_name: string;
+  schema_name?: string;
+  name: string;
+  columns: SQLColumn[];
+  columns_known: boolean;
+  observed_at?: string;
+  stale?: boolean;
+  referenced_by_asset_ids: string[];
+  referenced_by_asset_names: string[];
+};
+
 export type TypeCheckReport = {
   status: string;
   pipeline_id?: string;
@@ -911,7 +932,34 @@ export type TypeCheckReport = {
   start_date?: string;
   end_date?: string;
   assets: TypeCheckAsset[];
+  external_relations?: TypeCheckExternalRelation[];
   summary: TypeCheckSummary;
+};
+
+export type ExternalRelationImportRequest = {
+  relation_id: string;
+  include_columns?: boolean;
+};
+
+export type ExternalRelationImportAsset = {
+  name: string;
+  path: string;
+  type: string;
+  columns: SQLColumn[];
+};
+
+export type ExternalRelationImportWarning = {
+  table: string;
+  warning: string;
+};
+
+export type ExternalRelationImportResult = {
+  status: string;
+  preview: boolean;
+  relation: TypeCheckExternalRelation;
+  asset: ExternalRelationImportAsset;
+  include_columns: boolean;
+  warnings: ExternalRelationImportWarning[];
 };
 
 export type PipelinePlanSourceRequest = {

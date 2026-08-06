@@ -446,8 +446,10 @@ export function AssetNode({
   return (
     <div
       data-slot="asset-node"
+      data-external={asset.isExternal ? "true" : undefined}
       className={cn(
         "w-58 overflow-hidden rounded-xl border-2 bg-card text-left shadow-sm transition hover:border-primary/60",
+        asset.isExternal && "border-dashed bg-card/80",
         hasParseError
           ? "border-red-400 dark:border-red-500/70"
           : selected
@@ -516,6 +518,15 @@ export function AssetNode({
                 <AlertTriangle className="size-2.5 shrink-0" />
                 Parse error
               </span>
+            ) : asset.isExternal ? (
+              <>
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
+                  External
+                </Badge>
+                <span className="min-w-0 truncate text-[10px] text-muted-foreground">
+                  {asset.materializedAt}
+                </span>
+              </>
             ) : (
               <>
                 <StalenessBadge staleness={asset.staleness} className="shrink-0" />

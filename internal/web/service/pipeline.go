@@ -22,6 +22,11 @@ type PipelineService struct {
 	workspaceRoot       string
 	remoteCatalog       RemoteCatalogProvider
 	selectedEnvironment func() string
+	externalImporter    ExternalRelationImporter
+}
+
+type ExternalRelationImporter interface {
+	ImportDatabase(context.Context, ImportDatabaseRequest) ([]byte, error)
 }
 
 var ErrInvalidPipelineDefaultConnection = errors.New("invalid pipeline default connection")
@@ -36,6 +41,12 @@ func NewPipelineService(workspaceRoot string) *PipelineService {
 func (s *PipelineService) SetRemoteCatalogProvider(provider RemoteCatalogProvider, selectedEnvironment func() string) {
 	s.remoteCatalog = provider
 	s.selectedEnvironment = selectedEnvironment
+}
+
+// SetExternalRelationImporter wires the native single-table database importer
+// used by reviewed external-relation resolutions.
+func (s *PipelineService) SetExternalRelationImporter(importer ExternalRelationImporter) {
+	s.externalImporter = importer
 }
 
 func (s *PipelineService) resolver() *WorkspaceResolver {

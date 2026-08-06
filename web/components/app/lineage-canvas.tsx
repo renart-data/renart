@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, Play, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Download, Play, Plus, Trash2 } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -57,6 +57,7 @@ export type AppLineageCanvasAsset = AppAsset & {
   pipelineId?: string;
   isMaterialized?: boolean;
   upstreams?: string[];
+  readOnly?: boolean;
 };
 
 type AssetNodeData = {
@@ -352,6 +353,7 @@ export function AppLineageCanvas({
   onGoToAsset,
   onAssetConnectionClick,
   onReviewFailedCheck,
+  onImportExternalRelation,
   goToLabel,
 }: {
   assets: AppLineageCanvasAsset[];
@@ -372,6 +374,9 @@ export function AppLineageCanvas({
   onAssetConnectionClick?: (assetId: string) => void;
   // Opens the asset properties focused on the first failed quality assertion.
   onReviewFailedCheck?: (assetId: string) => void;
+  // Imports an ephemeral, positively observed external relation as an authored
+  // source-placeholder asset.
+  onImportExternalRelation?: (relationId: string) => void;
   goToLabel?: string;
 }) {
   const [lineageAssetId, setLineageAssetId] = useState<string | null>(null);
@@ -399,6 +404,7 @@ export function AppLineageCanvas({
     onGoToAsset,
     onAssetConnectionClick,
     onReviewFailedCheck,
+    onImportExternalRelation,
   });
   callbacksRef.current = {
     selectedAssetId,
@@ -409,6 +415,7 @@ export function AppLineageCanvas({
     onGoToAsset,
     onAssetConnectionClick,
     onReviewFailedCheck,
+    onImportExternalRelation,
   };
 
   const handleSelect = useCallback((assetId: string) => {
@@ -443,6 +450,7 @@ export function AppLineageCanvas({
   const hasRun = Boolean(onRunAsset);
   const hasGoTo = Boolean(onGoToAsset);
   const hasDelete = Boolean(onDeleteAsset);
+  const hasExternalImport = Boolean(onImportExternalRelation);
 
   const { nodes, edges } = useMemo(() => {
     const graphEdges = derivedEdges(assets, links);
@@ -501,7 +509,15 @@ export function AppLineageCanvas({
     const assetNodes: Node<AssetNodeData>[] = assets.map((asset) => {
       const measured = flowInstance?.getNode(asset.id);
       const actions: AssetNodeAction[] = [];
-      if (hasRun) {
+      if (asset.isExternal && hasExternalImport) {
+        actions.push({
+          key: "import-external-relation",
+          label: "Import as asset",
+          icon: Download,
+          onSelect: () => callbacksRef.current.onImportExternalRelation?.(asset.id),
+        });
+      }
+      if (!asset.readOnly && hasRun) {
         actions.push({
           key: "run",
           label: "Run",
@@ -509,7 +525,7 @@ export function AppLineageCanvas({
           onSelect: () => callbacksRef.current.onRunAsset?.(asset.id),
         });
       }
-      if (hasGoTo) {
+      if (!asset.readOnly && hasGoTo) {
         actions.push({
           key: "go-to",
           label: goToLabel ?? "Open",
@@ -517,7 +533,7 @@ export function AppLineageCanvas({
           onSelect: () => callbacksRef.current.onGoToAsset?.(asset.id),
         });
       }
-      if (hasDelete) {
+      if (!asset.readOnly && hasDelete) {
         actions.push({
           key: "delete",
           label: "Delete",
@@ -538,8 +554,11 @@ export function AppLineageCanvas({
           selected: asset.id === visuallySelectedAssetId,
           highlighted: asset.id === highlightAssetId,
           dimmed: Boolean(lineage && !lineage.all.has(asset.id)),
-          onSelect: handleSelect,
-          onCreateDownstream: hasCreateDownstream ? handleCreateDownstream : undefined,
+          onSelect: asset.readOnly
+            ? () => setLineageAssetId((current) => (current === asset.id ? null : asset.id))
+            : handleSelect,
+          onCreateDownstream:
+            !asset.readOnly && hasCreateDownstream ? handleCreateDownstream : undefined,
           onOpenConnection: hasConnectionClick ? handleOpenConnection : undefined,
           onReviewFailedCheck: hasQualityReview ? handleReviewFailedCheck : undefined,
           actions: actions.length > 0 ? actions : undefined,
@@ -583,6 +602,7 @@ export function AppLineageCanvas({
     hasRun,
     hasGoTo,
     hasDelete,
+    hasExternalImport,
     handleSelect,
     handleCreateDownstream,
     handleOpenConnection,

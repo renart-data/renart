@@ -108,6 +108,8 @@ export type AppAsset = {
   parseError?: string;
   // Projected from the active pipeline's type-check report; never persisted.
   hasTypeCheckError?: boolean;
+  // Ephemeral positive warehouse observation, not an authored workspace asset.
+  isExternal?: boolean;
   x: number;
   y: number;
 };

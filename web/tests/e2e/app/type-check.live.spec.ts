@@ -1,5 +1,5 @@
 import { expect } from "@playwright/test";
-import { writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { liveTest as test, type LiveApp } from "../live-app-fixture";
@@ -13,7 +13,8 @@ type TypeCheckFinding = {
   resolutions?: Array<{
     id: string;
     title: string;
-    transaction: { type: string; column?: string };
+    transaction?: { type: string; column?: string };
+    action?: { type: "import-external-relation"; relation_id: string };
   }>;
 };
 type TypeCheckAsset = {
@@ -27,6 +28,11 @@ type TypeCheckReport = {
   status: string;
   pipeline_name: string;
   assets: TypeCheckAsset[];
+  external_relations?: Array<{
+    id: string;
+    qualified_name: string;
+    referenced_by_asset_names: string[];
+  }>;
   summary: { assets: number; errors: number; warnings: number };
 };
 
@@ -333,5 +339,187 @@ select 1::bigint as id
         );
       })
       .toBe(false);
+  });
+
+  test("shows a positively observed external table and imports it after review", async ({
+    liveApp,
+    page,
+  }) => {
+    test.skip(
+      test.info().project.name.includes("mobile"),
+      "The desktop run covers the canvas node and reviewed import lifecycle.",
+    );
+
+    const assetsDir = join(liveApp.workspaceDir, "analytics", "assets", "analytics");
+    const producerPath = join(assetsDir, "external_orders.sql");
+    const producerAssetId = Buffer.from("analytics/assets/analytics/external_orders.sql").toString(
+      "base64url",
+    );
+    await writeFile(
+      producerPath,
+      `/* @bruin
+name: main.external_orders
+type: duckdb.sql
+connection: duckdb-default
+materialization:
+  type: table
+columns:
+  - name: order_id
+    type: bigint
+  - name: customer_name
+    type: varchar
+@bruin */
+
+select 1::bigint as order_id, 'Ada'::varchar as customer_name
+`,
+      "utf8",
+    );
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${liveApp.baseURL}/api/workspace`);
+        const workspace = (await response.json()) as {
+          pipelines: Array<{ assets: Array<{ id: string }> }>;
+        };
+        return workspace.pipelines.some((pipeline) =>
+          pipeline.assets.some((asset) => asset.id === producerAssetId),
+        );
+      })
+      .toBe(true);
+
+    const materialize = await page.request.post(
+      `${liveApp.baseURL}/api/assets/${producerAssetId}/materialize/stream?environment=default`,
+    );
+    const materializeStream = await materialize.text();
+    expect(materialize.ok(), materializeStream).toBe(true);
+    const doneLine = materializeStream
+      .split(/\r?\n/)
+      .reverse()
+      .find((line) => line.startsWith("data: ") && line.includes('"status"'));
+    expect(doneLine, materializeStream).toBeTruthy();
+    expect(JSON.parse(doneLine!.slice("data: ".length)).status).toBe("ok");
+
+    await rm(producerPath);
+    const consumerPath = join(assetsDir, "external_report.sql");
+    const consumerAssetId = Buffer.from("analytics/assets/analytics/external_report.sql").toString(
+      "base64url",
+    );
+    const consumerSQL = `/* @bruin
+name: analytics.external_report
+type: duckdb.sql
+connection: duckdb-default
+materialization:
+  type: view
+columns:
+  - name: order_id
+    type: bigint
+@bruin */
+
+select order_id from main.external_orders
+`;
+    await writeFile(consumerPath, consumerSQL, "utf8");
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(`${liveApp.baseURL}/api/workspace`);
+          const workspace = (await response.json()) as {
+            pipelines: Array<{ assets: Array<{ id: string }> }>;
+          };
+          const assetIds = workspace.pipelines.flatMap((pipeline) =>
+            pipeline.assets.map((asset) => asset.id),
+          );
+          return !assetIds.includes(producerAssetId) && assetIds.includes(consumerAssetId);
+        },
+        { timeout: 30000 },
+      )
+      .toBe(true);
+
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.post(`${liveApp.baseURL}/api/sql/lsp/diagnostics`, {
+            data: {
+              asset_id: consumerAssetId,
+              content: consumerSQL,
+              environment: "default",
+            },
+          });
+          if (!response.ok()) return false;
+          const body = (await response.json()) as {
+            diagnostics?: Array<{ code?: string; severity?: number }>;
+          };
+          return Boolean(
+            body.diagnostics?.some(
+              (diagnostic) => diagnostic.code === "external-relation" && diagnostic.severity === 2,
+            ),
+          );
+        },
+        { timeout: 30000 },
+      )
+      .toBe(true);
+
+    let externalRelationId = "";
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(
+          `${liveApp.baseURL}/api/pipelines/${pipelineId}/type-check`,
+        );
+        if (!response.ok()) return "";
+        const report = (await response.json()) as TypeCheckReport;
+        const relation = report.external_relations?.find((candidate) =>
+          candidate.referenced_by_asset_names.includes("analytics.external_report"),
+        );
+        externalRelationId = relation?.id ?? "";
+        return relation?.qualified_name ?? "";
+      })
+      .toMatch(/external_orders$/);
+
+    const initialTypeCheck = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/pipelines/${pipelineId}/type-check`) && response.ok(),
+      { timeout: 30000 },
+    );
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${consumerAssetId}/canvas`);
+    await initialTypeCheck;
+
+    const externalNode = page.locator(
+      `[data-testid="lineage-asset"][data-asset-id="${externalRelationId}"]`,
+    );
+    await expect(externalNode.locator('[data-external="true"]')).toBeVisible({ timeout: 15000 });
+    await externalNode.getByRole("button", { name: "Asset actions" }).click();
+    await page.getByRole("menuitem", { name: "Import as asset" }).click();
+
+    const importDialog = page.getByRole("dialog", { name: "Import external relation" });
+    await expect(importDialog).toBeVisible();
+    await expect(
+      importDialog.getByRole("checkbox", { name: "Import observed columns" }),
+    ).toBeChecked();
+    await expect(importDialog.getByText("order_id", { exact: true })).toBeVisible();
+    await expect(importDialog.getByText("customer_name", { exact: true })).toBeVisible();
+    const importResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/pipelines/${pipelineId}/external-relations/import`) &&
+        response.request().method() === "POST",
+      { timeout: 30000 },
+    );
+    await importDialog.getByRole("button", { name: "Import asset" }).click();
+    expect((await importResponse).status()).toBe(201);
+
+    const importedPath = join(
+      liveApp.workspaceDir,
+      "analytics",
+      "assets",
+      "main",
+      "external_orders.asset.yml",
+    );
+    await expect
+      .poll(async () => {
+        try {
+          return await readFile(importedPath, "utf8");
+        } catch {
+          return "";
+        }
+      })
+      .toContain("name: order_id");
+    await expect(externalNode).toHaveCount(0, { timeout: 30000 });
   });
 });

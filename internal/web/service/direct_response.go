@@ -11,11 +11,20 @@ type directImportWarning struct {
 
 type directImportDatabaseResponse struct {
 	Status         string                `json:"status"`
+	Preview        bool                  `json:"preview,omitempty"`
 	ImportedTables int                   `json:"imported_tables"`
 	MergedTables   int                   `json:"merged_tables"`
 	Database       string                `json:"database"`
 	PipelinePath   string                `json:"pipeline_path"`
+	Assets         []directImportAsset   `json:"assets"`
 	Warnings       []directImportWarning `json:"warnings"`
+}
+
+type directImportAsset struct {
+	Name    string      `json:"name"`
+	Path    string      `json:"path"`
+	Type    string      `json:"type"`
+	Columns []SQLColumn `json:"columns"`
 }
 
 type directFillAssetDependenciesResponse struct {

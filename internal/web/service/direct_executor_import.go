@@ -98,9 +98,14 @@ func (e *HybridBruinExecutor) ImportDatabase(ctx context.Context, req ImportData
 	}
 
 	fs := afero.NewOsFs()
-	totalTables := 0
-	mergedTableCount := 0
 	warnings := make([]directImportWarning, 0)
+	type importCandidate struct {
+		asset     *pipeline.Asset
+		assetName string
+		fullName  string
+		existing  *pipeline.Asset
+	}
+	candidates := make([]importCandidate, 0)
 
 	for _, schemaObj := range summary.Schemas {
 		if req.Schema != "" && !strings.EqualFold(schemaObj.Name, req.Schema) {
@@ -121,30 +126,83 @@ func (e *HybridBruinExecutor) ImportDatabase(ctx context.Context, req ImportData
 			}
 
 			assetName := fmt.Sprintf("%s.%s", strings.ToLower(schemaObj.Name), strings.ToLower(table.Name))
-			if existingAssets[assetName] == nil {
-				schemaFolder := filepath.Join(assetsPath, strings.ToLower(schemaObj.Name))
-				if err := fs.MkdirAll(schemaFolder, 0o755); err != nil {
-					return nil, fmt.Errorf("failed to create schema directory %s: %w", schemaFolder, err)
+			candidates = append(candidates, importCandidate{
+				asset:     createdAsset,
+				assetName: assetName,
+				fullName:  fullName,
+				existing:  existingAssets[assetName],
+			})
+		}
+	}
+	if len(selectedTables) > 0 && len(candidates) == 0 {
+		return nil, fmt.Errorf("none of the selected tables were found in the database summary")
+	}
+
+	if req.RejectExisting {
+		for _, candidate := range candidates {
+			if candidate.existing != nil {
+				return nil, fmt.Errorf("asset %q already exists", candidate.assetName)
+			}
+			exists, existsErr := afero.Exists(fs, candidate.asset.ExecutableFile.Path)
+			if existsErr != nil {
+				return nil, fmt.Errorf("check imported asset path: %w", existsErr)
+			}
+			if exists {
+				return nil, fmt.Errorf("asset path %q already exists", directImportAssetPath(e.workspaceRoot, candidate.asset.ExecutableFile.Path))
+			}
+		}
+	}
+
+	assetPreviews := make([]directImportAsset, 0, len(candidates))
+	for _, candidate := range candidates {
+		columns := make([]SQLColumn, 0, len(candidate.asset.Columns))
+		for _, column := range candidate.asset.Columns {
+			columns = append(columns, SQLColumn{Name: column.Name, Type: column.Type})
+		}
+		assetPreviews = append(assetPreviews, directImportAsset{
+			Name:    candidate.asset.Name,
+			Path:    directImportAssetPath(e.workspaceRoot, candidate.asset.ExecutableFile.Path),
+			Type:    string(candidate.asset.Type),
+			Columns: columns,
+		})
+	}
+
+	totalTables := 0
+	mergedTableCount := 0
+	if !req.PreviewOnly {
+		for _, candidate := range candidates {
+			if candidate.existing == nil {
+				assetFolder := filepath.Dir(candidate.asset.ExecutableFile.Path)
+				if err := fs.MkdirAll(assetFolder, 0o755); err != nil {
+					return nil, fmt.Errorf("failed to create asset directory %s: %w", assetFolder, err)
 				}
-				if err := createdAsset.Persist(fs); err != nil {
+				if err := candidate.asset.Persist(fs); err != nil {
 					return nil, err
 				}
-				existingAssets[assetName] = createdAsset
+				existingAssets[candidate.assetName] = candidate.asset
+				totalTables++
+				continue
+			}
+
+			existingColumns := make(map[string]pipeline.Column, len(candidate.existing.Columns))
+			for _, column := range candidate.existing.Columns {
+				existingColumns[column.Name] = column
+			}
+			for _, column := range candidate.asset.Columns {
+				if _, ok := existingColumns[column.Name]; !ok {
+					candidate.existing.Columns = append(candidate.existing.Columns, column)
+				}
+			}
+			if err := candidate.existing.Persist(fs); err != nil {
+				return nil, err
+			}
+			mergedTableCount++
+		}
+	} else {
+		for _, candidate := range candidates {
+			if candidate.existing == nil {
 				totalTables++
 			} else {
-				existingAsset := existingAssets[assetName]
-				existingColumns := make(map[string]pipeline.Column, len(existingAsset.Columns))
-				for _, column := range existingAsset.Columns {
-					existingColumns[column.Name] = column
-				}
-				for _, column := range createdAsset.Columns {
-					if _, ok := existingColumns[column.Name]; !ok {
-						existingAsset.Columns = append(existingAsset.Columns, column)
-					}
-				}
-				if err := existingAsset.Persist(fs); err != nil {
-					return nil, err
-				}
 				mergedTableCount++
 			}
 		}
@@ -152,13 +210,23 @@ func (e *HybridBruinExecutor) ImportDatabase(ctx context.Context, req ImportData
 
 	response := directImportDatabaseResponse{
 		Status:         "ok",
+		Preview:        req.PreviewOnly,
 		ImportedTables: totalTables,
 		MergedTables:   mergedTableCount,
 		Database:       summary.Name,
 		PipelinePath:   pipelinePath,
+		Assets:         assetPreviews,
 		Warnings:       warnings,
 	}
 	return json.Marshal(response)
+}
+
+func directImportAssetPath(workspaceRoot, assetPath string) string {
+	relative, err := filepath.Rel(workspaceRoot, assetPath)
+	if err == nil && relative != "." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return filepath.ToSlash(relative)
+	}
+	return filepath.ToSlash(assetPath)
 }
 
 // formatImportedViewDefinition cleans up engine-extracted view SQL (e.g.

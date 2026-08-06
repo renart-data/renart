@@ -84,14 +84,22 @@ type TypeCheckFinding struct {
 // The transaction payload deliberately contains only fields used by currently
 // supported resolutions; the asset transaction endpoint remains authoritative.
 type TypeCheckResolution struct {
-	ID          string                         `json:"id"`
-	Title       string                         `json:"title"`
-	Transaction TypeCheckResolutionTransaction `json:"transaction"`
+	ID          string                          `json:"id"`
+	Title       string                          `json:"title"`
+	Transaction *TypeCheckResolutionTransaction `json:"transaction,omitempty"`
+	Action      *TypeCheckResolutionAction      `json:"action,omitempty"`
 }
 
 type TypeCheckResolutionTransaction struct {
 	Type   string `json:"type"`
 	Column string `json:"column,omitempty"`
+}
+
+const typeCheckResolutionActionImportExternalRelation = "import-external-relation"
+
+type TypeCheckResolutionAction struct {
+	Type       string `json:"type"`
+	RelationID string `json:"relation_id"`
 }
 
 // TypeCheckAsset is the per-asset result of a pipeline type check.
@@ -111,15 +119,33 @@ type TypeCheckSummary struct {
 	Warnings int `json:"warnings"`
 }
 
+// TypeCheckExternalRelation is positive, ephemeral catalog evidence used by
+// the canvas and import review. It is never persisted as workspace state.
+type TypeCheckExternalRelation struct {
+	ID                     string      `json:"id"`
+	Connection             string      `json:"connection"`
+	Environment            string      `json:"environment,omitempty"`
+	QualifiedName          string      `json:"qualified_name"`
+	SchemaName             string      `json:"schema_name,omitempty"`
+	Name                   string      `json:"name"`
+	Columns                []SQLColumn `json:"columns"`
+	ColumnsKnown           bool        `json:"columns_known"`
+	ObservedAt             string      `json:"observed_at,omitempty"`
+	Stale                  bool        `json:"stale,omitempty"`
+	ReferencedByAssetIDs   []string    `json:"referenced_by_asset_ids"`
+	ReferencedByAssetNames []string    `json:"referenced_by_asset_names"`
+}
+
 // TypeCheckReport is the full result of type-checking a pipeline.
 type TypeCheckReport struct {
-	Status       string           `json:"status"`
-	PipelineID   string           `json:"pipeline_id,omitempty"`
-	PipelineName string           `json:"pipeline_name"`
-	StartDate    string           `json:"start_date,omitempty"`
-	EndDate      string           `json:"end_date,omitempty"`
-	Assets       []TypeCheckAsset `json:"assets"`
-	Summary      TypeCheckSummary `json:"summary"`
+	Status            string                      `json:"status"`
+	PipelineID        string                      `json:"pipeline_id,omitempty"`
+	PipelineName      string                      `json:"pipeline_name"`
+	StartDate         string                      `json:"start_date,omitempty"`
+	EndDate           string                      `json:"end_date,omitempty"`
+	Assets            []TypeCheckAsset            `json:"assets"`
+	ExternalRelations []TypeCheckExternalRelation `json:"external_relations,omitempty"`
+	Summary           TypeCheckSummary            `json:"summary"`
 }
 
 // CheckPipeline type-checks every asset in a parsed pipeline.
@@ -195,6 +221,7 @@ func checkPipelineAt(
 		connectionEngine := sqllsp.NewEngine(assetSnapshot.Graph)
 		ac := checkAsset(ctx, pp, workspaceRoot, asset, assetSnapshot, connectionEngine)
 		report.Assets = append(report.Assets, ac)
+		appendTypeCheckExternalRelations(ctx, &report, pp, workspaceRoot, asset, assetSnapshot, connectionEngine, options)
 		report.Summary.Assets++
 		for _, finding := range ac.Findings {
 			switch finding.Severity {
@@ -213,7 +240,132 @@ func checkPipelineAt(
 	if report.Summary.Errors > 0 {
 		report.Status = typeCheckStatusError
 	}
+	sort.Slice(report.ExternalRelations, func(i, j int) bool {
+		if report.ExternalRelations[i].Connection != report.ExternalRelations[j].Connection {
+			return report.ExternalRelations[i].Connection < report.ExternalRelations[j].Connection
+		}
+		return report.ExternalRelations[i].QualifiedName < report.ExternalRelations[j].QualifiedName
+	})
 	return report
+}
+
+func appendTypeCheckExternalRelations(
+	ctx context.Context,
+	report *TypeCheckReport,
+	pp *pipeline.Pipeline,
+	workspaceRoot string,
+	asset *pipeline.Asset,
+	snapshot typeCheckSchemaSnapshot,
+	engine *sqllsp.Engine,
+	options typeCheckOptions,
+) {
+	if report == nil || asset == nil || engine == nil || options.RemoteCatalog == nil {
+		return
+	}
+	connection, err := targetConnectionNameForAsset(asset, pp)
+	if err != nil || strings.TrimSpace(connection) == "" {
+		return
+	}
+	scope := RemoteCatalogScope{Connection: connection, Environment: strings.TrimSpace(options.Environment)}
+	catalog := options.RemoteCatalog.Snapshot(scope)
+	if len(catalog.Relations) == 0 {
+		return
+	}
+	byID := make(map[string]RemoteCatalogRelation, len(catalog.Relations))
+	for _, relation := range catalog.Relations {
+		byID[remoteCatalogRelationID(scope, relation.QualifiedName)] = relation
+	}
+	assetID := assetReportID(workspaceRoot, asset)
+	appendReferences := func(text string) {
+		doc := sqllsp.TextDocumentItem{
+			URI:        typeCheckAssetURI(workspaceRoot, asset),
+			LanguageID: "sql",
+			Text:       text,
+		}
+		for _, reference := range engine.ExternalRelationReferences(doc) {
+			remote, ok := byID[reference.RelationID]
+			if !ok {
+				continue
+			}
+			appendTypeCheckExternalRelation(report, scope, catalog, remote, assetID, asset.Name)
+		}
+	}
+	for _, unit := range snapshot.RenderedUnits[asset] {
+		appendReferences(unit.RenderedSQL)
+	}
+	var renderer jinja.RendererInterface
+	if snapshot.Renderer != nil {
+		renderer = snapshot.Renderer
+		if cloned, cloneErr := snapshot.Renderer.CloneForAsset(ctx, pp, asset); cloneErr == nil {
+			renderer = cloned
+		}
+	}
+	for _, check := range asset.CustomChecks {
+		text := strings.TrimSpace(check.Query)
+		if text == "" {
+			continue
+		}
+		if renderer != nil {
+			if rendered, renderErr := renderer.Render(text); renderErr == nil {
+				text = rendered
+			}
+		}
+		appendReferences(text)
+	}
+}
+
+func appendTypeCheckExternalRelation(
+	report *TypeCheckReport,
+	scope RemoteCatalogScope,
+	snapshot RemoteCatalogSnapshot,
+	remote RemoteCatalogRelation,
+	assetID string,
+	assetName string,
+) {
+	id := remoteCatalogRelationID(scope, remote.QualifiedName)
+	for index := range report.ExternalRelations {
+		if report.ExternalRelations[index].ID != id {
+			continue
+		}
+		report.ExternalRelations[index].ReferencedByAssetIDs = appendUniqueString(report.ExternalRelations[index].ReferencedByAssetIDs, assetID)
+		report.ExternalRelations[index].ReferencedByAssetNames = appendUniqueString(report.ExternalRelations[index].ReferencedByAssetNames, assetName)
+		return
+	}
+	columns := append([]SQLColumn(nil), remote.Columns...)
+	if columns == nil {
+		columns = []SQLColumn{}
+	}
+	observedAt := ""
+	if !snapshot.ObservedAt.IsZero() {
+		observedAt = snapshot.ObservedAt.UTC().Format(time.RFC3339Nano)
+	}
+	report.ExternalRelations = append(report.ExternalRelations, TypeCheckExternalRelation{
+		ID:                     id,
+		Connection:             scope.Connection,
+		Environment:            scope.Environment,
+		QualifiedName:          remote.QualifiedName,
+		SchemaName:             remote.SchemaName,
+		Name:                   remote.ShortName,
+		Columns:                columns,
+		ColumnsKnown:           remote.ColumnsKnown,
+		ObservedAt:             observedAt,
+		Stale:                  snapshot.Stale,
+		ReferencedByAssetIDs:   appendUniqueString(nil, assetID),
+		ReferencedByAssetNames: appendUniqueString(nil, assetName),
+	})
+}
+
+func appendUniqueString(values []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return values
+	}
+	for _, current := range values {
+		if current == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 func typeCheckSnapshotWithRemoteCatalog(
@@ -288,12 +440,15 @@ func checkAsset(ctx context.Context, pp *pipeline.Pipeline, workspaceRoot string
 		}) {
 			ac.Findings = append(ac.Findings, findingFromMappedLSPDiagnostic(sourceText, unit, renderedQuery, diagnostic))
 		}
-		for _, diagnostic := range connectionEngine.ExternalRelationDiagnostics(sqllsp.TextDocumentItem{
+		externalDoc := sqllsp.TextDocumentItem{
 			URI:        typeCheckAssetURI(workspaceRoot, asset),
 			LanguageID: "sql",
 			Text:       renderedQuery,
-		}) {
-			ac.Findings = append(ac.Findings, findingFromMappedLSPDiagnostic(sourceText, unit, renderedQuery, diagnostic))
+		}
+		for _, diagnostic := range connectionEngine.ExternalRelationDiagnostics(externalDoc) {
+			finding := findingFromMappedLSPDiagnostic(sourceText, unit, renderedQuery, diagnostic)
+			finding.Resolutions = externalRelationResolutions(connectionEngine, externalDoc, diagnostic)
+			ac.Findings = append(ac.Findings, finding)
 		}
 		var expectedOutput []sqlintelligence.SchemaColumn
 		if unitIndex == len(units)-1 {
@@ -414,14 +569,16 @@ func customCheckTypeCheckFindings(
 			})
 		}
 		for _, diagnostic := range connectionEngine.ExternalRelationDiagnostics(doc) {
-			findings = append(findings, TypeCheckFinding{
-				Code:       diagnostic.Code,
-				Source:     diagnostic.Source,
-				Severity:   typeCheckSeverityWarning,
-				Message:    prefix + diagnostic.Message,
-				Scope:      string(authoringdiag.ScopeDocument),
-				Confidence: diagnostic.Confidence,
-			})
+			finding := TypeCheckFinding{
+				Code:        diagnostic.Code,
+				Source:      diagnostic.Source,
+				Severity:    typeCheckSeverityWarning,
+				Message:     prefix + diagnostic.Message,
+				Scope:       string(authoringdiag.ScopeDocument),
+				Confidence:  diagnostic.Confidence,
+				Resolutions: externalRelationResolutions(connectionEngine, doc, diagnostic),
+			}
+			findings = append(findings, finding)
 		}
 		validation, err := sqlintelligence.ValidateSQL(ctx, sqlintelligence.ValidationRequest{
 			URI:                string(doc.URI),
@@ -454,6 +611,26 @@ func customCheckTypeCheckFindings(
 		}
 	}
 	return findings, dialect
+}
+
+func externalRelationResolutions(engine *sqllsp.Engine, doc sqllsp.TextDocumentItem, diagnostic sqllsp.Diagnostic) []TypeCheckResolution {
+	if engine == nil || diagnostic.Code != authoringdiag.CodeExternalRelation {
+		return nil
+	}
+	for _, reference := range engine.ExternalRelationReferences(doc) {
+		if reference.Range != diagnostic.Range {
+			continue
+		}
+		return []TypeCheckResolution{{
+			ID:    "import-external-relation-" + strings.TrimPrefix(reference.RelationID, "relation:remote_catalog:"),
+			Title: "Import source asset",
+			Action: &TypeCheckResolutionAction{
+				Type:       typeCheckResolutionActionImportExternalRelation,
+				RelationID: reference.RelationID,
+			},
+		}}
+	}
+	return nil
 }
 
 func customCheckDialect(asset *pipeline.Asset, pp *pipeline.Pipeline) string {
@@ -810,7 +987,7 @@ func materializationTypeCheckFindings(asset *pipeline.Asset, pl ...*pipeline.Pip
 			TypeCheckResolution{
 				ID:    "delete-inactive-partition-by",
 				Title: "Delete inactive partition setting",
-				Transaction: TypeCheckResolutionTransaction{
+				Transaction: &TypeCheckResolutionTransaction{
 					Type: TxMaterializationPartitionByClear,
 				},
 			},
@@ -822,7 +999,7 @@ func materializationTypeCheckFindings(asset *pipeline.Asset, pl ...*pipeline.Pip
 			TypeCheckResolution{
 				ID:    "delete-inactive-cluster-by",
 				Title: "Delete inactive clustering settings",
-				Transaction: TypeCheckResolutionTransaction{
+				Transaction: &TypeCheckResolutionTransaction{
 					Type: TxMaterializationClusterByClear,
 				},
 			},
@@ -836,7 +1013,7 @@ func materializationTypeCheckFindings(asset *pipeline.Asset, pl ...*pipeline.Pip
 				TypeCheckResolution{
 					ID:    "delete-inactive-merge-settings-" + column.Name,
 					Title: "Delete inactive merge settings",
-					Transaction: TypeCheckResolutionTransaction{
+					Transaction: &TypeCheckResolutionTransaction{
 						Type:   TxColumnMergeSettingsClear,
 						Column: column.Name,
 					},

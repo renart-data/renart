@@ -175,11 +175,22 @@ const sources = [
     file: resolve(repoRoot, "internal", "web", "service", "typecheck.go"),
     types: [
       "TypeCheckResolutionTransaction",
+      "TypeCheckResolutionAction",
       "TypeCheckResolution",
       "TypeCheckFinding",
       "TypeCheckAsset",
       "TypeCheckSummary",
+      "TypeCheckExternalRelation",
       "TypeCheckReport",
+    ],
+  },
+  {
+    file: resolve(repoRoot, "internal", "web", "service", "external_relation_import.go"),
+    types: [
+      "ExternalRelationImportRequest",
+      "ExternalRelationImportAsset",
+      "ExternalRelationImportWarning",
+      "ExternalRelationImportResult",
     ],
   },
   {

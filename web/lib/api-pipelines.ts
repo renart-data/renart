@@ -18,7 +18,11 @@ import type { AssetTransaction } from "@/lib/api-asset-transactions";
 export type PipelineTypeCheckResolution = {
   id: string;
   title: string;
-  transaction: AssetTransaction;
+  transaction?: AssetTransaction;
+  action?: {
+    type: "import-external-relation";
+    relation_id: string;
+  };
 };
 
 export async function getPipelineTemplates() {
@@ -83,7 +87,37 @@ export type PipelineTypeCheckReport = {
   start_date?: string;
   end_date?: string;
   assets: PipelineTypeCheckAsset[];
+  external_relations?: PipelineTypeCheckExternalRelation[];
   summary: { assets: number; errors: number; warnings: number };
+};
+
+export type PipelineTypeCheckExternalRelation = {
+  id: string;
+  connection: string;
+  environment?: string;
+  qualified_name: string;
+  schema_name?: string;
+  name: string;
+  columns: Array<{ name: string; type: string }>;
+  columns_known: boolean;
+  observed_at?: string;
+  stale?: boolean;
+  referenced_by_asset_ids: string[];
+  referenced_by_asset_names: string[];
+};
+
+export type ExternalRelationImportResult = {
+  status: string;
+  preview: boolean;
+  relation: PipelineTypeCheckExternalRelation;
+  asset: {
+    name: string;
+    path: string;
+    type: string;
+    columns: Array<{ name: string; type: string }>;
+  };
+  include_columns: boolean;
+  warnings: Array<{ table: string; warning: string }>;
 };
 
 /** Type-checks every asset in a pipeline (SQL columns/types + missing column declarations). */
@@ -99,6 +133,30 @@ export async function typeCheckPipeline(
     method: "GET",
     cache: "no-store",
   });
+}
+
+export async function previewExternalRelationImport(
+  pipelineId: string,
+  relationId: string,
+  includeColumns = true,
+) {
+  return fetchJSONWithBody<ExternalRelationImportResult>(
+    `/api/pipelines/${pipelineId}/external-relations/import/preview`,
+    "POST",
+    { relation_id: relationId, include_columns: includeColumns },
+  );
+}
+
+export async function importExternalRelation(
+  pipelineId: string,
+  relationId: string,
+  includeColumns = true,
+) {
+  return fetchJSONWithBody<ExternalRelationImportResult>(
+    `/api/pipelines/${pipelineId}/external-relations/import`,
+    "POST",
+    { relation_id: relationId, include_columns: includeColumns },
+  );
 }
 
 export async function updatePipelineConfig(pipelineId: string, input: UpdatePipelineConfigRequest) {

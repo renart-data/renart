@@ -459,22 +459,43 @@ func (e *Engine) ExternalRelationDiagnostics(doc TextDocumentItem) []Diagnostic 
 	return diagnostics
 }
 
+// ExternalRelationReference is the structured counterpart of an
+// external-relation diagnostic. RelationID identifies every unambiguous
+// spelling of the same positively observed catalog relation, while Name keeps
+// the spelling used in the document for source mapping and UI copy.
+type ExternalRelationReference struct {
+	Name         string
+	ResolvedName string
+	RelationID   string
+	Connection   string
+	Range        Range
+}
+
+// ExternalRelationReferences returns only positively resolved remote-catalog
+// references. SQL text that is merely unresolved never becomes an external
+// relation through this API.
+func (e *Engine) ExternalRelationReferences(doc TextDocumentItem) []ExternalRelationReference {
+	projection := e.renderDocument(doc)
+	analysis := analyzeSQLWithResolver(projection.doc.Text, e)
+	references := e.externalRelationReferences(projection.doc.Text, analysis)
+	if projection.changed {
+		for i := range references {
+			references[i].Range = projection.rendered.TemplateRangeForGenerated(doc.Text, references[i].Range)
+		}
+	}
+	return references
+}
+
 func (e *Engine) externalRelationDiagnostics(sql string, analysis sqlAnalysis) []Diagnostic {
-	var diagnostics []Diagnostic
-	for _, use := range analysis.relations {
-		if _, isCTE := analysis.ctes[strings.ToLower(use.name)]; isCTE || strings.HasPrefix(use.name, "{{") {
-			continue
-		}
-		resolved := e.resolveRelation(use.name)
-		if resolved == nil || !isRemoteCatalogRelation(*resolved) {
-			continue
-		}
-		message := "External relation " + strconv.Quote(use.name) + " exists in the remote warehouse catalog but is not represented by an asset."
-		if connection := remoteCatalogConnection(*resolved); connection != "" {
-			message = "External relation " + strconv.Quote(use.name) + " exists on connection " + strconv.Quote(connection) + " but is not represented by an asset."
+	references := e.externalRelationReferences(sql, analysis)
+	diagnostics := make([]Diagnostic, 0, len(references))
+	for _, reference := range references {
+		message := "External relation " + strconv.Quote(reference.Name) + " exists in the remote warehouse catalog but is not represented by an asset."
+		if reference.Connection != "" {
+			message = "External relation " + strconv.Quote(reference.Name) + " exists on connection " + strconv.Quote(reference.Connection) + " but is not represented by an asset."
 		}
 		diagnostics = append(diagnostics, Diagnostic{
-			Range:      RangeFromOffsets(sql, use.start, use.end),
+			Range:      reference.Range,
 			Severity:   diagnosticSeverityWarn,
 			Code:       authoringdiag.CodeExternalRelation,
 			Source:     authoringdiag.SourceRenart,
@@ -484,6 +505,27 @@ func (e *Engine) externalRelationDiagnostics(sql string, analysis sqlAnalysis) [
 		})
 	}
 	return diagnostics
+}
+
+func (e *Engine) externalRelationReferences(sql string, analysis sqlAnalysis) []ExternalRelationReference {
+	var references []ExternalRelationReference
+	for _, use := range analysis.relations {
+		if _, isCTE := analysis.ctes[strings.ToLower(use.name)]; isCTE || strings.HasPrefix(use.name, "{{") {
+			continue
+		}
+		resolved := e.resolveRelation(use.name)
+		if resolved == nil || !isRemoteCatalogRelation(*resolved) {
+			continue
+		}
+		references = append(references, ExternalRelationReference{
+			Name:         use.name,
+			ResolvedName: resolved.Name,
+			RelationID:   resolved.ID,
+			Connection:   remoteCatalogConnection(*resolved),
+			Range:        RangeFromOffsets(sql, use.start, use.end),
+		})
+	}
+	return references
 }
 
 func (e *Engine) crossConnectionDiagnostics(sql string, analysis sqlAnalysis, currentAsset *AssetNode) []Diagnostic {

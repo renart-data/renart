@@ -263,6 +263,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 	hybridExecutor := service.NewHybridBruinExecutor(absRoot, "", server.newConnectionManager, server.newPipelineBuilder)
 	hybridExecutor.SetDuckDBFilesystemAccess(!cfg.disableFilesystemAccess)
 	server.executor = hybridExecutor
+	server.pipelineSvc.SetExternalRelationImporter(hybridExecutor)
 	server.policyLoader = policy.NewLoader(filepath.Join(absRoot, ".renart", "environments.yml"))
 
 	server.executionSvc = service.NewExecutionService(service.ExecutionDependencies{

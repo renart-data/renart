@@ -44,6 +44,8 @@ func RegisterPipelineRoutes(router chi.Router, handlers *PipelineHandlers) {
 	router.Get("/api/pipelines/{id}/python-dependencies", handlers.HandleGetPipelinePythonDependencies)
 	router.Put("/api/pipelines/{id}/python-dependencies", handlers.HandleUpdatePipelinePythonDependencies)
 	router.Get("/api/pipelines/{id}/type-check", handlers.HandleTypeCheckPipeline)
+	router.Post("/api/pipelines/{id}/external-relations/import/preview", handlers.HandlePreviewExternalRelationImport)
+	router.Post("/api/pipelines/{id}/external-relations/import", handlers.HandleImportExternalRelation)
 	router.Delete("/api/pipelines/{id}", handlers.HandleDeletePipeline)
 }
 
@@ -69,6 +71,43 @@ func (h *PipelineHandlers) HandleTypeCheckPipeline(w http.ResponseWriter, r *htt
 	}
 
 	webapi.WriteJSON(w, http.StatusOK, report)
+}
+
+func (h *PipelineHandlers) HandlePreviewExternalRelationImport(w http.ResponseWriter, r *http.Request) {
+	var req service.ExternalRelationImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
+		return
+	}
+	result, apiErr := h.Service.PreviewExternalRelationImport(r.Context(), chi.URLParam(r, "id"), req)
+	if apiErr != nil {
+		webapi.WriteJSON(w, apiErr.Status, map[string]any{
+			"status": "error",
+			"error":  map[string]string{"code": apiErr.Code, "message": apiErr.Message},
+		})
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h *PipelineHandlers) HandleImportExternalRelation(w http.ResponseWriter, r *http.Request) {
+	var req service.ExternalRelationImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
+		return
+	}
+	result, apiErr := h.Service.ImportExternalRelation(r.Context(), chi.URLParam(r, "id"), req)
+	if apiErr != nil {
+		webapi.WriteJSON(w, apiErr.Status, map[string]any{
+			"status": "error",
+			"error":  map[string]string{"code": apiErr.Code, "message": apiErr.Message},
+		})
+		return
+	}
+	if h.Publisher != nil {
+		h.Publisher.WorkspaceChanged(r.Context(), result.PipelinePath, "pipeline.external-relation-imported")
+	}
+	webapi.WriteJSON(w, http.StatusCreated, result)
 }
 
 func (h *PipelineHandlers) HandleCreatePipeline(w http.ResponseWriter, r *http.Request) {
