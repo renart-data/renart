@@ -1,6 +1,6 @@
 # Materialization target lifecycle safety
 
-Status: investigated — upstream Bruin contract and Renart review UX proposed
+Status: investigated — Renart-owned compatibility layer and review UX proposed
 
 ## Goal
 
@@ -66,10 +66,27 @@ materialization portable. Renart's render view already exposes the Snowflake
 and BigQuery full-refresh-only compatibility stages, but there is no common
 execution contract.
 
-## Proposed runtime contract
+## Constraint and rejected approaches
 
-Add a provider-neutral target inspection result to Bruin's materialization
-operator boundary:
+Renart does not control Bruin upstream and should not depend on an accepted
+Bruin patch or maintain a fork. The compatibility behavior therefore belongs
+at Renart's existing direct-execution seam, while Bruin's public Go
+materializers remain the source of warehouse DDL.
+
+Do not implement this as:
+
+- an automatic retry with `--full-refresh` after an incremental statement
+  fails — the error cannot reliably distinguish absence from permissions,
+  qualification, or a partial write;
+- hidden pre/post hooks — they would change user hook ordering and duplicate
+  warehouse materialization SQL;
+- local-state inference that a target is absent — Renart materialization facts
+  can be stale after external DDL; or
+- vendoring/replacing the Bruin module — that is a fork under another name.
+
+## Proposed Renart-owned runtime contract
+
+Add a provider-neutral target inspection result inside Renart:
 
 ```text
 TargetState {
@@ -79,31 +96,56 @@ TargetState {
 }
 ```
 
-Each warehouse adapter supplies the metadata lookup and kind-specific drop or
-replacement operation. An unavailable/unauthorized lookup returns `unknown`,
-not `absent`. Renart consumes the same contract through Bruin instead of
-maintaining a second matrix of information-schema queries.
+Each Renart lifecycle adapter uses only the runtime connection's public Bruin
+interfaces (`GetDatabaseSummaryForSchemas`, table discovery, and the normal
+query executor where available). A small adapter registry fills gaps with a
+targeted metadata query; it does not copy materialization SQL. An unavailable,
+unauthorized, capped, or ambiguous lookup returns `unknown`, not `absent`.
+
+The process-local remote-catalog cache is useful positive evidence for rename
+warnings, but it is not sufficient for execution preflight: it intentionally
+cannot prove absence and currently does not preserve relation kind. Execution
+uses a fresh, targeted lookup with a short timeout.
+
+Renart already owns the key integration points:
+
+- `newDirectStringExecutionMaterializer` and
+  `newDirectQueryBatchExecutionMaterializer` construct the pinned Bruin
+  materializers used by both render and execution;
+- planned pipeline execution builds an executor per asset/unit; and
+- `runDirectTask` runs after developer-environment prefixes have been applied
+  and before the Bruin operator executes.
+
+The lifecycle preflight should run before constructing the per-asset executor,
+then choose either the configured Bruin materializer or the existing Bruin
+full-refresh materializer. This reuses Bruin's SCD2 initializer and
+warehouse-specific create/replace SQL without changing Bruin. Single-asset
+runs can use the same selection directly. The legacy multi-asset sequential
+path should be normalized through the existing version-3 per-unit executor so
+the decision is never shared accidentally between assets.
 
 ### Missing-target bootstrap
 
-For an ordinary table strategy whose target is positively absent, Bruin should
-select a strategy-specific bootstrap before executing any incremental
-statement:
+For an ordinary table strategy whose target is positively absent, Renart should
+select Bruin's existing full-refresh materializer before executing any
+incremental statement:
 
 - `append`, `merge`, `delete+insert`, `truncate+insert`, and `time_interval`:
-  create the table from that run's rendered SELECT, using the adapter's safe
-  create/replace implementation;
+  use Bruin's warehouse-specific create/replace rendering for that run's
+  SELECT;
 - SCD2: use the existing SCD2 full-refresh initializer so its bookkeeping
   columns and semantics are preserved;
 - `ddl`: retain its idempotent DDL behavior;
-- `refresh_restricted`: allow creation of a positively absent target, but never
-  replace an existing one.
+- `refresh_restricted`: initially stop with an actionable first-run error. A
+  later adapter may opt in only when it can provide an atomic create-if-absent
+  primitive; a racy create/replace would violate the restriction.
 
-This must be an upstream Bruin capability, not a Renart error retry, so CLI,
-scheduler, dry-run/render, and browser execution agree. The plan/review output
-must identify the conditional bootstrap. An existence race should be handled
-by the adapter's atomic/idempotent primitive where available; otherwise return
-a specific target-state conflict and require a re-plan.
+This is a pre-execution selection, not an error retry. Renart's scheduler,
+direct run, dry-run/render, and review plan must all expose the conditional
+bootstrap. The target is inspected again immediately before execution; where
+the adapter cannot make creation atomic, the review states that an external DDL
+race remains possible. Unknown state preserves the configured strategy and
+emits an actionable warning instead of claiming that bootstrap is safe.
 
 ### Table/view transitions
 
@@ -111,17 +153,21 @@ Use **Full refresh** as the explicit portable transition action:
 
 1. Ordinary materialization against a positively observed opposite kind stops
    before DDL and reports that full refresh is required.
-2. Full refresh inspects the target, emits the correct kind-specific drop, and
-   creates the declared object kind.
+2. Full refresh inspects the target. Snowflake and BigQuery continue using
+   Bruin's existing mismatch handlers; other supported Renart adapters execute
+   one kind-specific drop through the public connection query interface before
+   selecting Bruin's full-refresh materializer.
 3. `unknown` state keeps today's execution semantics but the review identifies
    that compatibility could not be verified.
 4. The rendered operation list includes the conditional lookup/drop; it must
    not imply an atomic swap on adapters that cannot provide one.
 
-Where an adapter supports transactional or rename/swap replacement, it may keep
-the prior object available until the new object is ready. The portable fallback
-is a drop/create window, so the full-refresh confirmation must describe that
-availability risk.
+Where an adapter supports transactional or rename/swap replacement, Renart may
+keep the prior object available until the new object is ready. The portable
+fallback is a drop/create window, so the full-refresh confirmation must describe
+that availability risk. Adapters without reliable kind inspection remain
+unsupported for automatic transition rather than guessing with two `DROP`
+statements.
 
 ## Asset-name changes and orphaned targets
 
@@ -154,11 +200,13 @@ introduce a separate physical output alias.
 
 ## Delivery order
 
-1. Propose the target-state/bootstrap interface upstream in Bruin with adapter
-   contract tests for DuckDB/Postgres, Snowflake, BigQuery, and Databricks.
-2. Make the Bruin render result expose conditional bootstrap and kind-transition
-   operations; retain CLI/full-refresh parity.
-3. Add Renart run-review blockers/warnings and live tests for absent target,
+1. Add the Renart target-lifecycle adapter interface and contract tests. Start
+   with DuckDB/Postgres and the already-special-cased Snowflake/BigQuery paths;
+   add Databricks only with a real or faithful Sail-backed kind probe.
+2. Feed the preflight result into the existing direct materializer construction
+   seam and normalize legacy pipeline runs through per-unit execution. Make
+   render/review show the conditional selection.
+3. Add run-review blockers/warnings and live tests for absent target,
    table→view, and view→table on the local/live warehouse matrix.
 4. Add rename preflight using positive current-environment observations, then a
    separately confirmed post-success cleanup action.
@@ -167,8 +215,9 @@ introduce a separate physical output alias.
 
 ## Acceptance checks
 
-- Every SQL incremental strategy has an absent-target test and never executes
-  its destructive/incremental statement before bootstrap.
+- Every opted-in SQL adapter and incremental strategy has an absent-target test
+  and never executes its destructive/incremental statement before bootstrap.
+- An unknown or unsupported target state never silently selects full refresh.
 - A first SCD2 run creates the SCD2 bookkeeping schema, not a plain CTAS table.
 - Both object-kind transition directions either succeed under explicit full
   refresh or fail before destructive work with an actionable message.
