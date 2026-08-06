@@ -142,6 +142,12 @@ resolution. Duplicate effective names remain invalid regardless of path.
 - Git history for an asset is more stable because a logical rename no longer
   forces a file move; an intentional file move remains an explicit reviewable
   diff.
+- Because the effective asset name is also the default physical target, a
+  semantic rename must preview the old/new targets, warn that the old target is
+  left behind in every environment, and block a positively observed collision
+  in the selected environment. Any later warehouse cleanup is a separate,
+  environment-scoped destructive action; see
+  [materialization-target-lifecycle.md](materialization-target-lifecycle.md).
 
 ## Validation
 

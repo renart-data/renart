@@ -1,6 +1,7 @@
 # Remote-table intelligence and external source nodes
 
-Status: server/LSP catalog overlay shipped — external nodes and import proposed
+Status: server/LSP catalog overlay and warnings shipped — external nodes and
+import proposed
 
 ## Goal
 
@@ -51,6 +52,10 @@ is optional and must never block or disable asset-only LSP behavior.
   unknown schemas remain non-authoritative.
 - Column discovery is lazy for relations referenced by the current document.
   The stdio LSP has no provider and remains offline.
+- Positively observed remote references produce a warning in Monaco and in the
+  interactive pipeline type-check report. Type-check consumes only an existing
+  snapshot and never initiates warehouse I/O; CLI validation stays offline and
+  deterministic.
 
 ### Gaps
 
@@ -62,8 +67,8 @@ is optional and must never block or disable asset-only LSP behavior.
   event currently asks Monaco to rerun an unchanged diagnostic request.
 - Remote navigation has no authored definition target, and observation age is
   not yet shown in completion/hover detail.
-- The canvas and type-check report have no external-relation model or import
-  action.
+- The canvas and type-check report have no structured external-relation model
+  or import action beyond the warning finding.
 - Stdio LSP has no connection manager and must remain deterministic/offline.
 
 ## Shipped foundation and proposed product layers
@@ -174,11 +179,12 @@ It should be emitted only from an already available snapshot; type-check must
 not initiate warehouse I/O. Offline/CLI results therefore remain deterministic
 and simply omit this live enrichment.
 
-Offer a structured resolution, “Import source asset”. Bruin already provides
-`bruin import database --connection ... --schema ...` and generates
-source-placeholder assets with optional columns. Extract that logic behind a
-Bruin library API and call it from a scoped Renart endpoint; do not shell out or
-reimplement warehouse-specific import rules. The endpoint must:
+Offer a structured resolution, “Import source asset”. Renart's native
+`HybridBruinExecutor.ImportDatabase` already calls Bruin connection discovery,
+supports a selected table, and writes a source-placeholder asset with columns
+unless `DisableColumns` is set. Reuse that service behind a scoped preview and
+confirm endpoint; do not shell out or reimplement warehouse-specific import
+rules. The endpoint must:
 
 - pin connection, environment, schema, and one table;
 - preview the proposed file/name/columns and reject collisions;
@@ -228,11 +234,12 @@ output identity.
 ## Rollout
 
 1. **Done:** add the bounded provider/cache and tests.
-2. **Mostly done:** overlay remote relations/columns per request. Add a
+2. **Mostly done:** overlay remote relations/columns per request and emit live
+   warning diagnostics. Add a
    catalog-ready invalidation/live test, then remove client-side merge paths.
 3. Add the external-relation workspace DTO and canvas nodes.
-4. Extract Bruin's single-table import library API; add preview/confirm endpoint
-   and structured type-check resolution.
+4. Add a scoped preview/confirm wrapper around the native single-table importer
+   and a structured type-check resolution.
 5. Add live tests, document shipped behavior, fold it into
    `architecture/sql-lsp.md`, and delete this plan.
 
@@ -242,8 +249,7 @@ The catalog foundation uses the accepted starting defaults: 60-second TTL,
 five-second timeout, stale-positive retention, explicit caps, and all discovered
 databases within the cap. Prefix pagination remains follow-up work.
 
-1. Whether external nodes appear immediately from SQL text as “unverified” or
-   only after a positive catalog observation. Recommended: positive observation
-   only for the first release.
-2. Whether “Import source asset” imports columns by default. Recommended: yes,
-   with a review preview and a no-columns escape hatch.
+1. **Decided:** external nodes appear only after a positive catalog observation
+   in the first release; SQL text alone never creates an unverified node.
+2. **Decided:** “Import source asset” imports columns by default, with a review
+   preview and a no-columns escape hatch.
