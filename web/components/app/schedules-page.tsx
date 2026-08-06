@@ -883,7 +883,7 @@ function EditEnvScheduleDialog({
 
   return (
     <Dialog open={Boolean(schedule)} onOpenChange={onOpenChange}>
-      <DialogContent className="grid max-h-[calc(100dvh-2rem)] max-w-xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+      <DialogContent className="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Pencil className="size-4 text-primary" />
@@ -894,7 +894,7 @@ function EditEnvScheduleDialog({
             deployment pin unless you explicitly redeploy it from the schedule row.
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea className="-mx-1 min-h-0 px-1">
+        <ScrollArea data-testid="edit-schedule-scroll-area" className="-mx-1 min-h-0 px-1">
           <FieldGroup className="pb-1">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field>
@@ -1228,7 +1228,7 @@ function NewEnvScheduleDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Clock className="size-4 text-primary" />
@@ -1239,142 +1239,146 @@ function NewEnvScheduleDialog({
               exact deployment pin and run history locally.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Pipeline</span>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                value={pipelineId}
-                onChange={(event) => {
-                  setPipelineId(event.target.value);
-                  setSourceMode("deploy");
-                }}
-              >
-                {pipelines.map((pipeline) => (
-                  <option key={pipeline.id} value={pipeline.id}>
-                    {pipeline.name || pipeline.path}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Environment</span>
-              <Input
-                value={environment}
-                onChange={(event) => setEnvironment(event.target.value)}
-                placeholder="prod"
-              />
-            </label>
-            <div className="grid grid-cols-2 gap-3">
+          <ScrollArea data-testid="new-schedule-scroll-area" className="-mx-1 min-h-0 px-1">
+            <div className="space-y-3 pb-1">
               <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Cron</span>
-                <Input
-                  className="font-mono"
-                  value={cron}
-                  onChange={(event) => setCron(event.target.value)}
-                  placeholder="0 * * * *"
-                />
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Timezone</span>
-                <Input
-                  value={timezone}
-                  onChange={(event) => setTimezone(event.target.value)}
-                  placeholder="UTC"
-                />
-              </label>
-            </div>
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Catch-up policy</span>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
-                value={catchupPolicy}
-                onChange={(event) => setCatchupPolicy(event.target.value as CatchupPolicy)}
-              >
-                <option value="skip">Skip missed intervals</option>
-                <option value="run_once">Run once to catch up</option>
-                <option value="backfill">
-                  Backfill each missed interval (incremental assets only)
-                </option>
-              </select>
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Variable overrides</span>
-              <Textarea
-                className="min-h-20 font-mono text-xs"
-                value={variableOverrides}
-                onChange={(event) => setVariableOverrides(event.target.value)}
-                placeholder={'{"region":"eu","limit":100}'}
-                spellCheck={false}
-              />
-              <span className="block text-[11px] text-muted-foreground">
-                Optional JSON values are validated against the declarations in the pinned
-                deployment. Plans and schedule responses expose names and digests, not values.
-              </span>
-            </label>
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Secret references</span>
-              <Textarea
-                className="min-h-20 font-mono text-xs"
-                value={secretReferences}
-                onChange={(event) => setSecretReferences(event.target.value)}
-                placeholder={'{"api_token":"env:RENART_API_TOKEN"}'}
-                spellCheck={false}
-              />
-              <span className="block text-[11px] text-muted-foreground">
-                Only env:NAME references are committed. Renart resolves their values from the server
-                process when planning and running; resolved values are never written to schedule or
-                run state.
-              </span>
-            </label>
-            <div className="space-y-1.5">
-              <span className="text-xs font-medium text-muted-foreground">Run source</span>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                spacing={0}
-                value={sourceMode}
-                onValueChange={(value) => {
-                  if (value === "existing" || value === "deploy") setSourceMode(value);
-                }}
-                className="grid w-full grid-cols-2"
-              >
-                <ToggleGroupItem
-                  value="existing"
-                  className="w-full"
-                  disabled={
-                    deployState.loading ||
-                    !deployState.status?.has_snapshot ||
-                    !deployState.status.executable
-                  }
+                <span className="text-xs font-medium text-muted-foreground">Pipeline</span>
+                <select
+                  className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                  value={pipelineId}
+                  onChange={(event) => {
+                    setPipelineId(event.target.value);
+                    setSourceMode("deploy");
+                  }}
                 >
-                  {deployState.loading
-                    ? "Checking deployment…"
-                    : deployState.status?.has_snapshot && !deployState.status.executable
-                      ? "Deployment needs repair"
-                      : deployState.status?.version_id
-                        ? `Use ${deploymentLabel(
-                            deployState.status.ordinal,
-                            deployState.status.version_id,
-                          )}`
-                        : "No deployment yet"}
-                </ToggleGroupItem>
-                <ToggleGroupItem value="deploy" className="w-full">
-                  Review saved workspace
-                </ToggleGroupItem>
-              </ToggleGroup>
-              <p className="text-[11px] text-muted-foreground">
-                {sourceMode === "existing" && deployState.status?.version_id
-                  ? `The schedule will stay pinned to ${deploymentLabel(
-                      deployState.status.ordinal,
-                      deployState.status.version_id,
-                      "deployment",
-                    )}.`
-                  : "Review the saved workspace, create a deployment, and pin this schedule to that exact version."}
-              </p>
+                  {pipelines.map((pipeline) => (
+                    <option key={pipeline.id} value={pipeline.id}>
+                      {pipeline.name || pipeline.path}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Environment</span>
+                <Input
+                  value={environment}
+                  onChange={(event) => setEnvironment(event.target.value)}
+                  placeholder="prod"
+                />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Cron</span>
+                  <Input
+                    className="font-mono"
+                    value={cron}
+                    onChange={(event) => setCron(event.target.value)}
+                    placeholder="0 * * * *"
+                  />
+                </label>
+                <label className="block space-y-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Timezone</span>
+                  <Input
+                    value={timezone}
+                    onChange={(event) => setTimezone(event.target.value)}
+                    placeholder="UTC"
+                  />
+                </label>
+              </div>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Catch-up policy</span>
+                <select
+                  className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                  value={catchupPolicy}
+                  onChange={(event) => setCatchupPolicy(event.target.value as CatchupPolicy)}
+                >
+                  <option value="skip">Skip missed intervals</option>
+                  <option value="run_once">Run once to catch up</option>
+                  <option value="backfill">
+                    Backfill each missed interval (incremental assets only)
+                  </option>
+                </select>
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Variable overrides
+                </span>
+                <Textarea
+                  className="min-h-20 font-mono text-xs"
+                  value={variableOverrides}
+                  onChange={(event) => setVariableOverrides(event.target.value)}
+                  placeholder={'{"region":"eu","limit":100}'}
+                  spellCheck={false}
+                />
+                <span className="block text-[11px] text-muted-foreground">
+                  Optional JSON values are validated against the declarations in the pinned
+                  deployment. Plans and schedule responses expose names and digests, not values.
+                </span>
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Secret references</span>
+                <Textarea
+                  className="min-h-20 font-mono text-xs"
+                  value={secretReferences}
+                  onChange={(event) => setSecretReferences(event.target.value)}
+                  placeholder={'{"api_token":"env:RENART_API_TOKEN"}'}
+                  spellCheck={false}
+                />
+                <span className="block text-[11px] text-muted-foreground">
+                  Only env:NAME references are committed. Renart resolves their values from the
+                  server process when planning and running; resolved values are never written to
+                  schedule or run state.
+                </span>
+              </label>
+              <div className="space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Run source</span>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  spacing={0}
+                  value={sourceMode}
+                  onValueChange={(value) => {
+                    if (value === "existing" || value === "deploy") setSourceMode(value);
+                  }}
+                  className="grid w-full grid-cols-2"
+                >
+                  <ToggleGroupItem
+                    value="existing"
+                    className="w-full"
+                    disabled={
+                      deployState.loading ||
+                      !deployState.status?.has_snapshot ||
+                      !deployState.status.executable
+                    }
+                  >
+                    {deployState.loading
+                      ? "Checking deployment…"
+                      : deployState.status?.has_snapshot && !deployState.status.executable
+                        ? "Deployment needs repair"
+                        : deployState.status?.version_id
+                          ? `Use ${deploymentLabel(
+                              deployState.status.ordinal,
+                              deployState.status.version_id,
+                            )}`
+                          : "No deployment yet"}
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="deploy" className="w-full">
+                    Review saved workspace
+                  </ToggleGroupItem>
+                </ToggleGroup>
+                <p className="text-[11px] text-muted-foreground">
+                  {sourceMode === "existing" && deployState.status?.version_id
+                    ? `The schedule will stay pinned to ${deploymentLabel(
+                        deployState.status.ordinal,
+                        deployState.status.version_id,
+                        "deployment",
+                      )}.`
+                    : "Review the saved workspace, create a deployment, and pin this schedule to that exact version."}
+                </p>
+              </div>
+              {error ? <p className="text-xs text-red-600">{error}</p> : null}
             </div>
-            {error ? <p className="text-xs text-red-600">{error}</p> : null}
-          </div>
+          </ScrollArea>
           <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
               Cancel

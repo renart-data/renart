@@ -61,6 +61,21 @@ test.describe("app scheduler pages live", () => {
     await expect(page.getByRole("heading", { name: "Schedules" })).toBeVisible();
     await expect(page.getByText("analytics", { exact: true })).toBeVisible({ timeout: 15000 });
     await expect(page.getByText("daily", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "New schedule" }).click();
+    const newScheduleDialog = page.getByRole("dialog", { name: "New schedule" });
+    await expect(newScheduleDialog).toBeVisible();
+    await expect(newScheduleDialog.getByTestId("new-schedule-scroll-area")).toBeVisible();
+    const newScheduleBounds = await newScheduleDialog.boundingBox();
+    const viewport = page.viewportSize();
+    expect(newScheduleBounds).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    expect(newScheduleBounds!.height).toBeLessThanOrEqual(viewport!.height - 16);
+    if (viewport!.width >= 640) {
+      expect(newScheduleBounds!.width).toBeGreaterThanOrEqual(640);
+    }
+    await newScheduleDialog.getByRole("button", { name: "Close" }).click();
+
     const scheduleRow = page.getByTestId("schedule-row").filter({ hasText: "analytics" }).first();
     const metadata = scheduleRow.getByTestId("schedule-metadata");
     await expect(metadata).toContainText("Schedule");
@@ -402,6 +417,15 @@ test.describe("app scheduler pages live", () => {
     await page.getByRole("menuitem", { name: "Edit schedule" }).click();
     const editDialog = page.getByRole("dialog", { name: "Edit schedule" });
     await expect(editDialog).toBeVisible();
+    await expect(editDialog.getByTestId("edit-schedule-scroll-area")).toBeVisible();
+    const editDialogBounds = await editDialog.boundingBox();
+    const viewport = page.viewportSize();
+    expect(editDialogBounds).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    expect(editDialogBounds!.height).toBeLessThanOrEqual(viewport!.height - 16);
+    if (viewport!.width >= 640) {
+      expect(editDialogBounds!.width).toBeGreaterThanOrEqual(640);
+    }
     await expect(editDialog.getByLabel("Pipeline")).toHaveValue("analytics");
     await expect(editDialog.getByLabel("Environment")).toHaveValue("default");
     await editDialog.getByLabel("Cron").fill("15 1 * * *");
