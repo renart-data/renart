@@ -1,7 +1,7 @@
 # Remote-table intelligence and external source nodes
 
-Status: server/LSP catalog overlay and warnings shipped — external nodes and
-import proposed
+Status: catalog overlay, warnings, external canvas nodes, and reviewed import
+shipped — catalog-ready invalidation and live coverage remain
 
 ## Goal
 
@@ -67,8 +67,11 @@ is optional and must never block or disable asset-only LSP behavior.
   event currently asks Monaco to rerun an unchanged diagnostic request.
 - Remote navigation has no authored definition target, and observation age is
   not yet shown in completion/hover detail.
-- The canvas and type-check report have no structured external-relation model
-  or import action beyond the warning finding.
+- External nodes currently appear only after an interactive pipeline type-check
+  has consumed a positive cached observation. A catalog refresh does not yet
+  rerun that report or unchanged Monaco diagnostics automatically.
+- Observation timestamps are carried in the report but are not yet presented
+  in the canvas node or import review.
 - Stdio LSP has no connection manager and must remain deterministic/offline.
 
 ## Shipped foundation and proposed product layers
@@ -143,10 +146,11 @@ may satisfy `unresolved-relation`; a relation absent from a stale, partial, or
 unavailable snapshot must not create a “table does not exist” error. LSP detail
 and hover should label live catalog evidence and its age.
 
-### 3. External source nodes
+### 3. External source nodes — shipped
 
-Add a workspace-level, ephemeral external-relation DTO rather than pretending a
-remote table is an authored asset:
+The interactive pipeline type-check response carries an ephemeral
+external-relation DTO rather than pretending a remote table is an authored
+asset:
 
 ```text
 (connection, environment, qualified relation)
@@ -155,17 +159,19 @@ remote table is an authored asset:
     -> optional imported asset ID
 ```
 
-Build it from unresolved SQL relation references joined with positive provider
-observations. The canvas renders a distinct read-only source node and edges it
-to every referencing asset. It is not written to Jotai as authoritative state,
-does not participate in execution selection, and disappears when the reference
-or observation disappears. Local assets still win collisions.
+It is built from SQL relation references joined with positive provider
+observations. The Build canvas renders a distinct read-only source node and
+edges it to every referencing asset. It is derived from the latest report, is
+not written to Jotai as authoritative workspace state, does not participate in
+execution selection, and disappears when the reference or observation
+disappears. Local assets still win collisions.
 
-The node should expose connection, physical relation, observation age, and an
-“Import as asset” action. Catalog state changes arrive through normal workspace
-SSE reconciliation or a dedicated event, never polling.
+The node exposes its connection and physical relation plus an “Import as asset”
+action. Import writes reconcile through the ordinary workspace SSE event. A
+future catalog-ready event should rerun the report without polling; observation
+age display remains follow-up work.
 
-### 4. Type-check warning and import resolution
+### 4. Type-check warning and import resolution — shipped
 
 When a SQL reference is confirmed by the provider but has no asset, add a
 non-blocking warning such as:
@@ -179,8 +185,8 @@ It should be emitted only from an already available snapshot; type-check must
 not initiate warehouse I/O. Offline/CLI results therefore remain deterministic
 and simply omit this live enrichment.
 
-Offer a structured resolution, “Import source asset”. Renart's native
-`HybridBruinExecutor.ImportDatabase` already calls Bruin connection discovery,
+The structured “Import source asset” resolution uses Renart's native
+`HybridBruinExecutor.ImportDatabase`, which already calls Bruin connection discovery,
 supports a selected table, and writes a source-placeholder asset with columns
 unless `DisableColumns` is set. Reuse that service behind a scoped preview and
 confirm endpoint; do not shell out or reimplement warehouse-specific import
@@ -193,9 +199,12 @@ rules. The endpoint must:
 - rerun type-check so the warning resolves and the ephemeral node becomes an
   authored asset.
 
-The current type-check resolution payload supports semantic edits to one asset.
-Extend it with a separately typed server action before adding import; do not
-encode file creation as an `AssetTransaction`.
+The type-check resolution payload now distinguishes semantic asset
+transactions from typed server actions; file creation is never encoded as an
+`AssetTransaction`. The preview/import endpoints rerun interactive type-check
+to bind the request to a still-referenced positive observation, reject logical
+name and file-path collisions, and repeat discovery on confirm. Columns are
+enabled by default and can be disabled in the review dialog.
 
 Bruin's importer currently proposes the physical `schema.table` as the asset
 name. A different logical name can use Bruin's native explicit `name:` while
@@ -225,9 +234,10 @@ output identity.
   `FROM schema.`, alias columns, unknown-column suppression, nil provider;
 - freshness of overlay: cached base graph is never mutated across requests;
 - canvas tests: one external node shared by multiple consumers, removal after
-  import/reference deletion, environment switch;
-- import tests: exact proposed Bruin source asset, columns, collision refusal,
-  SSE reconciliation, and warning removal;
+  import/reference deletion, environment switch (live coverage remains);
+- import tests: exact proposed Bruin source asset, default columns, explicit
+  no-columns mode, collision refusal, and stale observation refusal are covered;
+  live SSE reconciliation and warning removal remain;
 - live DuckDB/Postgres test with a table created outside the pipeline, plus one
   credential failure proving asset completions stay responsive.
 
@@ -237,11 +247,13 @@ output identity.
 2. **Mostly done:** overlay remote relations/columns per request and emit live
    warning diagnostics. Add a
    catalog-ready invalidation/live test, then remove client-side merge paths.
-3. Add the external-relation workspace DTO and canvas nodes.
-4. Add a scoped preview/confirm wrapper around the native single-table importer
-   and a structured type-check resolution.
-5. Add live tests, document shipped behavior, fold it into
-   `architecture/sql-lsp.md`, and delete this plan.
+3. **Done:** add the pipeline-scoped external-relation report DTO and read-only
+   canvas nodes.
+4. **Done:** add a scoped preview/confirm wrapper around the native single-table
+   importer and a structured type-check resolution, importing columns by
+   default.
+5. Add catalog-ready invalidation and live tests, then remove the transitional
+   client-side completion merge and delete this plan.
 
 ## Decisions for the remaining phases
 

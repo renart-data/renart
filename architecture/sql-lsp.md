@@ -109,7 +109,16 @@ coordinator's `WorkspaceState` rather than the filesystem:
   each document reference until an authored asset represents it. Interactive
   pipeline type-check reads the same already-cached snapshot without scheduling
   discovery; CLI and execution-planning type-checks remain deterministic and
-  omit this live enrichment. Connection secrets never enter the graph.
+  omit this live enrichment. Its report also aggregates positively observed
+  references into pipeline-scoped external-relation records with their
+  connection, environment, observed columns, and consumer assets. Those records
+  are ephemeral evidence for the Build canvas and a typed import action; they
+  are never canonical graph or workspace state. The reviewed action reruns
+  type-check to bind the relation identity to a still-positive observation,
+  previews the native one-table Bruin source-asset import, defaults to importing
+  columns, rejects logical-name/file-path collisions, and emits the ordinary
+  workspace SSE update only after confirmation. Connection secrets never enter
+  the graph or response.
 - Asset/header rules shared with type-check (dependency existence,
   materialization metadata, missing output declarations, render failures, and
   resilient asset-parse failures) run once per `(revision, pipeline)` through

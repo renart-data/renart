@@ -350,7 +350,10 @@ round-trips unknown fields).
   destructive resolutions remove inactive `partition_by`, `cluster_by`, or
   column merge-only metadata after an explicit confirmation, apply through the
   asset transaction endpoint, and immediately rerun the report. Findings
-  without a proven safe edit remain explanatory only.
+  without a proven safe edit remain explanatory only. The distinct external
+  relation resolution is a typed server action rather than an asset transaction:
+  it opens a preview of the native single-table source-asset import, defaults to
+  persisting observed columns, and writes only after confirmation.
 
 ## 7. Not built (still intent, from the original concept)
 

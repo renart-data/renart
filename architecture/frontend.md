@@ -148,7 +148,15 @@ not underscore-flattened route hacks.
   groups, paths, types, and connections. The toolbar keeps Deploy as a separate
   secondary action and makes **Review run** the primary pipeline action. Type
   checks live in the results panel, which scrolls through a shadcn ScrollArea;
-  failing assets also receive a warning marker on their canvas node. Assets
+  failing assets also receive a warning marker on their canvas node. A type-check
+  report can additionally project positively observed warehouse relations as
+  dashed, read-only external source nodes connected to every authored consumer.
+  They are report-derived rather than persisted workspace assets and cannot be
+  run, opened, deleted, or selected for downstream creation. Their canvas action
+  and matching warning resolution open one reviewed native import dialog: the
+  proposed asset name, path, type, and columns are shown before the Go server
+  writes anything, columns are enabled by default, and an explicit checkbox
+  supports a no-columns import. Assets
   whose latest successful write has failed runtime assertions receive a
   separate **Checks failed** badge only while that outcome matches the current
   asset content. Selecting it opens the asset properties and scrolls to and
@@ -409,7 +417,10 @@ not underscore-flattened route hacks.
   secondary, and edit/archive are in the row's overflow menu. The edit dialog
   keeps pipeline/environment identity fixed, edits the version-controlled
   cadence and lifecycle fields, and defaults to preserving server-private
-  overrides; replacing or clearing them is an explicit mode. The displayed
+  overrides; replacing or clearing them is an explicit mode. Both create and
+  edit dialogs use a wider desktop layout, remain viewport-height-bounded, and
+  put the form body in a shadcn ScrollArea while keeping their header and actions
+  visible. The displayed
   deployment identifies the exact pin
   used by the run; pinless rows show `Needs deployment`, and rows with stored
   variable overrides show an `Overrides` badge and value-free name tooltip.
