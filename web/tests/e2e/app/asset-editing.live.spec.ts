@@ -793,7 +793,23 @@ materialization:
 
     await dialog.getByLabel("Source connection").click();
     await page.getByRole("option", { name: "duckdb-default", exact: true }).click();
-    await dialog.getByLabel("Source table or object").fill("analytics.orders");
+    let discoveryURL = "";
+    await page.route("**/api/load/discover?*", async (route) => {
+      discoveryURL = route.request().url();
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "ok",
+          connection_name: "duckdb-default",
+          streams: [{ name: "analytics.orders", schema: "analytics" }],
+        }),
+      });
+    });
+    await dialog.getByRole("button", { name: "Browse sources" }).click();
+    await page.getByRole("option", { name: "analytics.orders", exact: true }).click();
+    await expect(dialog.getByLabel("Source table or object")).toHaveValue("analytics.orders");
+    expect(discoveryURL).toContain("connection=duckdb-default");
+    expect(discoveryURL).toContain("environment=default");
 
     const createdResponse = page.waitForResponse(
       (response) =>

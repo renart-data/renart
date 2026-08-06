@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { useAtomValue } from "jotai";
-import { ArrowUpRight, Boxes, Check, Database, HardDrive, Loader2, Plug } from "lucide-react";
+import { ArrowUpRight, Check, Database, HardDrive, Plug } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { updateAsset } from "@/lib/api-assets";
-import { discoverLoadStreams, LoadDiscoveryStream } from "@/lib/api-load";
 import { selectedEnvironmentAtom, workspaceAtom } from "@/lib/atoms/workspace";
 import { assetCreationRole } from "@/lib/asset-creation-profile";
 import { useAssetCreationProfile } from "@/hooks/use-asset-creation-profile";
@@ -26,6 +25,7 @@ import { isLocalLoadConnection, loadTargetNeedsDestinationObject } from "@/lib/l
 
 import { Comment, Key, Line } from "./asset-yaml-editor";
 import { FilePathPicker } from "./file-path-picker";
+import { LoadStreamPicker } from "./load-stream-picker";
 
 const CATEGORY_LABELS: Record<string, string> = {
   database: "Databases",
@@ -153,11 +153,11 @@ export function LoadParametersEditor({
             onCommit={(value) => setParam("source_table", value)}
           />
         ) : (
-          <StreamValue
+          <LoadStreamPicker
             value={params.source_table ?? ""}
             connection={params.source_connection ?? ""}
             environment={environment}
-            placeholder="schema.table"
+            placeholder="schema.table or object path"
             onCommit={(value) => setParam("source_table", value)}
           />
         )}
@@ -184,11 +184,12 @@ export function LoadParametersEditor({
               onCommit={(value) => setParam("destination_object", value)}
             />
           ) : (
-            <StreamValue
+            <LoadStreamPicker
               value={params.destination_object ?? ""}
               connection={asset.connection ?? ""}
               environment={environment}
               placeholder="path/to/object"
+              mode="destination"
               onCommit={(value) => setParam("destination_object", value)}
             />
           )}
@@ -283,150 +284,6 @@ function ConnectionValue({
                 })}
               </CommandGroup>
             ))}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-// StreamValue is a free-text-or-discover combobox: it accepts an arbitrary
-// object name and, when a connection is set, lists discovered streams via
-// `sling conns discover` (with the typed text used as a --pattern).
-function StreamValue({
-  value,
-  connection,
-  environment,
-  placeholder,
-  onCommit,
-}: {
-  value: string;
-  connection: string;
-  environment: string | undefined;
-  placeholder?: string;
-  onCommit: (value: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [streams, setStreams] = useState<LoadDiscoveryStream[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const requestRef = useRef(0);
-
-  useEffect(() => {
-    if (!open || !connection) return;
-    const token = ++requestRef.current;
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    discoverLoadStreams({ connection, environment, signal: controller.signal })
-      .then((result) => {
-        if (token !== requestRef.current) return;
-        if (result.status === "error") {
-          setError(result.error || "Discovery failed.");
-          setStreams([]);
-        } else {
-          setStreams(result.streams ?? []);
-        }
-      })
-      .catch((cause: unknown) => {
-        if (token !== requestRef.current) return;
-        if (cause instanceof DOMException && cause.name === "AbortError") return;
-        setError(cause instanceof Error ? cause.message : "Discovery failed.");
-      })
-      .finally(() => {
-        if (token === requestRef.current) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [open, connection, environment]);
-
-  const commitCustom = () => {
-    const trimmed = query.trim();
-    if (trimmed) {
-      onCommit(trimmed);
-      setOpen(false);
-    }
-  };
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "font-monaco min-w-0 flex-1 rounded-sm px-1 text-left outline-none hover:bg-muted/50 focus:bg-muted/60 focus:ring-1 focus:ring-ring",
-            value ? "text-foreground" : "text-muted-foreground/60",
-          )}
-        >
-          <span className="truncate">{value || placeholder || "object…"}</span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-0">
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder={connection ? "Search or type an object…" : "Type an object name…"}
-            className="text-xs"
-            value={query}
-            onValueChange={setQuery}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                commitCustom();
-              }
-            }}
-          />
-          <CommandList>
-            {loading ? (
-              <div className="flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground">
-                <Loader2 className="size-3 animate-spin" /> discovering…
-              </div>
-            ) : null}
-            {error ? <div className="px-3 py-3 text-xs text-amber-600">{error}</div> : null}
-            {!loading && !error ? (
-              <CommandEmpty className="py-3 text-xs">
-                {connection ? "No streams found." : "Pick a connection to discover streams."}
-              </CommandEmpty>
-            ) : null}
-            {query.trim() ? (
-              <CommandGroup heading="Custom">
-                <CommandItem
-                  value={`__custom__${query}`}
-                  onSelect={commitCustom}
-                  className="text-xs"
-                >
-                  <span className="flex-1 truncate">
-                    Use “<span className="text-foreground">{query.trim()}</span>”
-                  </span>
-                </CommandItem>
-              </CommandGroup>
-            ) : null}
-            {streams.length > 0 ? (
-              <CommandGroup heading="Discovered">
-                {streams
-                  .filter((stream) =>
-                    query.trim()
-                      ? stream.name.toLowerCase().includes(query.trim().toLowerCase())
-                      : true,
-                  )
-                  .map((stream) => (
-                    <CommandItem
-                      key={stream.name}
-                      value={stream.name}
-                      onSelect={() => {
-                        onCommit(stream.name);
-                        setOpen(false);
-                      }}
-                      className="text-xs"
-                    >
-                      <Boxes className="mr-2 size-3 text-muted-foreground" />
-                      <span className="flex-1 truncate">{stream.name}</span>
-                      {stream.name === value ? (
-                        <Check className="size-3 text-muted-foreground" />
-                      ) : null}
-                    </CommandItem>
-                  ))}
-              </CommandGroup>
-            ) : null}
           </CommandList>
         </Command>
       </PopoverContent>

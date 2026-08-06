@@ -211,7 +211,14 @@ round-trips unknown fields).
   connection control, including an explicit Auto state. The Load editor keeps
   only source fields in `parameters`, derives database destinations from the
   asset name, shows `destination_object` for file/storage targets, and offers a
-  go-to-source action when the source resolves to an upstream asset. Every edit
+  go-to-source action when the source resolves to an upstream asset. Load
+  creation and editing reuse one free-text stream picker: configured database,
+  S3/GCS, and file connections can list existing tables/objects through Sling
+  with the selected environment's backend-only credentials, while local paths
+  use the workspace file picker. Destination browsing is labeled as existing
+  objects and still accepts a new object path. Listings are capped at 500
+  entries, and raw Sling output is server-only because a connector may echo
+  connection details. Every edit
   flows through the transaction/API write paths; the workspace SSE stream
   refreshes the asset. Seed and non-query sensor runtime parameters use
   dedicated compact, YAML-like editors in the main pane where Monaco normally

@@ -19,6 +19,8 @@ import (
 // `sling conns discover RENART_SLING_DISCOVER` resolves to whatever URI we set.
 const loadDiscoverEnvName = "RENART_SLING_DISCOVER"
 
+const maxLoadDiscoveryStreams = 500
+
 // LoadDiscoveryStream is a single object/stream a Load connection exposes.
 type LoadDiscoveryStream struct {
 	Name   string `json:"name"`
@@ -31,8 +33,11 @@ type LoadDiscoveryResult struct {
 	ConnectionName string                `json:"connection_name"`
 	Pattern        string                `json:"pattern,omitempty"`
 	Streams        []LoadDiscoveryStream `json:"streams"`
-	RawOutput      string                `json:"raw_output,omitempty"`
-	Error          string                `json:"error,omitempty"`
+	Truncated      bool                  `json:"truncated,omitempty"`
+	// RawOutput is retained for server-side diagnostics and tests only. Sling
+	// output can echo connection details, so it must never cross the HTTP API.
+	RawOutput string `json:"-"`
+	Error     string `json:"error,omitempty"`
 }
 
 type LoadDependencies struct {
@@ -82,13 +87,23 @@ func (s *LoadService) Discover(ctx context.Context, connectionName, pattern, env
 		}, nil
 	}
 
+	streams := parseLoadDiscoverStreams(output)
+	streams, truncated := boundedLoadDiscoveryStreams(streams)
 	return LoadDiscoveryResult{
 		Status:         "ok",
 		ConnectionName: connectionName,
 		Pattern:        strings.TrimSpace(pattern),
-		Streams:        parseLoadDiscoverStreams(output),
+		Streams:        streams,
+		Truncated:      truncated,
 		RawOutput:      output,
 	}, nil
+}
+
+func boundedLoadDiscoveryStreams(streams []LoadDiscoveryStream) ([]LoadDiscoveryStream, bool) {
+	if len(streams) <= maxLoadDiscoveryStreams {
+		return streams, false
+	}
+	return streams[:maxLoadDiscoveryStreams], true
 }
 
 func runLoadConnsDiscover(ctx context.Context, workspaceRoot, connectionURI, pattern string) (string, error) {

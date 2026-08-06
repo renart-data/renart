@@ -55,6 +55,7 @@ import { useAssetCreationProfile } from "@/hooks/use-asset-creation-profile";
 
 import { AssetConnectionField, resolveAssetConnectionSelection } from "./asset-connection-field";
 import { FilePathPicker } from "./file-path-picker";
+import { LoadStreamPicker } from "./load-stream-picker";
 import {
   SemanticAssetCreateFields,
   buildSemanticAssetCreatePayload,
@@ -644,12 +645,15 @@ export function NewAssetDialog({
                             onCommit={setSourceTable}
                           />
                         ) : (
-                          <Input
+                          <LoadStreamPicker
                             id="new-load-source-table"
-                            className="font-mono"
-                            placeholder="public.orders"
                             value={sourceTable}
-                            onChange={(event) => setSourceTable(event.target.value)}
+                            connection={sourceSelection?.name ?? sourceConnection}
+                            environment={profile?.environment || environment || undefined}
+                            placeholder="public.orders or path/to/object"
+                            ariaLabel="Source table or object"
+                            variant="field"
+                            onCommit={setSourceTable}
                           />
                         )}
                       </Field>
@@ -767,17 +771,28 @@ export function NewAssetDialog({
               {selected.id === "load" && targetNeedsDestinationObject ? (
                 <Field variant="plain">
                   <FieldLabel htmlFor="new-load-destination-object">Destination object</FieldLabel>
-                  <Input
-                    id="new-load-destination-object"
-                    className="font-mono"
-                    placeholder={
-                      isLocalLoadConnection(targetSelection?.name ?? "")
-                        ? "data/orders.csv"
-                        : "path/to/object"
-                    }
-                    value={destinationObject}
-                    onChange={(event) => setDestinationObject(event.target.value)}
-                  />
+                  {isLocalLoadConnection(targetSelection?.name ?? "") ? (
+                    <FilePathPicker
+                      id="new-load-destination-object"
+                      variant="field"
+                      ariaLabel="Choose destination file"
+                      placeholder="data/orders.csv"
+                      value={destinationObject}
+                      onCommit={setDestinationObject}
+                    />
+                  ) : (
+                    <LoadStreamPicker
+                      id="new-load-destination-object"
+                      value={destinationObject}
+                      connection={targetSelection?.name ?? connection}
+                      environment={profile?.environment || environment || undefined}
+                      placeholder="path/to/object"
+                      ariaLabel="Destination object"
+                      mode="destination"
+                      variant="field"
+                      onCommit={setDestinationObject}
+                    />
+                  )}
                 </Field>
               ) : null}
               {error ? (

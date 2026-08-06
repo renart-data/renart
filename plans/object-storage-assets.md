@@ -1,6 +1,6 @@
 # Object-storage assets and browsing
 
-Status: partial support shipped — Seed and lifecycle integration proposed
+Status: Load creation/edit browsing shipped — Seed and lifecycle integration proposed
 
 ## Goal
 
@@ -16,6 +16,13 @@ The Load path is substantially implemented already:
   destinations (SFTP is a file transport);
 - Load source and target pickers call Sling discovery with the selected
   environment and configured credentials;
+- the same free-text picker is used during Load creation and later editing;
+  local paths use the workspace file picker, while configured database and
+  object-storage connections expose discovered streams;
+- destination browsing distinguishes existing objects from the manually typed
+  new destination path;
+- discovery responses are capped at 500 entries and never serialize raw Sling
+  output, which may contain echoed connection details;
 - database targets use the asset relation, while storage/file targets use
   `parameters.destination_object`;
 - runtime connection URIs are passed through environment variables rather than
@@ -51,6 +58,11 @@ The same connection-to-Sling URI builder should serve Seed and Load. Avoid a
 second provider-specific credential translator.
 
 ## Shared object browser
+
+The shared React picker has shipped for Load. The backend is still the
+Load/Sling stream-discovery endpoint rather than the richer provider-neutral,
+paginated object contract below; that remaining extraction is needed before
+Seed, preview, and lineage can share it safely.
 
 Extract the existing Load stream picker behind a provider-neutral API:
 
@@ -135,9 +147,8 @@ discovery, and test contracts.
 
 ## What else belongs in scope
 
-Besides Seed source and Load source/target, complete support needs:
+Beyond the shipped Load source/target browser, complete support needs:
 
-- create-dialog browsing, not only post-create editing;
 - explicit remote schema import and bounded preview;
 - URI lineage nodes and remote-source freshness;
 - destination collision/resource-claim handling;
@@ -146,15 +157,16 @@ Besides Seed source and Load source/target, complete support needs:
   feasible).
 
 API/Python assets writing arbitrary object files and SQL `COPY` outputs are
-separate output-target features. They should build on the physical-output
-contract in `physical-output-names.md`, not be smuggled into Seed/Load syntax.
+separate output-target features and should not be smuggled into Seed/Load
+syntax. Asset-name/path independence does not define those runtime targets.
 
 ## Rollout
 
 1. Land the optional Seed source-connection contract and shared Sling URI
    builder in Bruin, with CLI tests for local/HTTP/S3/GCS compatibility.
-2. Extract and harden the shared object-browser endpoint/picker; reuse it for
-   existing Load source and destination fields.
+2. **Partial:** the shared, bounded picker now covers Load create/edit sources
+   and destinations and hides raw connector output. Extract the backend into a
+   prefix-aware, paginated object contract before adding further consumers.
 3. Add Seed creation/editing, explicit schema import, and bounded preview.
 4. Add URI lineage, fingerprints, and exact storage write claims.
 5. Add emulator-backed live tests and user documentation, then fold shipped

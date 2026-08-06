@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,6 +47,23 @@ func TestParseLoadDiscoverStreamsEmpty(t *testing.T) {
 	if got := parseLoadDiscoverStreams("6:24PM INF nothing here\n"); len(got) != 0 {
 		t.Errorf("expected no streams, got %+v", got)
 	}
+}
+
+func TestLoadDiscoveryResultBoundsEntriesAndKeepsRawOutputServerSide(t *testing.T) {
+	streams := make([]LoadDiscoveryStream, maxLoadDiscoveryStreams+1)
+	bounded, truncated := boundedLoadDiscoveryStreams(streams)
+	assert.Len(t, bounded, maxLoadDiscoveryStreams)
+	assert.True(t, truncated)
+
+	payload, err := json.Marshal(LoadDiscoveryResult{
+		Status:    "ok",
+		Streams:   bounded,
+		Truncated: true,
+		RawOutput: "postgres://user:secret@example.invalid/database",
+	})
+	require.NoError(t, err)
+	assert.NotContains(t, string(payload), "secret")
+	assert.NotContains(t, string(payload), "raw_output")
 }
 
 func TestLoadFileStreamURI(t *testing.T) {

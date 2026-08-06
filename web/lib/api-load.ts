@@ -10,7 +10,7 @@ export type LoadDiscoveryResponse = {
   connection_name: string;
   pattern?: string;
   streams: LoadDiscoveryStream[];
-  raw_output?: string;
+  truncated?: boolean;
   error?: string;
 };
 
