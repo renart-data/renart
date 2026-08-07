@@ -291,6 +291,69 @@ select order_id from external.orders
 	provider.mu.Unlock()
 }
 
+func TestInteractiveTypeCheckWarnsForExternalRelationAfterCommaJoin(t *testing.T) {
+	parsed, root := writeTypeCheckWorkspace(t, "name: analytics", map[string]string{
+		"accounts.asset.yml": `
+name: public.accounts
+type: duckdb.source
+connection: duckdb-default
+columns:
+  - name: id
+    type: bigint
+`,
+		"jobs.asset.yml": `
+name: public.jobs
+type: duckdb.source
+connection: duckdb-default
+columns:
+  - name: id
+    type: bigint
+`,
+		"report.sql": `
+/* @bruin
+name: analytics.report
+type: duckdb.sql
+connection: duckdb-default
+materialization:
+  type: view
+@bruin */
+SELECT
+  *
+FROM public.accounts join
+public.jobs jobs, public.pipeline_tasks tasks
+`,
+	})
+	provider := &stubRemoteCatalogProvider{snapshot: RemoteCatalogSnapshot{
+		Relations: []RemoteCatalogRelation{{
+			QualifiedName: "public.pipeline_tasks",
+			ShortName:     "pipeline_tasks",
+			SchemaName:    "public",
+			ColumnsKnown:  true,
+			Columns:       []SQLColumn{{Name: "id", Type: "bigint"}},
+		}},
+	}}
+	tw, err := ResolveExecutionTimeWindow(string(parsed.Schedule), "", "", time.Now().UTC())
+	require.NoError(t, err)
+	report := checkPipelineAt(
+		context.Background(),
+		afero.NewOsFs(),
+		parsed,
+		root,
+		tw,
+		time.Now().UTC(),
+		typeCheckOptions{RemoteCatalog: provider, Environment: "dev"},
+	)
+
+	asset := findAsset(t, report, "analytics.report")
+	assert.True(t, hasFinding(asset, typeCheckSeverityWarning, `External relation "public.pipeline_tasks"`),
+		"expected comma-separated external relation warning, got %+v", asset.Findings)
+	for _, finding := range asset.Findings {
+		assert.NotEqual(t, authoringdiag.CodeUnresolvedAlias, finding.Code, finding.Message)
+	}
+	require.Len(t, report.ExternalRelations, 1)
+	assert.Equal(t, "public.pipeline_tasks", report.ExternalRelations[0].QualifiedName)
+}
+
 func TestCheckPipelineDoesNotTreatDuckDBCopyOptionsAsColumns(t *testing.T) {
 	parsed, root := writeTypeCheckWorkspace(t, `name: create_partitions
 default_connections:

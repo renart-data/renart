@@ -50,6 +50,10 @@ export type SQLLSPCodeAction = {
   diagnostics?: SQLLSPDiagnostic[];
   edit?: SQLLSPWorkspaceEdit;
   isPreferred?: boolean;
+  action?: {
+    type: "import-external-relation";
+    relation_id: string;
+  };
 };
 
 export type SQLLSPHover = {

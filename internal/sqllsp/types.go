@@ -54,11 +54,20 @@ type WorkspaceEdit struct {
 }
 
 type CodeAction struct {
-	Title       string        `json:"title"`
-	Kind        string        `json:"kind,omitempty"`
-	Diagnostics []Diagnostic  `json:"diagnostics,omitempty"`
-	Edit        WorkspaceEdit `json:"edit,omitempty"`
-	IsPreferred bool          `json:"isPreferred,omitempty"`
+	Title       string            `json:"title"`
+	Kind        string            `json:"kind,omitempty"`
+	Diagnostics []Diagnostic      `json:"diagnostics,omitempty"`
+	Edit        WorkspaceEdit     `json:"edit,omitempty"`
+	IsPreferred bool              `json:"isPreferred,omitempty"`
+	Action      *CodeActionAction `json:"action,omitempty"`
+}
+
+// CodeActionAction describes a reviewed Renart workflow that cannot be
+// represented as an in-document workspace edit. LSP clients that do not know
+// the action can safely ignore it.
+type CodeActionAction struct {
+	Type       string `json:"type"`
+	RelationID string `json:"relation_id,omitempty"`
 }
 
 type SemanticTokens struct {

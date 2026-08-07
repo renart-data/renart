@@ -49,11 +49,12 @@ const (
 )
 
 var (
-	wordPattern         = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_$]*`)
-	relationPattern     = regexp.MustCompile(`(?i)\b(from|join|into|update|table|describe)\s+((?:"[^"]+"|'(?:''|[^'])+'|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)(?:\s+as\s+([A-Za-z_][\w$]*))?`)
-	insertValuesPattern = regexp.MustCompile(`(?is)\binsert\s+into\s+((?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)\s*(?:\(([^)]*)\))?\s*values\s*\(`)
-	dotColumnPattern    = regexp.MustCompile(`([A-Za-z_][\w$]*)\s*\.\s*([A-Za-z_][\w$]*)`)
-	refCallPattern      = regexp.MustCompile(`(?is)\{\{\s*(ref|source)\s*\(\s*['"]([^'"]*)`)
+	wordPattern          = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_$]*`)
+	relationPattern      = regexp.MustCompile(`(?i)\b(from|join|into|update|table|describe)\s+((?:"[^"]+"|'(?:''|[^'])+'|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)(?:\s+as\s+([A-Za-z_][\w$]*))?`)
+	commaRelationPattern = regexp.MustCompile(`(?i),\s*((?:"[^"]+"|'(?:''|[^'])+'|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)(?:\s+as\s+([A-Za-z_][\w$]*))?`)
+	insertValuesPattern  = regexp.MustCompile(`(?is)\binsert\s+into\s+((?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)\s*(?:\(([^)]*)\))?\s*values\s*\(`)
+	dotColumnPattern     = regexp.MustCompile(`([A-Za-z_][\w$]*)\s*\.\s*([A-Za-z_][\w$]*)`)
+	refCallPattern       = regexp.MustCompile(`(?is)\{\{\s*(ref|source)\s*\(\s*['"]([^'"]*)`)
 )
 
 type scopeResolver interface {
@@ -582,9 +583,31 @@ func (e *Engine) CodeActions(doc TextDocumentItem) []CodeAction {
 			if action, ok := e.unresolvedColumnAction(doc, diagnostic, analysis); ok {
 				actions = append(actions, action)
 			}
+		case authoringdiag.CodeExternalRelation:
+			if action, ok := e.externalRelationAction(doc, diagnostic); ok {
+				actions = append(actions, action)
+			}
 		}
 	}
 	return actions
+}
+
+func (e *Engine) externalRelationAction(doc TextDocumentItem, diagnostic Diagnostic) (CodeAction, bool) {
+	for _, reference := range e.ExternalRelationReferences(doc) {
+		if reference.Range != diagnostic.Range || strings.TrimSpace(reference.RelationID) == "" {
+			continue
+		}
+		return CodeAction{
+			Title:       "Import source asset",
+			Kind:        "quickfix",
+			Diagnostics: []Diagnostic{diagnostic},
+			Action: &CodeActionAction{
+				Type:       "import-external-relation",
+				RelationID: reference.RelationID,
+			},
+		}, true
+	}
+	return CodeAction{}, false
 }
 
 func (e *Engine) SemanticTokens(doc TextDocumentItem) SemanticTokens {
@@ -2364,37 +2387,60 @@ func analyzeSQLWithParent(sql string, resolver scopeResolver, parent *sqlAnalysi
 		}
 	}
 	scanSQL := maskNestedQueries(sql)
+	type relationCandidate struct {
+		nameStart, nameEnd   int
+		aliasStart, aliasEnd int
+	}
+	candidates := make([]relationCandidate, 0)
 	for _, match := range relationPattern.FindAllStringSubmatchIndex(scanSQL, -1) {
 		if !offsetInSQLCode(sql, match[4]) {
 			continue
 		}
-		name := normalizeRelation(sql[match[4]:match[5]])
+		candidate := relationCandidate{nameStart: match[4], nameEnd: match[5], aliasStart: -1, aliasEnd: -1}
+		if len(match) >= 8 && match[6] >= 0 {
+			candidate.aliasStart, candidate.aliasEnd = match[6], match[7]
+		}
+		candidates = append(candidates, candidate)
+	}
+	for _, match := range commaRelationPattern.FindAllStringSubmatchIndex(scanSQL, -1) {
+		if !commaStartsFromRelation(scanSQL, match[0]) || !offsetInSQLCode(sql, match[2]) {
+			continue
+		}
+		candidate := relationCandidate{nameStart: match[2], nameEnd: match[3], aliasStart: -1, aliasEnd: -1}
+		if len(match) >= 6 && match[4] >= 0 {
+			candidate.aliasStart, candidate.aliasEnd = match[4], match[5]
+		}
+		candidates = append(candidates, candidate)
+	}
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].nameStart < candidates[j].nameStart })
+	for _, match := range candidates {
+		name := normalizeRelation(sql[match.nameStart:match.nameEnd])
 		if name == "" || isKeyword(name) {
 			continue
 		}
-		if columns, ok := tableFunctionColumns(name, sql, match[5]); ok {
+		if columns, ok := tableFunctionColumns(name, sql, match.nameEnd); ok {
 			alias := shortName(name)
 			analysis.aliases[strings.ToLower(alias)] = aliasRef{
 				alias:   alias,
 				name:    name,
 				columns: columns,
 				kind:    "table-function",
-				start:   baseOffset + match[4],
-				end:     baseOffset + match[5],
+				start:   baseOffset + match.nameStart,
+				end:     baseOffset + match.nameEnd,
 			}
 			analysis.localAliases[strings.ToLower(alias)] = struct{}{}
 			continue
 		}
-		analysis.relations = append(analysis.relations, relationUse{name: name, start: baseOffset + match[4], end: baseOffset + match[5]})
+		analysis.relations = append(analysis.relations, relationUse{name: name, start: baseOffset + match.nameStart, end: baseOffset + match.nameEnd})
 		alias := shortName(name)
-		aliasStart, aliasEnd := match[4], match[5]
-		if len(match) >= 8 && match[6] >= 0 {
-			candidate := sql[match[6]:match[7]]
+		aliasStart, aliasEnd := match.nameStart, match.nameEnd
+		if match.aliasStart >= 0 {
+			candidate := sql[match.aliasStart:match.aliasEnd]
 			if !isKeyword(candidate) {
 				alias = candidate
-				aliasStart, aliasEnd = match[6], match[7]
+				aliasStart, aliasEnd = match.aliasStart, match.aliasEnd
 			}
-		} else if candidate, candidateStart, candidateEnd := implicitRelationAlias(sql, match[5]); candidate != "" {
+		} else if candidate, candidateStart, candidateEnd := implicitRelationAlias(sql, match.nameEnd); candidate != "" {
 			alias = candidate
 			aliasStart, aliasEnd = candidateStart, candidateEnd
 		}
@@ -2402,7 +2448,7 @@ func analyzeSQLWithParent(sql string, resolver scopeResolver, parent *sqlAnalysi
 		if cte, ok := analysis.ctes[strings.ToLower(name)]; ok {
 			ref = cte
 			ref.alias = alias
-			if aliasStart != match[4] || aliasEnd != match[5] {
+			if aliasStart != match.nameStart || aliasEnd != match.nameEnd {
 				ref.start, ref.end = baseOffset+aliasStart, baseOffset+aliasEnd
 			}
 		} else if resolver != nil {
@@ -2477,6 +2523,96 @@ func analyzeSQLWithParent(sql string, resolver scopeResolver, parent *sqlAnalysi
 		})
 	}
 	return analysis
+}
+
+// commaStartsFromRelation reports whether a top-level comma belongs to a FROM
+// source list. The relation regexp cannot use a bare comma globally because
+// SELECT lists, ORDER BY clauses, and function arguments contain commas too.
+// Nested query bodies are analyzed recursively, so only the current scope is
+// considered here.
+func commaStartsFromRelation(sql string, comma int) bool {
+	if comma < 0 || comma >= len(sql) || sql[comma] != ',' {
+		return false
+	}
+	inFrom := false
+	depth := 0
+	inQuote := byte(0)
+	lineComment := false
+	blockComment := false
+	for i := 0; i < comma; i++ {
+		ch := sql[i]
+		next := byte(0)
+		if i+1 < comma {
+			next = sql[i+1]
+		}
+		if lineComment {
+			if ch == '\n' {
+				lineComment = false
+			}
+			continue
+		}
+		if blockComment {
+			if ch == '*' && next == '/' {
+				blockComment = false
+				i++
+			}
+			continue
+		}
+		if inQuote != 0 {
+			if ch == inQuote {
+				if next == inQuote {
+					i++
+					continue
+				}
+				inQuote = 0
+			}
+			continue
+		}
+		if ch == '-' && next == '-' {
+			lineComment = true
+			i++
+			continue
+		}
+		if ch == '/' && next == '*' {
+			blockComment = true
+			i++
+			continue
+		}
+		if ch == '\'' || ch == '"' || ch == '`' {
+			inQuote = ch
+			continue
+		}
+		switch ch {
+		case '(':
+			depth++
+			continue
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+			continue
+		case ';':
+			if depth == 0 {
+				inFrom = false
+			}
+			continue
+		}
+		if depth != 0 || !isIdentByte(ch) || (i > 0 && isIdentByte(sql[i-1])) {
+			continue
+		}
+		word, end := readIdentifier(sql, i)
+		if word == "" {
+			continue
+		}
+		switch strings.ToLower(word) {
+		case "from":
+			inFrom = true
+		case "where", "group", "having", "qualify", "order", "limit", "union", "intersect", "except", "window", "returning", "fetch", "offset":
+			inFrom = false
+		}
+		i = end - 1
+	}
+	return inFrom && depth == 0 && inQuote == 0 && !lineComment && !blockComment
 }
 
 // implicitRelationAlias reads an alias without letting the relation matcher

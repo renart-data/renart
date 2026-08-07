@@ -1182,6 +1182,50 @@ from orders o`}
 	}
 }
 
+func TestEngineResolvesCommaSeparatedQualifiedRelationsAndOffersExternalImport(t *testing.T) {
+	engine := NewEngine(CanonicalGraph{
+		Version: 1,
+		Relations: []RelationNode{
+			{ID: "relation:accounts", Name: "public.accounts", AssetID: "accounts"},
+			{ID: "relation:jobs", Name: "public.jobs", AssetID: "jobs"},
+			{
+				ID:   "relation:remote_catalog:postgres-other:public.pipeline_tasks",
+				Name: "public.pipeline_tasks",
+				Provenance: []Provenance{{
+					Provider: "remote_catalog", ProviderID: "postgres-other", Confidence: "low",
+				}},
+			},
+		},
+	})
+	doc := TextDocumentItem{URI: "file:///query.sql", Text: `SELECT
+  *
+FROM public.accounts join
+public.jobs jobs, public.pipeline_tasks tasks`}
+
+	diagnostics := engine.Diagnostics(doc)
+	var external *Diagnostic
+	for index := range diagnostics {
+		diagnostic := &diagnostics[index]
+		if diagnostic.Code == authoringdiag.CodeUnresolvedAlias || diagnostic.Code == authoringdiag.CodeUnresolvedRelation {
+			t.Fatalf("qualified comma relation was not parsed as a relation: %#v", diagnostics)
+		}
+		if diagnostic.Code == authoringdiag.CodeExternalRelation {
+			external = diagnostic
+		}
+	}
+	if external == nil || !strings.Contains(external.Message, "public.pipeline_tasks") {
+		t.Fatalf("expected external relation warning for pipeline_tasks, got %#v", diagnostics)
+	}
+
+	actions := engine.CodeActions(doc)
+	if len(actions) != 1 || actions[0].Action == nil {
+		t.Fatalf("expected reviewed external relation quick fix, got %#v", actions)
+	}
+	if actions[0].Action.Type != "import-external-relation" || actions[0].Action.RelationID != "relation:remote_catalog:postgres-other:public.pipeline_tasks" {
+		t.Fatalf("unexpected external relation action: %#v", actions[0].Action)
+	}
+}
+
 func TestEngineSemanticTokensIncludesRelationAliasAndColumn(t *testing.T) {
 	engine := NewEngine(CanonicalGraph{
 		Version: 1,

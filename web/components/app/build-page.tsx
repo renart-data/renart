@@ -2380,6 +2380,7 @@ function EditorWorkspace({ asset, adhoc }: { asset: BuildAsset; adhoc: boolean }
     view,
     buildSearch,
     goToAsset,
+    importExternalRelation,
     openPipelineVariable,
     openInspector,
     materializeSelectedAsset,
@@ -2512,6 +2513,7 @@ function EditorWorkspace({ asset, adhoc }: { asset: BuildAsset; adhoc: boolean }
               pipelineId={asset.pipelineId}
               onInspect={inspectSelectedAsset}
               onGoToAsset={goToAsset}
+              onImportExternalRelation={importExternalRelation}
               onGoToJinjaVariable={openPipelineVariable}
             />
           ) : (

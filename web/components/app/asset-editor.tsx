@@ -25,12 +25,14 @@ export function AppAssetEditor({
   pipelineId,
   onInspect,
   onGoToAsset,
+  onImportExternalRelation,
   onGoToJinjaVariable,
 }: {
   asset: WebAsset;
   pipelineId: string;
   onInspect?: () => void;
   onGoToAsset?: (pipelineId: string, assetId: string) => void;
+  onImportExternalRelation?: (relationId: string) => void;
   onGoToJinjaVariable?: (variableName: string) => void;
 }) {
   const { monacoTheme } = useWorkspaceTheme();
@@ -41,6 +43,7 @@ export function AppAssetEditor({
       asset,
       editorValue,
       onGoToAsset,
+      onImportExternalRelation,
       onGoToJinjaVariable,
       onInspect,
       onSave: handleSaveSelectedAsset,

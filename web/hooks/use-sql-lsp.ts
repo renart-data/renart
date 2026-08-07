@@ -61,6 +61,7 @@ export function useSQLLSP(
     includeNotebookRuntimeColumns?: boolean;
     documentContext?: "asset" | "adhoc" | "custom_check" | "hook";
     allowNonSQLDocument?: boolean;
+    onImportExternalRelation?: (relationId: string) => void;
   },
 ) {
   const workspace = useAtomValue(workspaceAtom);
@@ -92,6 +93,7 @@ export function useSQLLSP(
     parseContext,
     onGoToAsset,
     onGoToCell,
+    onImportExternalRelation: options?.onImportExternalRelation,
   });
   providerStateRef.current = {
     asset,
@@ -102,6 +104,7 @@ export function useSQLLSP(
     parseContext,
     onGoToAsset,
     onGoToCell,
+    onImportExternalRelation: options?.onImportExternalRelation,
   };
 
   useEffect(() => {
@@ -113,6 +116,14 @@ export function useSQLLSP(
       return;
     }
     const modelURI = model.uri.toString();
+    const importExternalRelationCommand = editor.addCommand(
+      0,
+      (_accessor, relationId: unknown) => {
+        if (typeof relationId === "string" && relationId.trim()) {
+          providerStateRef.current.onImportExternalRelation?.(relationId);
+        }
+      },
+    );
     const lspDocumentRequest = (content: string): SQLLSPRequest => {
       const current = providerStateRef.current;
       return {
@@ -379,11 +390,25 @@ export function useSQLLSP(
         const markerRanges = new Set(context.markers.map(markerRangeKey));
         const actions = (response.code_actions ?? [])
           .filter((action) =>
-            action.diagnostics?.some((diagnostic) => {
-              return markerRanges.has(lspRangeKey(lspRangeToMarker(diagnostic.range)));
-            }),
+            Boolean(
+              action.diagnostics?.some((diagnostic) =>
+                markerRanges.has(lspRangeKey(lspRangeToMarker(diagnostic.range))),
+              ) &&
+                (!action.action ||
+                  (action.action.type === "import-external-relation" &&
+                    providerStateRef.current.onImportExternalRelation &&
+                    importExternalRelationCommand)),
+            ),
           )
-          .map((action) => codeActionToMonaco(monaco, currentModel, action, context.markers));
+          .map((action) =>
+            codeActionToMonaco(
+              monaco,
+              currentModel,
+              action,
+              context.markers,
+              importExternalRelationCommand,
+            ),
+          );
         return { actions, dispose: () => undefined };
       },
     });
@@ -750,12 +775,22 @@ function codeActionToMonaco(
   currentModel: MonacoNS.editor.ITextModel,
   action: SQLLSPCodeAction,
   markers: MonacoNS.editor.IMarkerData[],
+  importExternalRelationCommand: string | null,
 ): MonacoNS.languages.CodeAction {
+  const command =
+    action.action?.type === "import-external-relation" && importExternalRelationCommand
+      ? {
+          id: importExternalRelationCommand,
+          title: action.title,
+          arguments: [action.action.relation_id],
+        }
+      : undefined;
   return {
     title: action.title,
     kind: action.kind ?? "quickfix",
     diagnostics: markers,
     edit: lspWorkspaceEditToMonaco(monaco, currentModel, action.edit),
+    command,
     isPreferred: action.isPreferred,
   };
 }
