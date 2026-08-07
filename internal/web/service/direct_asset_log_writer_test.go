@@ -133,7 +133,7 @@ func TestRunDirectTaskUsesAssetLocalWriter(t *testing.T) {
 	printer := &streamCaptureWriter{buffer: &output}
 	executor := &HybridBruinExecutor{}
 
-	err := executor.runDirectTask(context.Background(), pl, pending[0], nil, nil, seq, printer)
+	err := executor.runDirectTask(context.Background(), pl, pending[0], nil, nil, seq, nil, printer)
 	require.NoError(t, err)
 	plain := directAssetLogANSI.ReplaceAllString(output.String(), "")
 	assert.Regexp(t, `\[\d{2}:\d{2}:\d{2}\] \[analytics\.orders\] >> operator line one\n`, plain)

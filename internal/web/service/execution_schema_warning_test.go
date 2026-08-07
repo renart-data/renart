@@ -57,7 +57,7 @@ func TestRunDirectTaskWarnsWhenResultSchemaDrifts(t *testing.T) {
 	printer := &streamCaptureWriter{buffer: &output}
 	ctx, warnings := withExecutionWarnings(context.Background())
 
-	err := (&HybridBruinExecutor{}).runDirectTask(ctx, pl, instance, nil, manager, seq, printer)
+	err := (&HybridBruinExecutor{}).runDirectTask(ctx, pl, instance, nil, manager, seq, nil, printer)
 	require.NoError(t, err)
 
 	const warning = "Result schema for analytics.orders does not match its declaration: undeclared result columns: created_at (TIMESTAMP); missing result columns: legacy (TEXT)."
@@ -94,11 +94,14 @@ func TestRunDirectTaskKeepsSuccessfulRunWhenSchemaCannotBeObserved(t *testing.T)
 		nil,
 		manager,
 		seq,
+		nil,
 		&streamCaptureWriter{buffer: bytes.NewBuffer(nil)},
 	)
 
 	require.NoError(t, err)
-	assert.Empty(t, warnings.snapshot())
+	require.Len(t, warnings.snapshot(), 1)
+	assert.Contains(t, warnings.snapshot()[0], "Could not verify materialization target")
+	assert.Contains(t, warnings.snapshot()[0], "kept the configured materialization strategy")
 }
 
 func TestFormatDeclaredSchemaDriftIgnoresUnspecifiedDeclaredType(t *testing.T) {

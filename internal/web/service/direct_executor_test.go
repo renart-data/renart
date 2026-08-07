@@ -683,6 +683,97 @@ select 1 as customer_id, 'seeded' as source_label
 	assert.Equal(t, float64(1), directDuckDBCount(t, executor))
 }
 
+func TestDirectRunAssetBootstrapsAbsentDuckDBAppendTarget(t *testing.T) {
+	workspaceRoot, assetPath := createSuccessfulDuckDBWorkspace(t)
+	require.NoError(t, os.WriteFile(assetPath, []byte(strings.TrimSpace(`
+/* @bruin
+name: analytics.customers
+type: duckdb.sql
+materialization:
+  type: table
+  strategy: append
+@bruin */
+
+select 1 as customer_id, 'seeded' as source_label
+`)+"\n"), 0o644))
+
+	configPath := filepath.Join(workspaceRoot, ".bruin.yml")
+	cfg, err := loadSelectedConfig(configPath, "")
+	require.NoError(t, err)
+	manager, err := newConnectionManagerFromConfig(context.Background(), cfg)
+	require.NoError(t, err)
+	if connection, ok := manager.GetConnection("duckdb-default").(interface{ Close() }); ok {
+		t.Cleanup(connection.Close)
+	}
+	executor := newCompatDirectExecutor(workspaceRoot, "")
+	executor.newConnectionManager = func(context.Context, string) (config.ConnectionAndDetailsGetter, error) {
+		return manager, nil
+	}
+
+	output, err := executor.RunAsset(context.Background(), RunAssetRequest{AssetPath: assetPath}, nil)
+	require.NoError(t, err)
+	assert.Contains(t, directAssetLogANSI.ReplaceAllString(string(output), ""), "initializing it with Bruin's full-refresh materializer")
+	assert.Equal(t, float64(1), directDuckDBCount(t, executor))
+
+	_, err = executor.RunAsset(context.Background(), RunAssetRequest{AssetPath: assetPath}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, float64(2), directDuckDBCount(t, executor))
+}
+
+func TestDirectRunAssetRequiresFullRefreshForDuckDBObjectKindTransitions(t *testing.T) {
+	workspaceRoot, assetPath := createSuccessfulDuckDBWorkspace(t)
+	configPath := filepath.Join(workspaceRoot, ".bruin.yml")
+	cfg, err := loadSelectedConfig(configPath, "")
+	require.NoError(t, err)
+	manager, err := newConnectionManagerFromConfig(context.Background(), cfg)
+	require.NoError(t, err)
+	if connection, ok := manager.GetConnection("duckdb-default").(interface{ Close() }); ok {
+		t.Cleanup(connection.Close)
+	}
+	executor := newCompatDirectExecutor(workspaceRoot, "")
+	executor.newConnectionManager = func(context.Context, string) (config.ConnectionAndDetailsGetter, error) {
+		return manager, nil
+	}
+
+	_, err = executor.RunAsset(context.Background(), RunAssetRequest{AssetPath: assetPath}, nil)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(assetPath, []byte(strings.TrimSpace(`
+/* @bruin
+name: analytics.customers
+type: duckdb.sql
+materialization:
+  type: view
+@bruin */
+
+select 2 as customer_id, 'view' as source_label
+`)+"\n"), 0o644))
+
+	_, err = executor.RunAsset(context.Background(), RunAssetRequest{AssetPath: assetPath}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "run a full refresh")
+	_, err = executor.RunAsset(context.Background(), RunAssetRequest{AssetPath: assetPath, FullRefresh: true}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "view", directDuckDBRelationKind(t, executor, "analytics", "customers"))
+
+	require.NoError(t, os.WriteFile(assetPath, []byte(strings.TrimSpace(`
+/* @bruin
+name: analytics.customers
+type: duckdb.sql
+materialization:
+  type: table
+@bruin */
+
+select 3 as customer_id, 'table' as source_label
+`)+"\n"), 0o644))
+	_, err = executor.RunAsset(context.Background(), RunAssetRequest{AssetPath: assetPath}, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "run a full refresh")
+	_, err = executor.RunAsset(context.Background(), RunAssetRequest{AssetPath: assetPath, FullRefresh: true}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "table", directDuckDBRelationKind(t, executor, "analytics", "customers"))
+	assert.Equal(t, float64(1), directDuckDBCount(t, executor))
+}
+
 func TestDirectPipelineRunAppliesEnvironmentSchemaPrefix(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(workspaceRoot, ".git"), 0o755))
@@ -931,6 +1022,31 @@ func directDuckDBCount(t *testing.T, executor *HybridBruinExecutor) float64 {
 	count, ok := payload.Rows[0][0].(float64)
 	require.True(t, ok, "unexpected count value: %#v", payload.Rows[0][0])
 	return count
+}
+
+func directDuckDBRelationKind(t *testing.T, executor *HybridBruinExecutor, schema, table string) string {
+	t.Helper()
+	output, err := executor.QueryConnection(context.Background(), QueryConnectionRequest{
+		ConnectionName: "duckdb-default",
+		Query: fmt.Sprintf(
+			"select lower(table_type) from information_schema.tables where table_schema = '%s' and table_name = '%s'",
+			strings.ReplaceAll(schema, "'", "''"), strings.ReplaceAll(table, "'", "''"),
+		),
+		Output: "json",
+	})
+	require.NoError(t, err)
+	var payload struct {
+		Rows [][]any `json:"rows"`
+	}
+	require.NoError(t, json.Unmarshal(output, &payload))
+	require.Len(t, payload.Rows, 1)
+	require.Len(t, payload.Rows[0], 1)
+	kind, ok := payload.Rows[0][0].(string)
+	require.True(t, ok)
+	if kind == "base table" {
+		return "table"
+	}
+	return kind
 }
 
 func TestDirectRunAssetFailureMatchesCLIErrorSemantics(t *testing.T) {

@@ -692,6 +692,13 @@ func (s *AssetRenderService) renderPath(ctx context.Context, assetPath string, r
 			Fidelity: AssetRenderFidelityExact,
 		})
 	}
+	targetName := result.Asset.Target.Object
+	if strings.TrimSpace(targetName) == "" {
+		targetName = pp.Asset.Name
+	}
+	if lifecycleStage, ok := renderMaterializationTargetLifecycleStage(pp.Asset, targetName, executionFullRefresh); ok {
+		result.Stages = append(result.Stages, lifecycleStage)
+	}
 
 	if isQuerySensorAssetType(pp.Asset.Type) {
 		if pp.Asset.Type == pipeline.AssetTypeBigqueryQuerySensor {

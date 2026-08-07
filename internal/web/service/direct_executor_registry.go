@@ -275,6 +275,46 @@ func buildDirectMainExecutors(manager config.ConnectionAndDetailsGetter, rendere
 	return executors, nil
 }
 
+// buildDirectMainExecutorSequences keeps the configured and full-refresh
+// operators side by side. Target lifecycle preflight chooses between them per
+// asset only after a fresh warehouse lookup, so one asset's absent target can
+// never change another asset's materialization strategy.
+func buildDirectMainExecutorSequences(
+	manager config.ConnectionAndDetailsGetter,
+	renderer *jinja.Renderer,
+	parser *sqlparser.SQLParser,
+	pl *pipeline.Pipeline,
+	cfg *config.Config,
+	registry *runstate.Registry,
+	coordinator *duckcoord.Coordinator,
+	sessions *duckdbsession.Manager,
+	workspaceRoot string,
+	disableDuckDBFilesystemAccess bool,
+	requestedFullRefresh bool,
+	sensorMode string,
+) (*bruinexecutor.Sequential, *bruinexecutor.Sequential, error) {
+	configured, err := buildDirectMainExecutors(
+		manager, renderer, parser, pl, cfg, registry, coordinator, sessions,
+		workspaceRoot, disableDuckDBFilesystemAccess, requestedFullRefresh, sensorMode,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	configuredSequence := &bruinexecutor.Sequential{TaskTypeMap: configured}
+	if requestedFullRefresh {
+		return configuredSequence, configuredSequence, nil
+	}
+
+	full, err := buildDirectMainExecutors(
+		manager, renderer, parser, pl, cfg, registry, coordinator, sessions,
+		workspaceRoot, disableDuckDBFilesystemAccess, true, sensorMode,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return configuredSequence, &bruinexecutor.Sequential{TaskTypeMap: full}, nil
+}
+
 func pipelineUsesIngestr(pl *pipeline.Pipeline) bool {
 	if pl == nil {
 		return false

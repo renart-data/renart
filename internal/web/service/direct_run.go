@@ -75,16 +75,24 @@ func (e *HybridBruinExecutor) RunAsset(ctx context.Context, req RunAssetRequest,
 		return printer.buffer.Bytes(), err
 	}
 
-	mainExecutors := map[pipeline.AssetType]bruinexecutor.Config{}
+	var seq *bruinexecutor.Sequential
+	var fullRefreshSeq *bruinexecutor.Sequential
 	if isAPIAsset(pp.Asset) || isLoadAsset(pp.Asset) {
 		// Main execution stays on Renart's HTTP/Sling path below, but the
 		// scheduler still creates quality-check and metadata task instances.
-		mainExecutors, err = buildDirectCheckExecutors(manager, renderer)
+		mainExecutors, buildErr := buildDirectCheckExecutors(manager, renderer)
+		err = buildErr
 		if err != nil {
 			return printer.buffer.Bytes(), err
 		}
+		seq = &bruinexecutor.Sequential{TaskTypeMap: mainExecutors}
 	} else {
-		mainExecutors, err = buildDirectMainExecutors(manager, renderer, parser, pp.Pipeline, pp.Config, e.runRegistry, e.duckDBCoordinator, e.duckDBSessions, e.workspaceRoot, e.disableDuckDBFilesystemAccess, req.FullRefresh, effectiveSensorMode(req.SensorMode, false))
+		seq, fullRefreshSeq, err = buildDirectMainExecutorSequences(
+			manager, renderer, parser, pp.Pipeline, pp.Config, e.runRegistry,
+			e.duckDBCoordinator, e.duckDBSessions, e.workspaceRoot,
+			e.disableDuckDBFilesystemAccess, req.FullRefresh,
+			effectiveSensorMode(req.SensorMode, false),
+		)
 		if err != nil {
 			return printer.buffer.Bytes(), err
 		}
@@ -120,7 +128,6 @@ func (e *HybridBruinExecutor) RunAsset(ctx context.Context, req RunAssetRequest,
 	writeDirectRunWindow(printer, formatting)
 	runCtx = context.WithValue(runCtx, bruinexecutor.ContextLogger, zap.NewNop().Sugar())
 
-	seq := bruinexecutor.Sequential{TaskTypeMap: mainExecutors}
 	results := make([]*scheduler.TaskExecutionResult, 0, len(pending))
 	startedAt := time.Now()
 
@@ -150,7 +157,7 @@ func (e *HybridBruinExecutor) RunAsset(ctx context.Context, req RunAssetRequest,
 			instance.MarkAs(scheduler.Running)
 			writeDirectRunLifecycle(printer, instance, nil, true, 0)
 			finishTask := beginRegistryTask(regRun, instance)
-			runErr := e.runDirectTask(runCtx, pp.Pipeline, instance, renderer, manager, &seq, printer)
+			runErr := e.runDirectTask(runCtx, pp.Pipeline, instance, renderer, manager, seq, fullRefreshSeq, printer)
 			if runErr != nil {
 				finishTask(runErr)
 				instance.MarkAs(scheduler.Failed)
@@ -287,7 +294,12 @@ func (e *HybridBruinExecutor) RunPipeline(ctx context.Context, req RunPipelineRe
 			return printer.buffer.Bytes(), err
 		}
 	}
-	mainExecutors, err := buildDirectMainExecutors(manager, renderer, parser, foundPipeline, cfg, e.runRegistry, e.duckDBCoordinator, e.duckDBSessions, e.workspaceRoot, e.disableDuckDBFilesystemAccess, req.FullRefresh, effectiveSensorMode(req.SensorMode, false))
+	seq, fullRefreshSeq, err := buildDirectMainExecutorSequences(
+		manager, renderer, parser, foundPipeline, cfg, e.runRegistry,
+		e.duckDBCoordinator, e.duckDBSessions, e.workspaceRoot,
+		e.disableDuckDBFilesystemAccess, req.FullRefresh,
+		effectiveSensorMode(req.SensorMode, false),
+	)
 	if err != nil {
 		return printer.buffer.Bytes(), err
 	}
@@ -302,7 +314,6 @@ func (e *HybridBruinExecutor) RunPipeline(ctx context.Context, req RunPipelineRe
 	writeDirectRunWindow(printer, formatting)
 	runCtx = context.WithValue(runCtx, bruinexecutor.ContextLogger, zap.NewNop().Sugar())
 
-	seq := bruinexecutor.Sequential{TaskTypeMap: mainExecutors}
 	s := scheduler.NewScheduler(zap.NewNop().Sugar(), foundPipeline, runID)
 	s.MarkAll(scheduler.Pending)
 	if err := e.notifyExecutionTargetsResolved(foundPipeline, cfg, foundPipeline.Assets, req.OnTargetsResolved); err != nil {
@@ -349,7 +360,7 @@ func (e *HybridBruinExecutor) RunPipeline(ctx context.Context, req RunPipelineRe
 			instance.MarkAs(scheduler.Running)
 			writeDirectRunLifecycle(printer, instance, nil, true, 0)
 			finishTask := beginRegistryTask(regRun, instance)
-			runErr := e.runDirectTask(runCtx, foundPipeline, instance, renderer, manager, &seq, printer)
+			runErr := e.runDirectTask(runCtx, foundPipeline, instance, renderer, manager, seq, fullRefreshSeq, printer)
 			finishTask(runErr)
 			if runErr != nil {
 				instance.MarkAs(scheduler.Failed)
@@ -865,11 +876,16 @@ func (e *HybridBruinExecutor) runPlannedPipelineUnit(
 		return err
 	}
 
-	mainExecutors := map[pipeline.AssetType]bruinexecutor.Config{}
+	var seq *bruinexecutor.Sequential
+	var fullRefreshSeq *bruinexecutor.Sequential
 	if isAPIAsset(asset) || isLoadAsset(asset) {
-		mainExecutors, err = buildDirectCheckExecutors(manager, renderer)
+		mainExecutors, buildErr := buildDirectCheckExecutors(manager, renderer)
+		err = buildErr
+		if err == nil {
+			seq = &bruinexecutor.Sequential{TaskTypeMap: mainExecutors}
+		}
 	} else {
-		mainExecutors, err = buildDirectMainExecutors(
+		seq, fullRefreshSeq, err = buildDirectMainExecutorSequences(
 			manager, renderer, parser, pp.Pipeline, pp.Config, e.runRegistry, e.duckDBCoordinator,
 			e.duckDBSessions, sourceRoot, e.disableDuckDBFilesystemAccess, req.FullRefresh, effectiveSensorMode(req.SensorMode, false),
 		)
@@ -906,7 +922,6 @@ func (e *HybridBruinExecutor) runPlannedPipelineUnit(
 		}
 		return req.AssetEvent(event)
 	}
-	seq := bruinexecutor.Sequential{TaskTypeMap: mainExecutors}
 	results := make([]*scheduler.TaskExecutionResult, 0, len(pending))
 	unitStartedAt := time.Now()
 	defer func() {
@@ -937,7 +952,7 @@ func (e *HybridBruinExecutor) runPlannedPipelineUnit(
 			instance.MarkAs(scheduler.Running)
 			writeDirectRunLifecycle(printer, instance, nil, true, 0)
 			finishTask := beginRegistryTask(regRun, instance)
-			runErr := e.runDirectTask(runCtx, pp.Pipeline, instance, renderer, manager, &seq, printer)
+			runErr := e.runDirectTask(runCtx, pp.Pipeline, instance, renderer, manager, seq, fullRefreshSeq, printer)
 			finishTask(runErr)
 			if runErr != nil {
 				instance.MarkAs(scheduler.Failed)
@@ -1048,6 +1063,7 @@ func (e *HybridBruinExecutor) runDirectTask(
 	renderer *jinja.Renderer,
 	manager config.ConnectionAndDetailsGetter,
 	seq *bruinexecutor.Sequential,
+	fullRefreshSeq *bruinexecutor.Sequential,
 	printer *streamCaptureWriter,
 ) error {
 	asset := instance.GetAsset()
@@ -1076,6 +1092,29 @@ func (e *HybridBruinExecutor) runDirectTask(
 			runErr = preflightRuntimeConnections(manager, connectionNames...)
 		}
 	}
+	executionSeq := seq
+	if runErr == nil && instance.GetType() == scheduler.TaskInstanceTypeMain && !isAPIAsset(asset) && !isLoadAsset(asset) {
+		decision, lifecycleErr := e.prepareMaterializationTarget(
+			taskCtx, pl, asset, manager, fullRefreshSeq, assetWriter,
+		)
+		if lifecycleErr != nil {
+			runErr = lifecycleErr
+		} else {
+			if decision.UseFullRefresh {
+				executionSeq = fullRefreshSeq
+			}
+			if decision.DropOppositeKind {
+				if err := reportTargetWriteStarting(taskCtx, asset.Name); err != nil {
+					runErr = err
+				} else {
+					runErr = dropOppositeMaterializationTarget(taskCtx, manager, decision.State, assetWriter)
+				}
+			}
+		}
+	}
+	if runErr == nil && executionSeq == nil {
+		runErr = fmt.Errorf("direct executor is unavailable for asset %q", asset.Name)
+	}
 	if runErr == nil {
 		switch {
 		case isAPIAsset(asset) && instance.GetType() == scheduler.TaskInstanceTypeMain:
@@ -1083,7 +1122,7 @@ func (e *HybridBruinExecutor) runDirectTask(
 		case isLoadAsset(asset) && instance.GetType() == scheduler.TaskInstanceTypeMain:
 			_, runErr = e.runLoadAsset(taskCtx, pl, asset, manager, forward)
 		case directTaskOwnsDuckDBCoordination(instance):
-			runErr = seq.RunSingleTask(taskCtx, instance)
+			runErr = executionSeq.RunSingleTask(taskCtx, instance)
 		default:
 			lease, leaseErr := e.acquireDuckDBConnections(
 				taskCtx,
@@ -1095,7 +1134,7 @@ func (e *HybridBruinExecutor) runDirectTask(
 			if leaseErr != nil {
 				runErr = leaseErr
 			} else {
-				runErr = seq.RunSingleTask(taskCtx, instance)
+				runErr = executionSeq.RunSingleTask(taskCtx, instance)
 				lease.Release()
 			}
 		}

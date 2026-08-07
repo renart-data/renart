@@ -95,7 +95,7 @@ select
 	assert.NotEmpty(t, result.Asset.Target.Identity)
 	assert.NotContains(t, result.Asset.Target.Identity, root)
 
-	require.Len(t, result.Stages, 3)
+	require.Len(t, result.Stages, 4)
 	compiled := result.Stages[0]
 	assert.Equal(t, "compiled_query", compiled.Kind)
 	assert.Equal(t, AssetRenderStageStatusOK, compiled.Status)
@@ -106,13 +106,19 @@ select
 	assert.Contains(t, compiled.Content, "'renart-render-preview' as run_id")
 	assert.Contains(t, compiled.Content, "'analytics.report' as target")
 
-	schema := result.Stages[1]
+	lifecycle := result.Stages[1]
+	assert.Equal(t, "condition", lifecycle.Kind)
+	assert.Equal(t, "Inspect materialization target", lifecycle.Label)
+	assert.True(t, lifecycle.Conditional)
+	assert.Equal(t, AssetRenderFidelitySemantic, lifecycle.Fidelity)
+
+	schema := result.Stages[2]
 	assert.Equal(t, "schema_preparation", schema.Kind)
 	assert.Equal(t, "CREATE SCHEMA IF NOT EXISTS analytics", schema.Content)
 	assert.True(t, schema.Conditional)
 	assert.Equal(t, AssetRenderFidelitySemantic, schema.Fidelity)
 
-	execution := result.Stages[2]
+	execution := result.Stages[3]
 	assert.Equal(t, "execution_sql", execution.Kind)
 	assert.Equal(t, AssetRenderStageStatusOK, execution.Status)
 	assert.Equal(t, AssetRenderFidelityExact, execution.Fidelity)
@@ -271,17 +277,18 @@ select '{{ start_date }}' as window_start
 	require.NoError(t, err)
 
 	assert.Equal(t, AssetRenderStatusPartial, result.Status)
-	require.Len(t, result.Stages, 3)
+	require.Len(t, result.Stages, 4)
 	assert.Equal(t, AssetRenderStageStatusOK, result.Stages[0].Status)
 	assert.Equal(t, AssetRenderFidelityExact, result.Stages[0].Fidelity)
 	assert.Contains(t, result.Stages[0].Content, "'2026-07-15'")
-	assert.Equal(t, "schema_preparation", result.Stages[1].Kind)
-	assert.Equal(t, AssetRenderFidelitySemantic, result.Stages[1].Fidelity)
-	assert.Equal(t, "execution_sql", result.Stages[2].Kind)
-	assert.Equal(t, AssetRenderStageStatusOK, result.Stages[2].Status)
-	assert.Equal(t, AssetRenderFidelityExact, result.Stages[2].Fidelity)
-	assert.Contains(t, result.Stages[2].Content, `DROP TABLE IF EXISTS "analytics"."report"`)
-	assert.Contains(t, result.Stages[2].Content, "'2026-07-15' as window_start")
+	assert.Equal(t, "condition", result.Stages[1].Kind)
+	assert.Equal(t, "schema_preparation", result.Stages[2].Kind)
+	assert.Equal(t, AssetRenderFidelitySemantic, result.Stages[2].Fidelity)
+	assert.Equal(t, "execution_sql", result.Stages[3].Kind)
+	assert.Equal(t, AssetRenderStageStatusOK, result.Stages[3].Status)
+	assert.Equal(t, AssetRenderFidelityExact, result.Stages[3].Fidelity)
+	assert.Contains(t, result.Stages[3].Content, `DROP TABLE IF EXISTS "analytics"."report"`)
+	assert.Contains(t, result.Stages[3].Content, "'2026-07-15' as window_start")
 }
 
 func TestAssetRenderServicePostgresFamilyExecutionMatchesDirectRuntime(t *testing.T) {
@@ -510,12 +517,13 @@ select 1 as id
 			require.NoError(t, err)
 
 			assert.Equal(t, AssetRenderStatusPartial, result.Status)
-			require.Len(t, result.Stages, 2)
+			require.Len(t, result.Stages, 3)
 			assert.Equal(t, AssetRenderStageStatusOK, result.Stages[0].Status)
 			assert.Equal(t, "select 1 as id", strings.TrimSpace(result.Stages[0].Content))
-			assert.Equal(t, AssetRenderStageStatusError, result.Stages[1].Status)
-			assert.Equal(t, AssetRenderFidelityExact, result.Stages[1].Fidelity)
-			assert.Contains(t, result.Stages[1].Message, "requires the `columns` field")
+			assert.Equal(t, "condition", result.Stages[1].Kind)
+			assert.Equal(t, AssetRenderStageStatusError, result.Stages[2].Status)
+			assert.Equal(t, AssetRenderFidelityExact, result.Stages[2].Fidelity)
+			assert.Contains(t, result.Stages[2].Message, "requires the `columns` field")
 		})
 	}
 }
@@ -1072,9 +1080,9 @@ select DATE '{{ start_date }}' as event_date
 	})
 	require.NoError(t, err)
 	require.Equal(t, AssetRenderStatusOK, result.Status)
-	require.Len(t, result.Stages, 3)
+	require.Len(t, result.Stages, 4)
 
-	execution := result.Stages[2].Content
+	execution := result.Stages[3].Content
 	assert.Contains(t, execution, "DELETE FROM analytics.events WHERE event_date BETWEEN '2026-07-15' AND '2026-07-16'")
 	assert.Contains(t, execution, "INSERT INTO analytics.events select DATE '2026-07-15' as event_date")
 	assert.NotContains(t, execution, "{{start_date}}")
@@ -1118,7 +1126,7 @@ environments:
 	})
 	require.NoError(t, err)
 	require.Equal(t, AssetRenderStatusOK, result.Status)
-	require.Len(t, result.Stages, 3)
+	require.Len(t, result.Stages, 4)
 	assert.True(t, result.Provenance.Context.RequestedFullRefresh)
 	assert.False(t, result.Provenance.Context.FullRefresh)
 	require.Len(t, result.Issues, 1)
@@ -1127,7 +1135,7 @@ environments:
 	assert.Contains(t, result.Stages[0].Content, "'False' as is_full_refresh")
 	assert.NotContains(t, result.Stages[0].Content, "'True' as is_full_refresh")
 
-	execution := result.Stages[2].Content
+	execution := result.Stages[3].Content
 	assert.Contains(t, execution, "INSERT INTO analytics.events select 1 as id")
 	assert.NotContains(t, execution, "DROP TABLE IF EXISTS analytics.events")
 }
@@ -1592,9 +1600,9 @@ environments:
 	})
 	require.NoError(t, err)
 	require.Equal(t, AssetRenderStatusPartial, result.Status)
-	require.Len(t, result.Stages, 3)
+	require.Len(t, result.Stages, 4)
 
-	execution := result.Stages[2]
+	execution := result.Stages[3]
 	assert.Equal(t, AssetRenderStageStatusOK, execution.Status)
 	assert.Equal(t, AssetRenderFidelityRuntimeOnly, execution.Fidelity)
 	assert.Contains(t, execution.Content, "analytics.source_events")
@@ -1635,9 +1643,9 @@ environments:
 	})
 	require.NoError(t, err)
 	require.Equal(t, AssetRenderStatusPartial, result.Status)
-	require.Len(t, result.Stages, 3)
+	require.Len(t, result.Stages, 4)
 
-	execution := result.Stages[2]
+	execution := result.Stages[3]
 	assert.Equal(t, AssetRenderStageStatusOK, execution.Status)
 	assert.Equal(t, AssetRenderFidelityRuntimeOnly, execution.Fidelity)
 	assert.Contains(t, execution.Content, "analytics.source_events")
@@ -1674,9 +1682,9 @@ select 1 as id, 'value' as value
 	result, err := NewAssetRenderService(root).RenderPath(context.Background(), "analytics/assets/events.sql", AssetRenderRequest{})
 	require.NoError(t, err)
 	require.Equal(t, AssetRenderStatusPartial, result.Status)
-	require.Len(t, result.Stages, 3)
+	require.Len(t, result.Stages, 4)
 
-	execution := result.Stages[2]
+	execution := result.Stages[3]
 	assert.Equal(t, AssetRenderStageStatusOK, execution.Status)
 	assert.Equal(t, AssetRenderFidelityRuntimeOnly, execution.Fidelity)
 	assert.Contains(t, execution.Content, "__bruin_merge_tmp_")
@@ -1717,9 +1725,9 @@ select 1 as id, current_date as event_date
 			result, err := NewAssetRenderService(root).RenderPath(context.Background(), "analytics/assets/events.sql", AssetRenderRequest{})
 			require.NoError(t, err)
 			require.Equal(t, AssetRenderStatusPartial, result.Status)
-			require.Len(t, result.Stages, 3)
+			require.Len(t, result.Stages, 4)
 
-			execution := result.Stages[2]
+			execution := result.Stages[3]
 			assert.Equal(t, AssetRenderStageStatusOK, execution.Status)
 			assert.Equal(t, AssetRenderFidelityRuntimeOnly, execution.Fidelity)
 			assert.Contains(t, execution.Content, "__bruin_tmp_")

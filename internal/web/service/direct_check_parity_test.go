@@ -349,6 +349,7 @@ func TestRunDirectTaskDoesNotRerunAPIOrLoadMainForChecks(t *testing.T) {
 				nil,
 				&stubConnectionManager{},
 				seq,
+				nil,
 				printer,
 			)
 			require.NoError(t, err)
@@ -380,6 +381,7 @@ func TestRunDirectTaskTreatsAPIOrLoadMetadataPushAsExplicitNoOp(t *testing.T) {
 				nil,
 				&stubConnectionManager{},
 				seq,
+				nil,
 				&streamCaptureWriter{buffer: bytes.NewBuffer(nil)},
 			)
 			require.NoError(t, err)

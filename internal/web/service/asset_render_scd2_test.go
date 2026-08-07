@@ -95,8 +95,12 @@ select 1 as id, 'first' as label
 				AssetRenderRequest{},
 			)
 			require.NoError(t, err)
-			assert.Equal(t, []string{"compiled_query", "schema_preparation", "scd2_migration", "execution_sql"}, renderStageKinds(result.Stages))
-			migration := result.Stages[2]
+			assert.Equal(t, []string{"compiled_query", "condition", "schema_preparation", "scd2_migration", "execution_sql"}, renderStageKinds(result.Stages))
+			lifecycle := result.Stages[1]
+			assert.Equal(t, AssetRenderFidelitySemantic, lifecycle.Fidelity)
+			assert.True(t, lifecycle.Conditional)
+			assert.Contains(t, lifecycle.Content, `"operation": "inspect_materialization_target"`)
+			migration := result.Stages[3]
 			assert.Equal(t, AssetRenderFidelityRuntimeOnly, migration.Fidelity)
 			assert.True(t, migration.Conditional)
 			assert.Contains(t, migration.Content, `"operation": "`+test.operation+`"`)
