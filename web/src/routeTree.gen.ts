@@ -14,13 +14,16 @@ import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as RedesignIndexRouteImport } from './routes/redesign.index'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
 import { Route as RedesignSplatRouteImport } from './routes/redesign.$'
-import { Route as ShellSchedulesRouteImport } from './routes/_shell/schedules'
 import { Route as ShellCatalogRouteImport } from './routes/_shell/catalog'
+import { Route as ShellSchedulesRouteRouteImport } from './routes/_shell/schedules/route'
 import { Route as ShellRunsRouteRouteImport } from './routes/_shell/runs/route'
 import { Route as ShellProjectRouteRouteImport } from './routes/_shell/project/route'
+import { Route as ShellSchedulesIndexRouteImport } from './routes/_shell/schedules/index'
 import { Route as ShellRunsIndexRouteImport } from './routes/_shell/runs/index'
 import { Route as ShellProjectIndexRouteImport } from './routes/_shell/project/index'
 import { Route as ShellNotebooksIndexRouteImport } from './routes/_shell/notebooks/index'
+import { Route as ShellSchedulesTimelineRouteImport } from './routes/_shell/schedules/timeline'
+import { Route as ShellSchedulesDeploymentsRouteImport } from './routes/_shell/schedules/deployments'
 import { Route as ShellRunsRunIdRouteImport } from './routes/_shell/runs/$runId'
 import { Route as ShellProjectGeneralRouteImport } from './routes/_shell/project/general'
 import { Route as ShellProjectEnvironmentsRouteImport } from './routes/_shell/project/environments'
@@ -61,14 +64,14 @@ const RedesignSplatRoute = RedesignSplatRouteImport.update({
   path: '/redesign/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShellSchedulesRoute = ShellSchedulesRouteImport.update({
-  id: '/schedules',
-  path: '/schedules',
-  getParentRoute: () => ShellRoute,
-} as any)
 const ShellCatalogRoute = ShellCatalogRouteImport.update({
   id: '/catalog',
   path: '/catalog',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellSchedulesRouteRoute = ShellSchedulesRouteRouteImport.update({
+  id: '/schedules',
+  path: '/schedules',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellRunsRouteRoute = ShellRunsRouteRouteImport.update({
@@ -80,6 +83,11 @@ const ShellProjectRouteRoute = ShellProjectRouteRouteImport.update({
   id: '/project',
   path: '/project',
   getParentRoute: () => ShellRoute,
+} as any)
+const ShellSchedulesIndexRoute = ShellSchedulesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ShellSchedulesRouteRoute,
 } as any)
 const ShellRunsIndexRoute = ShellRunsIndexRouteImport.update({
   id: '/',
@@ -96,6 +104,17 @@ const ShellNotebooksIndexRoute = ShellNotebooksIndexRouteImport.update({
   path: '/notebooks/',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellSchedulesTimelineRoute = ShellSchedulesTimelineRouteImport.update({
+  id: '/timeline',
+  path: '/timeline',
+  getParentRoute: () => ShellSchedulesRouteRoute,
+} as any)
+const ShellSchedulesDeploymentsRoute =
+  ShellSchedulesDeploymentsRouteImport.update({
+    id: '/deployments',
+    path: '/deployments',
+    getParentRoute: () => ShellSchedulesRouteRoute,
+  } as any)
 const ShellRunsRunIdRoute = ShellRunsRunIdRouteImport.update({
   id: '/$runId',
   path: '/$runId',
@@ -189,8 +208,8 @@ export interface FileRoutesByFullPath {
   '/welcome': typeof WelcomeRoute
   '/project': typeof ShellProjectRouteRouteWithChildren
   '/runs': typeof ShellRunsRouteRouteWithChildren
+  '/schedules': typeof ShellSchedulesRouteRouteWithChildren
   '/catalog': typeof ShellCatalogRoute
-  '/schedules': typeof ShellSchedulesRoute
   '/redesign/$': typeof RedesignSplatRoute
   '/redesign/': typeof RedesignIndexRoute
   '/pipelines/$pipelineId': typeof ShellPipelinesPipelineIdRouteRouteWithChildren
@@ -199,9 +218,12 @@ export interface FileRoutesByFullPath {
   '/project/environments': typeof ShellProjectEnvironmentsRoute
   '/project/general': typeof ShellProjectGeneralRoute
   '/runs/$runId': typeof ShellRunsRunIdRoute
+  '/schedules/deployments': typeof ShellSchedulesDeploymentsRoute
+  '/schedules/timeline': typeof ShellSchedulesTimelineRoute
   '/notebooks/': typeof ShellNotebooksIndexRoute
   '/project/': typeof ShellProjectIndexRoute
   '/runs/': typeof ShellRunsIndexRoute
+  '/schedules/': typeof ShellSchedulesIndexRoute
   '/pipelines/$pipelineId/canvas': typeof ShellPipelinesPipelineIdCanvasRoute
   '/pipelines/$pipelineId/code': typeof ShellPipelinesPipelineIdCodeRoute
   '/pipelines/$pipelineId/split': typeof ShellPipelinesPipelineIdSplitRoute
@@ -215,7 +237,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/welcome': typeof WelcomeRoute
   '/catalog': typeof ShellCatalogRoute
-  '/schedules': typeof ShellSchedulesRoute
   '/redesign/$': typeof RedesignSplatRoute
   '/': typeof ShellIndexRoute
   '/redesign': typeof RedesignIndexRoute
@@ -224,9 +245,12 @@ export interface FileRoutesByTo {
   '/project/environments': typeof ShellProjectEnvironmentsRoute
   '/project/general': typeof ShellProjectGeneralRoute
   '/runs/$runId': typeof ShellRunsRunIdRoute
+  '/schedules/deployments': typeof ShellSchedulesDeploymentsRoute
+  '/schedules/timeline': typeof ShellSchedulesTimelineRoute
   '/notebooks': typeof ShellNotebooksIndexRoute
   '/project': typeof ShellProjectIndexRoute
   '/runs': typeof ShellRunsIndexRoute
+  '/schedules': typeof ShellSchedulesIndexRoute
   '/pipelines/$pipelineId/canvas': typeof ShellPipelinesPipelineIdCanvasRoute
   '/pipelines/$pipelineId/code': typeof ShellPipelinesPipelineIdCodeRoute
   '/pipelines/$pipelineId/split': typeof ShellPipelinesPipelineIdSplitRoute
@@ -242,8 +266,8 @@ export interface FileRoutesById {
   '/welcome': typeof WelcomeRoute
   '/_shell/project': typeof ShellProjectRouteRouteWithChildren
   '/_shell/runs': typeof ShellRunsRouteRouteWithChildren
+  '/_shell/schedules': typeof ShellSchedulesRouteRouteWithChildren
   '/_shell/catalog': typeof ShellCatalogRoute
-  '/_shell/schedules': typeof ShellSchedulesRoute
   '/redesign/$': typeof RedesignSplatRoute
   '/_shell/': typeof ShellIndexRoute
   '/redesign/': typeof RedesignIndexRoute
@@ -253,9 +277,12 @@ export interface FileRoutesById {
   '/_shell/project/environments': typeof ShellProjectEnvironmentsRoute
   '/_shell/project/general': typeof ShellProjectGeneralRoute
   '/_shell/runs/$runId': typeof ShellRunsRunIdRoute
+  '/_shell/schedules/deployments': typeof ShellSchedulesDeploymentsRoute
+  '/_shell/schedules/timeline': typeof ShellSchedulesTimelineRoute
   '/_shell/notebooks/': typeof ShellNotebooksIndexRoute
   '/_shell/project/': typeof ShellProjectIndexRoute
   '/_shell/runs/': typeof ShellRunsIndexRoute
+  '/_shell/schedules/': typeof ShellSchedulesIndexRoute
   '/_shell/pipelines/$pipelineId/canvas': typeof ShellPipelinesPipelineIdCanvasRoute
   '/_shell/pipelines/$pipelineId/code': typeof ShellPipelinesPipelineIdCodeRoute
   '/_shell/pipelines/$pipelineId/split': typeof ShellPipelinesPipelineIdSplitRoute
@@ -273,8 +300,8 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/project'
     | '/runs'
-    | '/catalog'
     | '/schedules'
+    | '/catalog'
     | '/redesign/$'
     | '/redesign/'
     | '/pipelines/$pipelineId'
@@ -283,9 +310,12 @@ export interface FileRouteTypes {
     | '/project/environments'
     | '/project/general'
     | '/runs/$runId'
+    | '/schedules/deployments'
+    | '/schedules/timeline'
     | '/notebooks/'
     | '/project/'
     | '/runs/'
+    | '/schedules/'
     | '/pipelines/$pipelineId/canvas'
     | '/pipelines/$pipelineId/code'
     | '/pipelines/$pipelineId/split'
@@ -299,7 +329,6 @@ export interface FileRouteTypes {
   to:
     | '/welcome'
     | '/catalog'
-    | '/schedules'
     | '/redesign/$'
     | '/'
     | '/redesign'
@@ -308,9 +337,12 @@ export interface FileRouteTypes {
     | '/project/environments'
     | '/project/general'
     | '/runs/$runId'
+    | '/schedules/deployments'
+    | '/schedules/timeline'
     | '/notebooks'
     | '/project'
     | '/runs'
+    | '/schedules'
     | '/pipelines/$pipelineId/canvas'
     | '/pipelines/$pipelineId/code'
     | '/pipelines/$pipelineId/split'
@@ -325,8 +357,8 @@ export interface FileRouteTypes {
     | '/welcome'
     | '/_shell/project'
     | '/_shell/runs'
-    | '/_shell/catalog'
     | '/_shell/schedules'
+    | '/_shell/catalog'
     | '/redesign/$'
     | '/_shell/'
     | '/redesign/'
@@ -336,9 +368,12 @@ export interface FileRouteTypes {
     | '/_shell/project/environments'
     | '/_shell/project/general'
     | '/_shell/runs/$runId'
+    | '/_shell/schedules/deployments'
+    | '/_shell/schedules/timeline'
     | '/_shell/notebooks/'
     | '/_shell/project/'
     | '/_shell/runs/'
+    | '/_shell/schedules/'
     | '/_shell/pipelines/$pipelineId/canvas'
     | '/_shell/pipelines/$pipelineId/code'
     | '/_shell/pipelines/$pipelineId/split'
@@ -394,18 +429,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RedesignSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_shell/schedules': {
-      id: '/_shell/schedules'
-      path: '/schedules'
-      fullPath: '/schedules'
-      preLoaderRoute: typeof ShellSchedulesRouteImport
-      parentRoute: typeof ShellRoute
-    }
     '/_shell/catalog': {
       id: '/_shell/catalog'
       path: '/catalog'
       fullPath: '/catalog'
       preLoaderRoute: typeof ShellCatalogRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/schedules': {
+      id: '/_shell/schedules'
+      path: '/schedules'
+      fullPath: '/schedules'
+      preLoaderRoute: typeof ShellSchedulesRouteRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/runs': {
@@ -421,6 +456,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/project'
       preLoaderRoute: typeof ShellProjectRouteRouteImport
       parentRoute: typeof ShellRoute
+    }
+    '/_shell/schedules/': {
+      id: '/_shell/schedules/'
+      path: '/'
+      fullPath: '/schedules/'
+      preLoaderRoute: typeof ShellSchedulesIndexRouteImport
+      parentRoute: typeof ShellSchedulesRouteRoute
     }
     '/_shell/runs/': {
       id: '/_shell/runs/'
@@ -442,6 +484,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/notebooks/'
       preLoaderRoute: typeof ShellNotebooksIndexRouteImport
       parentRoute: typeof ShellRoute
+    }
+    '/_shell/schedules/timeline': {
+      id: '/_shell/schedules/timeline'
+      path: '/timeline'
+      fullPath: '/schedules/timeline'
+      preLoaderRoute: typeof ShellSchedulesTimelineRouteImport
+      parentRoute: typeof ShellSchedulesRouteRoute
+    }
+    '/_shell/schedules/deployments': {
+      id: '/_shell/schedules/deployments'
+      path: '/deployments'
+      fullPath: '/schedules/deployments'
+      preLoaderRoute: typeof ShellSchedulesDeploymentsRouteImport
+      parentRoute: typeof ShellSchedulesRouteRoute
     }
     '/_shell/runs/$runId': {
       id: '/_shell/runs/$runId'
@@ -582,6 +638,21 @@ const ShellRunsRouteRouteWithChildren = ShellRunsRouteRoute._addFileChildren(
   ShellRunsRouteRouteChildren,
 )
 
+interface ShellSchedulesRouteRouteChildren {
+  ShellSchedulesDeploymentsRoute: typeof ShellSchedulesDeploymentsRoute
+  ShellSchedulesTimelineRoute: typeof ShellSchedulesTimelineRoute
+  ShellSchedulesIndexRoute: typeof ShellSchedulesIndexRoute
+}
+
+const ShellSchedulesRouteRouteChildren: ShellSchedulesRouteRouteChildren = {
+  ShellSchedulesDeploymentsRoute: ShellSchedulesDeploymentsRoute,
+  ShellSchedulesTimelineRoute: ShellSchedulesTimelineRoute,
+  ShellSchedulesIndexRoute: ShellSchedulesIndexRoute,
+}
+
+const ShellSchedulesRouteRouteWithChildren =
+  ShellSchedulesRouteRoute._addFileChildren(ShellSchedulesRouteRouteChildren)
+
 interface ShellPipelinesPipelineIdAssetsAssetIdRouteRouteChildren {
   ShellPipelinesPipelineIdAssetsAssetIdCanvasRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdCanvasRoute
   ShellPipelinesPipelineIdAssetsAssetIdCodeRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdCodeRoute
@@ -632,8 +703,8 @@ const ShellPipelinesPipelineIdRouteRouteWithChildren =
 interface ShellRouteChildren {
   ShellProjectRouteRoute: typeof ShellProjectRouteRouteWithChildren
   ShellRunsRouteRoute: typeof ShellRunsRouteRouteWithChildren
+  ShellSchedulesRouteRoute: typeof ShellSchedulesRouteRouteWithChildren
   ShellCatalogRoute: typeof ShellCatalogRoute
-  ShellSchedulesRoute: typeof ShellSchedulesRoute
   ShellIndexRoute: typeof ShellIndexRoute
   ShellPipelinesPipelineIdRouteRoute: typeof ShellPipelinesPipelineIdRouteRouteWithChildren
   ShellNotebooksNotebookIdRoute: typeof ShellNotebooksNotebookIdRoute
@@ -643,8 +714,8 @@ interface ShellRouteChildren {
 const ShellRouteChildren: ShellRouteChildren = {
   ShellProjectRouteRoute: ShellProjectRouteRouteWithChildren,
   ShellRunsRouteRoute: ShellRunsRouteRouteWithChildren,
+  ShellSchedulesRouteRoute: ShellSchedulesRouteRouteWithChildren,
   ShellCatalogRoute: ShellCatalogRoute,
-  ShellSchedulesRoute: ShellSchedulesRoute,
   ShellIndexRoute: ShellIndexRoute,
   ShellPipelinesPipelineIdRouteRoute:
     ShellPipelinesPipelineIdRouteRouteWithChildren,

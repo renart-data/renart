@@ -108,6 +108,58 @@ test.describe("app scheduler pages live", () => {
     await page.keyboard.press("Escape");
   });
 
+  test("navigates deployment history and the actual run timeline as schedule subroutes", async ({
+    liveApp,
+    page,
+    request,
+  }) => {
+    const deployed = await request.post(
+      `${liveApp.baseURL}/api/pipelines/${analyticsPipelineId}/deploy`,
+      { data: {} },
+    );
+    expect(deployed.ok()).toBe(true);
+
+    await page.goto(`${liveApp.baseURL}/schedules`);
+    await page.getByRole("link", { name: "Deployments", exact: true }).click();
+    await expect(page).toHaveURL(/\/schedules\/deployments$/);
+    await expect(page.getByRole("heading", { name: "Deployments" })).toBeVisible();
+    await expect(page.getByText("analytics", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Deployment #\d+/).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Review", exact: true }).first()).toBeVisible();
+
+    const now = Date.now();
+    await page.route("**/api/runs?*", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          status: "ok",
+          total: 1,
+          limit: 500,
+          offset: 0,
+          runs: [
+            {
+              id: "schedule-subroute-run",
+              pipeline_id: analyticsPipelineId,
+              pipeline: "analytics",
+              environment: "default",
+              trigger: "schedule",
+              status: "success",
+              started_at: new Date(now - 60_000).toISOString(),
+              finished_at: new Date(now - 30_000).toISOString(),
+              execution_context_resolved: true,
+            },
+          ],
+        }),
+      });
+    });
+    await page.getByRole("link", { name: "Run timeline", exact: true }).click();
+    await expect(page).toHaveURL(/\/schedules\/timeline$/);
+    await expect(page.getByRole("heading", { name: "Run timeline" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "analytics", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Open analytics run/ })).toBeVisible();
+  });
+
   test("deploys and pins a schedule that has no previous deployment", async ({
     liveApp,
     page,
