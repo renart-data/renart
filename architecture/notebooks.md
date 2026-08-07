@@ -125,7 +125,10 @@ warn that they are likely to change.
 
 Cell code is edited in Monaco. Its initial height follows the cell's content;
 each cell also has an independent vertical resize handle with pointer and
-keyboard controls. Resizing is presentation-only and stays in frontend state.
+keyboard controls. Until the user resizes it, the editor follows Monaco's
+content height up to the notebook's 24-line automatic cap; short cells do not
+have an internal scroll range, while longer cells scroll inside that bounded
+height. Resizing is presentation-only and stays in frontend state.
 
 `buildNotebookSchemaTables` supplies sibling relations to both SQL cells and
 plain SQL string literals inside Python `query(...)` calls. Native SQL cells
@@ -187,6 +190,12 @@ is typing" (a typing→save debounce) and rendering.
   Unsaved drafts remain in Monaco on conflict. After the revision check, a
   normalized payload identical to the current file is a no-op; focus/blur save
   races therefore do not rewrite the file or mark the dependency closure stale.
+- Notebook SQL formatting requests formatted text without persisting the asset
+  directly, applies it to Monaco, and lets the same revision-checked cell save
+  queue perform the only write. Ordinary pipeline-asset formatting remains a
+  persistent endpoint action. This prevents formatting from advancing the
+  notebook file behind its own queued `base_revision` and manufacturing a
+  `cell_edit_conflict`.
 - This is snapshot concurrency control, not collaborative text merging. The
   acknowledged snapshot is the boundary where a future OT/CRDT adapter can
   exchange operations; until then, conflicts are explicit and the filesystem

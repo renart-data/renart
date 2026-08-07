@@ -5,9 +5,30 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"renart/internal/authoringdiag"
 )
+
+func TestCatalogObservationAge(t *testing.T) {
+	now := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
+	for _, test := range []struct {
+		name     string
+		observed time.Time
+		want     string
+	}{
+		{name: "recent", observed: now.Add(-30 * time.Second), want: "just now"},
+		{name: "minutes", observed: now.Add(-12 * time.Minute), want: "12m ago"},
+		{name: "hours", observed: now.Add(-3 * time.Hour), want: "3h ago"},
+		{name: "days", observed: now.Add(-49 * time.Hour), want: "2d ago"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := catalogObservationAge(test.observed, now); got != test.want {
+				t.Fatalf("catalogObservationAge() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
 
 func TestEngineCompletesColumnsFromCTE(t *testing.T) {
 	engine := NewEngine(CanonicalGraph{
@@ -35,6 +56,67 @@ from recent_orders r`}
 	labels := completionLabels(items)
 	if !slices.Contains(labels, "order_id") || !slices.Contains(labels, "customer_id") {
 		t.Fatalf("expected CTE columns in completions, got %#v", labels)
+	}
+}
+
+func TestEngineResolvesAndCompletesCTEAfterVizComment(t *testing.T) {
+	engine := NewEngine(CanonicalGraph{
+		Version:   1,
+		Relations: []RelationNode{{ID: "relation:playful-maple", Name: "playful_maple"}},
+		Schemas: []SchemaLayer{{
+			RelationID: "relation:playful-maple",
+			Columns: []ColumnInfo{
+				{Name: "trino_seconds", Type: "double"},
+				{Name: "starrocks_seconds", Type: "double"},
+				{Name: "result", Type: "varchar"},
+				{Name: "trino_rows", Type: "bigint"},
+			},
+		}},
+	})
+	doc := TextDocumentItem{URI: "file:///query.sql", Text: `/* @viz(line, x: count, y: count_star()) */
+with preagg as (
+  select
+    round(trino_seconds / starrocks_seconds) as ratio,
+    count(*) over (order by trino_seconds / starrocks_seconds rows unbounded preceding) as count
+  from playful_maple
+  where result = '"MATCH"' and trino_rows > 0
+)
+select
+from preagg`}
+
+	for _, diagnostic := range engine.Diagnostics(doc) {
+		if diagnostic.Code == authoringdiag.CodeUnresolvedRelation && strings.Contains(diagnostic.Message, "preagg") {
+			t.Fatalf("CTE after viz comment was unresolved: %#v", engine.Diagnostics(doc))
+		}
+	}
+	items := engine.Complete(doc, PositionAt(doc.Text, strings.Index(doc.Text, "\nfrom preagg")))
+	labels := completionLabels(items)
+	for _, column := range []string{"ratio", "count"} {
+		if !slices.Contains(labels, column) {
+			t.Fatalf("expected CTE column %s after viz comment, got %#v", column, labels)
+		}
+	}
+}
+
+func TestEngineDoesNotTreatCopyOptionsAsColumns(t *testing.T) {
+	engine := NewEngine(CanonicalGraph{
+		Version:   1,
+		Relations: []RelationNode{{ID: "relation:create-partitions", Name: "create_partitions.create_partitions"}},
+		Schemas: []SchemaLayer{{
+			RelationID: "relation:create-partitions",
+			Columns:    []ColumnInfo{{Name: "statement", Type: "varchar"}},
+		}},
+	})
+	doc := TextDocumentItem{URI: "file:///query.sql", Text: `COPY create_partitions.create_partitions
+TO .data/create_all_partitions.sql
+format csv
+header FALSE
+delimiter '\t'`}
+
+	for _, diagnostic := range engine.Diagnostics(doc) {
+		if diagnostic.Code == authoringdiag.CodeUnresolvedColumn {
+			t.Fatalf("COPY format option was treated as a column: %#v", engine.Diagnostics(doc))
+		}
 	}
 }
 

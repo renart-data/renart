@@ -291,6 +291,102 @@ select order_id from external.orders
 	provider.mu.Unlock()
 }
 
+func TestCheckPipelineDoesNotTreatDuckDBCopyOptionsAsColumns(t *testing.T) {
+	parsed, root := writeTypeCheckWorkspace(t, `name: create_partitions
+default_connections:
+  duckdb: duckdb-default
+`, map[string]string{
+		"create_partitions.sql": `
+/* @bruin
+name: create_partitions.create_partitions
+type: duckdb.sql
+materialization:
+  type: table
+columns:
+  - name: partition
+    type: varchar
+@bruin */
+select 'statement' as partition
+`,
+		"export.sql": `
+/* @bruin
+name: create_partitions.export
+type: duckdb.sql
+depends:
+  - create_partitions.create_partitions
+@bruin */
+COPY create_partitions.create_partitions
+TO .data/create_all_partitions.sql
+format csv
+header FALSE
+delimiter '\t'
+`,
+	})
+
+	report := runTypeCheck(t, parsed, root)
+	asset := findAsset(t, report, "create_partitions.export")
+	for _, finding := range asset.Findings {
+		if finding.Code == authoringdiag.CodeUnresolvedColumn {
+			t.Fatalf("COPY format option was treated as a column: %#v", asset.Findings)
+		}
+	}
+}
+
+func TestInteractiveTypeCheckTreatsExactThreePartRemoteNameAsImportedAsset(t *testing.T) {
+	parsed, root := writeTypeCheckWorkspace(t, `name: example
+default_connections:
+  databricks: databricks-default
+`, map[string]string{
+		"accounts.asset.yml": `
+name: scraping_pipeline.public.accounts
+type: databricks.source
+connection: databricks-default
+columns:
+  - name: account_id
+    type: bigint
+`,
+		"remote.sql": `
+/* @bruin
+name: example.remote
+type: databricks.sql
+connection: databricks-default
+materialization:
+  type: view
+columns:
+  - name: account_id
+    type: bigint
+@bruin */
+select account_id from scraping_pipeline.public.accounts
+`,
+	})
+	provider := &stubRemoteCatalogProvider{snapshot: RemoteCatalogSnapshot{Relations: []RemoteCatalogRelation{{
+		QualifiedName: "scraping_pipeline.public.accounts",
+		ShortName:     "accounts",
+		SchemaName:    "public",
+		DatabaseName:  "scraping_pipeline",
+		ColumnsKnown:  true,
+		Columns:       []SQLColumn{{Name: "account_id", Type: "bigint"}},
+	}}}}
+	tw, err := ResolveExecutionTimeWindow(string(parsed.Schedule), "", "", time.Now().UTC())
+	require.NoError(t, err)
+	report := checkPipelineAt(
+		context.Background(),
+		afero.NewOsFs(),
+		parsed,
+		root,
+		tw,
+		time.Now().UTC(),
+		typeCheckOptions{RemoteCatalog: provider, Environment: "dev"},
+	)
+
+	asset := findAsset(t, report, "example.remote")
+	for _, finding := range asset.Findings {
+		assert.NotEqual(t, authoringdiag.CodeExternalRelation, finding.Code, finding.Message)
+		assert.NotEqual(t, authoringdiag.CodeUnresolvedRelation, finding.Code, finding.Message)
+	}
+	assert.Empty(t, report.ExternalRelations)
+}
+
 func TestCheckPipelineValidatesQuerySensorParameterSQL(t *testing.T) {
 	t.Parallel()
 	parsed, root := writeTypeCheckWorkspace(t, "name: analytics", map[string]string{

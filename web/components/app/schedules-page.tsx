@@ -894,9 +894,14 @@ function EditEnvScheduleDialog({
             deployment pin unless you explicitly redeploy it from the schedule row.
           </DialogDescription>
         </DialogHeader>
-        <ScrollArea data-testid="edit-schedule-scroll-area" className="-mx-1 min-h-0 px-1">
-          <FieldGroup className="pb-1">
-            <div className="grid gap-4 sm:grid-cols-2">
+        <ScrollArea
+          data-testid="edit-schedule-scroll-area"
+          className="-mx-1 min-h-0 min-w-0 px-1"
+          viewportClassName="overflow-x-hidden"
+          showHorizontalScrollBar={false}
+        >
+          <FieldGroup className="min-w-0 max-w-full pb-1">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor="edit-schedule-pipeline">Pipeline</FieldLabel>
                 <Input id="edit-schedule-pipeline" value={pipelineLabel} readOnly />
@@ -910,7 +915,7 @@ function EditEnvScheduleDialog({
                 />
               </Field>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
               <Field data-invalid={!cron.trim()}>
                 <FieldLabel htmlFor="edit-schedule-cron">Cron</FieldLabel>
                 <Input
@@ -956,7 +961,12 @@ function EditEnvScheduleDialog({
                   Paused schedules keep their declaration and deployment pin but do not admit runs.
                 </FieldDescription>
               </div>
-              <Switch id="edit-schedule-paused" checked={paused} onCheckedChange={setPaused} />
+              <Switch
+                id="edit-schedule-paused"
+                className="mr-3"
+                checked={paused}
+                onCheckedChange={setPaused}
+              />
             </Field>
             <Field>
               <FieldLabel>Variable overrides</FieldLabel>
@@ -968,17 +978,17 @@ function EditEnvScheduleDialog({
                 onValueChange={(value) => {
                   if (value === "preserve" || value === "replace") setOverrideMode(value);
                 }}
-                className="grid w-full grid-cols-2"
+                className="grid min-w-0 w-full grid-cols-2"
                 aria-label="Variable override behavior"
               >
-                <ToggleGroupItem value="preserve" className="w-full">
+                <ToggleGroupItem value="preserve" className="min-w-0 w-full whitespace-normal">
                   Keep stored overrides
                 </ToggleGroupItem>
-                <ToggleGroupItem value="replace" className="w-full">
+                <ToggleGroupItem value="replace" className="min-w-0 w-full whitespace-normal">
                   Replace or clear
                 </ToggleGroupItem>
               </ToggleGroup>
-              <FieldDescription>
+              <FieldDescription className="break-words">
                 {storedNames.length > 0
                   ? `Stored names: ${[...storedNames].sort().join(", ")}. Values stay private and are never loaded into this form.${
                       secretNames.length > 0
@@ -1239,8 +1249,13 @@ function NewEnvScheduleDialog({
               exact deployment pin and run history locally.
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea data-testid="new-schedule-scroll-area" className="-mx-1 min-h-0 px-1">
-            <div className="space-y-3 pb-1">
+          <ScrollArea
+            data-testid="new-schedule-scroll-area"
+            className="-mx-1 min-h-0 min-w-0 px-1"
+            viewportClassName="overflow-x-hidden"
+            showHorizontalScrollBar={false}
+          >
+            <div className="min-w-0 max-w-full space-y-3 pb-1">
               <label className="block space-y-1.5">
                 <span className="text-xs font-medium text-muted-foreground">Pipeline</span>
                 <select

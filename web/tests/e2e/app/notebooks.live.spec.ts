@@ -207,6 +207,69 @@ test.describe("app notebooks live", () => {
     await expect(suggestWidget.getByText("unrelated_runtime", { exact: true })).toHaveCount(0);
   });
 
+  test("resolves CTE columns after a leading viz directive", async ({ liveApp, page }) => {
+    test.skip(
+      test.info().project.name.includes("mobile"),
+      "Desktop suggest widget exposes stable Monaco completion DOM.",
+    );
+    const notebook = await createNotebook(page.request, liveApp.baseURL, "CTE IntelliSense");
+    const cellId = await addCell(page.request, liveApp.baseURL, notebook.id, "cte_query");
+    await setCell(page.request, liveApp.baseURL, notebook.id, cellId, "select 1 as placeholder");
+    const assetId = await getCellAssetId(page.request, liveApp.baseURL, notebook.id, cellId);
+    const query = [
+      "/* @viz(line, x: count, y: count_star()) */",
+      "with preagg as (",
+      "  select 1::bigint as count, 2::bigint as count_star",
+      ")",
+      "select ",
+      "from preagg",
+    ].join("\n");
+    const cursorOffset = query.indexOf("\nfrom preagg");
+
+    const diagnosticsResponse = await page.request.post(
+      `${liveApp.baseURL}/api/sql/lsp/diagnostics`,
+      { data: { asset_id: assetId, content: query } },
+    );
+    expect(diagnosticsResponse.ok()).toBe(true);
+    const diagnostics = (await diagnosticsResponse.json()) as {
+      diagnostics?: Array<{ code: string; message: string }>;
+    };
+    expect(
+      (diagnostics.diagnostics ?? []).some(
+        (diagnostic) =>
+          diagnostic.code === "unresolved-relation" && diagnostic.message.includes("preagg"),
+      ),
+    ).toBe(false);
+    const completionResponse = await page.request.post(
+      `${liveApp.baseURL}/api/sql/lsp/completions`,
+      {
+        data: {
+          asset_id: assetId,
+          content: query,
+          position: { line: 4, character: "select ".length },
+        },
+      },
+    );
+    expect(completionResponse.ok()).toBe(true);
+    const completionPayload = (await completionResponse.json()) as {
+      completions?: Array<{ label: string }>;
+    };
+    expect(completionPayload.completions?.map((completion) => completion.label)).toEqual(
+      expect.arrayContaining(["count", "count_star"]),
+    );
+
+    await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
+    await expect(page.locator(`[data-notebook-cell-id="${cellId}"] .monaco-editor`)).toBeVisible({
+      timeout: 15000,
+    });
+    await setNotebookEditorValue(page, cellId, query, { cursorOffset, triggerSuggest: true });
+
+    const suggestWidget = page.locator(".suggest-widget.visible").first();
+    await expect(suggestWidget).toBeVisible({ timeout: 15000 });
+    await expect(suggestWidget.getByText("count", { exact: true }).first()).toBeVisible();
+    await expect(suggestWidget.getByText("count_star", { exact: true }).first()).toBeVisible();
+  });
+
   test("Jinja in a SQL cell is rendered when the cell runs", async ({ liveApp, page }) => {
     const { request } = page;
     const notebook = await createNotebook(request, liveApp.baseURL, "Jinja Run");
@@ -591,6 +654,70 @@ test.describe("app notebooks live", () => {
     }
   });
 
+  test("formats cells through the revision-checked save queue", async ({ liveApp, page }) => {
+    const notebook = await createNotebook(page.request, liveApp.baseURL, "Format Queue");
+    const cellId = await addCell(page.request, liveApp.baseURL, notebook.id, "format_queue");
+    await setCell(
+      page.request,
+      liveApp.baseURL,
+      notebook.id,
+      cellId,
+      "select a,b from (select 1 as a,2 as b)",
+    );
+    const assetId = await getCellAssetId(page.request, liveApp.baseURL, notebook.id, cellId);
+
+    await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
+    const cell = page.locator(`[data-notebook-cell-id="${cellId}"]`);
+    const editor = cell.locator(".monaco-editor");
+    await expect(editor).toBeVisible({ timeout: 15000 });
+
+    const formatRequest = page.waitForRequest(
+      (request) =>
+        request.url().endsWith(`/api/assets/${assetId}/format-sql`) && request.method() === "POST",
+      { timeout: 15000 },
+    );
+    const formatResponse = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/assets/${assetId}/format-sql`) && response.ok(),
+      { timeout: 15000 },
+    );
+    const saveResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/notebooks/${notebook.id}/cells/${cellId}`) &&
+        response.request().method() === "PUT",
+      { timeout: 15000 },
+    );
+    await cell.getByRole("button", { name: /^Format SQL/ }).click();
+    expect((await formatRequest).postDataJSON()).toMatchObject({ persist: false });
+    await formatResponse;
+
+    await expect
+      .poll(() =>
+        page.evaluate((targetCellId) => {
+          const monaco = (window as typeof window & { monaco?: any }).monaco;
+          return (
+            monaco?.editor
+              .getModels?.()
+              .find((candidate: any) =>
+                candidate.uri.toString().includes(`/notebook/${targetCellId}.`),
+              )
+              ?.getValue() ?? ""
+          );
+        }, cellId),
+      )
+      .toContain("SELECT\n");
+
+    await cell.getByRole("button", { name: "format_queue", exact: true }).click();
+    expect((await saveResponse).status()).toBe(200);
+
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`);
+        const payload = (await response.json()) as NotebookEnvelope;
+        return payload.notebook.cells.find((candidate) => candidate.cell_id === cellId)?.content;
+      })
+      .toContain("SELECT\n");
+  });
+
   test("cell editors can be resized vertically", async ({ liveApp, page }) => {
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Resizable Cells");
     const cellId = await addCell(page.request, liveApp.baseURL, notebook.id, "resizable");
@@ -599,6 +726,25 @@ test.describe("app notebooks live", () => {
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     const cell = page.locator(`[data-notebook-cell-id="${cellId}"]`);
     await expect(cell.locator(".monaco-editor")).toBeVisible({ timeout: 15000 });
+
+    const shortEditorScrollMetrics = await page.evaluate((targetCellId) => {
+      const monaco = (window as typeof window & { monaco?: any }).monaco;
+      const target = monaco?.editor
+        .getEditors?.()
+        .find((candidate: any) =>
+          candidate.getModel?.()?.uri.toString().includes(`/notebook/${targetCellId}.`),
+        );
+      return target
+        ? {
+            layoutHeight: target.getLayoutInfo().height,
+            scrollHeight: target.getScrollHeight(),
+          }
+        : null;
+    }, cellId);
+    expect(shortEditorScrollMetrics).not.toBeNull();
+    expect(shortEditorScrollMetrics!.scrollHeight).toBeLessThanOrEqual(
+      shortEditorScrollMetrics!.layoutHeight + 1,
+    );
 
     const editor = cell.locator('[data-slot="notebook-cell-editor"]');
     const handle = cell.getByRole("separator", { name: "Resize resizable cell" });

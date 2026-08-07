@@ -6,6 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/bruin-data/bruin/pkg/pipeline"
+	"github.com/spf13/afero"
+
+	"renart/internal/web/service/assetmeta"
 )
 
 type ExternalRelationImportRequest struct {
@@ -84,7 +89,7 @@ func (s *PipelineService) externalRelationImport(
 		}
 	}
 
-	relPipelinePath, _, decodeErr := s.resolver().DecodePipelineID(pipelineID)
+	relPipelinePath, absPipelinePath, decodeErr := s.resolver().DecodePipelineID(pipelineID)
 	if decodeErr != nil {
 		return ExternalRelationImportResult{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_pipeline_id", Message: decodeErr.Error()}
 	}
@@ -93,14 +98,15 @@ func (s *PipelineService) externalRelationImport(
 		includeColumns = *req.IncludeColumns
 	}
 	output, importErr := s.externalImporter.ImportDatabase(ctx, ImportDatabaseRequest{
-		PipelinePath:   relPipelinePath,
-		ConnectionName: relation.Connection,
-		Schema:         relation.SchemaName,
-		Tables:         []string{relation.QualifiedName},
-		DisableColumns: !includeColumns,
-		PreviewOnly:    preview,
-		RejectExisting: true,
-		Environment:    relation.Environment,
+		PipelinePath:       relPipelinePath,
+		ConnectionName:     relation.Connection,
+		PreferredAssetName: relation.QualifiedName,
+		Schema:             relation.SchemaName,
+		Tables:             []string{relation.QualifiedName},
+		DisableColumns:     !includeColumns,
+		PreviewOnly:        preview,
+		RejectExisting:     true,
+		Environment:        relation.Environment,
 	})
 	if importErr != nil {
 		status := http.StatusBadRequest
@@ -131,6 +137,9 @@ func (s *PipelineService) externalRelationImport(
 	for _, warning := range imported.Warnings {
 		warnings = append(warnings, ExternalRelationImportWarning(warning))
 	}
+	if !preview {
+		warnings = append(warnings, s.bindImportedExternalRelationConsumers(ctx, absPipelinePath, *relation, asset.Name)...)
+	}
 	return ExternalRelationImportResult{
 		Status:   "ok",
 		Preview:  preview,
@@ -145,4 +154,139 @@ func (s *PipelineService) externalRelationImport(
 		Warnings:       warnings,
 		PipelinePath:   relPipelinePath,
 	}, nil
+}
+
+// bindImportedExternalRelationConsumers makes the reviewed import decision a
+// durable pipeline edge. Discovery and import use the same warehouse-valid
+// identity, so the pinned dependency is exact rather than a suffix mapping.
+//
+// Binding is deliberately connection-safe and scoped to this import. Renart
+// never applies a global "drop the catalog" rule, which could connect a query
+// to the wrong asset when multiple connections or catalogs expose the same
+// schema/table suffix.
+func (s *PipelineService) bindImportedExternalRelationConsumers(
+	ctx context.Context,
+	pipelinePath string,
+	relation TypeCheckExternalRelation,
+	importedAssetName string,
+) []ExternalRelationImportWarning {
+	parsed, err := s.newPipelineBuilder().CreatePipelineFromPath(ctx, pipelinePath, pipeline.WithMutate())
+	if err != nil {
+		return []ExternalRelationImportWarning{{
+			Table:   importedAssetName,
+			Warning: fmt.Sprintf("Imported the source asset, but could not reload the pipeline to attach its dependencies: %v", err),
+		}}
+	}
+
+	importedAsset := getAssetByNameCaseInsensitiveLocal(parsed, importedAssetName)
+	if importedAsset == nil {
+		return []ExternalRelationImportWarning{{
+			Table:   importedAssetName,
+			Warning: "Imported the source asset, but it was not present when Renart reloaded the pipeline; its consumer dependencies were left unchanged.",
+		}}
+	}
+	if !externalRelationMatchesImportedAsset(relation, importedAsset.Name) {
+		return []ExternalRelationImportWarning{{
+			Table:   importedAssetName,
+			Warning: fmt.Sprintf("Imported the source asset, but %q is not the unambiguous authored name for %q; its consumer dependencies were left unchanged.", importedAsset.Name, relation.QualifiedName),
+		}}
+	}
+	importedConnection, connectionErr := targetConnectionNameForAsset(importedAsset, parsed)
+	if connectionErr != nil || !strings.EqualFold(strings.TrimSpace(importedConnection), strings.TrimSpace(relation.Connection)) {
+		return []ExternalRelationImportWarning{{
+			Table:   importedAssetName,
+			Warning: fmt.Sprintf("Imported the source asset, but its connection %q does not match the observed connection %q; its consumer dependencies were left unchanged.", importedConnection, relation.Connection),
+		}}
+	}
+
+	fs := afero.NewOsFs()
+	warnings := make([]ExternalRelationImportWarning, 0)
+	for _, consumerName := range relation.ReferencedByAssetNames {
+		consumer := getAssetByNameCaseInsensitiveLocal(parsed, consumerName)
+		if consumer == nil {
+			warnings = append(warnings, ExternalRelationImportWarning{
+				Table:   consumerName,
+				Warning: fmt.Sprintf("Could not attach dependency %q because the referencing asset was no longer present.", importedAsset.Name),
+			})
+			continue
+		}
+		consumerConnection, err := targetConnectionNameForAsset(consumer, parsed)
+		if err != nil || !strings.EqualFold(strings.TrimSpace(consumerConnection), strings.TrimSpace(relation.Connection)) {
+			warnings = append(warnings, ExternalRelationImportWarning{
+				Table:   consumer.Name,
+				Warning: fmt.Sprintf("Did not attach dependency %q because the consumer connection %q does not match the observed connection %q.", importedAsset.Name, consumerConnection, relation.Connection),
+			})
+			continue
+		}
+		if !pinExternalRelationDependency(consumer, importedAsset.Name) {
+			continue
+		}
+
+		originalHadExplicitName := assetContentHasExplicitName(consumer.ExecutableFile.Content)
+		if err := consumer.Persist(fs, parsed); err != nil {
+			warnings = append(warnings, ExternalRelationImportWarning{
+				Table:   consumer.Name,
+				Warning: fmt.Sprintf("Imported the source asset, but could not persist its dependency on %q: %v", importedAsset.Name, err),
+			})
+			continue
+		}
+		if isSQLAssetFile(consumer) && !originalHadExplicitName {
+			if err := removePersistedAssetNameField(consumer); err != nil {
+				warnings = append(warnings, ExternalRelationImportWarning{
+					Table:   consumer.Name,
+					Warning: fmt.Sprintf("Attached dependency %q, but could not restore the asset's inferred-name form: %v", importedAsset.Name, err),
+				})
+			}
+		}
+	}
+	return warnings
+}
+
+func externalRelationMatchesImportedAsset(relation TypeCheckExternalRelation, importedAssetName string) bool {
+	return strings.EqualFold(strings.TrimSpace(importedAssetName), strings.TrimSpace(relation.QualifiedName))
+}
+
+func pinExternalRelationDependency(asset *pipeline.Asset, upstreamName string) bool {
+	if asset == nil || strings.TrimSpace(upstreamName) == "" || strings.EqualFold(strings.TrimSpace(asset.Name), strings.TrimSpace(upstreamName)) {
+		return false
+	}
+	exists := false
+	for _, upstream := range asset.Upstreams {
+		if isAssetUpstream(upstream) && strings.EqualFold(strings.TrimSpace(upstream.Value), strings.TrimSpace(upstreamName)) {
+			exists = true
+			break
+		}
+	}
+
+	upstream := pipeline.Upstream{Type: "asset", Value: strings.TrimSpace(upstreamName), Mode: pipeline.UpstreamModeFull}
+	if !exists {
+		asset.Upstreams = append(asset.Upstreams, upstream)
+	}
+	next := assetmeta.ParseAsset(asset)
+	next.Version = assetmeta.SchemaVersion
+	next.Generator = assetmeta.GeneratorVersion
+	key := assetmeta.DependencyKey(upstream)
+	matchKey := assetmeta.DependencyMatchKey(key)
+
+	changed := !exists
+	filteredDrops := next.DepDrop[:0]
+	for _, existing := range next.DepDrop {
+		if assetmeta.DependencyMatchKey(existing) != matchKey {
+			filteredDrops = append(filteredDrops, existing)
+		} else {
+			changed = true
+		}
+	}
+	next.DepDrop = filteredDrops
+	for _, existing := range next.DepAdd {
+		if assetmeta.DependencyMatchKey(existing) == matchKey {
+			if changed {
+				next.ApplyToAsset(asset)
+			}
+			return changed
+		}
+	}
+	next.DepAdd = append(next.DepAdd, key)
+	next.ApplyToAsset(asset)
+	return true
 }

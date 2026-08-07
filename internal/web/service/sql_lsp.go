@@ -530,9 +530,13 @@ func graphWithRemoteCatalogSnapshot(
 	result.Relations = append([]sqllsp.RelationNode(nil), graph.Relations...)
 	result.Schemas = append([]sqllsp.SchemaLayer(nil), graph.Schemas...)
 
-	knownNames := make(map[string]struct{}, len(graph.Relations))
+	knownRelations := make(map[string]sqllsp.RelationNode, len(graph.Relations))
 	for _, relation := range graph.Relations {
-		knownNames[strings.ToLower(strings.TrimSpace(relation.Name))] = struct{}{}
+		knownRelations[strings.ToLower(strings.TrimSpace(relation.Name))] = relation
+	}
+	assetConnections := make(map[string]string, len(graph.Assets))
+	for _, asset := range graph.Assets {
+		assetConnections[asset.ID] = strings.TrimSpace(asset.Connection)
 	}
 	remoteAliasCounts := make(map[string]int)
 	remoteFullNames := make(map[string]struct{}, len(snapshot.Relations))
@@ -550,14 +554,41 @@ func graphWithRemoteCatalogSnapshot(
 		if name == "" {
 			continue
 		}
+		spellings := remoteCatalogRelationSpellings(remote)
+		var authoredMatch *sqllsp.RelationNode
+		candidate, exists := knownRelations[strings.ToLower(name)]
+		if exists && candidate.AssetID != "" && strings.EqualFold(assetConnections[candidate.AssetID], strings.TrimSpace(scope.Connection)) {
+			matched := candidate
+			authoredMatch = &matched
+		}
+		if authoredMatch != nil {
+			// The authored asset owns the exact warehouse identity. Add only
+			// unambiguous shorter spellings supplied by the positive catalog
+			// observation; never reinterpret a different authored asset by suffix.
+			for _, spelling := range spellings[1:] {
+				normalized := strings.ToLower(spelling)
+				if remoteAliasCounts[normalized] != 1 {
+					continue
+				}
+				if _, exists := knownRelations[normalized]; exists {
+					continue
+				}
+				alias := *authoredMatch
+				alias.Name = spelling
+				result.Relations = append(result.Relations, alias)
+				knownRelations[normalized] = alias
+			}
+			continue
+		}
 		relationID := remoteCatalogRelationID(scope, name)
 		provenance := []sqllsp.Provenance{{
 			Provider:   "remote_catalog",
 			ProviderID: scope.Connection,
 			Confidence: "low",
+			ObservedAt: remoteCatalogObservedAt(snapshot),
 		}}
 		added := false
-		for spellingIndex, spelling := range remoteCatalogRelationSpellings(remote) {
+		for spellingIndex, spelling := range spellings {
 			normalized := strings.ToLower(spelling)
 			if spellingIndex > 0 {
 				if remoteAliasCounts[normalized] != 1 {
@@ -567,15 +598,16 @@ func graphWithRemoteCatalogSnapshot(
 					continue
 				}
 			}
-			if _, collides := knownNames[normalized]; collides {
+			if _, collides := knownRelations[normalized]; collides {
 				continue
 			}
-			knownNames[normalized] = struct{}{}
-			result.Relations = append(result.Relations, sqllsp.RelationNode{
+			relation := sqllsp.RelationNode{
 				ID:         relationID,
 				Name:       spelling,
 				Provenance: provenance,
-			})
+			}
+			knownRelations[normalized] = relation
+			result.Relations = append(result.Relations, relation)
 			added = true
 		}
 		if !added {
@@ -601,6 +633,13 @@ func graphWithRemoteCatalogSnapshot(
 		})
 	}
 	return result
+}
+
+func remoteCatalogObservedAt(snapshot RemoteCatalogSnapshot) string {
+	if snapshot.ObservedAt.IsZero() {
+		return ""
+	}
+	return snapshot.ObservedAt.UTC().Format(time.RFC3339Nano)
 }
 
 func remoteCatalogRelationSpellings(relation RemoteCatalogRelation) []string {

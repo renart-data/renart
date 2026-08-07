@@ -105,6 +105,7 @@ test.describe("seed and sensor assets live", () => {
     expect(seedPathBox).not.toBeNull();
     expect(seedFileTypeBox).not.toBeNull();
     expect(enforceSchemaBox).not.toBeNull();
+    expect(seedInputBox!.width).toBeLessThanOrEqual(768);
     expect(seedFileTypeBox!.y).toBeGreaterThanOrEqual(seedPathBox!.y + seedPathBox!.height);
     expect(enforceSchemaBox!.y).toBeGreaterThanOrEqual(
       seedFileTypeBox!.y + seedFileTypeBox!.height,

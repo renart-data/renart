@@ -345,7 +345,10 @@ func resolveInferredDependencyName(dep string, asset *pipeline.Asset, parsedPipe
 		return found.Name
 	}
 
-	if strings.Contains(name, ".") || asset == nil {
+	if strings.Contains(name, ".") {
+		return name
+	}
+	if asset == nil {
 		return name
 	}
 

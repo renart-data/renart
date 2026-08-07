@@ -122,7 +122,10 @@ func TestRemoteCatalogCacheBoundsRelationsAndScopesColumns(t *testing.T) {
 }
 
 func TestRemoteCatalogCacheAcceptsPositiveEndpointObservations(t *testing.T) {
-	cache := NewRemoteCatalogCache(RemoteCatalogDependencies{})
+	ready := make(chan RemoteCatalogReadyEvent, 2)
+	cache := NewRemoteCatalogCache(RemoteCatalogDependencies{
+		PublishReady: func(event RemoteCatalogReadyEvent) { ready <- event },
+	})
 	scope := RemoteCatalogScope{Connection: "warehouse", Environment: "dev"}
 	cache.ObserveTables(scope, []SQLDiscoveryTableItem{{
 		Name:         "catalog.analytics.orders",
@@ -138,6 +141,59 @@ func TestRemoteCatalogCacheAcceptsPositiveEndpointObservations(t *testing.T) {
 	assert.True(t, snapshot.Relations[0].ColumnsKnown)
 	assert.Equal(t, []SQLColumn{{Name: "order_id", Type: "bigint"}}, snapshot.Relations[0].Columns)
 	assert.Empty(t, cache.Snapshot(RemoteCatalogScope{Connection: "warehouse", Environment: "prod"}).Relations)
+	assert.Equal(t, RemoteCatalogReadyEvent{
+		Type:        remoteCatalogReadyEventType,
+		Connection:  "warehouse",
+		Environment: "dev",
+	}, <-ready)
+	assert.Equal(t, RemoteCatalogReadyEvent{
+		Type:        remoteCatalogReadyEventType,
+		Connection:  "warehouse",
+		Environment: "dev",
+		Relation:    "catalog.analytics.orders",
+	}, <-ready)
+}
+
+func TestRemoteCatalogCachePublishesSuccessfulBackgroundRefreshesOnly(t *testing.T) {
+	ready := make(chan RemoteCatalogReadyEvent, 2)
+	cache := NewRemoteCatalogCache(RemoteCatalogDependencies{
+		DiscoverDatabases: func(context.Context, string, string) ([]string, error) {
+			return []string{"catalog"}, nil
+		},
+		DiscoverTables: func(context.Context, string, string, string) ([]SQLDiscoveryTableItem, error) {
+			return []SQLDiscoveryTableItem{{
+				Name:         "catalog.analytics.orders",
+				ShortName:    "orders",
+				SchemaName:   "analytics",
+				DatabaseName: "catalog",
+			}}, nil
+		},
+		DiscoverColumns: func(context.Context, string, string, string) ([]SQLColumn, error) {
+			return []SQLColumn{{Name: "order_id", Type: "bigint"}}, nil
+		},
+		PublishReady: func(event RemoteCatalogReadyEvent) { ready <- event },
+	})
+	scope := RemoteCatalogScope{Connection: "warehouse", Environment: "dev"}
+
+	cache.Refresh(t.Context(), scope)
+	select {
+	case event := <-ready:
+		assert.Equal(t, RemoteCatalogReadyEvent{
+			Type:        remoteCatalogReadyEventType,
+			Connection:  "warehouse",
+			Environment: "dev",
+		}, event)
+	case <-time.After(time.Second):
+		t.Fatal("catalog refresh did not publish readiness")
+	}
+
+	cache.RefreshColumns(t.Context(), scope, "catalog.analytics.orders")
+	select {
+	case event := <-ready:
+		assert.Equal(t, "catalog.analytics.orders", event.Relation)
+	case <-time.After(time.Second):
+		t.Fatal("column refresh did not publish readiness")
+	}
 }
 
 func TestRemoteCatalogCacheRefreshesIncompleteEndpointObservation(t *testing.T) {

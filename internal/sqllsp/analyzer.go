@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	polyglot "github.com/tobilg/polyglot/packages/go"
 
@@ -1759,7 +1760,7 @@ func (e *Engine) relationCompletions() []CompletionItem {
 		detail := "relation"
 		sortPrefix := "0"
 		if isRemoteCatalogRelation(relation) {
-			detail = "remote warehouse relation"
+			detail = remoteCatalogDetail(relation)
 			sortPrefix = "1"
 		}
 		items = append(items, CompletionItem{
@@ -1792,7 +1793,7 @@ func (e *Engine) relationCompletionsInSchema(schema string) []CompletionItem {
 		detail := "relation"
 		sortPrefix := "0"
 		if isRemoteCatalogRelation(relation) {
-			detail = "remote warehouse relation"
+			detail = remoteCatalogDetail(relation)
 			sortPrefix = "1"
 		}
 		items = append(items, CompletionItem{
@@ -2005,6 +2006,9 @@ func (e *Engine) relationHover(relation RelationNode) string {
 		} else {
 			fmt.Fprintf(&b, "\n\nRemote warehouse catalog on `%s`", connection)
 		}
+		if observed := remoteCatalogObservedAt(relation); !observed.IsZero() {
+			fmt.Fprintf(&b, " · observed %s", catalogObservationAge(observed, time.Now()))
+		}
 	}
 	columns := e.columnsForRelation(relation.ID)
 	if len(columns) > 0 {
@@ -2035,6 +2039,41 @@ func remoteCatalogConnection(relation RelationNode) string {
 		}
 	}
 	return ""
+}
+
+func remoteCatalogObservedAt(relation RelationNode) time.Time {
+	for _, provenance := range relation.Provenance {
+		if !strings.EqualFold(strings.TrimSpace(provenance.Provider), "remote_catalog") {
+			continue
+		}
+		observed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(provenance.ObservedAt))
+		if err == nil {
+			return observed
+		}
+	}
+	return time.Time{}
+}
+
+func remoteCatalogDetail(relation RelationNode) string {
+	detail := "remote warehouse relation"
+	if observed := remoteCatalogObservedAt(relation); !observed.IsZero() {
+		detail += " · observed " + catalogObservationAge(observed, time.Now())
+	}
+	return detail
+}
+
+func catalogObservationAge(observed, now time.Time) string {
+	age := now.Sub(observed)
+	if age < time.Minute {
+		return "just now"
+	}
+	if age < time.Hour {
+		return fmt.Sprintf("%dm ago", int(age/time.Minute))
+	}
+	if age < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(age/time.Hour))
+	}
+	return fmt.Sprintf("%dd ago", int(age/(24*time.Hour)))
 }
 
 func columnHover(source string, column ColumnInfo) string {
@@ -2528,13 +2567,13 @@ type subqueryColumnAlias struct {
 
 func extractCTEDefs(sql string) []cteBody {
 	var result []cteBody
-	i := skipSpace(sql, 0)
+	i := skipSQLTrivia(sql, 0)
 	if !hasWordAt(sql, i, "with") {
 		return result
 	}
 	i += len("with")
 	for i < len(sql) {
-		i = skipSpace(sql, i)
+		i = skipSQLTrivia(sql, i)
 		if hasWordAt(sql, i, "recursive") {
 			i += len("recursive")
 			continue
@@ -2543,19 +2582,19 @@ func extractCTEDefs(sql string) []cteBody {
 		if name == "" {
 			return result
 		}
-		nameStart := skipSpace(sql, i)
-		i = skipSpace(sql, nameEnd)
+		nameStart := skipSQLTrivia(sql, i)
+		i = skipSQLTrivia(sql, nameEnd)
 		if i < len(sql) && sql[i] == '(' {
 			close := findMatchingParen(sql, i)
 			if close < 0 {
 				return result
 			}
-			i = skipSpace(sql, close+1)
+			i = skipSQLTrivia(sql, close+1)
 		}
 		if !hasWordAt(sql, i, "as") {
 			return result
 		}
-		i = skipSpace(sql, i+len("as"))
+		i = skipSQLTrivia(sql, i+len("as"))
 		if i >= len(sql) || sql[i] != '(' {
 			return result
 		}
@@ -2564,7 +2603,7 @@ func extractCTEDefs(sql string) []cteBody {
 			return result
 		}
 		result = append(result, cteBody{name: name, body: sql[i+1 : close], nameStart: nameStart, nameEnd: nameEnd, bodyStart: i + 1})
-		i = skipSpace(sql, close+1)
+		i = skipSQLTrivia(sql, close+1)
 		if i >= len(sql) || sql[i] != ',' {
 			return result
 		}
@@ -2902,6 +2941,35 @@ func findMatchingParen(sql string, open int) int {
 func skipSpace(text string, i int) int {
 	for i < len(text) && isSpace(text[i]) {
 		i++
+	}
+	return i
+}
+
+// skipSQLTrivia advances past whitespace and SQL comments. Structural scanners
+// use it where comments are allowed between query tokens; lexical scanners that
+// need offsets immediately after whitespace should keep using skipSpace.
+func skipSQLTrivia(text string, i int) int {
+	for i < len(text) {
+		i = skipSpace(text, i)
+		if i+1 >= len(text) {
+			return i
+		}
+		switch text[i : i+2] {
+		case "--":
+			newline := strings.IndexByte(text[i+2:], '\n')
+			if newline < 0 {
+				return len(text)
+			}
+			i += 2 + newline + 1
+		case "/*":
+			close := strings.Index(text[i+2:], "*/")
+			if close < 0 {
+				return len(text)
+			}
+			i += 2 + close + 2
+		default:
+			return i
+		}
 	}
 	return i
 }

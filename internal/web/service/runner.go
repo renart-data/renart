@@ -112,14 +112,18 @@ type PatchRequest struct {
 type ImportDatabaseRequest struct {
 	PipelinePath   string
 	ConnectionName string
-	Schema         string
-	Schemas        []string
-	Tables         []string
-	DisableColumns bool
-	PreviewOnly    bool
-	RejectExisting bool
-	Environment    string
-	ConfigFilePath string
+	// PreferredAssetName lets a reviewed single-table import preserve the exact
+	// warehouse-qualified identity when that name is valid for the connection's
+	// Bruin platform. The generated file path remains schema/table based.
+	PreferredAssetName string
+	Schema             string
+	Schemas            []string
+	Tables             []string
+	DisableColumns     bool
+	PreviewOnly        bool
+	RejectExisting     bool
+	Environment        string
+	ConfigFilePath     string
 }
 
 // BruinCommandExecutor executes Bruin operations through typed methods.

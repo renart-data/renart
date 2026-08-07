@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"renart/internal/authoringdiag"
 )
 
 func TestParseContextWithSchemaPolyglotExtractsTablesColumnsAndDiagnostics(t *testing.T) {
@@ -43,6 +45,77 @@ func TestParseContextWithSchemaPolyglotExtractsTablesColumnsAndDiagnostics(t *te
 	assert.Equal(t, "error", parseContext.Diagnostics[0].Severity)
 	require.NotNil(t, parseContext.Diagnostics[0].Range)
 	assert.Equal(t, "missing_col", parseContext.Diagnostics[0].Range.RangeText("select c.customer_id, o.total from analytics.customers c join analytics.orders o on c.customer_id = o.customer_id where missing_col = 1"))
+}
+
+func TestParseContextWithSchemaPolyglotDoesNotTreatCopyOptionsAsColumns(t *testing.T) {
+	query := `COPY create_partitions.create_partitions
+TO .data/create_all_partitions.sql
+format csv
+header FALSE
+delimiter '\t'`
+
+	parseContext, err := ParseContextWithSchemaPolyglot(query, "duckdb", Schema{
+		"create_partitions.create_partitions": {"partition": "varchar"},
+	})
+	require.NoError(t, err)
+
+	for _, diagnostic := range parseContext.Diagnostics {
+		assert.NotEqual(t, authoringdiag.CodeUnresolvedColumn, diagnostic.Code, diagnostic.Message)
+	}
+}
+
+func TestCopyOptionValueDiagnosticSuppressionIsNarrow(t *testing.T) {
+	query := "/* export */\nCOPY source.table\nTO 'output.csv'\nFORMAT = csv\nHEADER false"
+	csvStart := strings.Index(query, "csv\n")
+	assert.True(t, isCopyOptionValue(query, "csv", &ParseContextRange{
+		Start: csvStart,
+		End:   csvStart + len("csv"),
+	}))
+	falseStart := strings.LastIndex(query, "false")
+	assert.True(t, isCopyOptionValue(query, "false", &ParseContextRange{
+		Start: falseStart,
+		End:   falseStart + len("false"),
+	}))
+
+	selectQuery := "select csv from source.table"
+	selectStart := strings.Index(selectQuery, "csv")
+	assert.False(t, isCopyOptionValue(selectQuery, "csv", &ParseContextRange{
+		Start: selectStart,
+		End:   selectStart + len("csv"),
+	}))
+}
+
+func TestParseContextWithSchemaPolyglotResolvesCTEAfterVizComment(t *testing.T) {
+	query := `/* @viz(line, x: count, y: count_star()) */
+with preagg as (
+SELECT
+  round(trino_seconds / starrocks_seconds) AS ratio,
+  count(*) over (order by trino_seconds / starrocks_seconds rows unbounded preceding) as count
+FROM playful_maple
+WHERE
+  result = '"MATCH"'
+  and trino_rows > 0
+ORDER BY
+  1,2 ASC
+)
+
+select
+  count,
+  count(*)
+from preagg
+group by count`
+
+	parseContext, err := ParseContextWithSchemaPolyglot(query, "duckdb", Schema{
+		"playful_maple": {
+			"trino_seconds":     "double",
+			"starrocks_seconds": "double",
+			"result":            "varchar",
+			"trino_rows":        "bigint",
+		},
+	})
+	require.NoError(t, err)
+
+	assert.NotContains(t, diagnosticMessages(parseContext.Diagnostics), "Unresolved table: preagg")
 }
 
 func TestParseContextUsesPolyglotStructuredErrorOffsets(t *testing.T) {

@@ -238,6 +238,7 @@ type Provenance struct {
 	ProviderID string `json:"provider_id,omitempty"`
 	URI        URI    `json:"uri,omitempty"`
 	Confidence string `json:"confidence,omitempty"`
+	ObservedAt string `json:"observed_at,omitempty"`
 }
 
 type Request struct {

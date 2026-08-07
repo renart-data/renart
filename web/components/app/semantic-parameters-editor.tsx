@@ -500,7 +500,7 @@ function SeedReplacementInput({
 
   return (
     <Field
-      className="gap-1.5"
+      className="w-full max-w-3xl gap-1.5"
       data-disabled={busy ? true : undefined}
       data-invalid={clipboardError ? true : undefined}
       data-testid="seed-replacement-input"

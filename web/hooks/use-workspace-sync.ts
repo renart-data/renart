@@ -6,6 +6,7 @@ import { useEffect } from "react";
 
 import {
   serverOnlineAtom,
+  sqlCatalogReadyEventAtom,
   workspaceAtom,
   workspaceReconnectSequenceAtom,
   workspaceSyncSourceAtom,
@@ -138,6 +139,23 @@ function isNotebookRuntimeEvent(payload: unknown): payload is NotebookRuntimeEve
   );
 }
 
+function isSQLCatalogReadyEvent(payload: unknown): payload is {
+  type: "sql.catalog-ready";
+  connection: string;
+  environment?: string;
+  database?: string;
+  relation?: string;
+} {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "type" in payload &&
+    payload.type === "sql.catalog-ready" &&
+    "connection" in payload &&
+    typeof payload.connection === "string"
+  );
+}
+
 export function useWorkspaceSync() {
   const workspace = useAtomValue(workspaceAtom);
   const setWorkspace = useSetAtom(workspaceAtom);
@@ -145,6 +163,7 @@ export function useWorkspaceSync() {
   const setScheduleOccurrenceEvent = useSetAtom(scheduleOccurrenceEventAtom);
   const setStalenessEvent = useSetAtom(stalenessEventAtom);
   const setNotebookRuntimeEvents = useSetAtom(notebookRuntimeEventsAtom);
+  const setSQLCatalogReadyEvent = useSetAtom(sqlCatalogReadyEventAtom);
   const setWorkspaceSyncSource = useSetAtom(workspaceSyncSourceAtom);
   const setWorkspaceReconnectSequence = useSetAtom(workspaceReconnectSequenceAtom);
   const setServerOnline = useSetAtom(serverOnlineAtom);
@@ -234,6 +253,14 @@ export function useWorkspaceSync() {
           return;
         }
 
+        if (isSQLCatalogReadyEvent(payload)) {
+          setSQLCatalogReadyEvent((current) => ({
+            sequence: current.sequence + 1,
+            event: payload,
+          }));
+          return;
+        }
+
         if (!isWorkspaceEvent(payload)) {
           return;
         }
@@ -279,6 +306,7 @@ export function useWorkspaceSync() {
   }, [
     appendSchedulerRunEvent,
     setNotebookRuntimeEvents,
+    setSQLCatalogReadyEvent,
     setServerOnline,
     setStalenessEvent,
     setWorkspace,

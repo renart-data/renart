@@ -18,6 +18,7 @@ import (
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/bruin-data/bruin/pkg/postgres"
 	"github.com/bruin-data/bruin/pkg/query"
+	"github.com/bruin-data/bruin/pkg/tablename"
 	"github.com/spf13/afero"
 )
 
@@ -85,7 +86,8 @@ func (e *HybridBruinExecutor) ImportDatabase(ctx context.Context, req ImportData
 	}
 
 	assetsPath := filepath.Join(pipelinePath, "assets")
-	assetType, ok := sourceAssetTypeForConnectionType(manager.GetConnectionType(req.ConnectionName))
+	connectionType := normalizeConnectionType(manager.GetConnectionType(req.ConnectionName))
+	assetType, ok := sourceAssetTypeForConnectionType(connectionType)
 	if !ok {
 		assetType = pipeline.AssetTypeEmpty
 	}
@@ -117,7 +119,7 @@ func (e *HybridBruinExecutor) ImportDatabase(ctx context.Context, req ImportData
 				continue
 			}
 
-			createdAsset, warning := createDirectImportedAsset(ctx, assetsPath, schemaObj.Name, table.Name, assetType, conn, !req.DisableColumns, table)
+			createdAsset, warning := createDirectImportedAsset(ctx, assetsPath, schemaObj.Name, table.Name, assetType, req.ConnectionName, conn, !req.DisableColumns, table)
 			if warning != "" {
 				warnings = append(warnings, directImportWarning{Table: fullName, Warning: warning})
 			}
@@ -136,6 +138,18 @@ func (e *HybridBruinExecutor) ImportDatabase(ctx context.Context, req ImportData
 	}
 	if len(selectedTables) > 0 && len(candidates) == 0 {
 		return nil, fmt.Errorf("none of the selected tables were found in the database summary")
+	}
+	if preferredName := strings.TrimSpace(req.PreferredAssetName); preferredName != "" {
+		if len(candidates) != 1 {
+			return nil, fmt.Errorf("preferred asset name requires exactly one selected table, got %d", len(candidates))
+		}
+		candidate := &candidates[0]
+		if err := validatePreferredDirectImportAssetName(preferredName, candidate.asset.Name, connectionType); err != nil {
+			return nil, err
+		}
+		candidate.asset.Name = preferredName
+		candidate.assetName = strings.ToLower(preferredName)
+		candidate.existing = existingAssets[candidate.assetName]
 	}
 
 	if req.RejectExisting {
@@ -221,6 +235,31 @@ func (e *HybridBruinExecutor) ImportDatabase(ctx context.Context, req ImportData
 	return json.Marshal(response)
 }
 
+func validatePreferredDirectImportAssetName(preferredName, defaultName, connectionType string) error {
+	preferredName = strings.TrimSpace(preferredName)
+	defaultName = strings.TrimSpace(defaultName)
+	if preferredName == "" {
+		return nil
+	}
+	if capability, ok := tablename.For(normalizeConnectionType(connectionType)); ok {
+		if err := capability.CheckName(preferredName); err != nil {
+			return fmt.Errorf("cannot import source asset as %q for %s: %w", preferredName, capability.Platform, err)
+		}
+	} else {
+		for _, component := range strings.Split(preferredName, ".") {
+			if strings.TrimSpace(component) == "" {
+				return fmt.Errorf("cannot import source asset as %q: asset name contains an empty component", preferredName)
+			}
+		}
+	}
+
+	if !strings.EqualFold(preferredName, defaultName) &&
+		!strings.HasSuffix(strings.ToLower(preferredName), "."+strings.ToLower(defaultName)) {
+		return fmt.Errorf("preferred asset name %q does not identify discovered table %q", preferredName, defaultName)
+	}
+	return nil
+}
+
 func directImportAssetPath(workspaceRoot, assetPath string) string {
 	relative, err := filepath.Rel(workspaceRoot, assetPath)
 	if err == nil && relative != "." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
@@ -242,7 +281,7 @@ func formatImportedViewDefinition(ctx context.Context, definition string, assetT
 	return strings.TrimSpace(formatted)
 }
 
-func createDirectImportedAsset(ctx context.Context, assetsPath, schemaName, tableName string, assetType pipeline.AssetType, conn interface{}, fillColumns bool, table *ansisql.DBTable) (*pipeline.Asset, string) {
+func createDirectImportedAsset(ctx context.Context, assetsPath, schemaName, tableName string, assetType pipeline.AssetType, connectionName string, conn interface{}, fillColumns bool, table *ansisql.DBTable) (*pipeline.Asset, string) {
 	schemaFolder := filepath.Join(assetsPath, strings.ToLower(schemaName))
 	isView := table.Type == ansisql.DBTableTypeView && table.ViewDefinition != ""
 
@@ -267,8 +306,9 @@ func createDirectImportedAsset(ctx context.Context, assetsPath, schemaName, tabl
 
 	assetName := fmt.Sprintf("%s.%s", strings.ToLower(schemaName), strings.ToLower(tableName))
 	asset := &pipeline.Asset{
-		Name: assetName,
-		Type: actualAssetType,
+		Name:       assetName,
+		Type:       actualAssetType,
+		Connection: strings.TrimSpace(connectionName),
 		ExecutableFile: pipeline.ExecutableFile{
 			Name:    fileName,
 			Path:    filePath,

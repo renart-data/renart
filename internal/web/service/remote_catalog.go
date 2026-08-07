@@ -78,6 +78,21 @@ type RemoteCatalogDependencies struct {
 	MaxRelations      int
 	MaxColumns        int
 	Now               func() time.Time
+	PublishReady      func(RemoteCatalogReadyEvent)
+}
+
+const remoteCatalogReadyEventType = "sql.catalog-ready"
+
+// RemoteCatalogReadyEvent wakes HTTP LSP and interactive type-check consumers
+// after a non-blocking catalog refresh has produced new positive evidence.
+// It deliberately carries only scope names; credentials and catalog contents
+// stay backend-only and are fetched through the ordinary LSP/type-check APIs.
+type RemoteCatalogReadyEvent struct {
+	Type        string `json:"type"`
+	Connection  string `json:"connection"`
+	Environment string `json:"environment,omitempty"`
+	Database    string `json:"database,omitempty"`
+	Relation    string `json:"relation,omitempty"`
 }
 
 type remoteCatalogEntry struct {
@@ -212,7 +227,6 @@ func (c *RemoteCatalogCache) ObserveTables(scope RemoteCatalogScope, relations [
 	}
 	key := remoteCatalogScopeKey(scope)
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	entry := c.entryLocked(key)
 	byName := make(map[string]int, len(entry.snapshot.Relations))
 	for index, relation := range entry.snapshot.Relations {
@@ -246,6 +260,8 @@ func (c *RemoteCatalogCache) ObserveTables(scope RemoteCatalogScope, relations [
 	})
 	entry.snapshot.ObservedAt = c.deps.Now()
 	entry.snapshot.Complete = false
+	c.mu.Unlock()
+	c.publishReady(scope, "")
 }
 
 func (c *RemoteCatalogCache) ObserveColumns(scope RemoteCatalogScope, relation string, columns []SQLColumn) {
@@ -259,11 +275,11 @@ func (c *RemoteCatalogCache) ObserveColumns(scope RemoteCatalogScope, relation s
 	}
 	key := remoteCatalogScopeKey(scope)
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	entry := c.entryLocked(key)
 	index := remoteCatalogRelationIndex(entry.snapshot.Relations, relation)
 	if index < 0 {
 		if len(entry.snapshot.Relations) >= c.deps.MaxRelations {
+			c.mu.Unlock()
 			return
 		}
 		entry.snapshot.Relations = append(entry.snapshot.Relations, RemoteCatalogRelation{
@@ -276,6 +292,8 @@ func (c *RemoteCatalogCache) ObserveColumns(scope RemoteCatalogScope, relation s
 	entry.snapshot.Relations[index].ColumnsKnown = true
 	entry.snapshot.Relations[index].ColumnsObservedAt = c.deps.Now()
 	entry.snapshot.ObservedAt = c.deps.Now()
+	c.mu.Unlock()
+	c.publishReady(scope, relation)
 }
 
 func (c *RemoteCatalogCache) refresh(parent context.Context, key string, scope RemoteCatalogScope) {
@@ -285,15 +303,17 @@ func (c *RemoteCatalogCache) refresh(parent context.Context, key string, scope R
 	snapshot, err := c.loadSnapshot(ctx, scope)
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	entry := c.entryLocked(key)
 	entry.refreshing = false
 	entry.lastError = err
 	if err != nil {
+		c.mu.Unlock()
 		return
 	}
 	mergeRemoteCatalogColumns(&snapshot, entry.snapshot)
 	entry.snapshot = snapshot
+	c.mu.Unlock()
+	c.publishReady(scope, "")
 }
 
 func (c *RemoteCatalogCache) loadSnapshot(ctx context.Context, scope RemoteCatalogScope) (RemoteCatalogSnapshot, error) {
@@ -375,19 +395,35 @@ func (c *RemoteCatalogCache) refreshColumns(parent context.Context, key string, 
 	}
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	entry := c.entryLocked(key)
 	delete(entry.columnFlights, flightKey)
 	if err != nil {
+		c.mu.Unlock()
 		return
 	}
 	index := remoteCatalogRelationIndex(entry.snapshot.Relations, qualified)
 	if index < 0 {
+		c.mu.Unlock()
 		return
 	}
 	entry.snapshot.Relations[index].Columns = append([]SQLColumn(nil), columns...)
 	entry.snapshot.Relations[index].ColumnsKnown = true
 	entry.snapshot.Relations[index].ColumnsObservedAt = c.deps.Now()
+	c.mu.Unlock()
+	c.publishReady(scope, qualified)
+}
+
+func (c *RemoteCatalogCache) publishReady(scope RemoteCatalogScope, relation string) {
+	if c.deps.PublishReady == nil {
+		return
+	}
+	c.deps.PublishReady(RemoteCatalogReadyEvent{
+		Type:        remoteCatalogReadyEventType,
+		Connection:  scope.Connection,
+		Environment: scope.Environment,
+		Database:    scope.Database,
+		Relation:    strings.TrimSpace(relation),
+	})
 }
 
 func (c *RemoteCatalogCache) entryLocked(key string) *remoteCatalogEntry {

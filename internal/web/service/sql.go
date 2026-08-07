@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bruin-data/bruin/pkg/config"
+	"github.com/bruin-data/bruin/pkg/tablename"
 )
 
 type SQLColumnValuesResult struct {
@@ -175,6 +176,7 @@ func (s *SQLService) Tables(ctx context.Context, connectionName, databaseName, e
 		return SQLTableDiscoveryResult{}, &APIError{Status: http.StatusBadRequest, Code: "connection_not_found", Message: fmt.Sprintf("connection '%s' not found", connectionName)}
 	}
 
+	connectionType := strings.TrimSpace(manager.GetConnectionType(connectionName))
 	tables := make([]SQLDiscoveryTableItem, 0)
 	if fetcherWithSchemas, ok := conn.(interface {
 		GetTablesWithSchemas(ctx context.Context, databaseName string) (map[string][]string, error)
@@ -183,7 +185,7 @@ func (s *SQLService) Tables(ctx context.Context, connectionName, databaseName, e
 		if err != nil {
 			return SQLTableDiscoveryResult{}, &APIError{Status: http.StatusBadRequest, Code: "sql_table_discovery_failed", Message: err.Error()}
 		}
-		tables = BuildSQLDiscoveryTableItems(databaseName, items)
+		tables = BuildSQLDiscoveryTableItemsForConnectionType(connectionType, databaseName, items)
 	} else if fetcher, ok := conn.(interface {
 		GetTables(ctx context.Context, databaseName string) ([]string, error)
 	}); ok {
@@ -191,7 +193,7 @@ func (s *SQLService) Tables(ctx context.Context, connectionName, databaseName, e
 		if err != nil {
 			return SQLTableDiscoveryResult{}, &APIError{Status: http.StatusBadRequest, Code: "sql_table_discovery_failed", Message: err.Error()}
 		}
-		tables = BuildSQLDiscoveryTableItemsWithoutSchemas(databaseName, items)
+		tables = BuildSQLDiscoveryTableItemsWithoutSchemasForConnectionType(connectionType, databaseName, items)
 	} else {
 		return SQLTableDiscoveryResult{}, &APIError{Status: http.StatusBadRequest, Code: "connection_type_not_supported", Message: fmt.Sprintf("connection '%s' does not support table discovery", connectionName)}
 	}
@@ -199,7 +201,7 @@ func (s *SQLService) Tables(ctx context.Context, connectionName, databaseName, e
 	result := SQLTableDiscoveryResult{
 		Status:         "ok",
 		ConnectionName: connectionName,
-		ConnectionType: strings.TrimSpace(manager.GetConnectionType(connectionName)),
+		ConnectionType: connectionType,
 		Database:       databaseName,
 		Tables:         tables,
 	}
@@ -252,6 +254,16 @@ func (s *SQLService) TableColumns(ctx context.Context, connectionName, tableName
 }
 
 func BuildSQLDiscoveryTableItems(databaseName string, tables map[string][]string) []SQLDiscoveryTableItem {
+	return BuildSQLDiscoveryTableItemsForConnectionType("", databaseName, tables)
+}
+
+// BuildSQLDiscoveryTableItemsForConnectionType renders each discovered table
+// using the widest name that the warehouse and Bruin both accept. A catalog is
+// part of the SQL identity for three-level platforms such as Snowflake and
+// Databricks. PostgreSQL and other two-level platforms deliberately expose
+// schema.table: prefixing the configured database would produce SQL and a Bruin
+// asset name that those platforms reject.
+func BuildSQLDiscoveryTableItemsForConnectionType(connectionType, databaseName string, tables map[string][]string) []SQLDiscoveryTableItem {
 	items := make([]SQLDiscoveryTableItem, 0)
 	schemas := make([]string, 0, len(tables))
 	for schema := range tables {
@@ -263,8 +275,9 @@ func BuildSQLDiscoveryTableItems(databaseName string, tables map[string][]string
 		schemaTables := append([]string{}, tables[schema]...)
 		sort.Strings(schemaTables)
 		for _, table := range schemaTables {
+			qualifiedName := discoveredTableName(connectionType, databaseName, schema, table)
 			items = append(items, SQLDiscoveryTableItem{
-				Name:         fmt.Sprintf("%s.%s.%s", databaseName, schema, table),
+				Name:         qualifiedName,
 				ShortName:    table,
 				SchemaName:   schema,
 				DatabaseName: databaseName,
@@ -276,6 +289,10 @@ func BuildSQLDiscoveryTableItems(databaseName string, tables map[string][]string
 }
 
 func BuildSQLDiscoveryTableItemsWithoutSchemas(databaseName string, tables []string) []SQLDiscoveryTableItem {
+	return BuildSQLDiscoveryTableItemsWithoutSchemasForConnectionType("", databaseName, tables)
+}
+
+func BuildSQLDiscoveryTableItemsWithoutSchemasForConnectionType(connectionType, databaseName string, tables []string) []SQLDiscoveryTableItem {
 	items := make([]SQLDiscoveryTableItem, 0, len(tables))
 	sortedTables := append([]string{}, tables...)
 	sort.Strings(sortedTables)
@@ -292,8 +309,11 @@ func BuildSQLDiscoveryTableItemsWithoutSchemas(databaseName string, tables []str
 		}
 
 		name := trimmed
-		if !strings.Contains(trimmed, ".") {
-			name = fmt.Sprintf("%s.%s", databaseName, trimmed)
+		parts := strings.Split(trimmed, ".")
+		if len(parts) == 1 {
+			name = discoveredTableName(connectionType, databaseName, "", trimmed)
+		} else if len(parts) == 2 && strings.TrimSpace(connectionType) != "" && discoveredTableNamesIncludeCatalog(connectionType) && strings.TrimSpace(databaseName) != "" {
+			name = strings.TrimSpace(databaseName) + "." + trimmed
 		}
 
 		items = append(items, SQLDiscoveryTableItem{
@@ -304,6 +324,27 @@ func BuildSQLDiscoveryTableItemsWithoutSchemas(databaseName string, tables []str
 	}
 
 	return items
+}
+
+func discoveredTableName(connectionType, databaseName, schemaName, tableName string) string {
+	parts := make([]string, 0, 3)
+	if discoveredTableNamesIncludeCatalog(connectionType) && strings.TrimSpace(databaseName) != "" {
+		parts = append(parts, strings.TrimSpace(databaseName))
+	}
+	if strings.TrimSpace(schemaName) != "" {
+		parts = append(parts, strings.TrimSpace(schemaName))
+	} else if len(parts) == 0 && strings.TrimSpace(databaseName) != "" {
+		// Engines without separately reported schemas have historically exposed
+		// database.table. Keep that useful two-part spelling.
+		parts = append(parts, strings.TrimSpace(databaseName))
+	}
+	parts = append(parts, strings.TrimSpace(tableName))
+	return strings.Join(parts, ".")
+}
+
+func discoveredTableNamesIncludeCatalog(connectionType string) bool {
+	capability, ok := tablename.For(normalizeConnectionType(connectionType))
+	return !ok || capability.Unbounded || capability.MaxComponents >= 3
 }
 
 func InferSQLColumnsFromQueryOutput(output []byte) []SQLColumn {

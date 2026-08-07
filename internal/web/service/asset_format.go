@@ -31,6 +31,9 @@ func (s *AssetService) FormatSQL(ctx context.Context, assetID string, req Format
 	if err != nil {
 		return FormatSQLAssetResponse{Status: "error", AssetID: assetID, Content: req.Content, Error: err.Error()}, nil
 	}
+	if req.Persist != nil && !*req.Persist {
+		return FormatSQLAssetResponse{Status: "ok", AssetID: assetID, Content: formattedSQL}, nil
+	}
 	if isQuerySensor {
 		_, _, querySensor, resolveErr := s.deps.ResolveAssetByID(ctx, assetID)
 		if resolveErr != nil || querySensor == nil || !isQuerySensorAssetType(querySensor.Type) {

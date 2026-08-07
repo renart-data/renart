@@ -1042,6 +1042,9 @@ func polyglotDiagnostics(query string, tokens []polyglotToken, errors []polyglot
 			if selectAliases[strings.ToLower(match[1])] || describeColumns[strings.ToLower(match[1])] {
 				continue
 			}
+			if isCopyOptionValue(query, match[1], rangeInfo) {
+				continue
+			}
 			message = "Unresolved column: " + match[1]
 		}
 		for _, key := range polyglotValidationDiagnosticKeys(item, message, match) {
@@ -1053,6 +1056,36 @@ func polyglotDiagnostics(query string, tokens []polyglotToken, errors []polyglot
 	diagnostics = append(diagnostics, polyglotLocalColumnDiagnostics(columns, tables, selectAliases, describeColumns, validationKeys)...)
 	diagnostics = append(diagnostics, polyglotUnmaterializedColumnWarnings(columns, ctes, sourceMethods)...)
 	return diagnostics
+}
+
+var (
+	copyStatementPrefixPattern = regexp.MustCompile(`(?is)^\s*(?:(?:--[^\n]*(?:\n|$))|(?:/\*.*?\*/\s*))*copy\b`)
+	copyToKeywordPattern       = regexp.MustCompile(`(?i)\bto\b`)
+)
+
+func isCopyOptionValue(query, identifier string, rangeInfo *ParseContextRange) bool {
+	if rangeInfo == nil || rangeInfo.Start <= 0 || rangeInfo.Start > len(query) || rangeInfo.End > len(query) ||
+		!copyStatementPrefixPattern.MatchString(query) {
+		return false
+	}
+	prefix := query[:rangeInfo.Start]
+	if !copyToKeywordPattern.MatchString(prefix) {
+		return false
+	}
+	lineStart := strings.LastIndexByte(prefix, '\n') + 1
+	linePrefix := strings.TrimSpace(prefix[lineStart:])
+	linePrefix = strings.TrimRight(linePrefix, " \t=(,")
+	fields := strings.Fields(linePrefix)
+	if len(fields) == 0 {
+		return false
+	}
+	option := strings.ToLower(strings.Trim(fields[len(fields)-1], "`\"'()"))
+	switch option {
+	case "format", "header", "delimiter", "quote", "escape", "null", "compression", "encoding", "dateformat", "timestampformat", "partition_by", "overwrite_or_ignore", "append", "use_tmp_file":
+		return strings.EqualFold(strings.TrimSpace(query[rangeInfo.Start:rangeInfo.End]), identifier)
+	default:
+		return false
+	}
 }
 
 func findPolyglotIdentifierRange(query string, tokens []polyglotToken, identifier string) *ParseContextRange {

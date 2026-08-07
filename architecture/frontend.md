@@ -130,10 +130,15 @@ not underscore-flattened route hacks.
   the route, later selections
   preserve the explicit code/split/canvas layout. A DAG that fits at the default
   zoom is horizontally centered on initial render, while a wider DAG keeps its layout
-  origin so it remains predictable to pan. Layer-band layout reserves deterministic
-  empty row slots for same-prefix dependencies that skip intermediate ranks; when
-  such a lane is unambiguous, intermediate asset nodes cannot sit directly on the
-  rendered edge. After that initial positioning, a
+  origin so it remains predictable to pan. Layer-band layout assigns acyclic
+  prefix dependencies complete horizontal blocks: every asset in an upstream
+  prefix stays left of every asset in its downstream prefix, while dependency
+  depth still orders assets inside each block. Independent prefixes may share
+  columns, and cyclic prefix relationships fall back to ordinary asset-level
+  ranks. The ordering is independent of workspace input order. Bands also
+  reserve deterministic empty row slots for same-prefix dependencies that skip
+  intermediate ranks; when such a lane is unambiguous, intermediate asset nodes
+  cannot sit directly on the rendered edge. After that initial positioning, a
   routed selection is smoothly brought into view only when it falls outside
   the current viewport; this preserves the selected node when the canvas is
   resized into split view without fighting user panning. Hovering an

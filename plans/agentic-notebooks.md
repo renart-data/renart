@@ -204,9 +204,10 @@ Renart already has unusually useful structured context for an agent:
 
 There are limits that the UI currently hides with narrower interactions:
 
-- remote warehouse tables without project assets are discovered through a live,
-  client-side path; unified remote-table LSP context remains a proposal in
-  [remote-table-intellisense.md](remote-table-intellisense.md);
+- remote warehouse tables without project assets are optional, live catalog
+  evidence in the server-owned SQL LSP graph; they are absent when discovery is
+  offline and have no version-controlled definition target until imported (see
+  [the current SQL LSP architecture](../architecture/sql-lsp.md));
 - runtime result context currently emphasizes column names, not a typed,
   redacted data profile designed for model consumption;
 - the SQL LSP graph is built from the on-disk workspace, so validating a whole

@@ -104,13 +104,20 @@ function graphFor(nodes: AppLineageLayoutNode[], edges: AppLineageLayoutEdge[]):
   const nodeIds = new Set(nodes.map((node) => node.id));
   const edgeSet = new Set<string>();
   return {
-    nodes: nodes.map((node) => ({
-      ...node,
-      layer: node.layer || "default",
-      name: node.name || node.id,
-      width: node.width ?? DEFAULT_NODE_WIDTH,
-      height: node.height ?? DEFAULT_NODE_HEIGHT,
-    })),
+    nodes: nodes
+      .map((node) => ({
+        ...node,
+        layer: node.layer || "default",
+        name: node.name || node.id,
+        width: node.width ?? DEFAULT_NODE_WIDTH,
+        height: node.height ?? DEFAULT_NODE_HEIGHT,
+      }))
+      .sort(
+        (a, b) =>
+          a.layer.localeCompare(b.layer) ||
+          a.name.localeCompare(b.name) ||
+          a.id.localeCompare(b.id),
+      ),
     edges: edges
       .filter(
         (edge) =>
@@ -121,7 +128,8 @@ function graphFor(nodes: AppLineageLayoutNode[], edges: AppLineageLayoutEdge[]):
         if (edgeSet.has(edge.key)) return false;
         edgeSet.add(edge.key);
         return true;
-      }),
+      })
+      .sort((a, b) => a.key.localeCompare(b.key)),
   };
 }
 
@@ -142,10 +150,9 @@ function buildAdjacency(graph: Graph) {
 function analyze(graph: Graph): Analysis {
   const { preds, succs } = buildAdjacency(graph);
   const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
-  const layersSeen: string[] = [];
-  graph.nodes.forEach((node) => {
-    if (!layersSeen.includes(node.layer)) layersSeen.push(node.layer);
-  });
+  const layersSeen = [...new Set(graph.nodes.map((node) => node.layer))].sort((a, b) =>
+    a.localeCompare(b),
+  );
 
   const layerEdgeSet = new Set<string>();
   graph.edges.forEach((edge) => {
@@ -164,12 +171,11 @@ function analyze(graph: Graph): Analysis {
     layerSucc.get(source)?.push(target);
   });
 
-  const appearanceIndex = new Map(layersSeen.map((layer, index) => [layer, index]));
   const indegWork = new Map(layerIndeg);
   const queue = layersSeen.filter((layer) => indegWork.get(layer) === 0);
   const layerOrder: string[] = [];
   while (queue.length) {
-    queue.sort((a, b) => (appearanceIndex.get(a) ?? 0) - (appearanceIndex.get(b) ?? 0));
+    queue.sort((a, b) => a.localeCompare(b));
     const layer = queue.shift();
     if (!layer) continue;
     layerOrder.push(layer);
@@ -536,12 +542,11 @@ function orderBandCells(
   cells: Map<string, Required<AppLineageLayoutNode>[]>,
   graph: Graph,
   analysis: Analysis,
+  nodeRank: Map<string, number>,
   maxRank: number,
 ) {
   let stableIndex = 0;
-  const rankById = new Map(
-    graph.nodes.map((node) => [node.id, analysis.nodeRank.get(node.id) ?? 0]),
-  );
+  const rankById = new Map(graph.nodes.map((node) => [node.id, nodeRank.get(node.id) ?? 0]));
   const layerById = new Map(graph.nodes.map((node) => [node.id, node.layer]));
   const virtualItems = new Map<string, LayeredLayoutItem[]>();
   const layeredEdges: LayeredLayoutEdge[] = [];
@@ -710,10 +715,81 @@ function layoutStrict(graph: Graph, analysis: Analysis) {
   return placeColumns(orderWithinRanks(ranks, graph), graph);
 }
 
+// A band keeps dependencies inside one prefix readable across multiple
+// columns. When the prefix graph itself is acyclic, reserve a complete
+// horizontal block for every upstream prefix before placing a downstream
+// prefix. This preserves the useful dependency-depth layout within a prefix
+// while preventing an unrelated root in a downstream prefix from appearing to
+// the left of its prefix's sources.
+function bandNodeRanks(graph: Graph, analysis: Analysis) {
+  if (!analysis.layerLinearizable) return new Map(analysis.nodeRank);
+
+  const localRanks = new Map<string, number>();
+  const layerSpans = new Map<string, number>();
+  for (const layer of analysis.layerOrder) {
+    const layerNodes = graph.nodes.filter((node) => node.layer === layer);
+    const layerIDs = new Set(layerNodes.map((node) => node.id));
+    const indegrees = new Map(layerNodes.map((node) => [node.id, 0]));
+    const successors = new Map(layerNodes.map((node) => [node.id, [] as string[]]));
+    graph.edges.forEach((edge) => {
+      if (!layerIDs.has(edge.source) || !layerIDs.has(edge.target)) return;
+      successors.get(edge.source)?.push(edge.target);
+      indegrees.set(edge.target, (indegrees.get(edge.target) ?? 0) + 1);
+    });
+
+    const queue = layerNodes
+      .filter((node) => indegrees.get(node.id) === 0)
+      .map((node) => node.id)
+      .sort((a, b) => a.localeCompare(b));
+    queue.forEach((id) => localRanks.set(id, 0));
+    let visited = 0;
+    while (queue.length) {
+      const id = queue.shift();
+      if (!id) continue;
+      visited += 1;
+      for (const target of (successors.get(id) ?? []).sort((a, b) => a.localeCompare(b))) {
+        localRanks.set(
+          target,
+          Math.max(localRanks.get(target) ?? 0, (localRanks.get(id) ?? 0) + 1),
+        );
+        indegrees.set(target, (indegrees.get(target) ?? 0) - 1);
+        if (indegrees.get(target) === 0) {
+          queue.push(target);
+          queue.sort((a, b) => a.localeCompare(b));
+        }
+      }
+    }
+    if (visited !== layerNodes.length) return new Map(analysis.nodeRank);
+    layerSpans.set(
+      layer,
+      Math.max(1, ...layerNodes.map((node) => (localRanks.get(node.id) ?? 0) + 1)),
+    );
+  }
+
+  const layerBases = new Map(analysis.layerOrder.map((layer) => [layer, 0]));
+  for (const layer of analysis.layerOrder) {
+    const sourceEnd = (layerBases.get(layer) ?? 0) + (layerSpans.get(layer) ?? 1);
+    graph.edges.forEach((edge) => {
+      const sourceLayer = analysis.nodeById.get(edge.source)?.layer;
+      const targetLayer = analysis.nodeById.get(edge.target)?.layer;
+      if (sourceLayer !== layer || !targetLayer || targetLayer === layer) return;
+      layerBases.set(targetLayer, Math.max(layerBases.get(targetLayer) ?? 0, sourceEnd));
+    });
+  }
+
+  return new Map(
+    graph.nodes.map((node) => [
+      node.id,
+      (layerBases.get(node.layer) ?? 0) + (localRanks.get(node.id) ?? 0),
+    ]),
+  );
+}
+
 function layoutBands(graph: Graph, analysis: Analysis) {
-  const maxRank = Math.max(0, ...graph.nodes.map((node) => analysis.nodeRank.get(node.id) ?? 0));
+  const nodeRank = bandNodeRanks(graph, analysis);
+  const maxRank = Math.max(0, ...graph.nodes.map((node) => nodeRank.get(node.id) ?? 0));
   const columnWidths = Array.from({ length: maxRank + 1 }, (_, rank) => {
-    const inRank = graph.nodes.filter((node) => analysis.nodeRank.get(node.id) === rank);
+    const inRank = graph.nodes.filter((node) => nodeRank.get(node.id) === rank);
     return Math.max(DEFAULT_NODE_WIDTH, ...inRank.map((node) => node.width));
   });
   const columnX: number[] = [];
@@ -728,12 +804,12 @@ function layoutBands(graph: Graph, analysis: Analysis) {
     graph.nodes
       .filter((node) => node.layer === layer)
       .forEach((node) => {
-        const rank = analysis.nodeRank.get(node.id) ?? 0;
+        const rank = nodeRank.get(node.id) ?? 0;
         const key = `${layer}\u0000${rank}`;
         cells.set(key, [...(cells.get(key) ?? []), node]);
       });
   });
-  const cellItems = orderBandCells(cells, graph, analysis, maxRank);
+  const cellItems = orderBandCells(cells, graph, analysis, nodeRank, maxRank);
 
   const positions = new Map<string, { x: number; y: number }>();
   let y = 54;
@@ -742,7 +818,7 @@ function layoutBands(graph: Graph, analysis: Analysis) {
     if (!inLayer.length) return;
     const byRank = new Map<number, Required<AppLineageLayoutNode>[]>();
     inLayer.forEach((node) => {
-      const rank = analysis.nodeRank.get(node.id) ?? 0;
+      const rank = nodeRank.get(node.id) ?? 0;
       byRank.set(rank, [...(byRank.get(rank) ?? []), node]);
     });
     const rows = Math.max(

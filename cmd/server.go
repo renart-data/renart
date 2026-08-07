@@ -394,6 +394,9 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 			}
 			return result.Columns, nil
 		},
+		PublishReady: func(event service.RemoteCatalogReadyEvent) {
+			server.hub.PublishImmediate(event)
+		},
 	})
 	server.sqlSvc.SetRemoteCatalogObserver(remoteCatalog)
 	server.pipelineSvc.SetRemoteCatalogProvider(

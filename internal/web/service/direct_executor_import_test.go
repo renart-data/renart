@@ -9,6 +9,8 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/ansisql"
 	"github.com/bruin-data/bruin/pkg/config"
+	"github.com/bruin-data/bruin/pkg/pipeline"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,6 +27,7 @@ func TestDirectDatabaseImportPreviewsColumnsAndRejectsCollisions(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	pipelineRoot := filepath.Join(root, "analytics")
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(pipelineRoot, "assets"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(pipelineRoot, "pipeline.yml"), []byte("name: analytics\nschedule: daily\nstart_date: '2024-01-01'\n"), 0o644))
 
@@ -80,9 +83,69 @@ func TestDirectDatabaseImportPreviewsColumnsAndRejectsCollisions(t *testing.T) {
 	content, err := os.ReadFile(assetPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "name: external.orders")
+	assert.Contains(t, string(content), "connection: warehouse")
 	assert.Contains(t, string(content), "name: order_id")
 	assert.Contains(t, string(content), "type: bigint")
 
 	_, err = executor.ImportDatabase(context.Background(), request)
 	require.ErrorContains(t, err, `asset "external.orders" already exists`)
+}
+
+func TestDirectDatabaseImportPreservesSupportedThreePartAssetName(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	pipelineRoot := filepath.Join(root, "analytics")
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(pipelineRoot, "assets"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(pipelineRoot, "pipeline.yml"), []byte("name: analytics\n"), 0o644))
+
+	connection := &directImportSummaryConnection{summary: &ansisql.DBDatabase{
+		Name: "main",
+		Schemas: []*ansisql.DBSchema{{
+			Name: "external",
+			Tables: []*ansisql.DBTable{{
+				Name:    "orders",
+				Type:    ansisql.DBTableTypeTable,
+				Columns: []*ansisql.DBColumn{{Name: "order_id", Type: "bigint"}},
+			}},
+		}},
+	}}
+	executor := newCompatDirectExecutor(root, "")
+	executor.newConnectionManager = func(context.Context, string) (config.ConnectionAndDetailsGetter, error) {
+		return &stubConnectionManager{conn: connection, connectionType: "databricks"}, nil
+	}
+
+	request := ImportDatabaseRequest{
+		PipelinePath:       "analytics",
+		ConnectionName:     "databricks-other",
+		PreferredAssetName: "main.external.orders",
+		Schema:             "external",
+		Tables:             []string{"main.external.orders"},
+		RejectExisting:     true,
+	}
+	output, err := executor.ImportDatabase(context.Background(), request)
+	require.NoError(t, err)
+	var imported directImportDatabaseResponse
+	require.NoError(t, json.Unmarshal(output, &imported))
+	require.Len(t, imported.Assets, 1)
+	assert.Equal(t, "main.external.orders", imported.Assets[0].Name)
+	assert.Equal(t, "analytics/assets/external/orders.asset.yml", imported.Assets[0].Path)
+	assert.Equal(t, "databricks.source", imported.Assets[0].Type)
+
+	assetPath := filepath.Join(pipelineRoot, "assets", "external", "orders.asset.yml")
+	content, err := os.ReadFile(assetPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "name: main.external.orders")
+	assert.Contains(t, string(content), "connection: databricks-other")
+
+	parsed, err := NewRenartPipelineBuilder(afero.NewOsFs()).CreatePipelineFromPath(
+		context.Background(),
+		pipelineRoot,
+		pipeline.WithMutate(),
+	)
+	require.NoError(t, err)
+	assert.NotNil(t, getAssetByNameCaseInsensitiveLocal(parsed, "main.external.orders"))
+
+	err = validatePreferredDirectImportAssetName("main.external.orders", "external.orders", "postgres")
+	require.ErrorContains(t, err, "table name must be in format `table` or `schema.table`")
 }

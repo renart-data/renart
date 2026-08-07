@@ -22,6 +22,19 @@ export const workspaceSyncSourceAtom = atom<WorkspaceSyncSource | null>(null);
 // can reconcile through their canonical HTTP endpoint.
 export const workspaceReconnectSequenceAtom = atom<number>(0);
 
+export type SQLCatalogReadyEvent = {
+  type: "sql.catalog-ready";
+  connection: string;
+  environment?: string;
+  database?: string;
+  relation?: string;
+};
+
+export const sqlCatalogReadyEventAtom = atom<{
+  sequence: number;
+  event: SQLCatalogReadyEvent | null;
+}>({ sequence: 0, event: null });
+
 // Tracks whether the Go server is reachable. The SSE stream is the signal:
 // `onopen` means connected, a sustained error means the server went away. We
 // start optimistic so the offline overlay only appears once we actually lose

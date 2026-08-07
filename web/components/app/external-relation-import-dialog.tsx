@@ -109,6 +109,16 @@ export function ExternalRelationImportDialog({
                   {preview.relation.environment ? (
                     <Badge variant="secondary">{preview.relation.environment}</Badge>
                   ) : null}
+                  {preview.relation.observed_at ? (
+                    <time
+                      dateTime={preview.relation.observed_at}
+                      title={new Date(preview.relation.observed_at).toLocaleString()}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Observed {new Date(preview.relation.observed_at).toLocaleString()}
+                      {preview.relation.stale ? " · stale" : ""}
+                    </time>
+                  ) : null}
                   <span className="font-mono text-xs">{preview.relation.qualified_name}</span>
                 </div>
                 <dl className="grid gap-3 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2">

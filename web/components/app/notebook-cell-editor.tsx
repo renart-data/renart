@@ -40,6 +40,12 @@ const NOTEBOOK_EDITOR_AUTO_MAX_LINES = 24;
 const NOTEBOOK_EDITOR_MIN_HEIGHT =
   NOTEBOOK_EDITOR_MIN_LINES * NOTEBOOK_EDITOR_LINE_HEIGHT + NOTEBOOK_EDITOR_VERTICAL_PADDING;
 const NOTEBOOK_EDITOR_MAX_HEIGHT = 800;
+const NOTEBOOK_EDITOR_AUTO_MAX_HEIGHT =
+  NOTEBOOK_EDITOR_AUTO_MAX_LINES * NOTEBOOK_EDITOR_LINE_HEIGHT + NOTEBOOK_EDITOR_VERTICAL_PADDING;
+const NOTEBOOK_EDITOR_OPTIONS: MonacoNS.editor.IStandaloneEditorConstructionOptions = {
+  scrollBeyondLastLine: false,
+  scrollbar: { alwaysConsumeMouseWheel: false },
+};
 
 function clampNotebookEditorHeight(height: number) {
   return Math.min(Math.max(height, NOTEBOOK_EDITOR_MIN_HEIGHT), NOTEBOOK_EDITOR_MAX_HEIGHT);
@@ -152,6 +158,7 @@ export function NotebookCellMonaco({
   const [editorInstance, setEditorInstance] =
     useState<MonacoNS.editor.IStandaloneCodeEditor | null>(null);
   const [resizedHeight, setResizedHeight] = useState<number | null>(null);
+  const [measuredContentHeight, setMeasuredContentHeight] = useState<number | null>(null);
   const resizeDragRef = useRef<{
     pointerId: number;
     startY: number;
@@ -230,7 +237,7 @@ export function NotebookCellMonaco({
       return;
     }
     const content = editorInstance.getValue();
-    void formatSQLAsset(cell.id, content)
+    void formatSQLAsset(cell.id, content, { persist: false })
       .then((response) => {
         if (response.status === "ok") {
           // The formatter pulls the @viz block comment onto the SELECT line;
@@ -284,6 +291,24 @@ export function NotebookCellMonaco({
     };
   }, [editorInstance, formatSQL, monacoInstance, onCommit, onRename, onRun]);
 
+  useLayoutEffect(() => {
+    if (!editorInstance) {
+      setMeasuredContentHeight(null);
+      return;
+    }
+    const syncHeight = () => {
+      setMeasuredContentHeight(
+        Math.min(
+          Math.max(Math.ceil(editorInstance.getContentHeight()), NOTEBOOK_EDITOR_MIN_HEIGHT),
+          NOTEBOOK_EDITOR_AUTO_MAX_HEIGHT,
+        ),
+      );
+    };
+    syncHeight();
+    const subscription = editorInstance.onDidContentSizeChange(syncHeight);
+    return () => subscription.dispose();
+  }, [cellId, editorInstance]);
+
   const handleBeforeMount = useCallback((monaco: Monaco) => {
     defineBruinMonacoThemes(monaco);
   }, []);
@@ -304,7 +329,7 @@ export function NotebookCellMonaco({
     Math.min(Math.max(lineCount, NOTEBOOK_EDITOR_MIN_LINES), NOTEBOOK_EDITOR_AUTO_MAX_LINES) *
       NOTEBOOK_EDITOR_LINE_HEIGHT +
     NOTEBOOK_EDITOR_VERTICAL_PADDING;
-  const editorHeight = resizedHeight ?? contentHeight;
+  const editorHeight = resizedHeight ?? measuredContentHeight ?? contentHeight;
 
   const setEditorHeight = (height: number) => {
     setResizedHeight(clampNotebookEditorHeight(height));
@@ -371,6 +396,7 @@ export function NotebookCellMonaco({
           asset={cell}
           containerClassName="h-full"
           editorModelPath={`inmemory://bruin/notebook/${cellId}.${ext}`}
+          editorOptions={NOTEBOOK_EDITOR_OPTIONS}
           editorValue={value}
           editorValueMode="initial"
           editorHighlighted={false}

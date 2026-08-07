@@ -433,46 +433,6 @@ select order_id from main.external_orders
       )
       .toBe(true);
 
-    await expect
-      .poll(
-        async () => {
-          const response = await page.request.post(`${liveApp.baseURL}/api/sql/lsp/diagnostics`, {
-            data: {
-              asset_id: consumerAssetId,
-              content: consumerSQL,
-              environment: "default",
-            },
-          });
-          if (!response.ok()) return false;
-          const body = (await response.json()) as {
-            diagnostics?: Array<{ code?: string; severity?: number }>;
-          };
-          return Boolean(
-            body.diagnostics?.some(
-              (diagnostic) => diagnostic.code === "external-relation" && diagnostic.severity === 2,
-            ),
-          );
-        },
-        { timeout: 30000 },
-      )
-      .toBe(true);
-
-    let externalRelationId = "";
-    await expect
-      .poll(async () => {
-        const response = await page.request.get(
-          `${liveApp.baseURL}/api/pipelines/${pipelineId}/type-check`,
-        );
-        if (!response.ok()) return "";
-        const report = (await response.json()) as TypeCheckReport;
-        const relation = report.external_relations?.find((candidate) =>
-          candidate.referenced_by_asset_names.includes("analytics.external_report"),
-        );
-        externalRelationId = relation?.id ?? "";
-        return relation?.qualified_name ?? "";
-      })
-      .toMatch(/external_orders$/);
-
     const initialTypeCheck = page.waitForResponse(
       (response) =>
         response.url().includes(`/api/pipelines/${pipelineId}/type-check`) && response.ok(),
@@ -481,9 +441,24 @@ select order_id from main.external_orders
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${consumerAssetId}/canvas`);
     await initialTypeCheck;
 
-    const externalNode = page.locator(
-      `[data-testid="lineage-asset"][data-asset-id="${externalRelationId}"]`,
+    // The initial report is intentionally catalog-cold. Opening the SQL editor
+    // starts a non-blocking discovery request; its sql.catalog-ready SSE event
+    // must rerun unchanged diagnostics and the interactive report without the
+    // browser polling or the user pressing Type check again.
+    const catalogReadyTypeCheck = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/pipelines/${pipelineId}/type-check`) && response.ok(),
+      { timeout: 30000 },
     );
+    await page.getByRole("link", { name: "Code view" }).click();
+    await expect(page.locator(".monaco-editor")).toBeVisible({ timeout: 15000 });
+    await catalogReadyTypeCheck;
+    await page.getByRole("link", { name: "Canvas view" }).click();
+
+    const externalNode = page
+      .locator('[data-testid="lineage-asset"]')
+      .filter({ has: page.locator('[data-external="true"]') })
+      .filter({ hasText: "external_orders" });
     await expect(externalNode.locator('[data-external="true"]')).toBeVisible({ timeout: 15000 });
     await externalNode.getByRole("button", { name: "Asset actions" }).click();
     await page.getByRole("menuitem", { name: "Import as asset" }).click();
@@ -520,6 +495,20 @@ select order_id from main.external_orders
         }
       })
       .toContain("name: order_id");
+    await expect.poll(() => readFile(importedPath, "utf8")).toContain("connection: duckdb-default");
+    await expect.poll(() => readFile(consumerPath, "utf8")).toContain("- main.external_orders");
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${liveApp.baseURL}/api/workspace`);
+        const workspace = (await response.json()) as {
+          pipelines: Array<{ assets: Array<{ id: string; upstreams?: string[] }> }>;
+        };
+        return workspace.pipelines
+          .flatMap((pipeline) => pipeline.assets)
+          .find((asset) => asset.id === consumerAssetId)
+          ?.upstreams?.includes("main.external_orders");
+      })
+      .toBe(true);
     await expect(externalNode).toHaveCount(0, { timeout: 30000 });
   });
 });

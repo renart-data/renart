@@ -72,6 +72,10 @@ type StatusResponse struct {
 
 type FormatSQLAssetRequest struct {
 	Content string `json:"content"`
+	// Persist defaults to true for existing asset-editor clients. Notebook cells
+	// set it to false so their revision-checked save queue remains the only
+	// writer of cell files.
+	Persist *bool `json:"persist,omitempty"`
 }
 
 type FormatSQLAssetResponse struct {

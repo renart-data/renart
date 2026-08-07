@@ -18,6 +18,7 @@ export function AssetCodeEditor({
   asset,
   containerClassName,
   editorModelPath,
+  editorOptions,
   editorValue,
   editorValueMode = "controlled",
   editorHighlighted,
@@ -35,6 +36,7 @@ export function AssetCodeEditor({
   asset: WebAsset | null;
   containerClassName?: string;
   editorModelPath: string;
+  editorOptions?: MonacoNS.editor.IStandaloneEditorConstructionOptions;
   editorValue: string;
   editorValueMode?: "controlled" | "initial";
   editorHighlighted: boolean;
@@ -51,7 +53,7 @@ export function AssetCodeEditor({
 }) {
   const [showFormatButton, setShowFormatButton] = useState(false);
   const isPythonAsset = usesPythonSource(asset);
-  const editorOptions = useMemo(
+  const resolvedEditorOptions = useMemo(
     () => ({
       minimap: { enabled: false },
       fontSize: 13,
@@ -67,8 +69,9 @@ export function AssetCodeEditor({
       // stale height and overflows — which oscillates a scrollbar until the
       // window is resized.
       automaticLayout: true,
+      ...editorOptions,
     }),
-    [isPythonAsset],
+    [editorOptions, isPythonAsset],
   );
 
   const handlePointerActivity = () => {
@@ -114,7 +117,7 @@ export function AssetCodeEditor({
           beforeMount={onBeforeMount}
           onChange={onChange}
           onMount={onMount}
-          options={editorOptions}
+          options={resolvedEditorOptions}
         />
       </Suspense>
     </div>

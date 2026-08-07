@@ -286,7 +286,7 @@ func (s *OnboardingService) PreviewDiscovery(ctx context.Context, req Onboarding
 		if err != nil {
 			return OnboardingDiscoveryResult{Status: "error", Databases: databases, Tables: []SQLDiscoveryTableItem{}, Error: redactWorkspaceConnectionMessage(selectedCfg, err.Error())}, 400
 		}
-		result.Tables = BuildSQLDiscoveryTableItems(selectedDatabase, items)
+		result.Tables = BuildSQLDiscoveryTableItemsForConnectionType(result.ConnectionType, selectedDatabase, items)
 		return result, 200
 	}
 
@@ -297,7 +297,7 @@ func (s *OnboardingService) PreviewDiscovery(ctx context.Context, req Onboarding
 		if err != nil {
 			return OnboardingDiscoveryResult{Status: "error", Databases: databases, Tables: []SQLDiscoveryTableItem{}, Error: redactWorkspaceConnectionMessage(selectedCfg, err.Error())}, 400
 		}
-		result.Tables = BuildSQLDiscoveryTableItemsWithoutSchemas(selectedDatabase, items)
+		result.Tables = BuildSQLDiscoveryTableItemsWithoutSchemasForConnectionType(result.ConnectionType, selectedDatabase, items)
 		return result, 200
 	}
 

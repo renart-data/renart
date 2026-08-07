@@ -148,4 +148,33 @@ test.describe("app lineage layout engine", () => {
     expect(events.y).toBe(health.y);
     expect(sensor.y).toBeGreaterThan(events.y + 96);
   });
+
+  test("reserves an upstream prefix block before every node in a downstream prefix", () => {
+    const nodes = [
+      node("example.report"),
+      node("public.accounts"),
+      node("example.remote"),
+      node("public.account_status"),
+    ];
+    const edges = [
+      edge("public.accounts", "public.account_status"),
+      edge("public.accounts", "example.remote"),
+      edge("example.remote", "example.report"),
+    ];
+    const layout = computeAppLineageLayout({ layoutId: "bands", nodes, edges });
+    const permuted = computeAppLineageLayout({
+      layoutId: "bands",
+      nodes: nodes.slice().reverse(),
+      edges: edges.slice().reverse(),
+    });
+
+    const publicX = ["public.accounts", "public.account_status"].map(
+      (id) => layout.positions.get(id)!.x,
+    );
+    const exampleX = ["example.remote", "example.report"].map((id) => layout.positions.get(id)!.x);
+    expect(Math.max(...publicX)).toBeLessThan(Math.min(...exampleX));
+    for (const asset of nodes) {
+      expect(permuted.positions.get(asset.id)).toEqual(layout.positions.get(asset.id));
+    }
+  });
 });

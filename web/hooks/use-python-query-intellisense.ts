@@ -18,7 +18,11 @@ import {
   SQLLSPSignatureHelp,
 } from "@/lib/api-sql-lsp";
 import { usesPythonSource } from "@/lib/asset-types";
-import { workspaceAtom } from "@/lib/atoms/domains/workspace";
+import {
+  selectedEnvironmentAtom,
+  sqlCatalogReadyEventAtom,
+  workspaceAtom,
+} from "@/lib/atoms/domains/workspace";
 import {
   findPythonQueryLiterals,
   PythonQueryLiteral,
@@ -37,6 +41,7 @@ type PythonQueryProviderState = {
   asset: WebAsset | null;
   schemaTables: SchemaTable[];
   workspace: WorkspaceState | null;
+  selectedEnvironment?: string;
   onGoToAsset?: (pipelineId: string, assetId: string) => void;
   onGoToCell?: (cellId: string) => void;
 };
@@ -62,14 +67,24 @@ export function usePythonQueryIntellisense(
   onGoToCell?: (cellId: string) => void,
 ) {
   const workspace = useAtomValue(workspaceAtom);
+  const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
+  const catalogReady = useAtomValue(sqlCatalogReadyEventAtom);
   const providerStateRef = useRef<PythonQueryProviderState>({
     asset,
     schemaTables,
     workspace,
+    selectedEnvironment,
     onGoToAsset,
     onGoToCell,
   });
-  providerStateRef.current = { asset, schemaTables, workspace, onGoToAsset, onGoToCell };
+  providerStateRef.current = {
+    asset,
+    schemaTables,
+    workspace,
+    selectedEnvironment,
+    onGoToAsset,
+    onGoToCell,
+  };
   const isPythonAsset = isPython(asset);
 
   useEffect(() => {
@@ -88,6 +103,17 @@ export function usePythonQueryIntellisense(
       release();
     };
   }, [asset?.id, editor, isPythonAsset, monaco]);
+
+  const seenCatalogReadySequenceRef = useRef(catalogReady.sequence);
+  useEffect(() => {
+    if (seenCatalogReadySequenceRef.current === catalogReady.sequence) {
+      return;
+    }
+    seenCatalogReadySequenceRef.current = catalogReady.sequence;
+    if (editor?.hasTextFocus() && editor.getDomNode()?.querySelector(".suggest-widget.visible")) {
+      editor.trigger("renart.catalog-ready", "editor.action.triggerSuggest", {});
+    }
+  }, [catalogReady.sequence, editor]);
 
   // A Python model tokenizes the entire literal as one Python string. Render
   // SQL lexical tokens and LSP relation tokens as model decorations so the
@@ -123,7 +149,9 @@ export function usePythonQueryIntellisense(
       semanticTimer = window.setTimeout(() => {
         void Promise.all(
           literals.map((literal) =>
-            getSQLLSPSemanticTokens(sqlLSPRequestForLiteral(asset.id, literal)).catch(() => null),
+            getSQLLSPSemanticTokens(
+              sqlLSPRequestForLiteral(asset.id, literal, {}, selectedEnvironment),
+            ).catch(() => null),
           ),
         ).then((responses) => {
           if (disposed || revision !== refreshRevision) {
@@ -145,7 +173,7 @@ export function usePythonQueryIntellisense(
       }
       decorationIds = editor.deltaDecorations(decorationIds, []);
     };
-  }, [asset?.id, editor, isPythonAsset, monaco]);
+  }, [asset?.id, catalogReady.sequence, editor, isPythonAsset, monaco, selectedEnvironment]);
 
   // Ctrl/Cmd+click is explicit navigation (matching SQL cells/assets). Monaco
   // does not know the host string contains SQL, so bridge the click directly.
@@ -169,9 +197,12 @@ export function usePythonQueryIntellisense(
       event.event.preventDefault();
       event.event.stopPropagation();
       void getSQLLSPDefinition(
-        sqlLSPRequestForLiteral(asset.id, projected.literal, {
-          position: projected.sqlPosition,
-        }),
+        sqlLSPRequestForLiteral(
+          asset.id,
+          projected.literal,
+          { position: projected.sqlPosition },
+          selectedEnvironment,
+        ),
       )
         .then((response) => {
           const location = (response.locations ?? []).find((candidate) => candidate.asset_id);
@@ -191,7 +222,7 @@ export function usePythonQueryIntellisense(
         .catch(() => undefined);
     });
     return () => subscription.dispose();
-  }, [asset?.id, editor, isPythonAsset]);
+  }, [asset?.id, editor, isPythonAsset, selectedEnvironment]);
 
   useEffect(() => {
     if (!monaco || !editor || !asset?.id || !isPythonAsset) {
@@ -222,7 +253,7 @@ export function usePythonQueryIntellisense(
         literals.map(async (literal) => ({
           literal,
           response: await getSQLLSPDiagnostics(
-            sqlLSPRequestForLiteral(asset.id, literal),
+            sqlLSPRequestForLiteral(asset.id, literal, {}, selectedEnvironment),
             controller.signal,
           ),
         })),
@@ -264,7 +295,15 @@ export function usePythonQueryIntellisense(
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [asset?.id, content, editor, isPythonAsset, monaco]);
+  }, [
+    asset?.id,
+    catalogReady.sequence,
+    content,
+    editor,
+    isPythonAsset,
+    monaco,
+    selectedEnvironment,
+  ]);
 }
 
 function acquirePythonQueryProviders(monaco: typeof MonacoNS) {
@@ -319,9 +358,12 @@ function registerPythonQueryProviders(monaco: typeof MonacoNS): MonacoNS.IDispos
         sqlModel.dispose();
       }
       const response = await getSQLLSPCompletions(
-        sqlLSPRequestForLiteral(state.asset.id, projected.literal, {
-          position: projected.sqlPosition,
-        }),
+        sqlLSPRequestForLiteral(
+          state.asset.id,
+          projected.literal,
+          { position: projected.sqlPosition },
+          state.selectedEnvironment,
+        ),
       ).catch(() => null);
       if (token.isCancellationRequested) {
         return { suggestions: [] };
@@ -360,9 +402,12 @@ function registerPythonQueryProviders(monaco: typeof MonacoNS): MonacoNS.IDispos
         return null;
       }
       const response = await getSQLLSPHover(
-        sqlLSPRequestForLiteral(state.asset.id, projected.literal, {
-          position: projected.sqlPosition,
-        }),
+        sqlLSPRequestForLiteral(
+          state.asset.id,
+          projected.literal,
+          { position: projected.sqlPosition },
+          state.selectedEnvironment,
+        ),
       ).catch(() => null);
       if (!response?.hover || token.isCancellationRequested) {
         return null;
@@ -384,9 +429,12 @@ function registerPythonQueryProviders(monaco: typeof MonacoNS): MonacoNS.IDispos
         return [];
       }
       const response = await getSQLLSPDefinition(
-        sqlLSPRequestForLiteral(state.asset.id, projected.literal, {
-          position: projected.sqlPosition,
-        }),
+        sqlLSPRequestForLiteral(
+          state.asset.id,
+          projected.literal,
+          { position: projected.sqlPosition },
+          state.selectedEnvironment,
+        ),
       ).catch(() => null);
       if (!response || token.isCancellationRequested) {
         return [];
@@ -424,9 +472,12 @@ function registerPythonQueryProviders(monaco: typeof MonacoNS): MonacoNS.IDispos
         return null;
       }
       const response = await getSQLLSPSignatureHelp(
-        sqlLSPRequestForLiteral(state.asset.id, projected.literal, {
-          position: projected.sqlPosition,
-        }),
+        sqlLSPRequestForLiteral(
+          state.asset.id,
+          projected.literal,
+          { position: projected.sqlPosition },
+          state.selectedEnvironment,
+        ),
       ).catch(() => null);
       if (!response?.signature || token.isCancellationRequested) {
         return null;
@@ -449,11 +500,13 @@ function sqlLSPRequestForLiteral(
   assetID: string,
   literal: PythonQueryLiteral,
   extra: Partial<SQLLSPRequest> = {},
+  environment?: string,
 ): SQLLSPRequest {
   return {
     asset_id: assetID,
     content: literal.sql,
     ...(literal.connection ? { connection: literal.connection } : {}),
+    ...(environment ? { environment } : {}),
     ...extra,
   };
 }

@@ -57,13 +57,29 @@ func TestSQLServiceSeedsRemoteCatalogObserverFromDiscoveryEndpoints(t *testing.T
 	tables, apiErr := service.Tables(t.Context(), "warehouse", "catalog", "dev")
 	require.Nil(t, apiErr)
 	require.Len(t, tables.Tables, 1)
+	assert.Equal(t, "analytics.orders", tables.Tables[0].Name)
+	assert.Equal(t, "catalog", tables.Tables[0].DatabaseName)
 	assert.Equal(t, RemoteCatalogScope{Connection: "warehouse", Environment: "dev"}, observer.tableScope)
 	assert.Equal(t, tables.Tables, observer.tables)
 
-	columns, status := service.TableColumns(t.Context(), "warehouse", "catalog.analytics.orders", "dev")
+	columns, status := service.TableColumns(t.Context(), "warehouse", "analytics.orders", "dev")
 	assert.Equal(t, 200, status)
 	require.Equal(t, "ok", columns.Status)
 	assert.Equal(t, RemoteCatalogScope{Connection: "warehouse", Environment: "dev"}, observer.columnScope)
-	assert.Equal(t, "catalog.analytics.orders", observer.columnTable)
+	assert.Equal(t, "analytics.orders", observer.columnTable)
 	assert.Equal(t, []SQLColumn{{Name: "order_id", Type: "BIGINT"}}, observer.columnResults)
+}
+
+func TestSQLDiscoveryUsesBruinWarehouseNameCapabilities(t *testing.T) {
+	t.Parallel()
+	tables := map[string][]string{"analytics": {"orders"}}
+
+	postgres := BuildSQLDiscoveryTableItemsForConnectionType("postgres", "warehouse", tables)
+	require.Len(t, postgres, 1)
+	assert.Equal(t, "analytics.orders", postgres[0].Name)
+	assert.Equal(t, "warehouse", postgres[0].DatabaseName)
+
+	databricks := BuildSQLDiscoveryTableItemsForConnectionType("databricks", "main", tables)
+	require.Len(t, databricks, 1)
+	assert.Equal(t, "main.analytics.orders", databricks[0].Name)
 }

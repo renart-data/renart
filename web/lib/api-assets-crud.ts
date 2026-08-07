@@ -136,9 +136,14 @@ export async function deleteAsset(pipelineId: string, assetId: string) {
   });
 }
 
-export async function formatSQLAsset(assetId: string, content: string) {
+export async function formatSQLAsset(
+  assetId: string,
+  content: string,
+  options?: { persist?: boolean },
+) {
   return fetchJSONWithBody<FormatSQLAssetResponse>(`/api/assets/${assetId}/format-sql`, "POST", {
     content,
+    persist: options?.persist,
   });
 }
 

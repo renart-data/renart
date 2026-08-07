@@ -98,12 +98,27 @@ coordinator's `WorkspaceState` rather than the filesystem:
   32 databases, 2,000 relations, and 512 columns per relation; a failed refresh
   retains the previous stale snapshot, and failed/partial catalog or column
   discovery is retry-limited for ten seconds so editor requests cannot fan out
-  warehouse work. Known columns participate in the same
+  warehouse work. Every successful relation or column refresh publishes a
+  scope-only `sql.catalog-ready` SSE event; it contains connection/environment
+  names but no catalog contents or credentials. SQL and embedded-Python editors
+  rerun unchanged diagnostics/semantic enrichment after that event and refresh
+  an already-open suggestion widget without opening one unsolicited. The Build
+  view coalesces adjacent events before rerunning interactive type-check, so
+  external nodes appear without polling or a manual refresh. Known columns participate in the same
   completion, hover, and semantic validation paths as authored schemas, while
   an observed relation whose columns have not been fetched remains resolvable
   without enabling unknown-column checks. Authored relations win exact-name
   collisions, remote completions rank below authored relations, and ambiguous
-  remote short names require qualification. The stdio LSP supplies no provider
+  remote short names require qualification. Completion detail, hover, canvas
+  nodes, and the import review expose the age of the positive observation.
+  Discovery renders the relation identity according to Bruin's platform table-
+  name capability: catalog-aware warehouses such as Snowflake and Databricks
+  expose `catalog.schema.table`, while PostgreSQL and other two-level engines
+  expose `schema.table` and retain the database only as observation metadata.
+  An authored asset represents a remote relation only by that exact identity;
+  Renart never drops a catalog prefix to match a different asset. A positive
+  observation may still supply an unambiguous shorter SQL spelling for the
+  exact authored relation on the same connection. The stdio LSP supplies no provider
   and remains deterministic/offline. A positively observed remote relation is
   resolved for SQL validation but receives an `external-relation` warning at
   each document reference until an authored asset represents it. Interactive
@@ -117,8 +132,14 @@ coordinator's `WorkspaceState` rather than the filesystem:
   type-check to bind the relation identity to a still-positive observation,
   previews the native one-table Bruin source-asset import, defaults to importing
   columns, rejects logical-name/file-path collisions, and emits the ordinary
-  workspace SSE update only after confirmation. Connection secrets never enter
-  the graph or response.
+  workspace SSE update only after confirmation. The generated source asset
+  keeps the exact observed connection and warehouse-valid relation name instead
+  of falling through to a pipeline default. Its Git path remains schema/table-
+  based and Bruin's explicit `name:` preserves a three-part identity when the
+  platform supports one. Confirmation also pins that exact name as a dependency
+  of every same-connection consumer in the fresh report. Imported relations
+  immediately stop producing external warnings under every unambiguous catalog
+  spelling. Connection secrets never enter the graph or response.
 - Asset/header rules shared with type-check (dependency existence,
   materialization metadata, missing output declarations, render failures, and
   resilient asset-parse failures) run once per `(revision, pipeline)` through
@@ -374,11 +395,14 @@ to `parameters.query`, never to the raw YAML content.
   single-quoted SQL string; explicit path and data-value suggestion flows retain
   their narrower behavior.
   Purely-remote warehouse tables (no backing asset) come from the optional
-  backend catalog overlay. The browser temporarily retains its older live
-  discovery fallback for a cold first request; warm relation and column results
-  are served by the LSP and deduplicate ahead of that fallback. External canvas
-  nodes and source-asset import remain in
-  `plans/remote-table-intellisense.md`.
+  backend catalog overlay. The browser does not merge warehouse tables or
+  columns into LSP responses: a cold request stays fast and asset-only, then the
+  catalog-ready event reruns the server-owned result once positive evidence is
+  available. Browser discovery caches remain available to explicit catalog,
+  settings, and object-picker surfaces but are not an editor source of truth.
+  An unimported relation intentionally has no definition target; after import,
+  definition navigation resolves the original unambiguous warehouse spelling
+  to its version-controlled asset.
 - **Diagnostics**: unresolved relation / alias / column (column checks only fire
   when the relation's columns are known from asset SQL or declared metadata),
   ambiguous unqualified columns in multi-relation scopes, Polyglot expression

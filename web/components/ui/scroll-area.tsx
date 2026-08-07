@@ -9,12 +9,14 @@ function ScrollArea({
   className,
   children,
   horizontalScrollBarClassName,
+  showHorizontalScrollBar = true,
   viewportClassName,
   viewportRef,
   onViewportScroll,
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   horizontalScrollBarClassName?: string;
+  showHorizontalScrollBar?: boolean;
   viewportClassName?: string;
   viewportRef?: React.Ref<HTMLDivElement>;
   onViewportScroll?: React.UIEventHandler<HTMLDivElement>;
@@ -34,7 +36,9 @@ function ScrollArea({
         {children}
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar />
-      <ScrollBar className={horizontalScrollBarClassName} orientation="horizontal" />
+      {showHorizontalScrollBar ? (
+        <ScrollBar className={horizontalScrollBarClassName} orientation="horizontal" />
+      ) : null}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   );

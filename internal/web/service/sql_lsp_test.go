@@ -116,6 +116,50 @@ select a, b from a.example_asset
 	}
 }
 
+func TestSQLLSPServiceDoesNotTreatDuckDBCopyOptionsAsColumns(t *testing.T) {
+	query := `COPY create_partitions.create_partitions
+TO .data/create_all_partitions.sql
+format csv
+header FALSE
+delimiter '\t'`
+	state := model.WorkspaceState{Revision: 1, Pipelines: []model.Pipeline{{
+		ID:   "pipeline",
+		Name: "create_partitions",
+		Assets: []model.Asset{
+			{
+				ID:      "source",
+				Name:    "create_partitions.create_partitions",
+				Type:    "duckdb.sql",
+				Path:    "create_partitions/assets/create_partitions.sql",
+				Content: "select 'statement' as partition",
+				Columns: []model.Column{{Name: "partition", Type: "varchar"}},
+			},
+			{
+				ID:      "copy",
+				Name:    "create_partitions.export",
+				Type:    "duckdb.sql",
+				Path:    "create_partitions/assets/export.sql",
+				Content: query,
+			},
+		},
+	}}}
+	service := NewSQLLSPService(SQLLSPDependencies{
+		WorkspaceRoot: t.TempDir(),
+		CurrentState:  func() model.WorkspaceState { return state },
+	})
+
+	response, apiErr := service.Diagnostics(context.Background(), SQLLSPRequest{
+		AssetID: "copy",
+		Content: query,
+	})
+	require.Nil(t, apiErr)
+	for _, diagnostic := range response.Diagnostics {
+		if diagnostic.Code == authoringdiag.CodeUnresolvedColumn {
+			t.Fatalf("COPY format option was treated as a column: %#v", response.Diagnostics)
+		}
+	}
+}
+
 func TestAuthoringSchemaParityAcrossTypeCheckHTTPAndFilesystemLSP(t *testing.T) {
 	parsed, root := writeTypeCheckWorkspace(t, `name: analytics
 default_connections:
@@ -1953,6 +1997,28 @@ func TestSQLLSPServiceCompletesSiblingNotebookCellColumns(t *testing.T) {
 	if !pipelineLabels["order_id"] || !pipelineLabels["total_amount"] {
 		t.Fatalf("expected pipeline asset columns in notebook completions, got %#v", pipelineResponse.Completions)
 	}
+}
+
+func TestSQLLSPServiceCompletesCTEAfterLeadingVizDirectiveInNotebook(t *testing.T) {
+	service := notebookLSPService(t, notebookLSPState())
+	query := `/* @viz(line, x: count, y: count_star()) */
+with preagg as (
+  select 1::bigint as count, 2::bigint as count_star
+)
+select
+from preagg`
+	response, apiErr := service.Completions(context.Background(), SQLLSPRequest{
+		AssetID:  "nb1-summary",
+		Content:  query,
+		Position: sqllsp.PositionAt(query, strings.Index(query, "\nfrom preagg")),
+	})
+	require.Nil(t, apiErr)
+	labels := make([]string, 0, len(response.Completions))
+	for _, item := range response.Completions {
+		labels = append(labels, item.Label)
+	}
+	assert.Contains(t, labels, "count")
+	assert.Contains(t, labels, "count_star")
 }
 
 func TestSQLLSPServiceNotebookDiagnosticsResolveSiblingsAndExternalRefs(t *testing.T) {

@@ -131,6 +131,7 @@ import {
   routeSelectionAtom,
   selectedEnvironmentAtom,
   selectedExecutionTimeWindowAtom,
+  sqlCatalogReadyEventAtom,
   workspaceAtom,
 } from "@/lib/atoms/domains/workspace";
 import { renderJinjaAsset } from "@/lib/jinja-intellisense";
@@ -240,6 +241,19 @@ function isValidExecutionWindow(start: string, end: string) {
   return (
     !Number.isNaN(startTimestamp) && !Number.isNaN(endTimestamp) && endTimestamp > startTimestamp
   );
+}
+
+function catalogObservationLabel(observedAt?: string) {
+  if (!observedAt) return "remote catalog";
+  const observed = Date.parse(observedAt);
+  if (Number.isNaN(observed)) return "remote catalog";
+  const ageMs = Math.max(0, Date.now() - observed);
+  const minutes = Math.floor(ageMs / 60_000);
+  if (minutes < 1) return "observed just now";
+  if (minutes < 60) return `observed ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `observed ${hours}h ago`;
+  return `observed ${Math.floor(hours / 24)}d ago`;
 }
 
 type BuildAsset = AppLineageCanvasAsset & {
@@ -380,6 +394,7 @@ export function AppBuildPage({
   onAssetSelect?: (assetId: string) => void;
 }) {
   const workspace = useAtomValue(workspaceAtom);
+  const catalogReady = useAtomValue(sqlCatalogReadyEventAtom);
   const navigate = useNavigate();
   const location = useLocation();
   const view = appBuildViewFromPath(location.pathname);
@@ -525,7 +540,9 @@ export function AppBuildPage({
       integration: relation.connection,
       description: `Observed on ${relation.connection}${relation.environment ? ` in ${relation.environment}` : ""}`,
       status: "unknown",
-      materializedAt: relation.stale ? "stale catalog observation" : "remote catalog",
+      materializedAt: `${catalogObservationLabel(relation.observed_at)}${
+        relation.stale ? " · stale" : ""
+      }`,
       connection: relation.connection,
       upstreams: [],
       readOnly: true,
@@ -814,6 +831,24 @@ export function AppBuildPage({
     }
     void runTypeCheck(false);
   }, [activePipeline?.id, runTypeCheck]);
+
+  const seenCatalogReadySequenceRef = useRef(catalogReady.sequence);
+  useEffect(() => {
+    if (seenCatalogReadySequenceRef.current === catalogReady.sequence) {
+      return;
+    }
+    seenCatalogReadySequenceRef.current = catalogReady.sequence;
+    if (!activePipeline) {
+      return;
+    }
+    // Catalog and lazy-column refreshes can complete back-to-back. Coalesce
+    // them into one interactive report refresh so external canvas nodes appear
+    // without polling or a manual type-check rerun.
+    const timer = window.setTimeout(() => {
+      void runTypeCheck(false);
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [activePipeline, catalogReady.sequence, runTypeCheck]);
   const runMaterialize = (assetId: string, name: string, scope: MaterializeScope = "asset") => {
     openBottom("materialize");
     void assetResults.runMaterializeForAsset(assetId, scope);

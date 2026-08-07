@@ -424,8 +424,22 @@ test.describe("app scheduler pages live", () => {
     expect(viewport).not.toBeNull();
     expect(editDialogBounds!.height).toBeLessThanOrEqual(viewport!.height - 16);
     if (viewport!.width >= 640) {
-      expect(editDialogBounds!.width).toBeGreaterThanOrEqual(640);
+      expect(editDialogBounds!.width).toBeGreaterThanOrEqual(600);
     }
+    const editScrollViewport = editDialog
+      .getByTestId("edit-schedule-scroll-area")
+      .locator(':scope > [data-slot="scroll-area-viewport"]');
+    const editScrollMetrics = await editScrollViewport.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      overflowX: getComputedStyle(element).overflowX,
+      scrollWidth: element.scrollWidth,
+      horizontalScrollbars: element.parentElement?.querySelectorAll(
+        '[data-slot="scroll-area-scrollbar"][data-orientation="horizontal"]',
+      ).length,
+    }));
+    expect(editScrollMetrics.overflowX).toBe("hidden");
+    expect(editScrollMetrics.horizontalScrollbars).toBe(0);
+    expect(editScrollMetrics.scrollWidth).toBeLessThanOrEqual(editScrollMetrics.clientWidth + 1);
     await expect(editDialog.getByLabel("Pipeline")).toHaveValue("analytics");
     await expect(editDialog.getByLabel("Environment")).toHaveValue("default");
     await editDialog.getByLabel("Cron").fill("15 1 * * *");

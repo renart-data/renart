@@ -21,7 +21,6 @@ the original.
 | [object-storage-assets.md](object-storage-assets.md) | partial support + proposal — existing Load S3/GCS browsing, upstream-compatible Seed sources, schema preview, lineage, and storage write safety |
 | [pipeline-readiness-and-rendering.md](pipeline-readiness-and-rendering.md) | core complete — Phases 0a/0b and 1–3 plus version-controlled schedules and bounded retention have shipped; single-workspace command handoff, resource claims, and rolling compatibility cleanup remain |
 | [polyglot-typechecking.md](polyglot-typechecking.md) | evaluation — cached compact analysis, richer schema constraints, and optional SQL lint policy |
-| [remote-table-intellisense.md](remote-table-intellisense.md) | catalog overlay, warnings, external canvas nodes, and reviewed source-asset import shipped — catalog-ready invalidation and live coverage remain |
 | [secret-management.md](secret-management.md) | local/env provider core and CLI administration implemented — file leases, team providers, and hosted run-scoped access remain |
 | [python-asset-sdk.md](python-asset-sdk.md) | phases 1–2 + upstream refresh + PyPI publication implemented — credential-free `query()`, ingestr-free uploads, editor/notebook parity; policy and protocol reach items open |
 | [python-cross-connection-policy.md](python-cross-connection-policy.md) | proposal — opt-in per-environment connection scopes for Python SDK queries |
@@ -32,4 +31,5 @@ Recently folded away (git history keeps them): `docs-alpha.md` and
 `architecture/sql-lsp.md`; `ingestr-feature-flag.md`,
 `project-settings-and-workspaces.md`, and `cli-v1.md` →
 `architecture/backend.md` + `architecture/frontend.md`; `schema-derivation.md` →
-`architecture/asset-editing.md` + `architecture/sql-lsp.md`.
+`architecture/asset-editing.md` + `architecture/sql-lsp.md`;
+`remote-table-intellisense.md` → `architecture/sql-lsp.md`.

@@ -146,6 +146,90 @@ func TestRemoteCatalogOverlayPreservesAuthoredCollisionAndCachedGraph(t *testing
 	assert.Nil(t, completionByLabel(items, "remote_id"))
 }
 
+func TestRemoteCatalogOverlayUsesExactThreePartImportedAssetIdentity(t *testing.T) {
+	base := sqllsp.CanonicalGraph{
+		Assets: []sqllsp.AssetNode{{
+			ID:         "accounts",
+			Name:       "scraping_pipeline.public.accounts",
+			Connection: "databricks",
+			URI:        "file:///workspace/accounts.asset.yml",
+		}},
+		Relations: []sqllsp.RelationNode{{
+			ID:      "local",
+			Name:    "scraping_pipeline.public.accounts",
+			AssetID: "accounts",
+		}},
+		Schemas: []sqllsp.SchemaLayer{{
+			RelationID:   "local",
+			SourceKind:   "declared",
+			Completeness: "complete",
+			Columns:      []sqllsp.ColumnInfo{{Name: "account_id", Type: "bigint"}},
+		}},
+	}
+	snapshot := RemoteCatalogSnapshot{Relations: []RemoteCatalogRelation{{
+		QualifiedName: "scraping_pipeline.public.accounts",
+		ShortName:     "accounts",
+		SchemaName:    "public",
+		DatabaseName:  "scraping_pipeline",
+		ColumnsKnown:  true,
+		Columns:       []SQLColumn{{Name: "account_id", Type: "bigint"}},
+	}}}
+	overlay := graphWithRemoteCatalogSnapshot(
+		base,
+		RemoteCatalogScope{Connection: "databricks"},
+		snapshot,
+	)
+
+	require.Len(t, overlay.Relations, 2)
+	assert.Equal(t, "public.accounts", overlay.Relations[1].Name)
+	assert.Equal(t, "accounts", overlay.Relations[1].AssetID)
+	assert.Equal(t, "local", overlay.Relations[1].ID)
+
+	engine := sqllsp.NewEngine(overlay)
+	doc := sqllsp.TextDocumentItem{Text: "select account_id from scraping_pipeline.public.accounts"}
+	for _, diagnostic := range engine.Diagnostics(doc) {
+		assert.NotEqual(t, authoringdiag.CodeUnresolvedRelation, diagnostic.Code, diagnostic.Message)
+		assert.NotEqual(t, authoringdiag.CodeExternalRelation, diagnostic.Code, diagnostic.Message)
+	}
+	assert.Empty(t, engine.ExternalRelationReferences(doc))
+	definitions := engine.Definition(doc, sqllsp.Position{
+		Character: len("select account_id from scraping_pipeline.public.acc"),
+	})
+	require.Len(t, definitions, 1)
+	assert.Equal(t, "accounts", definitions[0].AssetID)
+}
+
+func TestRemoteCatalogOverlayDoesNotAttachAuthoredIdentityAcrossConnections(t *testing.T) {
+	base := sqllsp.CanonicalGraph{
+		Assets: []sqllsp.AssetNode{{
+			ID:         "accounts",
+			Name:       "scraping_pipeline.public.accounts",
+			Connection: "databricks-default",
+		}},
+		Relations: []sqllsp.RelationNode{{
+			ID:      "local",
+			Name:    "scraping_pipeline.public.accounts",
+			AssetID: "accounts",
+		}},
+	}
+	snapshot := RemoteCatalogSnapshot{Relations: []RemoteCatalogRelation{{
+		QualifiedName: "scraping_pipeline.public.accounts",
+		ShortName:     "accounts",
+		SchemaName:    "public",
+		DatabaseName:  "scraping_pipeline",
+	}}}
+
+	overlay := graphWithRemoteCatalogSnapshot(
+		base,
+		RemoteCatalogScope{Connection: "databricks-other"},
+		snapshot,
+	)
+
+	require.Len(t, overlay.Relations, 2)
+	assert.Equal(t, "public.accounts", overlay.Relations[1].Name)
+	assert.Empty(t, overlay.Relations[1].AssetID)
+}
+
 func TestRemoteCatalogOverlayRequiresDatabaseForAmbiguousSchemaAlias(t *testing.T) {
 	snapshot := RemoteCatalogSnapshot{Relations: []RemoteCatalogRelation{
 		{
@@ -176,6 +260,38 @@ func TestRemoteCatalogOverlayRequiresDatabaseForAmbiguousSchemaAlias(t *testing.
 	diagnostics = engine.Diagnostics(sqllsp.TextDocumentItem{Text: "select * from warehouse_a.analytics.orders"})
 	for _, diagnostic := range diagnostics {
 		assert.NotEqual(t, "unresolved-relation", diagnostic.Code, diagnostic.Message)
+	}
+}
+
+func TestRemoteCatalogOverlayDoesNotGuessImportedAssetDatabaseWhenSchemaAliasIsAmbiguous(t *testing.T) {
+	base := sqllsp.CanonicalGraph{Relations: []sqllsp.RelationNode{{
+		ID:      "local",
+		Name:    "analytics.orders",
+		AssetID: "orders",
+	}}}
+	snapshot := RemoteCatalogSnapshot{Relations: []RemoteCatalogRelation{
+		{
+			QualifiedName: "warehouse_a.analytics.orders",
+			ShortName:     "orders",
+			SchemaName:    "analytics",
+			DatabaseName:  "warehouse_a",
+		},
+		{
+			QualifiedName: "warehouse_b.analytics.orders",
+			ShortName:     "orders",
+			SchemaName:    "analytics",
+			DatabaseName:  "warehouse_b",
+		},
+	}}
+	overlay := graphWithRemoteCatalogSnapshot(
+		base,
+		RemoteCatalogScope{Connection: "prod"},
+		snapshot,
+	)
+
+	require.Len(t, overlay.Relations, 3)
+	for _, relation := range overlay.Relations[1:] {
+		assert.Empty(t, relation.AssetID)
 	}
 }
 

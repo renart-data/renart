@@ -472,7 +472,7 @@ CI verifies that the checked-in inventory is current.
 | dequal | 2.0.3 | MIT | [license](third_party/licenses/306fa513e39b23a6e8747520de761809d206b99800ef41907b530226574c59ae.txt) |
 | detect-node-es | 1.1.0 | MIT | [license](third_party/licenses/54b32293ea560d22cd9b62af9b2cda1a030d910a48c6601d227c5ff2338d95f8.txt) |
 | devlop | 1.1.0 | MIT | [license](third_party/licenses/6f296a5eccc1dc96714bb94ebaa9cac25b0a1467d74cc5263ac4d0646ab01f62.txt) |
-| dompurify | 3.4.12 | (MPL-2.0 OR Apache-2.0) | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
+| dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
 | electron-to-chromium | 1.5.389 | ISC | [license](third_party/licenses/25ba5c59dad3e0dd8f9540beaa0f0a86a10e3aec35af5fdc8e88c5f6a5c0d8c6.txt) |
 | entities | 2.2.0 | BSD-2-Clause | [license](third_party/licenses/cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164.txt) |
 | es-toolkit | 1.49.0 | MIT | [license](third_party/licenses/51f3674294d988d89dbebd31273baaeb3c697a15482d9699b14d1fded2e132a7.txt) |

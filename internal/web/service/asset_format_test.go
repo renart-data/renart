@@ -109,6 +109,38 @@ func TestAssetServiceFormatSQLUsesAssetContentWorkspaceUpdateWhenAvailable(t *te
 	assert.False(t, syncCalled)
 }
 
+func TestAssetServiceFormatSQLCanReturnFormattingWithoutPersisting(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	assetPath := filepath.Join("notebooks", "scratch", "cell.sql")
+	absAssetPath := filepath.Join(workspaceRoot, assetPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(absAssetPath), 0o755))
+	original := "select old_value from source_table\n"
+	require.NoError(t, os.WriteFile(absAssetPath, []byte(original), 0o644))
+
+	pushCalled := false
+	service := NewAssetService(AssetDependencies{
+		WorkspaceRoot:   workspaceRoot,
+		SuppressWatcher: func(string) {},
+		PushWorkspaceUpdateImmediateWithChangedIDs: func(context.Context, string, string, []string) {
+			pushCalled = true
+		},
+	})
+
+	persist := false
+	response, apiErr := service.FormatSQL(context.Background(), EncodeID(assetPath), FormatSQLAssetRequest{
+		Content: "select a,b from t",
+		Persist: &persist,
+	})
+	require.Nil(t, apiErr)
+	assert.Equal(t, "ok", response.Status)
+	assert.Equal(t, "SELECT\n  a,\n  b\nFROM t", response.Content)
+
+	contents, err := os.ReadFile(absAssetPath)
+	require.NoError(t, err)
+	assert.Equal(t, original, string(contents))
+	assert.False(t, pushCalled)
+}
+
 func TestAssetServiceFormatSQLPersistsQuerySensorParameter(t *testing.T) {
 	t.Parallel()
 
