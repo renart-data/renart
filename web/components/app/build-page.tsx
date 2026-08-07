@@ -758,9 +758,9 @@ export function AppBuildPage({
 
     setRouteSelection({
       pipeline: activePipeline.id,
-      asset: effectiveSelectedAssetId ?? null,
+      asset: editorMode === "adhoc" ? null : (effectiveSelectedAssetId ?? null),
     });
-  }, [activePipeline, effectiveSelectedAssetId, setRouteSelection]);
+  }, [activePipeline, editorMode, effectiveSelectedAssetId, setRouteSelection]);
 
   useEffect(() => {
     if (!workspace?.pipelines.length || activePipeline) {
@@ -794,10 +794,33 @@ export function AppBuildPage({
   }, [buildSearch, navigate, pendingPipelinePath, workspace?.pipelines]);
 
   const openBottom = (tab: AppResultTab) => {
-    onResultTabChange?.(tab);
+    if (tab === "query" && editorMode !== "adhoc" && effectiveSelectedAssetId) {
+      void navigate({
+        to: appAssetViewPath(view === "canvas" ? "split" : view),
+        params: { pipelineId, assetId: effectiveSelectedAssetId },
+        search: { ...buildSearch, result: "query", editor: "adhoc" },
+        replace: true,
+      });
+    } else {
+      onResultTabChange?.(tab);
+    }
     // Make sure the results are visible when something routes output here.
     resultsPanelRef.current?.expand();
   };
+
+  // Keep direct/bookmarked Query-tab URLs consistent with the interaction:
+  // the query results belong to the ad-hoc scratch editor, not an asset file.
+  useEffect(() => {
+    if (resultTab !== "query" || editorMode === "adhoc" || !effectiveSelectedAssetId) {
+      return;
+    }
+    void navigate({
+      to: appAssetViewPath(view === "canvas" ? "split" : view),
+      params: { pipelineId, assetId: effectiveSelectedAssetId },
+      search: { ...buildSearch, result: "query", editor: "adhoc" },
+      replace: true,
+    });
+  }, [buildSearch, editorMode, effectiveSelectedAssetId, navigate, pipelineId, resultTab, view]);
   const runTypeCheck = useCallback(
     async (openTab = false) => {
       if (!activePipeline) {
@@ -1115,7 +1138,11 @@ export function AppBuildPage({
     void navigate({
       to: appAssetViewPath(view),
       params: { pipelineId: targetPipelineId, assetId },
-      search: { ...buildSearch, editor: "asset" },
+      search: {
+        ...buildSearch,
+        result: buildSearch.result === "query" ? "inspect" : buildSearch.result,
+        editor: "asset",
+      },
     });
   };
   const runAssetById = (assetId: string) => {
@@ -1149,7 +1176,11 @@ export function AppBuildPage({
       void navigate({
         to: appAssetViewPath(view),
         params: { pipelineId, assetId: effectiveSelectedAssetId },
-        search: { ...buildSearch, editor: "asset" },
+        search: {
+          ...buildSearch,
+          result: buildSearch.result === "query" ? "inspect" : buildSearch.result,
+          editor: "asset",
+        },
       });
       return;
     }
@@ -1283,7 +1314,7 @@ export function AppBuildPage({
     pipelineId,
     pipeline: activePipeline,
     pipelineAssets: displayedPipelineAssets,
-    routedAssetId: selectedAssetId,
+    routedAssetId: editorMode === "adhoc" ? undefined : selectedAssetId,
     selectedAssetId: effectiveSelectedAssetId,
     selectedAsset,
     view,
@@ -1835,7 +1866,7 @@ function BuildTopBar({
           )}
           params={{ pipelineId, assetId: selectedAssetId }}
           search={{
-            result: resultTab,
+            result: editorMode === "adhoc" && resultTab === "query" ? "inspect" : resultTab,
             editor: editorMode === "adhoc" ? "asset" : "adhoc",
           }}
           aria-pressed={editorMode === "adhoc"}
@@ -2525,9 +2556,22 @@ function EditorWorkspace({ asset, adhoc }: { asset: BuildAsset; adhoc: boolean }
   );
 }
 
-function EditorFilenameHeader({ filename, children }: { filename: string; children?: ReactNode }) {
+function EditorFilenameHeader({
+  filename,
+  children,
+  className,
+}: {
+  filename: string;
+  children?: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="flex h-10 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b bg-background/70 px-3">
+    <div
+      className={cn(
+        "flex h-10 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b bg-background/70 px-3",
+        className,
+      )}
+    >
       <span className="block min-w-0 flex-[1_1_0] truncate font-mono text-[11px] text-muted-foreground">
         {filename}
       </span>
@@ -2676,8 +2720,11 @@ function AdhocEditor({ showActionLabels }: { showActionLabels: boolean }) {
     goToAsset,
   } = useBuildContext();
   return (
-    <div className="relative flex h-full min-h-0 flex-col">
-      <EditorFilenameHeader filename="Ad-hoc query">
+    <div
+      className="relative flex h-full min-h-0 flex-col bg-primary/5 ring-1 ring-inset ring-primary/20"
+      data-testid="adhoc-editor-workspace"
+    >
+      <EditorFilenameHeader filename="Ad-hoc query" className="border-primary/20 bg-primary/10">
         <Select
           value={adhocConnection?.name}
           onValueChange={setAdhocConnection}

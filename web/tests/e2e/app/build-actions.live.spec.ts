@@ -1125,6 +1125,15 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
       ),
     );
 
+    const canvasCustomer = page
+      .locator(`[data-testid="lineage-asset"][data-asset-id="${customersAssetId}"]`)
+      .locator('[data-slot="asset-node"]');
+    const selectedBorderClass = /(?:^|\s)border-primary(?:\s|$)/;
+    await expect(canvasCustomer).not.toHaveClass(selectedBorderClass);
+
+    const scratchWorkspace = page.getByTestId("adhoc-editor-workspace");
+    await expect(scratchWorkspace).toHaveClass(/bg-primary\/5/);
+
     const editor = page.locator(".monaco-editor").first();
     await expect(editor).toBeVisible({ timeout: 15000 });
     await expect(page.getByText("Ad-hoc query").first()).toBeVisible();
@@ -1134,6 +1143,21 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
       /ring-primary/,
     );
     await expect(page.getByRole("link", { name: "Ad-hoc" }).first()).toHaveClass(/ring-primary/);
+
+    // Selecting even the same context asset leaves scratch mode and restores
+    // the repository-backed asset editor and canvas selection.
+    await page.getByRole("button", { name: /customers\.sql/ }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get("editor")).toBe("asset");
+    await expect(scratchWorkspace).toHaveCount(0);
+    await expect(canvasCustomer).toHaveClass(selectedBorderClass);
+
+    // Conversely, the Query result tab owns the scratch editor and opens it
+    // automatically while clearing the asset selection.
+    await page.getByRole("tab", { name: "Query", exact: true }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get("result")).toBe("query");
+    await expect.poll(() => new URL(page.url()).searchParams.get("editor")).toBe("adhoc");
+    await expect(scratchWorkspace).toBeVisible();
+    await expect(canvasCustomer).not.toHaveClass(selectedBorderClass);
 
     const connectionSelect = page.getByRole("combobox", { name: "Ad-hoc connection" });
     await expect(connectionSelect).toContainText("duckdb-default");

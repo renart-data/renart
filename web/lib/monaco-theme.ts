@@ -55,5 +55,54 @@ export function defineBruinMonacoThemes(monaco: Monaco) {
     },
   });
 
+  // Ad-hoc SQL is intentionally a scratch document rather than a repository
+  // asset. Give it a restrained tint while retaining the same SQL semantic
+  // colors as the regular editor themes.
+  monaco.editor.defineTheme("bruin-adhoc-vs", {
+    base: "vs",
+    inherit: true,
+    semanticHighlighting: true,
+    rules: [
+      { token: "schema", foreground: "7c5a2a" },
+      { token: "table", foreground: "0f766e" },
+      { token: "column", foreground: "1d4ed8" },
+      { token: "alias", foreground: "7c3aed" },
+    ],
+    colors: {
+      "editor.background": "#F6F7FC",
+      "editorGutter.background": "#F1F3FA",
+      "editorStickyScroll.background": "#F6F7FC",
+    },
+    semanticTokenColors: {
+      schema: "#7c5a2a",
+      table: "#0f766e",
+      column: "#1d4ed8",
+      alias: "#7c3aed",
+    },
+  });
+
+  monaco.editor.defineTheme("bruin-adhoc-vs-dark", {
+    base: "vs-dark",
+    inherit: true,
+    semanticHighlighting: true,
+    rules: [
+      { token: "schema", foreground: "d6b36d" },
+      { token: "table", foreground: "74cfc5" },
+      { token: "column", foreground: "93c5fd" },
+      { token: "alias", foreground: "c4b5fd" },
+    ],
+    colors: {
+      "editor.background": "#181A24",
+      "editorGutter.background": "#151721",
+      "editorStickyScroll.background": "#181A24",
+    },
+    semanticTokenColors: {
+      schema: "#d6b36d",
+      table: "#74cfc5",
+      column: "#93c5fd",
+      alias: "#c4b5fd",
+    },
+  });
+
   themesRegistered = true;
 }

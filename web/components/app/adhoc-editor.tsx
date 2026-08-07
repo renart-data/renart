@@ -67,7 +67,8 @@ export function AppAdhocEditor({
   onRunQuery: () => void;
   onGoToAsset?: (pipelineId: string, assetId: string) => void;
 }) {
-  const { monacoTheme } = useWorkspaceTheme();
+  const { theme } = useWorkspaceTheme();
+  const monacoTheme = theme === "dark" ? "bruin-adhoc-vs-dark" : "bruin-adhoc-vs";
   const [editorValue, setEditorValue] = useAdhocQueryDraft(pipelineId);
   const workspace = useAtomValue(workspaceAtom);
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);

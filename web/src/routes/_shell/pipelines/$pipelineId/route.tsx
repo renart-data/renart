@@ -38,7 +38,11 @@ function AppPipelineLayoutRoute() {
         navigate({
           to: appAssetViewPath(allParams.assetId ? currentView : "split"),
           params: { pipelineId, assetId },
-          search: { ...search, editor: "asset" },
+          search: {
+            ...search,
+            result: search.result === "query" ? "inspect" : search.result,
+            editor: "asset",
+          },
         })
       }
     />
