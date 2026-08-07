@@ -221,6 +221,35 @@ func TestRunDirectTaskLeavesSnowflakeKindReplacementToBruin(t *testing.T) {
 	assert.Contains(t, connection.query, `FROM "ANALYTICS".INFORMATION_SCHEMA.TABLES`)
 }
 
+func TestRunDirectTaskDropsOppositeDatabricksKindOnlyDuringFullRefresh(t *testing.T) {
+	t.Parallel()
+
+	asset, pl, instance := materializationLifecycleTask(t, pipeline.Materialization{
+		Type: pipeline.MaterializationTypeTable,
+	})
+	asset.Type = pipeline.AssetTypeDatabricksQuery
+	asset.Name = "sail.analytics.events"
+	full := &materializationLifecycleOperator{}
+	connection := &materializationLifecycleConnection{result: &query.QueryResult{Rows: [][]interface{}{{"VIEW"}}}}
+	manager := &materializationLifecycleManager{
+		connection: connection, connectionType: "databricks",
+		details: config.DatabricksConnection{Catalog: "sail", Schema: "analytics"},
+	}
+	ctx := context.WithValue(context.Background(), pipeline.RunConfigFullRefresh, true)
+
+	err := (&HybridBruinExecutor{}).runDirectTask(
+		ctx, pl, instance, nil, manager,
+		materializationLifecycleSequence(asset.Type, full),
+		materializationLifecycleSequence(asset.Type, full),
+		&streamCaptureWriter{buffer: bytes.NewBuffer(nil)},
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, full.calls)
+	assert.Equal(t, []string{"DROP VIEW `sail`.`analytics`.`events`"}, connection.drops)
+	assert.Contains(t, connection.query, "FROM `sail`.information_schema.tables")
+}
+
 func TestMaterializationTargetInspectionSQLIsTargetedByAdapter(t *testing.T) {
 	t.Parallel()
 
@@ -250,6 +279,11 @@ func TestMaterializationTargetInspectionSQLIsTargetedByAdapter(t *testing.T) {
 			lookup:   materializationTargetLookup{catalog: "project", schema: "analytics", table: "events"},
 			contains: []string{"`project.analytics.INFORMATION_SCHEMA.TABLES`", "table_name = 'events'"},
 		},
+		{
+			name: "databricks", connectionType: "databricks",
+			lookup:   materializationTargetLookup{catalog: "sail", schema: "analytics", table: "events"},
+			contains: []string{"`sail`.information_schema.tables", "table_schema = 'analytics'", "table_name = 'events'"},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -260,6 +294,27 @@ func TestMaterializationTargetInspectionSQLIsTargetedByAdapter(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMaterializationTargetLookupUsesDatabricksConnectionDefaults(t *testing.T) {
+	t.Parallel()
+
+	lookup, err := materializationTargetLookupFor(
+		&config.DatabricksConnection{Catalog: "main", Schema: "analytics"},
+		"databricks",
+		"events",
+	)
+
+	require.NoError(t, err)
+	assert.Equal(t, materializationTargetLookup{catalog: "main", schema: "analytics", table: "events"}, lookup)
+}
+
+func TestTargetRelationKindRecognizesDatabricksManagedTables(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, TargetRelationKindTable, targetRelationKindFromDatabaseValue("MANAGED"))
+	assert.Equal(t, TargetRelationKindView, targetRelationKindFromDatabaseValue("VIEW"))
+	assert.Equal(t, TargetRelationKindOther, targetRelationKindFromDatabaseValue("EXTERNAL"))
 }
 
 func TestRenderMaterializationTargetLifecycleStageDescribesConditionalBootstrap(t *testing.T) {

@@ -54,6 +54,7 @@ type proxyServer struct {
 
 	mu         sync.Mutex
 	operations map[string]*queryOperation
+	relations  map[string]string
 }
 
 type columnKind int
@@ -85,6 +86,12 @@ type describedColumn struct {
 
 var informationSchemaColumnsPattern = regexp.MustCompile(
 	`(?is)table_schema\s*=\s*(?:lower\()?['"]([^'"]+)['"]\)?\s+and\s+table_name\s*=\s*(?:lower\()?['"]([^'"]+)['"]\)?`,
+)
+var createRelationPattern = regexp.MustCompile(
+	"(?is)^\\s*create\\s+(?:or\\s+replace\\s+)?(table|view)\\s+(?:if\\s+not\\s+exists\\s+)?([A-Za-z0-9_.`]+)",
+)
+var dropRelationPattern = regexp.MustCompile(
+	"(?is)^\\s*drop\\s+(?:table|view)\\s+(?:if\\s+exists\\s+)?([A-Za-z0-9_.`]+)",
 )
 var usingDeltaPattern = regexp.MustCompile(`(?i)\busing\s+delta\b`)
 var renameTablePattern = regexp.MustCompile(
@@ -144,6 +151,7 @@ func main() {
 	proxy := &proxyServer{
 		db:         db,
 		operations: make(map[string]*queryOperation),
+		relations:  make(map[string]string),
 	}
 	service := &client.TestClient{
 		FnOpenSession:          proxy.openSession,
@@ -328,6 +336,9 @@ func (s *proxyServer) runQuery(ctx context.Context, statement string, parameters
 	if strings.Contains(normalized, "from information_schema.columns") {
 		return s.runInformationSchemaColumns(ctx, statement)
 	}
+	if strings.Contains(normalized, "information_schema.tables") {
+		return s.runInformationSchemaTables(ctx, statement)
+	}
 	if matches := renameTablePattern.FindStringSubmatch(statement); len(matches) == 3 {
 		return s.replaceTable(ctx, matches[1], matches[2])
 	}
@@ -387,6 +398,7 @@ func (s *proxyServer) runQuery(ctx context.Context, statement string, parameters
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	s.recordRelationMutation(statement)
 
 	return buildQueryOperation(columns)
 }
@@ -407,6 +419,7 @@ func (s *proxyServer) replaceTable(ctx context.Context, source, target string) (
 			return nil, err
 		}
 	}
+	s.replaceRelation(source, target, "MANAGED")
 	return buildQueryOperation(nil)
 }
 
@@ -433,6 +446,8 @@ func (s *proxyServer) rewriteTable(ctx context.Context, target, keepPredicate st
 			return nil, err
 		}
 	}
+	s.setRelationKind(target, "MANAGED")
+	s.deleteRelation(temporary)
 	return buildQueryOperation(nil)
 }
 
@@ -576,6 +591,42 @@ func sparkParameterLiteral(index int, parameter *cli_service.TSparkParameter) (s
 	}
 }
 
+func (s *proxyServer) runInformationSchemaTables(ctx context.Context, statement string) (*queryOperation, error) {
+	matches := informationSchemaColumnsPattern.FindStringSubmatch(statement)
+	if len(matches) != 3 {
+		return nil, fmt.Errorf("unsupported information_schema.tables query: %s", compactSQL(statement))
+	}
+	relation := matches[1] + "." + matches[2]
+	rows, err := s.db.QueryContext(ctx, "describe table "+relation)
+	if err != nil {
+		if isMissingRelationError(err) {
+			return buildInformationSchemaTables("")
+		}
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	kind := s.relationKind(relation)
+	if kind == "" {
+		// A relation created outside the compatibility endpoint is still positive
+		// evidence. Sail cannot expose its kind through information_schema, so the
+		// faithful default for the matrix's CTAS targets is a managed table.
+		kind = "MANAGED"
+	}
+	return buildInformationSchemaTables(kind)
+}
+
+func buildInformationSchemaTables(kind string) (*queryOperation, error) {
+	column := resultColumn{
+		name: "table_type", kind: columnString, typeID: cli_service.TTypeId_STRING_TYPE,
+	}
+	if kind != "" {
+		column.values = append(column.values, kind)
+	}
+	return buildQueryOperation([]resultColumn{column})
+}
+
 func (s *proxyServer) runInformationSchemaColumns(ctx context.Context, statement string) (*queryOperation, error) {
 	matches := informationSchemaColumnsPattern.FindStringSubmatch(statement)
 	if len(matches) != 3 {
@@ -584,7 +635,7 @@ func (s *proxyServer) runInformationSchemaColumns(ctx context.Context, statement
 	tableName := matches[1] + "." + matches[2]
 	rows, err := s.db.QueryContext(ctx, "describe table "+tableName)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "table not found") {
+		if isMissingRelationError(err) {
 			return buildInformationSchemaColumns(nil)
 		}
 		return nil, err
@@ -607,6 +658,71 @@ func (s *proxyServer) runInformationSchemaColumns(ctx context.Context, statement
 		return nil, err
 	}
 	return buildInformationSchemaColumns(described)
+}
+
+func isMissingRelationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "table not found") ||
+		strings.Contains(message, "table does not exist") ||
+		strings.Contains(message, "table_or_view_not_found")
+}
+
+func (s *proxyServer) recordRelationMutation(statement string) {
+	if matches := createRelationPattern.FindStringSubmatch(statement); len(matches) == 3 {
+		kind := "MANAGED"
+		if strings.EqualFold(matches[1], "view") {
+			kind = "VIEW"
+		}
+		s.setRelationKind(matches[2], kind)
+		return
+	}
+	if matches := dropRelationPattern.FindStringSubmatch(statement); len(matches) == 2 {
+		s.deleteRelation(matches[1])
+	}
+}
+
+func (s *proxyServer) relationKind(relation string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.relations[relationKey(relation)]
+}
+
+func (s *proxyServer) setRelationKind(relation, kind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.relations[relationKey(relation)] = kind
+}
+
+func (s *proxyServer) deleteRelation(relation string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.relations, relationKey(relation))
+}
+
+func (s *proxyServer) replaceRelation(source, target, fallbackKind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sourceKey := relationKey(source)
+	kind := s.relations[sourceKey]
+	if kind == "" {
+		kind = fallbackKind
+	}
+	delete(s.relations, sourceKey)
+	s.relations[relationKey(target)] = kind
+}
+
+func relationKey(relation string) string {
+	parts := strings.Split(strings.TrimSpace(relation), ".")
+	for index := range parts {
+		parts[index] = strings.ToLower(strings.TrimSpace(strings.Trim(parts[index], "`\"[]")))
+	}
+	if len(parts) > 2 {
+		parts = parts[len(parts)-2:]
+	}
+	return strings.Join(parts, ".")
 }
 
 func buildInformationSchemaColumns(described []describedColumn) (*queryOperation, error) {

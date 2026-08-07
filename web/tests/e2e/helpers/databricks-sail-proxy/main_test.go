@@ -7,6 +7,31 @@ import (
 	"github.com/databricks/databricks-sql-go/internal/cli_service"
 )
 
+func TestRelationKindRegistryTracksDatabricksDDL(t *testing.T) {
+	t.Parallel()
+
+	proxy := &proxyServer{relations: make(map[string]string)}
+	proxy.recordRelationMutation("CREATE TABLE `sail`.`analytics`.`orders` USING PARQUET AS SELECT 1")
+	if got := proxy.relationKind("analytics.orders"); got != "MANAGED" {
+		t.Fatalf("table kind: want MANAGED, got %q", got)
+	}
+	proxy.recordRelationMutation("CREATE OR REPLACE VIEW analytics.orders AS SELECT 1")
+	if got := proxy.relationKind("sail.analytics.orders"); got != "VIEW" {
+		t.Fatalf("view kind: want VIEW, got %q", got)
+	}
+	proxy.replaceRelation("analytics.orders", "analytics.orders_renamed", "MANAGED")
+	if got := proxy.relationKind("analytics.orders"); got != "" {
+		t.Fatalf("old relation should be absent, got %q", got)
+	}
+	if got := proxy.relationKind("analytics.orders_renamed"); got != "VIEW" {
+		t.Fatalf("renamed kind: want VIEW, got %q", got)
+	}
+	proxy.recordRelationMutation("DROP VIEW IF EXISTS analytics.orders_renamed")
+	if got := proxy.relationKind("analytics.orders_renamed"); got != "" {
+		t.Fatalf("dropped relation should be absent, got %q", got)
+	}
+}
+
 func TestRenderStatementParameters(t *testing.T) {
 	t.Parallel()
 

@@ -151,7 +151,7 @@ func (e *HybridBruinExecutor) prepareMaterializationTarget(
 		return decision, nil
 	}
 
-	if connectionType != "duckdb" && connectionType != "postgres" {
+	if connectionType != "duckdb" && connectionType != "postgres" && connectionType != "databricks" {
 		return decision, fmt.Errorf(
 			"full refresh cannot safely replace materialization target %q from %s to %s on %s yet",
 			asset.Name, state.Kind, expectedKind, displayConnectionType(connectionType),
@@ -218,7 +218,7 @@ func inspectMaterializationTarget(
 
 func materializationTargetAdapterSupported(connectionType string) bool {
 	switch connectionType {
-	case "duckdb", "postgres", "snowflake", "google_cloud_platform":
+	case "duckdb", "postgres", "snowflake", "google_cloud_platform", "databricks":
 		return true
 	default:
 		return false
@@ -273,11 +273,12 @@ func targetRelationKindFromDatabaseValue(value any) TargetRelationKind {
 	}
 	raw = strings.ToUpper(strings.TrimSpace(raw))
 	switch raw {
-	case "R", "P", "BASE TABLE", "TABLE":
+	case "R", "P", "BASE TABLE", "TABLE", "MANAGED":
 		return TargetRelationKindTable
 	case "V", "VIEW":
 		return TargetRelationKindView
-	case "M", "F", "OTHER", "EXTERNAL", "EXTERNAL TABLE", "MATERIALIZED VIEW", "SNAPSHOT", "CLONE":
+	case "M", "F", "OTHER", "EXTERNAL", "EXTERNAL TABLE", "MATERIALIZED VIEW", "MATERIALIZED_VIEW",
+		"STREAMING_TABLE", "MANAGED_SHALLOW_CLONE", "FOREIGN", "SNAPSHOT", "CLONE":
 		return TargetRelationKindOther
 	default:
 		return TargetRelationKindUnknown
@@ -334,6 +335,17 @@ func materializationTargetLookupFor(details any, connectionType, qualifiedName s
 		if lookup.catalog == "" || lookup.schema == "" {
 			return materializationTargetLookup{}, fmt.Errorf("target lifecycle inspection requires a BigQuery project and dataset for %q", qualifiedName)
 		}
+	case "databricks":
+		defaultCatalog, defaultSchema := databricksTargetDefaults(details)
+		if lookup.catalog == "" {
+			lookup.catalog = defaultCatalog
+		}
+		if lookup.schema == "" {
+			lookup.schema = defaultSchema
+		}
+		if lookup.schema == "" {
+			return materializationTargetLookup{}, fmt.Errorf("target lifecycle inspection cannot determine the Databricks schema for %q", qualifiedName)
+		}
 	}
 	if lookup.schema == "" || lookup.table == "" {
 		return materializationTargetLookup{}, fmt.Errorf("target lifecycle inspection cannot determine the schema and table for %q", qualifiedName)
@@ -373,6 +385,15 @@ func materializationTargetInspectionSQL(connectionType string, lookup materializ
 		return fmt.Sprintf(
 			"SELECT table_type FROM `%s` WHERE table_name = %s",
 			strings.ReplaceAll(informationSchema, "`", "\\`"), tableLiteral,
+		), nil
+	case "databricks":
+		informationSchema := "information_schema.tables"
+		if lookup.catalog != "" {
+			informationSchema = quoteRuntimeRelation(lookup.catalog, "databricks") + ".information_schema.tables"
+		}
+		return fmt.Sprintf(
+			"SELECT table_type FROM %s WHERE table_schema = %s AND table_name = %s",
+			informationSchema, schemaLiteral, tableLiteral,
 		), nil
 	default:
 		return "", fmt.Errorf("target lifecycle inspection is not implemented for %s connections", displayConnectionType(connectionType))
@@ -499,6 +520,18 @@ func bigQueryTargetProject(details any) string {
 		}
 	}
 	return ""
+}
+
+func databricksTargetDefaults(details any) (string, string) {
+	switch value := details.(type) {
+	case config.DatabricksConnection:
+		return value.Catalog, value.Schema
+	case *config.DatabricksConnection:
+		if value != nil {
+			return value.Catalog, value.Schema
+		}
+	}
+	return "", ""
 }
 
 func quoteSQLStringLiteral(value string) string {

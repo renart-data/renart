@@ -209,6 +209,20 @@ test.describe("multi-warehouse pipeline live", () => {
       for (const variant of selectedVariants) {
         await writePipelineVariant(liveApp, variant, api.url);
         const pipeline = await waitForPipelineVariant(page, liveApp.baseURL, variant);
+        if (variant.name === "databricks") {
+          const appendAsset = pipeline.assets.find((asset) => asset.name === "analytics.run_audit");
+          expect(appendAsset, "Databricks append bootstrap probe asset is missing").toBeDefined();
+          const bootstrap = await materializeAsset(
+            page,
+            liveApp.baseURL,
+            appendAsset!.id,
+            runWindows[0],
+          );
+          expect(bootstrap.status, `${bootstrap.error ?? ""}\n${bootstrap.output}`).toBe("ok");
+          expect(bootstrap.output).toContain(
+            "initializing it with Bruin's full-refresh materializer",
+          );
+        }
         for (const window of runWindows) {
           const done = await materializePipeline(page, liveApp.baseURL, pipeline.id, window);
           expect(
@@ -261,6 +275,9 @@ test.describe("multi-warehouse pipeline live", () => {
             ),
             `${variant.name} windowed incremental materialization did not retain both windows`,
           ).toEqual(expectedDates);
+        }
+        if (variant.name === "databricks") {
+          await verifyDatabricksKindTransitions(liveApp, page, pipeline);
         }
         results.set(variant.name, rows);
       }
@@ -783,6 +800,76 @@ async function waitForPipelineVariant(page: Page, baseURL: string, variant: Ware
     )
     .toBe(JSON.stringify({ types: expectedTypes, connections: [variant.connection] }));
   return found!;
+}
+
+async function materializeAsset(
+  page: Page,
+  baseURL: string,
+  assetId: string,
+  window: (typeof runWindows)[number],
+  fullRefresh = false,
+) {
+  const query = new URLSearchParams({
+    environment: "default",
+    start_date: window.start,
+    end_date: window.end,
+    full_refresh: String(fullRefresh),
+  });
+  const response = await page.request.post(
+    `${baseURL}/api/assets/${assetId}/materialize/stream?${query.toString()}`,
+    { timeout: 4 * 60_000 },
+  );
+  const text = await response.text();
+  expect(response.ok(), text).toBe(true);
+  const dataLine = text
+    .split(/\r?\n/)
+    .reverse()
+    .find((line) => line.startsWith("data: "));
+  if (!dataLine) throw new Error(`Asset stream did not contain a done event:\n${text}`);
+  return JSON.parse(dataLine.slice("data: ".length)) as {
+    status: string;
+    output: string;
+    error?: string;
+  };
+}
+
+async function verifyDatabricksKindTransitions(
+  liveApp: LiveApp,
+  page: Page,
+  pipeline: WorkspaceResponse["pipelines"][number],
+) {
+  const asset = pipeline.assets.find((candidate) => candidate.name === "analytics.branch_a");
+  expect(asset, "Databricks kind-transition probe asset is missing").toBeDefined();
+  const path = join(liveApp.workspaceDir, pipelinePath, "assets", "analytics", "branch_a.sql");
+  const definition = (kind: "table" | "view") => `/* @bruin
+name: analytics.branch_a
+type: databricks.sql
+connection: databricks-matrix
+materialization:
+  type: ${kind}
+@bruin */
+
+select 'a' as branch_name, 1 as branch_value
+`;
+
+  for (const kind of ["table", "view"] as const) {
+    await writeFile(path, definition(kind), "utf8");
+    const ordinary = await materializeAsset(page, liveApp.baseURL, asset!.id, runWindows[1]);
+    expect(ordinary.status).toBe("error");
+    expect(ordinary.error ?? ordinary.output).toContain("run a full refresh");
+
+    const replacement = await materializeAsset(
+      page,
+      liveApp.baseURL,
+      asset!.id,
+      runWindows[1],
+      true,
+    );
+    expect(replacement.status, `${replacement.error ?? ""}\n${replacement.output}`).toBe("ok");
+    expect(replacement.output).toContain(
+      `Replaced existing ${kind === "table" ? "view" : "table"} target`,
+    );
+  }
 }
 
 async function materializePipeline(
