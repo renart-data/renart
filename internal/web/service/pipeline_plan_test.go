@@ -135,6 +135,61 @@ select id from analytics.up
 	assert.NotEmpty(t, plan.ID)
 }
 
+func TestPipelineDeploymentPlanKeepsSourceAssetsWithoutRenderingThemAsExecutions(t *testing.T) {
+	t.Parallel()
+
+	_, root := writeTypeCheckWorkspace(t, `
+id: pipeline-uuid
+name: analytics
+default_connections:
+  duckdb: duckdb-default
+`, map[string]string{
+		"accounts.asset.yml": `
+name: public.accounts
+type: duckdb.source
+connection: duckdb-default
+columns:
+  - name: id
+    type: bigint
+`,
+		"report.sql": `
+/* @bruin
+name: analytics.report
+type: duckdb.sql
+depends:
+  - public.accounts
+materialization:
+  type: table
+columns:
+  - name: id
+    type: bigint
+@bruin */
+select id from public.accounts
+`,
+	})
+	service := newTestPipelinePlanService(root, &pipelinePlanStalenessStub{}, nil)
+
+	plan, apiErr := service.Plan(context.Background(), EncodeID("analytics"), PipelinePlanRequest{
+		Purpose:     PipelinePlanPurposeDeployment,
+		Environment: "default",
+		Selection:   PipelinePlanSelectionRequest{Mode: PipelinePlanSelectionAll},
+	})
+
+	require.Nil(t, apiErr)
+	assert.Equal(t, PipelinePlanStatusReady, plan.Status, plan.Readiness)
+	assert.NotContains(t, pipelinePlanIssueCodes(plan.Readiness.Blockers), "asset_render_failed")
+	assert.NotContains(t, pipelinePlanIssueCodes(plan.Readiness.Warnings), "asset_render_partial")
+	require.Len(t, plan.Assets, 2)
+	assert.Equal(t, "public.accounts", plan.Assets[0].Name)
+	assert.Empty(t, plan.Assets[0].Renders)
+	assert.Equal(t, assetRenderTargetKindNone, plan.Assets[0].Target.Kind)
+	assert.Equal(t, assetWriteResourceNone, plan.Assets[0].Target.WriteResource.Kind)
+	require.Len(t, plan.ExecutionUnits, 1)
+	assert.Equal(t, "analytics.report", plan.ExecutionUnits[0].AssetName)
+	require.Len(t, plan.ExecutionContracts, 1)
+	assert.Equal(t, "analytics.report", plan.ExecutionContracts[0].AssetName)
+}
+
 func TestBindPipelinePlanExecutionDependenciesChainsWindowsAndSelectedUpstreams(t *testing.T) {
 	t.Parallel()
 	pl := &pipeline.Pipeline{Assets: []*pipeline.Asset{

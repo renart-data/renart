@@ -36,6 +36,9 @@ func pipelinePlanExecutionContracts(
 		if asset == nil {
 			return nil, fmt.Errorf("planned asset %q was not found", planned.Name)
 		}
+		if !pipelinePlanAssetIsExecutable(asset) {
+			continue
+		}
 		contract, err := executionContractForAsset(
 			workspaceRoot,
 			cfg,

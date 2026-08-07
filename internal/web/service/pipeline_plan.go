@@ -507,7 +507,9 @@ func (s *PipelinePlanService) Plan(
 	}
 	selectedAssets := make([]*pipeline.Asset, 0, len(selected.items))
 	for _, item := range selected.items {
-		selectedAssets = append(selectedAssets, item.asset)
+		if pipelinePlanAssetIsExecutable(item.asset) {
+			selectedAssets = append(selectedAssets, item.asset)
+		}
 	}
 	configurationAssets := selectedAssets
 	if req.ConfigurationAssetNames != nil {
@@ -530,6 +532,9 @@ func (s *PipelinePlanService) Plan(
 			asset := assetByName[name]
 			if asset == nil {
 				return PipelinePlan{}, &APIError{Status: 409, Code: "reviewed_asset_missing", Message: "a reviewed asset no longer exists in the selected source"}
+			}
+			if !pipelinePlanAssetIsExecutable(asset) {
+				continue
 			}
 			seenConfigurationAssets[name] = struct{}{}
 			configurationAssets = append(configurationAssets, asset)
@@ -567,6 +572,21 @@ func (s *PipelinePlanService) Plan(
 			Staleness:        string(status.Status),
 			InclusionReasons: append([]string(nil), item.reasons...),
 			Renders:          []PipelinePlanRender{},
+		}
+		if !pipelinePlanAssetIsExecutable(asset) {
+			planAsset.Target = AssetRenderTarget{
+				Kind:     assetRenderTargetKindNone,
+				Fidelity: AssetRenderFidelityExact,
+				WriteResource: AssetRenderWriteResource{
+					Kind: assetWriteResourceNone, Fidelity: AssetRenderFidelityExact,
+				},
+			}
+			connectionName, _ := assetRenderConnectionName(&directPipelineInfo{
+				Pipeline: resolved.parsed, Asset: asset, Config: cfg,
+			})
+			planAsset.ConnectionName = connectionName
+			base.Assets = append(base.Assets, planAsset)
+			continue
 		}
 		if pipelineAssetParseError(asset) != "" {
 			base.Assets = append(base.Assets, planAsset)
@@ -705,6 +725,10 @@ func (s *PipelinePlanService) Plan(
 	}
 	base.ID = pipelinePlanID(base)
 	return base, nil
+}
+
+func pipelinePlanAssetIsExecutable(asset *pipeline.Asset) bool {
+	return asset != nil && !isSourceAssetType(asset.Type)
 }
 
 func effectivePipelineMaxActiveSteps(pl *pipeline.Pipeline) int {
