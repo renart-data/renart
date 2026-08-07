@@ -16,7 +16,7 @@ the original.
 | [dbt-assets.md](dbt-assets.md) | evaluation — enabling renart intelligence on existing dbt projects |
 | [execution-parallelism.md](execution-parallelism.md) | core + native DuckDB concurrency implemented — operator audits and wait telemetry remain |
 | [materialization-reach.md](materialization-reach.md) | proposed reach — guided advanced SQL modes, coverage timeline, Python pre-run diagnostic |
-| [materialization-target-lifecycle.md](materialization-target-lifecycle.md) | investigated — Renart-owned missing-target bootstrap, object-kind replacement, and rename/orphan safety |
+| [materialization-target-lifecycle.md](materialization-target-lifecycle.md) | runtime target safety implemented for DuckDB/Postgres/Snowflake/BigQuery/Databricks — rename/orphan workflow pending asset-name/path independence |
 | [open-project-links.md](open-project-links.md) | investigation — safe docs-to-local open intents, native protocol registration, and hosted routing |
 | [object-storage-assets.md](object-storage-assets.md) | partial support + proposal — existing Load S3/GCS browsing, upstream-compatible Seed sources, schema preview, lineage, and storage write safety |
 | [pipeline-readiness-and-rendering.md](pipeline-readiness-and-rendering.md) | core complete — Phases 0a/0b and 1–3 plus version-controlled schedules and bounded retention have shipped; single-workspace command handoff, resource claims, and rolling compatibility cleanup remain |

@@ -1,6 +1,6 @@
 # Materialization target lifecycle safety
 
-Status: investigated — Renart-owned compatibility layer and review UX proposed
+Status: partial implementation — runtime target safety shipped; rename/orphan workflow pending
 
 ## Goal
 
@@ -15,6 +15,36 @@ cannot prove the current state of every environment's warehouse. Renart should
 therefore distinguish declared intent, positively observed target state, and
 unknown state rather than inferring absence from a failed or partial catalog
 lookup.
+
+## Implementation status (August 2026)
+
+Shipped:
+
+- the provider-neutral `TargetState` contract and a fresh pre-execution lookup
+  after environment-prefix application;
+- targeted DuckDB, PostgreSQL, Snowflake, BigQuery, and Databricks adapters;
+- pre-statement bootstrap of positively absent incremental SQL targets through
+  Bruin's existing full-refresh materializer, including SCD2 selection and a
+  fail-closed `refresh_restricted` error;
+- ordinary-run blockers for a positive table/view mismatch and explicit
+  full-refresh replacement (Renart drops the observed kind for DuckDB,
+  PostgreSQL, and Databricks; Bruin retains its Snowflake/BigQuery handlers);
+- semantic conditional render/review stages and runtime unknown-state warnings;
+- real DuckDB lifecycle tests and a Sail-backed Databricks test across the real
+  Databricks SQL client boundary for first-run append plus both kind-transition
+  directions.
+
+Still open:
+
+- the rename/collision/orphan-cleanup flow below. It depends on making semantic
+  asset-name changes path-stable in
+  [asset-name-path-independence.md](asset-name-path-independence.md), so the
+  warehouse warning is not coupled to today's implicit file move;
+- live managed-warehouse coverage for PostgreSQL, Snowflake, and BigQuery and a
+  managed Databricks smoke test. The adapters are contract-tested, but only
+  DuckDB and the Sail-backed Databricks boundary are credential-free here; and
+- additional target-kind adapters. Unsupported families intentionally return
+  `unknown`, preserve the configured strategy, and warn rather than guessing.
 
 ## Bruin behavior today
 
@@ -84,7 +114,7 @@ Do not implement this as:
   can be stale after external DDL; or
 - vendoring/replacing the Bruin module — that is a fork under another name.
 
-## Proposed Renart-owned runtime contract
+## Renart-owned runtime contract
 
 Add a provider-neutral target inspection result inside Renart:
 
@@ -200,18 +230,19 @@ introduce a separate physical output alias.
 
 ## Delivery order
 
-1. Add the Renart target-lifecycle adapter interface and contract tests. Start
-   with DuckDB/Postgres and the already-special-cased Snowflake/BigQuery paths;
-   add Databricks only with a real or faithful Sail-backed kind probe.
-2. Feed the preflight result into the existing direct materializer construction
-   seam and normalize legacy pipeline runs through per-unit execution. Make
-   render/review show the conditional selection.
-3. Add run-review blockers/warnings and live tests for absent target,
-   table→view, and view→table on the local/live warehouse matrix.
-4. Add rename preflight using positive current-environment observations, then a
-   separately confirmed post-success cleanup action.
-5. Fold the shipped contract into `architecture/backend.md` and the rename UX
-   into `architecture/asset-editing.md`.
+1. **Shipped:** add the Renart target-lifecycle adapter interface and contract
+   tests for DuckDB/Postgres, Snowflake/BigQuery, and the Sail-backed Databricks
+   kind probe.
+2. **Shipped:** feed preflight into per-asset direct materializer selection and
+   make render/review show the conditional operation.
+3. **Shipped for credential-free adapters:** add runtime blockers/warnings and
+   live tests for absent target, table→view, and view→table. Managed-warehouse
+   smoke coverage remains additive validation, not a different contract.
+4. **Pending:** add rename preflight using positive current-environment
+   observations, then a separately confirmed post-success cleanup action after
+   asset-name/path independence lands.
+5. **Partial:** the runtime contract is folded into `architecture/backend.md`;
+   fold the rename UX into `architecture/asset-editing.md` when step 4 ships.
 
 ## Acceptance checks
 

@@ -536,6 +536,11 @@ blocker, omits an execution unit for that asset, and still renders valid
 siblings. Pipeline-level YAML that cannot establish a pipeline remains a
 request error. Incomplete SQL findings likewise do not erase sibling renders;
 Python stays explicitly runtime-only where no safe static claim is available.
+Imported `*.source` assets remain visible in the reviewed graph and plan as
+no-target/no-write dependency anchors, but they never receive a render request
+or execution unit. Their intentionally non-executable Bruin operator therefore
+cannot become a deployment blocker merely because static rendering is
+unsupported for the source type.
 
 Asset rendering is a separate read-only path. The working-tree convenience
 route is `POST /api/assets/{assetID}/render`; it reads the saved asset identified
@@ -1255,6 +1260,28 @@ asset-level or selected-environment full-refresh restrictions do not advertise
 the action in the workspace DTO. The direct runner applies Bruin's environment
 restriction to every parsed asset before dispatch, and backend policy checks
 remain authoritative even when a client supplies the request directly.
+
+Immediately before a direct SQL table/view main task, Renart performs a fresh,
+targeted materialization-target lookup after applying the selected
+environment's schema prefix. The provider-neutral result distinguishes
+`present`, `absent`, and `unknown`, plus `table`, `view`, `other`, and `unknown`
+relation kinds. DuckDB, PostgreSQL, Snowflake, BigQuery, and Databricks have
+targeted adapters; other connection families remain explicitly unknown. A
+lookup failure or unsupported adapter never proves absence and never authorizes
+destructive work: the configured materializer is retained and the run records
+an actionable warning.
+
+For a positively absent incremental SQL target (`append`, `merge`,
+`delete+insert`, `truncate+insert`, `time_interval`, or either SCD2 strategy),
+the executor selects the already-constructed Bruin full-refresh materializer
+before any incremental statement runs. This is first-run initialization, not an
+error retry; `refresh_restricted` assets instead stop with an actionable error.
+An ordinary run against a positively observed opposite table/view kind also
+stops before DDL and requires explicit full refresh. During that confirmed
+refresh DuckDB, PostgreSQL, and Databricks drop exactly the observed opposite
+kind before invoking Bruin; Snowflake and BigQuery retain Bruin's existing
+type-aware replacement path. Render/review exposes the fresh lookup and its
+conditional bootstrap/replacement behavior as a semantic, non-executed stage.
 
 Explicit asset backfill is a separate run-scoped option. It requires a complete
 start/end range, a single-asset scope, and `matlog.BackfillSafe` (currently SQL

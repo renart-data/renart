@@ -53,6 +53,10 @@ File-based routes under [src/routes](../web/src/routes):
   and `project` (settings). `/` waits for the workspace, then redirects to the
   first pipeline's canvas — or to `/welcome` when the workspace has no
   pipelines.
+- Schedule operations use a real TanStack layout route rather than component
+  pathname checks: `/schedules` is desired schedule state,
+  `/schedules/deployments` is retained immutable versions, and
+  `/schedules/timeline` is actual local run activity.
 - [welcome.tsx](../web/src/routes/welcome.tsx) (`/welcome`, outside the shell)
   is the first-run onboarding and new-project wizard
   ([welcome-page.tsx](../web/components/app/welcome-page.tsx)): demo / import /
@@ -120,7 +124,14 @@ not underscore-flattened route hacks.
   discovery, parse context, formatting, the complete SQL LSP surface, and the
   connection preselected when converting to an asset; the selected pipeline
   asset supplies only graph and Jinja scope. Both conversions use the normal Go
-  mutation APIs and keep the in-memory draft intact. Ad-hoc results keep the
+  mutation APIs and keep the in-memory draft intact. Ad-hoc mode clears the
+  route/global canvas selection while retaining the previous asset only as
+  graph/Jinja context. Selecting any asset, including that same asset, restores
+  the repository editor and changes a Query result selection back to Inspect;
+  selecting the Query result tab conversely opens ad-hoc mode (and changes a
+  canvas-only route to split). A lightly tinted workspace/header and dedicated
+  Monaco background distinguish the scratch document visually without adding
+  another explanatory panel. Ad-hoc results keep the
   effective rendered query in a compact disclosure above the table. When the
   response is capped, that strip shows a warning icon and appends the effective
   row cap as `LIMIT <n>` to the preview; the table remains unobscured. The
@@ -350,6 +361,8 @@ not underscore-flattened route hacks.
   [notebook-page.tsx](../web/components/app/notebook-page.tsx),
   [runs-page.tsx](../web/components/app/runs-page.tsx),
   [schedules-page.tsx](../web/components/app/schedules-page.tsx),
+  [deployments-page.tsx](../web/components/app/deployments-page.tsx),
+  [run-timeline-page.tsx](../web/components/app/run-timeline-page.tsx),
   [settings-pages.tsx](../web/components/app/settings-pages.tsx),
   [welcome-page.tsx](../web/components/app/welcome-page.tsx).
   Project **General** settings expose the effective tracked retention policy
@@ -415,6 +428,13 @@ not underscore-flattened route hacks.
   teaching unrelated asset-result consumers to treat units as pipeline steps.
   Duration tooltips anchor to the duration bars rather than the full timeline
   tracks.
+  The Schedules section has router-owned sibling pages. Deployments groups each
+  pipeline's retained snapshots with latest/executable/workspace-drift state,
+  Git revision, file count, and schedule pin counts, and opens the existing
+  reviewed deployment flow. Run timeline reads the same run history/SSE-backed
+  hook as the Runs page and plots actual start/finish spans over selectable
+  1-hour through 30-day windows; bars link to canonical run details. Neither
+  page polls.
   Schedule rows keep cadence, timezone, last-run result, deployment, catch-up,
   and runtime-window context in a wrapping metadata area rather than one
   truncated status line. Timeline and actions have dedicated columns: `Run
