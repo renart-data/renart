@@ -116,14 +116,11 @@ export function useSQLLSP(
       return;
     }
     const modelURI = model.uri.toString();
-    const importExternalRelationCommand = editor.addCommand(
-      0,
-      (_accessor, relationId: unknown) => {
-        if (typeof relationId === "string" && relationId.trim()) {
-          providerStateRef.current.onImportExternalRelation?.(relationId);
-        }
-      },
-    );
+    const importExternalRelationCommand = editor.addCommand(0, (_accessor, relationId: unknown) => {
+      if (typeof relationId === "string" && relationId.trim()) {
+        providerStateRef.current.onImportExternalRelation?.(relationId);
+      }
+    });
     const lspDocumentRequest = (content: string): SQLLSPRequest => {
       const current = providerStateRef.current;
       return {
@@ -394,10 +391,10 @@ export function useSQLLSP(
               action.diagnostics?.some((diagnostic) =>
                 markerRanges.has(lspRangeKey(lspRangeToMarker(diagnostic.range))),
               ) &&
-                (!action.action ||
-                  (action.action.type === "import-external-relation" &&
-                    providerStateRef.current.onImportExternalRelation &&
-                    importExternalRelationCommand)),
+              (!action.action ||
+                (action.action.type === "import-external-relation" &&
+                  providerStateRef.current.onImportExternalRelation &&
+                  importExternalRelationCommand)),
             ),
           )
           .map((action) =>

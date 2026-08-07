@@ -85,9 +85,18 @@ export function useAssetMonaco({
       registerSemanticDecorations: false,
     },
   );
-  useSQLLSP(monacoInstance, editorInstance, asset, editorValue, schemaTables, onGoToAsset, undefined, {
-    onImportExternalRelation,
-  });
+  useSQLLSP(
+    monacoInstance,
+    editorInstance,
+    asset,
+    editorValue,
+    schemaTables,
+    onGoToAsset,
+    undefined,
+    {
+      onImportExternalRelation,
+    },
+  );
   useSQLCanvasHover(monacoInstance, editorInstance, asset);
   useJinjaIntellisense(monacoInstance, editorInstance, asset, editorValue, onGoToJinjaVariable);
   usePythonIntellisense(monacoInstance, editorInstance, asset, editorValue);
