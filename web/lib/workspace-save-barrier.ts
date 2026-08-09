@@ -1,11 +1,27 @@
 export type WorkspaceSaveParticipant = () => Promise<void>;
 
 const participants = new Set<WorkspaceSaveParticipant>();
+const trackedSaves = new Set<Promise<unknown>>();
 type RetiredWorkspaceSave = {
   participant: WorkspaceSaveParticipant;
   promise: Promise<void>;
   failed: boolean;
 };
+
+/**
+ * Register an already-started workspace mutation with the next run/deploy
+ * barrier. This covers blur-committed metadata transactions: the blur event
+ * starts the request before the button click opens review, so review must wait
+ * for that request just as it waits for an editor flush.
+ */
+export function trackWorkspaceSave<T>(save: Promise<T>): Promise<T> {
+  trackedSaves.add(save);
+  void save.then(
+    () => trackedSaves.delete(save),
+    () => trackedSaves.delete(save),
+  );
+  return save;
+}
 const retiredSaves = new Set<RetiredWorkspaceSave>();
 
 function startRetiredWorkspaceSave(retiredSave: RetiredWorkspaceSave) {
@@ -55,7 +71,7 @@ export function registerWorkspaceSaveParticipant(participant: WorkspaceSaveParti
  */
 export async function awaitWorkspaceSaves() {
   const failures: unknown[] = [];
-  const recordFailures = (results: PromiseSettledResult<void>[]) => {
+  const recordFailures = (results: PromiseSettledResult<unknown>[]) => {
     for (const result of results) {
       if (
         result.status === "rejected" &&
@@ -71,6 +87,13 @@ export async function awaitWorkspaceSaves() {
       Array.from(participants, (participant) => Promise.resolve().then(participant)),
     ),
   );
+
+  // A property field can start a semantic transaction from its blur handler
+  // immediately before the run/deploy click. Drain the batch that existed when
+  // the barrier began, plus any follow-up writes started while it was waiting.
+  while (trackedSaves.size > 0) {
+    recordFailures(await Promise.allSettled(Array.from(trackedSaves)));
+  }
 
   // A participant can unmount while the mounted saves above are in flight.
   // Drain retired saves until the set is stable so navigation cannot let a
@@ -94,6 +117,11 @@ export async function awaitWorkspaceSaves() {
     }
     const results = await Promise.allSettled(retired.map(({ promise }) => promise));
     recordFailures(results);
+  }
+
+  // Retired editor flushes may themselves trigger a semantic follow-up write.
+  while (trackedSaves.size > 0) {
+    recordFailures(await Promise.allSettled(Array.from(trackedSaves)));
   }
 
   if (failures.length === 1) {

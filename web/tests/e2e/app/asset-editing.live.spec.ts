@@ -24,6 +24,7 @@ const loadAssetId = Buffer.from(loadAssetPath).toString("base64url");
 type WorkspaceAsset = {
   id: string;
   name: string;
+  uri?: string;
   type?: string;
   content?: string;
   connection?: string;
@@ -330,6 +331,94 @@ select customer_id from analytics.customers
     });
     expect(overflow.viewportScrollWidth).toBeLessThanOrEqual(overflow.viewportClientWidth + 1);
     expect(overflow.triggerWidth).toBeLessThanOrEqual(overflow.viewportClientWidth);
+  });
+
+  test("deployment review waits for a URI committed on blur", async ({ liveApp, page }) => {
+    test.skip(
+      test.info().project.name.includes("mobile"),
+      "The fixed inspector and top-bar deployment action are desktop affordances.",
+    );
+
+    const initialDeploy = await page.request.post(
+      `${liveApp.baseURL}/api/pipelines/${pipelineId}/deploy`,
+      { data: {} },
+    );
+    expect(initialDeploy.ok(), await initialDeploy.text()).toBe(true);
+
+    const orders = await fetchAsset(liveApp, page.request, "analytics.orders");
+    expect(orders?.content).toBeTruthy();
+    const unrelatedChange = await page.request.put(
+      `${liveApp.baseURL}/api/pipelines/${pipelineId}/assets/${ordersAssetId}`,
+      { data: { content: `${orders!.content}\n-- unrelated deployment change\n` } },
+    );
+    expect(unrelatedChange.ok(), await unrelatedChange.text()).toBe(true);
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(
+          `${liveApp.baseURL}/api/pipelines/${pipelineId}/deploy/status`,
+        );
+        if (!response.ok()) return [];
+        const status = (await response.json()) as { changed_files?: string[] };
+        return status.changed_files ?? [];
+      })
+      .toEqual(["assets/analytics/orders.sql"]);
+
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
+    const properties = await openAssetProperties(page);
+    await expect(page.getByRole("button", { name: "Redeploy (1 file changed)" })).toBeVisible({
+      timeout: 15000,
+    });
+
+    const producerURI = "duckdb://warehouse/analytics/customers";
+    let uriSaveFinished = false;
+    await page.route(`**/api/assets/${customersAssetId}/transactions`, async (route) => {
+      const transaction = route.request().postDataJSON() as { type?: string };
+      if (transaction.type === "asset.uri.set") {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      const response = await route.fetch();
+      uriSaveFinished = response.ok();
+      await route.fulfill({ response });
+    });
+    const deploymentPlanRequest = page.waitForRequest(
+      (request) =>
+        request.url().endsWith(`/api/pipelines/${pipelineId}/plan`) &&
+        request.method() === "POST" &&
+        request.postDataJSON().purpose === "deployment",
+      { timeout: 30000 },
+    );
+    const transactionResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/assets/${customersAssetId}/transactions`) &&
+        response.request().method() === "POST",
+      { timeout: 15000 },
+    );
+
+    await properties.getByRole("textbox", { name: "URI", exact: true }).fill(producerURI);
+    await page.getByRole("button", { name: "Redeploy (1 file changed)" }).click();
+
+    const saved = await transactionResponse;
+    expect(saved.ok(), await saved.text()).toBe(true);
+    await deploymentPlanRequest;
+    expect(uriSaveFinished).toBe(true);
+    await expect
+      .poll(async () => (await fetchAsset(liveApp, page.request, "analytics.customers"))?.uri)
+      .toBe(producerURI);
+
+    const planSheet = page.getByTestId("pipeline-plan-sheet");
+    await expect(planSheet).toBeVisible();
+    await expect(planSheet.getByText("2 changed files will be captured.")).toBeVisible();
+    const customerFile = planSheet
+      .locator('section[aria-labelledby="pipeline-deploy-source-changes"]')
+      .locator('[data-slot="collapsible"]')
+      .filter({ hasText: "assets/analytics/customers.sql" });
+    await expect(customerFile).toBeVisible();
+    await customerFile.locator('[data-slot="collapsible-trigger"]').click();
+    await expect(customerFile.locator(".monaco-diff-editor")).toBeVisible({ timeout: 15000 });
+    await expect(customerFile.locator(".modified .view-lines")).toContainText(
+      `uri: ${producerURI}`,
+      { timeout: 15000 },
+    );
   });
 
   test("keeps asset descriptions left of connections on both canvases", async ({

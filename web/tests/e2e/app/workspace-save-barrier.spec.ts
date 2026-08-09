@@ -4,6 +4,7 @@ import {
   awaitWorkspaceSaves,
   registerWorkspaceSaveParticipant,
   retireWorkspaceSaveParticipant,
+  trackWorkspaceSave,
 } from "../../../lib/workspace-save-barrier";
 
 test.describe("workspace save barrier", () => {
@@ -74,5 +75,37 @@ test.describe("workspace save barrier", () => {
     await awaitWorkspaceSaves();
     expect(calls).toBe(1);
     unregister();
+  });
+
+  test("awaits an already-started property transaction", async () => {
+    let finishSave!: () => void;
+    const save = new Promise<void>((resolve) => {
+      finishSave = resolve;
+    });
+    trackWorkspaceSave(save);
+
+    let barrierFinished = false;
+    const barrier = awaitWorkspaceSaves().then(() => {
+      barrierFinished = true;
+    });
+    await Promise.resolve();
+    expect(barrierFinished).toBe(false);
+
+    finishSave();
+    await barrier;
+    expect(barrierFinished).toBe(true);
+  });
+
+  test("reports a tracked property transaction failure", async () => {
+    let failSave!: (cause: Error) => void;
+    const save = new Promise<void>((_resolve, reject) => {
+      failSave = reject;
+    });
+    trackWorkspaceSave(save);
+    const failure = new Error("property save failed");
+    const barrier = awaitWorkspaceSaves();
+
+    failSave(failure);
+    await expect(barrier).rejects.toBe(failure);
   });
 });

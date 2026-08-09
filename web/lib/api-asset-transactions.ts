@@ -1,6 +1,7 @@
 import { fetchJSON, fetchJSONWithBody } from "@/lib/api-core";
 import { getSQLTableColumns } from "@/lib/api-sql-discovery";
 import { WebColumn, WebCustomCheck } from "@/lib/types";
+import { trackWorkspaceSave } from "@/lib/workspace-save-barrier";
 
 /**
  * Client for the asset provenance/transaction endpoints (§11 of the asset
@@ -65,10 +66,8 @@ export type AssetTransaction =
 
 /** Apply a single semantic transaction to an asset. */
 export async function applyAssetTransaction(assetId: string, tx: AssetTransaction) {
-  return fetchJSONWithBody<AssetTransactionResult>(
-    `/api/assets/${assetId}/transactions`,
-    "POST",
-    tx,
+  return trackWorkspaceSave(
+    fetchJSONWithBody<AssetTransactionResult>(`/api/assets/${assetId}/transactions`, "POST", tx),
   );
 }
 

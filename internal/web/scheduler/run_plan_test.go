@@ -40,6 +40,19 @@ func TestPipelineRunPlanV3StrictRoundTrip(t *testing.T) {
 	assert.Equal(t, plan, persisted)
 }
 
+func TestPipelineRunPlanV3AcceptsEmptyPrerequisitesAfterDurableRoundTrip(t *testing.T) {
+	t.Parallel()
+	plan := validPipelineRunPlanV3(t)
+	plan.Prerequisites = []PipelineRunPrerequisite{}
+	plan.Artifact = pipelineRunPlanArtifact(t, plan)
+
+	body, err := marshalPipelineRunPlan(plan)
+	require.NoError(t, err)
+	persisted, err := unmarshalPipelineRunPlan(plan.Version, body)
+	require.NoError(t, err)
+	assert.Empty(t, persisted.Prerequisites)
+}
+
 func TestPipelineRunPlanV3RetainsReviewedCrossPipelinePrerequisite(t *testing.T) {
 	t.Parallel()
 	plan := validPipelineRunPlanV3(t)

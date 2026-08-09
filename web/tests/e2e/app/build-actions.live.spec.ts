@@ -1194,9 +1194,31 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     );
 
     // Replace the default draft with a marker query that needs Jinja rendering.
+    // Its output deliberately differs from the selected asset declaration: an
+    // ad-hoc document borrows graph context, not the asset's output contract.
+    const scratchDiagnostics = page.waitForResponse(
+      (response) => {
+        if (!response.url().includes("/api/sql/lsp/diagnostics") || !response.ok()) return false;
+        const body = response.request().postDataJSON() as {
+          content?: string;
+          document_context?: string;
+        };
+        return body.document_context === "adhoc" && body.content?.includes("adhoc_ok") === true;
+      },
+      { timeout: 15000 },
+    );
     await editor.click();
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.type("select 'adhoc_ok' as marker, '{{ start_date }}' as win_start");
+    const scratchDiagnosticPayload = (await (await scratchDiagnostics).json()) as {
+      diagnostics?: Array<{ code?: string }>;
+    };
+    const scratchDiagnosticCodes = (scratchDiagnosticPayload.diagnostics ?? []).map(
+      (diagnostic) => diagnostic.code,
+    );
+    expect(scratchDiagnosticCodes).not.toContain("declared-output-schema-drift");
+    expect(scratchDiagnosticCodes).not.toContain("declared-column-type-drift");
+    expect(scratchDiagnosticCodes).not.toContain("declared-column-nullability-drift");
 
     // The ad hoc editor reuses the SQL parse-context intellisense.
     const parseContextSeen = page.waitForResponse(

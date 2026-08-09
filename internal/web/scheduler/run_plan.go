@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -650,7 +649,7 @@ func validatePipelineRunPlanArtifact(plan PipelineRunPlan) error {
 		!equalPipelineRunExecutionContracts(artifact.ExecutionContracts, plan.ExecutionContracts) {
 		return errors.New("pipeline run plan artifact execution contracts do not match their durable binding")
 	}
-	if plan.Version >= PipelineRunPlanVersionV3 && !reflect.DeepEqual(artifact.Prerequisites, plan.Prerequisites) {
+	if plan.Version >= PipelineRunPlanVersionV3 && !equalPipelineRunPrerequisites(artifact.Prerequisites, plan.Prerequisites) {
 		return errors.New("pipeline run plan artifact prerequisites do not match their durable binding")
 	}
 	if plan.Blocked != (strings.TrimSpace(artifact.Status) == "blocked") {
@@ -678,6 +677,18 @@ func validatePipelineRunPlanArtifact(plan PipelineRunPlan) error {
 		}
 	}
 	return nil
+}
+
+func equalPipelineRunPrerequisites(left, right []PipelineRunPrerequisite) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func equalPipelineRunPlanResources(left, right PipelineRunPlanResources) bool {

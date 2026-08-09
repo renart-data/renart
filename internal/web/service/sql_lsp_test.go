@@ -246,6 +246,7 @@ func TestSQLLSPServiceAllowsSelectedAssetReferencesInAdHocDocuments(t *testing.T
 		ID: "pipeline",
 		Assets: []model.Asset{{
 			ID: "report", Name: "analytics.report", Type: "duckdb.sql", Path: "analytics/assets/report.sql",
+			Columns: []model.Column{{Name: "geometry"}, {Name: "properties"}, {Name: "type"}},
 		}},
 	}}}
 	service := NewSQLLSPService(SQLLSPDependencies{
@@ -286,6 +287,38 @@ func TestSQLLSPServiceAllowsSelectedAssetReferencesInAdHocDocuments(t *testing.T
 	}
 	if diagnostic := findLSPDiagnosticByCode(customCheckResponse.Diagnostics, "circular-dependency"); diagnostic != nil {
 		t.Fatalf("custom check inherited the asset body's self-reference rule: %#v", diagnostic)
+	}
+
+	const scratchSQL = "select 1 as provider_id"
+	assetContractResponse, apiErr := service.Diagnostics(context.Background(), SQLLSPRequest{
+		AssetID: "report",
+		Content: scratchSQL,
+	})
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	if diagnostic := findLSPDiagnosticByCode(assetContractResponse.Diagnostics, authoringdiag.CodeDeclaredOutputSchemaDrift); diagnostic == nil {
+		t.Fatalf("asset body should still be checked against declared output columns: %#v", assetContractResponse.Diagnostics)
+	}
+
+	for _, documentContext := range []string{"adhoc", "custom_check", "hook"} {
+		response, requestErr := service.Diagnostics(context.Background(), SQLLSPRequest{
+			AssetID:         "report",
+			Content:         scratchSQL,
+			DocumentContext: documentContext,
+		})
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		for _, code := range []string{
+			authoringdiag.CodeDeclaredOutputSchemaDrift,
+			authoringdiag.CodeDeclaredColumnTypeDrift,
+			authoringdiag.CodeDeclaredColumnNullabilityDrift,
+		} {
+			if diagnostic := findLSPDiagnosticByCode(response.Diagnostics, code); diagnostic != nil {
+				t.Fatalf("%s document inherited the asset output contract: %#v", documentContext, diagnostic)
+			}
+		}
 	}
 }
 

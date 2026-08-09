@@ -139,17 +139,30 @@ func (s *SQLLSPService) Diagnostics(ctx context.Context, req SQLLSPRequest) (SQL
 	diagnostics := engine.DiagnosticsContext(ctx, doc)
 	documentContext := strings.ToLower(strings.TrimSpace(req.DocumentContext))
 	if documentContext == "adhoc" || documentContext == "custom_check" || documentContext == "hook" {
-		diagnostics = diagnosticsWithoutCode(diagnostics, "circular-dependency")
+		// These documents borrow an asset id for graph, connection, and Jinja
+		// context, but their query is not the asset body. Do not compare their
+		// result columns with the borrowed asset's declared output contract.
+		diagnostics = diagnosticsWithoutCodes(
+			diagnostics,
+			"circular-dependency",
+			authoringdiag.CodeDeclaredOutputSchemaDrift,
+			authoringdiag.CodeDeclaredColumnTypeDrift,
+			authoringdiag.CodeDeclaredColumnNullabilityDrift,
+		)
 	} else {
 		diagnostics = appendUniqueServiceDiagnostics(diagnostics, s.assetDiagnostics(ctx, req.AssetID, doc)...)
 	}
 	return SQLLSPResponse{Status: "ok", Diagnostics: diagnostics}, nil
 }
 
-func diagnosticsWithoutCode(diagnostics []sqllsp.Diagnostic, code string) []sqllsp.Diagnostic {
+func diagnosticsWithoutCodes(diagnostics []sqllsp.Diagnostic, codes ...string) []sqllsp.Diagnostic {
+	excluded := make(map[string]struct{}, len(codes))
+	for _, code := range codes {
+		excluded[strings.ToLower(strings.TrimSpace(code))] = struct{}{}
+	}
 	filtered := make([]sqllsp.Diagnostic, 0, len(diagnostics))
 	for _, diagnostic := range diagnostics {
-		if strings.EqualFold(strings.TrimSpace(diagnostic.Code), code) {
+		if _, ok := excluded[strings.ToLower(strings.TrimSpace(diagnostic.Code))]; ok {
 			continue
 		}
 		filtered = append(filtered, diagnostic)
