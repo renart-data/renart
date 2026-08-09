@@ -22,9 +22,9 @@ type pipelineDependencyIssue struct {
 	Description string
 }
 
-// pipelineDependencyIssues delegates local-name existence semantics to Bruin,
-// then fails closed for full URI dependencies until Renart can review their
-// cross-pipeline prerequisite coverage. Symbolic URI edges remain lineage-only.
+// pipelineDependencyIssues delegates local-name existence semantics to Bruin.
+// Workspace URI resolution and execution readiness are evaluated by the
+// canonical dependency graph and pipeline prerequisite planner respectively.
 func pipelineDependencyIssues(ctx context.Context, pl *pipeline.Pipeline) ([]pipelineDependencyIssue, error) {
 	if pl == nil {
 		return nil, nil
@@ -49,6 +49,19 @@ func pipelineDependencyIssues(ctx context.Context, pl *pipeline.Pipeline) ([]pip
 				Description: issue.Description,
 			})
 		}
+	}
+	return issues, nil
+}
+
+func unreviewedCrossPipelineDependencyIssues(pl *pipeline.Pipeline) []pipelineDependencyIssue {
+	if pl == nil {
+		return nil
+	}
+	issues := make([]pipelineDependencyIssue, 0)
+	for _, asset := range pl.Assets {
+		if asset == nil {
+			continue
+		}
 		for _, upstream := range asset.Upstreams {
 			if !strings.EqualFold(strings.TrimSpace(upstream.Type), "uri") || upstream.Mode == pipeline.UpstreamModeSymbolic {
 				continue
@@ -57,13 +70,13 @@ func pipelineDependencyIssues(ctx context.Context, pl *pipeline.Pipeline) ([]pip
 				Asset: asset,
 				Code:  authoringdiag.CodeCrossPipelineExecutionPending,
 				Description: fmt.Sprintf(
-					"Cross-pipeline dependency %q requires Renart prerequisite readiness, which is not executable yet",
+					"Cross-pipeline dependency %q requires a reviewed Renart prerequisite",
 					strings.TrimSpace(upstream.Value),
 				),
 			})
 		}
 	}
-	return issues, nil
+	return issues
 }
 
 func dependencyTypeCheckFindings(ctx context.Context, asset *pipeline.Asset, pl *pipeline.Pipeline) []TypeCheckFinding {
@@ -114,13 +127,16 @@ var directRunValidationGreenPrinter = directColorPrinter(color.FgGreen)
 var directRunValidationRedPrinter = directColorPrinter(color.FgRed)
 var directRunValidationWhiteBoldPrinter = directColorPrinter(color.FgWhite, color.Bold)
 
-func validateDirectRunDependencies(ctx context.Context, w io.Writer, pl *pipeline.Pipeline, workspaceRoot string) error {
+func validateDirectRunDependencies(ctx context.Context, w io.Writer, pl *pipeline.Pipeline, workspaceRoot string, reviewedCrossPipeline bool) error {
 	if pl == nil {
 		return fmt.Errorf("pipeline is required for dependency validation")
 	}
 	issues, err := pipelineDependencyIssues(ctx, pl)
 	if err != nil {
 		return fmt.Errorf("failed to validate pipeline dependencies: %w", err)
+	}
+	if !reviewedCrossPipeline {
+		issues = append(issues, unreviewedCrossPipelineDependencyIssues(pl)...)
 	}
 
 	writeDirectRunDependencyIssues(w, pl, issues, directPipelineDisplayPath(pl, workspaceRoot))

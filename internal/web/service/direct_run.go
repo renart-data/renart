@@ -37,7 +37,7 @@ func (e *HybridBruinExecutor) RunAsset(ctx context.Context, req RunAssetRequest,
 	}
 	printer := &streamCaptureWriter{buffer: bytes.NewBuffer(nil), onChunk: onChunk}
 	writeDirectRunAnalysis(printer, pp.Pipeline, pp.Asset)
-	if err := validateDirectRunDependencies(ctx, printer, pp.Pipeline, e.workspaceRoot); err != nil {
+	if err := validateDirectRunDependencies(ctx, printer, pp.Pipeline, e.workspaceRoot, false); err != nil {
 		return printer.buffer.Bytes(), err
 	}
 
@@ -237,7 +237,9 @@ func (e *HybridBruinExecutor) RunPipeline(ctx context.Context, req RunPipelineRe
 
 	printer := &streamCaptureWriter{buffer: bytes.NewBuffer(nil), onChunk: onChunk}
 	writeDirectRunAnalysis(printer, foundPipeline, nil)
-	if err := validateDirectRunDependencies(ctx, printer, foundPipeline, e.workspaceRoot); err != nil {
+	reviewedCrossPipeline := req.PlanVersion >= PipelineExecutionPlanVersionV3 &&
+		strings.TrimSpace(req.SelectionMode) != "" && len(req.Prerequisites) > 0
+	if err := validateDirectRunDependencies(ctx, printer, foundPipeline, e.workspaceRoot, reviewedCrossPipeline); err != nil {
 		return printer.buffer.Bytes(), err
 	}
 	selectionMode := strings.TrimSpace(req.SelectionMode)
@@ -464,11 +466,12 @@ func (e *HybridBruinExecutor) runPlannedPipeline(
 			return printer.buffer.Bytes(), fmt.Errorf("persist resolved execution units: %w", err)
 		}
 	}
-	snapshot, err := e.resolveExecutionTargetSnapshotForSelection(
+	snapshot, err := e.resolveExecutionTargetSnapshotForReviewedSelection(
 		pp.Pipeline,
 		pp.Config,
 		pp.Pipeline.Assets,
 		configurationAssets,
+		req.Prerequisites,
 	)
 	if err != nil {
 		return printer.buffer.Bytes(), fmt.Errorf("resolve execution target snapshot: %w", err)

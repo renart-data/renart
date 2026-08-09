@@ -10,10 +10,14 @@ import (
 	"time"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
+	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"renart/internal/web/dependencygraph"
 	"renart/internal/web/fingerprint"
+	"renart/internal/web/identity"
+	"renart/internal/web/matlog"
 	"renart/internal/web/policy"
 	"renart/internal/web/scheduler"
 	"renart/internal/web/snapshot"
@@ -190,7 +194,7 @@ select id from public.accounts
 	assert.Equal(t, "analytics.report", plan.ExecutionContracts[0].AssetName)
 }
 
-func TestPipelinePlanBlocksFullCrossPipelineDependenciesUntilReadinessIsReviewed(t *testing.T) {
+func TestPipelinePlanBlocksFullCrossPipelineDependenciesWhenEvidenceIsUnavailable(t *testing.T) {
 	t.Parallel()
 
 	_, root := writeTypeCheckWorkspace(t, `
@@ -231,9 +235,112 @@ select 1 as id
 	assert.Equal(t, PipelinePlanStatusBlocked, plan.Status)
 	issues := plan.Readiness.Blockers
 	require.Len(t, issues, 1)
-	assert.Equal(t, "cross-pipeline-execution-unsupported", issues[0].Code)
+	assert.Equal(t, pipelinePlanCodeCrossPipelinePrerequisiteNotReady, issues[0].Code)
 	assert.Equal(t, "analytics.full", issues[0].AssetName)
 	assert.Contains(t, issues[0].Message, "duckdb://warehouse/raw/orders")
+}
+
+func TestPipelinePlanAcceptsOnlyCurrentRenartObservedCrossPipelineProducer(t *testing.T) {
+	_, root := writeTypeCheckWorkspace(t, `
+id: consumer-uuid
+name: analytics
+default_connections:
+  duckdb: duckdb-default
+`, map[string]string{
+		"orders.sql": `
+/* @bruin
+name: analytics.orders
+type: duckdb.sql
+materialization:
+  type: table
+depends:
+  - uri: duckdb://warehouse/raw/orders
+@bruin */
+select 1 as id
+`,
+	})
+
+	producerAsset := &pipeline.Asset{
+		Name: "raw.orders", URI: "duckdb://warehouse/raw/orders", Type: pipeline.AssetTypeDuckDBQuery,
+		ExecutableFile: pipeline.ExecutableFile{
+			Path: filepath.Join(root, "raw", "assets", "orders.sql"), Content: "select 1 as id",
+		},
+		Materialization: pipeline.Materialization{Type: pipeline.MaterializationTypeTable},
+	}
+	producer := &pipeline.Pipeline{
+		LegacyID: "producer-uuid", Name: "raw",
+		DefinitionFile:     pipeline.DefinitionFile{Path: filepath.Join(root, "raw", "pipeline.yml")},
+		Assets:             []*pipeline.Asset{producerAsset},
+		DefaultConnections: map[string]string{"duckdb": "duckdb-default"},
+	}
+
+	schedStore, err := scheduler.OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = schedStore.Close() })
+	materializations := matlog.NewStore(schedStore.DB())
+	engine := fingerprint.NewEngine()
+	var consumer *pipeline.Pipeline
+	resolveGraph := func(_ context.Context, overrides map[string]*pipeline.Pipeline) (dependencygraph.Graph, error) {
+		consumer = overrides["consumer-uuid"]
+		require.NotNil(t, consumer)
+		return dependencygraph.Resolve([]dependencygraph.PipelineInput{
+			{UUID: producer.LegacyID, ID: EncodeID("raw"), Name: producer.Name, Parsed: producer},
+			{UUID: consumer.LegacyID, ID: EncodeID("analytics"), Name: consumer.Name, Parsed: consumer},
+		}), nil
+	}
+
+	cfg, err := loadSelectedConfigReadOnlyFS(afero.NewOsFs(), filepath.Join(root, ".bruin.yml"), "default")
+	require.NoError(t, err)
+	graph := dependencygraph.Resolve([]dependencygraph.PipelineInput{
+		{UUID: producer.LegacyID, ID: EncodeID("raw"), Name: producer.Name, Parsed: producer},
+	})
+	producerResults, err := engine.WorkspaceDAG(graph, map[string]fingerprint.Vars{
+		producer.LegacyID: fingerprint.EffectiveVars(producer, nil),
+	})
+	require.NoError(t, err)
+	producerID := identity.AssetID(producer.LegacyID, producerAsset.Name)
+	producerTarget := resolveAssetPhysicalTarget(root, &directPipelineInfo{
+		Pipeline: producer, Asset: producerAsset, Config: cfg,
+	})
+	require.Equal(t, AssetRenderFidelityExact, producerTarget.Fidelity)
+	require.NoError(t, materializations.Record(context.Background(), matlog.Materialization{
+		AssetID: producerID, Environment: "default",
+		Fingerprint:    string(producerResults[producerID].FP),
+		OwnContent:     string(producerResults[producerID].OwnContent),
+		VarsHash:       fingerprint.AllVarsHash(fingerprint.EffectiveVars(producer, nil)),
+		TargetIdentity: producerTarget.Identity,
+		RunID:          "producer-run", CompletionID: "producer-run", CompletionOrdinal: 0,
+		MaterializedAt: time.Date(2026, 7, 17, 11, 0, 0, 0, time.UTC),
+	}))
+
+	planner := NewPipelinePlanService(PipelinePlanDependencies{
+		WorkspaceRoot: root, ConfigPath: filepath.Join(root, ".bruin.yml"),
+		Staleness: &pipelinePlanStalenessStub{}, DependencyGraph: resolveGraph,
+		Fingerprints: engine, Materializations: materializations,
+		ResolvePipelineUUID: func(pipelineID string) (string, bool) {
+			return "consumer-uuid", pipelineID == EncodeID("analytics")
+		},
+		Now: func() time.Time { return time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC) },
+	})
+	request := PipelinePlanRequest{
+		Purpose: PipelinePlanPurposeExecution, Environment: "default",
+		Selection: PipelinePlanSelectionRequest{Mode: PipelinePlanSelectionAll},
+	}
+	plan, apiErr := planner.Plan(context.Background(), EncodeID("analytics"), request)
+	require.Nil(t, apiErr)
+	assert.NotEqual(t, PipelinePlanStatusBlocked, plan.Status)
+	require.Len(t, plan.Prerequisites, 1)
+	assert.Equal(t, PipelinePlanPrerequisiteReady, plan.Prerequisites[0].Status)
+	assert.Equal(t, producerID, plan.Prerequisites[0].ProducerAssetID)
+	assert.Equal(t, producerTarget.Identity, plan.Prerequisites[0].TargetIdentity)
+
+	producerAsset.ExecutableFile.Content = "select 1 as id, 2 as version"
+	changed, apiErr := planner.Plan(context.Background(), EncodeID("analytics"), request)
+	require.Nil(t, apiErr)
+	assert.Equal(t, PipelinePlanStatusBlocked, changed.Status)
+	require.Len(t, changed.Prerequisites, 1)
+	assert.Equal(t, PipelinePlanPrerequisiteBlocked, changed.Prerequisites[0].Status)
+	assert.Contains(t, changed.Prerequisites[0].Reason, "does not match")
 }
 
 func TestBindPipelinePlanExecutionDependenciesChainsWindowsAndSelectedUpstreams(t *testing.T) {

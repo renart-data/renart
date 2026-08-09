@@ -13,8 +13,6 @@ import (
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"renart/internal/authoringdiag"
 )
 
 func TestPipelineDependencyIssuesUseBruinDependencySemantics(t *testing.T) {
@@ -35,14 +33,17 @@ func TestPipelineDependencyIssuesUseBruinDependencySemantics(t *testing.T) {
 
 	issues, err := pipelineDependencyIssues(context.Background(), pl)
 	require.NoError(t, err)
-	require.Len(t, issues, 2)
+	require.Len(t, issues, 1)
 	byCode := make(map[string]pipelineDependencyIssue, len(issues))
 	for _, issue := range issues {
 		byCode[issue.Code] = issue
 	}
 	assert.Same(t, reader, byCode[dependencyExistsRule].Asset)
 	assert.Equal(t, "Dependency 'analytics.missing' does not exist", byCode[dependencyExistsRule].Description)
-	assert.Contains(t, byCode[authoringdiag.CodeCrossPipelineExecutionPending].Description, "s3://external-bucket/orders")
+
+	directIssues := unreviewedCrossPipelineDependencyIssues(pl)
+	require.Len(t, directIssues, 1)
+	assert.Contains(t, directIssues[0].Description, "s3://external-bucket/orders")
 }
 
 func TestValidateDirectRunDependenciesPrintsBruinStyleReport(t *testing.T) {
@@ -63,7 +64,7 @@ func TestValidateDirectRunDependenciesPrintsBruinStyleReport(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	err := validateDirectRunDependencies(context.Background(), &output, pl, root)
+	err := validateDirectRunDependencies(context.Background(), &output, pl, root, false)
 	var validationErr pipelineDependencyValidationError
 	require.ErrorAs(t, err, &validationErr)
 	assert.Equal(t, 1, validationErr.count)

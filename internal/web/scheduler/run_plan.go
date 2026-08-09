@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ const (
 	PipelineRunPlanVersionV3 = 3
 	maxPipelineRunPlanBytes  = 8 << 20
 	pipelineDataStateTokenV1 = "renart-data-state-v1"
+	pipelineDataStateTokenV2 = "renart-data-state-v2"
 
 	PipelineRunResourceIsolationResources = "resources"
 	PipelineRunResourceIsolationPipeline  = "pipeline"
@@ -44,6 +46,7 @@ type PipelineRunPlan struct {
 	Selection           PipelineRunPlanSelection       `json:"selection"`
 	Resources           PipelineRunPlanResources       `json:"resources,omitempty"`
 	ExecutionContracts  []PipelineRunExecutionContract `json:"execution_contracts,omitempty"`
+	Prerequisites       []PipelineRunPrerequisite      `json:"prerequisites,omitempty"`
 	ExecutionUnits      []PipelineRunExecutionUnit     `json:"execution_units"`
 	Preview             *PipelineRunPlanPreview        `json:"preview,omitempty"`
 	Artifact            json.RawMessage                `json:"artifact"`
@@ -83,6 +86,33 @@ type PipelineRunExecutionContract struct {
 	ConnectionKeys        []string                 `json:"connection_keys"`
 	MutationResources     PipelineRunPlanResources `json:"mutation_resources"`
 	CoordinationResources PipelineRunPlanResources `json:"coordination_resources"`
+}
+
+type PipelineRunPrerequisite struct {
+	Status                  string  `json:"status"`
+	Reason                  string  `json:"reason"`
+	ConsumerAssetID         string  `json:"consumer_asset_id"`
+	ConsumerAssetName       string  `json:"consumer_asset_name"`
+	URI                     string  `json:"uri"`
+	ProducerPipelineID      string  `json:"producer_pipeline_id"`
+	ProducerPipelineUUID    string  `json:"producer_pipeline_uuid"`
+	ProducerPipelineName    string  `json:"producer_pipeline_name"`
+	ProducerAssetID         string  `json:"producer_asset_id"`
+	ProducerAssetName       string  `json:"producer_asset_name"`
+	Environment             string  `json:"environment"`
+	RequiredStart           string  `json:"required_start"`
+	RequiredEnd             string  `json:"required_end"`
+	ExpectedFingerprint     string  `json:"expected_fingerprint"`
+	TargetIdentity          string  `json:"target_identity,omitempty"`
+	VarsHash                string  `json:"vars_hash"`
+	TargetGeneration        int64   `json:"target_generation,omitempty"`
+	WriterRunID             string  `json:"writer_run_id,omitempty"`
+	WriterSnapshotVersionID string  `json:"writer_snapshot_version_id,omitempty"`
+	WriterCompletionID      string  `json:"writer_completion_id,omitempty"`
+	WriterCompletionOrdinal int64   `json:"writer_completion_ordinal,omitempty"`
+	WriterMaterializedAt    string  `json:"writer_materialized_at,omitempty"`
+	CoveredSeconds          float64 `json:"covered_seconds,omitempty"`
+	RequiredSeconds         float64 `json:"required_seconds,omitempty"`
 }
 
 type PipelineRunExecutionUnit struct {
@@ -164,8 +194,16 @@ func (plan PipelineRunPlan) validate() error {
 		if len(plan.ExecutionContracts) != 0 {
 			return fmt.Errorf("pipeline run plan v%d cannot contain execution contracts", plan.Version)
 		}
+		if len(plan.Prerequisites) != 0 {
+			return fmt.Errorf("pipeline run plan v%d cannot contain prerequisites", plan.Version)
+		}
 	} else if plan.MaxActiveSteps < 1 {
 		return errors.New("pipeline run plan v3 requires max_active_steps greater than zero")
+	}
+	for index, prerequisite := range plan.Prerequisites {
+		if err := validatePipelineRunPrerequisite(prerequisite, plan.Blocked); err != nil {
+			return fmt.Errorf("pipeline run plan prerequisite %d: %w", index, err)
+		}
 	}
 	if err := validateRunIdentityDigest("plan_id", strings.TrimSpace(plan.PlanID)); err != nil {
 		return err
@@ -449,10 +487,58 @@ func pipelineRunPlanSelectionUsesNeededState(mode string) bool {
 
 func validatePipelineDataStateToken(field, value string) error {
 	version, digest, found := strings.Cut(value, ":")
-	if !found || version != pipelineDataStateTokenV1 {
-		return fmt.Errorf("pipeline run plan %s must use the %s token format", field, pipelineDataStateTokenV1)
+	if !found || (version != pipelineDataStateTokenV1 && version != pipelineDataStateTokenV2) {
+		return fmt.Errorf("pipeline run plan %s must use a renart-data-state-v1 token format or renart-data-state-v2 token format", field)
 	}
 	return validateRunIdentityDigest(field, digest)
+}
+
+func validatePipelineRunPrerequisite(prerequisite PipelineRunPrerequisite, planBlocked bool) error {
+	if prerequisite.Status == "blocked" && planBlocked {
+		if strings.TrimSpace(prerequisite.ConsumerAssetID) == "" || strings.TrimSpace(prerequisite.URI) == "" || strings.TrimSpace(prerequisite.Reason) == "" {
+			return errors.New("blocked prerequisite requires consumer_asset_id, uri, and reason")
+		}
+		return nil
+	}
+	if prerequisite.Status != "ready" {
+		return errors.New("status must be ready unless the retained plan is blocked")
+	}
+	for field, value := range map[string]string{
+		"consumer_asset_id":      prerequisite.ConsumerAssetID,
+		"consumer_asset_name":    prerequisite.ConsumerAssetName,
+		"uri":                    prerequisite.URI,
+		"producer_pipeline_id":   prerequisite.ProducerPipelineID,
+		"producer_pipeline_uuid": prerequisite.ProducerPipelineUUID,
+		"producer_asset_id":      prerequisite.ProducerAssetID,
+		"producer_asset_name":    prerequisite.ProducerAssetName,
+		"environment":            prerequisite.Environment,
+		"required_start":         prerequisite.RequiredStart,
+		"required_end":           prerequisite.RequiredEnd,
+		"expected_fingerprint":   prerequisite.ExpectedFingerprint,
+		"target_identity":        prerequisite.TargetIdentity,
+		"vars_hash":              prerequisite.VarsHash,
+		"writer_completion_id":   prerequisite.WriterCompletionID,
+		"writer_materialized_at": prerequisite.WriterMaterializedAt,
+	} {
+		if strings.TrimSpace(value) == "" || strings.TrimSpace(value) != value {
+			return fmt.Errorf("%s is required and must be canonical", field)
+		}
+	}
+	if prerequisite.TargetGeneration < 1 || prerequisite.WriterCompletionOrdinal < 0 {
+		return errors.New("writer completion coordinates are invalid")
+	}
+	start, err := time.Parse(time.RFC3339Nano, prerequisite.RequiredStart)
+	if err != nil {
+		return errors.New("required_start must be an RFC3339 timestamp")
+	}
+	end, err := time.Parse(time.RFC3339Nano, prerequisite.RequiredEnd)
+	if err != nil || !end.After(start) {
+		return errors.New("required_end must be after required_start")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, prerequisite.WriterMaterializedAt); err != nil {
+		return errors.New("writer_materialized_at must be an RFC3339 timestamp")
+	}
+	return nil
 }
 
 func validatePipelineRunExecutionUnit(unit PipelineRunExecutionUnit) error {
@@ -518,6 +604,7 @@ func validatePipelineRunPlanArtifact(plan PipelineRunPlan) error {
 		Selection          PipelineRunPlanSelection       `json:"selection"`
 		Resources          PipelineRunPlanResources       `json:"resources"`
 		ExecutionContracts []PipelineRunExecutionContract `json:"execution_contracts"`
+		Prerequisites      []PipelineRunPrerequisite      `json:"prerequisites"`
 		ExecutionUnits     []PipelineRunExecutionUnit     `json:"execution_units"`
 		Assets             []struct {
 			Renders []struct {
@@ -554,6 +641,9 @@ func validatePipelineRunPlanArtifact(plan PipelineRunPlan) error {
 	if plan.Version >= PipelineRunPlanVersionV3 &&
 		!equalPipelineRunExecutionContracts(artifact.ExecutionContracts, plan.ExecutionContracts) {
 		return errors.New("pipeline run plan artifact execution contracts do not match their durable binding")
+	}
+	if plan.Version >= PipelineRunPlanVersionV3 && !reflect.DeepEqual(artifact.Prerequisites, plan.Prerequisites) {
+		return errors.New("pipeline run plan artifact prerequisites do not match their durable binding")
 	}
 	if plan.Blocked != (strings.TrimSpace(artifact.Status) == "blocked") {
 		return errors.New("pipeline run plan artifact blocked status does not match its durable binding")

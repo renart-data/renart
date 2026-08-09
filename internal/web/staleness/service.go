@@ -20,6 +20,7 @@ import (
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"go.uber.org/zap"
 	"renart/internal/web/bus"
+	"renart/internal/web/dependencygraph"
 	"renart/internal/web/fingerprint"
 	"renart/internal/web/identity"
 	"renart/internal/web/matlog"
@@ -196,6 +197,14 @@ type TargetResolver func(
 	parsed *pipeline.Pipeline,
 ) (map[string]PhysicalTarget, error)
 
+// DependencyGraphResolver returns the canonical workspace dependency graph.
+// overrides replace selected working-tree pipelines with an already parsed
+// immutable source while preserving sibling-pipeline resolution.
+type DependencyGraphResolver func(
+	ctx context.Context,
+	overrides map[string]*pipeline.Pipeline,
+) (dependencygraph.Graph, error)
+
 type Dependencies struct {
 	Store   *matlog.Store
 	Engine  *fingerprint.Engine
@@ -204,6 +213,9 @@ type Dependencies struct {
 	// optional only for legacy callers and tests; production supplies the same
 	// selected-context resolver used before execution.
 	ResolveTargets TargetResolver
+	// ResolveGraph enables workspace-wide fingerprint propagation and reverse
+	// invalidation for full URI dependencies.
+	ResolveGraph DependencyGraphResolver
 	// Publish pushes staleness.updated events to SSE clients.
 	Publish func(any)
 	// Verify is optional trust-but-verify support; it runs async, throttled
@@ -242,10 +254,18 @@ func New(deps Dependencies) *Service {
 func (s *Service) AttachBus(events bus.Events) {
 	events.OnAssetSaved(func(event bus.AssetSaved) {
 		s.recomputePipeline(event.PipelineUUID, "asset saved")
+		go s.recomputeDownstreamPipelines([]string{event.AssetID}, "upstream asset saved")
 	})
 	events.OnRunCompleted(func(event bus.RunCompleted) error {
 		s.clearMissingAfterSuccessfulRun(event)
 		s.recomputePipeline(event.PipelineUUID, "run completed")
+		assetIDs := make([]string, 0, len(event.Assets))
+		for _, asset := range event.Assets {
+			if strings.TrimSpace(asset.AssetID) != "" {
+				assetIDs = append(assetIDs, asset.AssetID)
+			}
+		}
+		go s.recomputeDownstreamPipelines(assetIDs, "upstream run completed")
 		return nil
 	})
 	events.OnTargetWriteChanged(func(event bus.TargetWriteChanged) {
@@ -253,8 +273,60 @@ func (s *Service) AttachBus(events bus.Events) {
 		// the fail-closed snapshot asynchronously so warehouse work is not delayed
 		// by fingerprinting, while dirty claims still reach the UI even when no
 		// completion event can be persisted.
-		go s.recomputePipeline(event.PipelineUUID, "target write changed")
+		go func() {
+			s.recomputePipeline(event.PipelineUUID, "target write changed")
+			s.recomputeDownstreamPipelines([]string{event.AssetID}, "upstream target write changed")
+		}()
 	})
+}
+
+func (s *Service) recomputeDownstreamPipelines(assetIDs []string, reason string) {
+	if s.deps.ResolveGraph == nil || len(assetIDs) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	graph, err := s.deps.ResolveGraph(ctx, nil)
+	if err != nil {
+		if s.deps.Logger != nil {
+			s.deps.Logger.Warn("cross-pipeline staleness graph resolution failed", zap.Error(err))
+		}
+		return
+	}
+
+	queue := append([]string(nil), assetIDs...)
+	seenAssets := make(map[string]struct{}, len(queue))
+	downstreamPipelines := make(map[string]struct{})
+	for len(queue) > 0 {
+		producerID := queue[0]
+		queue = queue[1:]
+		if _, seen := seenAssets[producerID]; seen {
+			continue
+		}
+		seenAssets[producerID] = struct{}{}
+		producer := graph.Nodes[producerID]
+		for _, edge := range graph.ReverseEdges[producerID] {
+			if edge.Mode == pipeline.UpstreamModeSymbolic || !edge.Resolved {
+				continue
+			}
+			consumer := graph.Nodes[edge.ConsumerID]
+			if consumer == nil {
+				continue
+			}
+			if producer == nil || consumer.PipelineUUID != producer.PipelineUUID {
+				downstreamPipelines[consumer.PipelineUUID] = struct{}{}
+			}
+			queue = append(queue, consumer.AssetID)
+		}
+	}
+	ordered := make([]string, 0, len(downstreamPipelines))
+	for pipelineUUID := range downstreamPipelines {
+		ordered = append(ordered, pipelineUUID)
+	}
+	sort.Strings(ordered)
+	for _, pipelineUUID := range ordered {
+		s.recomputePipeline(pipelineUUID, reason)
+	}
 }
 
 func (s *Service) clearMissingAfterSuccessfulRun(event bus.RunCompleted) {
@@ -400,7 +472,7 @@ func (s *Service) compute(ctx context.Context, selection Selection) (Snapshot, e
 
 func (s *Service) computeParsed(ctx context.Context, selection Selection, parsed *pipeline.Pipeline) (Snapshot, error) {
 	vars := fingerprint.EffectiveVars(parsed, selection.VarOverrides)
-	results, err := s.deps.Engine.DAG(parsed, vars)
+	results, err := s.fingerprintResults(ctx, selection, parsed, vars)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -462,11 +534,42 @@ func (s *Service) computeParsed(ctx context.Context, selection Selection, parsed
 		}
 		statuses = append(statuses, status)
 	}
-	token, err := dataStateToken(selection, varsHash, assetIDs, coverageContext, missing)
+	token, err := dataStateToken(selection, varsHash, assetIDs, results, coverageContext, missing)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	return Snapshot{DataStateToken: token, Assets: statuses}, nil
+}
+
+func (s *Service) fingerprintResults(
+	ctx context.Context,
+	selection Selection,
+	parsed *pipeline.Pipeline,
+	selectedVars fingerprint.Vars,
+) (map[string]fingerprint.Result, error) {
+	if s.deps.ResolveGraph == nil {
+		return s.deps.Engine.DAG(parsed, selectedVars)
+	}
+	graph, err := s.deps.ResolveGraph(ctx, map[string]*pipeline.Pipeline{
+		selection.PipelineUUID: parsed,
+	})
+	if err != nil {
+		return nil, err
+	}
+	varsByPipeline := make(map[string]fingerprint.Vars)
+	for _, node := range graph.Nodes {
+		if node == nil || node.Pipeline == nil {
+			continue
+		}
+		if node.PipelineUUID == selection.PipelineUUID {
+			varsByPipeline[node.PipelineUUID] = selectedVars
+			continue
+		}
+		if _, exists := varsByPipeline[node.PipelineUUID]; !exists {
+			varsByPipeline[node.PipelineUUID] = fingerprint.EffectiveVars(node.Pipeline, nil)
+		}
+	}
+	return s.deps.Engine.WorkspaceDAG(graph, varsByPipeline)
 }
 
 type selectedTarget struct {
@@ -632,7 +735,7 @@ func applyTargetContext(
 	}
 }
 
-const dataStateTokenVersion = "renart-data-state-v1"
+const dataStateTokenVersion = "renart-data-state-v2"
 
 type dataStateTokenInput struct {
 	Version      string                `json:"version"`
@@ -650,6 +753,7 @@ type dataStateTokenRange struct {
 
 type dataStateTokenAsset struct {
 	AssetID         string                   `json:"asset_id"`
+	Fingerprint     string                   `json:"fingerprint"`
 	TargetFidelity  TargetFidelity           `json:"target_fidelity"`
 	TargetIdentity  string                   `json:"target_identity,omitempty"`
 	Writer          *dataStateTokenWriter    `json:"writer,omitempty"`
@@ -685,6 +789,7 @@ func dataStateToken(
 	selection Selection,
 	varsHash string,
 	assetIDs []string,
+	results map[string]fingerprint.Result,
 	context coverageContext,
 	missing map[string]bool,
 ) (string, error) {
@@ -707,6 +812,7 @@ func dataStateToken(
 		_, assetName, _ := identity.SplitAssetID(assetID)
 		assetState := dataStateTokenAsset{
 			AssetID:         assetID,
+			Fingerprint:     string(results[assetID].FP),
 			TargetFidelity:  target.Fidelity,
 			TargetIdentity:  target.Identity,
 			AnyBuilt:        context.anyBuilt[assetID],

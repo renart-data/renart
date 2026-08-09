@@ -210,6 +210,7 @@ const sources = [
       "PipelinePlanRender",
       "PipelinePlanAsset",
       "PipelinePlanExecutionUnit",
+      "PipelinePlanPrerequisite",
       "PipelinePlanResourceClaim",
       "PipelinePlanResources",
       "PipelinePlanExecutionContract",

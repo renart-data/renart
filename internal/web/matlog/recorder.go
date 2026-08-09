@@ -118,7 +118,13 @@ func (r *Recorder) HandleRunCompleted(event bus.RunCompleted) error {
 		r.warn("failed to load latest physical writers for materialization log", event.PipelineUUID, err)
 		return fmt.Errorf("load latest physical writers for pipeline %s: %w", event.PipelineUUID, err)
 	}
-	achieved, err := r.engine.AchievedFingerprintsByConsumer(parsed, results, materializedSucceeded, latestAchieved)
+	achieved, err := r.engine.AchievedFingerprintsByConsumerResolved(
+		parsed,
+		results,
+		materializedSucceeded,
+		fingerprintCtx.resolveUpstream,
+		latestAchieved,
+	)
 	if err != nil {
 		r.warn("failed to compute achieved fingerprints for materialization log", event.PipelineUUID, err)
 		return fmt.Errorf("compute achieved fingerprints for pipeline %s: %w", event.PipelineUUID, err)
@@ -214,7 +220,30 @@ type executionFingerprintContext struct {
 	targetsByID         map[string]bus.ExecutionTargetSnapshotEntry
 	coverageModes       map[string]string
 	refreshRestrictions map[string]bool
+	resolvedUpstreams   map[string]map[string]string
 	captured            bool
+}
+
+func (c executionFingerprintContext) resolveUpstream(
+	consumerAssetID string,
+	upstream pipeline.Upstream,
+) (string, bool, bool) {
+	key := strings.ToLower(strings.TrimSpace(upstream.Type)) + "\x00" + strings.TrimSpace(upstream.Value)
+	if resolved := c.resolvedUpstreams[consumerAssetID][key]; strings.TrimSpace(resolved) != "" {
+		return resolved, false, true
+	}
+	if c.parsed == nil {
+		return "", false, false
+	}
+	asset := c.parsed.GetAssetByName(upstream.Value)
+	if asset == nil {
+		return "", false, false
+	}
+	return identity.AssetID(c.parsed.LegacyID, asset.Name), recorderSourceAsset(asset), true
+}
+
+func recorderSourceAsset(asset *pipeline.Asset) bool {
+	return asset != nil && strings.HasSuffix(strings.ToLower(strings.TrimSpace(string(asset.Type))), ".source")
 }
 
 func (c executionFingerprintContext) coverageBehavior(assetID string, fallback *pipeline.Asset) coverageBehavior {
@@ -297,6 +326,7 @@ func (r *Recorder) fingerprintContext(
 	targetsByID := make(map[string]bus.ExecutionTargetSnapshotEntry, len(parsed.Assets))
 	coverageModes := make(map[string]string, len(parsed.Assets))
 	refreshRestrictions := make(map[string]bool, len(parsed.Assets))
+	resolvedUpstreams := make(map[string]map[string]string, len(parsed.Assets))
 	commonVarsHash := ""
 	for _, asset := range parsed.Assets {
 		if asset == nil || strings.TrimSpace(asset.Name) == "" {
@@ -322,6 +352,16 @@ func (r *Recorder) fingerprintContext(
 			FP:               fingerprint.Fingerprint(entry.Fingerprint),
 			OwnContent:       fingerprint.Fingerprint(entry.OwnContent),
 			ConsumedVarsHash: entry.ConsumedVarsHash,
+		}
+		for _, upstream := range entry.Upstreams {
+			if strings.TrimSpace(upstream.ResolvedAssetID) == "" {
+				continue
+			}
+			if resolvedUpstreams[entry.AssetID] == nil {
+				resolvedUpstreams[entry.AssetID] = make(map[string]string)
+			}
+			key := strings.ToLower(strings.TrimSpace(upstream.Type)) + "\x00" + strings.TrimSpace(upstream.Value)
+			resolvedUpstreams[entry.AssetID][key] = upstream.ResolvedAssetID
 		}
 		varsHashes[entry.AssetID] = entry.VarsHash
 		targetsByID[entry.AssetID] = entry
@@ -361,7 +401,7 @@ func (r *Recorder) fingerprintContext(
 			if !assetRun.HasUpstreamWriterSnapshot {
 				return executionFingerprintContext{}, fmt.Errorf("completed asset %s has no upstream writer snapshot", assetRun.AssetID)
 			}
-			if err := validateCapturedUpstreamWriters(assetRun, parsed.GetAssetByName(assetRun.AssetName), event.ExecutionTargets); err != nil {
+			if err := validateCapturedUpstreamWriters(assetRun, entry, event.ExecutionTargets); err != nil {
 				return executionFingerprintContext{}, err
 			}
 		}
@@ -383,21 +423,29 @@ func (r *Recorder) fingerprintContext(
 	}
 	return executionFingerprintContext{
 		parsed: parsed, results: results, varsHashes: varsHashes, targetsByID: targetsByID,
-		coverageModes: coverageModes, refreshRestrictions: refreshRestrictions, captured: true,
+		coverageModes: coverageModes, refreshRestrictions: refreshRestrictions,
+		resolvedUpstreams: resolvedUpstreams, captured: true,
 	}, nil
 }
 
 func validateCapturedUpstreamWriters(
 	assetRun bus.AssetRun,
-	asset *pipeline.Asset,
+	consumer bus.ExecutionTargetSnapshotEntry,
 	targets map[string]bus.ExecutionTargetSnapshotEntry,
 ) error {
 	allowed := make(map[string]bus.ExecutionTargetSnapshotEntry)
-	if asset != nil {
-		for _, upstream := range asset.Upstreams {
-			if entry, ok := targets[upstream.Value]; ok {
-				allowed[entry.AssetID] = entry
+	reviewed := make(map[string]bus.ExecutionUpstreamSnapshot)
+	for _, upstream := range consumer.Upstreams {
+		if upstream.Required && strings.TrimSpace(upstream.ResolvedAssetID) != "" {
+			allowed[upstream.ResolvedAssetID] = bus.ExecutionTargetSnapshotEntry{
+				AssetID: upstream.ResolvedAssetID, TargetIdentity: upstream.TargetIdentity,
+				TargetFidelity: "exact",
 			}
+			reviewed[upstream.ResolvedAssetID] = upstream
+			continue
+		}
+		if entry, ok := targets[upstream.Value]; ok {
+			allowed[entry.AssetID] = entry
 		}
 	}
 	for upstreamID, writer := range assetRun.UpstreamWriters {
@@ -413,6 +461,12 @@ func validateCapturedUpstreamWriters(
 			strings.TrimSpace(writer.CompletionID) == "" || strings.TrimSpace(writer.CompletionID) != writer.CompletionID ||
 			writer.TargetGeneration <= 0 || writer.CompletionOrdinal < 0 || writer.MaterializedAt.IsZero() {
 			return fmt.Errorf("completed asset %s has incomplete upstream writer evidence for %s", assetRun.AssetID, upstreamID)
+		}
+		if expected, ok := reviewed[upstreamID]; ok &&
+			(writer.Fingerprint != expected.ExpectedFingerprint || writer.VarsHash != expected.VarsHash ||
+				writer.TargetGeneration != expected.TargetGeneration || writer.CompletionID != expected.CompletionID ||
+				writer.CompletionOrdinal != expected.CompletionOrdinal) {
+			return fmt.Errorf("completed asset %s has changed cross-pipeline writer evidence for %s", assetRun.AssetID, upstreamID)
 		}
 	}
 	return nil
@@ -500,6 +554,12 @@ func validateCapturedExecutionTarget(assetName string, entry bus.ExecutionTarget
 			if strings.TrimSpace(upstream.Type) != upstream.Type || strings.TrimSpace(upstream.Value) == "" || strings.TrimSpace(upstream.Value) != upstream.Value {
 				return fmt.Errorf("execution target snapshot entry %s has a non-canonical upstream", assetName)
 			}
+			if upstream.Required &&
+				(strings.TrimSpace(upstream.ResolvedAssetID) == "" || strings.TrimSpace(upstream.TargetIdentity) == "" ||
+					strings.TrimSpace(upstream.ExpectedFingerprint) == "" || strings.TrimSpace(upstream.VarsHash) == "" ||
+					upstream.TargetGeneration < 1 || strings.TrimSpace(upstream.CompletionID) == "") {
+				return fmt.Errorf("execution target snapshot entry %s has an incomplete required upstream", assetName)
+			}
 		}
 	}
 	return nil
@@ -553,7 +613,13 @@ func pipelineFromExecutionSnapshot(pipelineUUID string, entries map[string]bus.E
 		asset := &pipeline.Asset{Name: name}
 		asset.Upstreams = make([]pipeline.Upstream, 0, len(entry.Upstreams))
 		for _, upstream := range entry.Upstreams {
-			asset.Upstreams = append(asset.Upstreams, pipeline.Upstream{Type: upstream.Type, Value: upstream.Value})
+			mode := pipeline.UpstreamModeFull
+			if strings.EqualFold(strings.TrimSpace(upstream.Mode), "symbolic") {
+				mode = pipeline.UpstreamModeSymbolic
+			}
+			asset.Upstreams = append(asset.Upstreams, pipeline.Upstream{
+				Type: upstream.Type, Value: upstream.Value, Mode: mode,
+			})
 		}
 		assets = append(assets, asset)
 	}
@@ -592,9 +658,7 @@ func (r *Recorder) latestAchievedLookup(
 		if !ok {
 			return "", false
 		}
-		target, ok := targetsByID[upstreamAssetID]
-		if !ok || target.TargetFidelity != "exact" || target.TargetIdentity == "" ||
-			writer.AssetID != upstreamAssetID || writer.TargetIdentity != target.TargetIdentity {
+		if writer.AssetID != upstreamAssetID || strings.TrimSpace(writer.TargetIdentity) == "" {
 			return "", false
 		}
 		return fingerprint.Fingerprint(writer.Fingerprint), true

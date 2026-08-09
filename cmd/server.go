@@ -494,6 +494,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 	}
 	server.fingerprintEngine = fingerprint.NewEngine()
 	hybridExecutor.SetFingerprintEngine(server.fingerprintEngine)
+	hybridExecutor.SetDependencyGraphResolver(server.resolveWorkspaceDependencyGraph)
 	server.matlogStore = matlog.NewStore(server.schedulerStore.DB())
 	server.completionStore = completion.NewStore(server.schedulerStore.DB())
 	server.snapshotStore = snapshot.NewStore(server.schedulerStore.DB())
@@ -557,6 +558,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 			}
 			return targets, nil
 		},
+		ResolveGraph: server.resolveWorkspaceDependencyGraph,
 		Publish: func(event any) {
 			server.hub.PublishImmediate(event)
 		},
@@ -569,6 +571,9 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		ConfigPath:          resolveConfigFilePath(absRoot),
 		Snapshots:           server.snapshotStore,
 		Staleness:           server.stalenessSvc,
+		DependencyGraph:     server.resolveWorkspaceDependencyGraph,
+		Fingerprints:        server.fingerprintEngine,
+		Materializations:    server.matlogStore,
 		ResolvePipelineUUID: server.findPipelineUUIDByID,
 		PolicyFor:           server.policyLoader.For,
 		ActiveRunID:         server.schedulerStore.ActiveRunID,
@@ -878,7 +883,11 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 					upstreams := make([]webscheduler.ExecutionUpstreamSnapshot, 0, len(entry.Upstreams))
 					for _, upstream := range entry.Upstreams {
 						upstreams = append(upstreams, webscheduler.ExecutionUpstreamSnapshot{
-							Type: upstream.Type, Value: upstream.Value,
+							Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
+							ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
+							TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+							VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
+							CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
 						})
 					}
 					entries[assetName] = webscheduler.ExecutionTargetSnapshotEntry{
@@ -1045,11 +1054,16 @@ func pipelineRunSpecFromSchedulerRequest(req webscheduler.RunRequest) service.Pi
 				DependencyPositions: append([]int(nil), unit.DependencyPositions...),
 			})
 		}
+		prerequisites := make([]service.PipelinePlanPrerequisite, 0, len(req.ConfirmedPlan.Prerequisites))
+		for _, prerequisite := range req.ConfirmedPlan.Prerequisites {
+			prerequisites = append(prerequisites, servicePrerequisiteFromScheduler(prerequisite))
+		}
 		spec.Plan = &service.PipelineExecutionPlan{
 			Version:        req.ConfirmedPlan.Version,
 			SelectionMode:  req.ConfirmedPlan.Selection.Mode,
 			MaxActiveSteps: req.ConfirmedPlan.MaxActiveSteps,
 			Contracts:      serviceExecutionContractsFromScheduler(req.ConfirmedPlan.ExecutionContracts),
+			Prerequisites:  prerequisites,
 			Units:          units,
 		}
 	}
@@ -1113,6 +1127,10 @@ func scheduledPipelineRunPlan(plan service.PipelinePlan, blockers []string) (web
 	for _, contract := range plan.ExecutionContracts {
 		contracts = append(contracts, schedulerExecutionContractFromService(contract))
 	}
+	prerequisites := make([]webscheduler.PipelineRunPrerequisite, 0, len(plan.Prerequisites))
+	for _, prerequisite := range plan.Prerequisites {
+		prerequisites = append(prerequisites, schedulerPrerequisiteFromService(prerequisite))
+	}
 	return webscheduler.PipelineRunPlan{
 		Version: webscheduler.PipelineRunPlanVersionV3,
 		PlanID:  plan.ID, PipelineID: plan.PipelineID, PipelineUUID: plan.PipelineUUID,
@@ -1129,9 +1147,46 @@ func scheduledPipelineRunPlan(plan service.PipelinePlan, blockers []string) (web
 			Claims:    claims,
 		},
 		ExecutionContracts: contracts,
+		Prerequisites:      prerequisites,
 		ExecutionUnits:     units,
 		Artifact:           artifact,
 	}, nil
+}
+
+func schedulerPrerequisiteFromService(item service.PipelinePlanPrerequisite) webscheduler.PipelineRunPrerequisite {
+	return webscheduler.PipelineRunPrerequisite{
+		Status: item.Status, Reason: item.Reason,
+		ConsumerAssetID: item.ConsumerAssetID, ConsumerAssetName: item.ConsumerAssetName,
+		URI:                item.URI,
+		ProducerPipelineID: item.ProducerPipelineID, ProducerPipelineUUID: item.ProducerPipelineUUID,
+		ProducerPipelineName: item.ProducerPipelineName,
+		ProducerAssetID:      item.ProducerAssetID, ProducerAssetName: item.ProducerAssetName,
+		Environment: item.Environment, RequiredStart: item.RequiredStart, RequiredEnd: item.RequiredEnd,
+		ExpectedFingerprint: item.ExpectedFingerprint, TargetIdentity: item.TargetIdentity, VarsHash: item.VarsHash,
+		TargetGeneration: item.TargetGeneration, WriterRunID: item.WriterRunID,
+		WriterSnapshotVersionID: item.WriterSnapshotVersionID,
+		WriterCompletionID:      item.WriterCompletionID, WriterCompletionOrdinal: item.WriterCompletionOrdinal,
+		WriterMaterializedAt: item.WriterMaterializedAt,
+		CoveredSeconds:       item.CoveredSeconds, RequiredSeconds: item.RequiredSeconds,
+	}
+}
+
+func servicePrerequisiteFromScheduler(item webscheduler.PipelineRunPrerequisite) service.PipelinePlanPrerequisite {
+	return service.PipelinePlanPrerequisite{
+		Status: item.Status, Reason: item.Reason,
+		ConsumerAssetID: item.ConsumerAssetID, ConsumerAssetName: item.ConsumerAssetName,
+		URI:                item.URI,
+		ProducerPipelineID: item.ProducerPipelineID, ProducerPipelineUUID: item.ProducerPipelineUUID,
+		ProducerPipelineName: item.ProducerPipelineName,
+		ProducerAssetID:      item.ProducerAssetID, ProducerAssetName: item.ProducerAssetName,
+		Environment: item.Environment, RequiredStart: item.RequiredStart, RequiredEnd: item.RequiredEnd,
+		ExpectedFingerprint: item.ExpectedFingerprint, TargetIdentity: item.TargetIdentity, VarsHash: item.VarsHash,
+		TargetGeneration: item.TargetGeneration, WriterRunID: item.WriterRunID,
+		WriterSnapshotVersionID: item.WriterSnapshotVersionID,
+		WriterCompletionID:      item.WriterCompletionID, WriterCompletionOrdinal: item.WriterCompletionOrdinal,
+		WriterMaterializedAt: item.WriterMaterializedAt,
+		CoveredSeconds:       item.CoveredSeconds, RequiredSeconds: item.RequiredSeconds,
+	}
 }
 
 func schedulerExecutionContractFromService(

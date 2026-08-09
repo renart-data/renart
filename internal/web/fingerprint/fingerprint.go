@@ -23,6 +23,7 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"renart/internal/sqlformat"
+	"renart/internal/web/dependencygraph"
 	"renart/internal/web/identity"
 )
 
@@ -157,7 +158,66 @@ func (e *Engine) DAG(p *pipeline.Pipeline, vars Vars) (map[string]Result, error)
 	return results, nil
 }
 
+// WorkspaceDAG computes one deterministic Merkle DAG across every pipeline in
+// a resolved workspace graph. Full URI dependencies contribute the resolved
+// producer fingerprint exactly like pipeline-local asset dependencies;
+// symbolic edges remain presentation-only. varsByPipeline is keyed by stable
+// pipeline UUID so each pipeline retains its own declared-variable contract.
+func (e *Engine) WorkspaceDAG(
+	graph dependencygraph.Graph,
+	varsByPipeline map[string]Vars,
+) (map[string]Result, error) {
+	ordered, err := workspaceTopoSort(graph)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make(map[string]Result, len(ordered))
+	for _, assetID := range ordered {
+		node := graph.Nodes[assetID]
+		if node == nil || node.Asset == nil || node.Pipeline == nil {
+			return nil, fmt.Errorf("fingerprint: workspace asset %q is incomplete", assetID)
+		}
+		declared := make(map[string]struct{}, len(node.Pipeline.Variables))
+		for name := range node.Pipeline.Variables {
+			declared[name] = struct{}{}
+		}
+		upstreamParts := workspaceUpstreamHashParts(graph.EdgesByConsumer[assetID], results)
+		result, err := e.fingerprintAssetWithUpstreams(
+			node.Asset,
+			node.Pipeline,
+			filepath.Dir(node.Pipeline.DefinitionFile.Path),
+			declared,
+			varsByPipeline[node.PipelineUUID],
+			upstreamParts,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("fingerprint: asset %s: %w", node.AssetName, err)
+		}
+		results[assetID] = result
+	}
+	return results, nil
+}
+
 func (e *Engine) fingerprintAsset(asset *pipeline.Asset, p *pipeline.Pipeline, pipelineDir string, declared map[string]struct{}, vars Vars, byName map[string]Result) (Result, error) {
+	return e.fingerprintAssetWithUpstreams(
+		asset,
+		p,
+		pipelineDir,
+		declared,
+		vars,
+		upstreamHashParts(asset, byName),
+	)
+}
+
+func (e *Engine) fingerprintAssetWithUpstreams(
+	asset *pipeline.Asset,
+	p *pipeline.Pipeline,
+	pipelineDir string,
+	declared map[string]struct{},
+	vars Vars,
+	upstreamParts []string,
+) (Result, error) {
 	content := assetContent(asset)
 	kind := assetKind(asset)
 
@@ -210,7 +270,6 @@ func (e *Engine) fingerprintAsset(asset *pipeline.Asset, p *pipeline.Pipeline, p
 	}
 	consumedVarsHash := VarsHash(vars, consumed)
 
-	upstreamParts := upstreamHashParts(asset, byName)
 	parts := append([]string{Version, string(ownContent), consumedVarsHash}, upstreamParts...)
 	full := Fingerprint(Version + ":" + hashHex(parts...))
 
@@ -220,6 +279,72 @@ func (e *Engine) fingerprintAsset(asset *pipeline.Asset, p *pipeline.Pipeline, p
 		ConsumedVars:     consumed,
 		ConsumedVarsHash: consumedVarsHash,
 	}, nil
+}
+
+func workspaceUpstreamHashParts(edges []dependencygraph.Edge, results map[string]Result) []string {
+	parts := make([]string, 0, len(edges))
+	for _, edge := range edges {
+		if edge.Mode == pipeline.UpstreamModeSymbolic {
+			continue
+		}
+		if edge.Resolved {
+			if result, ok := results[edge.ProducerID]; ok {
+				parts = append(parts, "up:"+string(result.FP))
+				continue
+			}
+		}
+		parts = append(parts, "ext:"+edge.Type+":"+edge.Value)
+	}
+	sort.Strings(parts)
+	return parts
+}
+
+func workspaceTopoSort(graph dependencygraph.Graph) ([]string, error) {
+	assetIDs := make([]string, 0, len(graph.Nodes))
+	for assetID := range graph.Nodes {
+		assetIDs = append(assetIDs, assetID)
+	}
+	sort.Strings(assetIDs)
+
+	const (
+		workspaceUnvisited = iota
+		workspaceVisiting
+		workspaceDone
+	)
+	state := make(map[string]int, len(assetIDs))
+	ordered := make([]string, 0, len(assetIDs))
+	var visit func(string) error
+	visit = func(assetID string) error {
+		switch state[assetID] {
+		case workspaceDone:
+			return nil
+		case workspaceVisiting:
+			return fmt.Errorf("fingerprint: workspace dependency cycle through asset %q", assetID)
+		}
+		state[assetID] = workspaceVisiting
+		upstreamIDs := make([]string, 0, len(graph.EdgesByConsumer[assetID]))
+		for _, edge := range graph.EdgesByConsumer[assetID] {
+			if edge.Mode == pipeline.UpstreamModeSymbolic || !edge.Resolved || graph.Nodes[edge.ProducerID] == nil {
+				continue
+			}
+			upstreamIDs = append(upstreamIDs, edge.ProducerID)
+		}
+		sort.Strings(upstreamIDs)
+		for _, upstreamID := range upstreamIDs {
+			if err := visit(upstreamID); err != nil {
+				return err
+			}
+		}
+		state[assetID] = workspaceDone
+		ordered = append(ordered, assetID)
+		return nil
+	}
+	for _, assetID := range assetIDs {
+		if err := visit(assetID); err != nil {
+			return nil, err
+		}
+	}
+	return ordered, nil
 }
 
 // AchievedFingerprints computes the fingerprint of the data each just-succeeded
@@ -266,6 +391,39 @@ func (e *Engine) AchievedFingerprintsByConsumer(
 	if p == nil {
 		return nil, fmt.Errorf("fingerprint: pipeline is nil")
 	}
+	inPipeline := make(map[string]*pipeline.Asset, len(p.Assets))
+	for _, asset := range p.Assets {
+		inPipeline[asset.Name] = asset
+	}
+	return e.AchievedFingerprintsByConsumerResolved(
+		p,
+		targets,
+		succeeded,
+		func(consumerAssetID string, upstream pipeline.Upstream) (string, bool, bool) {
+			upstreamAsset, ok := inPipeline[upstream.Value]
+			if !ok {
+				return "", false, false
+			}
+			return identity.AssetID(strings.TrimSpace(p.LegacyID), upstream.Value), isSourceAsset(upstreamAsset), true
+		},
+		latestAchieved,
+	)
+}
+
+// AchievedFingerprintsByConsumerResolved extends read-set attribution to
+// producers outside the executed pipeline. resolveUpstream maps each full edge
+// to its stable producer ID; external producers then contribute the exact
+// writer fingerprint captured before the consumer task began.
+func (e *Engine) AchievedFingerprintsByConsumerResolved(
+	p *pipeline.Pipeline,
+	targets map[string]Result,
+	succeeded map[string]bool,
+	resolveUpstream func(consumerAssetID string, upstream pipeline.Upstream) (producerAssetID string, source bool, ok bool),
+	latestAchieved func(consumerAssetID, upstreamAssetID string) (Fingerprint, bool),
+) (map[string]Fingerprint, error) {
+	if p == nil {
+		return nil, fmt.Errorf("fingerprint: pipeline is nil")
+	}
 	pipelineUUID := strings.TrimSpace(p.LegacyID)
 	if pipelineUUID == "" {
 		return nil, fmt.Errorf("fingerprint: pipeline %q has no stable id", p.Name)
@@ -274,11 +432,6 @@ func (e *Engine) AchievedFingerprintsByConsumer(
 	if err != nil {
 		return nil, err
 	}
-	inPipeline := make(map[string]*pipeline.Asset, len(p.Assets))
-	for _, asset := range p.Assets {
-		inPipeline[asset.Name] = asset
-	}
-
 	achieved := make(map[string]Fingerprint, len(ordered))
 	for _, asset := range ordered {
 		assetID := identity.AssetID(pipelineUUID, asset.Name)
@@ -294,13 +447,12 @@ func (e *Engine) AchievedFingerprintsByConsumer(
 			if upstream.Mode == pipeline.UpstreamModeSymbolic {
 				continue
 			}
-			upstreamAsset, ok := inPipeline[upstream.Value]
-			if !ok {
+			upID, source, resolved := resolveUpstream(assetID, upstream)
+			if !resolved || strings.TrimSpace(upID) == "" {
 				parts = append(parts, "ext:"+upstream.Type+":"+upstream.Value)
 				continue
 			}
-			upID := identity.AssetID(pipelineUUID, upstream.Value)
-			if isSourceAsset(upstreamAsset) {
+			if source {
 				// Source assets describe data maintained outside Renart. They never
 				// receive a materialization fact, so the declaration fingerprint is
 				// the exact read contract for an in-pipeline consumer. This lets a

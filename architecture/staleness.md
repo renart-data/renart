@@ -68,6 +68,12 @@ Python: H(fp_version ‖ file_bytes ‖ lockfile_hash ‖ shared_dir_hash ‖ co
 - **Symbolic dependencies are lineage-only.** They do not participate in
   topological ordering, target fingerprints, or achieved read fingerprints.
   Full dependencies retain all three behaviors.
+- **Full cross-pipeline dependencies use one workspace DAG.** The producer's
+  current fingerprint contributes to the consumer exactly like an in-pipeline
+  upstream, while each pipeline still exposes only its own local asset status
+  list. Producer saves and target-write events recompute cached downstream
+  pipelines and publish their normal staleness SSE updates. Symbolic edges are
+  excluded from both propagation and reverse invalidation.
 - **Stability guard:** `fingerprint/golden_test.go` fingerprints the committed
   fixture project against `testdata/fixture-golden.json` on every test run.
   Intentional algorithm changes bump `fingerprint.Version` and regenerate with
@@ -126,6 +132,20 @@ immediately before the Go-side loader writes it. The recorder requires that
 claim (or the already-committed matching fact during replay) before granting
 coverage. A failed or cancelled claimed write becomes `dirty`; active and dirty
 claims make the previous writer unavailable so freshness fails closed.
+
+Reviewed manual plans bind every selected full cross-pipeline dependency to the
+same-environment producer asset, current workspace fingerprint, exact physical
+target, variables hash, writer generation, completion, and required coverage.
+Only Renart-observed latest-writer and coverage facts can satisfy this
+prerequisite; table existence and unobserved Bruin CLI runs are never promoted
+to freshness evidence. The binding is persisted in the version-three run plan,
+revalidated while the execution target snapshot is created, and queried once
+more immediately before the consumer task starts. That final query captures the
+exact external writer in the consumer's read set. Any edit, rewrite, ambiguity,
+active/dirty target claim, variable mismatch, or interval gap stops the task
+before its own target is claimed. Symbolic dependencies never create a runtime
+prerequisite. Snapshot-backed and scheduled cross-pipeline admission remain
+blocked until the deployment-manifest and durable-waiting phase is complete.
 
 A full refresh remains paired with its requested run window. For an
 interval-aware asset it replaces prior interval coverage with that window; it

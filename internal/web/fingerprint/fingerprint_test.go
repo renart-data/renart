@@ -7,6 +7,8 @@ import (
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"renart/internal/web/dependencygraph"
 )
 
 func sqlAsset(name, content string, upstreams ...string) *pipeline.Asset {
@@ -52,6 +54,25 @@ func testPipeline(assets ...*pipeline.Asset) *pipeline.Pipeline {
 func dagOf(t *testing.T, p *pipeline.Pipeline, vars Vars) map[string]Result {
 	t.Helper()
 	results, err := NewEngine().DAG(p, vars)
+	require.NoError(t, err)
+	return results
+}
+
+func workspaceDAGOf(t *testing.T, pipelines ...*pipeline.Pipeline) map[string]Result {
+	t.Helper()
+	inputs := make([]dependencygraph.PipelineInput, 0, len(pipelines))
+	vars := make(map[string]Vars, len(pipelines))
+	for _, pl := range pipelines {
+		inputs = append(inputs, dependencygraph.PipelineInput{
+			UUID:   pl.LegacyID,
+			ID:     pl.LegacyID,
+			Name:   pl.Name,
+			Path:   filepath.Dir(pl.DefinitionFile.Path),
+			Parsed: pl,
+		})
+		vars[pl.LegacyID] = EffectiveVars(pl, nil)
+	}
+	results, err := NewEngine().WorkspaceDAG(dependencygraph.Resolve(inputs), vars)
 	require.NoError(t, err)
 	return results
 }
@@ -137,6 +158,99 @@ func TestUpstreamEditCascadesDownstreamOnly(t *testing.T) {
 	// Downstream own-content stays put: the staleness service uses this to
 	// distinguish stale_edited from stale_upstream.
 	assert.Equal(t, before["pipeline-uuid:b"].OwnContent, after["pipeline-uuid:b"].OwnContent)
+}
+
+func TestWorkspaceDAGPropagatesFullURIDependencyAcrossPipelines(t *testing.T) {
+	t.Parallel()
+	build := func(producerSQL string) map[string]Result {
+		producer := testPipeline(sqlAsset("raw.orders", producerSQL))
+		producer.LegacyID = "producer-uuid"
+		producer.Name = "producer"
+		producer.DefinitionFile.Path = "/workspace/producer/pipeline.yml"
+		producer.Assets[0].URI = "duckdb://warehouse/raw/orders"
+
+		consumerAsset := sqlAsset("analytics.orders", "select * from raw.orders")
+		consumerAsset.Upstreams = []pipeline.Upstream{{
+			Type: "uri", Value: producer.Assets[0].URI,
+		}}
+		consumer := testPipeline(consumerAsset, sqlAsset("unrelated", "select 1"))
+		consumer.LegacyID = "consumer-uuid"
+		consumer.Name = "consumer"
+		consumer.DefinitionFile.Path = "/workspace/consumer/pipeline.yml"
+
+		return workspaceDAGOf(t, producer, consumer)
+	}
+
+	before := build("select 1 as id")
+	after := build("select 1 as id, 2 as version")
+	assert.NotEqual(t, before["producer-uuid:raw.orders"].FP, after["producer-uuid:raw.orders"].FP)
+	assert.NotEqual(t, before["consumer-uuid:analytics.orders"].FP, after["consumer-uuid:analytics.orders"].FP)
+	assert.Equal(t, before["consumer-uuid:unrelated"].FP, after["consumer-uuid:unrelated"].FP)
+}
+
+func TestWorkspaceDAGIgnoresSymbolicURIDependency(t *testing.T) {
+	t.Parallel()
+	build := func(producerSQL string) map[string]Result {
+		producer := testPipeline(sqlAsset("raw.orders", producerSQL))
+		producer.LegacyID = "producer-uuid"
+		producer.Assets[0].URI = "duckdb://warehouse/raw/orders"
+		consumerAsset := sqlAsset("analytics.orders", "select 1")
+		consumerAsset.Upstreams = []pipeline.Upstream{{
+			Type: "uri", Value: producer.Assets[0].URI, Mode: pipeline.UpstreamModeSymbolic,
+		}}
+		consumer := testPipeline(consumerAsset)
+		consumer.LegacyID = "consumer-uuid"
+		return workspaceDAGOf(t, producer, consumer)
+	}
+
+	before := build("select 1")
+	after := build("select 2")
+	assert.NotEqual(t, before["producer-uuid:raw.orders"].FP, after["producer-uuid:raw.orders"].FP)
+	assert.Equal(t, before["consumer-uuid:analytics.orders"].FP, after["consumer-uuid:analytics.orders"].FP)
+}
+
+func TestAchievedFingerprintUsesCapturedCrossPipelineWriter(t *testing.T) {
+	t.Parallel()
+	producer := testPipeline(sqlAsset("raw.orders", "select 1 as id"))
+	producer.LegacyID = "producer-uuid"
+	producer.Assets[0].URI = "duckdb://warehouse/raw/orders"
+	consumerAsset := sqlAsset("analytics.orders", "select * from raw.orders")
+	consumerAsset.Upstreams = []pipeline.Upstream{{Type: "uri", Value: producer.Assets[0].URI}}
+	consumer := testPipeline(consumerAsset)
+	consumer.LegacyID = "consumer-uuid"
+	graph := dependencygraph.Resolve([]dependencygraph.PipelineInput{
+		{UUID: producer.LegacyID, Parsed: producer},
+		{UUID: consumer.LegacyID, Parsed: consumer},
+	})
+	engine := NewEngine()
+	targets, err := engine.WorkspaceDAG(graph, map[string]Vars{
+		producer.LegacyID: EffectiveVars(producer, nil),
+		consumer.LegacyID: EffectiveVars(consumer, nil),
+	})
+	require.NoError(t, err)
+	producerID := "producer-uuid:raw.orders"
+	consumerID := "consumer-uuid:analytics.orders"
+	achieved, err := engine.AchievedFingerprintsByConsumerResolved(
+		consumer,
+		targets,
+		map[string]bool{consumerID: true},
+		func(string, pipeline.Upstream) (string, bool, bool) { return producerID, false, true },
+		func(_, upstreamID string) (Fingerprint, bool) {
+			return targets[upstreamID].FP, true
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, targets[consumerID].FP, achieved[consumerID])
+
+	stale, err := engine.AchievedFingerprintsByConsumerResolved(
+		consumer,
+		targets,
+		map[string]bool{consumerID: true},
+		func(string, pipeline.Upstream) (string, bool, bool) { return producerID, false, true },
+		func(_, _ string) (Fingerprint, bool) { return "v3:stale-producer", true },
+	)
+	require.NoError(t, err)
+	assert.NotEqual(t, targets[consumerID].FP, stale[consumerID])
 }
 
 func TestSymbolicDependenciesDoNotAffectFingerprintsOrOrdering(t *testing.T) {

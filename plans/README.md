@@ -12,7 +12,7 @@ the original.
 | --- | --- |
 | [agentic-notebooks.md](agentic-notebooks.md) | research proposal — staged native notebook agent, safe tool/change-set foundation, and external-agent bridge option |
 | [asset-name-path-independence.md](asset-name-path-independence.md) | design plan — make Bruin's explicit asset name independent from the Git definition path, without introducing a physical-output alias |
-| [cross-pipeline-dependencies.md](cross-pipeline-dependencies.md) | Phase 1 implemented — Bruin-compatible URI authoring, validation, and lineage; workspace freshness and schedule prerequisites remain |
+| [cross-pipeline-dependencies.md](cross-pipeline-dependencies.md) | Phase 2 core implemented — workspace freshness and reviewed manual prerequisites ship; two-pipeline live coverage plus deployment/schedule prerequisites remain |
 | [dbt-assets.md](dbt-assets.md) | evaluation — enabling renart intelligence on existing dbt projects |
 | [execution-parallelism.md](execution-parallelism.md) | core + native DuckDB concurrency implemented — operator audits and wait telemetry remain |
 | [materialization-reach.md](materialization-reach.md) | proposed reach — guided advanced SQL modes, coverage timeline, Python pre-run diagnostic |

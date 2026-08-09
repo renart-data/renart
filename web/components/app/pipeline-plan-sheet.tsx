@@ -784,6 +784,7 @@ function RunPlanReview({
     <div className="mx-auto w-full max-w-5xl space-y-5 p-5">
       <PlanIssues title="Blockers" issues={plan.readiness.blockers} destructive />
       <PlanIssues title="Warnings" issues={plan.readiness.warnings} />
+      <PlanPrerequisites plan={plan} />
       {plan.readiness.active_run_id ? (
         <Alert variant="destructive">
           <ShieldAlert />
@@ -884,6 +885,7 @@ function DeployPlanReview({
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-5">
       <PlanIssues title="Blockers" issues={plan.readiness.blockers} destructive />
       <PlanIssues title="Warnings" issues={plan.readiness.warnings} />
+      <PlanPrerequisites plan={plan} />
 
       {deployment ? (
         <Alert>
@@ -1350,6 +1352,83 @@ function RunPlanDetails({ plan }: { plan: PipelinePlan }) {
         execution starts.
       </p>
     </div>
+  );
+}
+
+function PlanPrerequisites({ plan }: { plan: PipelinePlan }) {
+  if (plan.prerequisites.length === 0) return null;
+  const ready = plan.prerequisites.filter((item) => item.status === "ready").length;
+
+  return (
+    <section aria-labelledby="pipeline-plan-prerequisites" className="space-y-2">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h3 id="pipeline-plan-prerequisites" className="text-sm font-medium">
+            External prerequisites
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            Renart-observed producer outputs required before this pipeline can read them.
+          </p>
+        </div>
+        <Badge variant={ready === plan.prerequisites.length ? "outline" : "destructive"} size="xs">
+          {ready}/{plan.prerequisites.length} ready
+        </Badge>
+      </div>
+      <div className="divide-y rounded-lg border">
+        {plan.prerequisites.map((item) => {
+          const isReady = item.status === "ready";
+          const requiredSeconds = item.required_seconds ?? 0;
+          const coveredSeconds = item.covered_seconds ?? 0;
+          const coverage =
+            requiredSeconds > 0
+              ? Math.min(100, Math.round((coveredSeconds / requiredSeconds) * 100))
+              : null;
+          return (
+            <div
+              key={`${item.consumer_asset_id}:${item.uri}:${item.producer_asset_id}`}
+              className="flex min-w-0 items-start gap-2.5 px-3 py-2.5"
+            >
+              {isReady ? (
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                  {item.producer_pipeline_id ? (
+                    <Link
+                      to="/pipelines/$pipelineId/canvas"
+                      params={{ pipelineId: item.producer_pipeline_id }}
+                      className="truncate font-medium hover:underline"
+                    >
+                      {item.producer_pipeline_name || item.producer_asset_name}
+                    </Link>
+                  ) : (
+                    <span className="truncate font-medium">
+                      {item.producer_asset_name || "Unresolved producer"}
+                    </span>
+                  )}
+                  {item.producer_asset_name ? (
+                    <span className="truncate text-xs text-muted-foreground">
+                      {item.producer_asset_name}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="truncate text-xs text-muted-foreground" title={item.uri}>
+                  {item.uri}
+                </p>
+                <p className={cn("mt-1 text-xs", !isReady && "text-destructive")}>{item.reason}</p>
+              </div>
+              {coverage !== null ? (
+                <Badge variant="muted" size="xs" className="shrink-0">
+                  {coverage}% covered
+                </Badge>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

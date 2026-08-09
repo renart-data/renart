@@ -160,6 +160,15 @@ func validateExecutionTargetSnapshot(snapshot ExecutionTargetSnapshot) error {
 				if strings.TrimSpace(upstream.Value) == "" || strings.TrimSpace(upstream.Value) != upstream.Value {
 					return fmt.Errorf("%w: entry %q upstream %d requires a canonical value", ErrInvalidExecutionTargetSnapshot, assetName, index)
 				}
+				if upstream.Mode != "" && upstream.Mode != "full" && upstream.Mode != "symbolic" {
+					return fmt.Errorf("%w: entry %q upstream %d has an invalid mode", ErrInvalidExecutionTargetSnapshot, assetName, index)
+				}
+				if upstream.Required &&
+					(strings.TrimSpace(upstream.ResolvedAssetID) == "" || strings.TrimSpace(upstream.TargetIdentity) == "" ||
+						strings.TrimSpace(upstream.ExpectedFingerprint) == "" || strings.TrimSpace(upstream.VarsHash) == "" ||
+						upstream.TargetGeneration < 1 || strings.TrimSpace(upstream.CompletionID) == "") {
+					return fmt.Errorf("%w: entry %q upstream %d has incomplete prerequisite evidence", ErrInvalidExecutionTargetSnapshot, assetName, index)
+				}
 			}
 		}
 	}

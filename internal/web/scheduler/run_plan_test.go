@@ -40,6 +40,46 @@ func TestPipelineRunPlanV3StrictRoundTrip(t *testing.T) {
 	assert.Equal(t, plan, persisted)
 }
 
+func TestPipelineRunPlanV3RetainsReviewedCrossPipelinePrerequisite(t *testing.T) {
+	t.Parallel()
+	plan := validPipelineRunPlanV3(t)
+	plan.Prerequisites = []PipelineRunPrerequisite{{
+		Status: "ready", Reason: "Renart observed the producer",
+		ConsumerAssetID: "consumer:analytics.orders", ConsumerAssetName: "analytics.orders",
+		URI:                "duckdb://warehouse/raw/orders",
+		ProducerPipelineID: "raw", ProducerPipelineUUID: "producer",
+		ProducerPipelineName: "raw", ProducerAssetID: "producer:raw.orders", ProducerAssetName: "raw.orders",
+		Environment:   "default",
+		RequiredStart: "2026-07-17T11:00:00Z", RequiredEnd: "2026-07-17T12:00:00Z",
+		ExpectedFingerprint: "v3:producer", TargetIdentity: strings.Repeat("a", 64), VarsHash: strings.Repeat("b", 64),
+		TargetGeneration: 3, WriterCompletionID: "producer-run", WriterCompletionOrdinal: 1,
+		WriterMaterializedAt: "2026-07-17T11:30:00Z", RequiredSeconds: 3600, CoveredSeconds: 3600,
+	}}
+	plan.Artifact = pipelineRunPlanArtifact(t, plan)
+
+	body, err := marshalPipelineRunPlan(plan)
+	require.NoError(t, err)
+	persisted, err := unmarshalPipelineRunPlan(plan.Version, body)
+	require.NoError(t, err)
+	assert.Equal(t, plan.Prerequisites, persisted.Prerequisites)
+
+	persisted.Prerequisites[0].TargetGeneration++
+	require.ErrorContains(t, persisted.validate(), "artifact prerequisites")
+}
+
+func TestBlockedPipelineRunPlanMayRetainUnreadyPrerequisite(t *testing.T) {
+	t.Parallel()
+	plan := validPipelineRunPlanV3(t)
+	plan.Blocked = true
+	plan.Blockers = []string{"producer is not current"}
+	plan.Prerequisites = []PipelineRunPrerequisite{{
+		Status: "blocked", Reason: "producer is not current",
+		ConsumerAssetID: "consumer:analytics.orders", URI: "duckdb://warehouse/raw/orders",
+	}}
+	plan.Artifact = pipelineRunPlanArtifact(t, plan)
+	require.NoError(t, plan.validate())
+}
+
 func TestPipelineRunPlanV3AllowsWarehouseRelationClaims(t *testing.T) {
 	t.Parallel()
 
@@ -379,6 +419,7 @@ func pipelineRunPlanArtifact(t testing.TB, plan PipelineRunPlan) json.RawMessage
 	if plan.Version >= PipelineRunPlanVersionV3 {
 		artifact["context"].(map[string]any)["max_active_steps"] = plan.MaxActiveSteps
 		artifact["execution_contracts"] = plan.ExecutionContracts
+		artifact["prerequisites"] = plan.Prerequisites
 	}
 	body, err := json.Marshal(artifact)
 	require.NoError(t, err)

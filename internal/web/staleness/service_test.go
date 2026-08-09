@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"renart/internal/web/bus"
+	"renart/internal/web/dependencygraph"
 	"renart/internal/web/fingerprint"
 	"renart/internal/web/identity"
 	"renart/internal/web/matlog"
@@ -96,6 +97,96 @@ func TestEvaluateUsesResolvedPipelineWithoutMutatingCachedPanelState(t *testing.
 	defer f.service.mu.Unlock()
 	assert.Empty(t, f.service.selections)
 	assert.Empty(t, f.service.snapshots)
+}
+
+func TestWorkspaceFingerprintMakesConsumerStaleAfterCrossPipelineProducerEdit(t *testing.T) {
+	schedStore, err := scheduler.OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = schedStore.Close() })
+	store := matlog.NewStore(schedStore.DB())
+	engine := fingerprint.NewEngine()
+
+	producerAsset := sqlAsset("raw.orders", "select 1 as id")
+	producerAsset.URI = "duckdb://warehouse/raw/orders"
+	producer := &pipeline.Pipeline{
+		LegacyID: "producer", Name: "producer",
+		DefinitionFile: pipeline.DefinitionFile{Path: "/w/producer/pipeline.yml"},
+		Assets:         []*pipeline.Asset{producerAsset},
+	}
+	consumerAsset := sqlAsset("analytics.orders", "select * from raw.orders")
+	consumerAsset.Upstreams = []pipeline.Upstream{{Type: "uri", Value: producerAsset.URI}}
+	consumer := &pipeline.Pipeline{
+		LegacyID: "consumer", Name: "consumer",
+		DefinitionFile: pipeline.DefinitionFile{Path: "/w/consumer/pipeline.yml"},
+		Assets:         []*pipeline.Asset{consumerAsset},
+	}
+	resolveGraph := func(_ context.Context, overrides map[string]*pipeline.Pipeline) (dependencygraph.Graph, error) {
+		selectedProducer := producer
+		selectedConsumer := consumer
+		if overrides[producer.LegacyID] != nil {
+			selectedProducer = overrides[producer.LegacyID]
+		}
+		if overrides[consumer.LegacyID] != nil {
+			selectedConsumer = overrides[consumer.LegacyID]
+		}
+		return dependencygraph.Resolve([]dependencygraph.PipelineInput{
+			{UUID: producer.LegacyID, ID: "producer", Name: producer.Name, Parsed: selectedProducer},
+			{UUID: consumer.LegacyID, ID: "consumer", Name: consumer.Name, Parsed: selectedConsumer},
+		}), nil
+	}
+	pushed := make(chan any, 1)
+	events := bus.New()
+	service := New(Dependencies{
+		Store: store, Engine: engine,
+		Resolve: func(_ context.Context, uuid string) (*pipeline.Pipeline, error) {
+			if uuid == consumer.LegacyID {
+				return consumer, nil
+			}
+			return producer, nil
+		},
+		ResolveGraph: resolveGraph,
+		Publish:      func(event any) { pushed <- event },
+	})
+	service.AttachBus(events)
+
+	graph, err := resolveGraph(context.Background(), nil)
+	require.NoError(t, err)
+	targets, err := engine.WorkspaceDAG(graph, map[string]fingerprint.Vars{
+		producer.LegacyID: {}, consumer.LegacyID: {},
+	})
+	require.NoError(t, err)
+	consumerID := identity.AssetID(consumer.LegacyID, consumerAsset.Name)
+	require.NoError(t, store.Record(context.Background(), matlog.Materialization{
+		AssetID: consumerID, Environment: "dev", Fingerprint: string(targets[consumerID].FP),
+		OwnContent: string(targets[consumerID].OwnContent), VarsHash: fingerprint.AllVarsHash(fingerprint.EffectiveVars(consumer, nil)),
+		RunID: "consumer-run", MaterializedAt: time.Now().UTC(),
+	}))
+
+	selection := Selection{PipelineUUID: consumer.LegacyID, Environment: "dev"}
+	before, err := service.Snapshot(context.Background(), selection)
+	require.NoError(t, err)
+	require.Len(t, before.Assets, 1)
+	assert.Equal(t, StatusFresh, before.Assets[0].Status)
+
+	producerAsset.ExecutableFile.Content = "select 1 as id, 2 as version"
+	events.EmitAssetSaved(bus.AssetSaved{
+		PipelineUUID: producer.LegacyID,
+		AssetID:      identity.AssetID(producer.LegacyID, producerAsset.Name),
+		AssetName:    producerAsset.Name,
+	})
+	select {
+	case raw := <-pushed:
+		event, ok := raw.(map[string]any)
+		require.True(t, ok)
+		assert.Equal(t, consumer.LegacyID, event["pipeline_uuid"])
+		statuses, ok := event["assets"].([]AssetStatus)
+		require.True(t, ok)
+		require.Len(t, statuses, 1)
+		assert.Equal(t, StatusStaleUpstream, statuses[0].Status)
+		assert.NotEqual(t, before.DataStateToken, event["data_state_token"])
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for downstream staleness invalidation")
+	}
 }
 
 // recordRun simulates a completed run exactly as the matlog recorder does: it

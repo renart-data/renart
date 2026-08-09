@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"renart/internal/web/dependencygraph"
 	"renart/internal/web/fingerprint"
 	"renart/internal/web/identity"
 )
@@ -159,6 +160,79 @@ func TestExecutionTargetSnapshotRequiresOperatorEvidenceForPythonTable(t *testin
 	assert.Equal(t, AssetRenderFidelityExact, entry.TargetFidelity)
 	assert.NotEmpty(t, entry.TargetIdentity)
 	assert.True(t, entry.TargetWriteEvidenceRequired)
+}
+
+func TestExecutionTargetSnapshotBindsReviewedCrossPipelinePrerequisite(t *testing.T) {
+	root := t.TempDir()
+	producerAsset := materializedTargetAsset(pipeline.AssetTypeDuckDBQuery, "raw.orders", "warehouse")
+	producerAsset.URI = "duckdb://warehouse/raw/orders"
+	producerAsset.ExecutableFile = pipeline.ExecutableFile{Content: "select 1 as id"}
+	producer := &pipeline.Pipeline{
+		LegacyID: "producer", Name: "raw",
+		DefinitionFile: pipeline.DefinitionFile{Path: filepath.Join(root, "raw", "pipeline.yml")},
+		Assets:         []*pipeline.Asset{producerAsset},
+	}
+	consumerAsset := materializedTargetAsset(pipeline.AssetTypeDuckDBQuery, "analytics.orders", "warehouse")
+	consumerAsset.ExecutableFile = pipeline.ExecutableFile{Content: "select * from raw.orders"}
+	consumerAsset.Upstreams = []pipeline.Upstream{{Type: "uri", Value: producerAsset.URI}}
+	consumer := &pipeline.Pipeline{
+		LegacyID: "consumer", Name: "analytics",
+		DefinitionFile: pipeline.DefinitionFile{Path: filepath.Join(root, "analytics", "pipeline.yml")},
+		Assets:         []*pipeline.Asset{consumerAsset},
+	}
+	resolveGraph := func(_ context.Context, overrides map[string]*pipeline.Pipeline) (dependencygraph.Graph, error) {
+		selectedConsumer := consumer
+		if overrides[consumer.LegacyID] != nil {
+			selectedConsumer = overrides[consumer.LegacyID]
+		}
+		return dependencygraph.Resolve([]dependencygraph.PipelineInput{
+			{UUID: producer.LegacyID, ID: "raw", Name: producer.Name, Parsed: producer},
+			{UUID: consumer.LegacyID, ID: "analytics", Name: consumer.Name, Parsed: selectedConsumer},
+		}), nil
+	}
+	cfg := &config.Config{
+		SelectedEnvironmentName: "default",
+		SelectedEnvironment: &config.Environment{Connections: &config.Connections{
+			DuckDB: []config.DuckDBConnection{{ConnectionMetadata: targetMetadata("warehouse"), Path: filepath.Join(root, "warehouse.duckdb")}},
+		}},
+	}
+	executor := NewHybridBruinExecutor(root, "", nil, nil)
+	executor.SetDependencyGraphResolver(resolveGraph)
+	graph, err := resolveGraph(context.Background(), nil)
+	require.NoError(t, err)
+	results, err := executor.fingerprintEngine.WorkspaceDAG(graph, workspaceFingerprintVars(graph, consumer.LegacyID, nil))
+	require.NoError(t, err)
+	producerID := identity.AssetID(producer.LegacyID, producerAsset.Name)
+	producerTarget := resolveAssetPhysicalTarget(root, &directPipelineInfo{Pipeline: producer, Asset: producerAsset, Config: cfg})
+	require.Equal(t, AssetRenderFidelityExact, producerTarget.Fidelity)
+	prerequisite := PipelinePlanPrerequisite{
+		Status:            PipelinePlanPrerequisiteReady,
+		ConsumerAssetID:   identity.AssetID(consumer.LegacyID, consumerAsset.Name),
+		ConsumerAssetName: consumerAsset.Name, URI: producerAsset.URI,
+		ProducerAssetID: producerID, Environment: "default",
+		ExpectedFingerprint: string(results[producerID].FP), TargetIdentity: producerTarget.Identity,
+		VarsHash:         fingerprint.AllVarsHash(fingerprint.EffectiveVars(producer, nil)),
+		TargetGeneration: 1, WriterCompletionID: "producer-run", WriterCompletionOrdinal: 0,
+	}
+
+	snapshot, err := executor.resolveExecutionTargetSnapshotForReviewedSelection(
+		consumer, cfg, consumer.Assets, consumer.Assets, []PipelinePlanPrerequisite{prerequisite},
+	)
+	require.NoError(t, err)
+	entry := snapshot.Entries[consumerAsset.Name]
+	require.Len(t, entry.Upstreams, 1)
+	assert.True(t, entry.Upstreams[0].Required)
+	assert.Equal(t, producerID, entry.Upstreams[0].ResolvedAssetID)
+	assert.Equal(t, prerequisite.ExpectedFingerprint, entry.Upstreams[0].ExpectedFingerprint)
+	local, err := executor.fingerprintEngine.DAG(consumer, fingerprint.EffectiveVars(consumer, nil))
+	require.NoError(t, err)
+	assert.NotEqual(t, local[entry.AssetID].FP, fingerprint.Fingerprint(entry.Fingerprint))
+
+	producerAsset.ExecutableFile.Content = "select 1 as id, 2 as version"
+	_, err = executor.resolveExecutionTargetSnapshotForReviewedSelection(
+		consumer, cfg, consumer.Assets, consumer.Assets, []PipelinePlanPrerequisite{prerequisite},
+	)
+	assert.ErrorContains(t, err, "changed after plan confirmation")
 }
 
 func TestExecutionTargetSnapshotCallbackFailureStopsBeforeAnyTask(t *testing.T) {

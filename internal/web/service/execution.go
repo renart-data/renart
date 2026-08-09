@@ -246,7 +246,13 @@ func (s *ExecutionService) emitRunCompletedForSpec(ctx context.Context, spec Pip
 		for assetName, entry := range snapshot.Entries {
 			upstreams := make([]bus.ExecutionUpstreamSnapshot, 0, len(entry.Upstreams))
 			for _, upstream := range entry.Upstreams {
-				upstreams = append(upstreams, bus.ExecutionUpstreamSnapshot{Type: upstream.Type, Value: upstream.Value})
+				upstreams = append(upstreams, bus.ExecutionUpstreamSnapshot{
+					Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
+					ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
+					TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+					VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
+					CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
+				})
 			}
 			event.ExecutionTargets[assetName] = bus.ExecutionTargetSnapshotEntry{
 				AssetID:                     entry.AssetID,
@@ -1415,6 +1421,7 @@ type PipelineExecutionPlan struct {
 	SelectionMode  string
 	MaxActiveSteps int
 	Contracts      []PipelinePlanExecutionContract
+	Prerequisites  []PipelinePlanPrerequisite
 	Units          []PipelineExecutionUnit
 }
 
@@ -1819,6 +1826,7 @@ func (s *ExecutionService) MaterializePipelineRun(ctx context.Context, spec Pipe
 			[]PipelinePlanExecutionContract(nil),
 			spec.Plan.Contracts...,
 		)
+		request.Prerequisites = append([]PipelinePlanPrerequisite(nil), spec.Plan.Prerequisites...)
 		request.ExecutionUnits = append([]PipelineExecutionUnit(nil), spec.Plan.Units...)
 	}
 	output, runErr := s.deps.Executor.RunPipeline(ctx, request, onChunk)
@@ -2173,14 +2181,39 @@ func (o *pipelineRunObservation) captureUpstreamWriterSnapshot(assetName string)
 	}
 
 	targets := make([]string, 0, len(consumer.Upstreams))
-	upstreams := make(map[string]ExecutionTargetSnapshotEntry, len(consumer.Upstreams))
+	type expectedUpstream struct {
+		target   ExecutionTargetSnapshotEntry
+		reviewed ExecutionUpstreamSnapshot
+	}
+	upstreams := make(map[string]expectedUpstream, len(consumer.Upstreams))
 	seenTargets := make(map[string]struct{}, len(consumer.Upstreams))
 	for _, upstream := range consumer.Upstreams {
+		if upstream.Required {
+			if strings.TrimSpace(upstream.ResolvedAssetID) == "" ||
+				strings.TrimSpace(upstream.TargetIdentity) == "" ||
+				strings.TrimSpace(upstream.ExpectedFingerprint) == "" ||
+				strings.TrimSpace(upstream.VarsHash) == "" ||
+				upstream.TargetGeneration < 1 || strings.TrimSpace(upstream.CompletionID) == "" {
+				return nil, false, fmt.Errorf("capture upstream physical writers for %s: reviewed prerequisite is incomplete", assetName)
+			}
+			upstreams[upstream.ResolvedAssetID] = expectedUpstream{
+				target: ExecutionTargetSnapshotEntry{
+					AssetID: upstream.ResolvedAssetID, TargetIdentity: upstream.TargetIdentity,
+					TargetFidelity: AssetRenderFidelityExact,
+				},
+				reviewed: upstream,
+			}
+			if _, seen := seenTargets[upstream.TargetIdentity]; !seen {
+				seenTargets[upstream.TargetIdentity] = struct{}{}
+				targets = append(targets, upstream.TargetIdentity)
+			}
+			continue
+		}
 		entry, inPipeline := snapshot.Entries[upstream.Value]
 		if !inPipeline || entry.TargetFidelity != AssetRenderFidelityExact || entry.TargetIdentity == "" {
 			continue
 		}
-		upstreams[entry.AssetID] = entry
+		upstreams[entry.AssetID] = expectedUpstream{target: entry}
 		if _, seen := seenTargets[entry.TargetIdentity]; !seen {
 			seenTargets[entry.TargetIdentity] = struct{}{}
 			targets = append(targets, entry.TargetIdentity)
@@ -2195,8 +2228,24 @@ func (o *pipelineRunObservation) captureUpstreamWriterSnapshot(assetName string)
 		return nil, false, fmt.Errorf("capture upstream physical writers for %s: %w", assetName, err)
 	}
 	captured := make(map[string]bus.UpstreamWriterSnapshot, len(upstreams))
-	for upstreamID, target := range upstreams {
+	for upstreamID, expected := range upstreams {
+		target := expected.target
 		writer, ok := writers[target.TargetIdentity]
+		if expected.reviewed.Required {
+			reviewed := expected.reviewed
+			if !ok || writer.Ambiguous || writer.AssetID != upstreamID ||
+				writer.TargetIdentity != target.TargetIdentity ||
+				writer.Fingerprint != reviewed.ExpectedFingerprint || writer.VarsHash != reviewed.VarsHash ||
+				writer.TargetGeneration != reviewed.TargetGeneration ||
+				writer.CompletionID != reviewed.CompletionID ||
+				writer.CompletionOrdinal != reviewed.CompletionOrdinal {
+				return nil, false, fmt.Errorf(
+					"capture upstream physical writers for %s: cross-pipeline prerequisite %q changed before execution",
+					assetName,
+					reviewed.Value,
+				)
+			}
+		}
 		if !ok || writer.Ambiguous || writer.AssetID != upstreamID || writer.TargetIdentity != target.TargetIdentity {
 			continue
 		}
@@ -2535,7 +2584,11 @@ func schedulerExecutionTargetSnapshot(snapshot ExecutionTargetSnapshot) websched
 		upstreams := make([]webscheduler.ExecutionUpstreamSnapshot, 0, len(entry.Upstreams))
 		for _, upstream := range entry.Upstreams {
 			upstreams = append(upstreams, webscheduler.ExecutionUpstreamSnapshot{
-				Type: upstream.Type, Value: upstream.Value,
+				Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
+				ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
+				TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+				VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
+				CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
 			})
 		}
 		entries[assetName] = webscheduler.ExecutionTargetSnapshotEntry{

@@ -48,6 +48,7 @@ type RunPipelineRequest struct {
 	PlanVersion        int
 	MaxActiveSteps     int
 	ExecutionContracts []PipelinePlanExecutionContract
+	Prerequisites      []PipelinePlanPrerequisite
 	ExecutionUnits     []PipelineExecutionUnit
 	UnitEvent          func(PipelineExecutionUnitEvent) error
 	// OnExecutionUnitsResolved must succeed after a dynamic full-pipeline plan

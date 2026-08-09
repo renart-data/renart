@@ -208,6 +208,10 @@ func durablePipelineRunPlan(plan service.PipelinePlan, preview *scheduler.Pipeli
 	for _, contract := range plan.ExecutionContracts {
 		contracts = append(contracts, schedulerPipelineRunExecutionContract(contract))
 	}
+	prerequisites := make([]scheduler.PipelineRunPrerequisite, 0, len(plan.Prerequisites))
+	for _, prerequisite := range plan.Prerequisites {
+		prerequisites = append(prerequisites, schedulerPipelineRunPrerequisite(prerequisite))
+	}
 	return &scheduler.PipelineRunPlan{
 		Version: scheduler.PipelineRunPlanVersionV3,
 		PlanID:  plan.ID, PipelineID: plan.PipelineID, PipelineUUID: plan.PipelineUUID,
@@ -225,9 +229,28 @@ func durablePipelineRunPlan(plan service.PipelinePlan, preview *scheduler.Pipeli
 			Claims:    claims,
 		},
 		ExecutionContracts: contracts,
+		Prerequisites:      prerequisites,
 		ExecutionUnits:     units,
 		Preview:            preview,
 		Artifact:           artifact,
+	}
+}
+
+func schedulerPipelineRunPrerequisite(item service.PipelinePlanPrerequisite) scheduler.PipelineRunPrerequisite {
+	return scheduler.PipelineRunPrerequisite{
+		Status: item.Status, Reason: item.Reason,
+		ConsumerAssetID: item.ConsumerAssetID, ConsumerAssetName: item.ConsumerAssetName,
+		URI:                item.URI,
+		ProducerPipelineID: item.ProducerPipelineID, ProducerPipelineUUID: item.ProducerPipelineUUID,
+		ProducerPipelineName: item.ProducerPipelineName,
+		ProducerAssetID:      item.ProducerAssetID, ProducerAssetName: item.ProducerAssetName,
+		Environment: item.Environment, RequiredStart: item.RequiredStart, RequiredEnd: item.RequiredEnd,
+		ExpectedFingerprint: item.ExpectedFingerprint, TargetIdentity: item.TargetIdentity, VarsHash: item.VarsHash,
+		TargetGeneration: item.TargetGeneration, WriterRunID: item.WriterRunID,
+		WriterSnapshotVersionID: item.WriterSnapshotVersionID,
+		WriterCompletionID:      item.WriterCompletionID, WriterCompletionOrdinal: item.WriterCompletionOrdinal,
+		WriterMaterializedAt: item.WriterMaterializedAt,
+		CoveredSeconds:       item.CoveredSeconds, RequiredSeconds: item.RequiredSeconds,
 	}
 }
 
@@ -307,6 +330,9 @@ func (h *PipelinePlanAPI) confirmNeededPlanShrink(
 
 func sameNeededPlanNonDataIdentity(reviewed service.PipelinePlanReviewedIdentity, current service.PipelinePlan) bool {
 	if reviewed.PipelineUUID != current.PipelineUUID || reviewed.Source != current.Source {
+		return false
+	}
+	if !reflect.DeepEqual(reviewed.Prerequisites, current.Prerequisites) {
 		return false
 	}
 	reviewedContracts := make(map[string]service.PipelinePlanExecutionContract, len(reviewed.ExecutionContracts))

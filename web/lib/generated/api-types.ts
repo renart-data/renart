@@ -1022,6 +1022,7 @@ export type PipelinePlanReviewedIdentity = {
   source: AssetRenderSource;
   context: PipelinePlanContext;
   selection: PipelinePlanSelection;
+  prerequisites?: PipelinePlanPrerequisite[];
   resources: PipelinePlanResources;
   execution_contracts: PipelinePlanExecutionContract[];
   execution_units: PipelinePlanExecutionUnit[];
@@ -1102,6 +1103,33 @@ export type PipelinePlanExecutionUnit = {
   dependency_positions: number[];
 };
 
+export type PipelinePlanPrerequisite = {
+  status: string;
+  reason: string;
+  consumer_asset_id: string;
+  consumer_asset_name: string;
+  uri: string;
+  producer_pipeline_id: string;
+  producer_pipeline_uuid: string;
+  producer_pipeline_name: string;
+  producer_asset_id: string;
+  producer_asset_name: string;
+  environment: string;
+  required_start: string;
+  required_end: string;
+  expected_fingerprint: string;
+  target_identity?: string;
+  vars_hash: string;
+  target_generation?: number;
+  writer_run_id?: string;
+  writer_snapshot_version_id?: string;
+  writer_completion_id?: string;
+  writer_completion_ordinal?: number;
+  writer_materialized_at?: string;
+  covered_seconds?: number;
+  required_seconds?: number;
+};
+
 export type PipelinePlanResourceClaim = {
   kind: string;
   identity: string;
@@ -1139,6 +1167,7 @@ export type PipelinePlan = {
   context: PipelinePlanContext;
   readiness: PipelinePlanReadiness;
   selection: PipelinePlanSelection;
+  prerequisites: PipelinePlanPrerequisite[];
   resources: PipelinePlanResources;
   assets: PipelinePlanAsset[];
   execution_contracts: PipelinePlanExecutionContract[];

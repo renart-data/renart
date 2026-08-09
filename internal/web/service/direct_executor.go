@@ -30,6 +30,7 @@ type HybridBruinExecutor struct {
 	duckDBSessions                *duckdbsession.Manager
 	disableDuckDBFilesystemAccess bool
 	fingerprintEngine             *fingerprint.Engine
+	dependencyGraph               WorkspaceDependencyGraphResolver
 	workspaceBudget               *executiongraph.Budget
 	directTaskGate                func(context.Context, bruinscheduler.TaskInstance) error
 	// runRegistry tracks in-flight materializations across every run this
@@ -134,6 +135,12 @@ func (e *HybridBruinExecutor) SetFingerprintEngine(engine *fingerprint.Engine) {
 		engine = fingerprint.NewEngine()
 	}
 	e.fingerprintEngine = engine
+}
+
+// SetDependencyGraphResolver enables workspace-wide URI fingerprinting and
+// pre-task prerequisite revalidation for reviewed pipeline runs.
+func (e *HybridBruinExecutor) SetDependencyGraphResolver(resolver WorkspaceDependencyGraphResolver) {
+	e.dependencyGraph = resolver
 }
 
 func (e *HybridBruinExecutor) executionLogSink() ExecutionLogSink {

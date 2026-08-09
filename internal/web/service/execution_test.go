@@ -28,6 +28,56 @@ type stubTargetWriteStore struct {
 	dirtys []matlog.TargetWriteClaim
 }
 
+func TestPipelineRunObservationRequiresExactReviewedCrossPipelineWriter(t *testing.T) {
+	materializedAt := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	writer := matlog.LatestSuccessfulWriter{
+		TargetIdentity: "target", TargetGeneration: 7,
+		AssetID: "producer:raw.orders", Environment: "default",
+		Fingerprint: "v3:producer", VarsHash: "vars",
+		CompletionID: "producer-run", CompletionOrdinal: 2,
+		MaterializedAt: materializedAt,
+	}
+	store := &stubTargetWriteStore{latest: func(context.Context, []string) (map[string]matlog.LatestSuccessfulWriter, error) {
+		return map[string]matlog.LatestSuccessfulWriter{"target": writer}, nil
+	}}
+	observation := newPipelineRunObservation(nil)
+	observation.targetWrites = store
+	observation.targetWriteCtx = context.Background()
+	require.NoError(t, observation.captureExecutionTargets(ExecutionTargetSnapshot{
+		Version: ExecutionTargetSnapshotVersion,
+		Entries: map[string]ExecutionTargetSnapshotEntry{
+			"analytics.orders": {
+				AssetID: "consumer:analytics.orders",
+				Upstreams: []ExecutionUpstreamSnapshot{{
+					Type: "uri", Value: "duckdb://warehouse/raw/orders", Mode: "full",
+					ResolvedAssetID: writer.AssetID, Required: true,
+					TargetIdentity: writer.TargetIdentity, ExpectedFingerprint: writer.Fingerprint,
+					VarsHash: writer.VarsHash, TargetGeneration: writer.TargetGeneration,
+					CompletionID: writer.CompletionID, CompletionOrdinal: writer.CompletionOrdinal,
+				}},
+			},
+		},
+	}))
+
+	captured, present, err := observation.captureUpstreamWriterSnapshot("analytics.orders")
+	require.NoError(t, err)
+	assert.True(t, present)
+	require.Contains(t, captured, writer.AssetID)
+	assert.Equal(t, writer.TargetGeneration, captured[writer.AssetID].TargetGeneration)
+
+	changed := newPipelineRunObservation(nil)
+	changed.targetWrites = &stubTargetWriteStore{latest: func(context.Context, []string) (map[string]matlog.LatestSuccessfulWriter, error) {
+		newer := writer
+		newer.TargetGeneration++
+		newer.CompletionID = "newer-run"
+		return map[string]matlog.LatestSuccessfulWriter{"target": newer}, nil
+	}}
+	changed.targetWriteCtx = context.Background()
+	require.NoError(t, changed.captureExecutionTargets(observation.executionTargets))
+	_, _, err = changed.captureUpstreamWriterSnapshot("analytics.orders")
+	assert.ErrorContains(t, err, "changed before execution")
+}
+
 func (s *stubTargetWriteStore) LatestWriters(ctx context.Context, targets []string) (map[string]matlog.LatestSuccessfulWriter, error) {
 	if s.latest != nil {
 		return s.latest(ctx, targets)

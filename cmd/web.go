@@ -24,6 +24,7 @@ import (
 	webapi "renart/internal/web/api"
 	"renart/internal/web/bus"
 	"renart/internal/web/completion"
+	"renart/internal/web/dependencygraph"
 	"renart/internal/web/events"
 	"renart/internal/web/fingerprint"
 	webhttpapi "renart/internal/web/httpapi"
@@ -1012,6 +1013,18 @@ func (s *webServer) resolvePipelineByUUID(ctx context.Context, pipelineUUID stri
 		return s.newPipelineBuilder().CreatePipelineFromPath(ctx, absPath, pipeline.WithMutate())
 	}
 	return nil, fmt.Errorf("pipeline with id %s not found in workspace", pipelineUUID)
+}
+
+func (s *webServer) resolveWorkspaceDependencyGraph(
+	ctx context.Context,
+	overrides map[string]*pipeline.Pipeline,
+) (dependencygraph.Graph, error) {
+	return service.ResolveWorkspaceDependencyGraph(
+		ctx,
+		s.currentState(),
+		s.resolvePipelineByUUID,
+		overrides,
+	)
 }
 
 func (s *webServer) newConnectionManager(ctx context.Context, environment string) (config.ConnectionAndDetailsGetter, error) {

@@ -276,7 +276,13 @@ func (s *webServer) replayRecoveredRun(
 		for assetName, entry := range snapshot.Entries {
 			upstreams := make([]bus.ExecutionUpstreamSnapshot, 0, len(entry.Upstreams))
 			for _, upstream := range entry.Upstreams {
-				upstreams = append(upstreams, bus.ExecutionUpstreamSnapshot{Type: upstream.Type, Value: upstream.Value})
+				upstreams = append(upstreams, bus.ExecutionUpstreamSnapshot{
+					Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
+					ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
+					TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+					VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
+					CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
+				})
 			}
 			event.ExecutionTargets[assetName] = bus.ExecutionTargetSnapshotEntry{
 				AssetID:                     entry.AssetID,

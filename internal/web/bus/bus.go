@@ -83,8 +83,17 @@ type UpstreamWriterSnapshot struct {
 }
 
 type ExecutionUpstreamSnapshot struct {
-	Type  string
-	Value string
+	Type                string
+	Value               string
+	Mode                string
+	ResolvedAssetID     string
+	Required            bool
+	TargetIdentity      string
+	ExpectedFingerprint string
+	VarsHash            string
+	TargetGeneration    int64
+	CompletionID        string
+	CompletionOrdinal   int64
 }
 
 type ExecutionResourceClaim struct {

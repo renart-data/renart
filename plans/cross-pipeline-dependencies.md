@@ -342,19 +342,26 @@ batch promotion remains all-or-nothing.
 4. [x] Resolve Catalog/Build edges by asset ID; render cross-pipeline labels.
 5. [x] Add repository-wide typecheck and full-edge cycle tests.
 
-At this checkpoint cross-pipeline edges are visible and validated, but execution
-must remain blocked with an explicit `not implemented for execution` finding.
-Do not allow a validated-looking edge to run with stable-token freshness.
+This checkpoint shipped with execution blocked until Phase 2 added an exact
+reviewed-prerequisite path.
 
 ### Phase 2 — staleness and manual readiness
 
-1. Make fingerprints and reverse invalidation workspace-aware.
-2. Extend target/read evidence to external producers.
-3. Add plan prerequisites and manual readiness blockers.
-4. Make Build needed and asset-closure selection dependency-aware without
+1. [x] Make fingerprints and reverse invalidation workspace-aware.
+2. [x] Extend target/read evidence to external producers.
+3. [x] Add plan prerequisites and manual readiness blockers.
+4. [x] Make Build needed and asset-closure selection dependency-aware without
    pulling external assets into the consumer run.
-5. Add DuckDB live tests with two pipelines, edits, failed writes, ambiguous
-   writers, and interval gaps.
+5. [ ] Add DuckDB live tests with two pipelines, edits, failed writes, ambiguous
+   writers, and interval gaps. The fingerprint, planning, exact-writer capture,
+   ambiguity, and coverage rules have focused backend integration tests; the
+   browser-level two-pipeline scenario remains.
+
+Manual working-tree execution is now supported through a reviewed plan. The
+plan and durable run artifact bind exact same-environment Renart-observed writer
+evidence, and execution revalidates/captures that writer immediately before the
+consumer task. Snapshot-backed and scheduled execution remain explicitly
+blocked pending Phase 3.
 
 ### Phase 3 — deployments and schedules
 

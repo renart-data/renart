@@ -303,8 +303,17 @@ type executionResourceClaimV1 struct {
 }
 
 type executionUpstreamV1 struct {
-	Type  string `json:"type"`
-	Value string `json:"value"`
+	Type                string `json:"type"`
+	Value               string `json:"value"`
+	Mode                string `json:"mode,omitempty"`
+	ResolvedAssetID     string `json:"resolved_asset_id,omitempty"`
+	Required            bool   `json:"required,omitempty"`
+	TargetIdentity      string `json:"target_identity,omitempty"`
+	ExpectedFingerprint string `json:"expected_fingerprint,omitempty"`
+	VarsHash            string `json:"vars_hash,omitempty"`
+	TargetGeneration    int64  `json:"target_generation,omitempty"`
+	CompletionID        string `json:"completion_id,omitempty"`
+	CompletionOrdinal   int64  `json:"completion_ordinal,omitempty"`
 }
 
 func marshalEvent(event bus.RunCompleted) ([]byte, error) {
@@ -629,6 +638,15 @@ func validateExecutionTarget(assetName string, entry bus.ExecutionTargetSnapshot
 			strings.TrimSpace(upstream.Value) == "" || strings.TrimSpace(upstream.Value) != upstream.Value {
 			return fmt.Errorf("%w: execution target %q upstream %d is not canonical", ErrInvalidEnvelope, assetName, index)
 		}
+		if upstream.Mode != "" && upstream.Mode != "full" && upstream.Mode != "symbolic" {
+			return fmt.Errorf("%w: execution target %q upstream %d has an invalid mode", ErrInvalidEnvelope, assetName, index)
+		}
+		if upstream.Required &&
+			(strings.TrimSpace(upstream.ResolvedAssetID) == "" || strings.TrimSpace(upstream.TargetIdentity) == "" ||
+				strings.TrimSpace(upstream.ExpectedFingerprint) == "" || strings.TrimSpace(upstream.VarsHash) == "" ||
+				upstream.TargetGeneration < 1 || strings.TrimSpace(upstream.CompletionID) == "") {
+			return fmt.Errorf("%w: execution target %q upstream %d has incomplete prerequisite evidence", ErrInvalidEnvelope, assetName, index)
+		}
 	}
 	return nil
 }
@@ -702,7 +720,13 @@ func eventToV1(event bus.RunCompleted) completedRunV1 {
 	for assetName, target := range event.ExecutionTargets {
 		upstreams := make([]executionUpstreamV1, len(target.Upstreams))
 		for index, upstream := range target.Upstreams {
-			upstreams[index] = executionUpstreamV1{Type: upstream.Type, Value: upstream.Value}
+			upstreams[index] = executionUpstreamV1{
+				Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
+				ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
+				TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+				VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
+				CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
+			}
 		}
 		var executionContract *executionContractV1
 		if !bus.ExecutionContractIsEmpty(target.ExecutionContract) {
@@ -765,7 +789,13 @@ func eventFromV1(event completedRunV1) bus.RunCompleted {
 	for assetName, target := range event.ExecutionTargets {
 		upstreams := make([]bus.ExecutionUpstreamSnapshot, len(target.Upstreams))
 		for index, upstream := range target.Upstreams {
-			upstreams[index] = bus.ExecutionUpstreamSnapshot{Type: upstream.Type, Value: upstream.Value}
+			upstreams[index] = bus.ExecutionUpstreamSnapshot{
+				Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
+				ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
+				TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+				VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
+				CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
+			}
 		}
 		var executionContract bus.ExecutionContractSnapshot
 		if target.ExecutionContract != nil {
