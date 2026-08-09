@@ -1,7 +1,8 @@
 # Cross-pipeline dependencies
 
-Status: in progress — Phases 1 and 2 plus the Phase 3 deployment manifest are
-implemented; scheduled prerequisite resolution and durable waiting remain
+Status: in progress — Phases 1 and 2 plus Phase 3 deployment binding and
+snapshot prerequisite resolution are implemented; durable scheduled waiting
+remains
 
 ## Goal
 
@@ -366,7 +367,7 @@ blocked pending Phase 3.
 ### Phase 3 — deployments and schedules
 
 1. [x] Persist/validate deployment dependency manifests.
-2. Resolve prerequisites against same-environment producer deployments.
+2. [x] Resolve prerequisites against same-environment producer deployments.
 3. Add durable waiting occurrences, event-driven wakeup, timeout, and UI.
 4. Cover mixed schedule intervals, restart recovery, redeploy while waiting,
    schedule promotion, and snapshot/fact retention.

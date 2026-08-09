@@ -188,6 +188,42 @@ func TestWorkspaceDAGPropagatesFullURIDependencyAcrossPipelines(t *testing.T) {
 	assert.Equal(t, before["consumer-uuid:unrelated"].FP, after["consumer-uuid:unrelated"].FP)
 }
 
+func TestDeploymentBoundExternalFingerprintReproducesWorkspaceDAG(t *testing.T) {
+	t.Parallel()
+	producer := testPipeline(sqlAsset("raw.orders", "select 1 as id"))
+	producer.LegacyID = "producer-uuid"
+	producer.Name = "producer"
+	producer.Assets[0].URI = "duckdb://warehouse/raw/orders"
+
+	consumerAsset := sqlAsset("analytics.orders", "select * from raw.orders")
+	consumerAsset.Upstreams = []pipeline.Upstream{{
+		Type: "uri", Value: producer.Assets[0].URI,
+	}}
+	consumer := testPipeline(consumerAsset)
+	consumer.LegacyID = "consumer-uuid"
+	consumer.Name = "consumer"
+
+	engine := NewEngine()
+	workspace := workspaceDAGOf(t, producer, consumer)
+	bound, err := engine.DAGWithExternalFingerprints(
+		consumer,
+		EffectiveVars(consumer, nil),
+		map[ExternalUpstreamKey]Fingerprint{
+			{
+				ConsumerAssetID: "consumer-uuid:analytics.orders",
+				Type:            "uri",
+				Value:           producer.Assets[0].URI,
+			}: workspace["producer-uuid:raw.orders"].FP,
+		},
+	)
+	require.NoError(t, err)
+	assert.Equal(
+		t,
+		workspace["consumer-uuid:analytics.orders"].FP,
+		bound["consumer-uuid:analytics.orders"].FP,
+	)
+}
+
 func TestWorkspaceDAGIgnoresSymbolicURIDependency(t *testing.T) {
 	t.Parallel()
 	build := func(producerSQL string) map[string]Result {

@@ -31,6 +31,7 @@ type HybridBruinExecutor struct {
 	disableDuckDBFilesystemAccess bool
 	fingerprintEngine             *fingerprint.Engine
 	dependencyGraph               WorkspaceDependencyGraphResolver
+	validateProducerDeployment    func(context.Context, string, string) error
 	workspaceBudget               *executiongraph.Budget
 	directTaskGate                func(context.Context, bruinscheduler.TaskInstance) error
 	// runRegistry tracks in-flight materializations across every run this
@@ -141,6 +142,14 @@ func (e *HybridBruinExecutor) SetFingerprintEngine(engine *fingerprint.Engine) {
 // pre-task prerequisite revalidation for reviewed pipeline runs.
 func (e *HybridBruinExecutor) SetDependencyGraphResolver(resolver WorkspaceDependencyGraphResolver) {
 	e.dependencyGraph = resolver
+}
+
+// SetProducerDeploymentValidator validates immutable producer snapshots used
+// by reviewed snapshot prerequisites without consulting working-tree source.
+func (e *HybridBruinExecutor) SetProducerDeploymentValidator(
+	validator func(context.Context, string, string) error,
+) {
+	e.validateProducerDeployment = validator
 }
 
 func (e *HybridBruinExecutor) executionLogSink() ExecutionLogSink {

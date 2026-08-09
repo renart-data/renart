@@ -409,17 +409,19 @@ type ExecutionTargetSnapshot struct {
 }
 
 type ExecutionUpstreamSnapshot struct {
-	Type                string `json:"type"`
-	Value               string `json:"value"`
-	Mode                string `json:"mode,omitempty"`
-	ResolvedAssetID     string `json:"resolved_asset_id,omitempty"`
-	Required            bool   `json:"required,omitempty"`
-	TargetIdentity      string `json:"target_identity,omitempty"`
-	ExpectedFingerprint string `json:"expected_fingerprint,omitempty"`
-	VarsHash            string `json:"vars_hash,omitempty"`
-	TargetGeneration    int64  `json:"target_generation,omitempty"`
-	CompletionID        string `json:"completion_id,omitempty"`
-	CompletionOrdinal   int64  `json:"completion_ordinal,omitempty"`
+	Type                      string `json:"type"`
+	Value                     string `json:"value"`
+	Mode                      string `json:"mode,omitempty"`
+	ResolvedAssetID           string `json:"resolved_asset_id,omitempty"`
+	Required                  bool   `json:"required,omitempty"`
+	ProducerPipelineUUID      string `json:"producer_pipeline_uuid,omitempty"`
+	ProducerSnapshotVersionID string `json:"producer_snapshot_version_id,omitempty"`
+	TargetIdentity            string `json:"target_identity,omitempty"`
+	ExpectedFingerprint       string `json:"expected_fingerprint,omitempty"`
+	VarsHash                  string `json:"vars_hash,omitempty"`
+	TargetGeneration          int64  `json:"target_generation,omitempty"`
+	CompletionID              string `json:"completion_id,omitempty"`
+	CompletionOrdinal         int64  `json:"completion_ordinal,omitempty"`
 }
 
 type ExecutionTargetSnapshotEntry struct {

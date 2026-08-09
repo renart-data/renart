@@ -89,30 +89,32 @@ type PipelineRunExecutionContract struct {
 }
 
 type PipelineRunPrerequisite struct {
-	Status                  string  `json:"status"`
-	Reason                  string  `json:"reason"`
-	ConsumerAssetID         string  `json:"consumer_asset_id"`
-	ConsumerAssetName       string  `json:"consumer_asset_name"`
-	URI                     string  `json:"uri"`
-	ProducerPipelineID      string  `json:"producer_pipeline_id"`
-	ProducerPipelineUUID    string  `json:"producer_pipeline_uuid"`
-	ProducerPipelineName    string  `json:"producer_pipeline_name"`
-	ProducerAssetID         string  `json:"producer_asset_id"`
-	ProducerAssetName       string  `json:"producer_asset_name"`
-	Environment             string  `json:"environment"`
-	RequiredStart           string  `json:"required_start"`
-	RequiredEnd             string  `json:"required_end"`
-	ExpectedFingerprint     string  `json:"expected_fingerprint"`
-	TargetIdentity          string  `json:"target_identity,omitempty"`
-	VarsHash                string  `json:"vars_hash"`
-	TargetGeneration        int64   `json:"target_generation,omitempty"`
-	WriterRunID             string  `json:"writer_run_id,omitempty"`
-	WriterSnapshotVersionID string  `json:"writer_snapshot_version_id,omitempty"`
-	WriterCompletionID      string  `json:"writer_completion_id,omitempty"`
-	WriterCompletionOrdinal int64   `json:"writer_completion_ordinal,omitempty"`
-	WriterMaterializedAt    string  `json:"writer_materialized_at,omitempty"`
-	CoveredSeconds          float64 `json:"covered_seconds,omitempty"`
-	RequiredSeconds         float64 `json:"required_seconds,omitempty"`
+	Status                    string  `json:"status"`
+	Reason                    string  `json:"reason"`
+	ConsumerAssetID           string  `json:"consumer_asset_id"`
+	ConsumerAssetName         string  `json:"consumer_asset_name"`
+	URI                       string  `json:"uri"`
+	ProducerPipelineID        string  `json:"producer_pipeline_id"`
+	ProducerPipelineUUID      string  `json:"producer_pipeline_uuid"`
+	ProducerPipelineName      string  `json:"producer_pipeline_name"`
+	ProducerAssetID           string  `json:"producer_asset_id"`
+	ProducerAssetName         string  `json:"producer_asset_name"`
+	ProducerSnapshotVersionID string  `json:"producer_snapshot_version_id,omitempty"`
+	ProducerDeploymentOrdinal int64   `json:"producer_deployment_ordinal,omitempty"`
+	Environment               string  `json:"environment"`
+	RequiredStart             string  `json:"required_start"`
+	RequiredEnd               string  `json:"required_end"`
+	ExpectedFingerprint       string  `json:"expected_fingerprint"`
+	TargetIdentity            string  `json:"target_identity,omitempty"`
+	VarsHash                  string  `json:"vars_hash"`
+	TargetGeneration          int64   `json:"target_generation,omitempty"`
+	WriterRunID               string  `json:"writer_run_id,omitempty"`
+	WriterSnapshotVersionID   string  `json:"writer_snapshot_version_id,omitempty"`
+	WriterCompletionID        string  `json:"writer_completion_id,omitempty"`
+	WriterCompletionOrdinal   int64   `json:"writer_completion_ordinal,omitempty"`
+	WriterMaterializedAt      string  `json:"writer_materialized_at,omitempty"`
+	CoveredSeconds            float64 `json:"covered_seconds,omitempty"`
+	RequiredSeconds           float64 `json:"required_seconds,omitempty"`
 }
 
 type PipelineRunExecutionUnit struct {
@@ -526,6 +528,9 @@ func validatePipelineRunPrerequisite(prerequisite PipelineRunPrerequisite, planB
 	}
 	if prerequisite.TargetGeneration < 1 || prerequisite.WriterCompletionOrdinal < 0 {
 		return errors.New("writer completion coordinates are invalid")
+	}
+	if (strings.TrimSpace(prerequisite.ProducerSnapshotVersionID) == "") != (prerequisite.ProducerDeploymentOrdinal == 0) || prerequisite.ProducerDeploymentOrdinal < 0 {
+		return errors.New("producer deployment coordinates are invalid")
 	}
 	start, err := time.Parse(time.RFC3339Nano, prerequisite.RequiredStart)
 	if err != nil {

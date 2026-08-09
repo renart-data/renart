@@ -141,11 +141,16 @@ prerequisite; table existence and unobserved Bruin CLI runs are never promoted
 to freshness evidence. The binding is persisted in the version-three run plan,
 revalidated while the execution target snapshot is created, and queried once
 more immediately before the consumer task starts. That final query captures the
-exact external writer in the consumer's read set. Any edit, rewrite, ambiguity,
-active/dirty target claim, variable mismatch, or interval gap stops the task
-before its own target is claimed. Symbolic dependencies never create a runtime
-prerequisite. Snapshot-backed and scheduled cross-pipeline admission remain
-blocked until the deployment-manifest and durable-waiting phase is complete.
+exact external writer in the consumer's read set. Snapshot-backed plans resolve
+the URI inside the same-environment producer deployment, bind that deployment's
+version and ordinal, and reproduce the consumer fingerprint from the reviewed
+producer fingerprint without consulting producer working-tree files. Any edit,
+rewrite, missing deployment, ambiguity, active/dirty target claim, variable
+mismatch, or interval gap stops the task before its own target is claimed.
+Retained run plans protect every referenced producer deployment from snapshot
+garbage collection. Symbolic dependencies never create a runtime prerequisite.
+Ready scheduled prerequisites can be admitted; blocked scheduled prerequisites
+still become failed runs until the durable waiting lifecycle is implemented.
 
 A full refresh remains paired with its requested run window. For an
 interval-aware asset it replaces prior interval coverage with that window; it

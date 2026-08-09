@@ -24,17 +24,17 @@ const (
 func (s *PipelinePlanService) addCrossPipelinePrerequisites(
 	ctx context.Context,
 	plan *PipelinePlan,
-	parsed *pipeline.Pipeline,
+	resolved *resolvedPipelinePlanSource,
 	selected selectedPipelinePlanAssets,
 	cfg *config.Config,
-	sourceKind string,
 	purpose string,
 	timeWindow ExecutionTimeWindow,
 	variableOverrides map[string]any,
 ) {
-	if plan == nil || parsed == nil || len(selected.items) == 0 {
+	if plan == nil || resolved == nil || resolved.parsed == nil || len(selected.items) == 0 {
 		return
 	}
+	parsed := resolved.parsed
 	consumerIDs := make(map[string]struct{}, len(selected.items))
 	for _, selectedAsset := range selected.items {
 		if selectedAsset.asset != nil {
@@ -50,11 +50,27 @@ func (s *PipelinePlanService) addCrossPipelinePrerequisites(
 		// manifest. Runtime writer/coverage evidence belongs to execution only.
 		return
 	}
-	if purpose != PipelinePlanPurposeExecution || sourceKind != PipelinePlanSourceWorkingTree {
+	if purpose != PipelinePlanPurposeExecution {
 		s.addCrossPipelinePrerequisiteUnavailable(
 			plan,
 			pipelinePlanCodeCrossPipelineSnapshotPending,
 			"cross-pipeline deployment bindings and scheduled snapshot prerequisites are not available yet",
+			parsed,
+			consumerIDs,
+		)
+		return
+	}
+	if resolved.source.Kind == PipelinePlanSourceSnapshot {
+		s.addSnapshotCrossPipelinePrerequisites(
+			ctx, plan, resolved, selected, cfg, timeWindow,
+		)
+		return
+	}
+	if resolved.source.Kind != PipelinePlanSourceWorkingTree {
+		s.addCrossPipelinePrerequisiteUnavailable(
+			plan,
+			pipelinePlanCodeCrossPipelineSnapshotPending,
+			"cross-pipeline execution source is not supported",
 			parsed,
 			consumerIDs,
 		)

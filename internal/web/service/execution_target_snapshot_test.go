@@ -233,6 +233,34 @@ func TestExecutionTargetSnapshotBindsReviewedCrossPipelinePrerequisite(t *testin
 		consumer, cfg, consumer.Assets, consumer.Assets, []PipelinePlanPrerequisite{prerequisite},
 	)
 	assert.ErrorContains(t, err, "changed after plan confirmation")
+
+	prerequisite.ProducerPipelineUUID = producer.LegacyID
+	prerequisite.ProducerSnapshotVersionID = "producer-deployment-7"
+	prerequisite.ProducerDeploymentOrdinal = 7
+	validated := false
+	executor.SetProducerDeploymentValidator(func(_ context.Context, pipelineUUID, versionID string) error {
+		validated = true
+		assert.Equal(t, producer.LegacyID, pipelineUUID)
+		assert.Equal(t, prerequisite.ProducerSnapshotVersionID, versionID)
+		return nil
+	})
+	deploymentBound, err := executor.resolveExecutionTargetSnapshotForReviewedSelection(
+		consumer, cfg, consumer.Assets, consumer.Assets, []PipelinePlanPrerequisite{prerequisite},
+	)
+	require.NoError(t, err)
+	assert.True(t, validated)
+	deploymentUpstream := deploymentBound.Entries[consumerAsset.Name].Upstreams[0]
+	assert.Equal(t, producer.LegacyID, deploymentUpstream.ProducerPipelineUUID)
+	assert.Equal(t, prerequisite.ProducerSnapshotVersionID, deploymentUpstream.ProducerSnapshotVersionID)
+	assert.Equal(t, string(results[identity.AssetID(consumer.LegacyID, consumerAsset.Name)].FP), deploymentBound.Entries[consumerAsset.Name].Fingerprint)
+
+	executor.SetProducerDeploymentValidator(func(context.Context, string, string) error {
+		return os.ErrNotExist
+	})
+	_, err = executor.resolveExecutionTargetSnapshotForReviewedSelection(
+		consumer, cfg, consumer.Assets, consumer.Assets, []PipelinePlanPrerequisite{prerequisite},
+	)
+	assert.ErrorContains(t, err, "no longer executable")
 }
 
 func TestExecutionTargetSnapshotCallbackFailureStopsBeforeAnyTask(t *testing.T) {

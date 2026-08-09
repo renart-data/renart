@@ -279,7 +279,9 @@ func (s *webServer) replayRecoveredRun(
 				upstreams = append(upstreams, bus.ExecutionUpstreamSnapshot{
 					Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
 					ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
-					TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+					ProducerPipelineUUID:      upstream.ProducerPipelineUUID,
+					ProducerSnapshotVersionID: upstream.ProducerSnapshotVersionID,
+					TargetIdentity:            upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
 					VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
 					CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
 				})

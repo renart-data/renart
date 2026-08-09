@@ -497,7 +497,7 @@ func TestPruneProtectsLatestPinnedRunAndPendingCompletionDeployments(t *testing.
 	now := time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
 	old := now.AddDate(-1, 0, 0).Format(time.RFC3339Nano)
 	for ordinal, versionID := range []string{
-		"pinned", "run-referenced", "completion-referenced", "deletable", "latest",
+		"pinned", "run-referenced", "plan-prerequisite-referenced", "completion-referenced", "deletable", "latest",
 	} {
 		hash := "hash-" + versionID
 		_, err := db.ExecContext(ctx, `
@@ -523,6 +523,18 @@ func TestPruneProtectsLatestPinnedRunAndPendingCompletionDeployments(t *testing.
 		) VALUES ('run', 'pipeline', 'pipeline', 'prod', 'manual', 'success', ?, 'run-referenced')`, old)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `
+		INSERT INTO pipeline_runs (
+			id, pipeline_id, pipeline, environment, trigger, status, finished_at
+		) VALUES ('plan-run', 'consumer', 'consumer', 'prod', 'manual', 'success', ?)`, old)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO pipeline_run_plans (run_id, version, body, created_at)
+		VALUES ('plan-run', 3, ?, ?)`,
+		`{"prerequisites":[{"producer_snapshot_version_id":"plan-prerequisite-referenced"}]}`,
+		old,
+	)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `
 		INSERT INTO renart_completion_outbox (completion_id, version, body, enqueued_at)
 		VALUES ('completion', 1, ?, ?)`,
 		`{"version":1,"event":{"completion_id":"completion","run_id":"run","snapshot_version_id":"completion-referenced"}}`,
@@ -536,7 +548,7 @@ func TestPruneProtectsLatestPinnedRunAndPendingCompletionDeployments(t *testing.
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, result.Snapshots)
 	assert.EqualValues(t, 1, result.Blobs)
-	for _, versionID := range []string{"pinned", "run-referenced", "completion-referenced", "latest"} {
+	for _, versionID := range []string{"pinned", "run-referenced", "plan-prerequisite-referenced", "completion-referenced", "latest"} {
 		_, err := store.Get(ctx, versionID)
 		require.NoError(t, err)
 	}

@@ -343,6 +343,160 @@ select 1 as id
 	assert.Contains(t, changed.Prerequisites[0].Reason, "does not match")
 }
 
+func TestSnapshotPipelinePlanBindsExactProducerDeploymentAndRenartEvidence(t *testing.T) {
+	consumer, root := writeTypeCheckWorkspace(t, `
+id: consumer-uuid
+name: analytics
+schedule: daily
+default_connections:
+  duckdb: duckdb-default
+`, map[string]string{
+		"orders.sql": `
+/* @bruin
+name: analytics.orders
+type: duckdb.sql
+materialization:
+  type: table
+depends:
+  - uri: duckdb://warehouse/raw/orders
+@bruin */
+select 1 as id
+`,
+	})
+	producerRoot := filepath.Join(root, "raw")
+	require.NoError(t, os.MkdirAll(filepath.Join(producerRoot, "assets"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(producerRoot, "pipeline.yml"), []byte(`
+id: producer-uuid
+name: raw
+schedule: daily
+default_connections:
+  duckdb: duckdb-default
+`), 0o644))
+	producerAssetPath := filepath.Join(producerRoot, "assets", "orders.sql")
+	require.NoError(t, os.WriteFile(producerAssetPath, []byte(`
+/* @bruin
+name: raw.orders
+uri: duckdb://warehouse/raw/orders
+type: duckdb.sql
+materialization:
+  type: table
+@bruin */
+select 1 as id
+`), 0o644))
+	producer, err := NewRenartPipelineBuilder(afero.NewOsFs()).
+		CreatePipelineFromPath(context.Background(), producerRoot, pipeline.WithMutate())
+	require.NoError(t, err)
+	require.Len(t, producer.Assets, 1)
+
+	schedStore, err := scheduler.OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = schedStore.Close() })
+	snapshots := snapshot.NewStore(schedStore.DB())
+	producerSnapshot, created, err := snapshots.DeployReviewedWithDependencies(
+		context.Background(), producer.LegacyID, producerRoot, "test", "", snapshot.EmptyDependencyManifest(),
+	)
+	require.NoError(t, err)
+	require.True(t, created)
+	consumerSnapshot, created, err := snapshots.DeployReviewedWithDependencies(
+		context.Background(), consumer.LegacyID, filepath.Join(root, "analytics"), "test", "",
+		snapshot.DependencyManifest{Version: snapshot.DependencyManifestVersion, Dependencies: []snapshot.DependencyManifestItem{{
+			ConsumerAssetID:      identity.AssetID(consumer.LegacyID, consumer.Assets[0].Name),
+			URI:                  producer.Assets[0].URI,
+			Mode:                 "full",
+			ProducerPipelineUUID: producer.LegacyID,
+			ProducerAssetURI:     producer.Assets[0].URI,
+		}}},
+	)
+	require.NoError(t, err)
+	require.True(t, created)
+
+	engine := fingerprint.NewEngine()
+	producerResults, err := engine.DAG(producer, fingerprint.EffectiveVars(producer, nil))
+	require.NoError(t, err)
+	cfg, err := loadSelectedConfigReadOnlyFS(afero.NewOsFs(), filepath.Join(root, ".bruin.yml"), "default")
+	require.NoError(t, err)
+	producerID := identity.AssetID(producer.LegacyID, producer.Assets[0].Name)
+	producerTarget := resolveAssetPhysicalTarget(root, &directPipelineInfo{
+		Pipeline: producer, Asset: producer.Assets[0], Config: cfg,
+	})
+	require.Equal(t, AssetRenderFidelityExact, producerTarget.Fidelity)
+	materializations := matlog.NewStore(schedStore.DB())
+	require.NoError(t, materializations.Record(context.Background(), matlog.Materialization{
+		AssetID: producerID, Environment: "default",
+		Fingerprint:    string(producerResults[producerID].FP),
+		OwnContent:     string(producerResults[producerID].OwnContent),
+		VarsHash:       fingerprint.AllVarsHash(fingerprint.EffectiveVars(producer, nil)),
+		TargetIdentity: producerTarget.Identity,
+		RunID:          "producer-run", SnapshotVersionID: producerSnapshot.VersionID,
+		CompletionID: "producer-run", CompletionOrdinal: 0,
+		MaterializedAt: time.Date(2026, 7, 17, 11, 0, 0, 0, time.UTC),
+	}))
+
+	selectedProducerSnapshot := producerSnapshot
+	planner := NewPipelinePlanService(PipelinePlanDependencies{
+		WorkspaceRoot: root, ConfigPath: filepath.Join(root, ".bruin.yml"),
+		Snapshots: snapshots, Staleness: &pipelinePlanStalenessStub{},
+		Fingerprints: engine, Materializations: materializations,
+		ResolveProducerDeployment: func(context.Context, string, string) (PipelinePlanProducerDeployment, error) {
+			return PipelinePlanProducerDeployment{
+				PipelineID: EncodeID("raw"), PipelineName: producer.Name,
+				SnapshotVersionID: selectedProducerSnapshot.VersionID,
+			}, nil
+		},
+		ResolvePipelineUUID: func(pipelineID string) (string, bool) {
+			return consumer.LegacyID, pipelineID == EncodeID("analytics")
+		},
+		Now: func() time.Time { return time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC) },
+	})
+	request := PipelinePlanRequest{
+		Purpose: PipelinePlanPurposeExecution, Environment: "default",
+		StartDate: "2026-07-17T00:00:00Z", EndDate: "2026-07-18T00:00:00Z",
+		Source: PipelinePlanSourceRequest{
+			Kind: PipelinePlanSourceSnapshot, VersionID: consumerSnapshot.VersionID,
+		},
+		Selection:          PipelinePlanSelectionRequest{Mode: PipelinePlanSelectionAll},
+		Scheduled:          true,
+		SkipDataStateCheck: true,
+		SkipActiveRunCheck: true,
+	}
+	plan, apiErr := planner.Plan(context.Background(), EncodeID("analytics"), request)
+	require.Nil(t, apiErr)
+	assert.NotEqual(t, PipelinePlanStatusBlocked, plan.Status, plan.Readiness.Blockers)
+	require.Len(t, plan.Prerequisites, 1)
+	assert.Equal(t, PipelinePlanPrerequisiteReady, plan.Prerequisites[0].Status)
+	assert.Equal(t, producerSnapshot.VersionID, plan.Prerequisites[0].ProducerSnapshotVersionID)
+	assert.Equal(t, producerSnapshot.Ordinal, plan.Prerequisites[0].ProducerDeploymentOrdinal)
+	assert.Equal(t, "producer-run", plan.Prerequisites[0].WriterRunID)
+
+	require.NoError(t, os.WriteFile(producerAssetPath, []byte(`
+/* @bruin
+name: raw.orders
+uri: duckdb://warehouse/raw/orders
+type: duckdb.sql
+materialization:
+  type: table
+@bruin */
+select 1 as id, 2 as changed
+`), 0o644))
+	stillBound, apiErr := planner.Plan(context.Background(), EncodeID("analytics"), request)
+	require.Nil(t, apiErr)
+	assert.NotEqual(t, PipelinePlanStatusBlocked, stillBound.Status)
+	assert.Equal(t, producerSnapshot.VersionID, stillBound.Prerequisites[0].ProducerSnapshotVersionID)
+
+	newProducerSnapshot, created, err := snapshots.DeployReviewedWithDependencies(
+		context.Background(), producer.LegacyID, producerRoot, "test", "", snapshot.EmptyDependencyManifest(),
+	)
+	require.NoError(t, err)
+	require.True(t, created)
+	selectedProducerSnapshot = newProducerSnapshot
+	changed, apiErr := planner.Plan(context.Background(), EncodeID("analytics"), request)
+	require.Nil(t, apiErr)
+	assert.Equal(t, PipelinePlanStatusBlocked, changed.Status)
+	require.Len(t, changed.Prerequisites, 1)
+	assert.Equal(t, newProducerSnapshot.VersionID, changed.Prerequisites[0].ProducerSnapshotVersionID)
+	assert.Contains(t, changed.Prerequisites[0].Reason, "does not match")
+}
+
 func TestBindPipelinePlanExecutionDependenciesChainsWindowsAndSelectedUpstreams(t *testing.T) {
 	t.Parallel()
 	pl := &pipeline.Pipeline{Assets: []*pipeline.Asset{

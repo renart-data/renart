@@ -731,13 +731,14 @@ must resolve to another asset; a missing edge produces the same
 `dependency-exists` diagnostic as Bruin and stops before connections or task
 execution begin. Full URI dependencies additionally fail closed with an
 explicit cross-pipeline-readiness issue on unreviewed/direct execution. A
-reviewed manual pipeline plan binds the full URI to exact Renart-observed
+reviewed pipeline plan binds the full URI to exact Renart-observed
 same-environment producer target, fingerprint, variables, writer generation,
 completion, and coverage evidence; the executor revalidates that binding before
-the consumer task starts. Snapshot-backed and scheduled cross-pipeline runs
-remain blocked until their deployment-manifest path is available. Symbolic URI
-edges remain lineage-only. The same local-name validator feeds pipeline
-type-check findings. Runtime
+the consumer task starts. Snapshot plans resolve URI ownership from the
+consumer deployment manifest and bind the producer's same-environment snapshot
+version and ordinal, so later working-tree edits cannot redirect an admitted
+run. Symbolic URI edges remain lineage-only. The same local-name validator
+feeds pipeline type-check findings. Runtime
 output is one stdout/stderr stream: lifecycle messages remain run-scoped, while
 task output passes through a line-aware asset writer that adds a timestamp,
 deterministically colored asset label, and `>>` marker to every logical line.

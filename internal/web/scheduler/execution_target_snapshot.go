@@ -169,6 +169,10 @@ func validateExecutionTargetSnapshot(snapshot ExecutionTargetSnapshot) error {
 						upstream.TargetGeneration < 1 || strings.TrimSpace(upstream.CompletionID) == "") {
 					return fmt.Errorf("%w: entry %q upstream %d has incomplete prerequisite evidence", ErrInvalidExecutionTargetSnapshot, assetName, index)
 				}
+				if (strings.TrimSpace(upstream.ProducerPipelineUUID) == "") !=
+					(strings.TrimSpace(upstream.ProducerSnapshotVersionID) == "") {
+					return fmt.Errorf("%w: entry %q upstream %d has incomplete producer deployment evidence", ErrInvalidExecutionTargetSnapshot, assetName, index)
+				}
 			}
 		}
 	}

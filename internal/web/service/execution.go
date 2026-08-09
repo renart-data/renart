@@ -249,7 +249,9 @@ func (s *ExecutionService) emitRunCompletedForSpec(ctx context.Context, spec Pip
 				upstreams = append(upstreams, bus.ExecutionUpstreamSnapshot{
 					Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
 					ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
-					TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+					ProducerPipelineUUID:      upstream.ProducerPipelineUUID,
+					ProducerSnapshotVersionID: upstream.ProducerSnapshotVersionID,
+					TargetIdentity:            upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
 					VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
 					CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
 				})
@@ -2196,6 +2198,10 @@ func (o *pipelineRunObservation) captureUpstreamWriterSnapshot(assetName string)
 				upstream.TargetGeneration < 1 || strings.TrimSpace(upstream.CompletionID) == "" {
 				return nil, false, fmt.Errorf("capture upstream physical writers for %s: reviewed prerequisite is incomplete", assetName)
 			}
+			if (strings.TrimSpace(upstream.ProducerPipelineUUID) == "") !=
+				(strings.TrimSpace(upstream.ProducerSnapshotVersionID) == "") {
+				return nil, false, fmt.Errorf("capture upstream physical writers for %s: producer deployment evidence is incomplete", assetName)
+			}
 			upstreams[upstream.ResolvedAssetID] = expectedUpstream{
 				target: ExecutionTargetSnapshotEntry{
 					AssetID: upstream.ResolvedAssetID, TargetIdentity: upstream.TargetIdentity,
@@ -2586,7 +2592,9 @@ func schedulerExecutionTargetSnapshot(snapshot ExecutionTargetSnapshot) websched
 			upstreams = append(upstreams, webscheduler.ExecutionUpstreamSnapshot{
 				Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
 				ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
-				TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+				ProducerPipelineUUID:      upstream.ProducerPipelineUUID,
+				ProducerSnapshotVersionID: upstream.ProducerSnapshotVersionID,
+				TargetIdentity:            upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
 				VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
 				CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
 			})

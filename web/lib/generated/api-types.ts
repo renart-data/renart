@@ -1114,6 +1114,8 @@ export type PipelinePlanPrerequisite = {
   producer_pipeline_name: string;
   producer_asset_id: string;
   producer_asset_name: string;
+  producer_snapshot_version_id?: string;
+  producer_deployment_ordinal?: number;
   environment: string;
   required_start: string;
   required_end: string;

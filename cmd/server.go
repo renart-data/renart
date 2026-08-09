@@ -498,6 +498,10 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 	server.matlogStore = matlog.NewStore(server.schedulerStore.DB())
 	server.completionStore = completion.NewStore(server.schedulerStore.DB())
 	server.snapshotStore = snapshot.NewStore(server.schedulerStore.DB())
+	hybridExecutor.SetProducerDeploymentValidator(func(ctx context.Context, pipelineUUID, versionID string) error {
+		_, err := server.snapshotStore.ValidateMetadata(ctx, versionID, pipelineUUID)
+		return err
+	})
 	shouldReconcileClaims := serverLease != nil
 	var releaseClaimRecovery func() error
 	if shouldReconcileClaims {
@@ -567,13 +571,51 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 	})
 	server.stalenessSvc.AttachBus(server.eventBus)
 	server.pipelinePlanSvc = service.NewPipelinePlanService(service.PipelinePlanDependencies{
-		WorkspaceRoot:       absRoot,
-		ConfigPath:          resolveConfigFilePath(absRoot),
-		Snapshots:           server.snapshotStore,
-		Staleness:           server.stalenessSvc,
-		DependencyGraph:     server.resolveWorkspaceDependencyGraph,
-		Fingerprints:        server.fingerprintEngine,
-		Materializations:    server.matlogStore,
+		WorkspaceRoot:    absRoot,
+		ConfigPath:       resolveConfigFilePath(absRoot),
+		Snapshots:        server.snapshotStore,
+		Staleness:        server.stalenessSvc,
+		DependencyGraph:  server.resolveWorkspaceDependencyGraph,
+		Fingerprints:     server.fingerprintEngine,
+		Materializations: server.matlogStore,
+		ResolveProducerDeployment: func(ctx context.Context, pipelineUUID, environment string) (service.PipelinePlanProducerDeployment, error) {
+			selection := service.PipelinePlanProducerDeployment{}
+			for _, current := range server.currentState().Pipelines {
+				if current.UUID == pipelineUUID {
+					selection.PipelineID = current.ID
+					selection.PipelineName = current.Name
+					break
+				}
+			}
+			if selection.PipelineID == "" {
+				return selection, fmt.Errorf("producer pipeline %s is not present in the workspace", pipelineUUID)
+			}
+			if server.schedulerSvc != nil {
+				schedule, variables, found, err := server.schedulerSvc.ResolveEnvScheduleExecutionContext(
+					ctx, pipelineUUID, environment,
+				)
+				if err != nil {
+					return selection, err
+				}
+				selection.ScheduleFound = found
+				if found {
+					selection.ScheduleStatus = string(schedule.Status)
+					selection.VariableOverrides = variables
+					if strings.TrimSpace(schedule.SnapshotVersionID) != "" {
+						selection.SnapshotVersionID = schedule.SnapshotVersionID
+						return selection, nil
+					}
+				}
+			}
+			latest, err := server.snapshotStore.Latest(ctx, pipelineUUID)
+			if err != nil {
+				return selection, err
+			}
+			if latest != nil {
+				selection.SnapshotVersionID = latest.VersionID
+			}
+			return selection, nil
+		},
 		ResolvePipelineUUID: server.findPipelineUUIDByID,
 		PolicyFor:           server.policyLoader.For,
 		ActiveRunID:         server.schedulerStore.ActiveRunID,
@@ -896,7 +938,9 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 						upstreams = append(upstreams, webscheduler.ExecutionUpstreamSnapshot{
 							Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
 							ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
-							TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+							ProducerPipelineUUID:      upstream.ProducerPipelineUUID,
+							ProducerSnapshotVersionID: upstream.ProducerSnapshotVersionID,
+							TargetIdentity:            upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
 							VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
 							CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
 						})
@@ -1172,7 +1216,9 @@ func schedulerPrerequisiteFromService(item service.PipelinePlanPrerequisite) web
 		ProducerPipelineID: item.ProducerPipelineID, ProducerPipelineUUID: item.ProducerPipelineUUID,
 		ProducerPipelineName: item.ProducerPipelineName,
 		ProducerAssetID:      item.ProducerAssetID, ProducerAssetName: item.ProducerAssetName,
-		Environment: item.Environment, RequiredStart: item.RequiredStart, RequiredEnd: item.RequiredEnd,
+		ProducerSnapshotVersionID: item.ProducerSnapshotVersionID,
+		ProducerDeploymentOrdinal: item.ProducerDeploymentOrdinal,
+		Environment:               item.Environment, RequiredStart: item.RequiredStart, RequiredEnd: item.RequiredEnd,
 		ExpectedFingerprint: item.ExpectedFingerprint, TargetIdentity: item.TargetIdentity, VarsHash: item.VarsHash,
 		TargetGeneration: item.TargetGeneration, WriterRunID: item.WriterRunID,
 		WriterSnapshotVersionID: item.WriterSnapshotVersionID,
@@ -1190,7 +1236,9 @@ func servicePrerequisiteFromScheduler(item webscheduler.PipelineRunPrerequisite)
 		ProducerPipelineID: item.ProducerPipelineID, ProducerPipelineUUID: item.ProducerPipelineUUID,
 		ProducerPipelineName: item.ProducerPipelineName,
 		ProducerAssetID:      item.ProducerAssetID, ProducerAssetName: item.ProducerAssetName,
-		Environment: item.Environment, RequiredStart: item.RequiredStart, RequiredEnd: item.RequiredEnd,
+		ProducerSnapshotVersionID: item.ProducerSnapshotVersionID,
+		ProducerDeploymentOrdinal: item.ProducerDeploymentOrdinal,
+		Environment:               item.Environment, RequiredStart: item.RequiredStart, RequiredEnd: item.RequiredEnd,
 		ExpectedFingerprint: item.ExpectedFingerprint, TargetIdentity: item.TargetIdentity, VarsHash: item.VarsHash,
 		TargetGeneration: item.TargetGeneration, WriterRunID: item.WriterRunID,
 		WriterSnapshotVersionID: item.WriterSnapshotVersionID,

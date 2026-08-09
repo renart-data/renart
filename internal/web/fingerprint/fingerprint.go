@@ -44,6 +44,17 @@ type Fingerprint string
 // (pipeline defaults merged with any per-environment overrides).
 type Vars map[string]any
 
+// ExternalUpstreamKey identifies one full dependency edge whose producer is
+// outside the locally parsed pipeline. Reviewed snapshot runs use it to
+// reproduce the consumer Merkle fingerprint from the immutable producer
+// fingerprint retained in their plan, without consulting a mutable working
+// tree.
+type ExternalUpstreamKey struct {
+	ConsumerAssetID string
+	Type            string
+	Value           string
+}
+
 // Result is the fingerprint outcome for one asset.
 type Result struct {
 	// FP is the full Merkle fingerprint: own content + consumed vars +
@@ -125,6 +136,16 @@ func EffectiveVars(p *pipeline.Pipeline, overrides map[string]any) Vars {
 // DAG computes fingerprints for every asset in the pipeline. Keys of the
 // returned map are durable asset IDs (pipeline UUID + ":" + asset name).
 func (e *Engine) DAG(p *pipeline.Pipeline, vars Vars) (map[string]Result, error) {
+	return e.DAGWithExternalFingerprints(p, vars, nil)
+}
+
+// DAGWithExternalFingerprints computes a pipeline-local DAG while replacing
+// selected unresolved full edges with reviewed producer fingerprints.
+func (e *Engine) DAGWithExternalFingerprints(
+	p *pipeline.Pipeline,
+	vars Vars,
+	external map[ExternalUpstreamKey]Fingerprint,
+) (map[string]Result, error) {
 	if p == nil {
 		return nil, fmt.Errorf("fingerprint: pipeline is nil")
 	}
@@ -148,12 +169,14 @@ func (e *Engine) DAG(p *pipeline.Pipeline, vars Vars) (map[string]Result, error)
 	byName := make(map[string]Result, len(ordered))
 
 	for _, asset := range ordered {
-		result, err := e.fingerprintAsset(asset, p, pipelineDir, declared, vars, byName)
+		assetID := identity.AssetID(pipelineUUID, asset.Name)
+		upstreamParts := upstreamHashPartsWithExternal(assetID, asset, byName, external)
+		result, err := e.fingerprintAssetWithUpstreams(asset, p, pipelineDir, declared, vars, upstreamParts)
 		if err != nil {
 			return nil, fmt.Errorf("fingerprint: asset %s: %w", asset.Name, err)
 		}
 		byName[asset.Name] = result
-		results[identity.AssetID(pipelineUUID, asset.Name)] = result
+		results[assetID] = result
 	}
 	return results, nil
 }
@@ -489,6 +512,15 @@ func isSourceAsset(asset *pipeline.Asset) bool {
 // assets contribute their fingerprints, external dependencies (URIs, assets
 // outside this pipeline) contribute a stable token of their name.
 func upstreamHashParts(asset *pipeline.Asset, byName map[string]Result) []string {
+	return upstreamHashPartsWithExternal("", asset, byName, nil)
+}
+
+func upstreamHashPartsWithExternal(
+	consumerAssetID string,
+	asset *pipeline.Asset,
+	byName map[string]Result,
+	external map[ExternalUpstreamKey]Fingerprint,
+) []string {
 	parts := make([]string, 0, len(asset.Upstreams))
 	for _, upstream := range asset.Upstreams {
 		if upstream.Mode == pipeline.UpstreamModeSymbolic {
@@ -496,12 +528,26 @@ func upstreamHashParts(asset *pipeline.Asset, byName map[string]Result) []string
 		}
 		if result, ok := byName[upstream.Value]; ok {
 			parts = append(parts, "up:"+string(result.FP))
+		} else if reviewed, ok := external[ExternalUpstreamKey{
+			ConsumerAssetID: consumerAssetID,
+			Type:            normalizedExternalDependencyType(upstream.Type),
+			Value:           strings.TrimSpace(upstream.Value),
+		}]; ok {
+			parts = append(parts, "up:"+string(reviewed))
 		} else {
 			parts = append(parts, "ext:"+upstream.Type+":"+upstream.Value)
 		}
 	}
 	sort.Strings(parts)
 	return parts
+}
+
+func normalizedExternalDependencyType(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "asset"
+	}
+	return value
 }
 
 // normalizedSQL is the v2 SQL canonical form: strip comments and collapse

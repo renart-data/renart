@@ -31,17 +31,19 @@ const (
 // engine. It excludes resolved connection/configuration values; Type and Value
 // are the same user-authored dependency coordinates present in pipeline source.
 type ExecutionUpstreamSnapshot struct {
-	Type                string `json:"type"`
-	Value               string `json:"value"`
-	Mode                string `json:"mode,omitempty"`
-	ResolvedAssetID     string `json:"resolved_asset_id,omitempty"`
-	Required            bool   `json:"required,omitempty"`
-	TargetIdentity      string `json:"target_identity,omitempty"`
-	ExpectedFingerprint string `json:"expected_fingerprint,omitempty"`
-	VarsHash            string `json:"vars_hash,omitempty"`
-	TargetGeneration    int64  `json:"target_generation,omitempty"`
-	CompletionID        string `json:"completion_id,omitempty"`
-	CompletionOrdinal   int64  `json:"completion_ordinal,omitempty"`
+	Type                      string `json:"type"`
+	Value                     string `json:"value"`
+	Mode                      string `json:"mode,omitempty"`
+	ResolvedAssetID           string `json:"resolved_asset_id,omitempty"`
+	Required                  bool   `json:"required,omitempty"`
+	ProducerPipelineUUID      string `json:"producer_pipeline_uuid,omitempty"`
+	ProducerSnapshotVersionID string `json:"producer_snapshot_version_id,omitempty"`
+	TargetIdentity            string `json:"target_identity,omitempty"`
+	ExpectedFingerprint       string `json:"expected_fingerprint,omitempty"`
+	VarsHash                  string `json:"vars_hash,omitempty"`
+	TargetGeneration          int64  `json:"target_generation,omitempty"`
+	CompletionID              string `json:"completion_id,omitempty"`
+	CompletionOrdinal         int64  `json:"completion_ordinal,omitempty"`
 }
 
 // ExecutionTargetSnapshot captures the value-only target and fingerprint
@@ -117,7 +119,13 @@ func (e *HybridBruinExecutor) resolveExecutionTargetSnapshotForReviewedSelection
 	if engine == nil {
 		engine = fingerprint.NewEngine()
 	}
-	results, graph, err := e.executionFingerprintResults(pl, vars)
+	snapshotBoundPrerequisites, err := reviewedPrerequisiteSnapshotBinding(reviewedPrerequisites)
+	if err != nil {
+		return ExecutionTargetSnapshot{}, err
+	}
+	results, graph, err := e.executionFingerprintResultsForPrerequisites(
+		pl, vars, reviewedPrerequisites, snapshotBoundPrerequisites,
+	)
 	if err != nil {
 		return ExecutionTargetSnapshot{}, err
 	}
@@ -204,33 +212,46 @@ func (e *HybridBruinExecutor) resolveExecutionTargetSnapshotForReviewedSelection
 				upstream.Mode != pipeline.UpstreamModeSymbolic {
 				key := executionPrerequisiteKey(assetID, strings.TrimSpace(upstream.Value))
 				prerequisite, reviewed := reviewedByConsumerURI[key]
-				if !reviewed || !resolved || prerequisite.ProducerAssetID != edge.ProducerID {
+				if !reviewed || (!snapshotBoundPrerequisites && (!resolved || prerequisite.ProducerAssetID != edge.ProducerID)) {
 					return ExecutionTargetSnapshot{}, fmt.Errorf(
 						"asset %s has no matching reviewed prerequisite for URI %q",
 						asset.Name,
 						strings.TrimSpace(upstream.Value),
 					)
 				}
-				producer := graph.Nodes[edge.ProducerID]
-				producerResult, ok := results[edge.ProducerID]
-				if producer == nil || !ok {
-					return ExecutionTargetSnapshot{}, fmt.Errorf("reviewed prerequisite producer is unavailable")
-				}
-				producerVars := fingerprint.EffectiveVars(producer.Pipeline, nil)
-				producerTarget := resolveAssetPhysicalTarget(e.workspaceRoot, &directPipelineInfo{
-					Pipeline: producer.Pipeline, Asset: producer.Asset, Config: cfg,
-				})
-				if prerequisite.Environment != cfg.SelectedEnvironmentName ||
-					prerequisite.ExpectedFingerprint != string(producerResult.FP) ||
-					prerequisite.VarsHash != fingerprint.AllVarsHash(producerVars) ||
-					producerTarget.Fidelity != AssetRenderFidelityExact ||
-					prerequisite.TargetIdentity != producerTarget.Identity {
-					return ExecutionTargetSnapshot{}, fmt.Errorf(
-						"cross-pipeline prerequisite %q changed after plan confirmation",
-						prerequisite.URI,
-					)
+				if snapshotBoundPrerequisites {
+					if prerequisite.Environment != cfg.SelectedEnvironmentName ||
+						strings.TrimSpace(prerequisite.ProducerAssetID) == "" ||
+						strings.TrimSpace(prerequisite.ExpectedFingerprint) == "" ||
+						strings.TrimSpace(prerequisite.TargetIdentity) == "" ||
+						strings.TrimSpace(prerequisite.VarsHash) == "" {
+						return ExecutionTargetSnapshot{}, fmt.Errorf("reviewed snapshot prerequisite %q is incomplete", prerequisite.URI)
+					}
+					upstreamSnapshot.ResolvedAssetID = prerequisite.ProducerAssetID
+				} else {
+					producer := graph.Nodes[edge.ProducerID]
+					producerResult, ok := results[edge.ProducerID]
+					if producer == nil || !ok {
+						return ExecutionTargetSnapshot{}, fmt.Errorf("reviewed prerequisite producer is unavailable")
+					}
+					producerVars := fingerprint.EffectiveVars(producer.Pipeline, nil)
+					producerTarget := resolveAssetPhysicalTarget(e.workspaceRoot, &directPipelineInfo{
+						Pipeline: producer.Pipeline, Asset: producer.Asset, Config: cfg,
+					})
+					if prerequisite.Environment != cfg.SelectedEnvironmentName ||
+						prerequisite.ExpectedFingerprint != string(producerResult.FP) ||
+						prerequisite.VarsHash != fingerprint.AllVarsHash(producerVars) ||
+						producerTarget.Fidelity != AssetRenderFidelityExact ||
+						prerequisite.TargetIdentity != producerTarget.Identity {
+						return ExecutionTargetSnapshot{}, fmt.Errorf(
+							"cross-pipeline prerequisite %q changed after plan confirmation",
+							prerequisite.URI,
+						)
+					}
 				}
 				upstreamSnapshot.Required = true
+				upstreamSnapshot.ProducerPipelineUUID = prerequisite.ProducerPipelineUUID
+				upstreamSnapshot.ProducerSnapshotVersionID = prerequisite.ProducerSnapshotVersionID
 				upstreamSnapshot.TargetIdentity = prerequisite.TargetIdentity
 				upstreamSnapshot.ExpectedFingerprint = prerequisite.ExpectedFingerprint
 				upstreamSnapshot.VarsHash = prerequisite.VarsHash
@@ -260,6 +281,67 @@ func (e *HybridBruinExecutor) resolveExecutionTargetSnapshotForReviewedSelection
 		ConfigurationFidelity: string(configurationIdentity.Fidelity),
 		Entries:               entries,
 	}, nil
+}
+
+func reviewedPrerequisiteSnapshotBinding(prerequisites []PipelinePlanPrerequisite) (bool, error) {
+	if len(prerequisites) == 0 {
+		return false, nil
+	}
+	bound := 0
+	for _, prerequisite := range prerequisites {
+		if strings.TrimSpace(prerequisite.ProducerSnapshotVersionID) != "" {
+			bound++
+		}
+	}
+	if bound != 0 && bound != len(prerequisites) {
+		return false, fmt.Errorf("reviewed cross-pipeline prerequisites mix working-tree and deployment bindings")
+	}
+	return bound == len(prerequisites), nil
+}
+
+func (e *HybridBruinExecutor) executionFingerprintResultsForPrerequisites(
+	pl *pipeline.Pipeline,
+	vars fingerprint.Vars,
+	prerequisites []PipelinePlanPrerequisite,
+	snapshotBound bool,
+) (map[string]fingerprint.Result, dependencygraph.Graph, error) {
+	if !snapshotBound {
+		return e.executionFingerprintResults(pl, vars)
+	}
+	if e.validateProducerDeployment == nil {
+		return nil, dependencygraph.Graph{}, fmt.Errorf("producer deployment validation is unavailable")
+	}
+	external := make(map[fingerprint.ExternalUpstreamKey]fingerprint.Fingerprint, len(prerequisites))
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	for _, prerequisite := range prerequisites {
+		if strings.TrimSpace(prerequisite.ProducerPipelineUUID) == "" || prerequisite.ProducerDeploymentOrdinal < 1 {
+			return nil, dependencygraph.Graph{}, fmt.Errorf(
+				"reviewed snapshot prerequisite %q has invalid producer deployment coordinates",
+				prerequisite.URI,
+			)
+		}
+		if err := e.validateProducerDeployment(
+			ctx, prerequisite.ProducerPipelineUUID, prerequisite.ProducerSnapshotVersionID,
+		); err != nil {
+			return nil, dependencygraph.Graph{}, fmt.Errorf(
+				"producer deployment %s is no longer executable: %w",
+				prerequisite.ProducerSnapshotVersionID, err,
+			)
+		}
+		external[fingerprint.ExternalUpstreamKey{
+			ConsumerAssetID: prerequisite.ConsumerAssetID,
+			Type:            "uri", Value: prerequisite.URI,
+		}] = fingerprint.Fingerprint(prerequisite.ExpectedFingerprint)
+	}
+	results, err := e.fingerprintEngine.DAGWithExternalFingerprints(pl, vars, external)
+	if err != nil {
+		return nil, dependencygraph.Graph{}, err
+	}
+	graph := dependencygraph.Resolve([]dependencygraph.PipelineInput{{
+		UUID: strings.TrimSpace(pl.LegacyID), Parsed: pl,
+	}})
+	return results, graph, nil
 }
 
 func (e *HybridBruinExecutor) executionFingerprintResults(

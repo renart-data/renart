@@ -556,6 +556,12 @@ func (s *Store) Prune(ctx context.Context, policy RetentionPolicy) (PruneResult,
 				  WHERE run.snapshot_version_id = snapshot.version_id
 			  )
 			  AND NOT EXISTS (
+				  SELECT 1
+				  FROM pipeline_run_plans AS plan,
+				       json_each(plan.body, '$.prerequisites') AS prerequisite
+				  WHERE json_extract(prerequisite.value, '$.producer_snapshot_version_id') = snapshot.version_id
+			  )
+			  AND NOT EXISTS (
 				  SELECT 1 FROM renart_completion_outbox AS outbox
 				  WHERE json_extract(outbox.body, '$.event.snapshot_version_id') = snapshot.version_id
 			  )

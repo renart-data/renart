@@ -303,17 +303,19 @@ type executionResourceClaimV1 struct {
 }
 
 type executionUpstreamV1 struct {
-	Type                string `json:"type"`
-	Value               string `json:"value"`
-	Mode                string `json:"mode,omitempty"`
-	ResolvedAssetID     string `json:"resolved_asset_id,omitempty"`
-	Required            bool   `json:"required,omitempty"`
-	TargetIdentity      string `json:"target_identity,omitempty"`
-	ExpectedFingerprint string `json:"expected_fingerprint,omitempty"`
-	VarsHash            string `json:"vars_hash,omitempty"`
-	TargetGeneration    int64  `json:"target_generation,omitempty"`
-	CompletionID        string `json:"completion_id,omitempty"`
-	CompletionOrdinal   int64  `json:"completion_ordinal,omitempty"`
+	Type                      string `json:"type"`
+	Value                     string `json:"value"`
+	Mode                      string `json:"mode,omitempty"`
+	ResolvedAssetID           string `json:"resolved_asset_id,omitempty"`
+	Required                  bool   `json:"required,omitempty"`
+	ProducerPipelineUUID      string `json:"producer_pipeline_uuid,omitempty"`
+	ProducerSnapshotVersionID string `json:"producer_snapshot_version_id,omitempty"`
+	TargetIdentity            string `json:"target_identity,omitempty"`
+	ExpectedFingerprint       string `json:"expected_fingerprint,omitempty"`
+	VarsHash                  string `json:"vars_hash,omitempty"`
+	TargetGeneration          int64  `json:"target_generation,omitempty"`
+	CompletionID              string `json:"completion_id,omitempty"`
+	CompletionOrdinal         int64  `json:"completion_ordinal,omitempty"`
 }
 
 func marshalEvent(event bus.RunCompleted) ([]byte, error) {
@@ -647,6 +649,10 @@ func validateExecutionTarget(assetName string, entry bus.ExecutionTargetSnapshot
 				upstream.TargetGeneration < 1 || strings.TrimSpace(upstream.CompletionID) == "") {
 			return fmt.Errorf("%w: execution target %q upstream %d has incomplete prerequisite evidence", ErrInvalidEnvelope, assetName, index)
 		}
+		if (strings.TrimSpace(upstream.ProducerPipelineUUID) == "") !=
+			(strings.TrimSpace(upstream.ProducerSnapshotVersionID) == "") {
+			return fmt.Errorf("%w: execution target %q upstream %d has incomplete producer deployment evidence", ErrInvalidEnvelope, assetName, index)
+		}
 	}
 	return nil
 }
@@ -723,7 +729,9 @@ func eventToV1(event bus.RunCompleted) completedRunV1 {
 			upstreams[index] = executionUpstreamV1{
 				Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
 				ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
-				TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+				ProducerPipelineUUID:      upstream.ProducerPipelineUUID,
+				ProducerSnapshotVersionID: upstream.ProducerSnapshotVersionID,
+				TargetIdentity:            upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
 				VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
 				CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
 			}
@@ -792,7 +800,9 @@ func eventFromV1(event completedRunV1) bus.RunCompleted {
 			upstreams[index] = bus.ExecutionUpstreamSnapshot{
 				Type: upstream.Type, Value: upstream.Value, Mode: upstream.Mode,
 				ResolvedAssetID: upstream.ResolvedAssetID, Required: upstream.Required,
-				TargetIdentity: upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
+				ProducerPipelineUUID:      upstream.ProducerPipelineUUID,
+				ProducerSnapshotVersionID: upstream.ProducerSnapshotVersionID,
+				TargetIdentity:            upstream.TargetIdentity, ExpectedFingerprint: upstream.ExpectedFingerprint,
 				VarsHash: upstream.VarsHash, TargetGeneration: upstream.TargetGeneration,
 				CompletionID: upstream.CompletionID, CompletionOrdinal: upstream.CompletionOrdinal,
 			}

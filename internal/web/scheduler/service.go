@@ -121,6 +121,34 @@ type Options struct {
 	RecoverRun func(context.Context, PipelineRun, []PipelineRunStep, []PipelineRunUnit) error
 }
 
+// ResolveEnvScheduleExecutionContext returns the private variables and exact
+// deployment pin for one producer schedule. It is used by cross-pipeline
+// prerequisite planning only; resolved values never enter public schedule or
+// run DTOs.
+func (s *Service) ResolveEnvScheduleExecutionContext(
+	ctx context.Context,
+	pipelineUUID string,
+	environment string,
+) (EnvSchedule, map[string]any, bool, error) {
+	if s == nil || s.store == nil {
+		return EnvSchedule{}, nil, false, errors.New("scheduler store is unavailable")
+	}
+	schedule, found, err := s.store.GetEnvSchedule(ctx, strings.TrimSpace(pipelineUUID), strings.TrimSpace(environment))
+	if err != nil || !found {
+		return EnvSchedule{}, nil, found, err
+	}
+	variables, err := s.resolveScheduleVariables(
+		secretstore.WithPurpose(ctx, secretstore.PurposeScheduledRun),
+		schedule.Environment,
+		schedule.Vars,
+		schedule.SecretRefs,
+	)
+	if err != nil {
+		return EnvSchedule{}, nil, true, err
+	}
+	return schedule, variables, true, nil
+}
+
 type pipelineRunJobArgs struct {
 	RunID        string `json:"run_id,omitempty" river:"unique"`
 	PipelineID   string `json:"pipeline_id,omitempty" river:"unique"`

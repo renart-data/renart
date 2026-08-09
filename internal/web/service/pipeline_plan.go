@@ -195,30 +195,41 @@ const (
 // full URI dependency requires. Ready evidence is bound into the reviewed plan
 // and revalidated immediately before the consumer task starts.
 type PipelinePlanPrerequisite struct {
-	Status                  string  `json:"status"`
-	Reason                  string  `json:"reason"`
-	ConsumerAssetID         string  `json:"consumer_asset_id"`
-	ConsumerAssetName       string  `json:"consumer_asset_name"`
-	URI                     string  `json:"uri"`
-	ProducerPipelineID      string  `json:"producer_pipeline_id"`
-	ProducerPipelineUUID    string  `json:"producer_pipeline_uuid"`
-	ProducerPipelineName    string  `json:"producer_pipeline_name"`
-	ProducerAssetID         string  `json:"producer_asset_id"`
-	ProducerAssetName       string  `json:"producer_asset_name"`
-	Environment             string  `json:"environment"`
-	RequiredStart           string  `json:"required_start"`
-	RequiredEnd             string  `json:"required_end"`
-	ExpectedFingerprint     string  `json:"expected_fingerprint"`
-	TargetIdentity          string  `json:"target_identity,omitempty"`
-	VarsHash                string  `json:"vars_hash"`
-	TargetGeneration        int64   `json:"target_generation,omitempty"`
-	WriterRunID             string  `json:"writer_run_id,omitempty"`
-	WriterSnapshotVersionID string  `json:"writer_snapshot_version_id,omitempty"`
-	WriterCompletionID      string  `json:"writer_completion_id,omitempty"`
-	WriterCompletionOrdinal int64   `json:"writer_completion_ordinal,omitempty"`
-	WriterMaterializedAt    string  `json:"writer_materialized_at,omitempty"`
-	CoveredSeconds          float64 `json:"covered_seconds,omitempty"`
-	RequiredSeconds         float64 `json:"required_seconds,omitempty"`
+	Status                    string  `json:"status"`
+	Reason                    string  `json:"reason"`
+	ConsumerAssetID           string  `json:"consumer_asset_id"`
+	ConsumerAssetName         string  `json:"consumer_asset_name"`
+	URI                       string  `json:"uri"`
+	ProducerPipelineID        string  `json:"producer_pipeline_id"`
+	ProducerPipelineUUID      string  `json:"producer_pipeline_uuid"`
+	ProducerPipelineName      string  `json:"producer_pipeline_name"`
+	ProducerAssetID           string  `json:"producer_asset_id"`
+	ProducerAssetName         string  `json:"producer_asset_name"`
+	ProducerSnapshotVersionID string  `json:"producer_snapshot_version_id,omitempty"`
+	ProducerDeploymentOrdinal int64   `json:"producer_deployment_ordinal,omitempty"`
+	Environment               string  `json:"environment"`
+	RequiredStart             string  `json:"required_start"`
+	RequiredEnd               string  `json:"required_end"`
+	ExpectedFingerprint       string  `json:"expected_fingerprint"`
+	TargetIdentity            string  `json:"target_identity,omitempty"`
+	VarsHash                  string  `json:"vars_hash"`
+	TargetGeneration          int64   `json:"target_generation,omitempty"`
+	WriterRunID               string  `json:"writer_run_id,omitempty"`
+	WriterSnapshotVersionID   string  `json:"writer_snapshot_version_id,omitempty"`
+	WriterCompletionID        string  `json:"writer_completion_id,omitempty"`
+	WriterCompletionOrdinal   int64   `json:"writer_completion_ordinal,omitempty"`
+	WriterMaterializedAt      string  `json:"writer_materialized_at,omitempty"`
+	CoveredSeconds            float64 `json:"covered_seconds,omitempty"`
+	RequiredSeconds           float64 `json:"required_seconds,omitempty"`
+}
+
+type PipelinePlanProducerDeployment struct {
+	PipelineID        string
+	PipelineName      string
+	SnapshotVersionID string
+	VariableOverrides map[string]any
+	ScheduleFound     bool
+	ScheduleStatus    string
 }
 
 // PipelinePlanResourceClaim is one exclusive, secret-free mutation resource.
@@ -287,19 +298,20 @@ type PipelinePlanStaleness interface {
 }
 
 type PipelinePlanDependencies struct {
-	WorkspaceRoot       string
-	ConfigPath          string
-	Snapshots           PipelinePlanSnapshotStore
-	Staleness           PipelinePlanStaleness
-	DependencyGraph     WorkspaceDependencyGraphResolver
-	Fingerprints        *fingerprint.Engine
-	Materializations    *matlog.Store
-	ResolvePipelineUUID func(pipelineID string) (string, bool)
-	PolicyFor           func(environment string) policy.EnvironmentPolicy
-	ActiveRunID         func(ctx context.Context, pipelineID, pipelineUUID string) (string, error)
-	ConflictingRunID    func(ctx context.Context, pipelineID, pipelineUUID string, resources PipelinePlanResources) (string, error)
-	NewPipelineBuilder  func() *pipeline.Builder
-	Now                 func() time.Time
+	WorkspaceRoot             string
+	ConfigPath                string
+	Snapshots                 PipelinePlanSnapshotStore
+	Staleness                 PipelinePlanStaleness
+	DependencyGraph           WorkspaceDependencyGraphResolver
+	Fingerprints              *fingerprint.Engine
+	Materializations          *matlog.Store
+	ResolveProducerDeployment func(context.Context, string, string) (PipelinePlanProducerDeployment, error)
+	ResolvePipelineUUID       func(pipelineID string) (string, bool)
+	PolicyFor                 func(environment string) policy.EnvironmentPolicy
+	ActiveRunID               func(ctx context.Context, pipelineID, pipelineUUID string) (string, error)
+	ConflictingRunID          func(ctx context.Context, pipelineID, pipelineUUID string, resources PipelinePlanResources) (string, error)
+	NewPipelineBuilder        func() *pipeline.Builder
+	Now                       func() time.Time
 }
 
 type PipelinePlanService struct {
@@ -311,14 +323,15 @@ func NewPipelinePlanService(deps PipelinePlanDependencies) *PipelinePlanService 
 }
 
 type resolvedPipelinePlanSource struct {
-	root        string
-	pipelineDir string
-	relPath     string
-	parsed      *pipeline.Pipeline
-	manifest    map[string]string
-	state       snapshot.SourceState
-	source      AssetRenderSource
-	cleanup     func()
+	root               string
+	pipelineDir        string
+	relPath            string
+	parsed             *pipeline.Pipeline
+	manifest           map[string]string
+	dependencyManifest snapshot.DependencyManifest
+	state              snapshot.SourceState
+	source             AssetRenderSource
+	cleanup            func()
 }
 
 func (s *PipelinePlanService) Plan(
@@ -526,10 +539,9 @@ func (s *PipelinePlanService) Plan(
 	s.addCrossPipelinePrerequisites(
 		ctx,
 		&base,
-		resolved.parsed,
+		resolved,
 		selected,
 		cfg,
-		resolved.source.Kind,
 		purpose,
 		timeWindow,
 		req.VariableOverrides,
@@ -1039,6 +1051,7 @@ func (s *PipelinePlanService) resolveSource(
 		resolved.root = tempRoot
 		resolved.pipelineDir = pipelineDir
 		resolved.manifest = deployed.Manifest
+		resolved.dependencyManifest = deployed.DependencyManifest
 		resolved.source = AssetRenderSource{
 			Kind:              PipelinePlanSourceSnapshot,
 			VersionID:         deployed.VersionID,
