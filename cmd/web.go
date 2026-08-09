@@ -381,6 +381,12 @@ func (s *webServer) registerRoutes(router chi.Router) {
 	webhttpapi.RegisterDeployRoutes(router, &webhttpapi.DeployAPI{
 		Snapshots:       s.snapshotStore,
 		ResolvePipeline: s.resolvePipelineForDeploy,
+		ResolveDependencyManifest: func(ctx context.Context, pipelineUUID string) (snapshot.DependencyManifest, string, error) {
+			manifest, sourceRoot, _, err := service.ResolveDeploymentDependencyManifest(
+				ctx, s.workspaceRoot, resolveConfigFilePath(s.workspaceRoot), pipelineUUID,
+			)
+			return manifest, sourceRoot, err
+		},
 	})
 
 	router.Get("/*", s.handleStatic)

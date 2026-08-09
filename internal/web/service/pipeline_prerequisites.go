@@ -45,6 +45,11 @@ func (s *PipelinePlanService) addCrossPipelinePrerequisites(
 		return
 	}
 
+	if purpose == PipelinePlanPurposeDeployment {
+		// Deployment admission persists and validates the immutable URI-owner
+		// manifest. Runtime writer/coverage evidence belongs to execution only.
+		return
+	}
 	if purpose != PipelinePlanPurposeExecution || sourceKind != PipelinePlanSourceWorkingTree {
 		s.addCrossPipelinePrerequisiteUnavailable(
 			plan,

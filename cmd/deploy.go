@@ -10,6 +10,7 @@ import (
 	"github.com/urfave/cli/v3"
 	"renart/internal/web/identity"
 	webscheduler "renart/internal/web/scheduler"
+	"renart/internal/web/service"
 	"renart/internal/web/snapshot"
 )
 
@@ -62,7 +63,18 @@ func Deploy() *cli.Command {
 			}
 			defer store.Close()
 
-			deployed, created, err := snapshot.NewStore(store.DB()).Deploy(ctx, pipelineUUID, absTarget, "cli")
+			dependencyManifest, sourceRoot, resolvedPipelineDir, err := service.ResolveDeploymentDependencyManifest(
+				ctx, workspaceRoot, filepath.Join(workspaceRoot, ".bruin.yml"), pipelineUUID,
+			)
+			if err != nil {
+				return err
+			}
+			if filepath.Clean(resolvedPipelineDir) != filepath.Clean(absTarget) {
+				return fmt.Errorf("pipeline %s resolved to %s instead of %s", pipelineUUID, resolvedPipelineDir, absTarget)
+			}
+			deployed, created, err := snapshot.NewStore(store.DB()).DeployReviewedWithDependencies(
+				ctx, pipelineUUID, absTarget, "cli", sourceRoot, dependencyManifest,
+			)
 			if err != nil {
 				return err
 			}

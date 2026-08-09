@@ -14,6 +14,7 @@ import (
 
 	"renart/internal/web/dependencygraph"
 	"renart/internal/web/model"
+	"renart/internal/web/snapshot"
 )
 
 func writeDependencyGraphPipeline(t *testing.T, root, directory, id, name string, assets map[string]string) {
@@ -100,6 +101,69 @@ select id from shared.orders
 	assert.Equal(t, producer.ID, dependency.ResolvedAssetID)
 	assert.Equal(t, rawPipeline.ID, dependency.ResolvedPipelineID)
 	assert.Equal(t, "raw", dependency.ResolvedPipeline)
+}
+
+func TestResolveDeploymentDependencyManifestBindsExactURIProducer(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+	producerUUID := "00000000-0000-0000-0000-000000000011"
+	consumerUUID := "00000000-0000-0000-0000-000000000012"
+	writeDependencyGraphPipeline(t, root, "raw", producerUUID, "raw", map[string]string{
+		"orders.sql": `/* @bruin
+name: raw.orders
+uri: duckdb://warehouse/raw/orders
+type: duckdb.sql
+@bruin */
+select 1 as id
+`,
+	})
+	writeDependencyGraphPipeline(t, root, "analytics", consumerUUID, "analytics", map[string]string{
+		"daily.sql": `/* @bruin
+name: analytics.daily
+type: duckdb.sql
+depends:
+  - uri: duckdb://warehouse/raw/orders
+@bruin */
+select 1 as id
+`,
+	})
+
+	manifest, sourceRoot, pipelineDir, err := ResolveDeploymentDependencyManifest(
+		context.Background(), root, "", consumerUUID,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(root, "analytics"), pipelineDir)
+	assert.Equal(t, snapshot.DependencyManifestVersion, manifest.Version)
+	require.Len(t, manifest.Dependencies, 1)
+	assert.Equal(t, snapshot.DependencyManifestItem{
+		ConsumerAssetID:      consumerUUID + ":analytics.daily",
+		URI:                  "duckdb://warehouse/raw/orders",
+		Mode:                 "full",
+		ProducerPipelineUUID: producerUUID,
+		ProducerAssetURI:     "duckdb://warehouse/raw/orders",
+	}, manifest.Dependencies[0])
+	sourceManifest, err := snapshot.CollectManifestHashes(pipelineDir)
+	require.NoError(t, err)
+	assert.Equal(t, snapshot.ManifestRoot(sourceManifest), sourceRoot)
+}
+
+func TestResolveDeploymentDependencyManifestRejectsUnresolvedFullURI(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, ".git"), 0o755))
+	consumerUUID := "00000000-0000-0000-0000-000000000013"
+	writeDependencyGraphPipeline(t, root, "analytics", consumerUUID, "analytics", map[string]string{
+		"daily.sql": `/* @bruin
+name: analytics.daily
+type: duckdb.sql
+depends:
+  - uri: duckdb://warehouse/missing
+@bruin */
+select 1 as id
+`,
+	})
+
+	_, _, _, err := ResolveDeploymentDependencyManifest(context.Background(), root, "", consumerUUID)
+	require.ErrorContains(t, err, "does not resolve")
 }
 
 func TestWorkspaceStateSurfacesFullAndSymbolicURIResolutionDiagnostics(t *testing.T) {

@@ -149,14 +149,15 @@ type RenartSchedule struct {
 }
 
 type RenartSnapshot struct {
-	VersionID  string
-	PipelineID string
-	MerkleRoot string
-	Manifest   string
-	GitSha     sql.NullString
-	GitDirty   sql.NullInt64
-	CreatedAt  string
-	CreatedBy  sql.NullString
+	VersionID          string
+	PipelineID         string
+	MerkleRoot         string
+	Manifest           string
+	DependencyManifest string
+	GitSha             sql.NullString
+	GitDirty           sql.NullInt64
+	CreatedAt          string
+	CreatedBy          sql.NullString
 }
 
 type RenartTargetWriteClaim struct {

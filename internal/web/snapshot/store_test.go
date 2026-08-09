@@ -95,6 +95,80 @@ func TestDeployDeduplicatesIdenticalContent(t *testing.T) {
 	assert.Equal(t, "select 1", string(content))
 }
 
+func TestDeployDependencyManifestRoundTripsAndChangesDeploymentIdentity(t *testing.T) {
+	t.Parallel()
+	store := openTestStore(t)
+	ctx := context.Background()
+	dir := writePipelineDir(t, map[string]string{
+		"pipeline.yml": "id: consumer\n",
+		"assets/a.sql": "select 1",
+	})
+	firstManifest := snapshot.DependencyManifest{
+		Version: snapshot.DependencyManifestVersion,
+		Dependencies: []snapshot.DependencyManifestItem{{
+			ConsumerAssetID: "consumer:analytics.report",
+			URI:             "duckdb://warehouse/raw/orders", Mode: "full",
+			ProducerPipelineUUID: "producer-a",
+			ProducerAssetURI:     "duckdb://warehouse/raw/orders",
+		}},
+	}
+	first, created, err := store.DeployReviewedWithDependencies(
+		ctx, "consumer", dir, "tester", "", firstManifest,
+	)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Equal(t, firstManifest, first.DependencyManifest)
+
+	same, created, err := store.DeployReviewedWithDependencies(
+		ctx, "consumer", dir, "tester", "", firstManifest,
+	)
+	require.NoError(t, err)
+	assert.False(t, created)
+	assert.Equal(t, first.VersionID, same.VersionID)
+
+	secondManifest := firstManifest
+	secondManifest.Dependencies = append([]snapshot.DependencyManifestItem(nil), firstManifest.Dependencies...)
+	secondManifest.Dependencies[0].ProducerPipelineUUID = "producer-b"
+	second, created, err := store.DeployReviewedWithDependencies(
+		ctx, "consumer", dir, "tester", "", secondManifest,
+	)
+	require.NoError(t, err)
+	assert.True(t, created, "URI ownership is part of immutable deployment identity")
+	assert.NotEqual(t, first.VersionID, second.VersionID)
+	assert.EqualValues(t, 2, second.Ordinal)
+	assert.Equal(t, secondManifest, second.DependencyManifest)
+
+	reloaded, err := store.Get(ctx, second.VersionID)
+	require.NoError(t, err)
+	assert.Equal(t, secondManifest, reloaded.DependencyManifest)
+	drift, err := store.DriftWithDependencies(ctx, "consumer", dir, firstManifest)
+	require.NoError(t, err)
+	assert.False(t, drift.InSync)
+	assert.False(t, drift.DependencyManifestInSync)
+	assert.Empty(t, drift.ChangedFiles)
+}
+
+func TestDeployRejectsInvalidFullDependencyManifest(t *testing.T) {
+	t.Parallel()
+	store := openTestStore(t)
+	dir := writePipelineDir(t, map[string]string{
+		"pipeline.yml": "id: consumer\n",
+		"assets/a.sql": "select 1",
+	})
+	_, created, err := store.DeployReviewedWithDependencies(
+		context.Background(), "consumer", dir, "tester", "",
+		snapshot.DependencyManifest{
+			Version: snapshot.DependencyManifestVersion,
+			Dependencies: []snapshot.DependencyManifestItem{{
+				ConsumerAssetID: "consumer:analytics.report",
+				URI:             "duckdb://warehouse/raw/orders", Mode: "full",
+			}},
+		},
+	)
+	require.ErrorContains(t, err, "has no producer pipeline")
+	assert.False(t, created)
+}
+
 func TestDeployReviewedRejectsSavedSourceChangedAfterReview(t *testing.T) {
 	t.Parallel()
 	store := openTestStore(t)

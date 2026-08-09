@@ -23,9 +23,34 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"renart/internal/web/identity"
 )
 
 var ErrSourceChanged = errors.New("snapshot: saved source changed after review")
+
+const DependencyManifestVersion = 1
+
+// DependencyManifest is the immutable cross-pipeline URI ownership contract
+// reviewed with one deployment. It intentionally contains no producer source
+// bytes or runtime freshness evidence; scheduled planning resolves the bound
+// producer UUID against that environment's deployment later.
+type DependencyManifest struct {
+	Version      int                      `json:"version"`
+	Dependencies []DependencyManifestItem `json:"dependencies"`
+}
+
+type DependencyManifestItem struct {
+	ConsumerAssetID      string `json:"consumer_asset_id"`
+	URI                  string `json:"uri"`
+	Mode                 string `json:"mode"`
+	ProducerPipelineUUID string `json:"producer_pipeline_uuid,omitempty"`
+	ProducerAssetURI     string `json:"producer_asset_uri,omitempty"`
+}
+
+func EmptyDependencyManifest() DependencyManifest {
+	return DependencyManifest{Version: DependencyManifestVersion, Dependencies: []DependencyManifestItem{}}
+}
 
 type SourceChangedError struct {
 	Expected string
@@ -40,32 +65,35 @@ func (e *SourceChangedError) Unwrap() error { return ErrSourceChanged }
 
 // Snapshot is one deployed version of a pipeline.
 type Snapshot struct {
-	VersionID    string            `json:"version_id"`
-	PipelineUUID string            `json:"pipeline_id"`
-	Ordinal      int64             `json:"ordinal"`
-	MerkleRoot   string            `json:"merkle_root"`
-	Manifest     map[string]string `json:"manifest"` // relpath -> blob hash
-	GitSHA       string            `json:"git_sha,omitempty"`
-	GitDirty     bool              `json:"git_dirty"`
-	CreatedAt    time.Time         `json:"created_at"`
-	CreatedBy    string            `json:"created_by,omitempty"`
+	VersionID          string             `json:"version_id"`
+	PipelineUUID       string             `json:"pipeline_id"`
+	Ordinal            int64              `json:"ordinal"`
+	MerkleRoot         string             `json:"merkle_root"`
+	Manifest           map[string]string  `json:"manifest"` // relpath -> blob hash
+	DependencyManifest DependencyManifest `json:"dependency_manifest"`
+	GitSHA             string             `json:"git_sha,omitempty"`
+	GitDirty           bool               `json:"git_dirty"`
+	CreatedAt          time.Time          `json:"created_at"`
+	CreatedBy          string             `json:"created_by,omitempty"`
 }
 
 // DriftReport compares the working tree against the latest deployed
 // snapshot.
 type DriftReport struct {
-	HasSnapshot    bool      `json:"has_snapshot"`
-	Executable     bool      `json:"executable"`
-	IntegrityError string    `json:"integrity_error,omitempty"`
-	InSync         bool      `json:"in_sync"`
-	VersionID      string    `json:"version_id,omitempty"`
-	Ordinal        int64     `json:"ordinal,omitempty"`
-	SourceMerkle   string    `json:"source_merkle"`
-	CreatedAt      time.Time `json:"created_at,omitempty"`
-	ChangedFiles   []string  `json:"changed_files,omitempty"`
-	AddedFiles     []string  `json:"added_files,omitempty"`
-	RemovedFiles   []string  `json:"removed_files,omitempty"`
-	SnapshotCount  int       `json:"snapshot_count"`
+	HasSnapshot              bool      `json:"has_snapshot"`
+	Executable               bool      `json:"executable"`
+	IntegrityError           string    `json:"integrity_error,omitempty"`
+	InSync                   bool      `json:"in_sync"`
+	DependencyManifestInSync bool      `json:"dependency_manifest_in_sync"`
+	DependencyManifestError  string    `json:"dependency_manifest_error,omitempty"`
+	VersionID                string    `json:"version_id,omitempty"`
+	Ordinal                  int64     `json:"ordinal,omitempty"`
+	SourceMerkle             string    `json:"source_merkle"`
+	CreatedAt                time.Time `json:"created_at,omitempty"`
+	ChangedFiles             []string  `json:"changed_files,omitempty"`
+	AddedFiles               []string  `json:"added_files,omitempty"`
+	RemovedFiles             []string  `json:"removed_files,omitempty"`
+	SnapshotCount            int       `json:"snapshot_count"`
 }
 
 // skipDirNames are never snapshotted (VCS internals, caches, local state).
@@ -290,15 +318,35 @@ func CopyPipelineSourceForExecution(pipelineDir, destDir string) (map[string]str
 // the latest snapshot it is a no-op and returns that snapshot with
 // created=false.
 func (s *Store) Deploy(ctx context.Context, pipelineUUID, pipelineDir, createdBy string) (Snapshot, bool, error) {
-	return s.DeployReviewed(ctx, pipelineUUID, pipelineDir, createdBy, "")
+	return s.DeployReviewedWithDependencies(ctx, pipelineUUID, pipelineDir, createdBy, "", EmptyDependencyManifest())
 }
 
 // DeployReviewed snapshots the saved pipeline directory only if its exact
 // source identity still matches the reviewed Merkle root. An empty expected
 // root preserves the CLI/internal deploy contract.
 func (s *Store) DeployReviewed(ctx context.Context, pipelineUUID, pipelineDir, createdBy, expectedRoot string) (Snapshot, bool, error) {
+	return s.DeployReviewedWithDependencies(
+		ctx, pipelineUUID, pipelineDir, createdBy, expectedRoot, EmptyDependencyManifest(),
+	)
+}
+
+// DeployReviewedWithDependencies persists source and the reviewed URI-owner
+// manifest as one immutable deployment. An ownership change creates a new
+// deployment even when the pipeline's source Merkle root is unchanged.
+func (s *Store) DeployReviewedWithDependencies(
+	ctx context.Context,
+	pipelineUUID string,
+	pipelineDir string,
+	createdBy string,
+	expectedRoot string,
+	dependencyManifest DependencyManifest,
+) (Snapshot, bool, error) {
 	if strings.TrimSpace(pipelineUUID) == "" {
 		return Snapshot{}, false, errors.New("snapshot: pipeline UUID is required")
+	}
+	dependencyManifest, err := normalizeDependencyManifest(pipelineUUID, dependencyManifest)
+	if err != nil {
+		return Snapshot{}, false, err
 	}
 	manifest, contents, err := CollectManifest(pipelineDir)
 	if err != nil {
@@ -317,7 +365,7 @@ func (s *Store) DeployReviewed(ctx context.Context, pipelineUUID, pipelineDir, c
 	if err != nil {
 		return Snapshot{}, false, err
 	}
-	if latest != nil && latest.MerkleRoot == root {
+	if latest != nil && latest.MerkleRoot == root && dependencyManifestsEqual(latest.DependencyManifest, dependencyManifest) {
 		if _, err := s.Validate(ctx, latest.VersionID, pipelineUUID); err == nil {
 			return *latest, false, nil
 		}
@@ -325,17 +373,22 @@ func (s *Store) DeployReviewed(ctx context.Context, pipelineUUID, pipelineDir, c
 
 	gitSHA, gitDirty := gitState(pipelineDir)
 	snapshot := Snapshot{
-		VersionID:    uuid.NewString(),
-		PipelineUUID: pipelineUUID,
-		MerkleRoot:   root,
-		Manifest:     manifest,
-		GitSHA:       gitSHA,
-		GitDirty:     gitDirty,
-		CreatedAt:    time.Now().UTC(),
-		CreatedBy:    createdBy,
+		VersionID:          uuid.NewString(),
+		PipelineUUID:       pipelineUUID,
+		MerkleRoot:         root,
+		Manifest:           manifest,
+		DependencyManifest: dependencyManifest,
+		GitSHA:             gitSHA,
+		GitDirty:           gitDirty,
+		CreatedAt:          time.Now().UTC(),
+		CreatedBy:          createdBy,
 	}
 
 	manifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		return Snapshot{}, false, err
+	}
+	dependencyManifestJSON, err := json.Marshal(dependencyManifest)
 	if err != nil {
 		return Snapshot{}, false, err
 	}
@@ -366,10 +419,10 @@ func (s *Store) DeployReviewed(ctx context.Context, pipelineUUID, pipelineDir, c
 		dirty = 1
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO renart_snapshots (version_id, pipeline_id, ordinal, merkle_root, manifest, git_sha, git_dirty, created_at, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO renart_snapshots (version_id, pipeline_id, ordinal, merkle_root, manifest, dependency_manifest, git_sha, git_dirty, created_at, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		snapshot.VersionID, snapshot.PipelineUUID, snapshot.Ordinal, snapshot.MerkleRoot, string(manifestJSON),
-		snapshot.GitSHA, dirty, snapshot.CreatedAt.Format(timeLayout), snapshot.CreatedBy); err != nil {
+		string(dependencyManifestJSON), snapshot.GitSHA, dirty, snapshot.CreatedAt.Format(timeLayout), snapshot.CreatedBy); err != nil {
 		return Snapshot{}, false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -383,7 +436,7 @@ func (s *Store) DeployReviewed(ctx context.Context, pipelineUUID, pipelineDir, c
 
 func (s *Store) Latest(ctx context.Context, pipelineUUID string) (*Snapshot, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT version_id, pipeline_id, ordinal, merkle_root, manifest, git_sha, git_dirty, created_at, created_by
+		SELECT version_id, pipeline_id, ordinal, merkle_root, manifest, dependency_manifest, git_sha, git_dirty, created_at, created_by
 		FROM renart_snapshots WHERE pipeline_id = ?
 		ORDER BY ordinal DESC LIMIT 1`, pipelineUUID)
 	snapshot, err := scanSnapshot(row)
@@ -398,7 +451,7 @@ func (s *Store) Latest(ctx context.Context, pipelineUUID string) (*Snapshot, err
 
 func (s *Store) Get(ctx context.Context, versionID string) (Snapshot, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT version_id, pipeline_id, ordinal, merkle_root, manifest, git_sha, git_dirty, created_at, created_by
+		SELECT version_id, pipeline_id, ordinal, merkle_root, manifest, dependency_manifest, git_sha, git_dirty, created_at, created_by
 		FROM renart_snapshots WHERE version_id = ?`, versionID)
 	return scanSnapshot(row)
 }
@@ -434,7 +487,7 @@ func (s *Store) ValidateMetadata(ctx context.Context, versionID, pipelineUUID st
 
 func (s *Store) List(ctx context.Context, pipelineUUID string) ([]Snapshot, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT version_id, pipeline_id, ordinal, merkle_root, manifest, git_sha, git_dirty, created_at, created_by
+		SELECT version_id, pipeline_id, ordinal, merkle_root, manifest, dependency_manifest, git_sha, git_dirty, created_at, created_by
 		FROM renart_snapshots WHERE pipeline_id = ?
 		ORDER BY ordinal DESC`, pipelineUUID)
 	if err != nil {
@@ -546,16 +599,24 @@ type rowScanner interface {
 
 func scanSnapshot(row rowScanner) (Snapshot, error) {
 	var snapshot Snapshot
-	var manifestJSON, createdAt string
+	var manifestJSON, dependencyManifestJSON, createdAt string
 	var gitSHA, createdBy sql.NullString
 	var gitDirty sql.NullInt64
 	if err := row.Scan(&snapshot.VersionID, &snapshot.PipelineUUID, &snapshot.Ordinal, &snapshot.MerkleRoot,
-		&manifestJSON, &gitSHA, &gitDirty, &createdAt, &createdBy); err != nil {
+		&manifestJSON, &dependencyManifestJSON, &gitSHA, &gitDirty, &createdAt, &createdBy); err != nil {
 		return Snapshot{}, err
 	}
 	if err := json.Unmarshal([]byte(manifestJSON), &snapshot.Manifest); err != nil {
 		return Snapshot{}, err
 	}
+	if err := json.Unmarshal([]byte(dependencyManifestJSON), &snapshot.DependencyManifest); err != nil {
+		return Snapshot{}, err
+	}
+	normalized, err := normalizeDependencyManifest(snapshot.PipelineUUID, snapshot.DependencyManifest)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	snapshot.DependencyManifest = normalized
 	snapshot.GitSHA = gitSHA.String
 	snapshot.GitDirty = gitDirty.Int64 != 0
 	snapshot.CreatedBy = createdBy.String
@@ -717,6 +778,9 @@ func (s *Store) validatedSnapshot(ctx context.Context, versionID, pipelineUUID s
 	if actualRoot := merkleRoot(snapshot.Manifest); actualRoot != snapshot.MerkleRoot {
 		return Snapshot{}, fmt.Errorf("snapshot %s: manifest root mismatch: expected %s, got %s", versionID, snapshot.MerkleRoot, actualRoot)
 	}
+	if _, err := normalizeDependencyManifest(snapshot.PipelineUUID, snapshot.DependencyManifest); err != nil {
+		return Snapshot{}, fmt.Errorf("snapshot %s: %w", versionID, err)
+	}
 
 	for relPath := range snapshot.Manifest {
 		if err := validateManifestPath(relPath); err != nil {
@@ -724,6 +788,81 @@ func (s *Store) validatedSnapshot(ctx context.Context, versionID, pipelineUUID s
 		}
 	}
 	return snapshot, nil
+}
+
+func normalizeDependencyManifest(pipelineUUID string, manifest DependencyManifest) (DependencyManifest, error) {
+	pipelineUUID = strings.TrimSpace(pipelineUUID)
+	if manifest.Version != DependencyManifestVersion {
+		return DependencyManifest{}, fmt.Errorf(
+			"dependency manifest version must be %d", DependencyManifestVersion,
+		)
+	}
+	result := DependencyManifest{
+		Version:      DependencyManifestVersion,
+		Dependencies: make([]DependencyManifestItem, 0, len(manifest.Dependencies)),
+	}
+	seen := make(map[string]struct{}, len(manifest.Dependencies))
+	for index, item := range manifest.Dependencies {
+		item.ConsumerAssetID = strings.TrimSpace(item.ConsumerAssetID)
+		item.URI = strings.TrimSpace(item.URI)
+		item.Mode = strings.ToLower(strings.TrimSpace(item.Mode))
+		item.ProducerPipelineUUID = strings.TrimSpace(item.ProducerPipelineUUID)
+		item.ProducerAssetURI = strings.TrimSpace(item.ProducerAssetURI)
+		consumerPipelineUUID, _, ok := identity.SplitAssetID(item.ConsumerAssetID)
+		if !ok || consumerPipelineUUID != pipelineUUID {
+			return DependencyManifest{}, fmt.Errorf(
+				"dependency manifest item %d has a consumer outside pipeline %s", index, pipelineUUID,
+			)
+		}
+		if item.URI == "" {
+			return DependencyManifest{}, fmt.Errorf("dependency manifest item %d has an empty URI", index)
+		}
+		if item.Mode != "full" && item.Mode != "symbolic" {
+			return DependencyManifest{}, fmt.Errorf("dependency manifest item %d has invalid mode %q", index, item.Mode)
+		}
+		if item.Mode == "full" && item.ProducerPipelineUUID == "" {
+			return DependencyManifest{}, fmt.Errorf("full dependency manifest item %d has no producer pipeline", index)
+		}
+		if item.ProducerPipelineUUID == "" {
+			if item.ProducerAssetURI != "" {
+				return DependencyManifest{}, fmt.Errorf("dependency manifest item %d has a producer URI without a producer pipeline", index)
+			}
+		} else if item.ProducerAssetURI != item.URI {
+			return DependencyManifest{}, fmt.Errorf("dependency manifest item %d does not bind its exact producer URI", index)
+		}
+		key := item.ConsumerAssetID + "\x00" + item.URI + "\x00" + item.Mode
+		if _, duplicate := seen[key]; duplicate {
+			return DependencyManifest{}, fmt.Errorf("dependency manifest item %d is duplicated", index)
+		}
+		seen[key] = struct{}{}
+		result.Dependencies = append(result.Dependencies, item)
+	}
+	sort.Slice(result.Dependencies, func(i, j int) bool {
+		left, right := result.Dependencies[i], result.Dependencies[j]
+		if left.ConsumerAssetID != right.ConsumerAssetID {
+			return left.ConsumerAssetID < right.ConsumerAssetID
+		}
+		if left.URI != right.URI {
+			return left.URI < right.URI
+		}
+		if left.Mode != right.Mode {
+			return left.Mode < right.Mode
+		}
+		return left.ProducerPipelineUUID < right.ProducerPipelineUUID
+	})
+	return result, nil
+}
+
+func dependencyManifestsEqual(left, right DependencyManifest) bool {
+	if left.Version != right.Version || len(left.Dependencies) != len(right.Dependencies) {
+		return false
+	}
+	for index := range left.Dependencies {
+		if left.Dependencies[index] != right.Dependencies[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Store) validatedBlobContent(ctx context.Context, versionID, relPath, expectedHash string) ([]byte, error) {
@@ -810,6 +949,30 @@ func (s *Store) materializeForExecution(ctx context.Context, versionID, pipeline
 
 // Drift compares the working tree against the latest deployed snapshot.
 func (s *Store) Drift(ctx context.Context, pipelineUUID, pipelineDir string) (DriftReport, error) {
+	return s.drift(ctx, pipelineUUID, pipelineDir, nil)
+}
+
+// DriftWithDependencies includes URI-owner changes in the deployment identity
+// shown by the UI, even when no file inside the consumer pipeline changed.
+func (s *Store) DriftWithDependencies(
+	ctx context.Context,
+	pipelineUUID string,
+	pipelineDir string,
+	dependencyManifest DependencyManifest,
+) (DriftReport, error) {
+	normalized, err := normalizeDependencyManifest(pipelineUUID, dependencyManifest)
+	if err != nil {
+		return DriftReport{}, err
+	}
+	return s.drift(ctx, pipelineUUID, pipelineDir, &normalized)
+}
+
+func (s *Store) drift(
+	ctx context.Context,
+	pipelineUUID string,
+	pipelineDir string,
+	dependencyManifest *DependencyManifest,
+) (DriftReport, error) {
 	snapshots, err := s.List(ctx, pipelineUUID)
 	if err != nil {
 		return DriftReport{}, err
@@ -818,7 +981,10 @@ func (s *Store) Drift(ctx context.Context, pipelineUUID, pipelineDir string) (Dr
 	if err != nil {
 		return DriftReport{}, err
 	}
-	report := DriftReport{SnapshotCount: len(snapshots), SourceMerkle: merkleRoot(manifest)}
+	report := DriftReport{
+		SnapshotCount: len(snapshots), SourceMerkle: merkleRoot(manifest),
+		DependencyManifestInSync: dependencyManifest == nil,
+	}
 	if len(snapshots) == 0 {
 		for path := range manifest {
 			report.AddedFiles = append(report.AddedFiles, path)
@@ -827,6 +993,9 @@ func (s *Store) Drift(ctx context.Context, pipelineUUID, pipelineDir string) (Dr
 		return report, nil
 	}
 	latest := snapshots[0]
+	if dependencyManifest != nil {
+		report.DependencyManifestInSync = dependencyManifestsEqual(latest.DependencyManifest, *dependencyManifest)
+	}
 	report.HasSnapshot = true
 	report.VersionID = latest.VersionID
 	report.Ordinal = latest.Ordinal
@@ -837,7 +1006,7 @@ func (s *Store) Drift(ctx context.Context, pipelineUUID, pipelineDir string) (Dr
 		report.Executable = true
 	}
 
-	if report.SourceMerkle == latest.MerkleRoot {
+	if report.SourceMerkle == latest.MerkleRoot && report.DependencyManifestInSync {
 		report.InSync = true
 		return report, nil
 	}

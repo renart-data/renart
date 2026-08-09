@@ -737,7 +737,18 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 				if err != nil {
 					return "", err
 				}
-				deployed, _, err := server.snapshotStore.Deploy(ctx, pipelineUUID, absPath, "schedule")
+				dependencyManifest, sourceRoot, resolvedPipelineDir, err := service.ResolveDeploymentDependencyManifest(
+					ctx, absRoot, configPath, pipelineUUID,
+				)
+				if err != nil {
+					return "", err
+				}
+				if filepath.Clean(resolvedPipelineDir) != filepath.Clean(absPath) {
+					return "", fmt.Errorf("pipeline %s resolved to %s instead of %s", pipelineUUID, resolvedPipelineDir, absPath)
+				}
+				deployed, _, err := server.snapshotStore.DeployReviewedWithDependencies(
+					ctx, pipelineUUID, absPath, "schedule", sourceRoot, dependencyManifest,
+				)
 				if err != nil {
 					return "", err
 				}

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -16,6 +17,10 @@ type DeployAPI struct {
 	// ResolvePipeline maps the path-encoded API pipeline ID to the stable
 	// UUID and the absolute pipeline directory.
 	ResolvePipeline func(pipelineID string) (pipelineUUID, absDir string, ok bool)
+	// ResolveDependencyManifest returns the immutable URI-owner contract and
+	// the source Merkle root it was read from. The store rechecks that root in
+	// the same deploy operation.
+	ResolveDependencyManifest func(context.Context, string) (snapshot.DependencyManifest, string, error)
 }
 
 func RegisterDeployRoutes(router chi.Router, handlers *DeployAPI) {
@@ -64,8 +69,27 @@ func (h *DeployAPI) HandleDeploy(w http.ResponseWriter, r *http.Request) {
 		}
 		request = decoded
 	}
-	deployed, created, err := h.Snapshots.DeployReviewed(
-		r.Context(), pipelineUUID, absDir, "web", request.ExpectedSourceMerkle,
+	dependencyManifest := snapshot.EmptyDependencyManifest()
+	expectedRoot := strings.TrimSpace(request.ExpectedSourceMerkle)
+	if h.ResolveDependencyManifest != nil {
+		resolved, sourceRoot, resolveErr := h.ResolveDependencyManifest(r.Context(), pipelineUUID)
+		if resolveErr != nil {
+			webapi.WriteBadRequest(w, "deployment_dependencies_invalid", resolveErr.Error())
+			return
+		}
+		dependencyManifest = resolved
+		sourceRoot = strings.TrimSpace(sourceRoot)
+		if expectedRoot != "" && sourceRoot != expectedRoot {
+			webapi.WriteErrorWithDetails(w, http.StatusConflict, "deployment_source_changed", "the saved pipeline source changed after review", map[string]string{
+				"expected_source_merkle": expectedRoot,
+				"actual_source_merkle":   sourceRoot,
+			})
+			return
+		}
+		expectedRoot = sourceRoot
+	}
+	deployed, created, err := h.Snapshots.DeployReviewedWithDependencies(
+		r.Context(), pipelineUUID, absDir, "web", expectedRoot, dependencyManifest,
 	)
 	if err != nil {
 		var changed *snapshot.SourceChangedError
@@ -97,7 +121,21 @@ func (h *DeployAPI) HandleDeployStatus(w http.ResponseWriter, r *http.Request) {
 		webapi.WriteNotFound(w, "pipeline_not_found", "pipeline not found")
 		return
 	}
-	report, err := h.Snapshots.Drift(r.Context(), pipelineUUID, absDir)
+	var report snapshot.DriftReport
+	var err error
+	if h.ResolveDependencyManifest == nil {
+		report, err = h.Snapshots.Drift(r.Context(), pipelineUUID, absDir)
+	} else {
+		dependencyManifest, _, resolveErr := h.ResolveDependencyManifest(r.Context(), pipelineUUID)
+		if resolveErr != nil {
+			report, err = h.Snapshots.Drift(r.Context(), pipelineUUID, absDir)
+			report.InSync = false
+			report.DependencyManifestInSync = false
+			report.DependencyManifestError = resolveErr.Error()
+		} else {
+			report, err = h.Snapshots.DriftWithDependencies(r.Context(), pipelineUUID, absDir, dependencyManifest)
+		}
+	}
 	if err != nil {
 		webapi.WriteInternalError(w, "deploy_status_failed", err.Error())
 		return

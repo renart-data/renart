@@ -17,6 +17,8 @@ export type DeployStatus = {
   executable: boolean;
   integrity_error?: string;
   in_sync: boolean;
+  dependency_manifest_in_sync: boolean;
+  dependency_manifest_error?: string;
   version_id?: string;
   ordinal?: number;
   source_merkle: string;

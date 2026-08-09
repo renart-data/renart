@@ -3261,12 +3261,18 @@ function DeployButton({
 
   const label = status.has_snapshot
     ? status.executable
-      ? `Redeploy (${driftedFileCount} file${driftedFileCount === 1 ? "" : "s"} changed)`
+      ? !status.dependency_manifest_in_sync && driftedFileCount === 0
+        ? "Redeploy (dependencies changed)"
+        : `Redeploy (${driftedFileCount} file${driftedFileCount === 1 ? "" : "s"} changed)`
       : "Repair deployment"
     : "Deploy";
   const title = status.has_snapshot
     ? status.executable
-      ? `Working tree differs from ${deploymentLabel(status.ordinal, status.version_id, "deployment")}`
+      ? status.dependency_manifest_error
+        ? status.dependency_manifest_error
+        : !status.dependency_manifest_in_sync && driftedFileCount === 0
+          ? `Cross-pipeline dependency ownership differs from ${deploymentLabel(status.ordinal, status.version_id, "deployment")}`
+          : `Working tree differs from ${deploymentLabel(status.ordinal, status.version_id, "deployment")}`
       : `The latest deployment is not executable: ${status.integrity_error ?? "integrity validation failed"}`
     : "No deployment exists yet; schedules require an exact deployment pin";
   return (

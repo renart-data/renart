@@ -465,9 +465,15 @@ server-resolved matches before confirmation and persist their final units.
 
 Content-addressed store in SQLite: `renart_blobs` (hash → file bytes) +
 `renart_snapshots` (version, pipeline, per-pipeline ordinal, merkle root,
-manifest JSON, git SHA/dirty). Existing ordinals are backfilled oldest-first
-with a deterministic version-ID tie-breaker; identical no-op deploys retain
-their UUID and ordinal. Snapshots hold **source files, not rendered SQL** — rendering
+manifest JSON, versioned cross-pipeline dependency manifest, git SHA/dirty).
+The dependency manifest binds each URI edge to its consumer asset, mode, exact
+URI, and resolved producer pipeline UUID (unresolved symbolic edges retain no
+producer). Existing ordinals are backfilled oldest-first with a deterministic
+version-ID tie-breaker; identical no-op deploys retain their UUID and ordinal
+only when both source and URI ownership match. A producer ownership change
+therefore makes deployment drift visible and creates a new immutable consumer
+deployment even if no file inside the consumer pipeline changed. Snapshots hold
+**source files, not rendered SQL** — rendering
 depends on per-run env/vars/interval, so the executor renders at run time from
 snapshot content exactly as from the working tree. Every selected snapshot is
 an exact version ID owned by the target pipeline. Admission and execution
