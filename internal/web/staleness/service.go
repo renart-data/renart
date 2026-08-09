@@ -50,6 +50,10 @@ const (
 	// StatusVolatile marks sensors. A successful check is useful run history,
 	// not durable materialization coverage, so every requested run checks again.
 	StatusVolatile Status = "volatile"
+	// StatusExternal marks source assets whose physical data is maintained
+	// outside Renart. Their declarations can participate in dependency
+	// fingerprints, but the source itself has no Renart build/freshness state.
+	StatusExternal Status = "external"
 )
 
 // Interval is a [Start, End) time range.
@@ -450,7 +454,9 @@ func (s *Service) computeParsed(ctx context.Context, selection Selection, parsed
 			coverageContext.targets[assetID],
 			coverageContext.writers,
 		)
-		applyLastRun(&status, lastRuns[assetID], result)
+		if status.Status != StatusExternal {
+			applyLastRun(&status, lastRuns[assetID], result)
+		}
 		if status.Status == StatusFresh && missing != nil && missing[asset.Name] && verifiableByName(asset) {
 			status.Status = StatusMissing
 		}
@@ -818,6 +824,10 @@ func classify(asset *pipeline.Asset, assetID string, result fingerprint.Result, 
 		IntervalAware: matlog.IntervalAware(asset),
 		BackfillSafe:  matlog.BackfillSafe(asset),
 	}
+	if isSourceAsset(asset) {
+		status.Status = StatusExternal
+		return status
+	}
 
 	currentRows := make([]matlog.CoverageRow, 0, len(rows))
 	for _, row := range rows {
@@ -865,6 +875,10 @@ func classify(asset *pipeline.Asset, assetID string, result fingerprint.Result, 
 
 func isSensorAsset(asset *pipeline.Asset) bool {
 	return asset != nil && strings.Contains(strings.ToLower(strings.TrimSpace(string(asset.Type))), ".sensor.")
+}
+
+func isSourceAsset(asset *pipeline.Asset) bool {
+	return asset != nil && strings.HasSuffix(strings.ToLower(strings.TrimSpace(string(asset.Type))), ".source")
 }
 
 func classifyStale(status AssetStatus, anyBuilt bool, lastOwnContent string, result fingerprint.Result, selectedRange *Interval) AssetStatus {

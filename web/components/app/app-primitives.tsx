@@ -219,6 +219,11 @@ const stalenessMeta: Record<
     className: "bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300",
     dotClassName: "bg-violet-500",
   },
+  external: {
+    label: "External source",
+    className: "",
+    dotClassName: "bg-muted-foreground",
+  },
   never_built: {
     label: "Never built",
     className: "bg-zinc-200 text-zinc-700 dark:bg-zinc-500/15 dark:text-zinc-300",
@@ -272,8 +277,13 @@ export function StalenessBadge({
   return (
     <Badge
       size="xs"
+      variant={staleness.status === "external" ? "outline" : undefined}
       data-staleness={staleness.status}
-      title={`Staleness: ${display.label}`}
+      title={
+        staleness.status === "external"
+          ? "External source: freshness is not tracked"
+          : `Staleness: ${display.label}`
+      }
       className={cn("max-w-full truncate", display.className, className)}
     >
       <span className={cn("size-1.5 shrink-0 rounded-full", display.dotClassName)} />

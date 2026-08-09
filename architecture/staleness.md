@@ -322,6 +322,7 @@ the disconnect was shorter than the offline-overlay grace period, so a missed
 | `never_built`      | no row for this asset in this env at any fingerprint                                                         |
 | `missing`          | materialization history says fresh, async verification couldn't find the table                               |
 | `volatile`         | sensor check has no durable output coverage and must run again in every stale plan                           |
+| `external`         | source asset describes externally maintained data; Renart does not assign it a build or freshness state      |
 
 The `missing` downgrade only applies to assets whose output is a warehouse
 object named after the asset (`verifiableByName`: SQL, seed, and database-backed
@@ -349,6 +350,13 @@ from warehouse-object verification and never become fresh from a run fact. The
 Build-needed planner therefore includes them on every requested build; interactive
 execution performs one check, while scheduled execution waits according to the
 sensor's configured interval and timeout.
+
+Imported `*.source` assets are classified as `external`, excluded from Needed
+selection, and never show a last-build state. For a consumer fingerprint, the
+current source declaration is immediately achievable without a materialization
+fact: a successful transformation can therefore become fresh, while an edit to
+the source declaration still cascades to its downstreams. Renart does not infer
+the external table's data freshness from its existence or modification time.
 
 Unsaved editor buffers get a purely-frontend "modified" dot; the service only
 sees saved state.

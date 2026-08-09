@@ -151,6 +151,7 @@ func TestBuildStalePlanFiltersToSelectedUpstreamsAndPreservesGaps(t *testing.T) 
 	end := start.Add(24 * time.Hour)
 	statuses := []staleness.AssetStatus{
 		{AssetName: "fresh", Status: staleness.StatusFresh},
+		{AssetName: "external", Status: staleness.StatusExternal},
 		{AssetName: "sensor", Status: staleness.StatusVolatile, Volatile: true},
 		{AssetName: "selected", Status: staleness.StatusPartial, Gaps: []staleness.Interval{{Start: start, End: end}}},
 		{AssetName: "deployed", Status: staleness.StatusStaleDeployment},

@@ -123,6 +123,7 @@ import {
   isPythonAssetType,
   isSeedAssetType,
   isSensorAssetType,
+  isSourceAssetType,
   isSqlAssetType,
 } from "@/lib/asset-types";
 import { editorDraftAtom, sqlHoveredAssetAtom } from "@/lib/atoms/domains/editor";
@@ -332,20 +333,27 @@ function useBuildContext() {
 }
 
 function assetsForPipeline(pipeline: WebPipeline): BuildAsset[] {
-  return pipeline.assets.map((asset) => ({
-    ...assetPresentationFields(asset, pipeline),
-    workspaceAsset: asset,
-    pipelineId: pipeline.id,
-    path: asset.path,
-    type: asset.type,
-    connection: asset.connection,
-    upstreams: asset.upstreams,
-    status: asset.is_materialized ? "success" : "pending",
-    materializedAt: asset.is_materialized ? "current" : "not materialized",
-    parseError: asset.parse_error,
-    x: 0,
-    y: 0,
-  }));
+  return pipeline.assets.map((asset) => {
+    const sourceAsset = isSourceAssetType(asset.type);
+    return {
+      ...assetPresentationFields(asset, pipeline),
+      workspaceAsset: asset,
+      pipelineId: pipeline.id,
+      path: asset.path,
+      type: asset.type,
+      connection: asset.connection,
+      upstreams: asset.upstreams,
+      status: sourceAsset ? "unknown" : asset.is_materialized ? "success" : "pending",
+      materializedAt: sourceAsset
+        ? ""
+        : asset.is_materialized
+          ? "current"
+          : "not materialized",
+      parseError: asset.parse_error,
+      x: 0,
+      y: 0,
+    };
+  });
 }
 
 function normalizeAssetContentIdentity(content: string) {
@@ -503,14 +511,20 @@ export function AppBuildPage({
     [typeCheckReport],
   );
   const displayedPipelineAssets = useMemo(() => {
-    const authored = pipelineAssets.map((asset) => ({
-      ...asset,
-      status: materializationStatusByAssetId[asset.id]?.status ?? asset.status,
-      materializedAt: labelForAppMaterializationState(materializationStatusByAssetId[asset.id]),
-      staleness: staleness.byAssetName[asset.name],
-      hasTypeCheckError:
-        typeCheckErrorAssetIds.has(asset.id) || typeCheckErrorAssetIds.has(asset.name),
-    }));
+    const authored = pipelineAssets.map((asset) => {
+      const assetStaleness = staleness.byAssetName[asset.name];
+      const sourceAsset = isSourceAssetType(asset.type);
+      return {
+        ...asset,
+        status: materializationStatusByAssetId[asset.id]?.status ?? asset.status,
+        materializedAt: sourceAsset
+          ? ""
+          : labelForAppMaterializationState(materializationStatusByAssetId[asset.id]),
+        staleness: assetStaleness,
+        hasTypeCheckError:
+          typeCheckErrorAssetIds.has(asset.id) || typeCheckErrorAssetIds.has(asset.name),
+      };
+    });
     const externalRelations = typeCheckReport?.external_relations ?? [];
     if (externalRelations.length === 0) return authored;
 

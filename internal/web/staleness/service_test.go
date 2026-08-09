@@ -40,6 +40,17 @@ func sqlAsset(name, content string, upstreams ...string) *pipeline.Asset {
 	return asset
 }
 
+func sourceAsset(name, content string) *pipeline.Asset {
+	return &pipeline.Asset{
+		Name: name,
+		Type: "pg.source",
+		ExecutableFile: pipeline.ExecutableFile{
+			Path:    "/w/p/assets/" + name + ".asset.yml",
+			Content: content,
+		},
+	}
+}
+
 func newFixture(t *testing.T, assets ...*pipeline.Asset) *fixture {
 	t.Helper()
 	schedStore, err := scheduler.OpenStore(filepath.Join(t.TempDir(), "state.db"))
@@ -281,6 +292,34 @@ func TestNeverBuiltThenFresh(t *testing.T) {
 
 	f.recordRun(t, "dev", nil, "a")
 	assert.Equal(t, StatusFresh, f.statuses(t, "dev", nil, nil)["a"].Status)
+}
+
+func TestSourceAssetHasNoFreshnessStateAndConsumerCanBecomeFresh(t *testing.T) {
+	t.Parallel()
+	source := sourceAsset("external.orders", "name: external.orders\ntype: pg.source\ncolumns:\n  - name: id\n    type: bigint\n")
+	consumer := sqlAsset("analytics.orders", "select * from external.orders", source.Name)
+	f := newFixture(t, source, consumer)
+
+	before := f.statuses(t, "dev", nil, nil)
+	assert.Equal(t, StatusExternal, before[source.Name].Status)
+	assert.Nil(t, before[source.Name].LastMaterializedAt)
+	assert.Empty(t, before[source.Name].LastRunStatus)
+	assert.Equal(t, StatusNeverBuilt, before[consumer.Name].Status)
+
+	// A source declaration is the consumer's observed read contract. It has no
+	// materialization fact of its own, but it must not prevent a successful
+	// consumer build from reaching its target fingerprint.
+	f.recordRun(t, "dev", nil, consumer.Name)
+	afterBuild := f.statuses(t, "dev", nil, nil)
+	assert.Equal(t, StatusExternal, afterBuild[source.Name].Status)
+	assert.Equal(t, StatusFresh, afterBuild[consumer.Name].Status)
+
+	// Editing the declaration still cascades to consumers while the source
+	// itself remains outside Renart's freshness model.
+	source.ExecutableFile.Content += "  - name: created_at\n    type: timestamp\n"
+	afterEdit := f.statuses(t, "dev", nil, nil)
+	assert.Equal(t, StatusExternal, afterEdit[source.Name].Status)
+	assert.Equal(t, StatusStaleUpstream, afterEdit[consumer.Name].Status)
 }
 
 func TestLegacySnapshotTokenIsDeterministicAndPreservesFreshness(t *testing.T) {

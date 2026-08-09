@@ -172,7 +172,9 @@ not underscore-flattened route hacks.
   and matching warning resolution open one reviewed native import dialog: the
   proposed asset name, path, type, and columns are shown before the Go server
   writes anything, columns are enabled by default, and an explicit checkbox
-  supports a no-columns import. Assets
+  supports a no-columns import. Persisted source assets use a neutral **External
+  source** freshness badge and omit last-build copy because Renart neither builds
+  nor assigns freshness to externally maintained data. Assets
   whose latest successful write has failed runtime assertions receive a
   separate **Checks failed** badge only while that outcome matches the current
   asset content. Selecting it opens the asset properties and scrolls to and

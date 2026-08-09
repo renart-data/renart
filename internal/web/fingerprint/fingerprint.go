@@ -272,9 +272,9 @@ func (e *Engine) AchievedFingerprintsByConsumer(
 	if err != nil {
 		return nil, err
 	}
-	inPipeline := make(map[string]struct{}, len(p.Assets))
+	inPipeline := make(map[string]*pipeline.Asset, len(p.Assets))
 	for _, asset := range p.Assets {
-		inPipeline[asset.Name] = struct{}{}
+		inPipeline[asset.Name] = asset
 	}
 
 	achieved := make(map[string]Fingerprint, len(ordered))
@@ -289,12 +289,24 @@ func (e *Engine) AchievedFingerprintsByConsumer(
 		}
 		parts := make([]string, 0, len(asset.Upstreams))
 		for _, upstream := range asset.Upstreams {
-			if _, ok := inPipeline[upstream.Value]; !ok {
+			upstreamAsset, ok := inPipeline[upstream.Value]
+			if !ok {
 				parts = append(parts, "ext:"+upstream.Type+":"+upstream.Value)
 				continue
 			}
 			upID := identity.AssetID(pipelineUUID, upstream.Value)
-			if fp, ok := achieved[upID]; ok {
+			if isSourceAsset(upstreamAsset) {
+				// Source assets describe data maintained outside Renart. They never
+				// receive a materialization fact, so the declaration fingerprint is
+				// the exact read contract for an in-pipeline consumer. This lets a
+				// successful consumer become fresh while still cascading source
+				// declaration edits through the ordinary target fingerprint.
+				result, exists := targets[upID]
+				if !exists {
+					return nil, fmt.Errorf("fingerprint: achieved: no target fingerprint for source %s", upstream.Value)
+				}
+				parts = append(parts, "up:"+string(result.FP))
+			} else if fp, ok := achieved[upID]; ok {
 				parts = append(parts, "up:"+string(fp))
 			} else if fp, ok := latestAchieved(assetID, upID); ok {
 				parts = append(parts, "up:"+string(fp))
@@ -310,6 +322,10 @@ func (e *Engine) AchievedFingerprintsByConsumer(
 		achieved[assetID] = Fingerprint(Version + ":" + hashHex(hashParts...))
 	}
 	return achieved, nil
+}
+
+func isSourceAsset(asset *pipeline.Asset) bool {
+	return asset != nil && strings.HasSuffix(strings.ToLower(strings.TrimSpace(string(asset.Type))), ".source")
 }
 
 // upstreamHashParts returns the sorted upstream contribution: resolved

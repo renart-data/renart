@@ -65,7 +65,7 @@ func PipelineUpstreamNames(view webmodel.Pipeline, targetAssetName string) (map[
 func BuildStalePlan(statuses []staleness.AssetStatus, include map[string]struct{}) []StaleAssetPlan {
 	plan := make([]StaleAssetPlan, 0, len(statuses))
 	for _, status := range statuses {
-		if status.Status == staleness.StatusFresh {
+		if status.Status == staleness.StatusFresh || status.Status == staleness.StatusExternal {
 			continue
 		}
 		if include != nil {

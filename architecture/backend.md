@@ -420,8 +420,10 @@ request body.
 
 Recognized imported `*.source` assets keep Bruin's registered no-op main/check
 semantics on the direct path. They are dependency anchors for externally owned
-relations, not transformations to execute. An unknown custom `.source` type is
-not inferred to be safe and still takes the unsupported/CLI-fallback path.
+relations, not transformations to execute. Their current declaration is the
+fingerprint read contract for consumers, but the source itself has no Renart
+build/freshness state or execution unit. An unknown custom `.source` type is not
+inferred to be safe and still takes the unsupported/CLI-fallback path.
 
 Pipeline planning is read-only at `POST /api/pipelines/{id}/plan` and through
 `renart plan`. It resolves an explicit saved-working-tree or deployment source,

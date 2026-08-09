@@ -25,6 +25,17 @@ func sqlAsset(name, content string, upstreams ...string) *pipeline.Asset {
 	return asset
 }
 
+func sourceAsset(name, content string) *pipeline.Asset {
+	return &pipeline.Asset{
+		Name: name,
+		Type: "pg.source",
+		ExecutableFile: pipeline.ExecutableFile{
+			Path:    "/workspace/p/assets/" + name + ".asset.yml",
+			Content: content,
+		},
+	}
+}
+
 func testPipeline(assets ...*pipeline.Asset) *pipeline.Pipeline {
 	return &pipeline.Pipeline{
 		LegacyID:       "pipeline-uuid",
@@ -126,6 +137,39 @@ func TestUpstreamEditCascadesDownstreamOnly(t *testing.T) {
 	// Downstream own-content stays put: the staleness service uses this to
 	// distinguish stale_edited from stale_upstream.
 	assert.Equal(t, before["pipeline-uuid:b"].OwnContent, after["pipeline-uuid:b"].OwnContent)
+}
+
+func TestSourceDeclarationIsAnImmediatelyAchievableReadContract(t *testing.T) {
+	t.Parallel()
+	source := sourceAsset("external.orders", "name: external.orders\ntype: pg.source\ncolumns:\n  - name: id\n")
+	consumer := sqlAsset("analytics.orders", "select * from external.orders", source.Name)
+	p := testPipeline(source, consumer)
+	engine := NewEngine()
+	targets, err := engine.DAG(p, Vars{})
+	require.NoError(t, err)
+
+	consumerID := "pipeline-uuid:" + consumer.Name
+	achieved, err := engine.AchievedFingerprints(
+		p,
+		targets,
+		map[string]bool{consumerID: true},
+		func(string) (Fingerprint, bool) { return "", false },
+	)
+	require.NoError(t, err)
+	assert.Equal(t, targets[consumerID].FP, achieved[consumerID])
+
+	source.ExecutableFile.Content += "  - name: created_at\n"
+	updatedTargets, err := engine.DAG(p, Vars{})
+	require.NoError(t, err)
+	updatedAchieved, err := engine.AchievedFingerprints(
+		p,
+		updatedTargets,
+		map[string]bool{consumerID: true},
+		func(string) (Fingerprint, bool) { return "", false },
+	)
+	require.NoError(t, err)
+	assert.NotEqual(t, targets[consumerID].FP, updatedTargets[consumerID].FP)
+	assert.Equal(t, updatedTargets[consumerID].FP, updatedAchieved[consumerID])
 }
 
 func TestUnconsumedVarFlipDoesNotChangeFingerprint(t *testing.T) {

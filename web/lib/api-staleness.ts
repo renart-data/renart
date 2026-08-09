@@ -8,6 +8,7 @@ export type AssetStalenessStatus =
   | "stale_upstream"
   | "partial"
   | "volatile"
+  | "external"
   | "never_built"
   | "missing";
 
