@@ -798,7 +798,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
       summary: { execution_units: number };
     };
     expect(neededPlan.selection.mode).toBe("needed");
-    expect(neededPlan.selection.data_state_token).toMatch(/^renart-data-state-v1:[a-f0-9]{64}$/);
+    expect(neededPlan.selection.data_state_token).toMatch(/^renart-data-state-v2:[a-f0-9]{64}$/);
     expect(neededPlan.summary.execution_units).toBeGreaterThan(0);
     expect(neededPlan.execution_units).toHaveLength(neededPlan.summary.execution_units);
 
