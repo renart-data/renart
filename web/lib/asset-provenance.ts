@@ -132,8 +132,13 @@ export function parseAssetProvenance(
 export type DependencyRow = {
   name: string;
   key: string;
+  kind: "asset" | "uri";
+  value: string;
   mode: DependencyMode;
   source: "inferred" | "manual";
+  resolvedAssetId?: string;
+  resolvedPipelineId?: string;
+  resolvedPipelineName?: string;
 };
 
 export type DependencyClassification = {
@@ -143,28 +148,73 @@ export type DependencyClassification = {
 };
 
 /**
- * Classify an asset's upstreams into inferred, manual, and ignored, using the
- * provenance. The workspace payload lists upstream names without modes, so the
- * mode for manual deps is recovered from the dep_add key.
+ * Classify an asset's typed dependencies into inferred, manual, and ignored,
+ * using provenance. Older workspace payloads are accepted through the flat
+ * upstream-name fallback.
  */
 export function classifyDependencies(asset: WebAsset): DependencyClassification {
   const provenance = parseAssetProvenance(asset.meta);
-  const manualByName = new Map(provenance.depAdd.map((d) => [d.value.toLowerCase(), d]));
+  const matchKey = (kind: "asset" | "uri", value: string) =>
+    `${kind}:${value.trim().toLowerCase()}`;
+  const manualByValue = new Map(
+    provenance.depAdd.map((dependency) => [
+      matchKey(dependency.kind, dependency.value),
+      dependency,
+    ]),
+  );
+
+  const dependencies =
+    asset.dependencies && asset.dependencies.length > 0
+      ? asset.dependencies.map((dependency) => ({
+          kind: dependency.type?.toLowerCase() === "uri" ? ("uri" as const) : ("asset" as const),
+          value: dependency.value,
+          mode:
+            dependency.mode?.toLowerCase() === "symbolic"
+              ? ("symbolic" as const)
+              : ("full" as const),
+          resolvedAssetId: dependency.resolved_asset_id,
+          resolvedAssetName: dependency.resolved_asset_name,
+          resolvedPipelineId: dependency.resolved_pipeline_id,
+          resolvedPipelineName: dependency.resolved_pipeline_name,
+        }))
+      : (asset.upstreams ?? []).map((value) => ({
+          kind: "asset" as const,
+          value,
+          mode: "full" as const,
+          resolvedAssetId: undefined,
+          resolvedAssetName: undefined,
+          resolvedPipelineId: undefined,
+          resolvedPipelineName: undefined,
+        }));
 
   const inferred: DependencyRow[] = [];
   const manual: DependencyRow[] = [];
-  for (const name of asset.upstreams ?? []) {
-    const lower = name.toLowerCase();
-    const manualKey = manualByName.get(lower);
+  for (const dependency of dependencies) {
+    const manualKey = manualByValue.get(matchKey(dependency.kind, dependency.value));
+    const row: DependencyRow = {
+      name: dependency.resolvedAssetName || dependency.value,
+      key: `${dependency.kind === "uri" ? "u" : "a"}:${dependency.value}#${dependency.mode}`,
+      kind: dependency.kind,
+      value: dependency.value,
+      mode: dependency.mode,
+      source: manualKey ? "manual" : "inferred",
+      resolvedAssetId: dependency.resolvedAssetId,
+      resolvedPipelineId: dependency.resolvedPipelineId,
+      resolvedPipelineName: dependency.resolvedPipelineName,
+    };
     if (manualKey) {
-      manual.push({ name, key: manualKey.key, mode: manualKey.mode, source: "manual" });
+      manual.push({ ...row, key: manualKey.key, mode: manualKey.mode });
     } else {
-      inferred.push({ name, key: `a:${name}#full`, mode: "full", source: "inferred" });
+      inferred.push(row);
     }
   }
 
-  const present = new Set((asset.upstreams ?? []).map((n) => n.toLowerCase()));
-  const ignored = provenance.depDrop.filter((d) => !present.has(d.value.toLowerCase()));
+  const present = new Set(
+    dependencies.map((dependency) => matchKey(dependency.kind, dependency.value)),
+  );
+  const ignored = provenance.depDrop.filter(
+    (dependency) => !present.has(matchKey(dependency.kind, dependency.value)),
+  );
 
   return { inferred, manual, ignored };
 }

@@ -16,6 +16,7 @@ import (
 	bruinpath "github.com/bruin-data/bruin/pkg/path"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/spf13/afero"
+	"renart/internal/web/dependencygraph"
 	"renart/internal/web/identity"
 	"renart/internal/web/model"
 	"renart/internal/web/notebook"
@@ -180,6 +181,7 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 	}
 
 	builder := s.NewPipelineBuilder()
+	dependencyInputs := make([]dependencygraph.PipelineInput, 0, len(pipelinePaths))
 
 	sort.Strings(pipelinePaths)
 	for _, pPath := range pipelinePaths {
@@ -248,8 +250,20 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 			}
 
 			upstreams := make([]string, 0, len(asset.Upstreams))
+			dependencies := make([]model.AssetDependency, 0, len(asset.Upstreams))
 			for _, up := range asset.Upstreams {
 				upstreams = append(upstreams, up.Value)
+				dependencyType := strings.ToLower(strings.TrimSpace(up.Type))
+				if dependencyType == "" {
+					dependencyType = "asset"
+				}
+				mode := up.Mode.String()
+				if mode == "" {
+					mode = "full"
+				}
+				dependencies = append(dependencies, model.AssetDependency{
+					Type: dependencyType, Value: strings.TrimSpace(up.Value), Mode: mode,
+				})
 			}
 
 			connectionName := ""
@@ -294,10 +308,12 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 			pSummary.Assets = append(pSummary.Assets, model.Asset{
 				ID:                          EncodeID(filepath.ToSlash(relAssetPath)),
 				Name:                        asset.Name,
+				URI:                         strings.TrimSpace(asset.URI),
 				Type:                        string(asset.Type),
 				Path:                        filepath.ToSlash(relAssetPath),
 				Content:                     content,
 				Upstreams:                   upstreams,
+				Dependencies:                dependencies,
 				Parameters:                  parameters,
 				Meta:                        assetMeta,
 				Columns:                     PipelineColumnsToModelColumns(columns),
@@ -324,7 +340,47 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 			})
 		}
 
+		assetWorkspaceIDs := make(map[string]string, len(pSummary.Assets))
+		for _, asset := range pSummary.Assets {
+			assetWorkspaceIDs[asset.Name] = asset.ID
+		}
+		dependencyInputs = append(dependencyInputs, dependencygraph.PipelineInput{
+			UUID: pipelineUUID, ID: pSummary.ID, Name: pSummary.Name, Path: pSummary.Path,
+			Parsed: parsed, AssetWorkspaceIDs: assetWorkspaceIDs,
+		})
+
 		state.Pipelines = append(state.Pipelines, pSummary)
+	}
+
+	resolvedDependencies := dependencygraph.Resolve(dependencyInputs)
+	state.DependencyGraphRevision = resolvedDependencies.Revision
+	for pipelineIndex := range state.Pipelines {
+		pipelineSummary := &state.Pipelines[pipelineIndex]
+		for assetIndex := range pipelineSummary.Assets {
+			assetSummary := &pipelineSummary.Assets[assetIndex]
+			stableAssetID := identity.AssetID(pipelineSummary.UUID, assetSummary.Name)
+			edges := resolvedDependencies.EdgesByConsumer[stableAssetID]
+			dependencies := make([]model.AssetDependency, 0, len(edges))
+			for _, edge := range edges {
+				dependency := model.AssetDependency{
+					Type: edge.Type, Value: edge.Value, Mode: edge.Mode.String(),
+				}
+				if producer := resolvedDependencies.Nodes[edge.ProducerID]; edge.Resolved && producer != nil {
+					dependency.ResolvedAssetID = producer.WorkspaceAssetID
+					dependency.ResolvedAssetName = producer.AssetName
+					dependency.ResolvedPipelineID = producer.PipelineID
+					dependency.ResolvedPipeline = producer.PipelineName
+				}
+				dependencies = append(dependencies, dependency)
+			}
+			assetSummary.Dependencies = dependencies
+		}
+	}
+	for _, diagnostic := range resolvedDependencies.Diagnostics {
+		state.DependencyDiagnostics = append(state.DependencyDiagnostics, model.WorkspaceDependencyDiagnostic{
+			AssetID: diagnostic.WorkspaceAssetID, PipelineID: diagnostic.PipelineID,
+			Code: diagnostic.Code, Severity: string(diagnostic.Severity), Message: diagnostic.Message,
+		})
 	}
 
 	s.appendNotebooks(&state)

@@ -101,7 +101,8 @@ default.
 ## 5. Transactions (`service/asset_transactions.go`)
 
 UI surfaces never write YAML. Every edit is a semantic `AssetTransaction`
-(dependency.manual.add/remove, dependency.inferred.ignore/restore,
+(asset URI set/clear, dependency.manual.add/remove,
+dependency.inferred.ignore/restore,
 column.check.add, column.description.set, column ownership, SQL hook
 upsert/remove, and safe inactive-materialization cleanup) POSTed to
 `/api/assets/{assetID}/transactions`. The handler read-locks the file (a
@@ -116,6 +117,13 @@ dependencies in SQL appearance order then manual ones, columns in SELECT-list
 order then manual/preserved ones, no timestamps or UI state in committed
 metadata (the node-preserving YAML codec in `service/asset_yaml_codec.go`
 round-trips unknown fields).
+
+The workspace API preserves Bruin dependency type and mode alongside the
+compatibility `upstreams[]` list. A shared resolver keeps bare asset names local
+to their pipeline and resolves exact URIs across the workspace. The guided and
+YAML-shaped editors use the same pipeline-grouped picker; cross-pipeline choices
+are unavailable until the producer declares a URI, and duplicate URIs remain
+editable while surfacing an asset-addressed error.
 
 ## 6. UI (`web/components/app/`)
 

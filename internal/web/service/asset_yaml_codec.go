@@ -26,6 +26,7 @@ import (
 // no longer carries it); every other key in the file is preserved.
 var baseManagedYAMLAssetKeys = []string{
 	"name",
+	"uri",
 	"type",
 	"description",
 	"connection",

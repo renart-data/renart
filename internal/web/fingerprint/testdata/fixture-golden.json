@@ -1,19 +1,19 @@
 {
   "fixture-pipeline-uuid:fixture.daily_summary": {
-    "fp": "v2:a790e6fd3dd2f8792d02b2f974c59e9efd07d48f5eb092ff020707f16de0653e",
-    "own_content": "v2:4019ce51f643493c70df530f1713071b5da181f647b4943df5318895eeba8710",
+    "fp": "v3:4555aa2aedb88a0132f1bd4665de982685bde8b2a108d3a7555d80669f33c373",
+    "own_content": "v3:3c727f1059f7d3c9cb180fe57cdf03744b0c840060b6a4e6d76d9c73195ef5dc",
     "consumed_vars": []
   },
   "fixture-pipeline-uuid:fixture.raw_events": {
-    "fp": "v2:1b1cbe4b23ba1cbe339e30b567f395bf095631149743a6d41a40595a0a70789b",
-    "own_content": "v2:fc123594e6651955b0af09331adb9946a09377087ff3237e9ede4586d40ae8e6",
+    "fp": "v3:8f4d370d0d133d8723292763dd19c6d84cb564ec76b1c79d5cd6b9fe54185145",
+    "own_content": "v3:57e51f6999b05694655063d7b7df4aa1d388a117819665d456ff173572d538ff",
     "consumed_vars": [
       "region"
     ]
   },
   "fixture-pipeline-uuid:fixture.score": {
-    "fp": "v2:97d435ed45bf1a1c5abeb090f9863ed4fe1921cfb30f94dedb9ba4d5bf7ab5cf",
-    "own_content": "v2:d30062aea123c3c4e7f203b093b0af0f4e1d8cdca1722fbad2fa0d89028d2ff1",
+    "fp": "v3:d795e5a2f832044bca900246c99bb0cdbe0a2958530f80d8584d6232f1d402fd",
+    "own_content": "v3:ef519f2708714c7811a02255fa3d82703256101e08748026631161802b07055b",
     "consumed_vars": [
       "limit",
       "region"

@@ -277,6 +277,17 @@ func (s *SQLLSPService) buildAssetFindings(ctx context.Context, assetID string) 
 		}
 		result[asset.ID] = append([]TypeCheckFinding(nil), asset.Findings...)
 	}
+	if s.deps.CurrentState != nil {
+		for _, diagnostic := range s.deps.CurrentState().DependencyDiagnostics {
+			if diagnostic.AssetID == "" {
+				continue
+			}
+			result[diagnostic.AssetID] = append(
+				result[diagnostic.AssetID],
+				workspaceDependencyTypeCheckFinding(diagnostic),
+			)
+		}
+	}
 	return result
 }
 
@@ -880,17 +891,22 @@ func (s *SQLLSPService) graphForState(ctx context.Context, state model.Workspace
 
 func (s *SQLLSPService) buildGraph(ctx context.Context, state model.WorkspaceState) sqllsp.CanonicalGraph {
 	s.buildCount.Add(1)
+	return buildWorkspaceCanonicalGraph(ctx, s.deps.WorkspaceRoot, state)
+}
+
+func buildWorkspaceCanonicalGraph(ctx context.Context, workspaceRoot string, state model.WorkspaceState) sqllsp.CanonicalGraph {
 	var pipelineAssets []model.Asset
 	for _, pipeline := range state.Pipelines {
 		pipelineAssets = append(pipelineAssets, pipeline.Assets...)
 	}
-	nodes, columns := s.graphAssetNodes(pipelineAssets)
-	graph := sqllsp.GraphFromRenartAssets(sqllsp.FileURI(s.deps.WorkspaceRoot), nodes, columns)
+	adapter := &SQLLSPService{deps: SQLLSPDependencies{WorkspaceRoot: workspaceRoot}}
+	nodes, columns := adapter.graphAssetNodes(pipelineAssets)
+	graph := sqllsp.GraphFromRenartAssets(sqllsp.FileURI(workspaceRoot), nodes, columns)
 	return resolveAuthoringSchemaGraph(
 		ctx,
 		graph,
 		pipelineFromSchemaModels(pipelineAssets),
-		inferenceAssetsFromModels(s.deps.WorkspaceRoot, pipelineAssets),
+		inferenceAssetsFromModels(workspaceRoot, pipelineAssets),
 	)
 }
 

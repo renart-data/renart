@@ -103,6 +103,24 @@ export type ColumnSchemaResolution = {
   type?: string;
 };
 
+export type AssetDependency = {
+  type: string;
+  value: string;
+  mode: string;
+  resolved_asset_id?: string;
+  resolved_asset_name?: string;
+  resolved_pipeline_id?: string;
+  resolved_pipeline_name?: string;
+};
+
+export type WorkspaceDependencyDiagnostic = {
+  asset_id: string;
+  pipeline_id: string;
+  code: string;
+  severity: string;
+  message: string;
+};
+
 export type WebColumnCheck = {
   name: string;
   value?: unknown;
@@ -151,11 +169,13 @@ export type WebColumn = {
 export type WebAsset = {
   id: string;
   name: string;
+  uri?: string;
   type: string;
   path: string;
   content: string;
   content_revision?: string;
   upstreams: string[];
+  dependencies?: AssetDependency[];
   parameters?: Record<string, string>;
   meta?: Record<string, string>;
   columns?: WebColumn[];
@@ -231,6 +251,8 @@ export type WorkspaceState = {
   connections: Record<string, string>;
   query_connections?: WorkspaceQueryConnection[];
   asset_capabilities?: AssetAuthoringCapability[];
+  dependency_graph_revision?: string;
+  dependency_diagnostics?: WorkspaceDependencyDiagnostic[];
   selected_environment: string;
   environment_policies?: Record<string, EnvironmentPolicy>;
   features?: Record<string, boolean>;

@@ -136,14 +136,34 @@ type ColumnSchemaResolution struct {
 // Asset represents a web API asset with its metadata. ContentRevision identifies
 // the exact snapshot returned for a notebook cell so saves can use it as an
 // optimistic-concurrency precondition.
+type AssetDependency struct {
+	Type               string `json:"type"`
+	Value              string `json:"value"`
+	Mode               string `json:"mode"`
+	ResolvedAssetID    string `json:"resolved_asset_id,omitempty"`
+	ResolvedAssetName  string `json:"resolved_asset_name,omitempty"`
+	ResolvedPipelineID string `json:"resolved_pipeline_id,omitempty"`
+	ResolvedPipeline   string `json:"resolved_pipeline_name,omitempty"`
+}
+
+type WorkspaceDependencyDiagnostic struct {
+	AssetID    string `json:"asset_id"`
+	PipelineID string `json:"pipeline_id"`
+	Code       string `json:"code"`
+	Severity   string `json:"severity"`
+	Message    string `json:"message"`
+}
+
 type Asset struct {
 	ID                     string                  `json:"id"`
 	Name                   string                  `json:"name"`
+	URI                    string                  `json:"uri,omitempty"`
 	Type                   string                  `json:"type"`
 	Path                   string                  `json:"path"`
 	Content                string                  `json:"content"`
 	ContentRevision        string                  `json:"content_revision,omitempty"`
 	Upstreams              []string                `json:"upstreams"`
+	Dependencies           []AssetDependency       `json:"dependencies,omitempty"`
 	Parameters             map[string]string       `json:"parameters,omitempty"`
 	Meta                   map[string]string       `json:"meta,omitempty"`
 	Columns                []Column                `json:"columns,omitempty"`
@@ -297,13 +317,15 @@ type WorkspaceQueryConnection struct {
 
 // WorkspaceState represents the current state of a workspace.
 type WorkspaceState struct {
-	Pipelines           []Pipeline                   `json:"pipelines"`
-	Notebooks           []Notebook                   `json:"notebooks,omitempty"`
-	Connections         map[string]string            `json:"connections"`
-	QueryConnections    []WorkspaceQueryConnection   `json:"query_connections,omitempty"`
-	AssetCapabilities   []AssetAuthoringCapability   `json:"asset_capabilities,omitempty"`
-	SelectedEnvironment string                       `json:"selected_environment"`
-	EnvironmentPolicies map[string]EnvironmentPolicy `json:"environment_policies,omitempty"`
+	Pipelines               []Pipeline                      `json:"pipelines"`
+	Notebooks               []Notebook                      `json:"notebooks,omitempty"`
+	Connections             map[string]string               `json:"connections"`
+	QueryConnections        []WorkspaceQueryConnection      `json:"query_connections,omitempty"`
+	AssetCapabilities       []AssetAuthoringCapability      `json:"asset_capabilities,omitempty"`
+	DependencyGraphRevision string                          `json:"dependency_graph_revision,omitempty"`
+	DependencyDiagnostics   []WorkspaceDependencyDiagnostic `json:"dependency_diagnostics,omitempty"`
+	SelectedEnvironment     string                          `json:"selected_environment"`
+	EnvironmentPolicies     map[string]EnvironmentPolicy    `json:"environment_policies,omitempty"`
 	// Features are project-scoped feature flags from .renart/project.yml
 	// (e.g. "ingestr" re-enables ingestr surfaces in the UI).
 	Features  map[string]bool     `json:"features,omitempty"`

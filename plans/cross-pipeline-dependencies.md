@@ -1,7 +1,7 @@
 # Cross-pipeline dependencies
 
-Status: proposed — repository and Bruin prior-art investigation complete; no
-cross-pipeline runtime semantics have shipped yet
+Status: in progress — Phase 1 graph, authoring, validation, SQL intelligence,
+and ID-based lineage are implemented; Phase 2 runtime readiness remains
 
 ## Goal
 
@@ -48,11 +48,11 @@ The Bruin version currently used by Renart already:
 
 - parses `Asset.URI` and `depends: [{uri: ...}]`;
 - validates duplicate and unresolved URIs across a repository in
-  [`ValidateCrossPipelineURIDependencies`](https://github.com/bruin-data/bruin/blob/v0.11.681/pkg/lint/rules.go#L2223-L2283);
+  [`ValidateCrossPipelineURIDependencies`](https://github.com/bruin-data/bruin/blob/v0.11.691/pkg/lint/rules.go#L2223-L2283);
 - excludes non-asset and symbolic dependencies from the local CLI execution
   scheduler. A symbolic edge is explicitly lineage-only; it must not make a
   downstream wait. See the
-  [scheduler relationship construction](https://github.com/bruin-data/bruin/blob/v0.11.681/pkg/scheduler/scheduler.go#L807-L817).
+  [scheduler relationship construction](https://github.com/bruin-data/bruin/blob/v0.11.691/pkg/scheduler/scheduler.go#L807-L817).
 
 Renart should reuse the syntax and validation rules, but the local Renart
 scheduler must implement the prerequisite/coverage behavior itself. That
@@ -336,11 +336,11 @@ batch promotion remains all-or-nothing.
 
 ### Phase 1 — correct graph, files, and lineage
 
-1. Introduce the shared workspace dependency graph and diagnostics.
-2. Add URI/typed dependencies to DTOs and generated web types.
-3. Add URI editing and sibling-pipeline dependency selection.
-4. Resolve Catalog/Build edges by asset ID; render cross-pipeline labels.
-5. Add repository-wide typecheck and full-edge cycle tests.
+1. [x] Introduce the shared workspace dependency graph and diagnostics.
+2. [x] Add URI/typed dependencies to DTOs and generated web types.
+3. [x] Add URI editing and sibling-pipeline dependency selection.
+4. [x] Resolve Catalog/Build edges by asset ID; render cross-pipeline labels.
+5. [x] Add repository-wide typecheck and full-edge cycle tests.
 
 At this checkpoint cross-pipeline edges are visible and validated, but execution
 must remain blocked with an explicit `not implemented for execution` finding.
@@ -390,37 +390,27 @@ Do not allow a validated-looking edge to run with stable-token freshness.
 - live E2E: author in the guided form, see a cross-pipeline Catalog edge, deploy
   both pipelines, observe waiting, run producer, and see downstream admission.
 
-## Open questions
+## Accepted decisions
 
-1. **URI authoring:** should Renart only suggest a URI from an exact physical
-   target, or also offer a portable `renart://<project>/<pipeline>/<asset>`
-   fallback? Recommendation: physical URI or explicit user value only; avoid
-   committing Renart-internal IDs as the default portable contract.
-2. **Unresolved symbolic edges:** warning or error? Recommendation: warning in
-   typecheck, but a deployment can retain it because it cannot affect data.
-3. **Wait deadline:** match Bruin Cloud's 12 hours, make it a project setting,
-   or derive it from schedules? Recommendation: 12-hour project default with a
-   bounded 5-minute–7-day setting; per-edge overrides can wait.
-4. **Producer schedule requirement:** may a scheduled downstream accept a
-   current producer fact created by a manual Renart run when the producer has
-   no active schedule? Recommendation: yes if the fact matches the producer's
-   deployed source/configuration; otherwise a paused/missing producer schedule
-   is an actionable warning, not an automatic rejection.
-5. **Bruin CLI runs:** Renart cannot currently prove a materialization performed
-   by a separate `bruin run` process because it did not capture target/fingerprint
-   facts. Should users explicitly import a Bruin run log, or should scheduled
-   prerequisites remain Renart-observed only? Recommendation: Renart-observed
-   only for the first version; never infer freshness from table existence.
+1. **URI authoring:** use only an exact physical URI or an explicit user value.
+   Do not invent a `renart://` fallback.
+2. **Unresolved symbolic edges:** emit a warning and allow deployment because
+   the edge cannot affect data readiness.
+3. **Wait deadline:** use a 12-hour project default, eventually configurable
+   within 5 minutes–7 days. Per-edge overrides are deferred.
+4. **Producer schedule requirement:** accept a current manual Renart run fact
+   that matches the deployed producer. A paused or missing producer schedule is
+   an actionable warning, not an automatic rejection.
+5. **Observed facts:** prerequisites use **only Renart-observed freshness and
+   materialization facts**. Do not infer freshness from table existence and do
+   not import separate Bruin CLI runs in the first version; Renart-only runtime
+   guarantees require the Renart CLI/runtime.
 6. **Redeploy while waiting:** freeze the producer snapshot selected when the
-   occurrence first waited, or re-plan to the new producer deployment?
-   Recommendation: freeze it for that occurrence and surface a superseded-source
-   action; future occurrences use the new pin. This preserves reviewed intent.
-7. **Environment mapping:** same-name environments are simple in one workspace.
-   Is there a real need for `consumer prod -> producer production` mappings?
-   Recommendation: defer until a concrete project needs it.
-8. **Sensor producers:** should a cross-pipeline dependency be allowed to target
-   a sensor's success rather than materialized data? Recommendation: disallow in
-   the initial coverage-based contract; add a separate event prerequisite later.
+   occurrence first waits. Future occurrences use the new pin.
+7. **Environment mapping:** require the same Renart environment name in the
+   first version; defer explicit mappings until a concrete need appears.
+8. **Sensor producers:** disallow them in the initial coverage-based contract.
+   A future event-prerequisite feature can model sensor success separately.
 
 ## Completion
 

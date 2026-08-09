@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"renart/internal/authoringdiag"
 )
 
 func TestPipelineDependencyIssuesUseBruinDependencySemantics(t *testing.T) {
@@ -25,6 +27,7 @@ func TestPipelineDependencyIssuesUseBruinDependencySemantics(t *testing.T) {
 		Upstreams: []pipeline.Upstream{
 			{Type: "asset", Value: upstream.Name},
 			{Type: "uri", Value: "s3://external-bucket/orders"},
+			{Type: "uri", Value: "s3://lineage-only/orders", Mode: pipeline.UpstreamModeSymbolic},
 			{Type: "asset", Value: "analytics.missing"},
 		},
 	}
@@ -32,9 +35,14 @@ func TestPipelineDependencyIssuesUseBruinDependencySemantics(t *testing.T) {
 
 	issues, err := pipelineDependencyIssues(context.Background(), pl)
 	require.NoError(t, err)
-	require.Len(t, issues, 1)
-	assert.Same(t, reader, issues[0].Asset)
-	assert.Equal(t, "Dependency 'analytics.missing' does not exist", issues[0].Description)
+	require.Len(t, issues, 2)
+	byCode := make(map[string]pipelineDependencyIssue, len(issues))
+	for _, issue := range issues {
+		byCode[issue.Code] = issue
+	}
+	assert.Same(t, reader, byCode[dependencyExistsRule].Asset)
+	assert.Equal(t, "Dependency 'analytics.missing' does not exist", byCode[dependencyExistsRule].Description)
+	assert.Contains(t, byCode[authoringdiag.CodeCrossPipelineExecutionPending].Description, "s3://external-bucket/orders")
 }
 
 func TestValidateDirectRunDependenciesPrintsBruinStyleReport(t *testing.T) {

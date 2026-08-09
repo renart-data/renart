@@ -729,7 +729,10 @@ Before either a pipeline or a single asset starts, the direct runner validates
 declared dependencies across the whole parsed pipeline. Non-URI dependencies
 must resolve to another asset; a missing edge produces the same
 `dependency-exists` diagnostic as Bruin and stops before connections or task
-execution begin. The same validator feeds pipeline type-check findings. Runtime
+execution begin. Full URI dependencies additionally fail closed with an
+explicit cross-pipeline-readiness issue until the reviewed prerequisite path is
+available; symbolic URI edges remain lineage-only. The same local-name
+validator feeds pipeline type-check findings. Runtime
 output is one stdout/stderr stream: lifecycle messages remain run-scoped, while
 task output passes through a line-aware asset writer that adds a timestamp,
 deterministically colored asset label, and `>>` marker to every logical line.
@@ -1295,6 +1298,12 @@ rather than trusting the UI.
 Pipeline type checks also validate declared dependency existence and
 materialization configuration: supported strategies, required merge primary
 keys, active incremental/update keys, and time-interval prerequisites.
+Interactive type-check additionally consumes the workspace dependency graph:
+URI producers resolve by exact declared URI, duplicate/unresolved producers and
+cross-pipeline full cycles are asset-addressed findings, and sibling-pipeline
+declared columns use the same canonical SQL graph as Monaco. Bare asset names
+remain pipeline-local. An unresolved symbolic URI is a warning; the equivalent
+full dependency is an error.
 For SQL queries they reuse the SQL LSP's cross-connection diagnostic and warn
 when a referenced project asset resolves to a different effective target
 connection; unknown connections do not produce a speculative warning.

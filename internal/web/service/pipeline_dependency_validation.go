@@ -18,13 +18,13 @@ const dependencyExistsRule = "dependency-exists"
 
 type pipelineDependencyIssue struct {
 	Asset       *pipeline.Asset
+	Code        string
 	Description string
 }
 
-// pipelineDependencyIssues deliberately delegates the rule semantics to Bruin:
-// URI dependencies are external, while every other declared dependency must
-// resolve to an asset in the parsed pipeline. Renart owns the presentation so
-// native api/load assets are not passed through Bruin's older asset-type rule.
+// pipelineDependencyIssues delegates local-name existence semantics to Bruin,
+// then fails closed for full URI dependencies until Renart can review their
+// cross-pipeline prerequisite coverage. Symbolic URI edges remain lineage-only.
 func pipelineDependencyIssues(ctx context.Context, pl *pipeline.Pipeline) ([]pipelineDependencyIssue, error) {
 	if pl == nil {
 		return nil, nil
@@ -45,7 +45,21 @@ func pipelineDependencyIssues(ctx context.Context, pl *pipeline.Pipeline) ([]pip
 			}
 			issues = append(issues, pipelineDependencyIssue{
 				Asset:       asset,
+				Code:        dependencyExistsRule,
 				Description: issue.Description,
+			})
+		}
+		for _, upstream := range asset.Upstreams {
+			if !strings.EqualFold(strings.TrimSpace(upstream.Type), "uri") || upstream.Mode == pipeline.UpstreamModeSymbolic {
+				continue
+			}
+			issues = append(issues, pipelineDependencyIssue{
+				Asset: asset,
+				Code:  authoringdiag.CodeCrossPipelineExecutionPending,
+				Description: fmt.Sprintf(
+					"Cross-pipeline dependency %q requires Renart prerequisite readiness, which is not executable yet",
+					strings.TrimSpace(upstream.Value),
+				),
 			})
 		}
 	}
@@ -169,7 +183,7 @@ func writeDirectRunDependencyIssues(w io.Writer, pl *pipeline.Pipeline, issues [
 			directRunValidationRedPrinter(
 				"    └── %s %s",
 				issue.Description,
-				directRunValidationFaintPrinter("(%s)", dependencyExistsRule),
+				directRunValidationFaintPrinter("(%s)", issue.Code),
 			),
 		)
 	}

@@ -16,6 +16,7 @@ export type AssetReconcileItem = {
 
 export type AssetTransactionResult = {
   status: string;
+  uri?: string;
   upstreams: string[];
   columns: WebColumn[];
   custom_checks: WebCustomCheck[];
@@ -25,6 +26,7 @@ export type AssetTransactionResult = {
 };
 
 export type AssetTransaction =
+  | { type: "asset.uri.set"; asset_uri: string }
   | {
       type: "dependency.manual.add";
       dependency: { asset?: string; uri?: string; mode?: "full" | "symbolic" };

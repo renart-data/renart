@@ -17,6 +17,9 @@ import (
 // which of the optional payloads is used.
 type AssetTransaction struct {
 	Type string `json:"type"`
+	// AssetURI is the explicit workspace-wide producer identity used by Bruin
+	// cross-pipeline dependencies. An empty value clears the URI.
+	AssetURI string `json:"asset_uri,omitempty"`
 
 	// Dependency transactions.
 	DependencyKey string                 `json:"dependency_key,omitempty"`
@@ -52,6 +55,7 @@ type TransactionDependency struct {
 // refresh its cards.
 type AssetTransactionResult struct {
 	Status         string                    `json:"status"`
+	URI            string                    `json:"uri,omitempty"`
 	Upstreams      []string                  `json:"upstreams"`
 	Columns        []WorkspaceColumn         `json:"columns"`
 	CustomChecks   []webmodel.CustomCheck    `json:"custom_checks"`
@@ -62,6 +66,7 @@ type AssetTransactionResult struct {
 
 // Supported transaction types.
 const (
+	TxAssetURISet                     = "asset.uri.set"
 	TxDependencyManualAdd             = "dependency.manual.add"
 	TxDependencyManualRemove          = "dependency.manual.remove"
 	TxDependencyInferredIgnore        = "dependency.inferred.ignore"
@@ -127,6 +132,7 @@ func (s *AssetService) ApplyAssetTransaction(ctx context.Context, assetID string
 
 	return AssetTransactionResult{
 		Status:       "ok",
+		URI:          strings.TrimSpace(asset.URI),
 		Upstreams:    upstreamNames(asset.Upstreams),
 		Columns:      PipelineColumnsToModelColumns(asset.Columns),
 		CustomChecks: PipelineCustomChecksToModelCustomChecks(asset.CustomChecks),
@@ -137,6 +143,9 @@ func (s *AssetService) ApplyAssetTransaction(ctx context.Context, assetID string
 
 func applyTransactionToAsset(asset *pipeline.Asset, meta *assetmeta.RenartMeta, tx AssetTransaction) *APIError {
 	switch tx.Type {
+	case TxAssetURISet:
+		asset.URI = strings.TrimSpace(tx.AssetURI)
+
 	case TxDependencyManualAdd:
 		if tx.Dependency == nil {
 			return badRequestError("invalid_transaction", "dependency is required")

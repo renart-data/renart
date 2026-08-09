@@ -1623,6 +1623,56 @@ select 1 as id
 	}
 }
 
+func TestSQLLSPServicePublishesWorkspaceDependencyDiagnosticsAtAssetHeader(t *testing.T) {
+	parsed, root := writeTypeCheckWorkspace(t, "name: analytics", map[string]string{
+		"reader.sql": `
+/* @bruin
+name: analytics.reader
+type: duckdb.sql
+@bruin */
+select 1 as id
+`,
+	})
+	reader := parsed.Assets[0]
+	assetID := assetReportID(root, reader)
+	state := model.WorkspaceState{
+		Revision: 1,
+		Pipelines: []model.Pipeline{{
+			ID: "analytics-pipeline",
+			Assets: []model.Asset{{
+				ID: assetID, Name: reader.Name, Type: string(reader.Type),
+				Path: reader.ExecutableFile.Path, Content: reader.ExecutableFile.Content,
+			}},
+		}},
+		DependencyDiagnostics: []model.WorkspaceDependencyDiagnostic{{
+			AssetID: assetID, PipelineID: "analytics-pipeline",
+			Code: "cross-pipeline-unresolved-uri", Severity: "warning",
+			Message: "Cross-pipeline URI dependency does not resolve",
+		}},
+	}
+	service := NewSQLLSPService(SQLLSPDependencies{
+		WorkspaceRoot: root,
+		CurrentState:  func() model.WorkspaceState { return state },
+		ResolveAssetByID: func(_ context.Context, requested string) (string, *pipeline.Pipeline, *pipeline.Asset, error) {
+			if requested != assetID {
+				return "", nil, nil, fmt.Errorf("unexpected asset %q", requested)
+			}
+			return reader.ExecutableFile.Path, parsed, reader, nil
+		},
+	})
+
+	response, apiErr := service.Diagnostics(context.Background(), SQLLSPRequest{
+		AssetID: assetID,
+		Content: reader.ExecutableFile.Content,
+	})
+	require.Nil(t, apiErr)
+	diagnostic := findLSPDiagnosticByCode(response.Diagnostics, "cross-pipeline-unresolved-uri")
+	require.NotNil(t, diagnostic)
+	assert.Equal(t, 2, diagnostic.Severity)
+	assert.Equal(t, "asset", diagnostic.Scope)
+	assert.Equal(t, sqllsp.Position{}, diagnostic.Range.Start)
+}
+
 func TestSQLLSPServiceRetriesAssetDiagnosticsAfterCancellation(t *testing.T) {
 	parsed, root := writeTypeCheckWorkspace(t, "name: analytics", map[string]string{
 		"reader.sql": `

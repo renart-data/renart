@@ -161,7 +161,13 @@ not underscore-flattened route hacks.
   farther-out zoom range; below the detail threshold, fixed-size asset cards
   become icon-only overview nodes and group labels disappear so unreadable text
   does not clutter a whole-DAG view. The explorer's asset filter searches names,
-  groups, paths, types, and connections. The toolbar keeps Deploy as a separate
+  groups, paths, types, and connections. Catalog lineage receives explicit
+  resolved asset-ID edges from the workspace DTO rather than globally joining
+  duplicate asset names. Build uses those same IDs and includes directly
+  referenced sibling-pipeline producers as read-only, pipeline-labelled nodes;
+  their action navigates to the owning pipeline.
+
+  The toolbar keeps Deploy as a separate
   secondary action and makes **Review run** the primary pipeline action. Type
   checks live in the results panel, which scrolls through a shadcn ScrollArea;
   failing assets also receive a warning marker on their canvas node. A type-check
@@ -288,7 +294,13 @@ not underscore-flattened route hacks.
   columns and checks for relation-producing assets; sensors omit columns and
   checks because they do not materialize a relation. Custom SQL checks remain
   available for other supported asset types even when they do not expose a
-  column workbench. The Columns card's
+  column workbench. Identity editing includes the asset's explicit Bruin URI
+  with workspace uniqueness feedback. The shared dependency chooser groups
+  candidates by pipeline, writes a bare name only for the current pipeline, and
+  requires a declared producer URI for sibling-pipeline choices; full and
+  symbolic modes are explicit in both inspector representations.
+
+  The Columns card's
   **Sync schema** action automatically uses the asset definition and places
   backend-advertised observed sources beside it as optional checkboxes (for
   example **Live request** and **Current table**). Safe additions and type fills

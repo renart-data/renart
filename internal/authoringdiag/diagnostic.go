@@ -53,6 +53,12 @@ const (
 	CodeExternalRelation                = "external-relation"
 	CodeDependencyValidationFailed      = "dependency-validation-failed"
 	CodeMissingDependency               = "missing-dependency"
+	CodeCrossPipelineDuplicateURI       = "cross-pipeline-duplicate-uri"
+	CodeCrossPipelineAmbiguousURI       = "cross-pipeline-ambiguous-uri"
+	CodeCrossPipelineUnresolvedURI      = "cross-pipeline-unresolved-uri"
+	CodeCrossPipelineInvalidProducer    = "cross-pipeline-invalid-producer"
+	CodeCrossPipelineCycle              = "cross-pipeline-cycle"
+	CodeCrossPipelineExecutionPending   = "cross-pipeline-execution-unsupported"
 	CodeInvalidMaterialization          = "invalid-materialization"
 	CodeInactiveMaterialization         = "inactive-materialization-metadata"
 	CodeMissingDeclaredColumns          = "missing-declared-columns"
@@ -113,6 +119,11 @@ var typeCheckDelivery = map[string]EditorDelivery{
 	CodeExternalRelation:                DeliveryDocument,
 	CodeDependencyValidationFailed:      DeliveryAssetHeader,
 	CodeMissingDependency:               DeliveryAssetHeader,
+	CodeCrossPipelineDuplicateURI:       DeliveryAssetHeader,
+	CodeCrossPipelineAmbiguousURI:       DeliveryAssetHeader,
+	CodeCrossPipelineUnresolvedURI:      DeliveryAssetHeader,
+	CodeCrossPipelineInvalidProducer:    DeliveryAssetHeader,
+	CodeCrossPipelineCycle:              DeliveryAssetHeader,
 	CodeInvalidMaterialization:          DeliveryAssetHeader,
 	CodeInactiveMaterialization:         DeliveryAssetHeader,
 	CodeMissingDeclaredColumns:          DeliveryAssetHeader,

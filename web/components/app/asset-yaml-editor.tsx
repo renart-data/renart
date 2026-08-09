@@ -3,18 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { useAtomValue } from "jotai";
-import { Boxes, Check, Database, KeyRound, Loader2, Plus, X } from "lucide-react";
+import { Check, Database, KeyRound, Loader2, Plus, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
@@ -41,7 +32,7 @@ import {
   isSensorAssetType,
   usesSQLSource,
 } from "@/lib/asset-types";
-import { selectedEnvironmentAtom, workspaceAtom } from "@/lib/atoms/workspace";
+import { selectedEnvironmentAtom } from "@/lib/atoms/workspace";
 import { WebAsset, WebColumn } from "@/lib/types";
 import { assetCreationKindForType } from "@/lib/asset-creation-profile";
 
@@ -55,6 +46,7 @@ import {
   materializationEditorState,
   materializationSelectionInput,
 } from "./asset-guided-cards";
+import { AssetDependencyPicker } from "./asset-dependency-picker";
 
 /**
  * An interactive, YAML-shaped view of an asset's configurable metadata — an
@@ -292,6 +284,21 @@ function IdentitySection({ asset, pipelineId }: { asset: WebAsset; pipelineId: s
       <Line>
         <Key>type</Key>
         <span className="text-foreground">{asset.type}</span>
+      </Line>
+      <Line>
+        <Key>uri</Key>
+        <InlineText
+          value={asset.uri ?? ""}
+          placeholder="duckdb://warehouse/schema/table"
+          onCommit={(uri) => {
+            if (uri.trim() !== (asset.uri ?? "").trim()) {
+              void applyAssetTransaction(asset.id, {
+                type: "asset.uri.set",
+                asset_uri: uri.trim(),
+              });
+            }
+          }}
+        />
       </Line>
       {hasTargetConnection ? (
         <Line>
@@ -589,11 +596,18 @@ function MaterializationSection({ asset, pipelineId }: { asset: WebAsset; pipeli
 
 function DependsSection({ asset }: { asset: WebAsset }) {
   const { inferred, manual, ignored } = useMemo(() => classifyDependencies(asset), [asset]);
+  const [addingKind, setAddingKind] = useState<"asset" | "uri">("asset");
+  const [addingMode, setAddingMode] = useState<"full" | "symbolic">("full");
   const apply = (tx: Parameters<typeof applyAssetTransaction>[1]) => {
     void applyAssetTransaction(asset.id, tx);
   };
-  const presentNames = useMemo(
-    () => new Set([...inferred, ...manual].map((dep) => dep.name.toLowerCase())),
+  const presentDependencies = useMemo(
+    () =>
+      new Set(
+        [...inferred, ...manual].map(
+          (dependency) => `${dependency.kind}:${dependency.value.trim().toLowerCase()}`,
+        ),
+      ),
     [inferred, manual],
   );
   const hasAny = inferred.length > 0 || manual.length > 0;
@@ -626,8 +640,12 @@ function DependsSection({ asset }: { asset: WebAsset }) {
           <Dash />
           <span className="flex-1 text-foreground">
             {dep.name}
-            {dep.mode === "symbolic" ? (
-              <span className="ml-1 text-muted-foreground">(symbolic)</span>
+            <span className="ml-1 text-muted-foreground">
+              ({dep.kind === "uri" ? "uri, " : ""}
+              {dep.mode})
+            </span>
+            {dep.resolvedPipelineName ? (
+              <span className="ml-1 text-muted-foreground">· {dep.resolvedPipelineName}</span>
             ) : null}
           </span>
           <RemoveButton
@@ -653,94 +671,46 @@ function DependsSection({ asset }: { asset: WebAsset }) {
           </button>
         </div>
       ))}
+      <Line depth={1} className="text-muted-foreground">
+        <span># add as</span>
+        <InlineSelect
+          value={addingKind}
+          onChange={(value) => setAddingKind(value as "asset" | "uri")}
+          options={[
+            { value: "asset", label: "asset" },
+            { value: "uri", label: "uri" },
+          ]}
+        />
+        <InlineSelect
+          value={addingMode}
+          onChange={(value) => setAddingMode(value as "full" | "symbolic")}
+          options={[
+            { value: "full", label: "full" },
+            { value: "symbolic", label: "symbolic" },
+          ]}
+        />
+      </Line>
       <AddItem
         depth={1}
-        placeholder="add dependency (asset name)"
-        onAdd={(name) => apply({ type: "dependency.manual.add", dependency: { asset: name } })}
+        placeholder={addingKind === "uri" ? "producer URI" : "same-pipeline asset name"}
+        onAdd={(value) =>
+          apply({
+            type: "dependency.manual.add",
+            dependency:
+              addingKind === "uri"
+                ? { uri: value, mode: addingMode }
+                : { asset: value, mode: addingMode },
+          })
+        }
       />
       <AssetDependencyPicker
         assetId={asset.id}
-        present={presentNames}
-        onPick={(name) => apply({ type: "dependency.manual.add", dependency: { asset: name } })}
+        present={presentDependencies}
+        mode={addingMode}
+        onPick={(dependency) => apply({ type: "dependency.manual.add", dependency })}
+        className="ml-[14px] mt-0.5 px-1 font-monaco text-[11px]"
       />
     </>
-  );
-}
-
-// Proposes the workspace's existing assets as dependency candidates (for SQL and
-// non-SQL assets alike) — picking one attaches it as a manual dependency.
-function AssetDependencyPicker({
-  assetId,
-  present,
-  onPick,
-}: {
-  assetId: string;
-  present: Set<string>;
-  onPick: (name: string) => void;
-}) {
-  const workspace = useAtomValue(workspaceAtom);
-  const [open, setOpen] = useState(false);
-
-  const candidates = useMemo(() => {
-    const seen = new Set<string>();
-    const out: { name: string; type: string }[] = [];
-    for (const pipeline of workspace?.pipelines ?? []) {
-      for (const candidate of pipeline.assets) {
-        if (candidate.id === assetId) continue;
-        const lower = candidate.name.toLowerCase();
-        if (seen.has(lower)) continue;
-        seen.add(lower);
-        out.push({ name: candidate.name, type: candidate.type });
-      }
-    }
-    return out.sort((a, b) => a.name.localeCompare(b.name));
-  }, [workspace, assetId]);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="font-monaco ml-[14px] mt-0.5 flex items-center gap-1 rounded-sm px-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <Boxes className="size-3" />
-          pick from existing assets…
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-0">
-        <Command>
-          <CommandInput placeholder="Search assets…" className="text-xs" />
-          <CommandList>
-            <CommandEmpty className="py-4 text-xs">No assets found.</CommandEmpty>
-            <CommandGroup>
-              {candidates.map((candidate) => {
-                const added = present.has(candidate.name.toLowerCase());
-                return (
-                  <CommandItem
-                    key={candidate.name}
-                    value={candidate.name}
-                    disabled={added}
-                    onSelect={() => {
-                      onPick(candidate.name);
-                      setOpen(false);
-                    }}
-                    className="text-xs"
-                  >
-                    <Boxes className="mr-2 size-3 text-muted-foreground" />
-                    <span className="flex-1 truncate">{candidate.name}</span>
-                    {added ? (
-                      <Check className="size-3 text-muted-foreground" />
-                    ) : (
-                      <span className="text-[10px] text-muted-foreground">{candidate.type}</span>
-                    )}
-                  </CommandItem>
-                );
-              })}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
   );
 }
 

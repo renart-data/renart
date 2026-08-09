@@ -525,10 +525,10 @@ export function AppLineageCanvas({
           onSelect: () => callbacksRef.current.onRunAsset?.(asset.id),
         });
       }
-      if (!asset.readOnly && hasGoTo) {
+      if (hasGoTo && (!asset.readOnly || !asset.isExternal)) {
         actions.push({
           key: "go-to",
-          label: goToLabel ?? "Open",
+          label: asset.readOnly ? "Open producer pipeline" : (goToLabel ?? "Open"),
           icon: ArrowUpRight,
           onSelect: () => callbacksRef.current.onGoToAsset?.(asset.id),
         });

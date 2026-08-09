@@ -139,6 +139,52 @@ func TestUpstreamEditCascadesDownstreamOnly(t *testing.T) {
 	assert.Equal(t, before["pipeline-uuid:b"].OwnContent, after["pipeline-uuid:b"].OwnContent)
 }
 
+func TestSymbolicDependenciesDoNotAffectFingerprintsOrOrdering(t *testing.T) {
+	t.Parallel()
+	build := func(upstreamSQL string) map[string]Result {
+		upstream := sqlAsset("a", upstreamSQL)
+		consumer := sqlAsset("b", "select 2")
+		consumer.Upstreams = []pipeline.Upstream{{
+			Type: "asset", Value: upstream.Name, Mode: pipeline.UpstreamModeSymbolic,
+		}}
+		// A full edge back would be a cycle if the symbolic relationship were
+		// incorrectly included in execution ordering.
+		upstream.Upstreams = []pipeline.Upstream{{Type: "asset", Value: consumer.Name}}
+		return dagOf(t, testPipeline(upstream, consumer), Vars{})
+	}
+
+	before := build("select 1")
+	after := build("select 3")
+	assert.NotEqual(t, before["pipeline-uuid:a"].FP, after["pipeline-uuid:a"].FP)
+	assert.Equal(t, before["pipeline-uuid:b"].FP, after["pipeline-uuid:b"].FP)
+}
+
+func TestSymbolicExternalDependencyDoesNotChangeTargetOrAchievedFingerprint(t *testing.T) {
+	t.Parallel()
+	without := sqlAsset("consumer", "select 1")
+	withSymbolic := sqlAsset("consumer", "select 1")
+	withSymbolic.Upstreams = []pipeline.Upstream{{
+		Type: "uri", Value: "warehouse://raw/orders", Mode: pipeline.UpstreamModeSymbolic,
+	}}
+
+	withoutTargets := dagOf(t, testPipeline(without), Vars{})
+	p := testPipeline(withSymbolic)
+	engine := NewEngine()
+	withTargets, err := engine.DAG(p, Vars{})
+	require.NoError(t, err)
+	assetID := "pipeline-uuid:consumer"
+	assert.Equal(t, withoutTargets[assetID].FP, withTargets[assetID].FP)
+
+	achieved, err := engine.AchievedFingerprints(
+		p,
+		withTargets,
+		map[string]bool{assetID: true},
+		func(string) (Fingerprint, bool) { return "", false },
+	)
+	require.NoError(t, err)
+	assert.Equal(t, withTargets[assetID].FP, achieved[assetID])
+}
+
 func TestSourceDeclarationIsAnImmediatelyAchievableReadContract(t *testing.T) {
 	t.Parallel()
 	source := sourceAsset("external.orders", "name: external.orders\ntype: pg.source\ncolumns:\n  - name: id\n")

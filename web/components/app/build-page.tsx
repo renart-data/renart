@@ -335,6 +335,9 @@ function useBuildContext() {
 function assetsForPipeline(pipeline: WebPipeline): BuildAsset[] {
   return pipeline.assets.map((asset) => {
     const sourceAsset = isSourceAssetType(asset.type);
+    const resolvedUpstreams = (asset.dependencies ?? []).map(
+      (dependency) => dependency.resolved_asset_id || dependency.value,
+    );
     return {
       ...assetPresentationFields(asset, pipeline),
       workspaceAsset: asset,
@@ -342,13 +345,9 @@ function assetsForPipeline(pipeline: WebPipeline): BuildAsset[] {
       path: asset.path,
       type: asset.type,
       connection: asset.connection,
-      upstreams: asset.upstreams,
+      upstreams: resolvedUpstreams.length > 0 ? resolvedUpstreams : asset.upstreams,
       status: sourceAsset ? "unknown" : asset.is_materialized ? "success" : "pending",
-      materializedAt: sourceAsset
-        ? ""
-        : asset.is_materialized
-          ? "current"
-          : "not materialized",
+      materializedAt: sourceAsset ? "" : asset.is_materialized ? "current" : "not materialized",
       parseError: asset.parse_error,
       x: 0,
       y: 0,
@@ -418,6 +417,50 @@ export function AppBuildPage({
     () => (activePipeline ? assetsForPipeline(activePipeline) : []),
     [activePipeline],
   );
+  const crossPipelineProducerAssets = useMemo<BuildAsset[]>(() => {
+    if (!workspace || !activePipeline) return [];
+    const producerRefs = new Map<string, { pipelineId: string; assetId: string }>();
+    for (const asset of activePipeline.assets) {
+      for (const dependency of asset.dependencies ?? []) {
+        if (
+          dependency.resolved_asset_id &&
+          dependency.resolved_pipeline_id &&
+          dependency.resolved_pipeline_id !== activePipeline.id
+        ) {
+          producerRefs.set(dependency.resolved_asset_id, {
+            pipelineId: dependency.resolved_pipeline_id,
+            assetId: dependency.resolved_asset_id,
+          });
+        }
+      }
+    }
+
+    const producers: BuildAsset[] = [];
+    for (const reference of producerRefs.values()) {
+      const producerPipeline = workspace.pipelines.find(
+        (pipeline) => pipeline.id === reference.pipelineId,
+      );
+      if (!producerPipeline) continue;
+      const producer = assetsForPipeline(producerPipeline).find(
+        (asset) => asset.id === reference.assetId,
+      );
+      if (!producer) continue;
+      producers.push({
+        ...producer,
+        prefix: `Pipeline · ${producerPipeline.name}`,
+        group: `Pipeline · ${producerPipeline.name}`,
+        description: `Producer in ${producerPipeline.name}`,
+        upstreams: [],
+        readOnly: true,
+      });
+    }
+    return producers.sort((left, right) => {
+      if (left.pipelineId !== right.pipelineId) {
+        return (left.pipelineId ?? "").localeCompare(right.pipelineId ?? "");
+      }
+      return left.name.localeCompare(right.name);
+    });
+  }, [activePipeline, workspace]);
   const existingAssetNames = useMemo(
     () => new Set((activePipeline?.assets ?? []).map((asset) => asset.name)),
     [activePipeline?.assets],
@@ -511,7 +554,7 @@ export function AppBuildPage({
     [typeCheckReport],
   );
   const displayedPipelineAssets = useMemo(() => {
-    const authored = pipelineAssets.map((asset) => {
+    const authored: BuildAsset[] = pipelineAssets.map((asset) => {
       const assetStaleness = staleness.byAssetName[asset.name];
       const sourceAsset = isSourceAssetType(asset.type);
       return {
@@ -525,6 +568,7 @@ export function AppBuildPage({
           typeCheckErrorAssetIds.has(asset.id) || typeCheckErrorAssetIds.has(asset.name),
       };
     });
+    authored.push(...crossPipelineProducerAssets);
     const externalRelations = typeCheckReport?.external_relations ?? [];
     if (externalRelations.length === 0) return authored;
 
@@ -568,6 +612,7 @@ export function AppBuildPage({
     return [...consumers, ...externalNodes];
   }, [
     materializationStatusByAssetId,
+    crossPipelineProducerAssets,
     pipelineAssets,
     staleness.byAssetName,
     typeCheckErrorAssetIds,
@@ -2363,6 +2408,7 @@ function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) =>
     runAssetById,
     deleteAssetById,
     goToCatalog,
+    goToAsset,
     openPipelineConnections,
     reviewFailedCheck,
     importExternalRelation,
@@ -2377,7 +2423,14 @@ function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) =>
       onAssetSelect={onAssetSelect}
       onRunAsset={runAssetById}
       onDeleteAsset={deleteAssetById}
-      onGoToAsset={(assetId) => goToCatalog(assetId)}
+      onGoToAsset={(assetId) => {
+        const target = pipelineAssets.find((asset) => asset.id === assetId);
+        if (target?.readOnly && target.pipelineId) {
+          goToAsset(target.pipelineId, target.id);
+          return;
+        }
+        goToCatalog(assetId);
+      }}
       onAssetConnectionClick={() => openPipelineConnections()}
       onReviewFailedCheck={reviewFailedCheck}
       onImportExternalRelation={importExternalRelation}

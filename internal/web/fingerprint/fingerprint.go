@@ -32,7 +32,9 @@ import (
 //
 // v2: SQL is normalized through the embedded formatter before hashing, so
 // running the formatter over an asset no longer changes its fingerprint.
-const Version = "v2"
+// v3: symbolic dependencies are lineage-only and no longer participate in
+// ordering, target fingerprints, or achieved read fingerprints.
+const Version = "v3"
 
 // Fingerprint is a hex sha256 prefixed with the algorithm version ("v1:…").
 type Fingerprint string
@@ -289,6 +291,9 @@ func (e *Engine) AchievedFingerprintsByConsumer(
 		}
 		parts := make([]string, 0, len(asset.Upstreams))
 		for _, upstream := range asset.Upstreams {
+			if upstream.Mode == pipeline.UpstreamModeSymbolic {
+				continue
+			}
 			upstreamAsset, ok := inPipeline[upstream.Value]
 			if !ok {
 				parts = append(parts, "ext:"+upstream.Type+":"+upstream.Value)
@@ -334,6 +339,9 @@ func isSourceAsset(asset *pipeline.Asset) bool {
 func upstreamHashParts(asset *pipeline.Asset, byName map[string]Result) []string {
 	parts := make([]string, 0, len(asset.Upstreams))
 	for _, upstream := range asset.Upstreams {
+		if upstream.Mode == pipeline.UpstreamModeSymbolic {
+			continue
+		}
 		if result, ok := byName[upstream.Value]; ok {
 			parts = append(parts, "up:"+string(result.FP))
 		} else {
@@ -572,6 +580,9 @@ func topoSort(p *pipeline.Pipeline) ([]*pipeline.Asset, error) {
 		asset := byName[name]
 		upstreams := make([]string, 0, len(asset.Upstreams))
 		for _, upstream := range asset.Upstreams {
+			if upstream.Mode == pipeline.UpstreamModeSymbolic {
+				continue
+			}
 			if _, ok := byName[upstream.Value]; ok {
 				upstreams = append(upstreams, upstream.Value)
 			}

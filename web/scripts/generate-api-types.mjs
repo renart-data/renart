@@ -20,6 +20,8 @@ const sources = [
       "ColumnSchemaMergeRow",
       "ColumnSchemaSyncResult",
       "ColumnSchemaResolution",
+      "AssetDependency",
+      "WorkspaceDependencyDiagnostic",
       "ColumnCheck",
       "CustomCheck",
       "ColumnReference",

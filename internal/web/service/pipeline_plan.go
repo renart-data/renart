@@ -481,6 +481,20 @@ func (s *PipelinePlanService) Plan(
 	if selected.err != nil {
 		return PipelinePlan{}, &APIError{Status: 400, Code: "invalid_plan_selection", Message: selected.err.Error()}
 	}
+	for _, item := range selected.items {
+		for _, upstream := range item.asset.Upstreams {
+			if !strings.EqualFold(strings.TrimSpace(upstream.Type), "uri") || upstream.Mode == pipeline.UpstreamModeSymbolic {
+				continue
+			}
+			base.Readiness.Blockers = append(base.Readiness.Blockers, PipelinePlanIssue{
+				Code:      "cross-pipeline-execution-unsupported",
+				Severity:  "error",
+				Message:   fmt.Sprintf("cross-pipeline dependency %q requires Renart prerequisite readiness, which is not executable yet", strings.TrimSpace(upstream.Value)),
+				AssetID:   identity.AssetID(pipelineUUID, item.asset.Name),
+				AssetName: item.asset.Name,
+			})
+		}
+	}
 	if req.Backfill && (selectionRequest.Mode != PipelinePlanSelectionAsset || selectionRequest.Scope != "asset") {
 		base.Readiness.Blockers = append(base.Readiness.Blockers, PipelinePlanIssue{
 			Code:     "backfill_scope_unsupported",

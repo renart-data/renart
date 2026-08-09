@@ -47,6 +47,29 @@ materialization:
   type: view
 @bruin */`
 
+func TestApplyTransactionAssetURISetAndClear(t *testing.T) {
+	service, assetID, absPath := newTransactionWorkspace(t, txCustomersHeader)
+
+	result, apiErr := service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type:     TxAssetURISet,
+		AssetURI: " duckdb://warehouse/analytics/customers ",
+	})
+	require.Nil(t, apiErr)
+	assert.Equal(t, "duckdb://warehouse/analytics/customers", result.URI)
+	content, err := os.ReadFile(absPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "uri: duckdb://warehouse/analytics/customers")
+
+	result, apiErr = service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type: TxAssetURISet,
+	})
+	require.Nil(t, apiErr)
+	assert.Empty(t, result.URI)
+	content, err = os.ReadFile(absPath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(content), "uri:")
+}
+
 func TestApplyTransactionDependencyManualAdd(t *testing.T) {
 	service, assetID, absPath := newTransactionWorkspace(t, txCustomersHeader)
 

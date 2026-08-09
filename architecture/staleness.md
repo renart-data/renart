@@ -36,7 +36,7 @@ environment policy ──► plan/admission and pre-side-effect checks
 
 ## 2. Fingerprints (`internal/web/fingerprint`, `renart fp`)
 
-Deterministic, versioned (`v1:` prefix) content identity per asset:
+Deterministic, versioned (currently `v3:`) content identity per asset:
 
 ```
 SQL:    H(fp_version ‖ canonical_sql ‖ config_hash ‖ consumed_vars_hash ‖ sorted(upstream_fps))
@@ -65,6 +65,9 @@ Python: H(fp_version ‖ file_bytes ‖ lockfile_hash ‖ shared_dir_hash ‖ co
 - **The engine recomputes on every call** — full recompute is O(pipeline)
   cheap hashing and cannot go stale; only disk-derived inputs are cached,
   validated by stat. `Engine.Invalidate` exists as API.
+- **Symbolic dependencies are lineage-only.** They do not participate in
+  topological ordering, target fingerprints, or achieved read fingerprints.
+  Full dependencies retain all three behaviors.
 - **Stability guard:** `fingerprint/golden_test.go` fingerprints the committed
   fixture project against `testdata/fixture-golden.json` on every test run.
   Intentional algorithm changes bump `fingerprint.Version` and regenerate with

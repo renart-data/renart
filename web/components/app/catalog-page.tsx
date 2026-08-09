@@ -26,6 +26,7 @@ import {
 
 import { kindMeta } from "./app-data";
 import { AppLineageCanvas, type AppLineageCanvasAsset } from "./lineage-canvas";
+import type { AppLineageLayoutEdge } from "@/lib/app-lineage-layout";
 import { PageHeader, AppPage, AppPanel } from "./app-primitives";
 
 function catalogAssetsForPipeline(pipeline: WebPipeline): AppLineageCanvasAsset[] {
@@ -74,6 +75,26 @@ export function AppCatalogPage({ selectedAssetId }: { selectedAssetId?: string }
     () => workspace?.pipelines.flatMap(catalogAssetsForPipeline) ?? [],
     [workspace?.pipelines],
   );
+  const catalogLinks = useMemo<AppLineageLayoutEdge[]>(
+    () =>
+      workspace?.pipelines.flatMap((pipeline) => {
+        const localAssetIDs = new Map(pipeline.assets.map((asset) => [asset.name, asset.id]));
+        return pipeline.assets.flatMap((asset) => {
+          if (asset.dependencies) {
+            return asset.dependencies.flatMap((dependency) =>
+              dependency.resolved_asset_id
+                ? [{ source: dependency.resolved_asset_id, target: asset.id }]
+                : [],
+            );
+          }
+          return asset.upstreams.flatMap((upstream) => {
+            const source = localAssetIDs.get(upstream);
+            return source ? [{ source, target: asset.id }] : [];
+          });
+        });
+      }) ?? [],
+    [workspace?.pipelines],
+  );
   const catalogPipelineIds = useMemo(
     () => [
       ...new Set(
@@ -102,14 +123,20 @@ export function AppCatalogPage({ selectedAssetId }: { selectedAssetId?: string }
   const materializationStatusByAssetId = useAppAssetMaterializationStatus(materializationAssets);
   const displayedCatalogAssets = useMemo(
     () =>
-      catalogAssets.map((asset) => ({
-        ...asset,
-        status: materializationStatusByAssetId[asset.id]?.status ?? asset.status,
-        materializedAt: labelForAppMaterializationState(materializationStatusByAssetId[asset.id]),
-        staleness: asset.pipelineId
+      catalogAssets.map((asset) => {
+        const assetStaleness = asset.pipelineId
           ? staleness.byPipelineId[asset.pipelineId]?.[asset.name]
-          : undefined,
-      })),
+          : undefined;
+        return {
+          ...asset,
+          status: materializationStatusByAssetId[asset.id]?.status ?? asset.status,
+          materializedAt:
+            assetStaleness?.status === "external"
+              ? "freshness not tracked"
+              : labelForAppMaterializationState(materializationStatusByAssetId[asset.id]),
+          staleness: assetStaleness,
+        };
+      }),
     [catalogAssets, materializationStatusByAssetId, staleness.byPipelineId],
   );
 
@@ -133,6 +160,12 @@ export function AppCatalogPage({ selectedAssetId }: { selectedAssetId?: string }
       return true;
     });
   }, [displayedCatalogAssets, hiddenKinds, query]);
+  const filteredLinks = useMemo(() => {
+    const displayedIDs = new Set(filteredAssets.map((asset) => asset.id));
+    return catalogLinks.filter(
+      (link) => displayedIDs.has(link.source) && displayedIDs.has(link.target),
+    );
+  }, [catalogLinks, filteredAssets]);
 
   const toggleKind = (kind: AssetKind) => {
     setHiddenKinds((current) => {
@@ -223,6 +256,7 @@ export function AppCatalogPage({ selectedAssetId }: { selectedAssetId?: string }
           {workspace ? (
             <AppLineageCanvas
               assets={filteredAssets}
+              links={filteredLinks}
               selectedAssetId={selectedAssetId}
               focusAssetId={selectedAssetId}
               onRunAsset={runAsset}

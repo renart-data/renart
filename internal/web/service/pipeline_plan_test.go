@@ -190,6 +190,52 @@ select id from public.accounts
 	assert.Equal(t, "analytics.report", plan.ExecutionContracts[0].AssetName)
 }
 
+func TestPipelinePlanBlocksFullCrossPipelineDependenciesUntilReadinessIsReviewed(t *testing.T) {
+	t.Parallel()
+
+	_, root := writeTypeCheckWorkspace(t, `
+id: pipeline-uuid
+name: analytics
+default_connections:
+  duckdb: duckdb-default
+`, map[string]string{
+		"full.sql": `
+/* @bruin
+name: analytics.full
+type: duckdb.sql
+depends:
+  - uri: duckdb://warehouse/raw/orders
+@bruin */
+select 1 as id
+`,
+		"symbolic.sql": `
+/* @bruin
+name: analytics.symbolic
+type: duckdb.sql
+depends:
+  - uri: duckdb://warehouse/raw/customers
+    mode: symbolic
+@bruin */
+select 1 as id
+`,
+	})
+	service := newTestPipelinePlanService(root, &pipelinePlanStalenessStub{}, nil)
+
+	plan, apiErr := service.Plan(context.Background(), EncodeID("analytics"), PipelinePlanRequest{
+		Purpose:     PipelinePlanPurposeExecution,
+		Environment: "default",
+		Selection:   PipelinePlanSelectionRequest{Mode: PipelinePlanSelectionAll},
+	})
+
+	require.Nil(t, apiErr)
+	assert.Equal(t, PipelinePlanStatusBlocked, plan.Status)
+	issues := plan.Readiness.Blockers
+	require.Len(t, issues, 1)
+	assert.Equal(t, "cross-pipeline-execution-unsupported", issues[0].Code)
+	assert.Equal(t, "analytics.full", issues[0].AssetName)
+	assert.Contains(t, issues[0].Message, "duckdb://warehouse/raw/orders")
+}
+
 func TestBindPipelinePlanExecutionDependenciesChainsWindowsAndSelectedUpstreams(t *testing.T) {
 	t.Parallel()
 	pl := &pipeline.Pipeline{Assets: []*pipeline.Asset{

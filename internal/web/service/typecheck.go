@@ -16,6 +16,7 @@ import (
 	"renart/internal/authoringdiag"
 	"renart/internal/sqlintelligence"
 	"renart/internal/sqllsp"
+	webmodel "renart/internal/web/model"
 )
 
 const typeCheckRunID = "renart-type-check"
@@ -44,10 +45,19 @@ func (s *PipelineService) TypeCheck(ctx context.Context, pipelineID, startDate, 
 	if s.selectedEnvironment != nil {
 		environment = strings.TrimSpace(s.selectedEnvironment())
 	}
-	report := checkPipelineAt(ctx, afero.NewOsFs(), parsed, s.workspaceRoot, tw, time.Now().UTC(), typeCheckOptions{
+	options := typeCheckOptions{
 		RemoteCatalog: s.remoteCatalog,
 		Environment:   environment,
-	})
+	}
+	if state, stateErr := NewWorkspaceService(s.workspaceRoot, "").ComputeState(ctx); stateErr == nil {
+		workspaceGraph := buildWorkspaceCanonicalGraph(ctx, s.workspaceRoot, state)
+		options.WorkspaceGraph = &workspaceGraph
+		options.DependencyDiagnostics = append(
+			[]webmodel.WorkspaceDependencyDiagnostic(nil),
+			state.DependencyDiagnostics...,
+		)
+	}
+	report := checkPipelineAt(ctx, afero.NewOsFs(), parsed, s.workspaceRoot, tw, time.Now().UTC(), options)
 	report.PipelineID = pipelineID
 	return report, nil
 }
@@ -181,8 +191,10 @@ func CheckPipelineAt(
 }
 
 type typeCheckOptions struct {
-	RemoteCatalog RemoteCatalogProvider
-	Environment   string
+	RemoteCatalog         RemoteCatalogProvider
+	Environment           string
+	WorkspaceGraph        *sqllsp.CanonicalGraph
+	DependencyDiagnostics []webmodel.WorkspaceDependencyDiagnostic
 }
 
 func checkPipelineAt(
@@ -216,10 +228,20 @@ func checkPipelineAt(
 	sort.SliceStable(assets, func(i, j int) bool { return assets[i].Name < assets[j].Name })
 
 	snapshot := buildTypeCheckSchemaSnapshot(ctx, fs, pp, workspaceRoot, renderer, now, tw, assets)
+	if options.WorkspaceGraph != nil {
+		snapshot.Graph = *options.WorkspaceGraph
+		snapshot.Schema, snapshot.Constraints, snapshot.Confidence = sqllsp.ValidationSchemaWithConstraints(snapshot.Graph)
+	}
 	for _, asset := range assets {
 		assetSnapshot := typeCheckSnapshotWithRemoteCatalog(snapshot, pp, asset, options)
 		connectionEngine := sqllsp.NewEngine(assetSnapshot.Graph)
 		ac := checkAsset(ctx, pp, workspaceRoot, asset, assetSnapshot, connectionEngine)
+		for _, diagnostic := range options.DependencyDiagnostics {
+			if diagnostic.AssetID == ac.ID {
+				ac.Findings = append(ac.Findings, workspaceDependencyTypeCheckFinding(diagnostic))
+			}
+		}
+		ac.Status = statusFromFindings(ac.Findings)
 		report.Assets = append(report.Assets, ac)
 		appendTypeCheckExternalRelations(ctx, &report, pp, workspaceRoot, asset, assetSnapshot, connectionEngine, options)
 		report.Summary.Assets++
@@ -247,6 +269,21 @@ func checkPipelineAt(
 		return report.ExternalRelations[i].QualifiedName < report.ExternalRelations[j].QualifiedName
 	})
 	return report
+}
+
+func workspaceDependencyTypeCheckFinding(diagnostic webmodel.WorkspaceDependencyDiagnostic) TypeCheckFinding {
+	severity := typeCheckSeverityWarning
+	if diagnostic.Severity == typeCheckSeverityError {
+		severity = typeCheckSeverityError
+	}
+	return TypeCheckFinding{
+		Code:       diagnostic.Code,
+		Source:     authoringdiag.SourceRenart,
+		Severity:   severity,
+		Message:    diagnostic.Message,
+		Scope:      string(authoringdiag.ScopeAsset),
+		Confidence: string(authoringdiag.ConfidenceHigh),
+	}
 }
 
 func appendTypeCheckExternalRelations(

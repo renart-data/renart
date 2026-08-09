@@ -75,6 +75,12 @@ coordinator's `WorkspaceState` rather than the filesystem:
   `model.Column`s become a `declared` schema layer, including nullable,
   primary-key, and foreign-key metadata. The provider-backed authoring resolver
   also supplies pure API response-field and Load passthrough declarations.
+- Workspace state carries each asset's explicit Bruin URI plus typed
+  dependencies (`asset|uri`, `full|symbolic`) resolved to workspace asset and
+  pipeline IDs by `internal/web/dependencygraph`. Monaco and interactive
+  pipeline type-check share that workspace graph and its asset/header
+  diagnostics. SQL names still resolve relations—the URI is orchestration
+  identity, not a SQL rewrite.
 - Query sensors are SQL documents even though their definition path ends in
   `.asset.yml`: the HTTP/LSP adapter and pipeline type-check both project
   `parameters.query`, assign the dialect from the sensor provider, and validate
@@ -140,7 +146,8 @@ coordinator's `WorkspaceState` rather than the filesystem:
   of every same-connection consumer in the fresh report. Imported relations
   immediately stop producing external warnings under every unambiguous catalog
   spelling. Connection secrets never enter the graph or response.
-- Asset/header rules shared with type-check (dependency existence,
+- Asset/header rules shared with type-check (local dependency existence,
+  duplicate/unresolved URI producers, cross-pipeline cycles,
   materialization metadata, missing output declarations, render failures, and
   resilient asset-parse failures) run once per `(revision, pipeline)` through
   `CheckPipelineAssetFindings`. This pass does not rerun semantic SQL. Only the

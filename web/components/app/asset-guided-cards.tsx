@@ -16,7 +16,7 @@ import {
   X,
 } from "lucide-react";
 
-import { selectedEnvironmentAtom } from "@/lib/atoms/workspace";
+import { selectedEnvironmentAtom, workspaceAtom } from "@/lib/atoms/workspace";
 import type { AssetStaleness, FailedQualityCheck } from "@/lib/api-staleness";
 
 import { Button } from "@/components/ui/button";
@@ -66,6 +66,7 @@ import { AssetCustomChecks } from "./asset-custom-checks";
 import { AssetHooks } from "./asset-hooks";
 import { MultiValueInput } from "./multi-value-input";
 import { SchemaSyncDialog } from "./schema-sync-dialog";
+import { AssetDependencyPicker } from "./asset-dependency-picker";
 
 /**
  * Guided metadata cards for the app asset editor (§13–14 of the asset
@@ -149,6 +150,19 @@ function GuidedCard({
 function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: string }) {
   const fieldIdPrefix = `${useId()}-identity`;
   const fieldId = (name: string) => `${fieldIdPrefix}-${name}`;
+  const workspace = useAtomValue(workspaceAtom);
+  const uri = asset.uri?.trim() ?? "";
+  const uriConflict = useMemo(() => {
+    if (!uri) return undefined;
+    for (const pipeline of workspace?.pipelines ?? []) {
+      for (const candidate of pipeline.assets) {
+        if (candidate.id !== asset.id && candidate.uri?.trim() === uri) {
+          return `${pipeline.name}/${candidate.name}`;
+        }
+      }
+    }
+    return undefined;
+  }, [asset.id, uri, workspace]);
 
   const updateMetaDescription = (description: string) => {
     const nextMeta = { ...(asset.meta ?? {}) };
@@ -176,6 +190,31 @@ function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: stri
             }}
           />
         </FieldRow>
+        <Field data-invalid={uriConflict ? true : undefined}>
+          <FieldLabel htmlFor={fieldId("uri")}>URI</FieldLabel>
+          <CommitInput
+            id={fieldId("uri")}
+            mono
+            value={asset.uri ?? ""}
+            placeholder="duckdb://warehouse/schema/table"
+            ariaInvalid={Boolean(uriConflict)}
+            ariaDescribedBy={fieldId("uri-description")}
+            onCommit={(nextURI) => {
+              const normalized = nextURI.trim();
+              if (normalized !== uri) {
+                void applyAssetTransaction(asset.id, {
+                  type: "asset.uri.set",
+                  asset_uri: normalized,
+                });
+              }
+            }}
+          />
+          <FieldDescription id={fieldId("uri-description")}>
+            {uriConflict
+              ? `Already declared by ${uriConflict}. Producer URIs must be unique.`
+              : "Explicit producer identity for dependencies from sibling pipelines."}
+          </FieldDescription>
+        </Field>
         <FieldRow label="Type" htmlFor={fieldId("type")}>
           <Input
             id={fieldId("type")}
@@ -580,6 +619,8 @@ function MaterializationCard({ asset, pipelineId }: { asset: WebAsset; pipelineI
 function DependenciesCard({ asset }: { asset: WebAsset }) {
   const { inferred, manual, ignored } = useMemo(() => classifyDependencies(asset), [asset]);
   const [adding, setAdding] = useState("");
+  const [addingKind, setAddingKind] = useState<"asset" | "uri">("asset");
+  const [addingMode, setAddingMode] = useState<"full" | "symbolic">("full");
 
   const apply = (tx: Parameters<typeof applyAssetTransaction>[1]) => {
     void applyAssetTransaction(asset.id, tx);
@@ -589,12 +630,24 @@ function DependenciesCard({ asset }: { asset: WebAsset }) {
     if (!adding.trim()) return;
     apply({
       type: "dependency.manual.add",
-      dependency: { asset: adding.trim() },
+      dependency:
+        addingKind === "uri"
+          ? { uri: adding.trim(), mode: addingMode }
+          : { asset: adding.trim(), mode: addingMode },
     });
     setAdding("");
   };
 
   const isEmpty = inferred.length === 0 && manual.length === 0 && ignored.length === 0;
+  const present = useMemo(
+    () =>
+      new Set(
+        [...inferred, ...manual].map(
+          (dependency) => `${dependency.kind}:${dependency.value.trim().toLowerCase()}`,
+        ),
+      ),
+    [inferred, manual],
+  );
 
   return (
     <GuidedCard title="Dependencies">
@@ -606,6 +659,14 @@ function DependenciesCard({ asset }: { asset: WebAsset }) {
             <DepRow
               key={dep.key}
               name={dep.name}
+              detail={dep.resolvedPipelineName}
+              badge={
+                dep.kind === "uri"
+                  ? dep.mode === "symbolic"
+                    ? "URI · symbolic"
+                    : "URI"
+                  : undefined
+              }
               actionLabel="Ignore"
               actionIcon={<Ban className="size-3" />}
               onAction={() =>
@@ -625,7 +686,16 @@ function DependenciesCard({ asset }: { asset: WebAsset }) {
             <DepRow
               key={dep.key}
               name={dep.name}
-              badge={dep.mode === "symbolic" ? "symbolic" : undefined}
+              detail={dep.resolvedPipelineName}
+              badge={
+                dep.kind === "uri"
+                  ? dep.mode === "symbolic"
+                    ? "URI · symbolic"
+                    : "URI"
+                  : dep.mode === "symbolic"
+                    ? "symbolic"
+                    : undefined
+              }
               actionLabel="Remove"
               actionIcon={<Trash2 className="size-3" />}
               onAction={() =>
@@ -659,10 +729,38 @@ function DependenciesCard({ asset }: { asset: WebAsset }) {
         </DepSection>
       ) : null}
 
-      <div className="flex items-center gap-1.5">
+      <div className="grid grid-cols-[5.5rem_6.25rem_minmax(0,1fr)_auto] items-center gap-1.5">
+        <Select
+          value={addingKind}
+          onValueChange={(value) => setAddingKind(value as "asset" | "uri")}
+        >
+          <SelectTrigger size="sm" className="h-7 text-[11px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="asset">Asset</SelectItem>
+              <SelectItem value="uri">URI</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <Select
+          value={addingMode}
+          onValueChange={(value) => setAddingMode(value as "full" | "symbolic")}
+        >
+          <SelectTrigger size="sm" className="h-7 text-[11px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="full">Full</SelectItem>
+              <SelectItem value="symbolic">Symbolic</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
         <Input
           className="h-7 text-xs"
-          placeholder="Add dependency (asset name)"
+          placeholder={addingKind === "uri" ? "Producer URI" : "Same-pipeline asset name"}
           value={adding}
           onChange={(e) => setAdding(e.target.value)}
           onKeyDown={(e) => {
@@ -673,6 +771,13 @@ function DependenciesCard({ asset }: { asset: WebAsset }) {
           <Plus className="size-3" />
         </Button>
       </div>
+      <AssetDependencyPicker
+        assetId={asset.id}
+        present={present}
+        mode={addingMode}
+        onPick={(dependency) => apply({ type: "dependency.manual.add", dependency })}
+        className="w-fit px-1"
+      />
     </GuidedCard>
   );
 }
@@ -690,6 +795,7 @@ function DepSection({ label, children }: { label: string; children: React.ReactN
 
 function DepRow({
   name,
+  detail,
   badge,
   muted,
   actionLabel,
@@ -697,6 +803,7 @@ function DepRow({
   onAction,
 }: {
   name: string;
+  detail?: string;
   badge?: string;
   muted?: boolean;
   actionLabel: string;
@@ -706,12 +813,14 @@ function DepRow({
   return (
     <div className="group flex items-center gap-1.5 px-2 py-1 text-xs">
       <span
-        className={cn(
-          "min-w-0 flex-1 truncate font-monaco",
-          muted && "text-muted-foreground line-through",
-        )}
+        className={cn("min-w-0 flex-1 font-monaco", muted && "text-muted-foreground line-through")}
       >
-        {name}
+        <span className="block truncate">{name}</span>
+        {detail ? (
+          <span className="block truncate font-sans text-[10px] text-muted-foreground">
+            {detail}
+          </span>
+        ) : null}
       </span>
       {badge ? (
         <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">{badge}</span>
@@ -1506,6 +1615,8 @@ function CommitInput({
   onCommit,
   mono,
   className,
+  ariaInvalid,
+  ariaDescribedBy,
 }: {
   id?: string;
   value: string;
@@ -1513,6 +1624,8 @@ function CommitInput({
   onCommit: (value: string) => void;
   mono?: boolean;
   className?: string;
+  ariaInvalid?: boolean;
+  ariaDescribedBy?: string;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
@@ -1523,6 +1636,8 @@ function CommitInput({
       className={cn("h-8 text-xs", mono && "font-monaco", className)}
       value={draft}
       placeholder={placeholder}
+      aria-invalid={ariaInvalid || undefined}
+      aria-describedby={ariaDescribedBy}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => onCommit(draft)}
       onKeyDown={(e) => {

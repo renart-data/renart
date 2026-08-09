@@ -25,6 +25,7 @@ custom_key: keep-me
 
 	asset := &pipeline.Asset{
 		Name:           "example.thing",
+		URI:            "duckdb://warehouse/example/thing",
 		Type:           "load",
 		Connection:     "duckdb-default",
 		DefinitionFile: pipeline.TaskDefinitionFile{Path: "/p/assets/thing.asset.yml"},
@@ -62,6 +63,9 @@ custom_key: keep-me
 	}
 	if _, ok := parsed["materialization"]; !ok {
 		t.Errorf("materialization not written:\n%s", def)
+	}
+	if parsed["uri"] != "duckdb://warehouse/example/thing" {
+		t.Errorf("uri not written:\n%s", def)
 	}
 }
 
@@ -186,6 +190,7 @@ custom_key: keep-me
 func TestMergeYAMLAssetDefinitionClearsRemovedKeys(t *testing.T) {
 	existing := `name: example.thing
 type: api
+uri: duckdb://warehouse/example/thing
 owner: old@example.com
 tags:
   - daily
@@ -207,7 +212,7 @@ depends:
 	if err := yaml.Unmarshal(merged, &parsed); err != nil {
 		t.Fatalf("invalid yaml: %v", err)
 	}
-	for _, key := range []string{"owner", "tags", "depends"} {
+	for _, key := range []string{"uri", "owner", "tags", "depends"} {
 		if _, ok := parsed[key]; ok {
 			t.Errorf("expected %q to be cleared:\n%s", key, merged)
 		}
