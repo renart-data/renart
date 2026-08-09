@@ -562,6 +562,14 @@ func (s *Store) Prune(ctx context.Context, policy RetentionPolicy) (PruneResult,
 				  WHERE json_extract(prerequisite.value, '$.producer_snapshot_version_id') = snapshot.version_id
 			  )
 			  AND NOT EXISTS (
+				  SELECT 1
+				  FROM schedule_occurrences AS occurrence,
+				       json_each(occurrence.prerequisite_plan, '$.prerequisites') AS prerequisite
+				  WHERE occurrence.status = 'pending'
+				    AND occurrence.prerequisite_plan IS NOT NULL
+				    AND json_extract(prerequisite.value, '$.producer_snapshot_version_id') = snapshot.version_id
+			  )
+			  AND NOT EXISTS (
 				  SELECT 1 FROM renart_completion_outbox AS outbox
 				  WHERE json_extract(outbox.body, '$.event.snapshot_version_id') = snapshot.version_id
 			  )

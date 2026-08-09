@@ -72,35 +72,42 @@ const (
 type ScheduleOccurrenceStatus string
 
 const (
-	ScheduleOccurrencePending   ScheduleOccurrenceStatus = "pending"
-	ScheduleOccurrenceAdmitting ScheduleOccurrenceStatus = "admitting"
-	ScheduleOccurrenceActive    ScheduleOccurrenceStatus = "active"
-	ScheduleOccurrenceSuccess   ScheduleOccurrenceStatus = "success"
-	ScheduleOccurrenceFailed    ScheduleOccurrenceStatus = "failed"
-	ScheduleOccurrenceCancelled ScheduleOccurrenceStatus = "cancelled"
+	ScheduleOccurrencePending              ScheduleOccurrenceStatus = "pending"
+	ScheduleOccurrenceWaitingPrerequisites ScheduleOccurrenceStatus = "waiting_prerequisites"
+	ScheduleOccurrenceAdmitting            ScheduleOccurrenceStatus = "admitting"
+	ScheduleOccurrenceActive               ScheduleOccurrenceStatus = "active"
+	ScheduleOccurrenceSuccess              ScheduleOccurrenceStatus = "success"
+	ScheduleOccurrenceFailed               ScheduleOccurrenceStatus = "failed"
+	ScheduleOccurrenceCancelled            ScheduleOccurrenceStatus = "cancelled"
 )
 
 // ScheduleOccurrence is the durable identity shared by duplicate signals and
 // all retry attempts for one normalized half-open schedule interval.
 type ScheduleOccurrence struct {
-	Key           string                   `json:"key"`
-	PipelineUUID  string                   `json:"pipeline_uuid"`
-	Environment   string                   `json:"environment"`
-	IntervalStart time.Time                `json:"interval_start"`
-	IntervalEnd   time.Time                `json:"interval_end"`
-	Status        ScheduleOccurrenceStatus `json:"status"`
-	CurrentRunID  string                   `json:"current_run_id,omitempty"`
-	AttemptCount  int                      `json:"attempt_count"`
-	CreatedAt     time.Time                `json:"created_at"`
-	UpdatedAt     time.Time                `json:"updated_at"`
+	Key                  string                   `json:"key"`
+	PipelineUUID         string                   `json:"pipeline_uuid"`
+	Environment          string                   `json:"environment"`
+	IntervalStart        time.Time                `json:"interval_start"`
+	IntervalEnd          time.Time                `json:"interval_end"`
+	Status               ScheduleOccurrenceStatus `json:"status"`
+	CurrentRunID         string                   `json:"current_run_id,omitempty"`
+	AttemptCount         int                      `json:"attempt_count"`
+	PrerequisitePlan     *PipelineRunPlan         `json:"-"`
+	PrerequisiteDeadline *time.Time               `json:"prerequisite_deadline,omitempty"`
+	PrerequisiteReason   string                   `json:"prerequisite_reason,omitempty"`
+	CreatedAt            time.Time                `json:"created_at"`
+	UpdatedAt            time.Time                `json:"updated_at"`
 }
 
 // DeferredScheduleOccurrence is the small public projection shown on a
 // schedule row while a due interval is waiting for planning or the run slot.
 type DeferredScheduleOccurrence struct {
-	IntervalStart time.Time `json:"interval_start"`
-	IntervalEnd   time.Time `json:"interval_end"`
-	AttemptCount  int       `json:"attempt_count"`
+	IntervalStart        time.Time                `json:"interval_start"`
+	IntervalEnd          time.Time                `json:"interval_end"`
+	AttemptCount         int                      `json:"attempt_count"`
+	Status               ScheduleOccurrenceStatus `json:"status"`
+	PrerequisiteDeadline *time.Time               `json:"prerequisite_deadline,omitempty"`
+	PrerequisiteReason   string                   `json:"prerequisite_reason,omitempty"`
 }
 
 const (
@@ -155,18 +162,20 @@ type PipelineRef struct {
 // ScheduledRunPlanRequest is the exact, private context resolved by a due or
 // catch-up signal. Variable values never enter public run or plan DTOs.
 type ScheduledRunPlanRequest struct {
-	PipelineID        string
-	PipelineUUID      string
-	Environment       string
-	SnapshotVersionID string
-	Start             time.Time
-	End               time.Time
-	ExecutionTime     time.Time
-	VariableOverrides map[string]any
+	PipelineID                string
+	PipelineUUID              string
+	Environment               string
+	SnapshotVersionID         string
+	Start                     time.Time
+	End                       time.Time
+	ExecutionTime             time.Time
+	VariableOverrides         map[string]any
+	FrozenProducerDeployments map[string]string
 }
 
 type ScheduledRunPlanResult struct {
-	Plan PipelineRunPlan
+	Plan                 PipelineRunPlan
+	WaitForPrerequisites bool
 }
 
 // UpsertEnvScheduleRequest creates or updates a per-environment schedule.

@@ -140,6 +140,7 @@ func TestReconcileContainsPerRowStoreFailures(t *testing.T) {
 
 func TestUpsertEnvScheduleValidation(t *testing.T) {
 	store := openEnvTestStore(t)
+	rejectDeploymentDependencies := false
 	service := New(Options{
 		Store:    store,
 		StateDir: t.TempDir(),
@@ -161,6 +162,24 @@ func TestUpsertEnvScheduleValidation(t *testing.T) {
 			}
 			if overrides["region"] == "invalid" {
 				return errors.New("variable \"region\" does not satisfy its declared schema")
+			}
+			return nil
+		},
+		ValidateScheduleDeploymentDependencies: func(
+			_ context.Context,
+			pipelineUUID string,
+			versionID string,
+			environment string,
+			overrides map[string]any,
+		) error {
+			assert.Equal(t, "uuid-1", pipelineUUID)
+			assert.NotEmpty(t, versionID)
+			assert.NotEmpty(t, environment)
+			if environment == "variables" {
+				assert.Equal(t, "eu", overrides["region"])
+			}
+			if rejectDeploymentDependencies {
+				return errors.New("URI ownership moved to another producer")
 			}
 			return nil
 		},
@@ -253,6 +272,20 @@ func TestUpsertEnvScheduleValidation(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, promoted, 2)
 	assert.Equal(t, "snap-new", promoted[1].SnapshotVersionID)
+
+	rejectDeploymentDependencies = true
+	_, err = service.PromoteEnvSchedules(ctx, "uuid-1", PromoteEnvSchedulesRequest{
+		SnapshotVersionID: "snap-existing",
+		Schedules: []EnvSchedulePinSelection{{
+			Environment: "variables", ExpectedSnapshotVersionID: scheduleSnapshotExpectation("snap-new"),
+		}},
+	})
+	require.ErrorContains(t, err, "URI ownership moved")
+	variablesSchedule, found, loadErr := store.GetEnvSchedule(ctx, "uuid-1", "variables")
+	require.NoError(t, loadErr)
+	require.True(t, found)
+	assert.Equal(t, "snap-new", variablesSchedule.SnapshotVersionID)
+	rejectDeploymentDependencies = false
 
 	_, err = service.PromoteEnvSchedules(ctx, "uuid-1", PromoteEnvSchedulesRequest{
 		SnapshotVersionID: "snap-existing",

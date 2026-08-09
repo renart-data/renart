@@ -80,7 +80,12 @@ coordinator's `WorkspaceState` rather than the filesystem:
   pipeline IDs by `internal/web/dependencygraph`. Monaco and interactive
   pipeline type-check share that workspace graph and its asset/header
   diagnostics. SQL names still resolve relations—the URI is orchestration
-  identity, not a SQL rewrite.
+  identity, not a SQL rewrite. Reviewed execution plans reuse the same graph
+  shape: working-tree plans merge sibling relations into the consumer's
+  execution-context-rendered graph, while snapshot plans build it only from the
+  exact materialized consumer and producer deployments. Local rendered schemas
+  win collisions, so plan checks neither consult mutable producer files nor
+  lose interval/Jinja-aware consumer inference.
 - Query sensors are SQL documents even though their definition path ends in
   `.asset.yml`: the HTTP/LSP adapter and pipeline type-check both project
   `parameters.query`, assign the dialect from the sensor provider, and validate

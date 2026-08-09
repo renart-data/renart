@@ -557,7 +557,16 @@ func validateUpstreamWriters(
 	targets map[string]bus.ExecutionTargetSnapshotEntry,
 ) error {
 	allowed := make(map[string]bus.ExecutionTargetSnapshotEntry, len(consumer.Upstreams))
+	reviewed := make(map[string]bus.ExecutionUpstreamSnapshot)
 	for _, upstream := range consumer.Upstreams {
+		if upstream.Required && strings.TrimSpace(upstream.ResolvedAssetID) != "" {
+			allowed[upstream.ResolvedAssetID] = bus.ExecutionTargetSnapshotEntry{
+				AssetID: upstream.ResolvedAssetID, TargetIdentity: upstream.TargetIdentity,
+				TargetFidelity: "exact",
+			}
+			reviewed[upstream.ResolvedAssetID] = upstream
+			continue
+		}
 		if entry, ok := targets[upstream.Value]; ok {
 			allowed[entry.AssetID] = entry
 		}
@@ -567,7 +576,7 @@ func validateUpstreamWriters(
 		if !ok {
 			return fmt.Errorf("%w: completed asset %q captured non-upstream writer %q", ErrInvalidEnvelope, asset.AssetName, upstreamID)
 		}
-		if writer.AssetID != upstreamID || target.TargetFidelity != "exact" ||
+		if writer.AssetID != upstreamID || target.AssetID != upstreamID || target.TargetFidelity != "exact" ||
 			writer.TargetIdentity != target.TargetIdentity || strings.TrimSpace(writer.TargetIdentity) != writer.TargetIdentity {
 			return fmt.Errorf("%w: completed asset %q has mismatched upstream writer %q", ErrInvalidEnvelope, asset.AssetName, upstreamID)
 		}
@@ -575,6 +584,12 @@ func validateUpstreamWriters(
 			strings.TrimSpace(writer.CompletionID) == "" || strings.TrimSpace(writer.CompletionID) != writer.CompletionID ||
 			writer.TargetGeneration <= 0 || writer.CompletionOrdinal < 0 || writer.MaterializedAt.IsZero() {
 			return fmt.Errorf("%w: completed asset %q has incomplete upstream writer %q", ErrInvalidEnvelope, asset.AssetName, upstreamID)
+		}
+		if expected, ok := reviewed[upstreamID]; ok &&
+			(writer.Fingerprint != expected.ExpectedFingerprint || writer.VarsHash != expected.VarsHash ||
+				writer.TargetGeneration != expected.TargetGeneration || writer.CompletionID != expected.CompletionID ||
+				writer.CompletionOrdinal != expected.CompletionOrdinal) {
+			return fmt.Errorf("%w: completed asset %q has changed cross-pipeline writer %q", ErrInvalidEnvelope, asset.AssetName, upstreamID)
 		}
 	}
 	return nil

@@ -229,7 +229,11 @@ func checkPipelineAt(
 
 	snapshot := buildTypeCheckSchemaSnapshot(ctx, fs, pp, workspaceRoot, renderer, now, tw, assets)
 	if options.WorkspaceGraph != nil {
-		snapshot.Graph = *options.WorkspaceGraph
+		// Keep the execution-context-rendered schema for this pipeline and add
+		// sibling relations from the immutable workspace graph. Replacing the
+		// graph outright would discard plan-time Jinja/interval inference, while
+		// omitting it makes valid cross-pipeline SQL look unresolved.
+		snapshot.Graph = mergeTypeCheckWorkspaceGraph(snapshot.Graph, *options.WorkspaceGraph)
 		snapshot.Schema, snapshot.Constraints, snapshot.Confidence = sqllsp.ValidationSchemaWithConstraints(snapshot.Graph)
 	}
 	for _, asset := range assets {
@@ -269,6 +273,56 @@ func checkPipelineAt(
 		return report.ExternalRelations[i].QualifiedName < report.ExternalRelations[j].QualifiedName
 	})
 	return report
+}
+
+func mergeTypeCheckWorkspaceGraph(local, workspace sqllsp.CanonicalGraph) sqllsp.CanonicalGraph {
+	relationNames := make(map[string]struct{}, len(local.Relations))
+	assetIDs := make(map[string]struct{}, len(local.Assets))
+	for _, relation := range local.Relations {
+		relationNames[strings.ToLower(strings.TrimSpace(relation.Name))] = struct{}{}
+	}
+	for _, asset := range local.Assets {
+		assetIDs[asset.ID] = struct{}{}
+	}
+	addedRelationIDs := make(map[string]struct{})
+	for _, relation := range workspace.Relations {
+		name := strings.ToLower(strings.TrimSpace(relation.Name))
+		if name == "" {
+			continue
+		}
+		if _, exists := relationNames[name]; exists {
+			continue
+		}
+		relationNames[name] = struct{}{}
+		addedRelationIDs[relation.ID] = struct{}{}
+		local.Relations = append(local.Relations, relation)
+	}
+	if len(addedRelationIDs) == 0 {
+		return local
+	}
+	for _, layer := range workspace.Schemas {
+		if _, added := addedRelationIDs[layer.RelationID]; added {
+			local.Schemas = append(local.Schemas, layer)
+		}
+	}
+	for _, asset := range workspace.Assets {
+		if _, exists := assetIDs[asset.ID]; exists {
+			continue
+		}
+		include := false
+		for _, relationID := range asset.OutputRelations {
+			if _, added := addedRelationIDs[relationID]; added {
+				include = true
+				break
+			}
+		}
+		if !include {
+			continue
+		}
+		assetIDs[asset.ID] = struct{}{}
+		local.Assets = append(local.Assets, asset)
+	}
+	return local
 }
 
 func workspaceDependencyTypeCheckFinding(diagnostic webmodel.WorkspaceDependencyDiagnostic) TypeCheckFinding {

@@ -335,6 +335,7 @@ function EnvScheduleRow({
   const overrideNames = [...(schedule.variable_names ?? [])].sort();
   const secretReferenceNames = [...(schedule.secret_reference_names ?? [])].sort();
   const deferredOccurrence = schedule.deferred_occurrence;
+  const waitingForPrerequisites = deferredOccurrence?.status === "waiting_prerequisites";
   const deploymentOutdated = Boolean(
     latestVersion && pinnedVersion && latestVersion !== pinnedVersion,
   );
@@ -522,14 +523,39 @@ function EnvScheduleRow({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Badge variant="outline" size="xs" tabIndex={0}>
-                      <Clock />
-                      {deferredOccurrence.attempt_count > 0 ? "Retry waiting" : "Run waiting"}
+                      {waitingForPrerequisites ? <AlertTriangle /> : <Clock />}
+                      {waitingForPrerequisites
+                        ? "Waiting for prerequisites"
+                        : deferredOccurrence.attempt_count > 0
+                          ? "Retry waiting"
+                          : "Run waiting"}
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-80">
-                    Scheduled interval {formatSchedulerDate(deferredOccurrence.interval_start)} to{" "}
-                    {formatSchedulerDate(deferredOccurrence.interval_end)} is durably retained and
-                    will be admitted when planning and the pipeline run slot are available.
+                    {waitingForPrerequisites ? (
+                      <div className="space-y-1">
+                        <p>
+                          {deferredOccurrence.prerequisite_reason ??
+                            "A cross-pipeline producer is not ready."}
+                        </p>
+                        <p>
+                          Scheduled interval{" "}
+                          {formatSchedulerDate(deferredOccurrence.interval_start)} to{" "}
+                          {formatSchedulerDate(deferredOccurrence.interval_end)} holds no run slot
+                          and will be checked again after producer activity
+                          {deferredOccurrence.prerequisite_deadline
+                            ? ` until ${formatSchedulerDate(deferredOccurrence.prerequisite_deadline)}.`
+                            : "."}
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        Scheduled interval {formatSchedulerDate(deferredOccurrence.interval_start)}{" "}
+                        to {formatSchedulerDate(deferredOccurrence.interval_end)} is durably
+                        retained and will be admitted when planning and the pipeline run slot are
+                        available.
+                      </>
+                    )}
                   </TooltipContent>
                 </Tooltip>
               ) : null}

@@ -34,6 +34,9 @@ export type EnvSchedule = {
     interval_start: string;
     interval_end: string;
     attempt_count: number;
+    status: "pending" | "waiting_prerequisites";
+    prerequisite_deadline?: string;
+    prerequisite_reason?: string;
   };
 };
 

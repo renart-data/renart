@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofrs/flock"
 	"github.com/riverqueue/river"
@@ -35,33 +36,34 @@ const (
 type PipelineSource func(context.Context) ([]PipelineSchedule, error)
 
 type Service struct {
-	store                     *Store
-	runner                    func(context.Context, RunRequest, func(string)) RunResult
-	pipelines                 PipelineSource
-	publish                   func(any)
-	stateDir                  string
-	housekeeping              func(context.Context) error
-	resolvePipelineRef        func(context.Context, string) (PipelineRef, bool)
-	defaultEnvironment        func() string
-	pipelineIntervalAware     func(context.Context, string) bool
-	deployPipeline            func(context.Context, string) (string, error)
-	latestSnapshot            func(context.Context, string) (string, bool, error)
-	checkSnapshot             func(context.Context, string, string) error
-	validateSnapshot          func(context.Context, string, string) error
-	validateScheduleVariables func(context.Context, string, string, map[string]any) error
-	resolveScheduleSecrets    func(context.Context, string, map[string]string) (map[string]any, error)
-	declarations              *ScheduleDeclarationStore
-	planScheduledRun          func(context.Context, ScheduledRunPlanRequest) (ScheduledRunPlanResult, error)
-	validateReexecution       func(context.Context, RunReexecutionValidationRequest) error
-	snapshotOrdinal           func(context.Context, string) (int64, error)
-	recoverRun                func(context.Context, PipelineRun, []PipelineRunStep, []PipelineRunUnit) error
-	lock                      *flock.Flock
-	riverClient               *river.Client[*sql.Tx]
-	activeRunCancels          map[string]context.CancelFunc
-	mu                        sync.Mutex
-	schedulerOn               bool
-	ownershipState            SchedulerOwnershipState
-	ownerMessage              string
+	store                                  *Store
+	runner                                 func(context.Context, RunRequest, func(string)) RunResult
+	pipelines                              PipelineSource
+	publish                                func(any)
+	stateDir                               string
+	housekeeping                           func(context.Context) error
+	resolvePipelineRef                     func(context.Context, string) (PipelineRef, bool)
+	defaultEnvironment                     func() string
+	pipelineIntervalAware                  func(context.Context, string) bool
+	deployPipeline                         func(context.Context, string) (string, error)
+	latestSnapshot                         func(context.Context, string) (string, bool, error)
+	checkSnapshot                          func(context.Context, string, string) error
+	validateSnapshot                       func(context.Context, string, string) error
+	validateScheduleVariables              func(context.Context, string, string, map[string]any) error
+	validateScheduleDeploymentDependencies func(context.Context, string, string, string, map[string]any) error
+	resolveScheduleSecrets                 func(context.Context, string, map[string]string) (map[string]any, error)
+	declarations                           *ScheduleDeclarationStore
+	planScheduledRun                       func(context.Context, ScheduledRunPlanRequest) (ScheduledRunPlanResult, error)
+	validateReexecution                    func(context.Context, RunReexecutionValidationRequest) error
+	snapshotOrdinal                        func(context.Context, string) (int64, error)
+	recoverRun                             func(context.Context, PipelineRun, []PipelineRunStep, []PipelineRunUnit) error
+	lock                                   *flock.Flock
+	riverClient                            *river.Client[*sql.Tx]
+	activeRunCancels                       map[string]context.CancelFunc
+	mu                                     sync.Mutex
+	schedulerOn                            bool
+	ownershipState                         SchedulerOwnershipState
+	ownerMessage                           string
 }
 
 type Options struct {
@@ -98,6 +100,9 @@ type Options struct {
 	// ValidateScheduleVariables checks overrides against the declarations in
 	// the exact pinned snapshot without connecting to a destination.
 	ValidateScheduleVariables func(context.Context, string, string, map[string]any) error
+	// ValidateScheduleDeploymentDependencies verifies cross-pipeline URI
+	// ownership against the selected same-environment producer deployments.
+	ValidateScheduleDeploymentDependencies func(context.Context, string, string, string, map[string]any) error
 	// ResolveScheduleSecrets resolves stable declaration references just in
 	// time. Resolved values are used for planning/execution but are never
 	// persisted in declarations, River signals, or retained RunSpecs.
@@ -234,6 +239,10 @@ func (w *scheduleSignalWorker) Work(ctx context.Context, job *river.Job[schedule
 	if err == nil {
 		return nil
 	}
+	var waiting *schedulePrerequisitesWaitingError
+	if errors.As(err, &waiting) {
+		return river.JobSnooze(waiting.snoozeDuration(time.Now().UTC()))
+	}
 	var invalidSignal *invalidScheduleSignalError
 	if errors.As(err, &invalidSignal) {
 		return river.JobCancel(err)
@@ -262,6 +271,31 @@ type scheduledPlanBlockedError struct {
 
 func (e *scheduledPlanBlockedError) Error() string { return e.err.Error() }
 func (e *scheduledPlanBlockedError) Unwrap() error { return e.err }
+
+const (
+	schedulePrerequisiteWaitDeadline = 12 * time.Hour
+	schedulePrerequisiteRetrySnooze  = time.Minute
+)
+
+type schedulePrerequisitesWaitingError struct {
+	Deadline time.Time
+	Reason   string
+}
+
+func (e *schedulePrerequisitesWaitingError) Error() string {
+	return fmt.Sprintf("scheduled occurrence is waiting for prerequisites until %s: %s", e.Deadline.UTC().Format(time.RFC3339), e.Reason)
+}
+
+func (e *schedulePrerequisitesWaitingError) snoozeDuration(now time.Time) time.Duration {
+	remaining := e.Deadline.Sub(now.UTC())
+	if remaining <= time.Second {
+		return time.Second
+	}
+	if remaining < schedulePrerequisiteRetrySnooze {
+		return remaining
+	}
+	return schedulePrerequisiteRetrySnooze
+}
 
 type runStartPersistenceError struct{ err error }
 
@@ -295,6 +329,10 @@ func (w *pipelineRunWorker) Work(ctx context.Context, job *river.Job[pipelineRun
 		var invalidSignal *invalidScheduleSignalError
 		if errors.As(err, &invalidSignal) {
 			return river.JobCancel(err)
+		}
+		var waiting *schedulePrerequisitesWaitingError
+		if errors.As(err, &waiting) {
+			return river.JobSnooze(waiting.snoozeDuration(time.Now().UTC()))
 		}
 		var blockedPlan *scheduledPlanBlockedError
 		if errors.As(err, &blockedPlan) {
@@ -375,29 +413,30 @@ func New(options Options) *Service {
 		resolveScheduleSecrets = resolveEnvironmentScheduleSecrets
 	}
 	return &Service{
-		store:                     options.Store,
-		runner:                    options.Runner,
-		pipelines:                 options.Pipelines,
-		publish:                   options.Publish,
-		stateDir:                  options.StateDir,
-		housekeeping:              options.Housekeeping,
-		resolvePipelineRef:        options.ResolvePipelineRef,
-		defaultEnvironment:        options.DefaultEnvironment,
-		pipelineIntervalAware:     options.PipelineIntervalAware,
-		deployPipeline:            options.DeployPipeline,
-		latestSnapshot:            options.LatestSnapshot,
-		checkSnapshot:             options.CheckSnapshot,
-		validateSnapshot:          options.ValidateSnapshot,
-		validateScheduleVariables: options.ValidateScheduleVariables,
-		resolveScheduleSecrets:    resolveScheduleSecrets,
-		declarations:              options.ScheduleDeclarations,
-		planScheduledRun:          options.PlanScheduledRun,
-		validateReexecution:       options.ValidateReexecution,
-		snapshotOrdinal:           options.SnapshotOrdinal,
-		recoverRun:                options.RecoverRun,
-		activeRunCancels:          make(map[string]context.CancelFunc),
-		ownershipState:            SchedulerOwnershipUnavailable,
-		ownerMessage:              "scheduler has not started",
+		store:                                  options.Store,
+		runner:                                 options.Runner,
+		pipelines:                              options.Pipelines,
+		publish:                                options.Publish,
+		stateDir:                               options.StateDir,
+		housekeeping:                           options.Housekeeping,
+		resolvePipelineRef:                     options.ResolvePipelineRef,
+		defaultEnvironment:                     options.DefaultEnvironment,
+		pipelineIntervalAware:                  options.PipelineIntervalAware,
+		deployPipeline:                         options.DeployPipeline,
+		latestSnapshot:                         options.LatestSnapshot,
+		checkSnapshot:                          options.CheckSnapshot,
+		validateSnapshot:                       options.ValidateSnapshot,
+		validateScheduleVariables:              options.ValidateScheduleVariables,
+		validateScheduleDeploymentDependencies: options.ValidateScheduleDeploymentDependencies,
+		resolveScheduleSecrets:                 resolveScheduleSecrets,
+		declarations:                           options.ScheduleDeclarations,
+		planScheduledRun:                       options.PlanScheduledRun,
+		validateReexecution:                    options.ValidateReexecution,
+		snapshotOrdinal:                        options.SnapshotOrdinal,
+		recoverRun:                             options.RecoverRun,
+		activeRunCancels:                       make(map[string]context.CancelFunc),
+		ownershipState:                         SchedulerOwnershipUnavailable,
+		ownerMessage:                           "scheduler has not started",
 	}
 }
 
@@ -1330,6 +1369,22 @@ func (s *Service) PromoteEnvSchedules(ctx context.Context, pipelineUUID string, 
 		if err := s.validateEnvScheduleVariables(ctx, candidate); err != nil {
 			return nil, fmt.Errorf("schedule %s cannot use the selected deployment: %w", environment, err)
 		}
+		if s.validateScheduleDeploymentDependencies != nil {
+			resolvedVariables, err := s.resolveScheduleVariables(
+				secretstore.WithPurpose(ctx, secretstore.PurposeScheduledRun),
+				candidate.Environment,
+				candidate.Vars,
+				candidate.SecretRefs,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("schedule %s cannot resolve variables for dependency validation: %w", environment, err)
+			}
+			if err := s.validateScheduleDeploymentDependencies(
+				ctx, pipelineUUID, versionID, environment, resolvedVariables,
+			); err != nil {
+				return nil, fmt.Errorf("schedule %s cannot use the selected deployment dependencies: %w", environment, err)
+			}
+		}
 		if expectedVersion == versionID {
 			continue
 		}
@@ -1988,6 +2043,18 @@ func (s *Service) prepareScheduledRunAdmission(
 		VariableOverrides: cloneScheduleVariables(args.Variables),
 	}
 	executionTime := time.Now().UTC()
+	frozenProducerDeployments := map[string]string(nil)
+	if occurrence.PrerequisitePlan != nil {
+		frozenProducerDeployments, err = producerDeploymentsFromPlan(*occurrence.PrerequisitePlan)
+		if err != nil {
+			return scheduledRunAdmission{}, false, &invalidScheduleSignalError{err: err}
+		}
+		retainedExecutionTime, parseErr := time.Parse(time.RFC3339Nano, occurrence.PrerequisitePlan.ExecutionTime)
+		if parseErr != nil {
+			return scheduledRunAdmission{}, false, &invalidScheduleSignalError{err: fmt.Errorf("waiting prerequisite plan has invalid execution time: %w", parseErr)}
+		}
+		executionTime = retainedExecutionTime.UTC()
+	}
 	run.ExecutionTime = &executionTime
 	spec := scheduledRunSpec(run, args)
 	if s.planScheduledRun == nil {
@@ -1997,7 +2064,8 @@ func (s *Service) prepareScheduledRunAdmission(
 		PipelineID: encodedPipelineID, PipelineUUID: pipelineUUID,
 		Environment: run.Environment, SnapshotVersionID: run.SnapshotVersionID,
 		Start: start, End: end, ExecutionTime: executionTime,
-		VariableOverrides: resolvedVariables,
+		VariableOverrides:         resolvedVariables,
+		FrozenProducerDeployments: frozenProducerDeployments,
 	})
 	if err != nil {
 		return scheduledRunAdmission{}, false, fmt.Errorf("plan scheduled run: %w", err)
@@ -2010,12 +2078,72 @@ func (s *Service) prepareScheduledRunAdmission(
 	if err := spec.validate(); err != nil {
 		return scheduledRunAdmission{}, false, &invalidScheduleSignalError{err: err}
 	}
+	if planned.Plan.Blocked && planned.WaitForPrerequisites {
+		now := time.Now().UTC()
+		deadline := now.Add(schedulePrerequisiteWaitDeadline)
+		if occurrence.PrerequisiteDeadline != nil {
+			deadline = occurrence.PrerequisiteDeadline.UTC()
+		}
+		reason := scheduledPrerequisiteWaitReason(planned.Plan)
+		if !now.Before(deadline) {
+			failureReason := "Timed out waiting for cross-pipeline prerequisites: " + reason
+			failed, failErr := s.store.FailScheduleOccurrencePrerequisites(ctx, occurrence, failureReason)
+			if failErr != nil {
+				return scheduledRunAdmission{}, false, failErr
+			}
+			s.publishScheduleOccurrenceEvent(failed)
+			return scheduledRunAdmission{}, false, &invalidScheduleSignalError{err: errors.New(failureReason)}
+		}
+		waiting, waitErr := s.store.MarkScheduleOccurrenceWaiting(ctx, occurrence, planned.Plan, deadline, reason)
+		if waitErr != nil {
+			return scheduledRunAdmission{}, false, waitErr
+		}
+		s.publishScheduleOccurrenceEvent(waiting)
+		return scheduledRunAdmission{}, false, &schedulePrerequisitesWaitingError{
+			Deadline: deadline, Reason: reason,
+		}
+	}
 	return scheduledRunAdmission{
 		Occurrence: occurrence,
 		Run:        run,
 		Spec:       spec,
 		Plan:       planned.Plan,
 	}, true, nil
+}
+
+func scheduledPrerequisiteWaitReason(plan PipelineRunPlan) string {
+	for _, prerequisite := range plan.Prerequisites {
+		if prerequisite.Status != "blocked" {
+			continue
+		}
+		producer := strings.TrimSpace(prerequisite.ProducerAssetName)
+		if producer == "" {
+			producer = strings.TrimSpace(prerequisite.URI)
+		}
+		reason := strings.TrimSpace(prerequisite.Reason)
+		if producer != "" && reason != "" {
+			return truncateSchedulePrerequisiteReason(producer + ": " + reason)
+		}
+		if reason != "" {
+			return truncateSchedulePrerequisiteReason(reason)
+		}
+	}
+	if len(plan.Blockers) > 0 {
+		return truncateSchedulePrerequisiteReason(plan.Blockers[0])
+	}
+	return "A cross-pipeline producer is not ready"
+}
+
+func truncateSchedulePrerequisiteReason(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= 4096 {
+		return value
+	}
+	end := 4093
+	for end > 0 && !utf8.RuneStart(value[end]) {
+		end--
+	}
+	return value[:end] + "..."
 }
 
 func (s *Service) admitScheduledSignal(

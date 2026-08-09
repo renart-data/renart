@@ -17,9 +17,35 @@ import (
 )
 
 const (
-	pipelinePlanCodeCrossPipelinePrerequisiteNotReady = "cross-pipeline-prerequisite-not-ready"
-	pipelinePlanCodeCrossPipelineSnapshotPending      = "cross-pipeline-snapshot-prerequisites-pending"
+	pipelinePlanCodeCrossPipelinePrerequisiteNotReady     = "cross-pipeline-prerequisite-not-ready"
+	pipelinePlanCodeCrossPipelineSnapshotPending          = "cross-pipeline-snapshot-prerequisites-pending"
+	pipelinePlanCodeCrossPipelineDeploymentBindingInvalid = "cross-pipeline-deployment-binding-invalid"
 )
+
+// PipelinePlanWaitsForCrossPipelinePrerequisites reports whether every plan
+// blocker is retryable Renart-observed producer readiness. Invalid immutable
+// deployment bindings and unrelated render/typecheck blockers fail normally
+// instead of occupying the prerequisite wait lifecycle.
+func PipelinePlanWaitsForCrossPipelinePrerequisites(plan PipelinePlan) bool {
+	if plan.Status != PipelinePlanStatusBlocked || len(plan.Readiness.Blockers) == 0 || len(plan.Prerequisites) == 0 {
+		return false
+	}
+	hasBlockedPrerequisite := false
+	for _, prerequisite := range plan.Prerequisites {
+		if prerequisite.Status == PipelinePlanPrerequisiteBlocked {
+			hasBlockedPrerequisite = true
+		}
+	}
+	if !hasBlockedPrerequisite {
+		return false
+	}
+	for _, blocker := range plan.Readiness.Blockers {
+		if blocker.Code != pipelinePlanCodeCrossPipelinePrerequisiteNotReady {
+			return false
+		}
+	}
+	return true
+}
 
 func (s *PipelinePlanService) addCrossPipelinePrerequisites(
 	ctx context.Context,
@@ -30,6 +56,9 @@ func (s *PipelinePlanService) addCrossPipelinePrerequisites(
 	purpose string,
 	timeWindow ExecutionTimeWindow,
 	variableOverrides map[string]any,
+	producerDeploymentPins map[string]string,
+	snapshotWorkspace *snapshotPrerequisiteWorkspace,
+	snapshotWorkspaceErr error,
 ) {
 	if plan == nil || resolved == nil || resolved.parsed == nil || len(selected.items) == 0 {
 		return
@@ -62,7 +91,7 @@ func (s *PipelinePlanService) addCrossPipelinePrerequisites(
 	}
 	if resolved.source.Kind == PipelinePlanSourceSnapshot {
 		s.addSnapshotCrossPipelinePrerequisites(
-			ctx, plan, resolved, selected, cfg, timeWindow,
+			ctx, plan, resolved, selected, cfg, timeWindow, snapshotWorkspace, snapshotWorkspaceErr,
 		)
 		return
 	}

@@ -734,11 +734,17 @@ explicit cross-pipeline-readiness issue on unreviewed/direct execution. A
 reviewed pipeline plan binds the full URI to exact Renart-observed
 same-environment producer target, fingerprint, variables, writer generation,
 completion, and coverage evidence; the executor revalidates that binding before
-the consumer task starts. Snapshot plans resolve URI ownership from the
-consumer deployment manifest and bind the producer's same-environment snapshot
-version and ordinal, so later working-tree edits cannot redirect an admitted
-run. Symbolic URI edges remain lineage-only. The same local-name validator
-feeds pipeline type-check findings. Runtime
+the consumer task starts, and durable completion validation requires the
+captured external writer to retain every reviewed identity field. Snapshot
+plans resolve URI ownership from the consumer deployment manifest and bind the
+producer's same-environment snapshot version and ordinal, so later working-tree
+edits cannot redirect an admitted run. Their SQL checks use a graph assembled
+from the materialized consumer and producer snapshots; working-tree plans use
+the saved workspace graph. In both cases, the consumer's execution-context
+rendering wins for its own relations while sibling schemas remain available,
+so a valid cross-pipeline SQL reference is not reported as unresolved.
+Symbolic URI edges remain lineage-only. The same local-name validator feeds
+pipeline type-check findings. Runtime
 output is one stdout/stderr stream: lifecycle messages remain run-scoped, while
 task output passes through a line-aware asset writer that adds a timestamp,
 deterministically colored asset label, and `>>` marker to every logical line.
@@ -1309,7 +1315,9 @@ URI producers resolve by exact declared URI, duplicate/unresolved producers and
 cross-pipeline full cycles are asset-addressed findings, and sibling-pipeline
 declared columns use the same canonical SQL graph as Monaco. Bare asset names
 remain pipeline-local. An unresolved symbolic URI is a warning; the equivalent
-full dependency is an error.
+full dependency is an error. Reviewed working-tree and immutable-snapshot plan
+checks reuse that workspace-shaped graph while preserving the selected
+consumer's execution-time rendering.
 For SQL queries they reuse the SQL LSP's cross-connection diagnostic and warn
 when a referenced project asset resolves to a different effective target
 connection; unknown connections do not produce a speculative warning.

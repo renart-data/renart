@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,13 +14,16 @@ import (
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/spf13/afero"
 
+	"renart/internal/sqllsp"
 	"renart/internal/web/dependencygraph"
 	"renart/internal/web/fingerprint"
+	"renart/internal/web/identity"
 	"renart/internal/web/snapshot"
 )
 
 type snapshotPrerequisiteWorkspace struct {
 	graph       dependencygraph.Graph
+	sqlGraph    sqllsp.CanonicalGraph
 	vars        map[string]fingerprint.Vars
 	deployments map[string]snapshotPrerequisiteDeployment
 	cleanup     func()
@@ -31,6 +35,59 @@ type snapshotPrerequisiteDeployment struct {
 	parsed    *pipeline.Pipeline
 }
 
+var errSnapshotDependencyBindingInvalid = errors.New("snapshot dependency binding is invalid")
+
+// ValidateSnapshotDependencyBindings checks that every URI in a consumer
+// deployment still resolves to its manifest-bound producer inside that
+// environment's selected producer deployments. It deliberately does not read
+// materialization facts: schedule promotion validates immutable ownership,
+// while occurrence planning owns freshness and coverage readiness.
+func (s *PipelinePlanService) ValidateSnapshotDependencyBindings(
+	ctx context.Context,
+	pipelineID string,
+	pipelineUUID string,
+	versionID string,
+	environment string,
+	variableOverrides map[string]any,
+) error {
+	resolved, missing, apiErr := s.resolveSource(ctx, pipelineID, pipelineUUID, PipelinePlanSourceRequest{
+		Kind: PipelinePlanSourceSnapshot, VersionID: strings.TrimSpace(versionID),
+	}, variableOverrides)
+	if apiErr != nil {
+		return errors.New(apiErr.Message)
+	}
+	if missing || resolved == nil {
+		return errors.New("deployment snapshot was not found for this pipeline")
+	}
+	defer resolved.cleanup()
+	if !pipelineHasSelectedFullURIDependency(resolved.parsed, allPipelineAssetIDs(resolved.parsed)) {
+		return nil
+	}
+	plan := PipelinePlan{
+		PipelineID: pipelineID, PipelineUUID: pipelineUUID,
+		Context: PipelinePlanContext{Environment: strings.TrimSpace(environment)},
+	}
+	workspace, err := s.resolveSnapshotPrerequisiteWorkspace(ctx, &plan, resolved, nil)
+	if err != nil {
+		return err
+	}
+	workspace.cleanup()
+	return nil
+}
+
+func allPipelineAssetIDs(parsed *pipeline.Pipeline) map[string]struct{} {
+	if parsed == nil {
+		return map[string]struct{}{}
+	}
+	result := make(map[string]struct{}, len(parsed.Assets))
+	for _, asset := range parsed.Assets {
+		if asset != nil {
+			result[identity.AssetID(parsed.LegacyID, asset.Name)] = struct{}{}
+		}
+	}
+	return result
+}
+
 func (s *PipelinePlanService) addSnapshotCrossPipelinePrerequisites(
 	ctx context.Context,
 	plan *PipelinePlan,
@@ -38,6 +95,8 @@ func (s *PipelinePlanService) addSnapshotCrossPipelinePrerequisites(
 	selected selectedPipelinePlanAssets,
 	cfg *config.Config,
 	timeWindow ExecutionTimeWindow,
+	workspace *snapshotPrerequisiteWorkspace,
+	workspaceErr error,
 ) {
 	consumerIDs := make(map[string]struct{}, len(selected.items))
 	for _, item := range selected.items {
@@ -57,18 +116,30 @@ func (s *PipelinePlanService) addSnapshotCrossPipelinePrerequisites(
 		return
 	}
 
-	workspace, err := s.resolveSnapshotPrerequisiteWorkspace(ctx, plan, resolved)
-	if err != nil {
+	if workspaceErr != nil {
+		code := pipelinePlanCodeCrossPipelinePrerequisiteNotReady
+		if errors.Is(workspaceErr, errSnapshotDependencyBindingInvalid) {
+			code = pipelinePlanCodeCrossPipelineDeploymentBindingInvalid
+		}
 		s.addCrossPipelinePrerequisiteUnavailable(
 			plan,
-			pipelinePlanCodeCrossPipelinePrerequisiteNotReady,
-			err.Error(),
+			code,
+			workspaceErr.Error(),
 			resolved.parsed,
 			consumerIDs,
 		)
 		return
 	}
-	defer workspace.cleanup()
+	if workspace == nil {
+		s.addCrossPipelinePrerequisiteUnavailable(
+			plan,
+			pipelinePlanCodeCrossPipelineSnapshotPending,
+			"cross-pipeline snapshot prerequisite workspace is unavailable",
+			resolved.parsed,
+			consumerIDs,
+		)
+		return
+	}
 	results, err := s.deps.Fingerprints.WorkspaceDAG(workspace.graph, workspace.vars)
 	if err != nil {
 		s.addCrossPipelinePrerequisiteUnavailable(
@@ -191,6 +262,7 @@ func (s *PipelinePlanService) resolveSnapshotPrerequisiteWorkspace(
 	ctx context.Context,
 	plan *PipelinePlan,
 	consumer *resolvedPipelinePlanSource,
+	producerDeploymentPins map[string]string,
 ) (snapshotPrerequisiteWorkspace, error) {
 	root, err := os.MkdirTemp("", "renart-prerequisite-plan-")
 	if err != nil {
@@ -217,6 +289,15 @@ func (s *PipelinePlanService) resolveSnapshotPrerequisiteWorkspace(
 	}
 	workspace.deployments[plan.PipelineUUID] = consumerDeployment
 	workspace.vars[plan.PipelineUUID] = fingerprint.EffectiveVars(consumer.parsed, nil)
+	consumerDir := filepath.Join(root, plan.PipelineUUID)
+	if mkdirErr := os.MkdirAll(consumerDir, 0o755); mkdirErr != nil {
+		return fail(mkdirErr)
+	}
+	if materializeErr := s.deps.Snapshots.MaterializeForPipelineExecution(
+		ctx, consumer.source.VersionID, plan.PipelineUUID, consumerDir,
+	); materializeErr != nil {
+		return fail(fmt.Errorf("materialize consumer deployment %s: %w", consumer.source.VersionID, materializeErr))
+	}
 
 	queue := []string{plan.PipelineUUID}
 	for len(queue) > 0 {
@@ -224,7 +305,7 @@ func (s *PipelinePlanService) resolveSnapshotPrerequisiteWorkspace(
 		queue = queue[1:]
 		current := workspace.deployments[pipelineUUID]
 		if err := validateParsedSnapshotDependencyManifest(current.parsed, current.snapshot.DependencyManifest); err != nil {
-			return fail(fmt.Errorf("deployment %s dependency manifest does not match its source: %w", current.snapshot.VersionID, err))
+			return fail(fmt.Errorf("%w: deployment %s dependency manifest does not match its source: %v", errSnapshotDependencyBindingInvalid, current.snapshot.VersionID, err))
 		}
 		for _, item := range current.snapshot.DependencyManifest.Dependencies {
 			producerUUID := strings.TrimSpace(item.ProducerPipelineUUID)
@@ -240,6 +321,9 @@ func (s *PipelinePlanService) resolveSnapshotPrerequisiteWorkspace(
 			}
 			if strings.TrimSpace(selection.SnapshotVersionID) == "" {
 				return fail(fmt.Errorf("producer pipeline %s has no deployment for environment %s", producerUUID, plan.Context.Environment))
+			}
+			if frozen := strings.TrimSpace(producerDeploymentPins[producerUUID]); frozen != "" {
+				selection.SnapshotVersionID = frozen
 			}
 			deployed, validateErr := s.deps.Snapshots.ValidateMetadata(ctx, selection.SnapshotVersionID, producerUUID)
 			if validateErr != nil {
@@ -297,9 +381,13 @@ func (s *PipelinePlanService) resolveSnapshotPrerequisiteWorkspace(
 			}
 			producer := workspace.graph.Nodes[edge.ProducerID]
 			if producer == nil || producer.PipelineUUID != item.ProducerPipelineUUID || producer.URI != item.ProducerAssetURI {
-				return fail(fmt.Errorf("deployed URI %q changed ownership from pipeline %s", item.URI, item.ProducerPipelineUUID))
+				return fail(fmt.Errorf("%w: deployed URI %q changed ownership from pipeline %s", errSnapshotDependencyBindingInvalid, item.URI, item.ProducerPipelineUUID))
 			}
 		}
+	}
+	workspace.sqlGraph, err = sqllsp.LoadGraphFromDir(ctx, root)
+	if err != nil {
+		return fail(fmt.Errorf("build deployed SQL schema graph: %w", err))
 	}
 	return workspace, nil
 }

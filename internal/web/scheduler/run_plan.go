@@ -500,6 +500,9 @@ func validatePipelineRunPrerequisite(prerequisite PipelineRunPrerequisite, planB
 		if strings.TrimSpace(prerequisite.ConsumerAssetID) == "" || strings.TrimSpace(prerequisite.URI) == "" || strings.TrimSpace(prerequisite.Reason) == "" {
 			return errors.New("blocked prerequisite requires consumer_asset_id, uri, and reason")
 		}
+		if (strings.TrimSpace(prerequisite.ProducerSnapshotVersionID) == "") != (prerequisite.ProducerDeploymentOrdinal == 0) || prerequisite.ProducerDeploymentOrdinal < 0 {
+			return errors.New("producer deployment coordinates are invalid")
+		}
 		return nil
 	}
 	if prerequisite.Status != "ready" {

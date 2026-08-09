@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/riverqueue/river/rivertype"
 )
 
 var ErrScheduleOccurrenceAlreadyAdmitted = errors.New("schedule occurrence is already admitted")
@@ -137,7 +139,9 @@ func (s *Store) EnsureScheduleOccurrence(
 	}
 	retryResult, err := tx.ExecContext(ctx, `
 		UPDATE schedule_occurrences
-		SET status = ?, updated_at = ?
+		SET status = ?, prerequisite_plan = NULL,
+		    prerequisite_deadline = NULL, prerequisite_reason = NULL,
+		    updated_at = ?
 		WHERE occurrence_key = ? AND status IN (?, ?)`,
 		string(ScheduleOccurrencePending), now, occurrence.Key,
 		string(ScheduleOccurrenceFailed), string(ScheduleOccurrenceCancelled),
@@ -201,10 +205,11 @@ func getScheduleOccurrence(
 ) (ScheduleOccurrence, error) {
 	var occurrence ScheduleOccurrence
 	var status, start, end, created, updated string
-	var currentRunID sql.NullString
+	var currentRunID, prerequisitePlan, prerequisiteDeadline, prerequisiteReason sql.NullString
 	err := queryer.QueryRowContext(ctx, `
 		SELECT occurrence_key, pipeline_uuid, environment, interval_start,
 		       interval_end, status, current_run_id, attempt_count,
+		       prerequisite_plan, prerequisite_deadline, prerequisite_reason,
 		       created_at, updated_at
 		FROM schedule_occurrences
 		WHERE occurrence_key = ?`, strings.TrimSpace(key)).Scan(
@@ -216,6 +221,9 @@ func getScheduleOccurrence(
 		&status,
 		&currentRunID,
 		&occurrence.AttemptCount,
+		&prerequisitePlan,
+		&prerequisiteDeadline,
+		&prerequisiteReason,
 		&created,
 		&updated,
 	)
@@ -226,6 +234,24 @@ func getScheduleOccurrence(
 	occurrence.IntervalEnd = parseTimeValue(end)
 	occurrence.Status = ScheduleOccurrenceStatus(status)
 	occurrence.CurrentRunID = stringFromNull(currentRunID)
+	occurrence.PrerequisiteReason = stringFromNull(prerequisiteReason)
+	if prerequisitePlan.Valid {
+		plan, planErr := unmarshalScheduleOccurrencePrerequisitePlan([]byte(prerequisitePlan.String))
+		if planErr != nil {
+			return ScheduleOccurrence{}, fmt.Errorf("schedule occurrence %s has an invalid prerequisite plan: %w", occurrence.Key, planErr)
+		}
+		occurrence.PrerequisitePlan = &plan
+	}
+	if prerequisiteDeadline.Valid {
+		deadline := parseTimeValue(prerequisiteDeadline.String)
+		if deadline.IsZero() {
+			return ScheduleOccurrence{}, fmt.Errorf("schedule occurrence %s has an invalid prerequisite deadline", occurrence.Key)
+		}
+		occurrence.PrerequisiteDeadline = &deadline
+	}
+	if occurrence.Status == ScheduleOccurrencePending && occurrence.PrerequisitePlan != nil {
+		occurrence.Status = ScheduleOccurrenceWaitingPrerequisites
+	}
 	occurrence.CreatedAt = parseTimeValue(created)
 	occurrence.UpdatedAt = parseTimeValue(updated)
 	if !validScheduleOccurrenceStatus(occurrence.Status) || occurrence.IntervalStart.IsZero() ||
@@ -241,6 +267,7 @@ func getScheduleOccurrence(
 func validScheduleOccurrenceStatus(status ScheduleOccurrenceStatus) bool {
 	switch status {
 	case ScheduleOccurrencePending, ScheduleOccurrenceAdmitting, ScheduleOccurrenceActive,
+		ScheduleOccurrenceWaitingPrerequisites,
 		ScheduleOccurrenceSuccess, ScheduleOccurrenceFailed, ScheduleOccurrenceCancelled:
 		return true
 	default:
@@ -267,8 +294,10 @@ func (s *Store) DeferredScheduleOccurrence(
 ) (DeferredScheduleOccurrence, bool, error) {
 	var result DeferredScheduleOccurrence
 	var start, end string
+	var prerequisitePlan, prerequisiteDeadline, prerequisiteReason sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT interval_start, interval_end, attempt_count
+		SELECT interval_start, interval_end, attempt_count,
+		       prerequisite_plan, prerequisite_deadline, prerequisite_reason
 		FROM schedule_occurrences
 		WHERE pipeline_uuid = ? AND environment = ? AND status = ?
 		ORDER BY interval_start, occurrence_key
@@ -276,7 +305,10 @@ func (s *Store) DeferredScheduleOccurrence(
 		strings.TrimSpace(pipelineUUID),
 		strings.TrimSpace(environment),
 		string(ScheduleOccurrencePending),
-	).Scan(&start, &end, &result.AttemptCount)
+	).Scan(
+		&start, &end, &result.AttemptCount,
+		&prerequisitePlan, &prerequisiteDeadline, &prerequisiteReason,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DeferredScheduleOccurrence{}, false, nil
 	}
@@ -285,11 +317,239 @@ func (s *Store) DeferredScheduleOccurrence(
 	}
 	result.IntervalStart = parseTimeValue(start)
 	result.IntervalEnd = parseTimeValue(end)
+	result.Status = ScheduleOccurrencePending
+	if prerequisitePlan.Valid {
+		result.Status = ScheduleOccurrenceWaitingPrerequisites
+		result.PrerequisiteReason = stringFromNull(prerequisiteReason)
+		if !prerequisiteDeadline.Valid {
+			return DeferredScheduleOccurrence{}, false, errors.New("waiting schedule occurrence is missing its prerequisite deadline")
+		}
+		deadline := parseTimeValue(prerequisiteDeadline.String)
+		if deadline.IsZero() {
+			return DeferredScheduleOccurrence{}, false, errors.New("waiting schedule occurrence has an invalid prerequisite deadline")
+		}
+		result.PrerequisiteDeadline = &deadline
+	}
 	if result.IntervalStart.IsZero() || result.IntervalEnd.IsZero() ||
 		!result.IntervalStart.Before(result.IntervalEnd) || result.AttemptCount < 0 {
 		return DeferredScheduleOccurrence{}, false, errors.New("deferred schedule occurrence contains invalid durable state")
 	}
 	return result, true, nil
+}
+
+func unmarshalScheduleOccurrencePrerequisitePlan(body []byte) (PipelineRunPlan, error) {
+	var header struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(body, &header); err != nil {
+		return PipelineRunPlan{}, err
+	}
+	return unmarshalPipelineRunPlan(header.Version, body)
+}
+
+// MarkScheduleOccurrenceWaiting persists the latest redacted prerequisite
+// evaluation without creating a run or claiming a pipeline/resource slot. A
+// producer deployment selected by an earlier evaluation cannot move while the
+// occurrence waits.
+func (s *Store) MarkScheduleOccurrenceWaiting(
+	ctx context.Context,
+	occurrence ScheduleOccurrence,
+	plan PipelineRunPlan,
+	deadline time.Time,
+	reason string,
+) (ScheduleOccurrence, error) {
+	if err := validateScheduleOccurrence(occurrence); err != nil {
+		return ScheduleOccurrence{}, err
+	}
+	if !deadline.IsZero() {
+		deadline = deadline.UTC()
+	}
+	reason = strings.TrimSpace(reason)
+	if deadline.IsZero() || reason == "" || len(reason) > 4096 {
+		return ScheduleOccurrence{}, errors.New("prerequisite waiting requires a deadline and a reason of at most 4096 bytes")
+	}
+	if !plan.Blocked || !pipelineRunPlanHasBlockedPrerequisite(plan) {
+		return ScheduleOccurrence{}, errors.New("prerequisite waiting requires a blocked prerequisite plan")
+	}
+	body, err := marshalPipelineRunPlan(plan)
+	if err != nil {
+		return ScheduleOccurrence{}, err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return ScheduleOccurrence{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	persisted, err := getScheduleOccurrence(ctx, tx, occurrence.Key)
+	if err != nil {
+		return ScheduleOccurrence{}, err
+	}
+	if err := validateScheduleOccurrenceBinding(occurrence, persisted); err != nil {
+		return ScheduleOccurrence{}, err
+	}
+	if persisted.Status != ScheduleOccurrencePending && persisted.Status != ScheduleOccurrenceWaitingPrerequisites {
+		return ScheduleOccurrence{}, &ScheduleOccurrenceAlreadyAdmittedError{
+			OccurrenceKey: persisted.Key, Status: persisted.Status, RunID: persisted.CurrentRunID,
+		}
+	}
+	if persisted.PrerequisitePlan != nil {
+		if err := validateFrozenProducerDeployments(*persisted.PrerequisitePlan, plan); err != nil {
+			return ScheduleOccurrence{}, err
+		}
+		if persisted.PrerequisiteDeadline == nil {
+			return ScheduleOccurrence{}, errors.New("stored prerequisite wait is missing its deadline")
+		}
+		deadline = persisted.PrerequisiteDeadline.UTC()
+	}
+	now := time.Now().UTC()
+	result, err := tx.ExecContext(ctx, `
+		UPDATE schedule_occurrences
+		SET prerequisite_plan = ?, prerequisite_deadline = ?,
+		    prerequisite_reason = ?, updated_at = ?
+		WHERE occurrence_key = ? AND status = ? AND current_run_id IS NULL`,
+		string(body), formatTime(deadline), reason, formatTime(now), occurrence.Key,
+		string(ScheduleOccurrencePending),
+	)
+	if err != nil {
+		return ScheduleOccurrence{}, err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return ScheduleOccurrence{}, err
+	}
+	if updated != 1 {
+		return ScheduleOccurrence{}, errors.New("schedule occurrence changed while entering prerequisite wait")
+	}
+	persisted, err = getScheduleOccurrence(ctx, tx, occurrence.Key)
+	if err != nil {
+		return ScheduleOccurrence{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return ScheduleOccurrence{}, err
+	}
+	return persisted, nil
+}
+
+// FailScheduleOccurrencePrerequisites terminalizes a waiting occurrence at its
+// durable deadline. It creates no synthetic pipeline run and therefore never
+// claims the consumer pipeline slot.
+func (s *Store) FailScheduleOccurrencePrerequisites(
+	ctx context.Context,
+	occurrence ScheduleOccurrence,
+	reason string,
+) (ScheduleOccurrence, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" || len(reason) > 4096 {
+		return ScheduleOccurrence{}, errors.New("prerequisite failure requires a reason of at most 4096 bytes")
+	}
+	now := time.Now().UTC()
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE schedule_occurrences
+		SET status = ?, prerequisite_reason = ?, updated_at = ?
+		WHERE occurrence_key = ? AND status = ? AND current_run_id IS NULL
+		  AND prerequisite_plan IS NOT NULL`,
+		string(ScheduleOccurrenceFailed), reason, formatTime(now), occurrence.Key,
+		string(ScheduleOccurrencePending),
+	)
+	if err != nil {
+		return ScheduleOccurrence{}, err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return ScheduleOccurrence{}, err
+	}
+	if updated != 1 {
+		return ScheduleOccurrence{}, errors.New("schedule occurrence changed while failing prerequisite wait")
+	}
+	persisted, found, err := s.GetScheduleOccurrence(ctx, occurrence.Key)
+	if err != nil {
+		return ScheduleOccurrence{}, err
+	}
+	if !found {
+		return ScheduleOccurrence{}, errors.New("failed schedule occurrence disappeared")
+	}
+	return persisted, nil
+}
+
+// WakeWaitingPrerequisiteSignals makes snoozed due-signal jobs that reference
+// the changed producer available after a target change or Renart completion.
+// River snooze remains the crash-recovery fallback; this wakeup only reduces
+// latency.
+func (s *Store) WakeWaitingPrerequisiteSignals(ctx context.Context, producerPipelineUUID string) (int64, error) {
+	producerPipelineUUID = strings.TrimSpace(producerPipelineUUID)
+	if producerPipelineUUID == "" {
+		return 0, errors.New("producer pipeline UUID is required")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE river_job
+		SET state = ?, scheduled_at = ?, finalized_at = NULL
+		WHERE kind = ? AND state = ?
+		  AND EXISTS (
+			SELECT 1
+			FROM schedule_occurrences AS occurrence
+			WHERE occurrence.status = ?
+			  AND occurrence.prerequisite_plan IS NOT NULL
+			  AND occurrence.pipeline_uuid = json_extract(river_job.args, '$.pipeline_uuid')
+			  AND occurrence.environment = json_extract(river_job.args, '$.environment')
+			  AND occurrence.interval_start = json_extract(river_job.args, '$.start')
+			  AND occurrence.interval_end = json_extract(river_job.args, '$.end')
+			  AND EXISTS (
+				  SELECT 1
+				  FROM json_each(occurrence.prerequisite_plan, '$.prerequisites') AS prerequisite
+				  WHERE json_extract(prerequisite.value, '$.producer_pipeline_uuid') = ?
+			  )
+		  )`,
+		string(rivertype.JobStateAvailable), formatRiverTime(time.Now().UTC()),
+		scheduleSignalJobKind, string(rivertype.JobStateScheduled),
+		string(ScheduleOccurrencePending), producerPipelineUUID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func pipelineRunPlanHasBlockedPrerequisite(plan PipelineRunPlan) bool {
+	for _, prerequisite := range plan.Prerequisites {
+		if prerequisite.Status == "blocked" {
+			return true
+		}
+	}
+	return false
+}
+
+func producerDeploymentsFromPlan(plan PipelineRunPlan) (map[string]string, error) {
+	result := make(map[string]string)
+	for _, prerequisite := range plan.Prerequisites {
+		pipelineUUID := strings.TrimSpace(prerequisite.ProducerPipelineUUID)
+		versionID := strings.TrimSpace(prerequisite.ProducerSnapshotVersionID)
+		if pipelineUUID == "" || versionID == "" {
+			continue
+		}
+		if existing := result[pipelineUUID]; existing != "" && existing != versionID {
+			return nil, fmt.Errorf("prerequisite plan selects multiple deployments for producer %s", pipelineUUID)
+		}
+		result[pipelineUUID] = versionID
+	}
+	return result, nil
+}
+
+func validateFrozenProducerDeployments(previous, next PipelineRunPlan) error {
+	frozen, err := producerDeploymentsFromPlan(previous)
+	if err != nil {
+		return err
+	}
+	selected, err := producerDeploymentsFromPlan(next)
+	if err != nil {
+		return err
+	}
+	for pipelineUUID, versionID := range frozen {
+		if selected[pipelineUUID] != versionID {
+			return fmt.Errorf("waiting occurrence cannot move producer %s from deployment %s", pipelineUUID, versionID)
+		}
+	}
+	return nil
 }
 
 // CreateScheduleOccurrenceAttemptWithSpecAndPlan atomically claims the
@@ -321,6 +581,11 @@ func (s *Store) createScheduleOccurrenceAttemptWithSpecAndPlan(
 	if err := validateRunPlanAdmissionBinding(run, spec, plan); err != nil {
 		return "", err
 	}
+	if occurrence.PrerequisitePlan != nil {
+		if err := validateFrozenProducerDeployments(*occurrence.PrerequisitePlan, plan); err != nil {
+			return "", err
+		}
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
@@ -329,7 +594,9 @@ func (s *Store) createScheduleOccurrenceAttemptWithSpecAndPlan(
 	now := formatTime(time.Now().UTC())
 	claim, err := tx.ExecContext(ctx, `
 		UPDATE schedule_occurrences
-		SET status = ?, attempt_count = attempt_count + 1, updated_at = ?
+		SET status = ?, attempt_count = attempt_count + 1,
+		    prerequisite_plan = NULL, prerequisite_deadline = NULL,
+		    prerequisite_reason = NULL, updated_at = ?
 		WHERE occurrence_key = ? AND status IN (?, ?, ?)`,
 		string(ScheduleOccurrenceAdmitting), now, occurrence.Key,
 		string(ScheduleOccurrencePending), string(ScheduleOccurrenceFailed), string(ScheduleOccurrenceCancelled),

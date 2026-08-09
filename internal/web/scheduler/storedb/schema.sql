@@ -136,6 +136,10 @@ CREATE TABLE IF NOT EXISTS schedule_occurrences (
     current_run_id TEXT
         REFERENCES pipeline_runs(id) ON DELETE SET NULL,
     attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    prerequisite_plan TEXT
+        CHECK (prerequisite_plan IS NULL OR json_valid(prerequisite_plan)),
+    prerequisite_deadline TEXT,
+    prerequisite_reason TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     UNIQUE (pipeline_uuid, environment, interval_start, interval_end)

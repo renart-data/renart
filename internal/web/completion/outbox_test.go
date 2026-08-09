@@ -78,6 +78,46 @@ func TestOutboxRoundTripsVersionFourExecutionContracts(t *testing.T) {
 	assert.Equal(t, entry.ExecutionContract, pending[0].Event.ExecutionTargets["analytics.orders"].ExecutionContract)
 }
 
+func TestOutboxAcceptsReviewedCrossPipelineUpstreamWriter(t *testing.T) {
+	t.Parallel()
+	store, _ := newOutboxStore(t)
+	ctx := context.Background()
+	event := completeEvent("completion-cross-pipeline")
+	producerID := "producer-uuid:raw.orders"
+	writer := bus.UpstreamWriterSnapshot{
+		AssetID: producerID, TargetIdentity: strings.Repeat("c", 64),
+		Fingerprint: "v3:producer", VarsHash: strings.Repeat("d", 64),
+		TargetGeneration: 2, CompletionID: "producer-completion", CompletionOrdinal: 1,
+		MaterializedAt: time.Date(2026, 7, 17, 9, 0, 0, 0, time.UTC),
+	}
+	entry := event.ExecutionTargets["analytics.orders"]
+	entry.Upstreams = append(entry.Upstreams, bus.ExecutionUpstreamSnapshot{
+		Type: "uri", Value: "duckdb://warehouse/raw/orders", Required: true,
+		ResolvedAssetID: producerID, ProducerPipelineUUID: "producer-uuid",
+		ProducerSnapshotVersionID: "producer-deployment", TargetIdentity: writer.TargetIdentity,
+		ExpectedFingerprint: writer.Fingerprint, VarsHash: writer.VarsHash,
+		TargetGeneration: writer.TargetGeneration, CompletionID: writer.CompletionID,
+		CompletionOrdinal: writer.CompletionOrdinal,
+	})
+	event.ExecutionTargets["analytics.orders"] = entry
+	event.Assets[0].UpstreamWriters[producerID] = writer
+
+	require.NoError(t, store.Enqueue(ctx, event))
+	pending, err := store.ListPending(ctx)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, writer, pending[0].Event.Assets[0].UpstreamWriters[producerID])
+
+	tampered := event
+	tampered.CompletionID = "completion-cross-pipeline-tampered"
+	tampered.Assets = append([]bus.AssetRun(nil), event.Assets...)
+	tampered.Assets[0].UpstreamWriters = map[string]bus.UpstreamWriterSnapshot{producerID: writer}
+	changed := tampered.Assets[0].UpstreamWriters[producerID]
+	changed.TargetGeneration++
+	tampered.Assets[0].UpstreamWriters[producerID] = changed
+	require.ErrorIs(t, store.Enqueue(ctx, tampered), completion.ErrInvalidEnvelope)
+}
+
 func TestOutboxRejectsConflictingCompletionEvidence(t *testing.T) {
 	t.Parallel()
 	store, _ := newOutboxStore(t)

@@ -194,15 +194,20 @@ func (s *Service) resolveRunSpecForExecution(
 		if spec.Requested.Start == nil || spec.Requested.End == nil || spec.Requested.ExecutionTime == nil {
 			return runSpecV1{}, errors.New("reviewed plan is missing its execution window")
 		}
+		frozenProducerDeployments, err := producerDeploymentsFromPlan(retainedPlan)
+		if err != nil {
+			return runSpecV1{}, fmt.Errorf("load reviewed producer deployments: %w", err)
+		}
 		replanned, err := s.planScheduledRun(ctx, ScheduledRunPlanRequest{
-			PipelineID:        spec.Pipeline.ID,
-			PipelineUUID:      spec.Pipeline.UUID,
-			Environment:       spec.Requested.Environment,
-			SnapshotVersionID: spec.Source.SnapshotVersionID,
-			Start:             spec.Requested.Start.UTC(),
-			End:               spec.Requested.End.UTC(),
-			ExecutionTime:     spec.Requested.ExecutionTime.UTC(),
-			VariableOverrides: resolved,
+			PipelineID:                spec.Pipeline.ID,
+			PipelineUUID:              spec.Pipeline.UUID,
+			Environment:               spec.Requested.Environment,
+			SnapshotVersionID:         spec.Source.SnapshotVersionID,
+			Start:                     spec.Requested.Start.UTC(),
+			End:                       spec.Requested.End.UTC(),
+			ExecutionTime:             spec.Requested.ExecutionTime.UTC(),
+			VariableOverrides:         resolved,
+			FrozenProducerDeployments: frozenProducerDeployments,
 		})
 		if err != nil {
 			return runSpecV1{}, fmt.Errorf("verify referenced variables against reviewed plan: %w", err)

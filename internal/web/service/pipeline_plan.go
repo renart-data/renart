@@ -79,6 +79,10 @@ type PipelinePlanRequest struct {
 	// admission inputs. Public plan JSON cannot set or recover their values.
 	VariableOverrides      map[string]any `json:"-"`
 	VariableOverrideSource string         `json:"-"`
+	// ProducerDeploymentPins freezes producer snapshots selected by a durable
+	// scheduled occurrence while its Renart-observed coverage is incomplete.
+	// It is private admission context and never accepted from HTTP JSON.
+	ProducerDeploymentPins map[string]string `json:"-"`
 	// Scheduled admission arbitrates the active run slot transactionally and
 	// always selects all assets, so transient active/data-state checks must not
 	// turn a due interval into a failed plan before admission.
@@ -497,13 +501,37 @@ func (s *PipelinePlanService) Plan(
 		base.Context.SchemaPrefix = cfg.SelectedEnvironment.SchemaPrefix
 	}
 
-	base.Readiness.CodeChecks = CheckPipelineAt(
-		ctx,
-		afero.NewOsFs(),
-		resolved.parsed,
-		resolved.root,
-		timeWindow,
-		executionTime,
+	var snapshotWorkspace *snapshotPrerequisiteWorkspace
+	var snapshotWorkspaceErr error
+	if resolved.source.Kind == PipelinePlanSourceSnapshot &&
+		pipelineHasSelectedFullURIDependency(resolved.parsed, allPipelineAssetIDs(resolved.parsed)) &&
+		s.deps.Snapshots != nil && s.deps.ResolveProducerDeployment != nil {
+		workspace, resolveErr := s.resolveSnapshotPrerequisiteWorkspace(
+			ctx, &base, resolved, req.ProducerDeploymentPins,
+		)
+		if resolveErr != nil {
+			snapshotWorkspaceErr = resolveErr
+		} else {
+			snapshotWorkspace = &workspace
+			defer workspace.cleanup()
+		}
+	}
+	checkOptions := typeCheckOptions{}
+	if snapshotWorkspace != nil {
+		checkOptions.WorkspaceGraph = &snapshotWorkspace.sqlGraph
+	} else if resolved.source.Kind == PipelinePlanSourceWorkingTree &&
+		pipelineHasSelectedFullURIDependency(resolved.parsed, allPipelineAssetIDs(resolved.parsed)) {
+		// A cross-pipeline URI is an orchestration edge, but the SQL relation is
+		// still authored normally. Planning validates it against the same
+		// workspace-wide schema graph as Monaco/typecheck while execution remains
+		// scoped to the selected consumer pipeline.
+		if workspaceSQLGraph, graphErr := LoadSQLLSPGraph(ctx, s.deps.WorkspaceRoot); graphErr == nil {
+			checkOptions.WorkspaceGraph = &workspaceSQLGraph
+		}
+	}
+	base.Readiness.CodeChecks = checkPipelineAt(
+		ctx, afero.NewOsFs(), resolved.parsed, resolved.root,
+		timeWindow, executionTime, checkOptions,
 	)
 	base.Readiness.CodeChecks.PipelineID = pipelineID
 	s.addCodeCheckIssues(&base)
@@ -545,6 +573,9 @@ func (s *PipelinePlanService) Plan(
 		purpose,
 		timeWindow,
 		req.VariableOverrides,
+		req.ProducerDeploymentPins,
+		snapshotWorkspace,
+		snapshotWorkspaceErr,
 	)
 	if req.Backfill && (selectionRequest.Mode != PipelinePlanSelectionAsset || selectionRequest.Scope != "asset") {
 		base.Readiness.Blockers = append(base.Readiness.Blockers, PipelinePlanIssue{

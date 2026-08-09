@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -408,6 +409,217 @@ func TestV2ScheduleSignalSnoozesBehindActivePipelineRun(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, store, `SELECT COUNT(*) FROM river_job WHERE kind = ?`, pipelineRunJobKind))
 }
 
+func TestScheduledPrerequisiteWaitPersistsAcrossRestartFreezesDeploymentAndAdmitsWithoutSlot(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.db")
+	store, err := OpenStore(statePath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+	selectedVersion := "producer-deployment-v1"
+	ready := false
+	var observedFrozen []map[string]string
+	planScheduled := func(_ context.Context, req ScheduledRunPlanRequest) (ScheduledRunPlanResult, error) {
+		frozen := make(map[string]string, len(req.FrozenProducerDeployments))
+		for key, value := range req.FrozenProducerDeployments {
+			frozen[key] = value
+		}
+		observedFrozen = append(observedFrozen, frozen)
+		version := selectedVersion
+		if pinned := req.FrozenProducerDeployments["producer-uuid"]; pinned != "" {
+			version = pinned
+		}
+		return scheduledPrerequisitePlan(t, req, ready, version), nil
+	}
+	newService := func() *Service {
+		return New(Options{
+			Store: store,
+			ResolvePipelineRef: func(context.Context, string) (PipelineRef, bool) {
+				return PipelineRef{EncodedID: "pipeline-id", Name: "analytics"}, true
+			},
+			PlanScheduledRun: planScheduled,
+		})
+	}
+	service := newService()
+	start := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	args := pipelineRunJobArgs{
+		PipelineUUID: "pipeline-uuid", Environment: "prod", PipelineName: "analytics",
+		Start: start.Format(time.RFC3339Nano), End: start.Add(time.Hour).Format(time.RFC3339Nano),
+		SnapshotVersionID: "consumer-deployment",
+	}
+
+	_, shouldAdmit, err := service.prepareScheduledRunAdmission(ctx, args)
+	var waiting *schedulePrerequisitesWaitingError
+	require.ErrorAs(t, err, &waiting)
+	assert.False(t, shouldAdmit)
+	assert.WithinDuration(t, time.Now().UTC().Add(12*time.Hour), waiting.Deadline, 5*time.Second)
+	assert.Equal(t, 0, countRows(t, store, `SELECT COUNT(*) FROM pipeline_runs`))
+	assert.Equal(t, 0, countRows(t, store, `SELECT COUNT(*) FROM pipeline_run_slots`))
+
+	occurrence, err := newScheduleOccurrence("pipeline-uuid", "prod", start, start.Add(time.Hour))
+	require.NoError(t, err)
+	persisted, found, err := store.GetScheduleOccurrence(ctx, occurrence.Key)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, ScheduleOccurrenceWaitingPrerequisites, persisted.Status)
+	require.NotNil(t, persisted.PrerequisitePlan)
+	require.NotNil(t, persisted.PrerequisiteDeadline)
+	assert.Equal(t, "producer-deployment-v1", persisted.PrerequisitePlan.Prerequisites[0].ProducerSnapshotVersionID)
+	firstDeadline := *persisted.PrerequisiteDeadline
+	firstExecutionTime := persisted.PrerequisitePlan.ExecutionTime
+	deferred, found, err := store.DeferredScheduleOccurrence(ctx, "pipeline-uuid", "prod")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, ScheduleOccurrenceWaitingPrerequisites, deferred.Status)
+	assert.Contains(t, deferred.PrerequisiteReason, "producer is not current")
+
+	require.NoError(t, store.Close())
+	store, err = OpenStore(statePath)
+	require.NoError(t, err)
+	service = newService()
+	selectedVersion = "producer-deployment-v2"
+	_, shouldAdmit, err = service.prepareScheduledRunAdmission(ctx, args)
+	require.ErrorAs(t, err, &waiting)
+	assert.False(t, shouldAdmit)
+	require.Len(t, observedFrozen, 2)
+	assert.Equal(t, "producer-deployment-v1", observedFrozen[1]["producer-uuid"])
+	persisted, found, err = store.GetScheduleOccurrence(ctx, occurrence.Key)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NotNil(t, persisted.PrerequisiteDeadline)
+	assert.Equal(t, firstDeadline, *persisted.PrerequisiteDeadline)
+	assert.Equal(t, firstExecutionTime, persisted.PrerequisitePlan.ExecutionTime)
+	assert.Equal(t, "producer-deployment-v1", persisted.PrerequisitePlan.Prerequisites[0].ProducerSnapshotVersionID)
+
+	ready = true
+	prepared, shouldAdmit, err := service.prepareScheduledRunAdmission(ctx, args)
+	require.NoError(t, err)
+	require.True(t, shouldAdmit)
+	require.Len(t, observedFrozen, 3)
+	assert.Equal(t, "producer-deployment-v1", observedFrozen[2]["producer-uuid"])
+	assert.Equal(t, "producer-deployment-v1", prepared.Plan.Prerequisites[0].ProducerSnapshotVersionID)
+	_, err = store.CreateScheduleOccurrenceAttemptWithSpecAndPlan(
+		ctx, prepared.Occurrence, prepared.Run, prepared.Spec, prepared.Plan,
+	)
+	require.NoError(t, err)
+	active, found, err := store.GetScheduleOccurrence(ctx, occurrence.Key)
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, ScheduleOccurrenceActive, active.Status)
+	assert.Nil(t, active.PrerequisitePlan)
+	assert.Nil(t, active.PrerequisiteDeadline)
+}
+
+func TestScheduledPrerequisiteWaitTimesOutWithoutCreatingRun(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	require.NoError(t, err)
+	defer store.Close()
+	ctx := context.Background()
+	service := New(Options{
+		Store: store,
+		ResolvePipelineRef: func(context.Context, string) (PipelineRef, bool) {
+			return PipelineRef{EncodedID: "pipeline-id", Name: "analytics"}, true
+		},
+		PlanScheduledRun: func(_ context.Context, req ScheduledRunPlanRequest) (ScheduledRunPlanResult, error) {
+			return scheduledPrerequisitePlan(t, req, false, "producer-deployment-v1"), nil
+		},
+	})
+	start := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	args := pipelineRunJobArgs{
+		PipelineUUID: "pipeline-uuid", Environment: "prod",
+		Start: start.Format(time.RFC3339Nano), End: start.Add(time.Hour).Format(time.RFC3339Nano),
+		SnapshotVersionID: "consumer-deployment",
+	}
+	_, _, err = service.prepareScheduledRunAdmission(ctx, args)
+	var waiting *schedulePrerequisitesWaitingError
+	require.ErrorAs(t, err, &waiting)
+	require.NoError(t, store.db.QueryRowContext(ctx, `
+		UPDATE schedule_occurrences
+		SET prerequisite_deadline = ?
+		RETURNING occurrence_key`, formatTime(time.Now().UTC().Add(-time.Minute))).Scan(new(string)))
+
+	_, _, err = service.prepareScheduledRunAdmission(ctx, args)
+	var invalid *invalidScheduleSignalError
+	require.ErrorAs(t, err, &invalid)
+	assert.Contains(t, err.Error(), "Timed out")
+	occurrence, occurrenceErr := newScheduleOccurrence("pipeline-uuid", "prod", start, start.Add(time.Hour))
+	require.NoError(t, occurrenceErr)
+	persisted, found, occurrenceErr := store.GetScheduleOccurrence(ctx, occurrence.Key)
+	require.NoError(t, occurrenceErr)
+	require.True(t, found)
+	assert.Equal(t, ScheduleOccurrenceFailed, persisted.Status)
+	assert.Contains(t, persisted.PrerequisiteReason, "Timed out")
+	assert.Equal(t, 0, countRows(t, store, `SELECT COUNT(*) FROM pipeline_runs`))
+}
+
+func TestProducerEventWakeMakesWaitingScheduleSignalAvailable(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	require.NoError(t, err)
+	defer store.Close()
+	ctx := context.Background()
+	start := time.Date(2026, 7, 18, 8, 0, 0, 0, time.UTC)
+	args := scheduleSignalJobArgs{
+		PipelineUUID: "pipeline-uuid", Environment: "prod",
+		Start: start.Format(time.RFC3339Nano), End: start.Add(time.Hour).Format(time.RFC3339Nano),
+		SnapshotVersionID: "consumer-deployment",
+	}
+	jobID := insertTestRiverJob(t, store, args)
+	_, err = store.db.ExecContext(ctx, `
+		UPDATE river_job SET state = ?, scheduled_at = ? WHERE id = ?`,
+		string(rivertype.JobStateScheduled), formatRiverTime(time.Now().UTC().Add(time.Hour)), jobID,
+	)
+	require.NoError(t, err)
+	occurrence, err := newScheduleOccurrence("pipeline-uuid", "prod", start, start.Add(time.Hour))
+	require.NoError(t, err)
+	occurrence, _, err = store.EnsureScheduleOccurrence(ctx, occurrence)
+	require.NoError(t, err)
+	request := ScheduledRunPlanRequest{
+		PipelineID: "pipeline-id", PipelineUUID: occurrence.PipelineUUID,
+		Environment: occurrence.Environment, Start: start, End: start.Add(time.Hour),
+		ExecutionTime: start.Add(time.Minute),
+	}
+	planned := scheduledPrerequisitePlan(t, request, false, "producer-deployment-v1")
+	_, err = store.MarkScheduleOccurrenceWaiting(
+		ctx, occurrence, planned.Plan, time.Now().UTC().Add(12*time.Hour), "producer is not current",
+	)
+	require.NoError(t, err)
+	otherStart := start.Add(time.Hour)
+	otherArgs := args
+	otherArgs.Start = otherStart.Format(time.RFC3339Nano)
+	otherArgs.End = otherStart.Add(time.Hour).Format(time.RFC3339Nano)
+	otherJobID := insertTestRiverJob(t, store, otherArgs)
+	_, err = store.db.ExecContext(ctx, `
+		UPDATE river_job SET state = ?, scheduled_at = ? WHERE id = ?`,
+		string(rivertype.JobStateScheduled), formatRiverTime(time.Now().UTC().Add(time.Hour)), otherJobID,
+	)
+	require.NoError(t, err)
+	otherOccurrence, err := newScheduleOccurrence("pipeline-uuid", "prod", otherStart, otherStart.Add(time.Hour))
+	require.NoError(t, err)
+	otherOccurrence, _, err = store.EnsureScheduleOccurrence(ctx, otherOccurrence)
+	require.NoError(t, err)
+	otherRequest := request
+	otherRequest.Start = otherStart
+	otherRequest.End = otherStart.Add(time.Hour)
+	otherPlan := scheduledPrerequisitePlan(t, otherRequest, false, "other-deployment-v1")
+	otherPlan.Plan.Prerequisites[0].ProducerPipelineUUID = "other-producer"
+	otherPlan.Plan.Artifact = pipelineRunPlanArtifact(t, otherPlan.Plan)
+	require.NoError(t, otherPlan.Plan.validate())
+	_, err = store.MarkScheduleOccurrenceWaiting(
+		ctx, otherOccurrence, otherPlan.Plan, time.Now().UTC().Add(12*time.Hour), "other producer is not current",
+	)
+	require.NoError(t, err)
+
+	woken, err := store.WakeWaitingPrerequisiteSignals(ctx, "unrelated-producer")
+	require.NoError(t, err)
+	assert.Zero(t, woken)
+	assertRiverJobState(t, store, jobID, rivertype.JobStateScheduled)
+
+	woken, err = store.WakeWaitingPrerequisiteSignals(ctx, "producer-uuid")
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, woken)
+	assertRiverJobState(t, store, jobID, rivertype.JobStateAvailable)
+	assertRiverJobState(t, store, otherJobID, rivertype.JobStateScheduled)
+}
+
 func TestV2ScheduleSignalRecoveryRequeuesSignalAndRetriesFailedAttempt(t *testing.T) {
 	store, err := OpenStore(filepath.Join(t.TempDir(), "state.db"))
 	require.NoError(t, err)
@@ -507,4 +719,57 @@ func scheduledOccurrenceFixture(t testing.TB) (
 	}
 	require.NoError(t, spec.validate())
 	return occurrence, run, spec, planned.Plan
+}
+
+func scheduledPrerequisitePlan(
+	t testing.TB,
+	req ScheduledRunPlanRequest,
+	ready bool,
+	producerSnapshotVersionID string,
+) ScheduledRunPlanResult {
+	t.Helper()
+	plan := validPipelineRunPlanV3(t)
+	plan.PipelineID = req.PipelineID
+	plan.PipelineUUID = req.PipelineUUID
+	plan.ExecutionTime = req.ExecutionTime.UTC().Format(time.RFC3339Nano)
+	for index := range plan.ExecutionUnits {
+		plan.ExecutionUnits[index].AssetID = req.PipelineUUID + strings.TrimPrefix(plan.ExecutionUnits[index].AssetID, "pipeline-uuid")
+		plan.ExecutionUnits[index].StartDate = req.Start.UTC().Format(time.RFC3339Nano)
+		plan.ExecutionUnits[index].EndDate = req.End.UTC().Format(time.RFC3339Nano)
+	}
+	for index := range plan.ExecutionContracts {
+		plan.ExecutionContracts[index].AssetID = req.PipelineUUID + strings.TrimPrefix(plan.ExecutionContracts[index].AssetID, "pipeline-uuid")
+	}
+	status := "blocked"
+	reason := "producer is not current"
+	planIDPart := "4"
+	if ready {
+		status = "ready"
+		reason = "Renart observed complete producer coverage"
+		planIDPart = "5"
+	}
+	plan.PlanID = strings.Repeat(planIDPart, 64)
+	plan.Blocked = !ready
+	if plan.Blocked {
+		plan.Blockers = []string{"raw.orders: " + reason}
+	} else {
+		plan.Blockers = nil
+	}
+	plan.Prerequisites = []PipelineRunPrerequisite{{
+		Status: status, Reason: reason,
+		ConsumerAssetID: req.PipelineUUID + ":analytics.orders", ConsumerAssetName: "analytics.orders",
+		URI:                "duckdb://warehouse/raw/orders",
+		ProducerPipelineID: "raw", ProducerPipelineUUID: "producer-uuid", ProducerPipelineName: "raw",
+		ProducerAssetID: "producer-uuid:raw.orders", ProducerAssetName: "raw.orders",
+		ProducerSnapshotVersionID: producerSnapshotVersionID, ProducerDeploymentOrdinal: 1,
+		Environment:   req.Environment,
+		RequiredStart: req.Start.UTC().Format(time.RFC3339Nano), RequiredEnd: req.End.UTC().Format(time.RFC3339Nano),
+		ExpectedFingerprint: "v3:producer", TargetIdentity: strings.Repeat("f", 64), VarsHash: strings.Repeat("e", 64),
+		TargetGeneration: 1, WriterRunID: "producer-run", WriterSnapshotVersionID: producerSnapshotVersionID,
+		WriterCompletionID: "producer-run", WriterMaterializedAt: req.Start.Add(time.Minute).UTC().Format(time.RFC3339Nano),
+		RequiredSeconds: req.End.Sub(req.Start).Seconds(), CoveredSeconds: map[bool]float64{true: req.End.Sub(req.Start).Seconds()}[ready],
+	}}
+	plan.Artifact = pipelineRunPlanArtifact(t, plan)
+	require.NoError(t, plan.validate())
+	return ScheduledRunPlanResult{Plan: plan, WaitForPrerequisites: !ready}
 }

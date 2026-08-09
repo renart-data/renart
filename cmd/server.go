@@ -828,6 +828,27 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 				ctx, service.NewRenartPipelineBuilder(afero.NewOsFs()), pipelineRoot, overrides,
 			)
 		},
+		ValidateScheduleDeploymentDependencies: func(
+			ctx context.Context,
+			pipelineUUID string,
+			versionID string,
+			environment string,
+			overrides map[string]any,
+		) error {
+			pipelineID := ""
+			for _, current := range server.currentState().Pipelines {
+				if current.UUID == pipelineUUID {
+					pipelineID = current.ID
+					break
+				}
+			}
+			if pipelineID == "" {
+				return fmt.Errorf("pipeline %s is not present in the workspace", pipelineUUID)
+			}
+			return server.pipelinePlanSvc.ValidateSnapshotDependencyBindings(
+				ctx, pipelineID, pipelineUUID, versionID, environment, overrides,
+			)
+		},
 		PlanScheduledRun: func(ctx context.Context, req webscheduler.ScheduledRunPlanRequest) (webscheduler.ScheduledRunPlanResult, error) {
 			plan, apiErr := server.pipelinePlanSvc.Plan(ctx, req.PipelineID, service.PipelinePlanRequest{
 				Purpose:       service.PipelinePlanPurposeExecution,
@@ -841,6 +862,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 				Selection:              service.PipelinePlanSelectionRequest{Mode: service.PipelinePlanSelectionAll},
 				VariableOverrides:      req.VariableOverrides,
 				VariableOverrideSource: "schedule_override",
+				ProducerDeploymentPins: req.FrozenProducerDeployments,
 				SkipActiveRunCheck:     true,
 				SkipDataStateCheck:     true,
 				Scheduled:              true,
@@ -861,7 +883,10 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 			if err != nil {
 				return webscheduler.ScheduledRunPlanResult{}, err
 			}
-			return webscheduler.ScheduledRunPlanResult{Plan: retainedPlan}, nil
+			return webscheduler.ScheduledRunPlanResult{
+				Plan:                 retainedPlan,
+				WaitForPrerequisites: service.PipelinePlanWaitsForCrossPipelinePrerequisites(plan),
+			}, nil
 		},
 		ValidateReexecution: func(ctx context.Context, req webscheduler.RunReexecutionValidationRequest) error {
 			environmentPolicy := policy.EnvironmentPolicy{}
@@ -1005,6 +1030,28 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 			// by non-streaming callers; appending it here would replay the run.
 			return webscheduler.RunResult{Status: result.Status, Error: result.Error}
 		},
+	})
+	wakeWaitingPrerequisites := func(producerPipelineUUID string) {
+		wakeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, wakeErr := server.schedulerStore.WakeWaitingPrerequisiteSignals(wakeCtx, producerPipelineUUID); wakeErr != nil {
+			logger.Warn("failed to wake scheduled prerequisite waits", zap.Error(wakeErr))
+		}
+	}
+	server.eventBus.OnRunCompleted(func(event bus.RunCompleted) error {
+		producerPipelineUUID := event.PipelineUUID
+		if producerPipelineUUID == "" {
+			producerPipelineUUID = event.ExecutionPipelineUUID
+		}
+		if producerPipelineUUID != "" {
+			wakeWaitingPrerequisites(producerPipelineUUID)
+		}
+		return nil
+	})
+	server.eventBus.OnTargetWriteChanged(func(event bus.TargetWriteChanged) {
+		if event.PipelineUUID != "" {
+			wakeWaitingPrerequisites(event.PipelineUUID)
+		}
 	})
 	server.executionSvc.SetInlineRunLedger(server.schedulerSvc)
 

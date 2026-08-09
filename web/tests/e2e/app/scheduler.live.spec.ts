@@ -51,6 +51,9 @@ test.describe("app scheduler pages live", () => {
             interval_start: "2026-07-18T08:00:00Z",
             interval_end: "2026-07-18T09:00:00Z",
             attempt_count: 0,
+            status: "waiting_prerequisites",
+            prerequisite_deadline: "2026-07-18T20:00:00Z",
+            prerequisite_reason: "raw.orders: producer coverage is incomplete",
           };
         }
       }
@@ -95,10 +98,11 @@ test.describe("app scheduler pages live", () => {
       ),
     ).toBe(true);
     await expect(scheduleRow.getByText("Needs deployment", { exact: true })).toBeVisible();
-    const waitingBadge = scheduleRow.getByText("Run waiting", { exact: true });
+    const waitingBadge = scheduleRow.getByText("Waiting for prerequisites", { exact: true });
     await expect(waitingBadge).toBeVisible();
     await waitingBadge.focus();
-    await expect(page.getByRole("tooltip")).toContainText("durably retained");
+    await expect(page.getByRole("tooltip")).toContainText("producer coverage is incomplete");
+    await expect(page.getByRole("tooltip")).toContainText("holds no run slot");
     const actions = scheduleRow.getByTestId("schedule-actions");
     await expect(actions.getByRole("button", { name: "Review deployment" })).toBeVisible();
     await expect(actions.getByRole("button", { name: "Run pinned" })).toBeDisabled();

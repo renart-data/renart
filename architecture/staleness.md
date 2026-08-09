@@ -149,8 +149,16 @@ rewrite, missing deployment, ambiguity, active/dirty target claim, variable
 mismatch, or interval gap stops the task before its own target is claimed.
 Retained run plans protect every referenced producer deployment from snapshot
 garbage collection. Symbolic dependencies never create a runtime prerequisite.
-Ready scheduled prerequisites can be admitted; blocked scheduled prerequisites
-still become failed runs until the durable waiting lifecycle is implemented.
+Scheduled occurrences persist blocked prerequisite plans separately from runs.
+They freeze the producer deployment selected by the first evaluation, retain
+the original execution time and a 12-hour deadline, and consume no pipeline or
+resource slot while waiting. Relevant producer completions and target-write
+events wake the occurrence immediately; a one-minute River snooze is the
+restart/crash-recovery fallback. Admission re-evaluates the exact frozen
+deployment and creates a run only when all Renart-observed facts are ready. A
+deadline expires the occurrence with its prerequisite reason and no synthetic
+run, while an invalid immutable deployment binding fails normally instead of
+entering the retryable wait lifecycle.
 
 A full refresh remains paired with its requested run window. For an
 interval-aware asset it replaces prior interval coverage with that window; it
@@ -500,6 +508,14 @@ remains `/api/snapshots/{versionId}/file`; status also reports whether the lates
 snapshot is executable so identical-but-corrupt content can be repaired by a
 new Deploy instead of dead-ending the UI.
 
+Schedule promotion validates every selected consumer deployment's URI manifest
+against the same-environment producer pins before changing any row. A missing
+producer deployment or changed URI owner rejects the entire compare-and-swap
+batch. Waiting occurrences keep their already-selected producer snapshot even
+if a newer producer deployment is promoted; new occurrences use the new pin.
+Snapshot pruning treats producer versions referenced by retained run plans and
+pending prerequisite waits as live references.
+
 Snapshot housekeeping removes a version only after it is older than the
 configured window (default 90 days), outside the newest-per-pipeline floor
 (default 20), and is neither that pipeline's latest version nor referenced by
@@ -545,11 +561,29 @@ periodic/catch-up job is only a due signal containing the captured schedule
 revision and interval; physical execution reconstructs behavior exclusively
 from the stored RunSpec. A slot conflict rolls the attempted admission
 back, leaves the occurrence pending, and snoozes the original signal with its
-exact arguments. The schedules API exposes only the pending interval and prior
-attempt count, and the UI labels it **Run waiting** or **Retry waiting**; values
-and the private key are not exposed. SSE occurrence events refresh this state
-without polling. Migrated active rows have only a path alias because their UUID
-was not persisted, so rename safety cannot be reconstructed for those rows.
+exact arguments.
+
+A due occurrence whose only blockers are incomplete cross-pipeline
+prerequisites stays in a durable `waiting_prerequisites` projection. Its private
+row retains the redacted plan, original execution time, exact producer snapshot
+versions, last reason, and 12-hour deadline without creating a run or taking a
+pipeline/resource slot. Producer-specific completion and target-write events
+wake its snoozed due signal; a bounded one-minute snooze provides restart and
+missed-event recovery. Each evaluation keeps the initially selected producer
+deployment even after redeploy. When the evidence becomes ready, occurrence,
+run, RunSpec, confirmed plan, resource claims, and River execution job are
+admitted atomically. On deadline expiry the occurrence becomes failed with an
+actionable reason and no synthetic run. Permanent deployment-binding or other
+plan failures do not enter this waiting state.
+
+The schedules API exposes only the oldest deferred interval, prior attempt
+count, public wait state, redacted reason, and deadline. The UI labels ordinary
+slot waits **Run waiting** or **Retry waiting**, and prerequisite waits
+**Waiting for prerequisites**, explicitly noting that no run slot is held.
+Values, the private occurrence key, and the retained plan are not exposed. SSE
+occurrence events refresh this state without polling. Migrated active rows have
+only a path alias because their UUID was not persisted, so rename safety cannot
+be reconstructed for those rows.
 Pre-v2 combined River jobs remain decodable until already-persisted work drains;
 startup returns both legacy and v2 claimed signals to River unchanged.
 
@@ -582,13 +616,15 @@ deployed version. A differing pin is shown as **Older deployment**, independentl
 of data freshness and last-run status. Repair/update opens the saved-source
 deployment review; after deployment the user explicitly selects zero or more
 schedules not yet using it. The server validates the target deployment and
-compare-and-swaps all selected rows in one transaction, so a concurrently
-changed pin rejects the whole batch. A paused declaration that has never been
-deployed participates with an explicit empty expected pin; omitting the expected
-pin is still an invalid request. The row-level manual action is a server-owned
-endpoint that loads the displayed exact pin and stored overrides; it remains a
-manual run, so it cannot advance the schedule watermark. Rows without a pin
-show **Needs deployment** instead of silently running the working tree.
+the selected deployment's cross-pipeline URI ownership against every
+same-environment producer deployment, then compare-and-swaps all selected rows
+in one transaction. A changed binding or concurrently changed pin rejects the
+whole batch. A paused declaration that has never been deployed participates
+with an explicit empty expected pin; omitting the expected pin is still an
+invalid request. The row-level manual action is a server-owned endpoint that
+loads the displayed exact pin and stored overrides; it remains a manual run, so
+it cannot advance the schedule watermark. Rows without a pin show **Needs
+deployment** instead of silently running the working tree.
 For an actual scheduled tick, the successful run status and its environment-
 scoped watermark advance commit in one SQLite transaction. A crash or write
 failure therefore leaves the interval retryable instead of recording success
@@ -612,9 +648,10 @@ River signals, retained RunSpecs, schedule responses, and SSE carry only the
 worker re-resolves references and requires them to reproduce the retained plan
 identity before physical execution; rotation between admission and execution
 therefore fails closed instead of silently running a different configuration.
-Exact re-execution applies the same check. A blocked scheduled plan is
-persisted as a failed auditable run and cannot become executable after worker
-recovery.
+Exact re-execution applies the same check. Retryable cross-pipeline readiness
+blockers use the occurrence wait lifecycle above. Every other blocked scheduled
+plan is persisted as a failed auditable run and cannot become executable after
+worker recovery.
 
 Existing database rows from the former pinless contract are migrated once:
 each non-archived row is pinned to that pipeline's then-latest deployment, or

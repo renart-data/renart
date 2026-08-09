@@ -240,6 +240,46 @@ select 1 as id
 	assert.Contains(t, issues[0].Message, "duckdb://warehouse/raw/orders")
 }
 
+func TestPipelinePlanWaitsOnlyForRetryableCrossPipelineReadiness(t *testing.T) {
+	t.Parallel()
+	plan := PipelinePlan{
+		Status: PipelinePlanStatusBlocked,
+		Prerequisites: []PipelinePlanPrerequisite{{
+			Status: PipelinePlanPrerequisiteBlocked,
+		}},
+		Readiness: PipelinePlanReadiness{Blockers: []PipelinePlanIssue{{
+			Code: pipelinePlanCodeCrossPipelinePrerequisiteNotReady,
+		}}},
+	}
+	assert.True(t, PipelinePlanWaitsForCrossPipelinePrerequisites(plan))
+	plan.Readiness.Blockers[0].Code = pipelinePlanCodeCrossPipelineDeploymentBindingInvalid
+	assert.False(t, PipelinePlanWaitsForCrossPipelinePrerequisites(plan))
+	plan.Readiness.Blockers[0].Code = pipelinePlanCodeCrossPipelinePrerequisiteNotReady
+	plan.Readiness.Blockers = append(plan.Readiness.Blockers, PipelinePlanIssue{Code: "asset_render_failed"})
+	assert.False(t, PipelinePlanWaitsForCrossPipelinePrerequisites(plan))
+}
+
+func TestPrerequisiteCoverageUnionsMixedProducerIntervalsAndRejectsGap(t *testing.T) {
+	t.Parallel()
+	start := time.Date(2026, 7, 17, 0, 0, 0, 0, time.UTC)
+	middle := start.Add(6 * time.Hour)
+	end := start.Add(24 * time.Hour)
+	covered, complete := prerequisiteCoverage([]matlog.CoverageRow{
+		{IntervalStart: &start, IntervalEnd: &middle},
+		{IntervalStart: &middle, IntervalEnd: &end},
+	}, start, end)
+	assert.True(t, complete)
+	assert.Equal(t, 24*time.Hour, covered)
+
+	gapStart := middle.Add(time.Hour)
+	covered, complete = prerequisiteCoverage([]matlog.CoverageRow{
+		{IntervalStart: &start, IntervalEnd: &middle},
+		{IntervalStart: &gapStart, IntervalEnd: &end},
+	}, start, end)
+	assert.False(t, complete)
+	assert.Equal(t, 6*time.Hour, covered)
+}
+
 func TestPipelinePlanAcceptsOnlyCurrentRenartObservedCrossPipelineProducer(t *testing.T) {
 	_, root := writeTypeCheckWorkspace(t, `
 id: consumer-uuid
@@ -256,7 +296,7 @@ materialization:
 depends:
   - uri: duckdb://warehouse/raw/orders
 @bruin */
-select 1 as id
+select id from raw.orders
 `,
 	})
 
@@ -273,6 +313,23 @@ select 1 as id
 		Assets:             []*pipeline.Asset{producerAsset},
 		DefaultConnections: map[string]string{"duckdb": "duckdb-default"},
 	}
+	require.NoError(t, os.MkdirAll(filepath.Dir(producerAsset.ExecutableFile.Path), 0o755))
+	require.NoError(t, os.WriteFile(producer.DefinitionFile.Path, []byte(`
+id: producer-uuid
+name: raw
+default_connections:
+  duckdb: duckdb-default
+`), 0o644))
+	require.NoError(t, os.WriteFile(producerAsset.ExecutableFile.Path, []byte(`
+/* @bruin
+name: raw.orders
+uri: duckdb://warehouse/raw/orders
+type: duckdb.sql
+materialization:
+  type: table
+@bruin */
+select 1 as id
+`), 0o644))
 
 	schedStore, err := scheduler.OpenStore(filepath.Join(t.TempDir(), "state.db"))
 	require.NoError(t, err)
@@ -360,7 +417,7 @@ materialization:
 depends:
   - uri: duckdb://warehouse/raw/orders
 @bruin */
-select 1 as id
+select id from raw.orders
 `,
 	})
 	producerRoot := filepath.Join(root, "raw")
@@ -462,6 +519,11 @@ select 1 as id
 	plan, apiErr := planner.Plan(context.Background(), EncodeID("analytics"), request)
 	require.Nil(t, apiErr)
 	assert.NotEqual(t, PipelinePlanStatusBlocked, plan.Status, plan.Readiness.Blockers)
+	for _, asset := range plan.Readiness.CodeChecks.Assets {
+		for _, finding := range asset.Findings {
+			assert.NotEqual(t, "unresolved-relation", finding.Code, finding.Message)
+		}
+	}
 	require.Len(t, plan.Prerequisites, 1)
 	assert.Equal(t, PipelinePlanPrerequisiteReady, plan.Prerequisites[0].Status)
 	assert.Equal(t, producerSnapshot.VersionID, plan.Prerequisites[0].ProducerSnapshotVersionID)
@@ -495,6 +557,15 @@ select 1 as id, 2 as changed
 	require.Len(t, changed.Prerequisites, 1)
 	assert.Equal(t, newProducerSnapshot.VersionID, changed.Prerequisites[0].ProducerSnapshotVersionID)
 	assert.Contains(t, changed.Prerequisites[0].Reason, "does not match")
+
+	request.ProducerDeploymentPins = map[string]string{
+		producer.LegacyID: producerSnapshot.VersionID,
+	}
+	frozen, apiErr := planner.Plan(context.Background(), EncodeID("analytics"), request)
+	require.Nil(t, apiErr)
+	assert.NotEqual(t, PipelinePlanStatusBlocked, frozen.Status)
+	require.Len(t, frozen.Prerequisites, 1)
+	assert.Equal(t, producerSnapshot.VersionID, frozen.Prerequisites[0].ProducerSnapshotVersionID)
 }
 
 func TestBindPipelinePlanExecutionDependenciesChainsWindowsAndSelectedUpstreams(t *testing.T) {

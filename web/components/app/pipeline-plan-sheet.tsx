@@ -1413,6 +1413,11 @@ function PlanPrerequisites({ plan }: { plan: PipelinePlan }) {
                       {item.producer_asset_name}
                     </span>
                   ) : null}
+                  {item.producer_deployment_ordinal ? (
+                    <Badge variant="muted" size="xs">
+                      Deployment #{item.producer_deployment_ordinal}
+                    </Badge>
+                  ) : null}
                 </div>
                 <p className="truncate text-xs text-muted-foreground" title={item.uri}>
                   {item.uri}
