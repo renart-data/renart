@@ -165,7 +165,9 @@ not underscore-flattened route hacks.
   resolved asset-ID edges from the workspace DTO rather than globally joining
   duplicate asset names. Build uses those same IDs and includes directly
   referenced sibling-pipeline producers as read-only, pipeline-labelled nodes;
-  their action navigates to the owning pipeline.
+  their action navigates to the owning pipeline. Those producer nodes also use
+  the owning pipeline's freshness snapshot and live run steps, rather than the
+  consumer pipeline's placeholder materialization state.
 
   The toolbar keeps Deploy as a separate
   secondary action and makes **Review run** the primary pipeline action. Type

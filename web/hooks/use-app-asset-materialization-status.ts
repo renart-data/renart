@@ -270,7 +270,10 @@ export function useAppAssetMaterializationStatus(assets: AppMaterializationAsset
     const result: Record<string, AppAssetMaterializationDisplayState> = {};
     for (const asset of assets) {
       const entry = statusByKey[asset.id] ?? statusByKey[asset.name];
-      const materializedAt = entry?.materializedAt ?? asset.staleness?.last_materialized_at;
+      const materializedAt =
+        entry?.materializedAt ??
+        asset.staleness?.last_materialized_at ??
+        asset.staleness?.latest_output?.materialized_at;
       const canonicalStatus: AppAssetMaterializationStatus =
         asset.staleness?.last_run_status === "failed"
           ? "failed"

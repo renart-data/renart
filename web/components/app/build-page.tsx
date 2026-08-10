@@ -153,7 +153,7 @@ import { useAssetResults } from "@/hooks/use-asset-results";
 import { useSelectedEnvironmentPolicy } from "@/hooks/use-environment-policy";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { usePipelineDeploy, type PipelineDeployState } from "@/hooks/use-pipeline-deploy";
-import { isStaleStatus, usePipelineStaleness } from "@/hooks/use-pipeline-staleness";
+import { isStaleStatus, usePipelinesStaleness } from "@/hooks/use-pipeline-staleness";
 import type { MaterializeScope } from "@/lib/materialize-scope";
 import {
   labelForAppMaterializationState,
@@ -513,19 +513,46 @@ export function AppBuildPage({
     () => new Set((activePipeline?.assets ?? []).map((asset) => asset.name)),
     [activePipeline?.assets],
   );
-  const staleness = usePipelineStaleness(activePipeline?.id);
+  const statusTrackedAssets = useMemo(() => {
+    const byID = new Map<string, BuildAsset>();
+    for (const asset of [
+      ...pipelineAssets,
+      ...crossPipelineProducerAssets,
+      ...provisionalCrossPipelineProducerAssets,
+    ]) {
+      if (!byID.has(asset.id)) byID.set(asset.id, asset);
+    }
+    return [...byID.values()];
+  }, [crossPipelineProducerAssets, pipelineAssets, provisionalCrossPipelineProducerAssets]);
+  const statusPipelineIDs = useMemo(
+    () =>
+      [
+        ...new Set(
+          statusTrackedAssets
+            .map((asset) => asset.pipelineId)
+            .filter((pipelineID): pipelineID is string => Boolean(pipelineID)),
+        ),
+      ].sort(),
+    [statusTrackedAssets],
+  );
+  const pipelinesStaleness = usePipelinesStaleness(statusPipelineIDs);
+  const activeStalenessByAssetName = activePipeline
+    ? (pipelinesStaleness.byPipelineId[activePipeline.id] ?? {})
+    : {};
   const materializationAssets = useMemo(
     () =>
-      pipelineAssets.map((asset) => ({
+      statusTrackedAssets.map((asset) => ({
         id: asset.id,
         name: asset.name,
         pipelineId: asset.pipelineId,
         isMaterialized:
           asset.workspaceAsset?.is_materialized ??
           (asset.status === "success" || asset.status === "ok"),
-        staleness: staleness.byAssetName[asset.name],
+        staleness: asset.pipelineId
+          ? pipelinesStaleness.byPipelineId[asset.pipelineId]?.[asset.name]
+          : undefined,
       })),
-    [pipelineAssets, staleness.byAssetName],
+    [pipelinesStaleness.byPipelineId, statusTrackedAssets],
   );
   const materializationStatusByAssetId = useAppAssetMaterializationStatus(materializationAssets);
   const deployState = usePipelineDeploy(activePipeline?.id);
@@ -599,9 +626,11 @@ export function AppBuildPage({
     [typeCheckReport],
   );
   const displayedPipelineAssets = useMemo(() => {
-    const authored: BuildAsset[] = pipelineAssets.map((asset) => {
-      const assetStaleness = staleness.byAssetName[asset.name];
-      const sourceAsset = isSourceAssetType(asset.type);
+    const authored: BuildAsset[] = statusTrackedAssets.map((asset) => {
+      const assetStaleness = asset.pipelineId
+        ? pipelinesStaleness.byPipelineId[asset.pipelineId]?.[asset.name]
+        : undefined;
+      const sourceAsset = isSourceAssetType(asset.type ?? "");
       return {
         ...asset,
         status: materializationStatusByAssetId[asset.id]?.status ?? asset.status,
@@ -610,17 +639,10 @@ export function AppBuildPage({
           : labelForAppMaterializationState(materializationStatusByAssetId[asset.id]),
         staleness: assetStaleness,
         hasTypeCheckError:
-          typeCheckErrorAssetIds.has(asset.id) || typeCheckErrorAssetIds.has(asset.name),
+          asset.pipelineId === activePipeline?.id &&
+          (typeCheckErrorAssetIds.has(asset.id) || typeCheckErrorAssetIds.has(asset.name)),
       };
     });
-    authored.push(...crossPipelineProducerAssets);
-    const authoredIDs = new Set(authored.map((asset) => asset.id));
-    for (const producer of provisionalCrossPipelineProducerAssets) {
-      if (!authoredIDs.has(producer.id)) {
-        authored.push(producer);
-        authoredIDs.add(producer.id);
-      }
-    }
     const provisionalByConsumer = new Map<string, string[]>();
     for (const reference of provisionalCrossPipelineReferences) {
       for (const consumerKey of [reference.consumer_asset_id, reference.consumer_asset_name]) {
@@ -682,12 +704,11 @@ export function AppBuildPage({
     }));
     return [...consumers, ...externalNodes];
   }, [
+    activePipeline?.id,
     materializationStatusByAssetId,
-    crossPipelineProducerAssets,
-    provisionalCrossPipelineProducerAssets,
+    pipelinesStaleness.byPipelineId,
     provisionalCrossPipelineReferences,
-    pipelineAssets,
-    staleness.byAssetName,
+    statusTrackedAssets,
     typeCheckErrorAssetIds,
     typeCheckReport?.external_relations,
   ]);
@@ -711,7 +732,7 @@ export function AppBuildPage({
         for (const upstream of asset.upstreams ?? []) {
           if (seen.has(upstream)) continue;
           seen.add(upstream);
-          const status = staleness.byAssetName[upstream];
+          const status = activeStalenessByAssetName[upstream];
           if (status && isStaleStatus(status.status)) stale.push(upstream);
           walk(upstream);
         }
@@ -719,7 +740,7 @@ export function AppBuildPage({
       walk(assetName);
       return stale;
     },
-    [assetsByName, staleness.byAssetName],
+    [activeStalenessByAssetName, assetsByName],
   );
   const [staleBuildPrompt, setStaleBuildPrompt] = useState<{
     assetId: string;

@@ -28,7 +28,7 @@ test.describe("cross-pipeline dependencies live", () => {
     liveApp,
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(120_000);
     test.skip(
       test.info().project.name.includes("mobile"),
       "The canvas dependency review is covered in the desktop project.",
@@ -42,6 +42,44 @@ test.describe("cross-pipeline dependencies live", () => {
     const producerAssetID = Buffer.from("cross-producer/assets/raw/orders.sql").toString(
       "base64url",
     );
+    await materializeAsset(liveApp, page.request, producerAssetID);
+    const producerPath = join(
+      liveApp.workspaceDir,
+      "cross-producer",
+      "assets",
+      "raw",
+      "orders.sql",
+    );
+    await writeFile(
+      producerPath,
+      (await readFile(producerPath, "utf8")).replace("select 1::bigint", "select 2::bigint"),
+      "utf8",
+    );
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(
+            `${liveApp.baseURL}/api/pipelines/${producerPipelineID}/staleness?environment=default`,
+          );
+          if (!response.ok()) return null;
+          const body = (await response.json()) as {
+            assets: Array<{
+              asset_name: string;
+              status: string;
+              latest_output?: { materialized_at?: string };
+            }>;
+          };
+          const producer = body.assets.find((asset) => asset.asset_name === "raw.orders");
+          return producer
+            ? {
+                status: producer.status,
+                hasLatestOutput: Boolean(producer.latest_output?.materialized_at),
+              }
+            : null;
+        },
+        { timeout: 30_000 },
+      )
+      .toEqual({ status: "stale_edited", hasLatestOutput: true });
     const typeCheckResponse = page.waitForResponse(
       (response) =>
         response.url().includes(`/api/pipelines/${consumerPipelineID}/type-check`) && response.ok(),
@@ -75,9 +113,16 @@ test.describe("cross-pipeline dependencies live", () => {
       }),
     ]);
 
-    await expect(
-      page.locator(`[data-testid="lineage-asset"][data-asset-id="${producerAssetID}"]`),
-    ).toBeVisible({ timeout: 15_000 });
+    const producerNode = page.locator(
+      `[data-testid="lineage-asset"][data-asset-id="${producerAssetID}"]`,
+    );
+    await expect(producerNode).toBeVisible({ timeout: 15_000 });
+    await expect(producerNode.locator('[title="Staleness: Edited"]')).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(producerNode.getByText("Running", { exact: true })).toHaveCount(0);
+    await expect(producerNode.locator('[title^="Last built:"]')).toHaveCount(1);
+    await expect(producerNode.locator('[title*="date unknown"]')).toHaveCount(0);
     await expect(page.locator(".react-flow__edge.asset-edge-provisional")).toHaveCount(1);
 
     await page.getByRole("tab", { name: /Type check/ }).click();
@@ -124,6 +169,9 @@ test.describe("cross-pipeline dependencies live", () => {
       timeout: 15_000,
     });
     await expect(page.locator(".react-flow__edge.asset-edge")).toHaveCount(1);
+    await expect(producerNode.locator('[title="Staleness: Edited"]')).toBeVisible();
+    await expect(producerNode.getByText("Running", { exact: true })).toHaveCount(0);
+    await expect(producerNode.locator('[title^="Last built:"]')).toHaveCount(1);
     expect(
       await readFile(
         join(liveApp.workspaceDir, "cross-consumer", "assets", "analytics", "orders.sql"),
@@ -513,6 +561,21 @@ async function deploy(liveApp: LiveApp, request: APIRequestContext, pipelineID: 
   });
   expect(response.ok(), await response.text()).toBe(true);
   return ((await response.json()) as { snapshot: { version_id: string } }).snapshot.version_id;
+}
+
+async function materializeAsset(liveApp: LiveApp, request: APIRequestContext, assetID: string) {
+  const response = await request.post(
+    `${liveApp.baseURL}/api/assets/${assetID}/materialize/stream?environment=default`,
+    { timeout: 60_000 },
+  );
+  const stream = await response.text();
+  expect(response.ok(), stream).toBe(true);
+  const doneLine = stream
+    .split(/\r?\n/)
+    .reverse()
+    .find((line) => line.startsWith("data: ") && line.includes('"status"'));
+  expect(doneLine, stream).toBeTruthy();
+  expect(JSON.parse(doneLine!.slice("data: ".length)).status).toBe("ok");
 }
 
 async function waitForCrossPipelineWorkspace(liveApp: LiveApp, request: APIRequestContext) {
