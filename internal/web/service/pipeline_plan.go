@@ -841,9 +841,9 @@ func effectivePipelineMaxActiveSteps(pl *pipeline.Pipeline) int {
 
 // bindPipelinePlanExecutionDependencies records a conservative, stable unit
 // DAG. Multiple windows for one asset are chained. The first selected window
-// waits for the final selected window of every selected in-pipeline upstream;
-// unselected upstreams remain reviewed data-state preconditions rather than
-// runtime nodes.
+// waits for the final selected window of every selected full in-pipeline
+// upstream. Symbolic dependencies remain lineage-only, while unselected full
+// upstreams remain reviewed data-state preconditions rather than runtime nodes.
 func bindPipelinePlanExecutionDependencies(pl *pipeline.Pipeline, units []PipelinePlanExecutionUnit) error {
 	if len(units) == 0 {
 		return nil
@@ -873,6 +873,9 @@ func bindPipelinePlanExecutionDependencies(pl *pipeline.Pipeline, units []Pipeli
 				dependencies = append(dependencies, positions[index-1])
 			} else {
 				for _, upstream := range asset.Upstreams {
+					if upstream.Mode == pipeline.UpstreamModeSymbolic {
+						continue
+					}
 					upstreamPositions := positionsByAsset[strings.TrimSpace(upstream.Value)]
 					if len(upstreamPositions) > 0 {
 						dependencies = append(dependencies, upstreamPositions[len(upstreamPositions)-1])

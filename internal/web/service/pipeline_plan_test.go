@@ -596,6 +596,32 @@ func TestBindPipelinePlanExecutionDependenciesChainsWindowsAndSelectedUpstreams(
 	assert.Empty(t, units[4].DependencyPositions)
 }
 
+func TestBindPipelinePlanExecutionDependenciesIgnoresSymbolicBackEdges(t *testing.T) {
+	t.Parallel()
+	pl := &pipeline.Pipeline{Assets: []*pipeline.Asset{
+		{
+			Name: "analytics.up",
+			Upstreams: []pipeline.Upstream{{
+				Type: "asset", Value: "analytics.down", Mode: pipeline.UpstreamModeSymbolic,
+			}},
+		},
+		{
+			Name: "analytics.down",
+			Upstreams: []pipeline.Upstream{{
+				Type: "asset", Value: "analytics.up", Mode: pipeline.UpstreamModeFull,
+			}},
+		},
+	}}
+	units := []PipelinePlanExecutionUnit{
+		{AssetName: "analytics.up"},
+		{AssetName: "analytics.down"},
+	}
+
+	require.NoError(t, bindPipelinePlanExecutionDependencies(pl, units))
+	assert.Empty(t, units[0].DependencyPositions)
+	assert.Equal(t, []int{0}, units[1].DependencyPositions)
+}
+
 func TestPipelinePlanDoesNotBlockLocalLoadPseudoConnection(t *testing.T) {
 	t.Parallel()
 
