@@ -298,10 +298,10 @@ not underscore-flattened route hacks.
   columns and checks for relation-producing assets; sensors omit columns and
   checks because they do not materialize a relation. Custom SQL checks remain
   available for other supported asset types even when they do not expose a
-  column workbench. Identity editing keeps the asset's explicit Bruin URI in a
-  collapsed producer identity section with workspace uniqueness feedback. The
-  shared dependency chooser is a creatable combobox: it writes a bare name for
-  the current pipeline, substitutes a declared URI for sibling-pipeline
+  column workbench. Identity editing keeps the asset's explicit Bruin URI as
+  the final field in the Identity section, with workspace uniqueness feedback.
+  The shared dependency chooser is a creatable combobox: it writes a bare name
+  for the current pipeline, substitutes a declared URI for sibling-pipeline
   selections, and warns without blocking when the selected sibling has no URI.
   Resolved rows navigate to their assets, and manual rows expose full/symbolic
   mode after creation. When

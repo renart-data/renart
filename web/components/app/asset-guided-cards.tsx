@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   Ban,
   Check,
-  ChevronDown,
   ChevronsUpDown,
   KeyRound,
   Plus,
@@ -22,7 +21,6 @@ import type { AssetStaleness, FailedQualityCheck } from "@/lib/api-staleness";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Command,
   CommandEmpty,
@@ -156,7 +154,6 @@ function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: stri
   const fieldId = (name: string) => `${fieldIdPrefix}-${name}`;
   const workspace = useAtomValue(workspaceAtom);
   const uri = asset.uri?.trim() ?? "";
-  const [producerIdentityOpen, setProducerIdentityOpen] = useState(false);
   const uriConflict = useMemo(() => {
     if (!uri) return undefined;
     for (const pipeline of workspace?.pipelines ?? []) {
@@ -168,9 +165,6 @@ function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: stri
     }
     return undefined;
   }, [asset.id, uri, workspace]);
-  useEffect(() => {
-    if (uriConflict) setProducerIdentityOpen(true);
-  }, [uriConflict]);
 
   const updateMetaDescription = (description: string) => {
     const nextMeta = { ...(asset.meta ?? {}) };
@@ -243,52 +237,31 @@ function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: stri
             }}
           />
         </FieldRow>
-        <Collapsible
-          open={producerIdentityOpen}
-          onOpenChange={setProducerIdentityOpen}
-          className="rounded-md border"
-        >
-          <CollapsibleTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              className="group h-auto w-full justify-between gap-2 px-3 py-2 text-xs font-normal"
-            >
-              <span>Producer identity</span>
-              <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
-                {uri ? <span className="max-w-44 truncate font-monaco">{uri}</span> : null}
-                <ChevronDown className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
-              </span>
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="border-t p-3">
-            <Field data-invalid={uriConflict ? true : undefined}>
-              <FieldLabel htmlFor={fieldId("uri")}>URI</FieldLabel>
-              <CommitInput
-                id={fieldId("uri")}
-                mono
-                value={asset.uri ?? ""}
-                placeholder="duckdb://warehouse/schema/table"
-                ariaInvalid={Boolean(uriConflict)}
-                ariaDescribedBy={fieldId("uri-description")}
-                onCommit={(nextURI) => {
-                  const normalized = nextURI.trim();
-                  if (normalized !== uri) {
-                    void applyAssetTransaction(asset.id, {
-                      type: "asset.uri.set",
-                      asset_uri: normalized,
-                    });
-                  }
-                }}
-              />
-              <FieldDescription id={fieldId("uri-description")}>
-                {uriConflict
-                  ? `Already declared by ${uriConflict}. Producer URIs must be unique.`
-                  : "Explicit producer identity for dependencies from sibling pipelines."}
-              </FieldDescription>
-            </Field>
-          </CollapsibleContent>
-        </Collapsible>
+        <Field data-invalid={uriConflict ? true : undefined}>
+          <FieldLabel htmlFor={fieldId("uri")}>URI</FieldLabel>
+          <CommitInput
+            id={fieldId("uri")}
+            mono
+            value={asset.uri ?? ""}
+            placeholder="duckdb://warehouse/schema/table"
+            ariaInvalid={Boolean(uriConflict)}
+            ariaDescribedBy={fieldId("uri-description")}
+            onCommit={(nextURI) => {
+              const normalized = nextURI.trim();
+              if (normalized !== uri) {
+                void applyAssetTransaction(asset.id, {
+                  type: "asset.uri.set",
+                  asset_uri: normalized,
+                });
+              }
+            }}
+          />
+          <FieldDescription id={fieldId("uri-description")}>
+            {uriConflict
+              ? `Already declared by ${uriConflict}. Producer URIs must be unique.`
+              : "Explicit producer identity for dependencies from sibling pipelines."}
+          </FieldDescription>
+        </Field>
       </FieldGroup>
     </GuidedCard>
   );

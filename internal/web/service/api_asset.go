@@ -106,6 +106,7 @@ type nativeAPILoad struct {
 
 type nativeAPIAssetDefinition struct {
 	Name       string            `yaml:"name"`
+	URI        string            `yaml:"uri"`
 	Type       string            `yaml:"type"`
 	Connection string            `yaml:"connection"`
 	Meta       map[string]string `yaml:"meta"`
@@ -225,6 +226,7 @@ func apiAwareYamlTaskCreator(fs afero.Fs) pipeline.TaskCreator {
 		}
 		asset := &pipeline.Asset{
 			Name:       strings.TrimSpace(definition.Name),
+			URI:        strings.TrimSpace(definition.URI),
 			Type:       pipeline.AssetType(apiAssetType),
 			Connection: strings.TrimSpace(definition.Connection),
 			Meta:       definition.Meta,

@@ -84,6 +84,7 @@ func TestAPIAwareCreatorLoadsFileColumnsDespiteNestedParameters(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	path := "/ws/analytics/assets/weather.asset.yml"
 	content := `type: api
+uri: https://data.example.com/weather/alerts
 parameters:
   request:
     url: https://api.weather.gov/alerts
@@ -112,6 +113,7 @@ depends:
 		names = append(names, column.Name)
 	}
 	assert.ElementsMatch(t, []string{"id", "geometry"}, names, "file columns must load through the nested parameters spec")
+	assert.Equal(t, "https://data.example.com/weather/alerts", asset.URI)
 	assert.Equal(t, "data@company.com", asset.Owner)
 	require.Len(t, asset.Upstreams, 1)
 	assert.Equal(t, "analytics.orders", asset.Upstreams[0].Value)

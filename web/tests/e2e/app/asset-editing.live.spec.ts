@@ -394,7 +394,6 @@ select customer_id from analytics.customers
       { timeout: 15000 },
     );
 
-    await properties.getByRole("button", { name: /Producer identity/ }).click();
     await properties.getByRole("textbox", { name: "URI", exact: true }).fill(producerURI);
     await page.getByRole("button", { name: "Redeploy (1 file changed)" }).click();
 
