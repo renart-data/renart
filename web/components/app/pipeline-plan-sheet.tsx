@@ -133,6 +133,7 @@ export function PipelinePlanSheet({
   const [promoting, setPromoting] = useState(false);
   const [promotionError, setPromotionError] = useState<string | null>(null);
   const [selectorDraft, setSelectorDraft] = useState("*");
+  const [runOptionsOpen, setRunOptionsOpen] = useState(false);
   const requestSerial = useRef(0);
   const initialPlanContext = useRef<string | null>(null);
   const requestedSourceKind = intent === "deploy" ? "working_tree" : source?.source;
@@ -196,6 +197,7 @@ export function PipelinePlanSheet({
     setSelectedScheduleKeys(new Set());
     setPromotionError(null);
     setSelectorDraft("*");
+    setRunOptionsOpen(false);
     setLoading(true);
     const serial = ++requestSerial.current;
     void (async () => {
@@ -485,144 +487,159 @@ export function PipelinePlanSheet({
               ) : null}
             </dl>
             {intent === "run" ? (
-              <FieldSet className="mt-3 gap-3 border-t pt-3">
-                <FieldLegend
-                  variant="label"
-                  className="mb-0 text-[10px] tracking-wide text-muted-foreground uppercase"
-                >
-                  Run options
-                </FieldLegend>
-                <FieldGroup className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] sm:items-end">
-                  <Field className="gap-1">
-                    <FieldLabel
-                      htmlFor="pipeline-plan-scope"
-                      className="text-[11px] text-muted-foreground"
-                    >
-                      Scope
-                    </FieldLabel>
-                    <Select
-                      value={selectionMode}
-                      onValueChange={(value) => {
-                        const mode = value as PlanSelectionMode;
-                        const usesSelector = mode === "selector" || mode === "selector_needed";
-                        const selector = selectorDraft.trim() || appliedSelector || "*";
-                        if (usesSelector) setSelectorDraft(selector);
-                        updateRequest((current) => ({
-                          ...current,
-                          selection: usesSelector ? { mode, selector } : { mode },
-                        }));
-                      }}
-                    >
-                      <SelectTrigger id="pipeline-plan-scope" size="sm" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="all">Entire pipeline</SelectItem>
-                          <SelectItem value="needed">Needed assets</SelectItem>
-                          <SelectItem value="selector">Matching selector</SelectItem>
-                          <SelectItem value="selector_needed">Needed matching selector</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field className="gap-1">
-                    <FieldLabel
-                      htmlFor="pipeline-plan-sensor"
-                      className="text-[11px] text-muted-foreground"
-                    >
-                      Sensors
-                    </FieldLabel>
-                    <Select
-                      value={sensorMode}
-                      onValueChange={(value) =>
-                        updateRequest((current) => ({
-                          ...current,
-                          sensor_mode: value as SensorMode,
-                        }))
-                      }
-                    >
-                      <SelectTrigger id="pipeline-plan-sensor" size="sm" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="once">Check once</SelectItem>
-                          <SelectItem value="wait">Wait</SelectItem>
-                          <SelectItem value="skip">Skip</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field
-                    orientation="horizontal"
-                    className="h-8 w-full self-end rounded-md border px-3 text-xs sm:w-auto"
+              <Collapsible
+                open={runOptionsOpen}
+                onOpenChange={setRunOptionsOpen}
+                className="mt-3 rounded-lg border"
+              >
+                <CollapsibleTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-auto w-full justify-start rounded-lg px-3 py-2.5"
                   >
-                    <Switch
-                      id="pipeline-plan-full-refresh"
-                      size="sm"
-                      checked={fullRefresh}
-                      onCheckedChange={(checked) =>
-                        updateRequest((current) => ({ ...current, full_refresh: checked }))
-                      }
+                    <ChevronRight
+                      className={cn(
+                        "size-4 shrink-0 transition-transform",
+                        runOptionsOpen && "rotate-90",
+                      )}
                     />
-                    <FieldLabel htmlFor="pipeline-plan-full-refresh" className="font-normal">
-                      Full refresh
-                    </FieldLabel>
-                  </Field>
-                  {selectorMode ? (
-                    <Field
-                      className="border-t pt-3 sm:col-span-3"
-                      data-invalid={!selectorDraft.trim()}
-                    >
-                      <FieldLabel htmlFor="pipeline-plan-selector">Asset selector</FieldLabel>
-                      <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <Input
-                          id="pipeline-plan-selector"
-                          value={selectorDraft}
-                          onChange={(event) => setSelectorDraft(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              applySelector();
-                            }
-                          }}
-                          placeholder="tag:daily,path:assets/marts +analytics.orders"
-                          aria-invalid={!selectorDraft.trim()}
-                          className="min-w-56 flex-1 font-mono"
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={applySelector}
-                          disabled={!selectorDraft.trim() || selectorDraftApplied || loading}
+                    <span className="font-medium">Run options</span>
+                    <span className="truncate text-xs font-normal text-muted-foreground">
+                      {planSelectionLabel(selectionMode)} · {sensorModeLabel(sensorMode)}
+                      {fullRefresh ? " · full refresh" : ""}
+                    </span>
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="border-t p-3">
+                  <FieldSet className="gap-3">
+                    <FieldLegend className="sr-only">Run options</FieldLegend>
+                    <FieldGroup className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] sm:items-end">
+                      <Field className="gap-1">
+                        <FieldLabel
+                          htmlFor="pipeline-plan-scope"
+                          className="text-[11px] text-muted-foreground"
                         >
-                          Apply
-                        </Button>
-                      </div>
-                      <FieldDescription>
-                        {!selectorDraftApplied
-                          ? "Apply the expression to validate it and preview its assets."
-                          : loading
-                            ? "Resolving selector…"
-                            : selectorPlanIsCurrent && plan
-                              ? `${plan.summary.assets} ${plan.summary.assets === 1 ? "asset" : "assets"} selected. Use spaces for union, commas for intersection, and + for graph expansion.`
-                              : "Use spaces for union, commas for intersection, and + for graph expansion."}
-                      </FieldDescription>
-                    </Field>
-                  ) : null}
-                </FieldGroup>
-              </FieldSet>
-            ) : (
-              <Alert className="mt-3">
-                <Package />
-                <AlertTitle>Representative execution preview</AlertTitle>
-                <AlertDescription>
-                  Deployment stores this saved source, not rendered SQL. Scheduled runs render it
-                  again with their actual interval, environment, and variables.
-                </AlertDescription>
-              </Alert>
-            )}
+                          Scope
+                        </FieldLabel>
+                        <Select
+                          value={selectionMode}
+                          onValueChange={(value) => {
+                            const mode = value as PlanSelectionMode;
+                            const usesSelector = mode === "selector" || mode === "selector_needed";
+                            const selector = selectorDraft.trim() || appliedSelector || "*";
+                            if (usesSelector) setSelectorDraft(selector);
+                            updateRequest((current) => ({
+                              ...current,
+                              selection: usesSelector ? { mode, selector } : { mode },
+                            }));
+                          }}
+                        >
+                          <SelectTrigger id="pipeline-plan-scope" size="sm" className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="all">Entire pipeline</SelectItem>
+                              <SelectItem value="needed">Needed assets</SelectItem>
+                              <SelectItem value="selector">Matching selector</SelectItem>
+                              <SelectItem value="selector_needed">
+                                Needed matching selector
+                              </SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field className="gap-1">
+                        <FieldLabel
+                          htmlFor="pipeline-plan-sensor"
+                          className="text-[11px] text-muted-foreground"
+                        >
+                          Sensors
+                        </FieldLabel>
+                        <Select
+                          value={sensorMode}
+                          onValueChange={(value) =>
+                            updateRequest((current) => ({
+                              ...current,
+                              sensor_mode: value as SensorMode,
+                            }))
+                          }
+                        >
+                          <SelectTrigger id="pipeline-plan-sensor" size="sm" className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="once">Check once</SelectItem>
+                              <SelectItem value="wait">Wait</SelectItem>
+                              <SelectItem value="skip">Skip</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field
+                        orientation="horizontal"
+                        className="h-8 w-full self-end rounded-md border px-3 text-xs sm:w-auto"
+                      >
+                        <Switch
+                          id="pipeline-plan-full-refresh"
+                          size="sm"
+                          checked={fullRefresh}
+                          onCheckedChange={(checked) =>
+                            updateRequest((current) => ({ ...current, full_refresh: checked }))
+                          }
+                        />
+                        <FieldLabel htmlFor="pipeline-plan-full-refresh" className="font-normal">
+                          Full refresh
+                        </FieldLabel>
+                      </Field>
+                      {selectorMode ? (
+                        <Field
+                          className="border-t pt-3 sm:col-span-3"
+                          data-invalid={!selectorDraft.trim()}
+                        >
+                          <FieldLabel htmlFor="pipeline-plan-selector">Asset selector</FieldLabel>
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <Input
+                              id="pipeline-plan-selector"
+                              value={selectorDraft}
+                              onChange={(event) => setSelectorDraft(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  applySelector();
+                                }
+                              }}
+                              placeholder="tag:daily,path:assets/marts +analytics.orders"
+                              aria-invalid={!selectorDraft.trim()}
+                              className="min-w-56 flex-1 font-mono"
+                            />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={applySelector}
+                              disabled={!selectorDraft.trim() || selectorDraftApplied || loading}
+                            >
+                              Apply
+                            </Button>
+                          </div>
+                          <FieldDescription>
+                            {!selectorDraftApplied
+                              ? "Apply the expression to validate it and preview its assets."
+                              : loading
+                                ? "Resolving selector…"
+                                : selectorPlanIsCurrent && plan
+                                  ? `${plan.summary.assets} ${plan.summary.assets === 1 ? "asset" : "assets"} selected. Use spaces for union, commas for intersection, and + for graph expansion.`
+                                  : "Use spaces for union, commas for intersection, and + for graph expansion."}
+                          </FieldDescription>
+                        </Field>
+                      ) : null}
+                    </FieldGroup>
+                  </FieldSet>
+                </CollapsibleContent>
+              </Collapsible>
+            ) : null}
           </div>
 
           {plan && intent === "run" ? (
@@ -767,6 +784,57 @@ function PlanContextItem({ label, value }: { label: string; value: string }) {
   );
 }
 
+function planSelectionLabel(mode: PlanSelectionMode) {
+  switch (mode) {
+    case "needed":
+      return "Needed assets";
+    case "selector":
+      return "Matching selector";
+    case "selector_needed":
+      return "Needed matching selector";
+    default:
+      return "Entire pipeline";
+  }
+}
+
+function sensorModeLabel(mode: SensorMode) {
+  switch (mode) {
+    case "wait":
+      return "wait for sensors";
+    case "skip":
+      return "skip sensors";
+    default:
+      return "check sensors once";
+  }
+}
+
+function PlanReadySummary({ plan, intent }: { plan: PipelinePlan; intent: PlanIntent }) {
+  const codeChecks = plan.readiness.code_checks.summary;
+  const prerequisitesReady = plan.prerequisites.every((item) => item.status === "ready");
+  if (
+    plan.readiness.blockers.length > 0 ||
+    plan.readiness.warnings.length > 0 ||
+    plan.readiness.active_run_id ||
+    !prerequisitesReady ||
+    codeChecks.errors > 0 ||
+    codeChecks.warnings > 0
+  ) {
+    return null;
+  }
+
+  return (
+    <Alert>
+      <CheckCircle2 aria-label="All code checks passed" />
+      <AlertTitle>{intent === "deploy" ? "Ready to deploy" : "Ready to run"}</AlertTitle>
+      <AlertDescription>
+        {plan.summary.assets} {plan.summary.assets === 1 ? "asset" : "assets"} selected · code
+        checks passed
+        {plan.prerequisites.length > 0 ? ` · ${plan.prerequisites.length} prerequisites ready` : ""}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 function RunPlanReview({
   plan,
   contentLoading,
@@ -781,7 +849,7 @@ function RunPlanReview({
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-5 p-5">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-5">
       <PlanIssues title="Blockers" issues={plan.readiness.blockers} destructive />
       <PlanIssues title="Warnings" issues={plan.readiness.warnings} />
       <PlanPrerequisites plan={plan} />
@@ -798,6 +866,7 @@ function RunPlanReview({
         </Alert>
       ) : null}
 
+      <PlanReadySummary plan={plan} intent="run" />
       <PlanCodeReview plan={plan} />
 
       <PlanExecutionReview
@@ -860,8 +929,6 @@ function DeployPlanReview({
   schedulesOpen: boolean;
   onSchedulesOpenChange: (open: boolean) => void;
 }) {
-  const [assetsOpen, setAssetsOpen] = useState(false);
-  const [checksOpen, setChecksOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const schedulesRef = useRef<HTMLDivElement | null>(null);
   const runtimeChecks = plan.assets.flatMap((asset) =>
@@ -899,36 +966,30 @@ function DeployPlanReview({
             {deployment.snapshot.merkle_root.slice(0, 8)}
           </AlertDescription>
         </Alert>
-      ) : plan.readiness.blockers.length === 0 && plan.readiness.warnings.length === 0 ? (
-        <Alert>
-          <CheckCircle2 />
-          <AlertTitle>Ready to deploy</AlertTitle>
-          <AlertDescription>
-            The saved source and representative operation graph passed planning.
-          </AlertDescription>
-        </Alert>
-      ) : null}
+      ) : (
+        <PlanReadySummary plan={plan} intent="deploy" />
+      )}
 
-      <section aria-labelledby="pipeline-deploy-source-changes">
-        <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h3 id="pipeline-deploy-source-changes" className="text-sm font-medium">
-              Source changes
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              {changedFiles === null
-                ? "Comparing the saved workspace with the latest deployment…"
-                : changedFiles === 0
-                  ? "The saved workspace matches the latest deployment."
-                  : `${changedFiles} changed ${changedFiles === 1 ? "file" : "files"} will be captured.`}
-            </p>
+      {changedFiles === null ? (
+        <Skeleton className="h-28" />
+      ) : changedFiles > 0 ? (
+        <section aria-labelledby="pipeline-deploy-source-changes">
+          <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h3 id="pipeline-deploy-source-changes" className="text-sm font-medium">
+                Source changes
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {changedFiles} changed {changedFiles === 1 ? "file" : "files"} will be captured.
+              </p>
+            </div>
+            <Badge variant="outline" size="xs">
+              {plan.summary.assets} {plan.summary.assets === 1 ? "asset" : "assets"}
+            </Badge>
           </div>
-          <Badge variant="outline" size="xs">
-            {plan.summary.assets} {plan.summary.assets === 1 ? "asset" : "assets"}
-          </Badge>
-        </div>
-        <DeploymentFileChanges pipelineId={pipelineId} status={status} autoOpenFirst={false} />
-      </section>
+          <DeploymentFileChanges pipelineId={pipelineId} status={status} autoOpenFirst={false} />
+        </section>
+      ) : null}
 
       <PlanCodeReview plan={plan} />
 
@@ -940,95 +1001,86 @@ function DeployPlanReview({
         representative
       />
 
-      <Collapsible open={assetsOpen} onOpenChange={setAssetsOpen} className="rounded-lg border">
-        <CollapsibleTrigger asChild>
-          <Button variant="ghost" className="h-auto w-full justify-start rounded-lg px-3 py-2.5">
-            <ChevronRight
-              className={cn("size-4 shrink-0 transition-transform", assetsOpen && "rotate-90")}
-            />
-            <span className="font-medium">Deployment contents</span>
-            <span className="truncate text-xs font-normal text-muted-foreground">
-              {plan.summary.assets} {plan.summary.assets === 1 ? "asset" : "assets"} ·{" "}
-              {plan.summary.execution_units} representative{" "}
-              {plan.summary.execution_units === 1 ? "step" : "steps"}
-            </span>
-          </Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="border-t p-3">
-          <PlanAssets plan={plan} />
-        </CollapsibleContent>
-      </Collapsible>
-
-      {runtimeChecks.length > 0 ? (
-        <Collapsible open={checksOpen} onOpenChange={setChecksOpen} className="rounded-lg border">
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" className="h-auto w-full justify-start rounded-lg px-3 py-2.5">
-              <ChevronRight
-                className={cn("size-4 shrink-0 transition-transform", checksOpen && "rotate-90")}
-              />
-              <span className="font-medium">Runtime quality checks</span>
-              <span className="truncate text-xs font-normal text-muted-foreground">
-                {runtimeChecks.length} {runtimeChecks.length === 1 ? "check" : "checks"} previewed
-              </span>
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="border-t p-3">
-            <RuntimeChecksReview plan={plan} />
-          </CollapsibleContent>
-        </Collapsible>
-      ) : null}
-
       <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen} className="rounded-lg border">
         <CollapsibleTrigger asChild>
           <Button variant="ghost" className="h-auto w-full justify-start rounded-lg px-3 py-2.5">
             <ChevronRight
               className={cn("size-4 shrink-0 transition-transform", detailsOpen && "rotate-90")}
             />
-            <span className="font-medium">Plan identities</span>
+            <span className="font-medium">Deployment details</span>
             <span className="truncate text-xs font-normal text-muted-foreground">
-              saved source, configuration, and variables
+              {plan.summary.assets} {plan.summary.assets === 1 ? "asset" : "assets"}
+              {runtimeChecks.length > 0
+                ? ` · ${runtimeChecks.length} runtime ${runtimeChecks.length === 1 ? "check" : "checks"}`
+                : ""}
+              {" · identities"}
             </span>
           </Button>
         </CollapsibleTrigger>
-        <CollapsibleContent className="border-t p-3">
-          <DeploymentPlanDetails plan={plan} />
+        <CollapsibleContent className="flex flex-col gap-5 border-t p-3">
+          <section aria-labelledby="pipeline-deployment-assets">
+            <h3 id="pipeline-deployment-assets" className="mb-2 text-sm font-medium">
+              Included assets
+            </h3>
+            <PlanAssets plan={plan} />
+          </section>
+          {runtimeChecks.length > 0 ? (
+            <section aria-labelledby="pipeline-deployment-runtime-checks">
+              <h3 id="pipeline-deployment-runtime-checks" className="mb-2 text-sm font-medium">
+                Runtime quality checks
+              </h3>
+              <RuntimeChecksReview plan={plan} />
+            </section>
+          ) : null}
+          <section aria-labelledby="pipeline-deployment-identities">
+            <h3 id="pipeline-deployment-identities" className="mb-2 text-sm font-medium">
+              Saved identities
+            </h3>
+            <DeploymentPlanDetails plan={plan} />
+          </section>
         </CollapsibleContent>
       </Collapsible>
 
-      <div ref={schedulesRef}>
-        <Collapsible
-          open={schedulesOpen}
-          onOpenChange={onSchedulesOpenChange}
-          className="rounded-lg border"
-        >
-          <CollapsibleTrigger asChild>
-            <Button variant="ghost" className="h-auto w-full justify-start rounded-lg px-3 py-2.5">
-              <ChevronRight
-                className={cn("size-4 shrink-0 transition-transform", schedulesOpen && "rotate-90")}
-              />
-              <span className="font-medium">Schedules</span>
-              <span className="truncate text-xs font-normal text-muted-foreground">
-                {deployment
-                  ? promotionCandidates.length > 0
+      {deployment ? (
+        <div ref={schedulesRef}>
+          <Collapsible
+            open={schedulesOpen}
+            onOpenChange={onSchedulesOpenChange}
+            className="rounded-lg border"
+          >
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                className="h-auto w-full justify-start rounded-lg px-3 py-2.5"
+              >
+                <ChevronRight
+                  className={cn(
+                    "size-4 shrink-0 transition-transform",
+                    schedulesOpen && "rotate-90",
+                  )}
+                />
+                <span className="font-medium">Update schedules</span>
+                <span className="truncate text-xs font-normal text-muted-foreground">
+                  {promotionCandidates.length > 0
                     ? `${promotionCandidates.length} ${promotionCandidates.length === 1 ? "pin can" : "pins can"} move`
-                    : "all pins current"
-                  : `${schedules.length} current ${schedules.length === 1 ? "pin" : "pins"}`}
-              </span>
-            </Button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="border-t p-3">
-            <DeploymentSchedulePromotion
-              schedules={schedules}
-              candidates={promotionCandidates}
-              deployment={deployment}
-              ownership={schedulerOwnership}
-              selected={selectedScheduleKeys}
-              onSelectedChange={onSelectedScheduleKeysChange}
-              error={promotionError}
-            />
-          </CollapsibleContent>
-        </Collapsible>
-      </div>
+                    : "all pins current"}
+                </span>
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="border-t p-3">
+              <DeploymentSchedulePromotion
+                schedules={schedules}
+                candidates={promotionCandidates}
+                deployment={deployment}
+                ownership={schedulerOwnership}
+                selected={selectedScheduleKeys}
+                onSelectedChange={onSelectedScheduleKeysChange}
+                error={promotionError}
+              />
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1242,6 +1294,7 @@ function PlanExecutionSequence({ plan }: { plan: PipelinePlan }) {
 function PlanCodeReview({ plan }: { plan: PipelinePlan }) {
   const report = plan.readiness.code_checks;
   const withFindings = report.assets.filter((asset) => asset.findings.length > 0);
+  if (withFindings.length === 0) return null;
   const passing = report.assets.length - withFindings.length;
   return (
     <section aria-labelledby="pipeline-plan-code-review">
@@ -1260,37 +1313,27 @@ function PlanCodeReview({ plan }: { plan: PipelinePlan }) {
           </span>
         ) : null}
       </div>
-      {withFindings.length === 0 ? (
-        <div className="flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm">
-          <CheckCircle2
-            className="size-4 shrink-0 text-primary"
-            aria-label="All code checks passed"
-          />
-          <span>All code checks passed.</span>
-        </div>
-      ) : (
-        <div className="divide-y rounded-lg border">
-          {withFindings.map((asset) => (
-            <div key={asset.name} className="px-3 py-2.5">
-              <div className="font-mono text-sm font-medium">{asset.name}</div>
-              <ul className="mt-1 space-y-1 text-xs">
-                {asset.findings.map((finding, index) => (
-                  <li
-                    key={`${finding.code}:${finding.message}:${index}`}
-                    className={
-                      finding.severity === "error"
-                        ? "text-destructive"
-                        : "text-amber-700 dark:text-amber-300"
-                    }
-                  >
-                    {finding.message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="divide-y rounded-lg border">
+        {withFindings.map((asset) => (
+          <div key={asset.name} className="px-3 py-2.5">
+            <div className="font-mono text-sm font-medium">{asset.name}</div>
+            <ul className="mt-1 flex flex-col gap-1 text-xs">
+              {asset.findings.map((finding, index) => (
+                <li
+                  key={`${finding.code}:${finding.message}:${index}`}
+                  className={
+                    finding.severity === "error"
+                      ? "text-destructive"
+                      : "text-amber-700 dark:text-amber-300"
+                  }
+                >
+                  {finding.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

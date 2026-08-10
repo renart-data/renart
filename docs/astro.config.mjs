@@ -145,7 +145,7 @@ export default defineConfig({
           label: 'Notebooks & scheduling',
           items: [
             { label: 'Notebooks', slug: 'docs/notebooks/overview' },
-            { label: 'Scheduling', slug: 'docs/scheduling/overview' },
+            { label: 'Deployments & schedules', slug: 'docs/scheduling/overview' },
           ],
         },
         {

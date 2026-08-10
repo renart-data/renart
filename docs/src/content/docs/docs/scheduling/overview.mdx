@@ -1,6 +1,6 @@
 ---
-title: Scheduling
-description: Put a pipeline on a per-environment cron without a separate orchestrator.
+title: Deployments & scheduling
+description: Pin reviewed pipeline source to a per-environment schedule and understand what runs.
 ---
 
 Renart schedules pipelines itself — there is no separate orchestrator to
@@ -14,6 +14,29 @@ happens to be in your working tree.
   width="2800"
   height="1520"
 />
+
+## How deployments, schedules, and runs fit together
+
+Think of the flow as three separate decisions:
+
+1. **Deploy** captures the pipeline's saved files as an immutable snapshot. It
+   reviews representative operations, but it does not execute the pipeline.
+2. **Schedule** defines when one environment should run and pins that
+   environment to one deployment.
+3. **Run** is one execution of that pinned deployment for a specific time
+   window. Its events and output appear in **Runs**.
+
+| Action | Source used | What changes |
+| --- | --- | --- |
+| **Review run** in the workspace | Current saved working tree | Starts one manual run; no deployment or schedule pin changes |
+| **Review deployment** | Current saved working tree | Creates or reuses an immutable deployment; executes no data |
+| **Update schedules** after deployment | The deployment you just reviewed | Moves only the schedule pins you select |
+| **Run pinned** on a schedule | That schedule's current deployment | Starts one run without changing the pin |
+
+This separation lets you keep editing after a deployment without silently
+changing scheduled behavior. A newer deployment also does not move every
+environment automatically: after deploying, select exactly which schedules
+should adopt it.
 
 ## Create a schedule
 
@@ -47,7 +70,7 @@ container runtime, or CI system. See
 [Manage connection credentials](/docs/connections-environments/managing-credentials/).
 :::
 
-## Snapshots keep schedules stable
+## Deployments keep schedules stable
 
 Deploying records a snapshot of the pipeline as it is; the schedule runs
 that snapshot until you redeploy. You can keep editing — and even break —

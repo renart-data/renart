@@ -101,7 +101,7 @@ default.
 ## 5. Transactions (`service/asset_transactions.go`)
 
 UI surfaces never write YAML. Every edit is a semantic `AssetTransaction`
-(asset URI set/clear, dependency.manual.add/remove,
+(asset URI set/clear, dependency.manual.add/remove/mode.set,
 dependency.inferred.ignore/restore,
 column.check.add, column.description.set, column ownership, SQL hook
 upsert/remove, and safe inactive-materialization cleanup) POSTed to
@@ -121,9 +121,13 @@ round-trips unknown fields).
 The workspace API preserves Bruin dependency type and mode alongside the
 compatibility `upstreams[]` list. A shared resolver keeps bare asset names local
 to their pipeline and resolves exact URIs across the workspace. The guided and
-YAML-shaped editors use the same pipeline-grouped picker; cross-pipeline choices
-are unavailable until the producer declares a URI, and duplicate URIs remain
-editable while surfacing an asset-addressed error.
+YAML-shaped editors use the same creatable combobox. It accepts free text and
+workspace assets directly, writes a bare name for the current pipeline, and
+substitutes the producer URI for sibling-pipeline choices. Sibling assets
+without a URI remain selectable but surface a warning that the name cannot
+resolve across pipelines. Duplicate URIs remain editable while surfacing an
+asset-addressed error. A manual row owns its full/symbolic mode, which can be
+changed atomically after the dependency is added.
 
 ## 6. UI (`web/components/app/`)
 

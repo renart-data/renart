@@ -706,7 +706,6 @@ function DependsSection({ asset }: { asset: WebAsset }) {
       <AssetDependencyPicker
         assetId={asset.id}
         present={presentDependencies}
-        mode={addingMode}
         onPick={(dependency) => apply({ type: "dependency.manual.add", dependency })}
         className="ml-[14px] mt-0.5 px-1 font-monaco text-[11px]"
       />

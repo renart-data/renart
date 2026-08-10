@@ -269,8 +269,8 @@ test.describe("import onboarding", () => {
     await expect(page.getByRole("heading", { name: "Pick tables to import" })).toBeVisible({
       timeout: 60000,
     });
-    await page.getByText(`${postgres.database}.analytics.orders`).click();
-    await page.getByText(`${postgres.database}.analytics.customers`).click();
+    await page.getByRole("checkbox", { name: "analytics.orders", exact: true }).click();
+    await page.getByRole("checkbox", { name: "analytics.customers", exact: true }).click();
     await page.getByRole("button", { name: "Import 2 tables" }).click();
 
     await expect(page.getByRole("heading", { name: "You're all set" })).toBeVisible({

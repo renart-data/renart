@@ -22,8 +22,9 @@ type AssetTransaction struct {
 	AssetURI string `json:"asset_uri,omitempty"`
 
 	// Dependency transactions.
-	DependencyKey string                 `json:"dependency_key,omitempty"`
-	Dependency    *TransactionDependency `json:"dependency,omitempty"`
+	DependencyKey  string                 `json:"dependency_key,omitempty"`
+	DependencyMode string                 `json:"dependency_mode,omitempty"`
+	Dependency     *TransactionDependency `json:"dependency,omitempty"`
 
 	// Column transactions.
 	Column      string                `json:"column,omitempty"`
@@ -69,6 +70,7 @@ const (
 	TxAssetURISet                     = "asset.uri.set"
 	TxDependencyManualAdd             = "dependency.manual.add"
 	TxDependencyManualRemove          = "dependency.manual.remove"
+	TxDependencyManualModeSet         = "dependency.manual.mode.set"
 	TxDependencyInferredIgnore        = "dependency.inferred.ignore"
 	TxDependencyInferredRestore       = "dependency.inferred.restore"
 	TxColumnManualAdd                 = "column.manual.add"
@@ -166,6 +168,32 @@ func applyTransactionToAsset(asset *pipeline.Asset, meta *assetmeta.RenartMeta, 
 		}
 		meta.DepAdd = removeDependencyKey(meta.DepAdd, key)
 		asset.Upstreams = removeUpstreamByKey(asset.Upstreams, key)
+
+	case TxDependencyManualModeSet:
+		key := strings.TrimSpace(tx.DependencyKey)
+		mode := strings.ToLower(strings.TrimSpace(tx.DependencyMode))
+		if key == "" {
+			return badRequestError("invalid_transaction", "dependency_key is required")
+		}
+		if mode != "full" && mode != "symbolic" {
+			return badRequestError("invalid_transaction", "dependency_mode must be full or symbolic")
+		}
+		match := assetmeta.DependencyMatchKey(key)
+		manual := false
+		for _, existing := range meta.DepAdd {
+			if assetmeta.DependencyMatchKey(existing) == match {
+				manual = true
+				break
+			}
+		}
+		if !manual {
+			return badRequestError("unknown_dependency", "dependency is not a manual addition")
+		}
+		upstream := assetmeta.ParseDependencyKey(key)
+		upstream.Mode = pipeline.MarshalUpstreamMode(mode)
+		meta.DepAdd = removeDependencyKey(meta.DepAdd, key)
+		meta.DepAdd = appendDependencyKey(meta.DepAdd, assetmeta.DependencyKey(upstream))
+		asset.Upstreams = addUpstream(asset.Upstreams, upstream)
 
 	case TxDependencyInferredIgnore:
 		key := strings.TrimSpace(tx.DependencyKey)

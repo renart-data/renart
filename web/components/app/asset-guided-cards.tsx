@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Ban,
   Check,
+  ChevronDown,
   ChevronsUpDown,
   KeyRound,
   Plus,
@@ -21,6 +22,7 @@ import type { AssetStaleness, FailedQualityCheck } from "@/lib/api-staleness";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Command,
   CommandEmpty,
@@ -81,11 +83,13 @@ export function AssetGuidedCards({
   pipelineId,
   quality,
   focusedCheck,
+  onGoToAsset,
 }: {
   asset: WebAsset;
   pipelineId: string;
   quality?: AssetStaleness;
   focusedCheck?: QualityCheckFocus | null;
+  onGoToAsset?: (pipelineId: string, assetId: string) => void;
 }) {
   const supportsColumns =
     (asset.column_inference_sources?.length ?? 0) > 0 ||
@@ -103,7 +107,7 @@ export function AssetGuidedCards({
             <AssetHooks asset={asset} />
           </GuidedCard>
         ) : null}
-        <DependenciesCard asset={asset} />
+        <DependenciesCard asset={asset} onGoToAsset={onGoToAsset} />
         {supportsColumns ? <ColumnsCard asset={asset} /> : null}
         {supportsColumns ? (
           <QualityChecksCard
@@ -152,6 +156,7 @@ function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: stri
   const fieldId = (name: string) => `${fieldIdPrefix}-${name}`;
   const workspace = useAtomValue(workspaceAtom);
   const uri = asset.uri?.trim() ?? "";
+  const [producerIdentityOpen, setProducerIdentityOpen] = useState(false);
   const uriConflict = useMemo(() => {
     if (!uri) return undefined;
     for (const pipeline of workspace?.pipelines ?? []) {
@@ -163,6 +168,9 @@ function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: stri
     }
     return undefined;
   }, [asset.id, uri, workspace]);
+  useEffect(() => {
+    if (uriConflict) setProducerIdentityOpen(true);
+  }, [uriConflict]);
 
   const updateMetaDescription = (description: string) => {
     const nextMeta = { ...(asset.meta ?? {}) };
@@ -190,31 +198,6 @@ function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: stri
             }}
           />
         </FieldRow>
-        <Field data-invalid={uriConflict ? true : undefined}>
-          <FieldLabel htmlFor={fieldId("uri")}>URI</FieldLabel>
-          <CommitInput
-            id={fieldId("uri")}
-            mono
-            value={asset.uri ?? ""}
-            placeholder="duckdb://warehouse/schema/table"
-            ariaInvalid={Boolean(uriConflict)}
-            ariaDescribedBy={fieldId("uri-description")}
-            onCommit={(nextURI) => {
-              const normalized = nextURI.trim();
-              if (normalized !== uri) {
-                void applyAssetTransaction(asset.id, {
-                  type: "asset.uri.set",
-                  asset_uri: normalized,
-                });
-              }
-            }}
-          />
-          <FieldDescription id={fieldId("uri-description")}>
-            {uriConflict
-              ? `Already declared by ${uriConflict}. Producer URIs must be unique.`
-              : "Explicit producer identity for dependencies from sibling pipelines."}
-          </FieldDescription>
-        </Field>
         <FieldRow label="Type" htmlFor={fieldId("type")}>
           <Input
             id={fieldId("type")}
@@ -260,6 +243,52 @@ function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: stri
             }}
           />
         </FieldRow>
+        <Collapsible
+          open={producerIdentityOpen}
+          onOpenChange={setProducerIdentityOpen}
+          className="rounded-md border"
+        >
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="group h-auto w-full justify-between gap-2 px-3 py-2 text-xs font-normal"
+            >
+              <span>Producer identity</span>
+              <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
+                {uri ? <span className="max-w-44 truncate font-monaco">{uri}</span> : null}
+                <ChevronDown className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-180" />
+              </span>
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="border-t p-3">
+            <Field data-invalid={uriConflict ? true : undefined}>
+              <FieldLabel htmlFor={fieldId("uri")}>URI</FieldLabel>
+              <CommitInput
+                id={fieldId("uri")}
+                mono
+                value={asset.uri ?? ""}
+                placeholder="duckdb://warehouse/schema/table"
+                ariaInvalid={Boolean(uriConflict)}
+                ariaDescribedBy={fieldId("uri-description")}
+                onCommit={(nextURI) => {
+                  const normalized = nextURI.trim();
+                  if (normalized !== uri) {
+                    void applyAssetTransaction(asset.id, {
+                      type: "asset.uri.set",
+                      asset_uri: normalized,
+                    });
+                  }
+                }}
+              />
+              <FieldDescription id={fieldId("uri-description")}>
+                {uriConflict
+                  ? `Already declared by ${uriConflict}. Producer URIs must be unique.`
+                  : "Explicit producer identity for dependencies from sibling pipelines."}
+              </FieldDescription>
+            </Field>
+          </CollapsibleContent>
+        </Collapsible>
       </FieldGroup>
     </GuidedCard>
   );
@@ -616,26 +645,17 @@ function MaterializationCard({ asset, pipelineId }: { asset: WebAsset; pipelineI
 
 // --- Dependencies card (§14.3) ---
 
-function DependenciesCard({ asset }: { asset: WebAsset }) {
+function DependenciesCard({
+  asset,
+  onGoToAsset,
+}: {
+  asset: WebAsset;
+  onGoToAsset?: (pipelineId: string, assetId: string) => void;
+}) {
   const { inferred, manual, ignored } = useMemo(() => classifyDependencies(asset), [asset]);
-  const [adding, setAdding] = useState("");
-  const [addingKind, setAddingKind] = useState<"asset" | "uri">("asset");
-  const [addingMode, setAddingMode] = useState<"full" | "symbolic">("full");
 
   const apply = (tx: Parameters<typeof applyAssetTransaction>[1]) => {
     void applyAssetTransaction(asset.id, tx);
-  };
-
-  const addDependency = () => {
-    if (!adding.trim()) return;
-    apply({
-      type: "dependency.manual.add",
-      dependency:
-        addingKind === "uri"
-          ? { uri: adding.trim(), mode: addingMode }
-          : { asset: adding.trim(), mode: addingMode },
-    });
-    setAdding("");
   };
 
   const isEmpty = inferred.length === 0 && manual.length === 0 && ignored.length === 0;
@@ -660,6 +680,11 @@ function DependenciesCard({ asset }: { asset: WebAsset }) {
               key={dep.key}
               name={dep.name}
               detail={dep.resolvedPipelineName}
+              onNavigate={
+                dep.resolvedPipelineId && dep.resolvedAssetId && onGoToAsset
+                  ? () => onGoToAsset(dep.resolvedPipelineId!, dep.resolvedAssetId!)
+                  : undefined
+              }
               badge={
                 dep.kind === "uri"
                   ? dep.mode === "symbolic"
@@ -687,14 +712,19 @@ function DependenciesCard({ asset }: { asset: WebAsset }) {
               key={dep.key}
               name={dep.name}
               detail={dep.resolvedPipelineName}
-              badge={
-                dep.kind === "uri"
-                  ? dep.mode === "symbolic"
-                    ? "URI · symbolic"
-                    : "URI"
-                  : dep.mode === "symbolic"
-                    ? "symbolic"
-                    : undefined
+              badge={dep.kind === "uri" ? "URI" : undefined}
+              onNavigate={
+                dep.resolvedPipelineId && dep.resolvedAssetId && onGoToAsset
+                  ? () => onGoToAsset(dep.resolvedPipelineId!, dep.resolvedAssetId!)
+                  : undefined
+              }
+              mode={dep.mode}
+              onModeChange={(mode) =>
+                apply({
+                  type: "dependency.manual.mode.set",
+                  dependency_key: dep.key,
+                  dependency_mode: mode,
+                })
               }
               actionLabel="Remove"
               actionIcon={<Trash2 className="size-3" />}
@@ -729,54 +759,10 @@ function DependenciesCard({ asset }: { asset: WebAsset }) {
         </DepSection>
       ) : null}
 
-      <div className="grid grid-cols-[5.5rem_6.25rem_minmax(0,1fr)_auto] items-center gap-1.5">
-        <Select
-          value={addingKind}
-          onValueChange={(value) => setAddingKind(value as "asset" | "uri")}
-        >
-          <SelectTrigger size="sm" className="h-7 text-[11px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value="asset">Asset</SelectItem>
-              <SelectItem value="uri">URI</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        <Select
-          value={addingMode}
-          onValueChange={(value) => setAddingMode(value as "full" | "symbolic")}
-        >
-          <SelectTrigger size="sm" className="h-7 text-[11px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value="full">Full</SelectItem>
-              <SelectItem value="symbolic">Symbolic</SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        <Input
-          className="h-7 text-xs"
-          placeholder={addingKind === "uri" ? "Producer URI" : "Same-pipeline asset name"}
-          value={adding}
-          onChange={(e) => setAdding(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") addDependency();
-          }}
-        />
-        <Button variant="outline" size="xs" disabled={!adding.trim()} onClick={addDependency}>
-          <Plus className="size-3" />
-        </Button>
-      </div>
       <AssetDependencyPicker
         assetId={asset.id}
         present={present}
-        mode={addingMode}
         onPick={(dependency) => apply({ type: "dependency.manual.add", dependency })}
-        className="w-fit px-1"
       />
     </GuidedCard>
   );
@@ -797,7 +783,10 @@ function DepRow({
   name,
   detail,
   badge,
+  mode,
   muted,
+  onNavigate,
+  onModeChange,
   actionLabel,
   actionIcon,
   onAction,
@@ -805,17 +794,30 @@ function DepRow({
   name: string;
   detail?: string;
   badge?: string;
+  mode?: "full" | "symbolic";
   muted?: boolean;
+  onNavigate?: () => void;
+  onModeChange?: (mode: "full" | "symbolic") => void;
   actionLabel: string;
   actionIcon: React.ReactNode;
   onAction: () => void;
 }) {
   return (
     <div className="group flex items-center gap-1.5 px-2 py-1 text-xs">
-      <span
-        className={cn("min-w-0 flex-1 font-monaco", muted && "text-muted-foreground line-through")}
-      >
-        <span className="block truncate">{name}</span>
+      <span className={cn("min-w-0 flex-1", muted && "text-muted-foreground line-through")}>
+        {onNavigate ? (
+          <Button
+            type="button"
+            variant="link"
+            size="xs"
+            className="block h-auto max-w-full truncate p-0 font-monaco text-xs"
+            onClick={onNavigate}
+          >
+            {name}
+          </Button>
+        ) : (
+          <span className="block truncate font-monaco">{name}</span>
+        )}
         {detail ? (
           <span className="block truncate font-sans text-[10px] text-muted-foreground">
             {detail}
@@ -824,6 +826,23 @@ function DepRow({
       </span>
       {badge ? (
         <span className="rounded bg-muted px-1 text-[10px] text-muted-foreground">{badge}</span>
+      ) : null}
+      {mode && onModeChange ? (
+        <Select value={mode} onValueChange={(value) => onModeChange(value as "full" | "symbolic")}>
+          <SelectTrigger
+            size="sm"
+            className="h-6 w-[6.25rem] text-[10px]"
+            aria-label={`Dependency mode for ${name}`}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="full">Full</SelectItem>
+              <SelectItem value="symbolic">Symbolic</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       ) : null}
       <Button
         variant="ghost"

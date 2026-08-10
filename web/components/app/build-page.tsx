@@ -1598,6 +1598,7 @@ export function AppBuildPage({
             <AppPanel className="hidden min-h-0 xl:flex xl:flex-col">
               <Inspector
                 asset={selectedAsset}
+                onGoToAsset={goToAsset}
                 focusedCheck={
                   focusedQualityCheck?.assetId === selectedAsset.id
                     ? focusedQualityCheck
@@ -1629,6 +1630,7 @@ export function AppBuildPage({
             <SheetTitle className="sr-only">Asset properties</SheetTitle>
             <Inspector
               asset={selectedAsset}
+              onGoToAsset={goToAsset}
               focusedCheck={
                 focusedQualityCheck?.assetId === selectedAsset.id ? focusedQualityCheck : undefined
               }
@@ -3256,9 +3258,11 @@ function ResultsEmpty({ label }: { label: string }) {
 function Inspector({
   asset,
   focusedCheck,
+  onGoToAsset,
 }: {
   asset: BuildAsset;
   focusedCheck?: QualityCheckFocus;
+  onGoToAsset: (pipelineId: string, assetId: string) => void;
 }) {
   const workspaceAsset = asset.workspaceAsset;
   const editable = Boolean(workspaceAsset && asset.pipelineId);
@@ -3294,6 +3298,7 @@ function Inspector({
             pipelineId={asset.pipelineId}
             quality={asset.staleness}
             focusedCheck={focusedCheck}
+            onGoToAsset={onGoToAsset}
           />
         </ErrorBoundary>
       ) : (

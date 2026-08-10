@@ -253,7 +253,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     };
     expect(payload.provenance.source).toMatchObject({ kind: "working_tree" });
     expect(payload.provenance.source.merkle_root).toMatch(/^[a-f0-9]{64}$/);
-    expect(payload.asset.fingerprint).toMatch(/^v2:[a-f0-9]{64}$/);
+    expect(payload.asset.fingerprint).toMatch(/^v3:[a-f0-9]{64}$/);
     expect(payload.asset.target).toMatchObject({
       fidelity: "exact",
       kind: "relation",
@@ -276,7 +276,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(preview).toBeVisible({ timeout: 15000 });
     await expect(preview).toContainText("Preview — not executed");
     await expect(preview).toContainText("Saved workspace");
-    await expect(preview).toContainText("DAG v2:");
+    await expect(preview).toContainText("DAG v3:");
     await expect(preview).toContainText("Target");
     await expect(preview.getByRole("radio", { name: "Compiled query" })).toBeChecked();
     await preview.getByRole("radio", { name: "Execution SQL" }).click();
@@ -467,6 +467,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(planSheet.getByRole("button", { name: /Execution details/ })).toBeVisible();
     await expect(reviewViewport.getByRole("heading", { name: "Execution order" })).toHaveCount(0);
     await expect(planSheet.getByText("Run options", { exact: true })).toBeVisible();
+    await planSheet.getByRole("button", { name: /Run options/ }).click();
     await expect(planSheet.getByLabel("Scope")).toBeVisible();
     await expect(planSheet.getByLabel("Sensors")).toBeVisible();
     await expect(planSheet.getByRole("switch", { name: "Full refresh" })).toBeVisible();
@@ -477,7 +478,6 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
 
     const passingCheck = planSheet.getByLabel("All code checks passed").first();
     await expect(passingCheck).toBeVisible();
-    await expect(passingCheck).toHaveClass(/text-primary/);
     await expect(planSheet.getByText("No findings", { exact: true })).toHaveCount(0);
 
     const renderedPlanResponse = page.waitForResponse(
@@ -558,6 +558,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
         response.ok(),
       { timeout: 30000 },
     );
+    await planSheet.getByRole("button", { name: /Run options/ }).click();
     await planSheet.getByLabel("Scope").click();
     await page.getByRole("option", { name: "Matching selector", exact: true }).click();
     await wildcardResponse;
@@ -736,6 +737,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
         response.ok(),
       { timeout: 30000 },
     );
+    await planSheet.getByRole("button", { name: /Run options/ }).click();
     await planSheet.getByRole("switch", { name: "Full refresh" }).click();
     const destructivePlan = (await (await destructivePlanResponse).json()) as {
       context: { destructive: boolean; environment: string };
@@ -782,6 +784,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
         response.ok(),
       { timeout: 30000 },
     );
+    await planSheet.getByRole("button", { name: /Run options/ }).click();
     await planSheet.getByLabel("Scope").click();
     await page.getByRole("option", { name: "Needed assets" }).click();
     const neededPlanResponse = await neededResponse;

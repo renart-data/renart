@@ -394,6 +394,7 @@ select customer_id from analytics.customers
       { timeout: 15000 },
     );
 
+    await properties.getByRole("button", { name: /Producer identity/ }).click();
     await properties.getByRole("textbox", { name: "URI", exact: true }).fill(producerURI);
     await page.getByRole("button", { name: "Redeploy (1 file changed)" }).click();
 
@@ -521,19 +522,40 @@ select customer_id from analytics.customers
       (r) => r.url().includes(`/api/assets/${customersAssetId}/transactions`) && r.ok(),
       { timeout: 15000 },
     );
-    const input = properties.getByPlaceholder("Add dependency (asset name)");
+    const input = properties.getByRole("combobox", { name: "Add dependency" });
     await input.fill("analytics.orders");
+    await expect(page.getByRole("option", { name: /analytics\.orders/ })).toBeVisible();
     await input.press("Enter");
     await txResponse;
 
     // It surfaces under Manual and is written to the asset's provenance.
     await expect(properties.getByText("Manual", { exact: true })).toBeVisible({ timeout: 15000 });
     await expect(properties.getByText("analytics.orders").first()).toBeVisible();
+    const dependencyMode = properties.getByRole("combobox", {
+      name: "Dependency mode for analytics.orders",
+    });
+    await expect(dependencyMode).toContainText("Full");
 
     const customers = await pollAsset(liveApp, page.request, "analytics.customers", (a) =>
       a.upstreams.includes("analytics.orders"),
     );
     expect(customers.meta?.renart_dep_add).toContain("a:analytics.orders#full");
+
+    // Mode belongs to the manual dependency row and updates the dependency atomically.
+    const modeResponse = page.waitForResponse(
+      (r) => r.url().includes(`/api/assets/${customersAssetId}/transactions`) && r.ok(),
+      { timeout: 15000 },
+    );
+    await dependencyMode.click();
+    await page.getByRole("option", { name: "Symbolic", exact: true }).click();
+    await modeResponse;
+    const symbolicCustomers = await pollAsset(
+      liveApp,
+      page.request,
+      "analytics.customers",
+      (a) => a.meta?.renart_dep_add?.includes("a:analytics.orders#symbolic") ?? false,
+    );
+    expect(symbolicCustomers.meta?.renart_dep_add).not.toContain("a:analytics.orders#full");
   });
 
   test("merge metadata is editable through the guided form", async ({ liveApp, page }) => {

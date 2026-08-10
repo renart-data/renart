@@ -2,12 +2,12 @@
 
 import { Link } from "@tanstack/react-router";
 import { AlertTriangle, Play } from "lucide-react";
-import { useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useFollowOutputScroll } from "@/hooks/use-follow-output-scroll";
 import { MaterializeHistoryEntry } from "@/lib/atoms/results";
 
 export function WorkspaceMaterializeOutputView({
@@ -19,16 +19,10 @@ export function WorkspaceMaterializeOutputView({
   outputHtml: string;
   pipelineMaterializeLoading?: boolean;
 }) {
-  const materializeOutputRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const element = materializeOutputRef.current;
-    if (!element) {
-      return;
-    }
-
-    element.scrollTop = element.scrollHeight;
-  }, [entry?.id, entry?.loading, outputHtml]);
+  const materializeOutputScroll = useFollowOutputScroll(
+    `${entry?.loading ?? false}:${outputHtml}`,
+    entry?.id,
+  );
 
   if (!entry) {
     return (
@@ -64,7 +58,8 @@ export function WorkspaceMaterializeOutputView({
         <ScrollArea
           className="min-h-0 flex-1"
           viewportClassName="p-2"
-          viewportRef={materializeOutputRef}
+          viewportRef={materializeOutputScroll.viewportRef}
+          onViewportScroll={materializeOutputScroll.onViewportScroll}
         >
           <div className="space-y-2">
             {entry.timeWindow ? (

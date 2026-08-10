@@ -43,6 +43,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatSchedulerDate, usePipelineRuns } from "@/hooks/use-pipeline-runs";
+import { useFollowOutputScroll } from "@/hooks/use-follow-output-scroll";
 import { workspaceAtom } from "@/lib/atoms/domains/workspace";
 import { activePipelineRunConflict, type PipelineRunSource } from "@/lib/api-scheduler";
 import type {
@@ -665,7 +666,7 @@ export function AppRunDetailPage({
               value="output"
               className="m-0 min-h-0 flex-1 overflow-hidden bg-zinc-950 data-[state=inactive]:hidden"
             >
-              <RunTerminalOutput output={output} />
+              <RunTerminalOutput runId={run.id} output={output} />
             </TabsContent>
           </Tabs>
         </AppPanel>
@@ -1008,18 +1009,12 @@ function RunTimelinePanel({
   onActivateAsset: (asset: string) => void;
 }) {
   const timelineRef = useRef<HTMLDivElement | null>(null);
-  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const timelineScroll = useFollowOutputScroll(steps.length, run.id);
   const now = useNow(run.status === "running");
   const bounds = timelineBounds(run, steps, now);
   const counts = countSteps(steps);
   const scrollable = steps.length >= 20;
   const rowHeight = timelineRowHeight(steps.length);
-
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    viewport.scrollTop = viewport.scrollHeight;
-  }, [steps.length, scrollable]);
 
   useEffect(() => {
     if (scrollRequest?.target !== "timeline") return;
@@ -1076,7 +1071,8 @@ function RunTimelinePanel({
         <ScrollArea
           className="h-72 min-w-0"
           viewportClassName="h-full min-h-0"
-          viewportRef={viewportRef}
+          viewportRef={timelineScroll.viewportRef}
+          onViewportScroll={timelineScroll.onViewportScroll}
           data-testid="run-timeline-scroll"
         >
           {timeline}
@@ -1228,22 +1224,24 @@ function RunEventsTable({
   scrollRequest: RunScrollRequest | null;
   onActivateAsset: (asset: string) => void;
 }) {
-  const viewportRef = useRef<HTMLDivElement | null>(null);
   const events = runEvents(run, steps);
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    viewport.scrollTop = viewport.scrollHeight;
-  }, [events.length, loading]);
+  const eventsScroll = useFollowOutputScroll(`${events.length}:${loading}`, run.id);
   useEffect(() => {
     if (scrollRequest?.target !== "events") return;
     const target = Array.from(
-      viewportRef.current?.querySelectorAll<HTMLElement>('[data-testid="run-event-row"]') ?? [],
+      eventsScroll.viewportRef.current?.querySelectorAll<HTMLElement>(
+        '[data-testid="run-event-row"]',
+      ) ?? [],
     ).find((element) => element.dataset.asset === scrollRequest.asset);
     scrollRunElementIntoView(target);
   }, [scrollRequest]);
   return (
-    <ScrollArea className="h-full min-h-0" viewportClassName="h-full" viewportRef={viewportRef}>
+    <ScrollArea
+      className="h-full min-h-0"
+      viewportClassName="h-full"
+      viewportRef={eventsScroll.viewportRef}
+      onViewportScroll={eventsScroll.onViewportScroll}
+    >
       <Table>
         <TableHeader className="sticky top-0 z-10 bg-card">
           <TableRow>
@@ -1364,15 +1362,15 @@ function combineRunOutput(logs: PipelineRunLogLine[], error?: string) {
   return `${captured}${separator}${terminalError}\n`;
 }
 
-function RunTerminalOutput({ output }: { output: string }) {
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    viewport.scrollTop = viewport.scrollHeight;
-  }, [output]);
+function RunTerminalOutput({ runId, output }: { runId: string; output: string }) {
+  const outputScroll = useFollowOutputScroll(output, runId);
   return (
-    <ScrollArea className="h-full min-h-0" viewportClassName="h-full" viewportRef={viewportRef}>
+    <ScrollArea
+      className="h-full min-h-0"
+      viewportClassName="h-full"
+      viewportRef={outputScroll.viewportRef}
+      onViewportScroll={outputScroll.onViewportScroll}
+    >
       <AnsiOutput
         output={output}
         className="font-console whitespace-pre-wrap p-3 text-xs text-zinc-100"

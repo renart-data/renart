@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -132,6 +132,71 @@ test.describe("cross-pipeline dependencies live", () => {
     ).toContain("uri: duckdb://warehouse/raw/orders");
   });
 
+  test("adds workspace dependencies directly and links resolved producers", async ({
+    liveApp,
+    page,
+  }) => {
+    test.skip(
+      test.info().project.name.includes("mobile"),
+      "The dependency picker behavior only needs one browser project.",
+    );
+
+    await writeCrossPipelineWorkspace(liveApp, { includeDependency: false });
+    await waitForCrossPipelineWorkspace(liveApp, page.request);
+    const consumerAssetID = Buffer.from("cross-consumer/assets/analytics/orders.sql").toString(
+      "base64url",
+    );
+    const producerAssetID = Buffer.from("cross-producer/assets/raw/orders.sql").toString(
+      "base64url",
+    );
+
+    await page.goto(
+      `${liveApp.baseURL}/pipelines/${consumerPipelineID}/assets/${consumerAssetID}/code`,
+    );
+    await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15_000 });
+    const properties = await openAssetProperties(page);
+
+    const dependencyInput = properties.getByRole("combobox", { name: "Add dependency" });
+    await dependencyInput.fill("raw.orders");
+    await expect(page.getByRole("option", { name: /raw\.orders/ })).toBeVisible();
+    const uriTransaction = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        request.url().includes(`/api/assets/${consumerAssetID}/transactions`),
+    );
+    await dependencyInput.press("Enter");
+    expect((await uriTransaction).postDataJSON()).toEqual({
+      type: "dependency.manual.add",
+      dependency: { uri: "duckdb://warehouse/raw/orders", mode: "full" },
+    });
+
+    await expect(properties.getByRole("button", { name: "raw.orders", exact: true })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await dependencyInput.fill("raw.customers");
+    await expect(page.getByRole("option", { name: /raw\.customers/ })).toBeVisible();
+    const nameTransaction = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        request.url().includes(`/api/assets/${consumerAssetID}/transactions`),
+    );
+    await dependencyInput.press("Enter");
+    expect((await nameTransaction).postDataJSON()).toEqual({
+      type: "dependency.manual.add",
+      dependency: { asset: "raw.customers", mode: "full" },
+    });
+    await expect(properties.getByText("Producer URI missing", { exact: true })).toBeVisible();
+    await expect(properties).toContainText(
+      "will not link across pipelines until that URI is declared",
+    );
+
+    await properties.getByRole("button", { name: "raw.orders", exact: true }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/pipelines/${producerPipelineID}/assets/${producerAssetID}/code(?:\\?.*)?$`),
+    );
+  });
+
   test("waits without a run and admits the consumer after a producer succeeds", async ({
     liveApp,
     page,
@@ -250,6 +315,18 @@ select 1::bigint as order_id, 'ready'::varchar as status
     "utf8",
   );
   await writeFile(
+    join(producerAssets, "customers.sql"),
+    `/* @bruin
+type: duckdb.sql
+materialization:
+  type: table
+@bruin */
+
+select 1::bigint as customer_id
+`,
+    "utf8",
+  );
+  await writeFile(
     join(liveApp.workspaceDir, "cross-consumer", "pipeline.yml"),
     `id: ${consumerPipelineUUID}
 name: cross_consumer
@@ -273,6 +350,22 @@ select * from raw.orders
 `,
     "utf8",
   );
+}
+
+async function openAssetProperties(page: Page) {
+  const inspector = page.locator('[data-testid="asset-inspector"]:visible').first();
+  const trigger = page
+    .getByRole("button", { name: "Asset properties" })
+    .or(page.getByRole("button", { name: "Show properties" }))
+    .first();
+  await expect
+    .poll(async () => (await inspector.isVisible()) || (await trigger.isVisible()), {
+      timeout: 15_000,
+    })
+    .toBe(true);
+  if (!(await inspector.isVisible().catch(() => false))) await trigger.click();
+  await expect(inspector).toBeVisible({ timeout: 15_000 });
+  return inspector;
 }
 
 async function deploy(liveApp: LiveApp, request: APIRequestContext, pipelineID: string) {

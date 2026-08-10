@@ -200,16 +200,20 @@ not underscore-flattened route hacks.
   shared, initially collapsed Execution details section containing the exact
   ordered asset/window units and their rendered operation/check sequence. The
   deployment review uses the same section for representative execution.
-  Runtime-only Python notices are aggregated across affected assets. Run options stay
-  visible in a compact responsive row: scope receives the most room, sensor
-  policy stays secondary, full refresh is an explicit switch, and the selector
-  editor only appears when that scope needs it. Source identities, resource
+  Runtime-only Python notices are aggregated across affected assets. The happy
+  path is summarized as one readiness result; successful code checks do not
+  repeat as a separate section. Run options start collapsed behind a summary;
+  scope, sensor policy, full refresh, and the conditional selector editor remain
+  available without competing with confirmation. Deployment contents, runtime
+  checks, and identities share one collapsed Deployment details section, while
+  schedule promotion appears only after a deployment exists. Source identities,
+  resource
   claims, and write isolation remain available under Plan details without
   competing with the decision. The dialog heading, context, options, and review
   body share one vertical ScrollArea so the scrollbar never changes the width
   between its upper and middle sections; confirmation remains fixed beneath it.
-  Successful code checks use one compact green result while assets with
-  findings retain their expanded messages. Opening Execution details lazily
+  Assets with code-check findings retain their expanded messages. Opening
+  Execution details lazily
   requests redacted
   stage content and shows compiled queries, generated materialization SQL,
   checks, and semantic/runtime-only operations in read-only Monaco with
@@ -294,11 +298,13 @@ not underscore-flattened route hacks.
   columns and checks for relation-producing assets; sensors omit columns and
   checks because they do not materialize a relation. Custom SQL checks remain
   available for other supported asset types even when they do not expose a
-  column workbench. Identity editing includes the asset's explicit Bruin URI
-  with workspace uniqueness feedback. The shared dependency chooser groups
-  candidates by pipeline, writes a bare name only for the current pipeline, and
-  requires a declared producer URI for sibling-pipeline choices; full and
-  symbolic modes are explicit in both inspector representations. When
+  column workbench. Identity editing keeps the asset's explicit Bruin URI in a
+  collapsed producer identity section with workspace uniqueness feedback. The
+  shared dependency chooser is a creatable combobox: it writes a bare name for
+  the current pipeline, substitutes a declared URI for sibling-pipeline
+  selections, and warns without blocking when the selected sibling has no URI.
+  Resolved rows navigate to their assets, and manual rows expose full/symbolic
+  mode after creation. When
   interactive type-check recognizes an undeclared sibling-pipeline SQL
   reference, the Build canvas shows its producer and an amber dashed
   provisional edge. Applying a full or symbolic resolution writes the ordinary
@@ -430,8 +436,11 @@ not underscore-flattened route hacks.
   the run grows so as many as 19 assets remain visible without an inner
   scrollbar; 20 or more use a fixed 16px row and an independent ScrollArea.
   Hovering an asset timeline row or one of its event rows highlights the
-  matching rows in both views. A running timeline follows newly appended rows
-  to the bottom. Clicking either an event or a timeline row selects the asset
+  matching rows in both views. Timeline, event, terminal, Build materialize,
+  and onboarding output use one follow-tail hook: appended output stays pinned
+  only while the reader is near the bottom, pauses when they scroll up, resumes
+  when they return, and resets for a different run. Clicking either an event or
+  a timeline row selects the asset
   and scrolls the counterpart view to its matching row; timeline clicks also
   return the lower panel to its Events tab.
   Queue-backed active runs expose a destructive, confirmed Abort run action.

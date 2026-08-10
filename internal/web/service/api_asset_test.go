@@ -98,6 +98,9 @@ columns:
     type: json
 meta:
   renart_col_drop: geometry
+depends:
+  - asset: analytics.orders
+    mode: symbolic
 `
 	require.NoError(t, afero.WriteFile(fs, path, []byte(content), 0o644))
 
@@ -110,6 +113,9 @@ meta:
 	}
 	assert.ElementsMatch(t, []string{"id", "geometry"}, names, "file columns must load through the nested parameters spec")
 	assert.Equal(t, "data@company.com", asset.Owner)
+	require.Len(t, asset.Upstreams, 1)
+	assert.Equal(t, "analytics.orders", asset.Upstreams[0].Value)
+	assert.Equal(t, pipeline.UpstreamModeSymbolic, asset.Upstreams[0].Mode)
 }
 
 func TestAPIAwareCreatorInfersAPIAssetWithoutExplicitType(t *testing.T) {

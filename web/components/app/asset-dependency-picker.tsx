@@ -3,18 +3,17 @@
 import { useMemo, useState } from "react";
 
 import { useAtomValue } from "jotai";
-import { Boxes, Check } from "lucide-react";
+import { Boxes, Plus, TriangleAlert } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from "@/components/ui/combobox";
 import { workspaceAtom } from "@/lib/atoms/workspace";
 import type { DependencyMode } from "@/lib/asset-provenance";
 import { cn } from "@/lib/utils";
@@ -30,43 +29,43 @@ type DependencyCandidate = {
   name: string;
   type: string;
   uri: string;
+  pipelineName: string;
+  currentPipeline: boolean;
   dependencyKind: "asset" | "uri";
   dependencyValue: string;
-  unavailableReason?: string;
-};
-
-type CandidateGroup = {
-  pipelineId: string;
-  heading: string;
-  candidates: DependencyCandidate[];
+  missingURI?: boolean;
+  custom?: boolean;
 };
 
 function dependencyMatchKey(kind: "asset" | "uri", value: string) {
   return `${kind}:${value.trim().toLowerCase()}`;
 }
 
+function looksLikeURI(value: string) {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value.trim());
+}
+
 /**
- * Workspace-aware dependency chooser. Bare asset names are offered only from
- * the owning pipeline; sibling-pipeline assets are represented by their exact
- * committed Bruin URI and remain disabled until a URI has been declared.
+ * A workspace-aware creatable combobox. Same-pipeline selections use the
+ * asset name; sibling-pipeline selections use the producer URI whenever one
+ * is declared. Free text remains available for dependencies not in the graph.
  */
 export function AssetDependencyPicker({
   assetId,
   present,
-  mode,
   onPick,
   className,
 }: {
   assetId: string;
   present: Set<string>;
-  mode: DependencyMode;
   onPick: (dependency: PickedAssetDependency) => void;
   className?: string;
 }) {
   const workspace = useAtomValue(workspaceAtom);
-  const [open, setOpen] = useState(false);
+  const [inputValue, setInputValue] = useState("");
+  const [warning, setWarning] = useState<string | null>(null);
 
-  const groups = useMemo<CandidateGroup[]>(() => {
+  const candidates = useMemo<DependencyCandidate[]>(() => {
     const pipelines = workspace?.pipelines ?? [];
     const owner = pipelines.find((pipeline) =>
       pipeline.assets.some((candidate) => candidate.id === assetId),
@@ -74,44 +73,29 @@ export function AssetDependencyPicker({
     if (!owner) return [];
 
     return pipelines
-      .map((pipeline) => {
-        const isOwner = pipeline.id === owner.id;
-        const candidates = pipeline.assets
+      .flatMap((pipeline) => {
+        const currentPipeline = pipeline.id === owner.id;
+        return pipeline.assets
           .filter((candidate) => candidate.id !== assetId)
           .map<DependencyCandidate>((candidate) => {
             const uri = candidate.uri?.trim() ?? "";
-            if (isOwner) {
-              return {
-                id: candidate.id,
-                name: candidate.name,
-                type: candidate.type,
-                uri,
-                dependencyKind: "asset",
-                dependencyValue: candidate.name,
-              };
-            }
             return {
-              id: candidate.id,
+              id: `${pipeline.id}:${candidate.id}`,
               name: candidate.name,
               type: candidate.type,
               uri,
-              dependencyKind: "uri",
-              dependencyValue: uri,
-              unavailableReason: uri ? undefined : "Declare a URI on this producer first",
+              pipelineName: pipeline.name,
+              currentPipeline,
+              dependencyKind: currentPipeline || !uri ? "asset" : "uri",
+              dependencyValue: currentPipeline || !uri ? candidate.name : uri,
+              missingURI: !currentPipeline && !uri,
             };
-          })
-          .sort((left, right) => left.name.localeCompare(right.name));
-        return {
-          pipelineId: pipeline.id,
-          heading: isOwner ? `${pipeline.name} · current pipeline` : pipeline.name,
-          candidates,
-        };
+          });
       })
-      .filter((group) => group.candidates.length > 0)
       .sort((left, right) => {
-        if (left.pipelineId === owner.id) return -1;
-        if (right.pipelineId === owner.id) return 1;
-        return left.heading.localeCompare(right.heading);
+        if (left.currentPipeline !== right.currentPipeline) return left.currentPipeline ? -1 : 1;
+        const pipelineOrder = left.pipelineName.localeCompare(right.pipelineName);
+        return pipelineOrder || left.name.localeCompare(right.name);
       });
   }, [assetId, workspace]);
 
@@ -120,63 +104,118 @@ export function AssetDependencyPicker({
     [present],
   );
 
+  const items = useMemo(() => {
+    const trimmed = inputValue.trim();
+    if (!trimmed) return candidates;
+    const exact = candidates.some(
+      (candidate) =>
+        candidate.name.toLowerCase() === trimmed.toLowerCase() ||
+        candidate.uri.toLowerCase() === trimmed.toLowerCase() ||
+        candidate.dependencyValue.toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (exact) return candidates;
+    const dependencyKind = looksLikeURI(trimmed) ? "uri" : "asset";
+    return [
+      ...candidates,
+      {
+        id: `custom:${dependencyKind}:${trimmed}`,
+        name: trimmed,
+        type: "Custom dependency",
+        uri: dependencyKind === "uri" ? trimmed : "",
+        pipelineName: "Not in this workspace",
+        currentPipeline: false,
+        dependencyKind,
+        dependencyValue: trimmed,
+        custom: true,
+      } satisfies DependencyCandidate,
+    ];
+  }, [candidates, inputValue]);
+
+  const selectCandidate = (candidate: DependencyCandidate | null) => {
+    if (!candidate) return;
+    const matchKey = dependencyMatchKey(candidate.dependencyKind, candidate.dependencyValue);
+    if (normalizedPresent.has(matchKey)) return;
+
+    onPick(
+      candidate.dependencyKind === "uri"
+        ? { uri: candidate.dependencyValue, mode: "full" }
+        : { asset: candidate.dependencyValue, mode: "full" },
+    );
+    setWarning(
+      candidate.missingURI
+        ? `${candidate.name} is in ${candidate.pipelineName}, but it has no producer URI. The dependency was added as a name and will not link across pipelines until that URI is declared.`
+        : null,
+    );
+    setInputValue("");
+  };
+
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          className={cn("justify-start text-muted-foreground", className)}
-        >
-          <Boxes className="size-3" />
-          Pick from workspace
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 p-0">
-        <Command>
-          <CommandInput placeholder="Search workspace assets…" className="text-xs" />
-          <CommandList>
-            <CommandEmpty className="py-4 text-xs">No assets found.</CommandEmpty>
-            {groups.map((group) => (
-              <CommandGroup key={group.pipelineId} heading={group.heading}>
-                {group.candidates.map((candidate) => {
-                  const added = normalizedPresent.has(
-                    dependencyMatchKey(candidate.dependencyKind, candidate.dependencyValue),
-                  );
-                  const disabled = added || Boolean(candidate.unavailableReason);
-                  return (
-                    <CommandItem
-                      key={`${group.pipelineId}:${candidate.id}`}
-                      value={`${group.heading} ${candidate.name} ${candidate.uri} ${candidate.type}`}
-                      disabled={disabled}
-                      onSelect={() => {
-                        if (candidate.dependencyKind === "uri") {
-                          onPick({ uri: candidate.dependencyValue, mode });
-                        } else {
-                          onPick({ asset: candidate.dependencyValue, mode });
-                        }
-                        setOpen(false);
-                      }}
-                      className="text-xs"
-                    >
-                      <Boxes className="mr-1 size-3 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate">{candidate.name}</span>
-                        <span className="block truncate text-[10px] text-muted-foreground">
-                          {candidate.unavailableReason ||
-                            (candidate.dependencyKind === "uri" ? candidate.uri : candidate.type)}
-                        </span>
-                      </span>
-                      {added ? <Check className="size-3 shrink-0 text-muted-foreground" /> : null}
-                    </CommandItem>
-                  );
-                })}
-              </CommandGroup>
-            ))}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <div className={cn("flex min-w-0 flex-col gap-2", className)}>
+      <Combobox
+        autoHighlight
+        items={items}
+        inputValue={inputValue}
+        value={null}
+        itemToStringLabel={(candidate: DependencyCandidate) => candidate.name}
+        itemToStringValue={(candidate: DependencyCandidate) => candidate.dependencyValue}
+        isItemEqualToValue={(left, right) => left.id === right.id}
+        onInputValueChange={(value, details) => {
+          if (details.reason !== "item-press") setInputValue(value);
+        }}
+        onValueChange={selectCandidate}
+      >
+        <ComboboxInput
+          aria-label="Add dependency"
+          placeholder="Add dependency by asset name or URI…"
+          className="h-8 w-full text-xs"
+          showClear={Boolean(inputValue)}
+        />
+        <ComboboxContent>
+          <ComboboxEmpty>Type an asset name or producer URI.</ComboboxEmpty>
+          <ComboboxList>
+            {(candidate: DependencyCandidate) => {
+              const added = normalizedPresent.has(
+                dependencyMatchKey(candidate.dependencyKind, candidate.dependencyValue),
+              );
+              return (
+                <ComboboxItem key={candidate.id} value={candidate} disabled={added}>
+                  {candidate.custom ? (
+                    <Plus className="size-3.5 text-muted-foreground" />
+                  ) : (
+                    <Boxes className="size-3.5 text-muted-foreground" />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">
+                      {candidate.custom ? `Add “${candidate.name}”` : candidate.name}
+                    </span>
+                    <span className="block truncate text-[10px] text-muted-foreground">
+                      {added
+                        ? "Already added"
+                        : candidate.missingURI
+                          ? `${candidate.pipelineName} · missing producer URI`
+                          : candidate.currentPipeline
+                            ? `${candidate.pipelineName} · ${candidate.type}`
+                            : candidate.custom
+                              ? candidate.pipelineName
+                              : `${candidate.pipelineName} · ${candidate.uri}`}
+                    </span>
+                  </span>
+                  {candidate.missingURI ? (
+                    <TriangleAlert className="size-3.5 text-amber-600" />
+                  ) : null}
+                </ComboboxItem>
+              );
+            }}
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
+      {warning ? (
+        <Alert className="py-2">
+          <TriangleAlert />
+          <AlertTitle>Producer URI missing</AlertTitle>
+          <AlertDescription>{warning}</AlertDescription>
+        </Alert>
+      ) : null}
+    </div>
   );
 }

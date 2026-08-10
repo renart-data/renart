@@ -584,16 +584,15 @@ test.describe("app scheduler pages live", () => {
     const planSheet = page.getByTestId("pipeline-plan-sheet");
     await expect(planSheet.getByRole("heading", { name: "Review deployment" })).toBeVisible();
     await expect(planSheet.getByRole("tablist")).toHaveCount(0);
-    await expect(planSheet.getByRole("heading", { name: "Source changes" })).toBeVisible();
-    await expect(planSheet.getByRole("button", { name: /Deployment contents/ })).toBeVisible();
-    await expect(planSheet.getByRole("button", { name: /Plan identities/ })).toBeVisible();
+    await expect(planSheet.getByRole("heading", { name: "Source changes" })).toHaveCount(0);
+    await expect(planSheet.getByRole("button", { name: /Deployment details/ })).toBeVisible();
     await expect(planSheet.getByRole("button", { name: /Execution details/ })).toBeVisible();
-    await expect(planSheet.getByRole("button", { name: /Schedules/ })).toBeVisible();
+    await expect(planSheet.getByRole("button", { name: /Update schedules/ })).toHaveCount(0);
     const reviewViewport = planSheet
       .getByTestId("pipeline-plan-scroll")
       .locator(':scope > [data-slot="scroll-area-viewport"]');
     await expect(reviewViewport.getByRole("heading", { name: "Review deployment" })).toBeVisible();
-    await expect(reviewViewport.getByRole("heading", { name: "Source changes" })).toBeVisible();
+    await expect(reviewViewport.getByRole("heading", { name: "Source changes" })).toHaveCount(0);
     await planSheet.getByRole("button", { name: /^Deploy \d+ assets?$/ }).click();
     await expect(page.getByText(/not using this deployment/)).toBeVisible({
       timeout: 15000,

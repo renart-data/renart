@@ -108,7 +108,6 @@ type nativeAPIAssetDefinition struct {
 	Name       string            `yaml:"name"`
 	Type       string            `yaml:"type"`
 	Connection string            `yaml:"connection"`
-	Depends    []string          `yaml:"depends"`
 	Meta       map[string]string `yaml:"meta"`
 	Parameters map[string]any    `yaml:"parameters"`
 }
@@ -224,19 +223,10 @@ func apiAwareYamlTaskCreator(fs afero.Fs) pipeline.TaskCreator {
 		if err != nil {
 			absPath = filePath
 		}
-		upstreams := make([]pipeline.Upstream, 0, len(definition.Depends))
-		for _, dep := range definition.Depends {
-			dep = strings.TrimSpace(dep)
-			if dep == "" {
-				continue
-			}
-			upstreams = append(upstreams, pipeline.Upstream{Value: dep, Type: "asset", Mode: pipeline.UpstreamModeFull})
-		}
 		asset := &pipeline.Asset{
 			Name:       strings.TrimSpace(definition.Name),
 			Type:       pipeline.AssetType(apiAssetType),
 			Connection: strings.TrimSpace(definition.Connection),
-			Upstreams:  upstreams,
 			Meta:       definition.Meta,
 			ExecutableFile: pipeline.ExecutableFile{
 				Name:    filepath.Base(absPath),
@@ -245,7 +235,8 @@ func apiAwareYamlTaskCreator(fs afero.Fs) pipeline.TaskCreator {
 			},
 		}
 		// The narrow API definition struct intentionally omits the fields renart's
-		// asset workbench edits (columns, owner, tags, description, materialization).
+		// asset workbench edits (typed dependencies, columns, owner, tags,
+		// description, materialization).
 		// Bruin's stock reader parses them, but it models `parameters:` as flat
 		// map[string]string and errors on an API asset's nested request/response
 		// spec — which would silently drop these fields (so a dropped column, an
@@ -253,6 +244,7 @@ func apiAwareYamlTaskCreator(fs afero.Fs) pipeline.TaskCreator {
 		// with `parameters` stripped so they load and survive a save.
 		if stripped, stripErr := stripYAMLTopLevelKey(content, "parameters"); stripErr == nil {
 			if metaAsset, metaErr := pipeline.ConvertYamlToTask(stripped); metaErr == nil && metaAsset != nil {
+				asset.Upstreams = metaAsset.Upstreams
 				asset.Columns = metaAsset.Columns
 				asset.Owner = metaAsset.Owner
 				asset.Tags = metaAsset.Tags

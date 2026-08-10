@@ -1,5 +1,5 @@
 import { expect, Page } from "@playwright/test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { liveTest as test } from "../live-app-fixture";
@@ -862,9 +862,11 @@ test.describe("sql intellisense live", () => {
     expect(focusedBefore).toBeTruthy();
 
     const revisionBefore = await getWorkspaceRevision(page);
-    const pipelinePath = join(liveApp.workspaceDir, "analytics", "pipeline.yml");
-    const pipelineContent = await readFile(pipelinePath, "utf8");
-    await writeFile(pipelinePath, `${pipelineContent.trimEnd()}\n`, "utf8");
+    const update = await page.request.put(
+      `${liveApp.baseURL}/api/pipelines/${analyticsPipelineId}/assets/${ordersAssetId}`,
+      { data: { meta: { description: `SSE focus check ${Date.now()}` } } },
+    );
+    expect(update.ok(), await update.text()).toBe(true);
 
     await expect
       .poll(async () => getWorkspaceRevision(page), { timeout: 15000 })

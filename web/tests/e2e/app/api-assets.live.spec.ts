@@ -198,8 +198,6 @@ parameters:
       await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${apiAssetId}/code`);
       const editor = page.locator(".monaco-editor").first();
       await expect(editor).toBeVisible({ timeout: 15000 });
-      await setEditorContentAtYamlField(page, assetContent, "records_path");
-
       const suggestionsResponse = page.waitForResponse(
         (response) =>
           response.url().includes("/api/api-assets/openapi-suggestions") &&
@@ -207,6 +205,7 @@ parameters:
           response.ok(),
         { timeout: 15000 },
       );
+      await setEditorContentAtYamlField(page, assetContent, "records_path");
       await page.keyboard.press("ControlOrMeta+Space");
       const response = await suggestionsResponse;
       const body = (await response.json()) as {

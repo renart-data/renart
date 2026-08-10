@@ -33,6 +33,11 @@ export type AssetTransaction =
       dependency: { asset?: string; uri?: string; mode?: "full" | "symbolic" };
     }
   | { type: "dependency.manual.remove"; dependency_key: string }
+  | {
+      type: "dependency.manual.mode.set";
+      dependency_key: string;
+      dependency_mode: "full" | "symbolic";
+    }
   | { type: "dependency.inferred.ignore"; dependency_key: string }
   | { type: "dependency.inferred.restore"; dependency_key: string }
   | { type: "column.manual.add"; column_def: WebColumn }

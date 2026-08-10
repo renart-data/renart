@@ -115,6 +115,31 @@ default_connections:
 	assert.NotContains(t, assetCreationConnectionNames(apiTarget.Connections), "object-store")
 }
 
+func TestAssetCreationProfileLoadsAPIAssetWithTypedDependency(t *testing.T) {
+	t.Parallel()
+	service, pipelineRoot := newAssetCreationProfileTestService(t, `name: analytics
+default_connections:
+  duckdb: warehouse
+`, assetCreationProfileTestConfig)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(pipelineRoot, "assets", "analytics", "weather.asset.yml"),
+		[]byte(`type: api
+parameters:
+  request:
+    url: https://api.weather.gov/alerts
+  response:
+    records_path: features
+depends:
+  - asset: analytics.orders
+    mode: symbolic
+`),
+		0o644,
+	))
+
+	_, apiErr := service.AssetCreationProfile(context.Background(), EncodeID("analytics"), "dev")
+	require.Nil(t, apiErr)
+}
+
 func TestAssetCreationProfileReportsAmbiguousCompatibleDefaults(t *testing.T) {
 	t.Parallel()
 	service, _ := newAssetCreationProfileTestService(t, `name: analytics

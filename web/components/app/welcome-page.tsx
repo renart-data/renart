@@ -14,7 +14,7 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AnsiOutput } from "@/components/ansi-output";
 import { DirectoryPickerDialog } from "@/components/app/directory-picker-dialog";
@@ -35,6 +35,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useWorkspaceTheme } from "@/hooks/use-workspace-theme";
+import { useFollowOutputScroll } from "@/hooks/use-follow-output-scroll";
 import {
   createWorkspaceConnection,
   getWorkspaceConfig,
@@ -104,7 +105,7 @@ export function WelcomePage({ forceNew = false }: { forceNew?: boolean }) {
   const [runProgress, setRunProgress] = useState<{ step: number; total: number } | null>(null);
   const [runLog, setRunLog] = useState("");
   const [runState, setRunState] = useState<"idle" | "running" | "done" | "error">("idle");
-  const runLogViewportRef = useRef<HTMLDivElement | null>(null);
+  const runLogScroll = useFollowOutputScroll(runLog, created?.pipeline_id);
 
   const [connectionType, setConnectionType] = useState("");
   const [connectionValues, setConnectionValues] = useState<Record<string, string | boolean>>({});
@@ -273,12 +274,6 @@ export function WelcomePage({ forceNew = false }: { forceNew?: boolean }) {
       setError(runError instanceof Error ? runError.message : "The first run failed.");
     }
   }, [created]);
-
-  useEffect(() => {
-    const viewport = runLogViewportRef.current;
-    if (!viewport) return;
-    viewport.scrollTop = viewport.scrollHeight;
-  }, [runLog]);
 
   useEffect(() => {
     if (stage === "materializing" && runState === "idle") {
@@ -614,7 +609,8 @@ export function WelcomePage({ forceNew = false }: { forceNew?: boolean }) {
               <ScrollArea
                 className="h-64 rounded-md border bg-zinc-950"
                 viewportClassName="max-h-64"
-                viewportRef={runLogViewportRef}
+                viewportRef={runLogScroll.viewportRef}
+                onViewportScroll={runLogScroll.onViewportScroll}
               >
                 <AnsiOutput
                   output={runLog}

@@ -86,6 +86,41 @@ func TestApplyTransactionDependencyManualAdd(t *testing.T) {
 	assert.Contains(t, string(content), "a:analytics.orders#symbolic")
 }
 
+func TestApplyTransactionDependencyManualModeSet(t *testing.T) {
+	service, assetID, absPath := newTransactionWorkspace(t, txCustomersHeader)
+
+	_, apiErr := service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type:       TxDependencyManualAdd,
+		Dependency: &TransactionDependency{Asset: "analytics.orders"},
+	})
+	require.Nil(t, apiErr)
+
+	res, apiErr := service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type:           TxDependencyManualModeSet,
+		DependencyKey:  "a:analytics.orders#full",
+		DependencyMode: "symbolic",
+	})
+	require.Nil(t, apiErr)
+	assert.Equal(t, []string{"analytics.orders"}, res.Upstreams)
+
+	content, err := os.ReadFile(absPath)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "a:analytics.orders#symbolic")
+	assert.NotContains(t, string(content), "a:analytics.orders#full")
+}
+
+func TestApplyTransactionDependencyManualModeSetRejectsInferredDependency(t *testing.T) {
+	service, assetID, _ := newTransactionWorkspace(t, txCustomersHeader)
+
+	_, apiErr := service.ApplyAssetTransaction(context.Background(), assetID, AssetTransaction{
+		Type:           TxDependencyManualModeSet,
+		DependencyKey:  "a:analytics.orders#full",
+		DependencyMode: "symbolic",
+	})
+	require.NotNil(t, apiErr)
+	assert.Equal(t, "unknown_dependency", apiErr.Code)
+}
+
 func TestApplyTransactionDependencyIgnoreAndRestore(t *testing.T) {
 	service, assetID, _ := newTransactionWorkspace(t, txCustomersHeader)
 
