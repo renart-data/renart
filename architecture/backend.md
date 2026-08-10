@@ -1314,8 +1314,14 @@ Interactive type-check additionally consumes the workspace dependency graph:
 URI producers resolve by exact declared URI, duplicate/unresolved producers and
 cross-pipeline full cycles are asset-addressed findings, and sibling-pipeline
 declared columns use the same canonical SQL graph as Monaco. Bare asset names
-remain pipeline-local. An unresolved symbolic URI is a warning; the equivalent
-full dependency is an error. Reviewed working-tree and immutable-snapshot plan
+remain pipeline-local. A SQL relation that uniquely resolves to a sibling asset
+but has no declared URI dependency is reported as an authoring warning with the
+same reviewed full/symbolic transactions as Monaco. The report includes
+deduplicated, ephemeral producer/consumer observations for provisional canvas
+lineage; they have no runtime meaning and disappear once the URI dependency is
+saved. Ambiguous or unsafe matches remain non-mutating. An unresolved symbolic
+URI is a warning; the equivalent full dependency is an error. Reviewed
+working-tree and immutable-snapshot plan
 checks reuse that workspace-shaped graph while preserving the selected
 consumer's execution-time rendering.
 For SQL queries they reuse the SQL LSP's cross-connection diagnostic and warn

@@ -4,6 +4,8 @@ import {
   Bell,
   CheckCircle2,
   Download,
+  ExternalLink,
+  Link2,
   Loader2,
   RotateCw,
   Trash2,
@@ -198,7 +200,46 @@ export function TypeCheckPanel({
                                     </Button>
                                   );
                                 }
+                                if (resolution.action?.type === "open-asset") {
+                                  return (
+                                    <Button
+                                      key={resolution.id}
+                                      type="button"
+                                      variant="outline"
+                                      size="xs"
+                                      disabled={!onResolutionAction}
+                                      onClick={() => onResolutionAction?.(resolution.action!)}
+                                    >
+                                      <ExternalLink data-icon="inline-start" />
+                                      {resolution.title}
+                                    </Button>
+                                  );
+                                }
                                 if (!asset.id || !resolution.transaction) return null;
+                                if (resolution.transaction.type === "dependency.manual.add") {
+                                  return (
+                                    <Button
+                                      key={resolution.id}
+                                      type="button"
+                                      variant="outline"
+                                      size="xs"
+                                      disabled={Boolean(resolving)}
+                                      onClick={() =>
+                                        void resolveFinding(asset.id!, finding, resolution)
+                                      }
+                                    >
+                                      {resolving === resolutionKey ? (
+                                        <Loader2
+                                          className="animate-spin"
+                                          data-icon="inline-start"
+                                        />
+                                      ) : (
+                                        <Link2 data-icon="inline-start" />
+                                      )}
+                                      {resolution.title}
+                                    </Button>
+                                  );
+                                }
                                 return (
                                   <AlertDialog key={resolution.id}>
                                     <AlertDialogTrigger asChild>

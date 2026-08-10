@@ -298,7 +298,13 @@ not underscore-flattened route hacks.
   with workspace uniqueness feedback. The shared dependency chooser groups
   candidates by pipeline, writes a bare name only for the current pipeline, and
   requires a declared producer URI for sibling-pipeline choices; full and
-  symbolic modes are explicit in both inspector representations.
+  symbolic modes are explicit in both inspector representations. When
+  interactive type-check recognizes an undeclared sibling-pipeline SQL
+  reference, the Build canvas shows its producer and an amber dashed
+  provisional edge. Applying a full or symbolic resolution writes the ordinary
+  dependency transaction; the workspace SSE refresh replaces the provisional
+  edge with canonical lineage. Missing-URI resolutions navigate to the producer
+  rather than manufacturing an identity.
 
   The Columns card's
   **Sync schema** action automatically uses the asset definition and places

@@ -417,6 +417,9 @@ export function AppBuildPage({
     () => (activePipeline ? assetsForPipeline(activePipeline) : []),
     [activePipeline],
   );
+  const [typeCheckReport, setTypeCheckReport] = useState<PipelineTypeCheckReport | null>(null);
+  const [typeCheckLoading, setTypeCheckLoading] = useState(false);
+  const [typeCheckError, setTypeCheckError] = useState<string | null>(null);
   const crossPipelineProducerAssets = useMemo<BuildAsset[]>(() => {
     if (!workspace || !activePipeline) return [];
     const producerRefs = new Map<string, { pipelineId: string; assetId: string }>();
@@ -461,6 +464,51 @@ export function AppBuildPage({
       return left.name.localeCompare(right.name);
     });
   }, [activePipeline, workspace]);
+  const provisionalCrossPipelineReferences = useMemo(() => {
+    if (!activePipeline || typeCheckReport?.pipeline_id !== activePipeline.id) return [];
+    return (typeCheckReport.cross_pipeline_references ?? []).filter((reference) => {
+      const consumer = activePipeline.assets.find(
+        (asset) => asset.id === reference.consumer_asset_id,
+      );
+      if (!consumer) return false;
+      return !(consumer.dependencies ?? []).some(
+        (dependency) =>
+          (dependency.resolved_asset_id === reference.producer_asset_id &&
+            dependency.resolved_pipeline_id === reference.producer_pipeline_id) ||
+          (reference.producer_uri &&
+            dependency.type.toLowerCase() === "uri" &&
+            dependency.value.toLowerCase() === reference.producer_uri.toLowerCase()),
+      );
+    });
+  }, [activePipeline, typeCheckReport]);
+  const provisionalCrossPipelineProducerAssets = useMemo<BuildAsset[]>(() => {
+    if (!workspace) return [];
+    const producers = new Map<string, BuildAsset>();
+    for (const reference of provisionalCrossPipelineReferences) {
+      const producerPipeline = workspace.pipelines.find(
+        (pipeline) => pipeline.id === reference.producer_pipeline_id,
+      );
+      if (!producerPipeline) continue;
+      const producer = assetsForPipeline(producerPipeline).find(
+        (asset) => asset.id === reference.producer_asset_id,
+      );
+      if (!producer) continue;
+      producers.set(producer.id, {
+        ...producer,
+        prefix: `Pipeline · ${producerPipeline.name}`,
+        group: `Pipeline · ${producerPipeline.name}`,
+        description: `Referenced in SQL; dependency not declared`,
+        upstreams: [],
+        readOnly: true,
+      });
+    }
+    return [...producers.values()].sort((left, right) => {
+      if (left.pipelineId !== right.pipelineId) {
+        return (left.pipelineId ?? "").localeCompare(right.pipelineId ?? "");
+      }
+      return left.name.localeCompare(right.name);
+    });
+  }, [provisionalCrossPipelineReferences, workspace]);
   const existingAssetNames = useMemo(
     () => new Set((activePipeline?.assets ?? []).map((asset) => asset.name)),
     [activePipeline?.assets],
@@ -529,9 +577,6 @@ export function AppBuildPage({
     : "Resolving the execution window";
   const editorDraft = useAtomValue(editorDraftAtom);
   const setEditorDraft = useSetAtom(editorDraftAtom);
-  const [typeCheckReport, setTypeCheckReport] = useState<PipelineTypeCheckReport | null>(null);
-  const [typeCheckLoading, setTypeCheckLoading] = useState(false);
-  const [typeCheckError, setTypeCheckError] = useState<string | null>(null);
   const [externalRelationImportId, setExternalRelationImportId] = useState<string | null>(null);
   const [adhocResult, setAdhocResult] = useState<SqlQueryResponse | null>(null);
   const [adhocRenderedQuery, setAdhocRenderedQuery] = useState<string | null>(null);
@@ -569,8 +614,34 @@ export function AppBuildPage({
       };
     });
     authored.push(...crossPipelineProducerAssets);
+    const authoredIDs = new Set(authored.map((asset) => asset.id));
+    for (const producer of provisionalCrossPipelineProducerAssets) {
+      if (!authoredIDs.has(producer.id)) {
+        authored.push(producer);
+        authoredIDs.add(producer.id);
+      }
+    }
+    const provisionalByConsumer = new Map<string, string[]>();
+    for (const reference of provisionalCrossPipelineReferences) {
+      for (const consumerKey of [reference.consumer_asset_id, reference.consumer_asset_name]) {
+        provisionalByConsumer.set(consumerKey, [
+          ...(provisionalByConsumer.get(consumerKey) ?? []),
+          reference.producer_asset_id,
+        ]);
+      }
+    }
+    const withProvisionalLineage = authored.map((asset) => {
+      const provisionalUpstreams =
+        provisionalByConsumer.get(asset.id) ?? provisionalByConsumer.get(asset.name) ?? [];
+      if (provisionalUpstreams.length === 0) return asset;
+      return {
+        ...asset,
+        upstreams: [...(asset.upstreams ?? []), ...provisionalUpstreams],
+        provisionalUpstreams,
+      };
+    });
     const externalRelations = typeCheckReport?.external_relations ?? [];
-    if (externalRelations.length === 0) return authored;
+    if (externalRelations.length === 0) return withProvisionalLineage;
 
     const externalByConsumer = new Map<string, string[]>();
     for (const relation of externalRelations) {
@@ -581,7 +652,7 @@ export function AppBuildPage({
         externalByConsumer.set(name, [...(externalByConsumer.get(name) ?? []), relation.id]);
       }
     }
-    const consumers = authored.map((asset) => ({
+    const consumers = withProvisionalLineage.map((asset) => ({
       ...asset,
       upstreams: [
         ...(asset.upstreams ?? []),
@@ -613,6 +684,8 @@ export function AppBuildPage({
   }, [
     materializationStatusByAssetId,
     crossPipelineProducerAssets,
+    provisionalCrossPipelineProducerAssets,
+    provisionalCrossPipelineReferences,
     pipelineAssets,
     staleness.byAssetName,
     typeCheckErrorAssetIds,
@@ -1502,6 +1575,7 @@ export function AppBuildPage({
                 onRunTypeCheck={() => void runTypeCheck(false)}
                 onSelectAsset={selectAsset}
                 onImportExternalRelation={setExternalRelationImportId}
+                onGoToAsset={goToAsset}
                 inspectResult={assetResults.inspectResult}
                 inspectLoading={assetResults.inspectLoading}
                 renderResult={visibleAssetRenderResult}
@@ -2894,6 +2968,7 @@ function ResultsPanel({
   onRunTypeCheck,
   onSelectAsset,
   onImportExternalRelation,
+  onGoToAsset,
   inspectResult,
   inspectLoading,
   renderResult,
@@ -2920,6 +2995,7 @@ function ResultsPanel({
   onRunTypeCheck?: () => void;
   onSelectAsset?: (assetId: string) => void;
   onImportExternalRelation?: (relationId: string) => void;
+  onGoToAsset?: (pipelineId: string, assetId: string) => void;
   inspectResult: AssetInspectResponse | null;
   inspectLoading: boolean;
   renderResult: AssetRenderResult | null;
@@ -3081,7 +3157,13 @@ function ResultsPanel({
             error={typeCheckError ?? null}
             onRun={onRunTypeCheck}
             onSelectAsset={onSelectAsset}
-            onResolutionAction={(action) => onImportExternalRelation?.(action.relation_id)}
+            onResolutionAction={(action) => {
+              if (action.type === "import-external-relation") {
+                onImportExternalRelation?.(action.relation_id);
+                return;
+              }
+              onGoToAsset?.(action.pipeline_id, action.asset_id);
+            }}
           />
         </TabsContent>
       </Tabs>

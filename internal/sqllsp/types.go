@@ -68,6 +68,10 @@ type CodeAction struct {
 type CodeActionAction struct {
 	Type       string `json:"type"`
 	RelationID string `json:"relation_id,omitempty"`
+	PipelineID string `json:"pipeline_id,omitempty"`
+	AssetID    string `json:"asset_id,omitempty"`
+	URI        string `json:"uri,omitempty"`
+	Mode       string `json:"mode,omitempty"`
 }
 
 type SemanticTokens struct {

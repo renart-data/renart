@@ -19,11 +19,19 @@ export type PipelineTypeCheckResolution = {
   id: string;
   title: string;
   transaction?: AssetTransaction;
-  action?: {
-    type: "import-external-relation";
-    relation_id: string;
-  };
+  action?: PipelineTypeCheckResolutionAction;
 };
+
+export type PipelineTypeCheckResolutionAction =
+  | {
+      type: "import-external-relation";
+      relation_id: string;
+    }
+  | {
+      type: "open-asset";
+      pipeline_id: string;
+      asset_id: string;
+    };
 
 export async function getPipelineTemplates() {
   return fetchJSON<PipelineTemplatesResponse>("/api/pipelines/templates", {
@@ -88,6 +96,7 @@ export type PipelineTypeCheckReport = {
   end_date?: string;
   assets: PipelineTypeCheckAsset[];
   external_relations?: PipelineTypeCheckExternalRelation[];
+  cross_pipeline_references?: PipelineTypeCheckCrossPipelineReference[];
   summary: { assets: number; errors: number; warnings: number };
 };
 
@@ -104,6 +113,19 @@ export type PipelineTypeCheckExternalRelation = {
   stale?: boolean;
   referenced_by_asset_ids: string[];
   referenced_by_asset_names: string[];
+};
+
+export type PipelineTypeCheckCrossPipelineReference = {
+  id: string;
+  status: "declarable" | "producer_uri_missing" | "connection_unknown" | "connection_mismatch";
+  relation: string;
+  consumer_asset_id: string;
+  consumer_asset_name: string;
+  producer_asset_id: string;
+  producer_asset_name: string;
+  producer_pipeline_id: string;
+  producer_pipeline_name: string;
+  producer_uri?: string;
 };
 
 export type ExternalRelationImportResult = {

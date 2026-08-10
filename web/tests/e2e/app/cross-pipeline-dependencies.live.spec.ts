@@ -1,5 +1,5 @@
 import { expect, type APIRequestContext } from "@playwright/test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { liveTest as test, type LiveApp } from "../live-app-fixture";
@@ -24,6 +24,114 @@ type EnvScheduleResponse = {
 test.describe("cross-pipeline dependencies live", () => {
   test.use({ fixtureName: "basic-workspace" });
 
+  test("reviews an undeclared SQL relation before adding the URI dependency", async ({
+    liveApp,
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    test.skip(
+      test.info().project.name.includes("mobile"),
+      "The canvas dependency review is covered in the desktop project.",
+    );
+
+    await writeCrossPipelineWorkspace(liveApp, { includeDependency: false });
+    await waitForCrossPipelineWorkspace(liveApp, page.request);
+    const consumerAssetID = Buffer.from("cross-consumer/assets/analytics/orders.sql").toString(
+      "base64url",
+    );
+    const producerAssetID = Buffer.from("cross-producer/assets/raw/orders.sql").toString(
+      "base64url",
+    );
+    const typeCheckResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/pipelines/${consumerPipelineID}/type-check`) && response.ok(),
+      { timeout: 30_000 },
+    );
+
+    await page.goto(
+      `${liveApp.baseURL}/pipelines/${consumerPipelineID}/assets/${consumerAssetID}/canvas`,
+    );
+    const report = (await (await typeCheckResponse).json()) as {
+      assets: Array<{
+        name: string;
+        findings: Array<{ code: string; resolutions?: Array<{ title: string }> }>;
+      }>;
+      cross_pipeline_references?: Array<{
+        producer_asset_id: string;
+        consumer_asset_id: string;
+        status: string;
+      }>;
+    };
+    expect(
+      report.assets
+        .find((asset) => asset.name === "analytics.orders")
+        ?.findings.some((finding) => finding.code === "undeclared-cross-pipeline-dependency"),
+    ).toBe(true);
+    expect(report.cross_pipeline_references).toEqual([
+      expect.objectContaining({
+        producer_asset_id: producerAssetID,
+        consumer_asset_id: consumerAssetID,
+        status: "declarable",
+      }),
+    ]);
+
+    await expect(
+      page.locator(`[data-testid="lineage-asset"][data-asset-id="${producerAssetID}"]`),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".react-flow__edge.asset-edge-provisional")).toHaveCount(1);
+
+    await page.getByRole("tab", { name: /Type check/ }).click();
+    const transactionRequest = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        request.url().includes(`/api/assets/${consumerAssetID}/transactions`),
+    );
+    await page.getByRole("button", { name: "Add full dependency", exact: true }).click();
+    expect((await transactionRequest).postDataJSON()).toEqual({
+      type: "dependency.manual.add",
+      dependency: { uri: "duckdb://warehouse/raw/orders", mode: "full" },
+    });
+
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${liveApp.baseURL}/api/workspace`);
+        if (!response.ok()) return null;
+        const workspace = (await response.json()) as {
+          pipelines: Array<{
+            id: string;
+            assets: Array<{
+              id: string;
+              dependencies?: Array<{
+                value: string;
+                resolved_asset_id?: string;
+                mode: string;
+              }>;
+            }>;
+          }>;
+        };
+        return workspace.pipelines
+          .find((pipeline) => pipeline.id === consumerPipelineID)
+          ?.assets.find((asset) => asset.id === consumerAssetID)?.dependencies?.[0];
+      })
+      .toEqual(
+        expect.objectContaining({
+          value: "duckdb://warehouse/raw/orders",
+          resolved_asset_id: producerAssetID,
+          mode: "full",
+        }),
+      );
+    await expect(page.locator(".react-flow__edge.asset-edge-provisional")).toHaveCount(0, {
+      timeout: 15_000,
+    });
+    await expect(page.locator(".react-flow__edge.asset-edge")).toHaveCount(1);
+    expect(
+      await readFile(
+        join(liveApp.workspaceDir, "cross-consumer", "assets", "analytics", "orders.sql"),
+        "utf8",
+      ),
+    ).toContain("uri: duckdb://warehouse/raw/orders");
+  });
+
   test("waits without a run and admits the consumer after a producer succeeds", async ({
     liveApp,
     page,
@@ -36,24 +144,7 @@ test.describe("cross-pipeline dependencies live", () => {
     );
 
     await writeCrossPipelineWorkspace(liveApp);
-    await expect
-      .poll(
-        async () => {
-          const response = await request.get(`${liveApp.baseURL}/api/workspace`);
-          if (!response.ok()) return [];
-          const body = (await response.json()) as {
-            pipelines: Array<{ uuid: string; assets: Array<{ name: string }> }>;
-          };
-          return body.pipelines
-            .filter((pipeline) =>
-              [producerPipelineUUID, consumerPipelineUUID].includes(pipeline.uuid),
-            )
-            .map((pipeline) => pipeline.uuid)
-            .sort();
-        },
-        { timeout: 20_000 },
-      )
-      .toEqual([consumerPipelineUUID, producerPipelineUUID].sort());
+    await waitForCrossPipelineWorkspace(liveApp, request);
 
     const producerDeployment = await deploy(liveApp, request, producerPipelineID);
     const consumerDeployment = await deploy(liveApp, request, consumerPipelineID);
@@ -126,7 +217,10 @@ test.describe("cross-pipeline dependencies live", () => {
   });
 });
 
-async function writeCrossPipelineWorkspace(liveApp: LiveApp) {
+async function writeCrossPipelineWorkspace(
+  liveApp: LiveApp,
+  { includeDependency = true }: { includeDependency?: boolean } = {},
+) {
   const producerAssets = join(liveApp.workspaceDir, "cross-producer", "assets", "raw");
   const consumerAssets = join(liveApp.workspaceDir, "cross-consumer", "assets", "analytics");
   await mkdir(producerAssets, { recursive: true });
@@ -170,8 +264,7 @@ default_connections:
     join(consumerAssets, "orders.sql"),
     `/* @bruin
 type: duckdb.sql
-depends:
-  - uri: duckdb://warehouse/raw/orders
+${includeDependency ? "depends:\n  - uri: duckdb://warehouse/raw/orders" : ""}
 materialization:
   type: view
 @bruin */
@@ -188,6 +281,27 @@ async function deploy(liveApp: LiveApp, request: APIRequestContext, pipelineID: 
   });
   expect(response.ok(), await response.text()).toBe(true);
   return ((await response.json()) as { snapshot: { version_id: string } }).snapshot.version_id;
+}
+
+async function waitForCrossPipelineWorkspace(liveApp: LiveApp, request: APIRequestContext) {
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get(`${liveApp.baseURL}/api/workspace`);
+        if (!response.ok()) return [];
+        const body = (await response.json()) as {
+          pipelines: Array<{ uuid: string; assets: Array<{ name: string }> }>;
+        };
+        return body.pipelines
+          .filter((pipeline) =>
+            [producerPipelineUUID, consumerPipelineUUID].includes(pipeline.uuid),
+          )
+          .map((pipeline) => pipeline.uuid)
+          .sort();
+      },
+      { timeout: 20_000 },
+    )
+    .toEqual([consumerPipelineUUID, producerPipelineUUID].sort());
 }
 
 async function waitForConsumerSchedule<T>(

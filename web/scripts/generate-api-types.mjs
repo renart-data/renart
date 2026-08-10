@@ -183,8 +183,13 @@ const sources = [
       "TypeCheckAsset",
       "TypeCheckSummary",
       "TypeCheckExternalRelation",
+      "TypeCheckCrossPipelineReference",
       "TypeCheckReport",
     ],
+  },
+  {
+    file: resolve(repoRoot, "internal", "web", "service", "asset_transactions.go"),
+    types: ["TransactionDependency"],
   },
   {
     file: resolve(repoRoot, "internal", "web", "service", "external_relation_import.go"),

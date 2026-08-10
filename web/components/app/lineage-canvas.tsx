@@ -57,6 +57,7 @@ export type AppLineageCanvasAsset = AppAsset & {
   pipelineId?: string;
   isMaterialized?: boolean;
   upstreams?: string[];
+  provisionalUpstreams?: string[];
   readOnly?: boolean;
 };
 
@@ -307,7 +308,13 @@ function derivedEdges(assets: AppLineageCanvasAsset[], links?: AppLineageLayoutE
     (asset.upstreams ?? [])
       .map((upstream) => assetByName.get(upstream) ?? assetById.get(upstream))
       .filter((source): source is AppLineageCanvasAsset => Boolean(source))
-      .map((source) => ({ source: source.id, target: asset.id })),
+      .map((source) => ({
+        source: source.id,
+        target: asset.id,
+        provisional: (asset.provisionalUpstreams ?? []).some(
+          (upstream) => upstream === source.id || upstream === source.name,
+        ),
+      })),
   );
 }
 
@@ -577,11 +584,15 @@ export function AppLineageCanvas({
         source: edge.source,
         target: edge.target,
         type: "default",
-        className: active ? "asset-edge-active" : "asset-edge",
-        animated: active,
+        className: edge.provisional
+          ? "asset-edge-provisional"
+          : active
+            ? "asset-edge-active"
+            : "asset-edge",
+        animated: active && !edge.provisional,
         style: {
-          stroke: active ? undefined : "#a1a1aa",
-          strokeWidth: active ? undefined : 1.5,
+          stroke: active || edge.provisional ? undefined : "#a1a1aa",
+          strokeWidth: active || edge.provisional ? undefined : 1.5,
           opacity: dimmed ? 0.12 : 1,
         },
       };

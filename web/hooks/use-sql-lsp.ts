@@ -33,6 +33,7 @@ import {
 } from "@/lib/atoms/domains/workspace";
 import { useSQLParseContext } from "@/hooks/use-sql-parse-context";
 import { fetchJSON } from "@/lib/api-core";
+import { applyAssetTransaction } from "@/lib/api-asset-transactions";
 import {
   isInsideSingleQuotedSQLString,
   provideLocalSQLCompletionItems,
@@ -62,6 +63,7 @@ export function useSQLLSP(
     documentContext?: "asset" | "adhoc" | "custom_check" | "hook";
     allowNonSQLDocument?: boolean;
     onImportExternalRelation?: (relationId: string) => void;
+    onActionError?: (message: string | null) => void;
   },
 ) {
   const workspace = useAtomValue(workspaceAtom);
@@ -94,6 +96,7 @@ export function useSQLLSP(
     onGoToAsset,
     onGoToCell,
     onImportExternalRelation: options?.onImportExternalRelation,
+    onActionError: options?.onActionError,
   });
   providerStateRef.current = {
     asset,
@@ -105,6 +108,7 @@ export function useSQLLSP(
     onGoToAsset,
     onGoToCell,
     onImportExternalRelation: options?.onImportExternalRelation,
+    onActionError: options?.onActionError,
   };
 
   useEffect(() => {
@@ -119,6 +123,27 @@ export function useSQLLSP(
     const importExternalRelationCommand = editor.addCommand(0, (_accessor, relationId: unknown) => {
       if (typeof relationId === "string" && relationId.trim()) {
         providerStateRef.current.onImportExternalRelation?.(relationId);
+      }
+    });
+    const renartActionCommand = editor.addCommand(0, async (_accessor, action: unknown) => {
+      if (!isSQLLSPRenartAction(action)) return;
+      const current = providerStateRef.current;
+      try {
+        current.onActionError?.(null);
+        if (action.type === "declare-cross-pipeline-dependency") {
+          await applyAssetTransaction(action.asset_id, {
+            type: "dependency.manual.add",
+            dependency: { uri: action.uri, mode: action.mode },
+          });
+          return;
+        }
+        if (action.type === "open-asset") {
+          current.onGoToAsset?.(action.pipeline_id, action.asset_id);
+        }
+      } catch (cause) {
+        current.onActionError?.(
+          cause instanceof Error ? cause.message : "The suggested change could not be applied.",
+        );
       }
     });
     const lspDocumentRequest = (content: string): SQLLSPRequest => {
@@ -394,7 +419,12 @@ export function useSQLLSP(
               (!action.action ||
                 (action.action.type === "import-external-relation" &&
                   providerStateRef.current.onImportExternalRelation &&
-                  importExternalRelationCommand)),
+                  importExternalRelationCommand) ||
+                (action.action.type === "declare-cross-pipeline-dependency" &&
+                  renartActionCommand) ||
+                (action.action.type === "open-asset" &&
+                  providerStateRef.current.onGoToAsset &&
+                  renartActionCommand)),
             ),
           )
           .map((action) =>
@@ -404,6 +434,7 @@ export function useSQLLSP(
               action,
               context.markers,
               importExternalRelationCommand,
+              renartActionCommand,
             ),
           );
         return { actions, dispose: () => undefined };
@@ -773,6 +804,7 @@ function codeActionToMonaco(
   action: SQLLSPCodeAction,
   markers: MonacoNS.editor.IMarkerData[],
   importExternalRelationCommand: string | null,
+  renartActionCommand: string | null,
 ): MonacoNS.languages.CodeAction {
   const command =
     action.action?.type === "import-external-relation" && importExternalRelationCommand
@@ -781,7 +813,13 @@ function codeActionToMonaco(
           title: action.title,
           arguments: [action.action.relation_id],
         }
-      : undefined;
+      : action.action && action.action.type !== "import-external-relation" && renartActionCommand
+        ? {
+            id: renartActionCommand,
+            title: action.title,
+            arguments: [action.action],
+          }
+        : undefined;
   return {
     title: action.title,
     kind: action.kind ?? "quickfix",
@@ -790,6 +828,28 @@ function codeActionToMonaco(
     command,
     isPreferred: action.isPreferred,
   };
+}
+
+function isSQLLSPRenartAction(
+  action: unknown,
+): action is Exclude<
+  NonNullable<SQLLSPCodeAction["action"]>,
+  { type: "import-external-relation" }
+> {
+  if (!action || typeof action !== "object" || !("type" in action)) return false;
+  const candidate = action as Record<string, unknown>;
+  if (candidate.type === "declare-cross-pipeline-dependency") {
+    return (
+      typeof candidate.asset_id === "string" &&
+      typeof candidate.uri === "string" &&
+      (candidate.mode === "full" || candidate.mode === "symbolic")
+    );
+  }
+  return (
+    candidate.type === "open-asset" &&
+    typeof candidate.pipeline_id === "string" &&
+    typeof candidate.asset_id === "string"
+  );
 }
 
 function markerRangeKey(marker: MonacoNS.editor.IMarkerData) {

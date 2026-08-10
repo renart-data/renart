@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 
 import { AssetCodeEditor } from "@/components/asset-code-editor";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useAssetContentEditing } from "@/hooks/use-asset-content-editing";
 import { useAssetMonaco } from "@/hooks/use-asset-monaco";
 import { useWorkspaceTheme } from "@/hooks/use-workspace-theme";
@@ -36,6 +38,7 @@ export function AppAssetEditor({
   onGoToJinjaVariable?: (variableName: string) => void;
 }) {
   const { monacoTheme } = useWorkspaceTheme();
+  const [lspActionError, setLSPActionError] = useState<string | null>(null);
   const { editorDisplayValue, editorValue, handleEditorChange, handleSaveSelectedAsset } =
     useAssetContentEditing({ asset, pipelineId });
   const { editorModelPath, formatSQL, handleBeforeMount, handleMount, isSqlAsset, shortcutLabel } =
@@ -44,6 +47,7 @@ export function AppAssetEditor({
       editorValue,
       onGoToAsset,
       onImportExternalRelation,
+      onLSPActionError: setLSPActionError,
       onGoToJinjaVariable,
       onInspect,
       onSave: handleSaveSelectedAsset,
@@ -81,6 +85,13 @@ export function AppAssetEditor({
             onAddDependency={addDependency}
           />
         </div>
+      ) : null}
+      {lspActionError ? (
+        <Alert variant="destructive" className="m-2 shrink-0 w-auto">
+          <AlertTriangle />
+          <AlertTitle>Suggested change failed</AlertTitle>
+          <AlertDescription>{lspActionError}</AlertDescription>
+        </Alert>
       ) : null}
     </div>
   );

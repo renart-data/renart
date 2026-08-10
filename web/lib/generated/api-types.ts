@@ -889,11 +889,14 @@ export type PipelineAssetRenderComparison = {
 export type TypeCheckResolutionTransaction = {
   type: string;
   column?: string;
+  dependency?: TransactionDependency;
 };
 
 export type TypeCheckResolutionAction = {
   type: string;
-  relation_id: string;
+  relation_id?: string;
+  pipeline_id?: string;
+  asset_id?: string;
 };
 
 export type TypeCheckResolution = {
@@ -947,6 +950,19 @@ export type TypeCheckExternalRelation = {
   referenced_by_asset_names: string[];
 };
 
+export type TypeCheckCrossPipelineReference = {
+  id: string;
+  status: string;
+  relation: string;
+  consumer_asset_id: string;
+  consumer_asset_name: string;
+  producer_asset_id: string;
+  producer_asset_name: string;
+  producer_pipeline_id: string;
+  producer_pipeline_name: string;
+  producer_uri?: string;
+};
+
 export type TypeCheckReport = {
   status: string;
   pipeline_id?: string;
@@ -955,7 +971,14 @@ export type TypeCheckReport = {
   end_date?: string;
   assets: TypeCheckAsset[];
   external_relations?: TypeCheckExternalRelation[];
+  cross_pipeline_references?: TypeCheckCrossPipelineReference[];
   summary: TypeCheckSummary;
+};
+
+export type TransactionDependency = {
+  asset?: string;
+  uri?: string;
+  mode?: string;
 };
 
 export type ExternalRelationImportRequest = {

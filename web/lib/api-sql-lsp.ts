@@ -50,10 +50,22 @@ export type SQLLSPCodeAction = {
   diagnostics?: SQLLSPDiagnostic[];
   edit?: SQLLSPWorkspaceEdit;
   isPreferred?: boolean;
-  action?: {
-    type: "import-external-relation";
-    relation_id: string;
-  };
+  action?:
+    | {
+        type: "import-external-relation";
+        relation_id: string;
+      }
+    | {
+        type: "declare-cross-pipeline-dependency";
+        asset_id: string;
+        uri: string;
+        mode: "full" | "symbolic";
+      }
+    | {
+        type: "open-asset";
+        pipeline_id: string;
+        asset_id: string;
+      };
 };
 
 export type SQLLSPHover = {

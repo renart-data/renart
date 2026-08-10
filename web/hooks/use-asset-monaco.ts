@@ -40,6 +40,7 @@ export function useAssetMonaco({
   inspectDiagnosticSnapshot = null,
   onGoToAsset,
   onImportExternalRelation,
+  onLSPActionError,
   onGoToJinjaVariable,
   onInspect,
   onSave,
@@ -49,6 +50,7 @@ export function useAssetMonaco({
   inspectDiagnosticSnapshot?: InspectDiagnosticSnapshot | null;
   onGoToAsset?: (pipelineId: string, assetId: string) => void;
   onImportExternalRelation?: (relationId: string) => void;
+  onLSPActionError?: (message: string | null) => void;
   onGoToJinjaVariable?: (variableName: string) => void;
   onInspect?: () => void;
   onSave?: () => void | Promise<unknown>;
@@ -95,6 +97,7 @@ export function useAssetMonaco({
     undefined,
     {
       onImportExternalRelation,
+      onActionError: onLSPActionError,
     },
   );
   useSQLCanvasHover(monacoInstance, editorInstance, asset);

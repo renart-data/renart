@@ -151,6 +151,12 @@ func (s *SQLLSPService) Diagnostics(ctx context.Context, req SQLLSPRequest) (SQL
 		)
 	} else {
 		diagnostics = appendUniqueServiceDiagnostics(diagnostics, s.assetDiagnostics(ctx, req.AssetID, doc)...)
+		if documentContext == "" || documentContext == "asset" {
+			state := s.deps.CurrentState()
+			for _, reference := range crossPipelineAuthoringReferences(state, req.AssetID, engine, doc) {
+				diagnostics = appendUniqueServiceDiagnostics(diagnostics, reference.diagnostic())
+			}
+		}
 	}
 	return SQLLSPResponse{Status: "ok", Diagnostics: diagnostics}, nil
 }
@@ -394,11 +400,21 @@ func (s *SQLLSPService) Rename(ctx context.Context, req SQLLSPRequest) (SQLLSPRe
 }
 
 func (s *SQLLSPService) CodeActions(ctx context.Context, req SQLLSPRequest) (SQLLSPResponse, *APIError) {
-	engine, doc, apiErr := s.engineAndDocument(ctx, req)
+	graph, doc, apiErr := s.graphAndDocument(ctx, req)
 	if apiErr != nil {
 		return SQLLSPResponse{}, apiErr
 	}
-	return SQLLSPResponse{Status: "ok", CodeActions: engine.CodeActions(doc)}, nil
+	engine := s.newEngine(graph)
+	actions := engine.CodeActions(doc)
+	documentContext := strings.ToLower(strings.TrimSpace(req.DocumentContext))
+	if documentContext == "" || documentContext == "asset" {
+		state := s.deps.CurrentState()
+		for _, reference := range crossPipelineAuthoringReferences(state, req.AssetID, engine, doc) {
+			diagnostic := reference.diagnostic()
+			actions = append(actions, reference.codeActions(diagnostic)...)
+		}
+	}
+	return SQLLSPResponse{Status: "ok", CodeActions: actions}, nil
 }
 
 func (s *SQLLSPService) Hover(ctx context.Context, req SQLLSPRequest) (SQLLSPResponse, *APIError) {

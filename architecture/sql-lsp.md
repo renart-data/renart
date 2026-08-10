@@ -151,6 +151,17 @@ coordinator's `WorkspaceState` rather than the filesystem:
   of every same-connection consumer in the fresh report. Imported relations
   immediately stop producing external warnings under every unambiguous catalog
   spelling. Connection secrets never enter the graph or response.
+- The embedded Monaco adapter also compares each physical relation use in a
+  saved pipeline asset body with the pipeline that owns the resolved authored
+  asset. A unique sibling-pipeline producer without a persisted URI dependency
+  is a document warning in Monaco and interactive type-check. If both assets
+  have the same known effective connection and the producer declares a URI,
+  reviewed quick fixes add either a full or symbolic dependency through the
+  semantic transaction API. A missing producer URI offers navigation to the
+  producer; ambiguous names, unknown connections, and connection mismatches are
+  explanation-only and never invent or persist an identity. Ad-hoc queries,
+  notebook cells, hooks, checks, the offline stdio LSP, and planning type-checks
+  do not run this workspace authoring policy.
 - Asset/header rules shared with type-check (local dependency existence,
   duplicate/unresolved URI producers, cross-pipeline cycles,
   materialization metadata, missing output declarations, render failures, and

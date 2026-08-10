@@ -473,6 +473,57 @@ type ExternalRelationReference struct {
 	Range        Range
 }
 
+// DocumentRelation is one physical relation used by a SQL document. The raw
+// Name and source Range are always present; ResolvedName and AssetID are set
+// only when the canonical graph resolves the use to an authored relation.
+// Web integrations use this provider-neutral shape to layer workspace policy
+// such as cross-pipeline dependency declarations without reparsing SQL.
+type DocumentRelation struct {
+	Name         string
+	ResolvedName string
+	AssetID      string
+	Range        Range
+}
+
+// DocumentRelations returns non-CTE relation uses from the rendered document,
+// source-mapped back to the authoring buffer when a projection is attached.
+// Unresolved uses are retained so adapters can explain ambiguous workspace
+// matches without changing the core graph's resolution policy.
+func (e *Engine) DocumentRelations(doc TextDocumentItem) []DocumentRelation {
+	projection := e.renderDocument(doc)
+	analysis := analyzeSQLWithResolver(projection.doc.Text, e)
+	relations := make([]DocumentRelation, 0, len(analysis.relations))
+	for _, use := range analysis.relations {
+		if _, isCTE := analysis.ctes[strings.ToLower(use.name)]; isCTE || strings.HasPrefix(use.name, "{{") {
+			continue
+		}
+		relation := DocumentRelation{
+			Name:  use.name,
+			Range: RangeFromOffsets(projection.doc.Text, use.start, use.end),
+		}
+		if resolved := e.resolveRelation(use.name); resolved != nil {
+			relation.ResolvedName = resolved.Name
+			relation.AssetID = resolved.AssetID
+		}
+		relations = append(relations, relation)
+	}
+	if projection.changed {
+		for index := range relations {
+			relations[index].Range = projection.rendered.TemplateRangeForGenerated(doc.Text, relations[index].Range)
+		}
+	}
+	sort.SliceStable(relations, func(i, j int) bool {
+		if relations[i].Range.Start.Line != relations[j].Range.Start.Line {
+			return relations[i].Range.Start.Line < relations[j].Range.Start.Line
+		}
+		if relations[i].Range.Start.Character != relations[j].Range.Start.Character {
+			return relations[i].Range.Start.Character < relations[j].Range.Start.Character
+		}
+		return relations[i].Name < relations[j].Name
+	})
+	return relations
+}
+
 // ExternalRelationReferences returns only positively resolved remote-catalog
 // references. SQL text that is merely unresolved never becomes an external
 // relation through this API.

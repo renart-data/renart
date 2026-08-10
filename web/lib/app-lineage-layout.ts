@@ -11,6 +11,7 @@ export type AppLineageLayoutNode = {
 export type AppLineageLayoutEdge = {
   source: string;
   target: string;
+  provisional?: boolean;
 };
 
 export type AppLineageLayoutRecommendation = {

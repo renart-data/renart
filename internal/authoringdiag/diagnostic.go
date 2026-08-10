@@ -51,6 +51,8 @@ const (
 	CodeUnmaterializedColumn            = "unmaterialized-column"
 	CodeCrossConnectionReference        = "cross-connection-reference"
 	CodeExternalRelation                = "external-relation"
+	CodeCrossPipelineDependencyMissing  = "undeclared-cross-pipeline-dependency"
+	CodeCrossPipelineRelationAmbiguous  = "ambiguous-cross-pipeline-relation"
 	CodeDependencyValidationFailed      = "dependency-validation-failed"
 	CodeMissingDependency               = "missing-dependency"
 	CodeCrossPipelineDuplicateURI       = "cross-pipeline-duplicate-uri"
@@ -117,6 +119,8 @@ var typeCheckDelivery = map[string]EditorDelivery{
 	CodeUnmaterializedColumn:            DeliveryDocument,
 	CodeCrossConnectionReference:        DeliveryDocument,
 	CodeExternalRelation:                DeliveryDocument,
+	CodeCrossPipelineDependencyMissing:  DeliveryDocument,
+	CodeCrossPipelineRelationAmbiguous:  DeliveryDocument,
 	CodeDependencyValidationFailed:      DeliveryAssetHeader,
 	CodeMissingDependency:               DeliveryAssetHeader,
 	CodeCrossPipelineDuplicateURI:       DeliveryAssetHeader,

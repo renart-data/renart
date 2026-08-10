@@ -961,6 +961,51 @@ from {{ ref("missing_orders") }}`))
 	}
 }
 
+func TestEngineDocumentRelationsRetainsResolvedAndUnresolvedPhysicalUses(t *testing.T) {
+	engine := NewEngine(CanonicalGraph{
+		Version: 1,
+		Assets: []AssetNode{{
+			ID:              "sibling-orders",
+			Name:            "raw.orders",
+			OutputRelations: []string{"relation:raw.orders"},
+		}},
+		Relations: []RelationNode{{
+			ID:      "relation:raw.orders",
+			Name:    "raw.orders",
+			AssetID: "sibling-orders",
+		}},
+	})
+	doc := TextDocumentItem{URI: "file:///report.sql", Text: `with local_orders as (
+  select * from raw.orders
+)
+select *
+from local_orders
+join missing.customers on true`}
+
+	relations := engine.DocumentRelations(doc)
+	if len(relations) != 2 {
+		t.Fatalf("expected physical relation uses only, got %#v", relations)
+	}
+	byName := make(map[string]DocumentRelation, len(relations))
+	for _, relation := range relations {
+		byName[relation.Name] = relation
+	}
+	resolved := byName["raw.orders"]
+	if resolved.ResolvedName != "raw.orders" || resolved.AssetID != "sibling-orders" {
+		t.Fatalf("expected resolved authored relation, got %#v", resolved)
+	}
+	if got := doc.Text[ByteOffset(doc.Text, resolved.Range.Start):ByteOffset(doc.Text, resolved.Range.End)]; got != "raw.orders" {
+		t.Fatalf("expected source range for raw.orders, got %q", got)
+	}
+	unresolved := byName["missing.customers"]
+	if unresolved.ResolvedName != "" || unresolved.AssetID != "" {
+		t.Fatalf("expected unresolved physical relation to be retained, got %#v", unresolved)
+	}
+	if got := doc.Text[ByteOffset(doc.Text, unresolved.Range.Start):ByteOffset(doc.Text, unresolved.Range.End)]; got != "missing.customers" {
+		t.Fatalf("expected source range for missing.customers, got %q", got)
+	}
+}
+
 func TestRenderedSourceMapHandlesRangesAcrossTemplateSegments(t *testing.T) {
 	engine := NewEngine(CanonicalGraph{
 		Version: 1,

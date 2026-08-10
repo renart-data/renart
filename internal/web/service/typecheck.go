@@ -52,6 +52,7 @@ func (s *PipelineService) TypeCheck(ctx context.Context, pipelineID, startDate, 
 	if state, stateErr := NewWorkspaceService(s.workspaceRoot, "").ComputeState(ctx); stateErr == nil {
 		workspaceGraph := buildWorkspaceCanonicalGraph(ctx, s.workspaceRoot, state)
 		options.WorkspaceGraph = &workspaceGraph
+		options.WorkspaceState = &state
 		options.DependencyDiagnostics = append(
 			[]webmodel.WorkspaceDependencyDiagnostic(nil),
 			state.DependencyDiagnostics...,
@@ -101,15 +102,21 @@ type TypeCheckResolution struct {
 }
 
 type TypeCheckResolutionTransaction struct {
-	Type   string `json:"type"`
-	Column string `json:"column,omitempty"`
+	Type       string                 `json:"type"`
+	Column     string                 `json:"column,omitempty"`
+	Dependency *TransactionDependency `json:"dependency,omitempty"`
 }
 
-const typeCheckResolutionActionImportExternalRelation = "import-external-relation"
+const (
+	typeCheckResolutionActionImportExternalRelation = "import-external-relation"
+	typeCheckResolutionActionOpenAsset              = "open-asset"
+)
 
 type TypeCheckResolutionAction struct {
 	Type       string `json:"type"`
-	RelationID string `json:"relation_id"`
+	RelationID string `json:"relation_id,omitempty"`
+	PipelineID string `json:"pipeline_id,omitempty"`
+	AssetID    string `json:"asset_id,omitempty"`
 }
 
 // TypeCheckAsset is the per-asset result of a pipeline type check.
@@ -146,16 +153,34 @@ type TypeCheckExternalRelation struct {
 	ReferencedByAssetNames []string    `json:"referenced_by_asset_names"`
 }
 
+// TypeCheckCrossPipelineReference is an authoring-only observation that links
+// a SQL relation use to a producer in another pipeline before the consumer has
+// declared Bruin's explicit URI dependency. It drives provisional canvas
+// lineage and disappears as soon as the dependency is persisted.
+type TypeCheckCrossPipelineReference struct {
+	ID                   string `json:"id"`
+	Status               string `json:"status"`
+	Relation             string `json:"relation"`
+	ConsumerAssetID      string `json:"consumer_asset_id"`
+	ConsumerAssetName    string `json:"consumer_asset_name"`
+	ProducerAssetID      string `json:"producer_asset_id"`
+	ProducerAssetName    string `json:"producer_asset_name"`
+	ProducerPipelineID   string `json:"producer_pipeline_id"`
+	ProducerPipelineName string `json:"producer_pipeline_name"`
+	ProducerURI          string `json:"producer_uri,omitempty"`
+}
+
 // TypeCheckReport is the full result of type-checking a pipeline.
 type TypeCheckReport struct {
-	Status            string                      `json:"status"`
-	PipelineID        string                      `json:"pipeline_id,omitempty"`
-	PipelineName      string                      `json:"pipeline_name"`
-	StartDate         string                      `json:"start_date,omitempty"`
-	EndDate           string                      `json:"end_date,omitempty"`
-	Assets            []TypeCheckAsset            `json:"assets"`
-	ExternalRelations []TypeCheckExternalRelation `json:"external_relations,omitempty"`
-	Summary           TypeCheckSummary            `json:"summary"`
+	Status                  string                            `json:"status"`
+	PipelineID              string                            `json:"pipeline_id,omitempty"`
+	PipelineName            string                            `json:"pipeline_name"`
+	StartDate               string                            `json:"start_date,omitempty"`
+	EndDate                 string                            `json:"end_date,omitempty"`
+	Assets                  []TypeCheckAsset                  `json:"assets"`
+	ExternalRelations       []TypeCheckExternalRelation       `json:"external_relations,omitempty"`
+	CrossPipelineReferences []TypeCheckCrossPipelineReference `json:"cross_pipeline_references,omitempty"`
+	Summary                 TypeCheckSummary                  `json:"summary"`
 }
 
 // CheckPipeline type-checks every asset in a parsed pipeline.
@@ -194,6 +219,7 @@ type typeCheckOptions struct {
 	RemoteCatalog         RemoteCatalogProvider
 	Environment           string
 	WorkspaceGraph        *sqllsp.CanonicalGraph
+	WorkspaceState        *webmodel.WorkspaceState
 	DependencyDiagnostics []webmodel.WorkspaceDependencyDiagnostic
 }
 
@@ -240,6 +266,24 @@ func checkPipelineAt(
 		assetSnapshot := typeCheckSnapshotWithRemoteCatalog(snapshot, pp, asset, options)
 		connectionEngine := sqllsp.NewEngine(assetSnapshot.Graph)
 		ac := checkAsset(ctx, pp, workspaceRoot, asset, assetSnapshot, connectionEngine)
+		if options.WorkspaceState != nil {
+			sourceText := assetSQLSource(asset)
+			for _, unit := range assetSnapshot.RenderedUnits[asset] {
+				doc := sqllsp.TextDocumentItem{
+					URI:        typeCheckAssetURI(workspaceRoot, asset),
+					LanguageID: "sql",
+					Text:       unit.RenderedSQL,
+				}
+				for _, reference := range crossPipelineAuthoringReferences(*options.WorkspaceState, ac.ID, connectionEngine, doc) {
+					finding := findingFromMappedLSPDiagnostic(sourceText, unit, unit.RenderedSQL, reference.diagnostic())
+					finding.Resolutions = reference.typeCheckResolutions()
+					ac.Findings = append(ac.Findings, finding)
+					if reportReference, ok := reference.reportReference(); ok {
+						appendTypeCheckCrossPipelineReference(&report, reportReference)
+					}
+				}
+			}
+		}
 		for _, diagnostic := range options.DependencyDiagnostics {
 			if diagnostic.AssetID == ac.ID {
 				ac.Findings = append(ac.Findings, workspaceDependencyTypeCheckFinding(diagnostic))
@@ -272,7 +316,22 @@ func checkPipelineAt(
 		}
 		return report.ExternalRelations[i].QualifiedName < report.ExternalRelations[j].QualifiedName
 	})
+	sort.Slice(report.CrossPipelineReferences, func(i, j int) bool {
+		return report.CrossPipelineReferences[i].ID < report.CrossPipelineReferences[j].ID
+	})
 	return report
+}
+
+func appendTypeCheckCrossPipelineReference(report *TypeCheckReport, reference TypeCheckCrossPipelineReference) {
+	if report == nil || strings.TrimSpace(reference.ID) == "" {
+		return
+	}
+	for _, current := range report.CrossPipelineReferences {
+		if current.ID == reference.ID {
+			return
+		}
+	}
+	report.CrossPipelineReferences = append(report.CrossPipelineReferences, reference)
 }
 
 func mergeTypeCheckWorkspaceGraph(local, workspace sqllsp.CanonicalGraph) sqllsp.CanonicalGraph {
