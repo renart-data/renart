@@ -973,6 +973,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 					}
 					entries[assetName] = webscheduler.ExecutionTargetSnapshotEntry{
 						AssetID:                     entry.AssetID,
+						ExternalSource:              entry.ExternalSource,
 						TargetIdentity:              entry.TargetIdentity,
 						TargetFidelity:              string(entry.TargetFidelity),
 						TargetWriteEvidenceRequired: entry.TargetWriteEvidenceRequired,

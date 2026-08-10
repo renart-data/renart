@@ -7,6 +7,7 @@ const (
 	ExecutionTargetSnapshotVersionV2 = 2
 	ExecutionTargetSnapshotVersionV3 = 3
 	ExecutionTargetSnapshotVersionV4 = 4
+	ExecutionTargetSnapshotVersionV5 = 5
 )
 
 type RunStatus string
@@ -435,6 +436,7 @@ type ExecutionUpstreamSnapshot struct {
 
 type ExecutionTargetSnapshotEntry struct {
 	AssetID                     string                       `json:"asset_id"`
+	ExternalSource              bool                         `json:"external_source,omitempty"`
 	TargetIdentity              string                       `json:"target_identity,omitempty"`
 	TargetFidelity              string                       `json:"target_fidelity"`
 	TargetWriteEvidenceRequired bool                         `json:"target_write_evidence_required,omitempty"`

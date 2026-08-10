@@ -258,6 +258,7 @@ func (s *ExecutionService) emitRunCompletedForSpec(ctx context.Context, spec Pip
 			}
 			event.ExecutionTargets[assetName] = bus.ExecutionTargetSnapshotEntry{
 				AssetID:                     entry.AssetID,
+				ExternalSource:              entry.ExternalSource,
 				TargetIdentity:              entry.TargetIdentity,
 				TargetFidelity:              string(entry.TargetFidelity),
 				TargetWriteEvidenceRequired: entry.TargetWriteEvidenceRequired,
@@ -2601,6 +2602,7 @@ func schedulerExecutionTargetSnapshot(snapshot ExecutionTargetSnapshot) websched
 		}
 		entries[assetName] = webscheduler.ExecutionTargetSnapshotEntry{
 			AssetID:                     entry.AssetID,
+			ExternalSource:              entry.ExternalSource,
 			TargetIdentity:              entry.TargetIdentity,
 			TargetFidelity:              string(entry.TargetFidelity),
 			TargetWriteEvidenceRequired: entry.TargetWriteEvidenceRequired,

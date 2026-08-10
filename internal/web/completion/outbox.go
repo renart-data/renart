@@ -23,6 +23,7 @@ const (
 	targetSnapshotVersionV2 = 2
 	targetSnapshotVersionV3 = 3
 	targetSnapshotVersionV4 = 4
+	targetSnapshotVersionV5 = 5
 )
 
 var (
@@ -268,6 +269,7 @@ type upstreamWriterV1 struct {
 
 type executionTargetV1 struct {
 	AssetID                     string                `json:"asset_id"`
+	ExternalSource              bool                  `json:"external_source,omitempty"`
 	TargetIdentity              string                `json:"target_identity"`
 	TargetFidelity              string                `json:"target_fidelity"`
 	TargetWriteEvidenceRequired bool                  `json:"target_write_evidence_required,omitempty"`
@@ -405,7 +407,8 @@ func validateEvent(event bus.RunCompleted) error {
 	}
 	if event.ExecutionTargetSnapshotVersion != targetSnapshotVersionV2 &&
 		event.ExecutionTargetSnapshotVersion != targetSnapshotVersionV3 &&
-		event.ExecutionTargetSnapshotVersion != targetSnapshotVersionV4 {
+		event.ExecutionTargetSnapshotVersion != targetSnapshotVersionV4 &&
+		event.ExecutionTargetSnapshotVersion != targetSnapshotVersionV5 {
 		return fmt.Errorf(
 			"%w: execution target snapshot version %d is not a supported self-contained version",
 			ErrInvalidEnvelope,
@@ -635,6 +638,14 @@ func validateExecutionTarget(assetName string, entry bus.ExecutionTargetSnapshot
 			err,
 		)
 	}
+	if version < targetSnapshotVersionV5 && entry.ExternalSource {
+		return fmt.Errorf(
+			"%w: execution target %q identifies an external source before version %d",
+			ErrInvalidEnvelope,
+			assetName,
+			targetSnapshotVersionV5,
+		)
+	}
 	for field, value := range map[string]string{
 		"fingerprint":        entry.Fingerprint,
 		"own_content":        entry.OwnContent,
@@ -757,7 +768,8 @@ func eventToV1(event bus.RunCompleted) completedRunV1 {
 			executionContract = &contract
 		}
 		targets[assetName] = executionTargetV1{
-			AssetID: target.AssetID, TargetIdentity: target.TargetIdentity,
+			AssetID: target.AssetID, ExternalSource: target.ExternalSource,
+			TargetIdentity: target.TargetIdentity,
 			TargetFidelity: target.TargetFidelity, TargetWriteEvidenceRequired: target.TargetWriteEvidenceRequired,
 			WriteResourceKind: target.WriteResourceKind, WriteResourceIdentity: target.WriteResourceIdentity,
 			WriteResourceFidelity: target.WriteResourceFidelity,
@@ -827,7 +839,8 @@ func eventFromV1(event completedRunV1) bus.RunCompleted {
 			executionContract = executionContractFromV1(*target.ExecutionContract)
 		}
 		targets[assetName] = bus.ExecutionTargetSnapshotEntry{
-			AssetID: target.AssetID, TargetIdentity: target.TargetIdentity,
+			AssetID: target.AssetID, ExternalSource: target.ExternalSource,
+			TargetIdentity: target.TargetIdentity,
 			TargetFidelity: target.TargetFidelity, TargetWriteEvidenceRequired: target.TargetWriteEvidenceRequired,
 			WriteResourceKind: target.WriteResourceKind, WriteResourceIdentity: target.WriteResourceIdentity,
 			WriteResourceFidelity: target.WriteResourceFidelity,

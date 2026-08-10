@@ -121,9 +121,11 @@ type ExecutionContractSnapshot struct {
 // ExecutionTargetSnapshotEntry is one value-only entry captured before any
 // main task starts. The RunCompleted map is keyed by canonical asset name so
 // an executed downstream can still resolve the captured identity of an
-// upstream that was not part of the selected run.
+// upstream that was not part of the selected run. ExternalSource means
+// consumers need no Renart materialization fact for the captured declaration.
 type ExecutionTargetSnapshotEntry struct {
 	AssetID                     string
+	ExternalSource              bool
 	TargetIdentity              string
 	TargetFidelity              string
 	TargetWriteEvidenceRequired bool

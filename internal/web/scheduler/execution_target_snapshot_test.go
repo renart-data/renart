@@ -52,6 +52,46 @@ func TestStorePersistsImmutableExecutionTargetSnapshotForRunAndRecovery(t *testi
 	require.ErrorContains(t, store.SetRunExecutionTargetSnapshot(ctx, runID, snapshot), "already terminal")
 }
 
+func TestStorePersistsVersionFiveExternalSourceEvidence(t *testing.T) {
+	t.Parallel()
+	store, err := OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	require.NoError(t, err)
+	defer store.Close()
+	ctx := context.Background()
+	runID, err := store.Create(ctx, PipelineRun{
+		ID: "source-target-run", PipelineID: "pipeline-id", Pipeline: "analytics",
+		Trigger: RunTriggerManual, Status: RunStatusQueued,
+	})
+	require.NoError(t, err)
+	assetID := "pipeline-uuid:public.accounts"
+	snapshot := ExecutionTargetSnapshot{
+		Version: ExecutionTargetSnapshotVersionV5, PipelineUUID: "pipeline-uuid",
+		Entries: map[string]ExecutionTargetSnapshotEntry{
+			"public.accounts": {
+				AssetID: assetID, ExternalSource: true, TargetFidelity: ExecutionTargetFidelityRuntimeOnly,
+				WriteResourceKind: "pipeline", WriteResourceFidelity: ExecutionTargetFidelityRuntimeOnly,
+				ExecutionContract: PipelineRunExecutionContract{
+					AssetID: assetID, AssetName: "public.accounts", ConnectionKeys: []string{},
+					MutationResources: PipelineRunPlanResources{
+						Isolation: PipelineRunResourceIsolationPipeline, Claims: []PipelineRunResourceClaim{},
+					},
+					CoordinationResources: PipelineRunPlanResources{
+						Isolation: PipelineRunResourceIsolationPipeline, Claims: []PipelineRunResourceClaim{},
+					},
+				},
+				Fingerprint: "v3:source", OwnContent: "v3:source-own",
+				ConsumedVarsHash: "consumed-source", VarsHash: "all-vars", CoverageMode: "marker",
+			},
+		},
+	}
+
+	require.NoError(t, store.SetRunExecutionTargetSnapshot(ctx, runID, snapshot))
+	run, _, _, err := store.Get(ctx, runID)
+	require.NoError(t, err)
+	require.NotNil(t, run.ExecutionTargetSnapshot)
+	assert.True(t, run.ExecutionTargetSnapshot.Entries["public.accounts"].ExternalSource)
+}
+
 func TestStoreValidatesExecutionTargetSnapshotIdentity(t *testing.T) {
 	t.Parallel()
 	store, err := OpenStore(filepath.Join(t.TempDir(), "state.db"))
@@ -109,6 +149,11 @@ func TestStoreValidatesExecutionTargetSnapshotIdentity(t *testing.T) {
 		{name: "missing fingerprint evidence", mutate: func(snapshot *ExecutionTargetSnapshot) {
 			entry := snapshot.Entries["analytics.orders"]
 			entry.OwnContent = ""
+			snapshot.Entries["analytics.orders"] = entry
+		}},
+		{name: "external source before version five", mutate: func(snapshot *ExecutionTargetSnapshot) {
+			entry := snapshot.Entries["analytics.orders"]
+			entry.ExternalSource = true
 			snapshot.Entries["analytics.orders"] = entry
 		}},
 	}

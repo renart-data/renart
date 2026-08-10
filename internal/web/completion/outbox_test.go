@@ -55,20 +55,7 @@ func TestOutboxRoundTripsVersionFourExecutionContracts(t *testing.T) {
 	event := completeEvent("completion-v4")
 	event.ExecutionTargetSnapshotVersion = 4
 	entry := event.ExecutionTargets["analytics.orders"]
-	resource := bus.ExecutionResourceClaim{
-		Kind: entry.WriteResourceKind, Identity: entry.WriteResourceIdentity,
-	}
-	entry.ExecutionContract = bus.ExecutionContractSnapshot{
-		AssetID:        entry.AssetID,
-		AssetName:      "analytics.orders",
-		ConnectionKeys: []string{strings.Repeat("b", 64)},
-		MutationResources: bus.ExecutionResources{
-			Isolation: "resources", Claims: []bus.ExecutionResourceClaim{resource},
-		},
-		CoordinationResources: bus.ExecutionResources{
-			Isolation: "resources", Claims: []bus.ExecutionResourceClaim{resource},
-		},
-	}
+	entry.ExecutionContract = exactExecutionContract(entry, "analytics.orders")
 	event.ExecutionTargets["analytics.orders"] = entry
 
 	require.NoError(t, store.Enqueue(ctx, event))
@@ -76,6 +63,35 @@ func TestOutboxRoundTripsVersionFourExecutionContracts(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, pending, 1)
 	assert.Equal(t, entry.ExecutionContract, pending[0].Event.ExecutionTargets["analytics.orders"].ExecutionContract)
+}
+
+func TestOutboxRoundTripsVersionFiveExternalSourceEvidence(t *testing.T) {
+	t.Parallel()
+	store, _ := newOutboxStore(t)
+	ctx := context.Background()
+	event := completeEvent("completion-v5-source")
+	event.ExecutionTargetSnapshotVersion = 5
+	consumer := event.ExecutionTargets["analytics.orders"]
+	consumer.ExecutionContract = exactExecutionContract(consumer, "analytics.orders")
+	event.ExecutionTargets["analytics.orders"] = consumer
+	source := bus.ExecutionTargetSnapshotEntry{
+		AssetID: "pipeline-uuid:raw.orders", ExternalSource: true,
+		TargetFidelity: "runtime_only", WriteResourceKind: "pipeline", WriteResourceFidelity: "runtime_only",
+		Fingerprint: "v3:source", OwnContent: "v3:source-own",
+		ConsumedVarsHash: "consumed-source", VarsHash: "all-vars", CoverageMode: "marker",
+	}
+	source.ExecutionContract = bus.ExecutionContractSnapshot{
+		AssetID: source.AssetID, AssetName: "raw.orders", ConnectionKeys: []string{},
+		MutationResources:     bus.ExecutionResources{Isolation: "pipeline", Claims: []bus.ExecutionResourceClaim{}},
+		CoordinationResources: bus.ExecutionResources{Isolation: "pipeline", Claims: []bus.ExecutionResourceClaim{}},
+	}
+	event.ExecutionTargets["raw.orders"] = source
+
+	require.NoError(t, store.Enqueue(ctx, event))
+	pending, err := store.ListPending(ctx)
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.True(t, pending[0].Event.ExecutionTargets["raw.orders"].ExternalSource)
 }
 
 func TestOutboxAcceptsReviewedCrossPipelineUpstreamWriter(t *testing.T) {
@@ -290,6 +306,20 @@ func completeEvent(completionID string) bus.RunCompleted {
 		},
 		SnapshotVersionID: "snapshot-version",
 		SnapshotDir:       "/ephemeral/deployed/snapshot",
+	}
+}
+
+func exactExecutionContract(entry bus.ExecutionTargetSnapshotEntry, assetName string) bus.ExecutionContractSnapshot {
+	resource := bus.ExecutionResourceClaim{Kind: entry.WriteResourceKind, Identity: entry.WriteResourceIdentity}
+	return bus.ExecutionContractSnapshot{
+		AssetID: entry.AssetID, AssetName: assetName,
+		ConnectionKeys: []string{strings.Repeat("b", 64)},
+		MutationResources: bus.ExecutionResources{
+			Isolation: "resources", Claims: []bus.ExecutionResourceClaim{resource},
+		},
+		CoordinationResources: bus.ExecutionResources{
+			Isolation: "resources", Claims: []bus.ExecutionResourceClaim{resource},
+		},
 	}
 }
 

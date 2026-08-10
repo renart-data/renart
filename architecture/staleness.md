@@ -120,8 +120,12 @@ with no writer row.
 Immediately before physical execution, the direct runner captures a versioned,
 secret-free snapshot of the full parsed graph: stable pipeline/asset identity,
 target identity and fidelity, fingerprints, dependency edges, coverage mode,
-variables hash, and refresh restriction. Scheduler-backed runs persist this
-snapshot before their first step; interactive asset, scoped, Build-needed,
+variables hash, refresh restriction, and the external-source read contract.
+Version-five snapshots retain that source marker through scheduler persistence,
+completion outbox replay, and crash recovery, so a successful consumer can
+achieve its captured fingerprint without inventing a source materialization
+fact. Scheduler-backed runs persist this snapshot before their first step;
+interactive asset, scoped, Build-needed,
 legacy `/api/run`, and quickstart builds carry the same evidence directly into
 their completion envelope. At each main-task start Renart captures the exact
 latest-writer read set for its in-pipeline upstream targets, then claims its own

@@ -17,7 +17,7 @@ import (
 
 // ExecutionTargetSnapshotVersion is the persisted execution-target contract.
 // Bump it when entry semantics or identity derivation change incompatibly.
-const ExecutionTargetSnapshotVersion = 4
+const ExecutionTargetSnapshotVersion = 5
 
 type ExecutionCoverageMode string
 
@@ -61,9 +61,11 @@ type ExecutionTargetSnapshot struct {
 // connection, endpoint, or credential-bearing configuration. TargetIdentity
 // is the opaque secret-free digest produced by the physical-target resolver;
 // runtime-only targets remain explicit through TargetFidelity and an empty
-// TargetIdentity.
+// TargetIdentity. ExternalSource preserves the source declaration's
+// immediately achievable read contract for completion recording and recovery.
 type ExecutionTargetSnapshotEntry struct {
 	AssetID                     string                        `json:"asset_id"`
+	ExternalSource              bool                          `json:"external_source,omitempty"`
 	TargetIdentity              string                        `json:"target_identity"`
 	TargetFidelity              AssetRenderFidelity           `json:"target_fidelity"`
 	TargetWriteEvidenceRequired bool                          `json:"target_write_evidence_required,omitempty"`
@@ -184,6 +186,7 @@ func (e *HybridBruinExecutor) resolveExecutionTargetSnapshotForReviewedSelection
 		}
 		entry := ExecutionTargetSnapshotEntry{
 			AssetID:                     assetID,
+			ExternalSource:              isSourceAssetType(asset.Type),
 			TargetIdentity:              target.Identity,
 			TargetFidelity:              target.Fidelity,
 			TargetWriteEvidenceRequired: pythonTargetWriteEvidenceRequired(asset, target),

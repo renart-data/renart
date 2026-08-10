@@ -106,6 +106,55 @@ func TestRecorderUsesCapturedTargetsAndDurableLatestUpstreamWriter(t *testing.T)
 	assert.Equal(t, string(results[downstreamID].FP), coverage[downstreamID][0].Fingerprint)
 }
 
+func TestRecorderTreatsCapturedExternalSourceDeclarationAsAchievable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	store := openTestStore(t)
+	engine := fingerprint.NewEngine()
+	source := &pipeline.Asset{
+		Name: "public.accounts", Type: pipeline.AssetType("pg.source"),
+	}
+	consumer := recorderSQLAsset("analytics.accounts", "select * from public.accounts")
+	consumer.Upstreams = []pipeline.Upstream{{Type: "asset", Value: source.Name}}
+	pl := &pipeline.Pipeline{LegacyID: "pipeline-uuid", Name: "analytics", Assets: []*pipeline.Asset{source, consumer}}
+	vars := fingerprint.EffectiveVars(pl, nil)
+	results, err := engine.DAG(pl, vars)
+	require.NoError(t, err)
+	varsHash := fingerprint.AllVarsHash(vars)
+	sourceID := identity.AssetID(pl.LegacyID, source.Name)
+	consumerID := identity.AssetID(pl.LegacyID, consumer.Name)
+
+	sourceEntry := withCapturedSemantics(recorderTargetEntry(sourceID, "", results[sourceID], varsHash), source)
+	sourceEntry.ExternalSource = true
+	sourceEntry.TargetFidelity = "runtime_only"
+	sourceEntry.WriteResourceKind = "pipeline"
+	sourceEntry.WriteResourceFidelity = "runtime_only"
+	sourceEntry = withCapturedExecutionContract(sourceEntry, source.Name)
+	consumerEntry := withCapturedWriteResource(
+		withCapturedSemantics(recorderTargetEntry(consumerID, "target-consumer", results[consumerID], varsHash), consumer),
+	)
+	consumerEntry.Upstreams[0].ResolvedAssetID = sourceID
+	consumerEntry = withCapturedExecutionContract(consumerEntry, consumer.Name)
+	entries := map[string]bus.ExecutionTargetSnapshotEntry{
+		source.Name: sourceEntry, consumer.Name: consumerEntry,
+	}
+	finished := time.Date(2026, 8, 11, 10, 0, 0, 0, time.UTC)
+	recorder := matlog.NewRecorder(store, engine, nil, nil, nil)
+	require.NoError(t, recorder.HandleRunCompleted(bus.RunCompleted{
+		RunID: "consumer-run", CompletionID: "consumer-run", PipelineUUID: pl.LegacyID,
+		Environment: "default", CompletedAt: finished,
+		ExecutionTargetSnapshotVersion: 5, ExecutionPipelineUUID: pl.LegacyID,
+		ExecutionTargets: entries,
+		Assets:           []bus.AssetRun{capturedAssetRun(consumer.Name, consumerID, consumerEntry, finished)},
+	}))
+
+	writers, err := store.LatestWriters(ctx, []string{consumerEntry.TargetIdentity})
+	require.NoError(t, err)
+	require.Contains(t, writers, consumerEntry.TargetIdentity)
+	assert.Equal(t, string(results[consumerID].FP), writers[consumerEntry.TargetIdentity].Fingerprint,
+		"a successful consumer must achieve its current target without a source materialization fact")
+}
+
 func TestRecorderRejectsCompletionThatDiffersFromCapturedSnapshot(t *testing.T) {
 	t.Parallel()
 	store := openTestStore(t)
@@ -444,6 +493,27 @@ func withCapturedSemantics(entry bus.ExecutionTargetSnapshotEntry, asset *pipeli
 	entry.Upstreams = make([]bus.ExecutionUpstreamSnapshot, 0, len(asset.Upstreams))
 	for _, upstream := range asset.Upstreams {
 		entry.Upstreams = append(entry.Upstreams, bus.ExecutionUpstreamSnapshot{Type: upstream.Type, Value: upstream.Value})
+	}
+	return entry
+}
+
+func withCapturedExecutionContract(entry bus.ExecutionTargetSnapshotEntry, assetName string) bus.ExecutionTargetSnapshotEntry {
+	mutation := bus.ExecutionResources{Isolation: "pipeline", Claims: []bus.ExecutionResourceClaim{}}
+	if entry.WriteResourceFidelity == "exact" {
+		mutation.Isolation = "resources"
+		if entry.WriteResourceKind != "none" {
+			mutation.Claims = []bus.ExecutionResourceClaim{{
+				Kind: entry.WriteResourceKind, Identity: entry.WriteResourceIdentity,
+			}}
+		}
+	}
+	coordination := bus.ExecutionResources{
+		Isolation: mutation.Isolation,
+		Claims:    append([]bus.ExecutionResourceClaim(nil), mutation.Claims...),
+	}
+	entry.ExecutionContract = bus.ExecutionContractSnapshot{
+		AssetID: entry.AssetID, AssetName: assetName,
+		ConnectionKeys: []string{}, MutationResources: mutation, CoordinationResources: coordination,
 	}
 	return entry
 }

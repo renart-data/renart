@@ -24,6 +24,12 @@ func TestExecutionTargetSnapshotCapturesSecretFreeTargetAndFingerprintEvidence(t
 
 	exact := materializedTargetAsset(pipeline.AssetTypePostgresQuery, "analytics.customers", "private-warehouse-alias")
 	exact.ExecutableFile = pipeline.ExecutableFile{Content: "select {{ var.threshold }} as threshold"}
+	source := &pipeline.Asset{
+		Name:       "public.accounts",
+		Type:       pipeline.AssetType("pg.source"),
+		Connection: "private-warehouse-alias",
+	}
+	exact.Upstreams = []pipeline.Upstream{{Type: "asset", Value: source.Name}}
 	runtimeOnly := &pipeline.Asset{
 		Name:           "analytics.preview",
 		Type:           pipeline.AssetTypePostgresQuery,
@@ -34,7 +40,7 @@ func TestExecutionTargetSnapshotCapturesSecretFreeTargetAndFingerprintEvidence(t
 		LegacyID:       "pipeline-target-snapshot-id",
 		Name:           "analytics",
 		DefinitionFile: pipeline.DefinitionFile{Path: filepath.Join(t.TempDir(), "pipeline.yml")},
-		Assets:         []*pipeline.Asset{exact, runtimeOnly},
+		Assets:         []*pipeline.Asset{source, exact, runtimeOnly},
 		Variables: pipeline.Variables{
 			"threshold": {"type": "integer", "default": 7},
 			"unused":    {"type": "string", "default": "stable"},
@@ -55,6 +61,11 @@ func TestExecutionTargetSnapshotCapturesSecretFreeTargetAndFingerprintEvidence(t
 		}},
 	}
 	executor := NewHybridBruinExecutor(t.TempDir(), "", nil, nil)
+	executor.SetDependencyGraphResolver(func(context.Context, map[string]*pipeline.Pipeline) (dependencygraph.Graph, error) {
+		return dependencygraph.Resolve([]dependencygraph.PipelineInput{{
+			UUID: pl.LegacyID, ID: pl.LegacyID, Name: pl.Name, Parsed: pl,
+		}}), nil
+	})
 
 	snapshot, err := executor.resolveExecutionTargetSnapshot(pl, cfg, pl.Assets)
 	require.NoError(t, err)
@@ -64,7 +75,7 @@ func TestExecutionTargetSnapshotCapturesSecretFreeTargetAndFingerprintEvidence(t
 	assert.Equal(t, expectedConfiguration.Digest, snapshot.ConfigurationDigest)
 	assert.Equal(t, string(expectedConfiguration.Fidelity), snapshot.ConfigurationFidelity)
 	assert.NotEmpty(t, snapshot.ConfigurationDigest)
-	require.Len(t, snapshot.Entries, 2)
+	require.Len(t, snapshot.Entries, 3)
 
 	vars := fingerprint.EffectiveVars(pl, nil)
 	dag, err := fingerprint.NewEngine().DAG(pl, vars)
@@ -82,6 +93,7 @@ func TestExecutionTargetSnapshotCapturesSecretFreeTargetAndFingerprintEvidence(t
 	}
 
 	exactEntry := snapshot.Entries[exact.Name]
+	assert.False(t, exactEntry.ExternalSource)
 	assert.Equal(t, AssetRenderFidelityExact, exactEntry.TargetFidelity)
 	assert.NotEmpty(t, exactEntry.TargetIdentity)
 	assert.Equal(t, assetWriteResourceWarehouse, exactEntry.WriteResourceKind)
@@ -93,6 +105,12 @@ func TestExecutionTargetSnapshotCapturesSecretFreeTargetAndFingerprintEvidence(t
 	assert.Equal(t, assetWriteResourcePipeline, runtimeEntry.WriteResourceKind)
 	assert.Equal(t, AssetRenderFidelityRuntimeOnly, runtimeEntry.WriteResourceFidelity)
 	assert.Empty(t, runtimeEntry.WriteResourceIdentity)
+	sourceEntry := snapshot.Entries[source.Name]
+	assert.True(t, sourceEntry.ExternalSource)
+	require.Len(t, exactEntry.Upstreams, 1)
+	assert.Equal(t, sourceEntry.AssetID, exactEntry.Upstreams[0].ResolvedAssetID)
+	persisted := schedulerExecutionTargetSnapshot(snapshot)
+	assert.True(t, persisted.Entries[source.Name].ExternalSource)
 
 	body, err := json.Marshal(snapshot)
 	require.NoError(t, err)
@@ -101,7 +119,7 @@ func TestExecutionTargetSnapshotCapturesSecretFreeTargetAndFingerprintEvidence(t
 		Entries map[string]map[string]any `json:"entries"`
 	}
 	require.NoError(t, json.Unmarshal(body, &wire))
-	require.Len(t, wire.Entries, 2)
+	require.Len(t, wire.Entries, 3)
 	for name, entry := range wire.Entries {
 		expectedKeys := []string{
 			"asset_id",
@@ -118,7 +136,11 @@ func TestExecutionTargetSnapshotCapturesSecretFreeTargetAndFingerprintEvidence(t
 			"coverage_mode",
 			"refresh_restricted",
 		}
-		if wireEntry := snapshot.Entries[name]; wireEntry.WriteResourceIdentity != "" {
+		wireEntry := snapshot.Entries[name]
+		if wireEntry.ExternalSource {
+			expectedKeys = append(expectedKeys, "external_source")
+		}
+		if wireEntry.WriteResourceIdentity != "" {
 			expectedKeys = append(expectedKeys, "write_resource_identity")
 		}
 		assert.ElementsMatch(t, expectedKeys, mapKeys(entry))

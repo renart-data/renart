@@ -285,6 +285,78 @@ func TestReplayRecoveredRunPreservesVersionFourExecutionContract(t *testing.T) {
 	assert.NoError(t, bus.ValidateExecutionContract(assetName, entry))
 }
 
+func TestReplayRecoveredRunPreservesVersionFiveExternalSourceEvidence(t *testing.T) {
+	t.Parallel()
+
+	events := bus.New()
+	server := &webServer{eventBus: events}
+	var got bus.RunCompleted
+	events.OnRunCompleted(func(event bus.RunCompleted) error {
+		got = event
+		return nil
+	})
+
+	pipelineUUID := "pipeline-uuid"
+	sourceName := "public.accounts"
+	sourceID := identity.AssetID(pipelineUUID, sourceName)
+	consumerName := "analytics.accounts"
+	consumerID := identity.AssetID(pipelineUUID, consumerName)
+	resourceOnlyContract := func(assetID, assetName string) webscheduler.PipelineRunExecutionContract {
+		return webscheduler.PipelineRunExecutionContract{
+			AssetID: assetID, AssetName: assetName, ConnectionKeys: []string{},
+			MutationResources: webscheduler.PipelineRunPlanResources{
+				Isolation: "resources", Claims: []webscheduler.PipelineRunResourceClaim{},
+			},
+			CoordinationResources: webscheduler.PipelineRunPlanResources{
+				Isolation: "resources", Claims: []webscheduler.PipelineRunResourceClaim{},
+			},
+		}
+	}
+	finishedAt := time.Date(2026, 8, 11, 11, 0, 0, 0, time.UTC)
+	ordinal := int64(0)
+	require.NoError(t, server.replayRecoveredRun(context.Background(), webscheduler.PipelineRun{
+		ID: "version-five-source-run", PipelineUUID: pipelineUUID, ExecutionContextResolved: true,
+		ExecutionTargetSnapshot: &webscheduler.ExecutionTargetSnapshot{
+			Version: webscheduler.ExecutionTargetSnapshotVersionV5, PipelineUUID: pipelineUUID,
+			Entries: map[string]webscheduler.ExecutionTargetSnapshotEntry{
+				sourceName: {
+					AssetID: sourceID, ExternalSource: true, TargetFidelity: "runtime_only",
+					WriteResourceKind: "pipeline", WriteResourceFidelity: "runtime_only",
+					ExecutionContract: webscheduler.PipelineRunExecutionContract{
+						AssetID: sourceID, AssetName: sourceName, ConnectionKeys: []string{},
+						MutationResources: webscheduler.PipelineRunPlanResources{
+							Isolation: "pipeline", Claims: []webscheduler.PipelineRunResourceClaim{},
+						},
+						CoordinationResources: webscheduler.PipelineRunPlanResources{
+							Isolation: "pipeline", Claims: []webscheduler.PipelineRunResourceClaim{},
+						},
+					},
+					Fingerprint: "v3:source", OwnContent: "v3:source-own",
+					ConsumedVarsHash: "source-vars", VarsHash: "vars", CoverageMode: "marker",
+				},
+				consumerName: {
+					AssetID: consumerID, TargetFidelity: "exact",
+					WriteResourceKind: "none", WriteResourceFidelity: "exact",
+					ExecutionContract: resourceOnlyContract(consumerID, consumerName),
+					Fingerprint:       "v3:consumer", OwnContent: "v3:consumer-own",
+					ConsumedVarsHash: "consumer-vars", VarsHash: "vars", CoverageMode: "marker",
+					Upstreams: []webscheduler.ExecutionUpstreamSnapshot{{
+						Type: "asset", Value: sourceName, ResolvedAssetID: sourceID,
+					}},
+				},
+			},
+		},
+	}, []webscheduler.PipelineRunStep{{
+		Asset: consumerName, Status: webscheduler.RunStatusSuccess,
+		FinishedAt: &finishedAt, CompletionOrdinal: &ordinal,
+		UpstreamWriters: map[string]webscheduler.UpstreamWriterSnapshot{}, HasUpstreamWriterSnapshot: true,
+	}}, nil))
+
+	require.Equal(t, webscheduler.ExecutionTargetSnapshotVersionV5, got.ExecutionTargetSnapshotVersion)
+	assert.True(t, got.ExecutionTargets[sourceName].ExternalSource)
+	assert.Equal(t, sourceID, got.ExecutionTargets[consumerName].Upstreams[0].ResolvedAssetID)
+}
+
 func TestReplayRecoveredRunUsesPersistedUnitCompletionCoordinates(t *testing.T) {
 	t.Parallel()
 

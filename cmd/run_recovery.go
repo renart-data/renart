@@ -288,6 +288,7 @@ func (s *webServer) replayRecoveredRun(
 			}
 			event.ExecutionTargets[assetName] = bus.ExecutionTargetSnapshotEntry{
 				AssetID:                     entry.AssetID,
+				ExternalSource:              entry.ExternalSource,
 				TargetIdentity:              entry.TargetIdentity,
 				TargetFidelity:              entry.TargetFidelity,
 				TargetWriteEvidenceRequired: entry.TargetWriteEvidenceRequired,

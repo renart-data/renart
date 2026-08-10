@@ -25,7 +25,8 @@ func validateExecutionTargetSnapshot(snapshot ExecutionTargetSnapshot) error {
 	if snapshot.Version != ExecutionTargetSnapshotVersionV1 &&
 		snapshot.Version != ExecutionTargetSnapshotVersionV2 &&
 		snapshot.Version != ExecutionTargetSnapshotVersionV3 &&
-		snapshot.Version != ExecutionTargetSnapshotVersionV4 {
+		snapshot.Version != ExecutionTargetSnapshotVersionV4 &&
+		snapshot.Version != ExecutionTargetSnapshotVersionV5 {
 		return fmt.Errorf("%w: unsupported version %d", ErrInvalidExecutionTargetSnapshot, snapshot.Version)
 	}
 	if snapshot.Version >= ExecutionTargetSnapshotVersionV2 {
@@ -131,6 +132,14 @@ func validateExecutionTargetSnapshot(snapshot ExecutionTargetSnapshot) error {
 			}
 		} else if err := validateExecutionTargetContract(assetName, entry); err != nil {
 			return err
+		}
+		if snapshot.Version < ExecutionTargetSnapshotVersionV5 && entry.ExternalSource {
+			return fmt.Errorf(
+				"%w: entry %q cannot identify an external source before version %d",
+				ErrInvalidExecutionTargetSnapshot,
+				assetName,
+				ExecutionTargetSnapshotVersionV5,
+			)
 		}
 		for field, value := range map[string]string{
 			"fingerprint":        entry.Fingerprint,
