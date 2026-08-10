@@ -209,7 +209,7 @@ func TestExecutionTargetSnapshotBindsReviewedCrossPipelinePrerequisite(t *testin
 		Status:            PipelinePlanPrerequisiteReady,
 		ConsumerAssetID:   identity.AssetID(consumer.LegacyID, consumerAsset.Name),
 		ConsumerAssetName: consumerAsset.Name, URI: producerAsset.URI,
-		ProducerAssetID: producerID, Environment: "default",
+		ProducerPipelineUUID: producer.LegacyID, ProducerAssetID: producerID, Environment: "default",
 		ExpectedFingerprint: string(results[producerID].FP), TargetIdentity: producerTarget.Identity,
 		VarsHash:         fingerprint.AllVarsHash(fingerprint.EffectiveVars(producer, nil)),
 		TargetGeneration: 1, WriterCompletionID: "producer-run", WriterCompletionOrdinal: 0,
@@ -224,6 +224,8 @@ func TestExecutionTargetSnapshotBindsReviewedCrossPipelinePrerequisite(t *testin
 	assert.True(t, entry.Upstreams[0].Required)
 	assert.Equal(t, producerID, entry.Upstreams[0].ResolvedAssetID)
 	assert.Equal(t, prerequisite.ExpectedFingerprint, entry.Upstreams[0].ExpectedFingerprint)
+	assert.Empty(t, entry.Upstreams[0].ProducerPipelineUUID)
+	assert.Empty(t, entry.Upstreams[0].ProducerSnapshotVersionID)
 	local, err := executor.fingerprintEngine.DAG(consumer, fingerprint.EffectiveVars(consumer, nil))
 	require.NoError(t, err)
 	assert.NotEqual(t, local[entry.AssetID].FP, fingerprint.Fingerprint(entry.Fingerprint))

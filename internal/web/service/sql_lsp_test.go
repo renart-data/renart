@@ -1566,8 +1566,15 @@ func TestSQLLSPServiceCachesGraphByRevision(t *testing.T) {
 	if _, apiErr := service.Diagnostics(context.Background(), SQLLSPRequest{AssetID: "report", Content: completionReq.Content}); apiErr != nil {
 		t.Fatal(apiErr)
 	}
+	workspaceGraph, err := service.WorkspaceGraph(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workspaceGraph.Assets) != 2 {
+		t.Fatalf("expected the planner-facing workspace graph to reuse both state assets, got %#v", workspaceGraph.Assets)
+	}
 	if got := service.buildCount.Load(); got != 1 {
-		t.Fatalf("expected a single graph build across same-revision requests, got %d", got)
+		t.Fatalf("expected a single graph build across editor and planner requests, got %d", got)
 	}
 
 	// A revision bump with a changed schema must invalidate the cache and surface

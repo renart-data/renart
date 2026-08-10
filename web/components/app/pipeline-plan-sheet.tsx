@@ -80,11 +80,12 @@ import {
 } from "@/lib/api-pipeline-plan";
 import { activePipelineRunConflict, type PipelineRunSource } from "@/lib/api-scheduler";
 import type { PipelineRun } from "@/lib/types";
+import type { PipelinePlanSelectionRequest } from "@/lib/generated/api-types";
 import { awaitWorkspaceSaves } from "@/lib/workspace-save-barrier";
 import { cn } from "@/lib/utils";
 import { deploymentLabel } from "@/lib/deployment-label";
 
-type PlanSelectionMode = "all" | "needed" | "selector" | "selector_needed";
+type PlanSelectionMode = "all" | "needed" | "asset" | "selector" | "selector_needed";
 type SensorMode = "once" | "wait" | "skip";
 type PlanIntent = "run" | "deploy";
 
@@ -96,6 +97,7 @@ export function PipelinePlanSheet({
   environment,
   timeWindow,
   source,
+  initialSelection,
   intent = "run",
   confirmDestructive = false,
   onAccepted,
@@ -109,6 +111,7 @@ export function PipelinePlanSheet({
   environment: string;
   timeWindow?: { start: string; end: string } | null;
   source?: PipelineRunSource | null;
+  initialSelection?: PipelinePlanSelectionRequest | null;
   intent?: PlanIntent;
   confirmDestructive?: boolean;
   onAccepted?: (run: PipelineRun, plan: PipelinePlan) => void;
@@ -217,7 +220,7 @@ export function PipelinePlanSheet({
                 version_id: requestedSourceVersion,
               }
             : undefined,
-          selection: { mode: "all" },
+          selection: initialSelection ? { ...initialSelection } : { mode: "all" },
         };
         setRequest(input);
         if (intent === "deploy") {
@@ -241,6 +244,10 @@ export function PipelinePlanSheet({
     environment,
     fetchPlan,
     intent,
+    initialSelection?.asset_name,
+    initialSelection?.mode,
+    initialSelection?.scope,
+    initialSelection?.selector,
     open,
     pipelineId,
     requestedSourceKind,
@@ -442,7 +449,11 @@ export function PipelinePlanSheet({
           <DialogHeader className="border-b px-5 py-4 pr-12">
             <div className="flex min-w-0 items-center gap-2">
               <DialogTitle className="truncate">
-                {intent === "deploy" ? "Review deployment" : "Review pipeline run"}
+                {intent === "deploy"
+                  ? "Review deployment"
+                  : initialSelection?.mode === "asset"
+                    ? "Review asset run"
+                    : "Review pipeline run"}
               </DialogTitle>
               {plan ? <PlanStatusBadge status={plan.status} /> : null}
               {(loading || contentLoading) && plan ? (
@@ -524,6 +535,7 @@ export function PipelinePlanSheet({
                         </FieldLabel>
                         <Select
                           value={selectionMode}
+                          disabled={selectionMode === "asset"}
                           onValueChange={(value) => {
                             const mode = value as PlanSelectionMode;
                             const usesSelector = mode === "selector" || mode === "selector_needed";
@@ -540,12 +552,18 @@ export function PipelinePlanSheet({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectGroup>
-                              <SelectItem value="all">Entire pipeline</SelectItem>
-                              <SelectItem value="needed">Needed assets</SelectItem>
-                              <SelectItem value="selector">Matching selector</SelectItem>
-                              <SelectItem value="selector_needed">
-                                Needed matching selector
-                              </SelectItem>
+                              {selectionMode === "asset" ? (
+                                <SelectItem value="asset">Selected asset</SelectItem>
+                              ) : (
+                                <>
+                                  <SelectItem value="all">Entire pipeline</SelectItem>
+                                  <SelectItem value="needed">Needed assets</SelectItem>
+                                  <SelectItem value="selector">Matching selector</SelectItem>
+                                  <SelectItem value="selector_needed">
+                                    Needed matching selector
+                                  </SelectItem>
+                                </>
+                              )}
                             </SelectGroup>
                           </SelectContent>
                         </Select>
@@ -786,6 +804,8 @@ function PlanContextItem({ label, value }: { label: string; value: string }) {
 
 function planSelectionLabel(mode: PlanSelectionMode) {
   switch (mode) {
+    case "asset":
+      return "Selected asset";
     case "needed":
       return "Needed assets";
     case "selector":

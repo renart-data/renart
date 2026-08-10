@@ -117,7 +117,7 @@ function createMaterializeEntry(input: {
   };
 }
 
-function resolveScopedMaterializingAssetIds(
+export function resolveScopedMaterializingAssetIds(
   assets: WebAsset[],
   assetId: string,
   scope: MaterializeScope,

@@ -232,7 +232,11 @@ not underscore-flattened route hacks.
   appears as an asset-scoped blocker while renderable siblings remain visible.
   Pipeline and asset execution plus Deploy await every mounted editor's
   pending/in-flight save, so the saved source named by the action includes
-  visible Monaco edits.
+  visible Monaco edits. Materializing an individual asset whose selected work
+  has a full cross-pipeline URI dependency opens this same review dialog with
+  an immutable asset/closure selection. This preserves the one-click action
+  while obtaining the producer evidence that the intentionally unreviewed
+  direct endpoint cannot accept.
   **Deploy** opens the same dialog in a definition-only deployment mode rather
   than mutating immediately. It reviews the entire saved working tree, keeps
   execution policy/data freshness out of the gate, and follows one linear

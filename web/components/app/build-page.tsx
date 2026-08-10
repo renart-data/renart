@@ -146,10 +146,11 @@ import type {
   WebPipeline,
   WorkspaceQueryConnection,
 } from "@/lib/types";
+import type { PipelinePlanSelectionRequest } from "@/lib/generated/api-types";
 import { cn } from "@/lib/utils";
 import { deploymentLabel } from "@/lib/deployment-label";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
-import { useAssetResults } from "@/hooks/use-asset-results";
+import { resolveScopedMaterializingAssetIds, useAssetResults } from "@/hooks/use-asset-results";
 import { useSelectedEnvironmentPolicy } from "@/hooks/use-environment-policy";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { usePipelineDeploy, type PipelineDeployState } from "@/hooks/use-pipeline-deploy";
@@ -353,6 +354,28 @@ function assetsForPipeline(pipeline: WebPipeline): BuildAsset[] {
       y: 0,
     };
   });
+}
+
+function assetNeedsReviewedCrossPipelineRun(asset: WebAsset | undefined) {
+  return Boolean(
+    asset?.dependencies?.some(
+      (dependency) =>
+        dependency.type.trim().toLowerCase() === "uri" &&
+        dependency.mode.trim().toLowerCase() !== "symbolic",
+    ),
+  );
+}
+
+function selectionNeedsReviewedCrossPipelineRun(
+  pipeline: WebPipeline | undefined,
+  assetId: string,
+  scope: MaterializeScope,
+) {
+  if (!pipeline) return false;
+  const selectedIds = new Set(resolveScopedMaterializingAssetIds(pipeline.assets, assetId, scope));
+  return pipeline.assets.some(
+    (asset) => selectedIds.has(asset.id) && assetNeedsReviewedCrossPipelineRun(asset),
+  );
 }
 
 function normalizeAssetContentIdentity(content: string) {
@@ -852,6 +875,8 @@ export function AppBuildPage({
   const openJinjaVariable = (variableName: string) =>
     openPipelineSettings("variables", variableName);
   const [pipelinePlanOpen, setPipelinePlanOpen] = useState(false);
+  const [pipelinePlanInitialSelection, setPipelinePlanInitialSelection] =
+    useState<PipelinePlanSelectionRequest | null>(null);
   const [deploymentPlanOpen, setDeploymentPlanOpen] = useState(false);
   const resultsPanelRef = useRef<PanelImperativeHandle | null>(null);
   const [resultsCollapsed, setResultsCollapsed] = useState(false);
@@ -1026,6 +1051,11 @@ export function AppBuildPage({
     return () => window.clearTimeout(timer);
   }, [activePipeline, catalogReady.sequence, runTypeCheck]);
   const runMaterialize = (assetId: string, name: string, scope: MaterializeScope = "asset") => {
+    if (selectionNeedsReviewedCrossPipelineRun(activePipeline, assetId, scope)) {
+      setPipelinePlanInitialSelection({ mode: "asset", asset_name: name, scope });
+      setPipelinePlanOpen(true);
+      return;
+    }
     openBottom("materialize");
     void assetResults.runMaterializeForAsset(assetId, scope);
   };
@@ -1526,7 +1556,10 @@ export function AppBuildPage({
           inspectorCollapsed={inspectorCollapsed}
           onToggleExplorer={() => setExplorerCollapsed((value) => !value)}
           onToggleInspector={() => setInspectorCollapsed((value) => !value)}
-          onReviewRun={() => setPipelinePlanOpen(true)}
+          onReviewRun={() => {
+            setPipelinePlanInitialSelection(null);
+            setPipelinePlanOpen(true);
+          }}
           onReviewDeploy={() => setDeploymentPlanOpen(true)}
           deployState={deployState}
           runSourceLabel={pipelineRunSourceLabel.replace(/^Run /, "")}
@@ -1661,12 +1694,16 @@ export function AppBuildPage({
 
         <PipelinePlanSheet
           open={pipelinePlanOpen}
-          onOpenChange={setPipelinePlanOpen}
+          onOpenChange={(open) => {
+            setPipelinePlanOpen(open);
+            if (!open) setPipelinePlanInitialSelection(null);
+          }}
           pipelineId={activePipeline?.id ?? pipelineId}
           pipelineName={activePipeline?.name ?? pipelineId}
           environment={effectiveEnvironment}
           timeWindow={selectedExecutionTimeWindow}
           source={pipelineRunSource}
+          initialSelection={pipelinePlanInitialSelection}
           confirmDestructive={Boolean(environmentPolicy?.confirm_destructive)}
           onAccepted={(run, plan) => {
             openBottom("materialize");

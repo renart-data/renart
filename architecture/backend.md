@@ -445,6 +445,13 @@ relation; unproven operators remain database- or pipeline-conservative.
 Incomplete source remains visible through structured findings and honest
 fidelity rather than fabricated SQL.
 
+Working-tree planning reads SQL relations from the same revision-cached
+canonical workspace graph used by Monaco and the interactive type checker. It
+therefore includes path-named and non-SQL producers without rebuilding the
+standalone filesystem LSP index for every review. Headless callers without a
+shared workspace graph build that same canonical graph from one fresh workspace
+state instead.
+
 The same endpoint accepts a distinct `deployment` purpose for reviewing the
 entire saved working tree before Deploy. That purpose is definition-only: it
 does not consult data freshness, reserve a run slot, or apply protected/

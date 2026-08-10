@@ -250,8 +250,10 @@ func (e *HybridBruinExecutor) resolveExecutionTargetSnapshotForReviewedSelection
 					}
 				}
 				upstreamSnapshot.Required = true
-				upstreamSnapshot.ProducerPipelineUUID = prerequisite.ProducerPipelineUUID
-				upstreamSnapshot.ProducerSnapshotVersionID = prerequisite.ProducerSnapshotVersionID
+				if snapshotBoundPrerequisites {
+					upstreamSnapshot.ProducerPipelineUUID = prerequisite.ProducerPipelineUUID
+					upstreamSnapshot.ProducerSnapshotVersionID = prerequisite.ProducerSnapshotVersionID
+				}
 				upstreamSnapshot.TargetIdentity = prerequisite.TargetIdentity
 				upstreamSnapshot.ExpectedFingerprint = prerequisite.ExpectedFingerprint
 				upstreamSnapshot.VarsHash = prerequisite.VarsHash

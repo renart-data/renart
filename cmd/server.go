@@ -576,6 +576,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		Snapshots:        server.snapshotStore,
 		Staleness:        server.stalenessSvc,
 		DependencyGraph:  server.resolveWorkspaceDependencyGraph,
+		WorkspaceGraph:   server.sqlLSPSvc.WorkspaceGraph,
 		Fingerprints:     server.fingerprintEngine,
 		Materializations: server.matlogStore,
 		ResolveProducerDeployment: func(ctx context.Context, pipelineUUID, environment string) (service.PipelinePlanProducerDeployment, error) {

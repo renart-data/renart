@@ -400,6 +400,75 @@ select 1 as id
 	assert.Contains(t, changed.Prerequisites[0].Reason, "does not match")
 }
 
+func TestDeploymentPlanResolvesPathNamedCrossPipelineAPIProducer(t *testing.T) {
+	_, root := writeTypeCheckWorkspace(t, `
+id: pipeline-uuid
+name: renart-marketing
+default_connections:
+  duckdb: duckdb-default
+`, map[string]string{
+		"report.sql": `
+/* @bruin
+name: renart_marketing.report
+type: duckdb.sql
+depends:
+  - uri: blub://asdf/asdf/another_asset
+materialization:
+  type: view
+@bruin */
+select * from example.another_asset
+`,
+	})
+
+	producerRoot := filepath.Join(root, "example")
+	producerAssetPath := filepath.Join(producerRoot, "assets", "example", "another_asset.asset.yml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(producerAssetPath), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(producerRoot, "pipeline.yml"), []byte(`
+id: producer-uuid
+name: example
+default_connections:
+  duckdb: duckdb-default
+`), 0o644))
+	// The API asset intentionally relies on Bruin's path-derived name. The
+	// filesystem-only SQL index used by planning did not represent this asset,
+	// even though Monaco and the interactive type checker did.
+	require.NoError(t, os.WriteFile(producerAssetPath, []byte(`
+type: api
+connection: duckdb-default
+uri: blub://asdf/asdf/another_asset
+parameters:
+  request:
+    url: https://api.example.com/items
+    method: GET
+  response:
+    records_path: data
+columns:
+  - name: id
+    type: bigint
+materialization:
+  type: table
+  strategy: create+replace
+`), 0o644))
+
+	plan, apiErr := newTestPipelinePlanService(root, &pipelinePlanStalenessStub{}, nil).Plan(
+		context.Background(),
+		EncodeID("analytics"),
+		PipelinePlanRequest{
+			Purpose:   PipelinePlanPurposeDeployment,
+			Selection: PipelinePlanSelectionRequest{Mode: PipelinePlanSelectionAll},
+		},
+	)
+	require.Nil(t, apiErr)
+	for _, asset := range plan.Readiness.CodeChecks.Assets {
+		for _, finding := range asset.Findings {
+			assert.NotEqual(t, "unresolved-relation", finding.Code, finding.Message)
+		}
+	}
+	for _, blocker := range plan.Readiness.Blockers {
+		assert.NotContains(t, blocker.Message, "Unresolved table: example.another_asset")
+	}
+}
+
 func TestSnapshotPipelinePlanBindsExactProducerDeploymentAndRenartEvidence(t *testing.T) {
 	consumer, root := writeTypeCheckWorkspace(t, `
 id: consumer-uuid

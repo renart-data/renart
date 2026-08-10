@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -916,6 +917,17 @@ func (s *SQLLSPService) graphForState(ctx context.Context, state model.Workspace
 		s.cacheMu.Unlock()
 	}
 	return graph
+}
+
+// WorkspaceGraph returns the revision-cached canonical graph for the server's
+// saved workspace state. Planning uses this same graph as Monaco and the
+// interactive type checker so non-SQL producers and inferred schemas are not
+// lost to a second filesystem-only index pass.
+func (s *SQLLSPService) WorkspaceGraph(ctx context.Context) (sqllsp.CanonicalGraph, error) {
+	if s == nil || s.deps.CurrentState == nil {
+		return sqllsp.CanonicalGraph{}, errors.New("workspace state is unavailable")
+	}
+	return s.graphForState(ctx, s.deps.CurrentState()), nil
 }
 
 func (s *SQLLSPService) buildGraph(ctx context.Context, state model.WorkspaceState) sqllsp.CanonicalGraph {

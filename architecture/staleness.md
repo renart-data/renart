@@ -144,7 +144,10 @@ more immediately before the consumer task starts. That final query captures the
 exact external writer in the consumer's read set. Snapshot-backed plans resolve
 the URI inside the same-environment producer deployment, bind that deployment's
 version and ordinal, and reproduce the consumer fingerprint from the reviewed
-producer fingerprint without consulting producer working-tree files. Any edit,
+producer fingerprint without consulting producer working-tree files.
+Working-tree target snapshots retain the producer writer evidence without
+claiming deployment coordinates; deployment UUID/version coordinates are an
+all-or-nothing binding reserved for snapshot-backed plans. Any edit,
 rewrite, missing deployment, ambiguity, active/dirty target claim, variable
 mismatch, or interval gap stops the task before its own target is claimed.
 Retained run plans protect every referenced producer deployment from snapshot

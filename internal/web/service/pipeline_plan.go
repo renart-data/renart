@@ -16,6 +16,7 @@ import (
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/spf13/afero"
 
+	"renart/internal/sqllsp"
 	"renart/internal/web/fingerprint"
 	"renart/internal/web/identity"
 	"renart/internal/web/matlog"
@@ -307,6 +308,7 @@ type PipelinePlanDependencies struct {
 	Snapshots                 PipelinePlanSnapshotStore
 	Staleness                 PipelinePlanStaleness
 	DependencyGraph           WorkspaceDependencyGraphResolver
+	WorkspaceGraph            func(context.Context) (sqllsp.CanonicalGraph, error)
 	Fingerprints              *fingerprint.Engine
 	Materializations          *matlog.Store
 	ResolveProducerDeployment func(context.Context, string, string) (PipelinePlanProducerDeployment, error)
@@ -525,7 +527,7 @@ func (s *PipelinePlanService) Plan(
 		// still authored normally. Planning validates it against the same
 		// workspace-wide schema graph as Monaco/typecheck while execution remains
 		// scoped to the selected consumer pipeline.
-		if workspaceSQLGraph, graphErr := LoadSQLLSPGraph(ctx, s.deps.WorkspaceRoot); graphErr == nil {
+		if workspaceSQLGraph, graphErr := s.workspaceSQLGraph(ctx); graphErr == nil {
 			checkOptions.WorkspaceGraph = &workspaceSQLGraph
 		}
 	}
@@ -826,6 +828,17 @@ func (s *PipelinePlanService) Plan(
 	}
 	base.ID = pipelinePlanID(base)
 	return base, nil
+}
+
+func (s *PipelinePlanService) workspaceSQLGraph(ctx context.Context) (sqllsp.CanonicalGraph, error) {
+	if s.deps.WorkspaceGraph != nil {
+		return s.deps.WorkspaceGraph(ctx)
+	}
+	state, err := NewWorkspaceService(s.deps.WorkspaceRoot, s.deps.ConfigPath).ComputeState(ctx)
+	if err != nil {
+		return sqllsp.CanonicalGraph{}, err
+	}
+	return buildWorkspaceCanonicalGraph(ctx, s.deps.WorkspaceRoot, state), nil
 }
 
 func pipelinePlanAssetIsExecutable(asset *pipeline.Asset) bool {

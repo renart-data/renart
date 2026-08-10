@@ -245,6 +245,69 @@ test.describe("cross-pipeline dependencies live", () => {
     );
   });
 
+  test("reviews a single asset run with a full cross-pipeline prerequisite", async ({
+    liveApp,
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    test.skip(
+      test.info().project.name.includes("mobile"),
+      "The desktop build action covers the shared reviewed execution path.",
+    );
+
+    await writeCrossPipelineWorkspace(liveApp);
+    await waitForCrossPipelineWorkspace(liveApp, page.request);
+    const producerAssetID = Buffer.from("cross-producer/assets/raw/orders.sql").toString(
+      "base64url",
+    );
+    const consumerAssetID = Buffer.from("cross-consumer/assets/analytics/orders.sql").toString(
+      "base64url",
+    );
+    await materializeAsset(liveApp, page.request, producerAssetID);
+
+    let directConsumerMaterializations = 0;
+    page.on("request", (request) => {
+      if (request.url().includes(`/api/assets/${consumerAssetID}/materialize/stream`)) {
+        directConsumerMaterializations += 1;
+      }
+    });
+    await page.goto(
+      `${liveApp.baseURL}/pipelines/${consumerPipelineID}/assets/${consumerAssetID}/code`,
+    );
+    await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15_000 });
+
+    const planRequest = page.waitForRequest(
+      (request) =>
+        request.method() === "POST" &&
+        request.url().endsWith(`/api/pipelines/${consumerPipelineID}/plan`),
+    );
+    await page.getByRole("button", { name: "Materialize", exact: true }).first().click();
+    expect((await planRequest).postDataJSON()).toMatchObject({
+      purpose: "execution",
+      selection: {
+        mode: "asset",
+        asset_name: "analytics.orders",
+        scope: "asset",
+      },
+    });
+
+    const dialog = page.getByTestId("pipeline-plan-sheet");
+    await expect(dialog.getByRole("heading", { name: "Review asset run" })).toBeVisible();
+    await expect(dialog.getByText("Renart observed the current producer output")).toBeVisible({
+      timeout: 20_000,
+    });
+    const confirmResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/pipelines/${consumerPipelineID}/plan/confirm`) &&
+        response.ok(),
+      { timeout: 30_000 },
+    );
+    await dialog.getByRole("button", { name: /^Run 1 asset from / }).click();
+    const confirmed = (await (await confirmResponse).json()) as { run: { id: string } };
+    await waitForRun(liveApp, page.request, confirmed.run.id, "success");
+    expect(directConsumerMaterializations).toBe(0);
+  });
+
   test("keeps API producer URIs after refresh and re-adds ignored relations by URI", async ({
     liveApp,
     page,
@@ -400,12 +463,13 @@ test.describe("cross-pipeline dependencies live", () => {
         ? schedule
         : null,
     );
-    expect(admitted.deferred_occurrence?.status).not.toBe("waiting_prerequisites");
     expect(admitted.last_run?.id).toBeTruthy();
-    await expect(consumerRow.getByText("Waiting for prerequisites", { exact: true })).toHaveCount(
-      0,
-      { timeout: 20_000 },
-    );
+    // A new minutely occurrence may already be waiting by the time the prior
+    // one completes. The durable last run proves that the occurrence under
+    // test was admitted without assuming anything about the next interval.
+    await expect(consumerRow.getByTestId("schedule-last-run")).toContainText("Success", {
+      timeout: 20_000,
+    });
   });
 });
 
