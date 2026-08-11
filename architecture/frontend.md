@@ -327,6 +327,9 @@ not underscore-flattened route hacks.
   the inspector with asset-kind-specific controls. The same card can add a
   declared column manually; that edit uses the semantic transaction API and
   column-local provenance rather than relying on the hidden raw YAML editor.
+  Each saved column is scan-first: its collapsed row summarizes name, type,
+  description, key status, and provenance, then expands into labeled type,
+  description, merge, and removal controls without leaving the card.
 - The Build view's **New pipeline** dialog loads the backend template catalog
   and presents the blank option plus feature-focused runnable starters in the
   same compact catalog used by onboarding. Category headings organize one

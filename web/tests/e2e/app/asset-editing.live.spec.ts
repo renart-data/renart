@@ -39,6 +39,7 @@ type WorkspaceAsset = {
   columns?: Array<{
     name: string;
     type?: string;
+    description?: string;
     primary_key?: boolean;
     update_on_merge?: boolean;
     merge_sql?: string;
@@ -1233,6 +1234,70 @@ from range(1, 2, 1)
     expect(customers.columns?.find((column) => column.name === "manual_note")?.meta).toMatchObject({
       renart_manual: "true",
     });
+  });
+
+  test("guided columns summarize metadata and expand into labeled editing controls", async ({
+    liveApp,
+    page,
+  }) => {
+    const declare = await page.request.put(
+      `${liveApp.baseURL}/api/assets/${customersAssetId}/columns`,
+      {
+        data: {
+          columns: [
+            {
+              name: "customer_id",
+              type: "BIGINT",
+              description: "Stable customer identifier",
+              primary_key: true,
+            },
+          ],
+        },
+      },
+    );
+    expect(declare.ok(), await declare.text()).toBe(true);
+
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
+    await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
+    const properties = await openAssetProperties(page);
+    const columnsCard = properties.getByRole("heading", { name: "Columns" }).locator("../..");
+    const columnTrigger = columnsCard.getByRole("button", { name: "Edit column customer_id" });
+
+    await expect(columnTrigger).toContainText("customer_id");
+    await expect(columnTrigger).toContainText("BIGINT");
+    await expect(columnTrigger).toContainText("Stable customer identifier");
+    await expect(columnTrigger).toContainText("Primary key");
+    await expect(columnsCard.getByRole("textbox", { name: "Type" })).toBeHidden();
+
+    await columnTrigger.click();
+    await expect(columnsCard.getByRole("textbox", { name: "Type" })).toHaveValue("BIGINT");
+    const description = columnsCard.getByRole("textbox", { name: "Description" });
+    await expect(description).toHaveValue("Stable customer identifier");
+    await expect(columnsCard.getByRole("checkbox", { name: "Primary key" })).toBeChecked();
+
+    const transactionResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/assets/${customersAssetId}/transactions`) &&
+        response.request().method() === "POST" &&
+        response.request().postDataJSON().type === "column.description.set",
+      { timeout: 15000 },
+    );
+    await description.fill("Warehouse customer identifier");
+    await description.press("Tab");
+    const transaction = await transactionResponse;
+    expect(transaction.ok(), await transaction.text()).toBe(true);
+
+    const customers = await pollAsset(
+      liveApp,
+      page.request,
+      "analytics.customers",
+      (asset) =>
+        asset.columns?.find((column) => column.name === "customer_id")?.description ===
+        "Warehouse customer identifier",
+    );
+    expect(customers.columns?.find((column) => column.name === "customer_id")?.description).toBe(
+      "Warehouse customer identifier",
+    );
   });
 
   test("schema sync applies safe changes and opens the resolver for known type changes", async ({

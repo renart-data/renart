@@ -191,9 +191,11 @@ changed atomically after the dependency is added.
   (inferred / manual / ignored, with ignore/restore/remove actions), a column
   workbench (status markers for inferred/manual/stale/type-overridden,
   checks, descriptions, and direct manual-column creation), custom SQL checks,
-  and reconcile prompts. A manually added column records its provenance on the
-  Bruin column's own `meta` map and remains present across later inference
-  reconciliation. Custom
+  and reconcile prompts. Column rows show a compact name/type/description/key/
+  provenance summary and expand into labeled editing controls, keeping large
+  schemas scannable without hiding editability. A manually added column records
+  its provenance on the Bruin column's own `meta` map and remains present across
+  later inference reconciliation. Custom
   checks open in a focused Monaco SQL dialog with named row-count or scalar
   expectations, descriptions, and blocking behavior; add/edit/remove actions
   use semantic asset transactions and keep the ordinary asset file as the only

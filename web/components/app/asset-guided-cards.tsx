@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Ban,
   Check,
+  ChevronRight,
   ChevronsUpDown,
   KeyRound,
   Plus,
@@ -20,7 +21,9 @@ import { selectedEnvironmentAtom, workspaceAtom } from "@/lib/atoms/workspace";
 import type { AssetStaleness, FailedQualityCheck } from "@/lib/api-staleness";
 
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Command,
   CommandEmpty,
@@ -1124,21 +1127,26 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
           No columns. Add one manually or sync the schema from an available source.
         </p>
       ) : (
-        <div className="divide-y rounded-md border">
-          {columns.map((column) => (
-            <ColumnRow
-              key={column.name}
-              column={column}
-              status={columnStatus(column.name, provenance)}
-              onCommitType={(type) => commitType(column, type)}
-              onCommitDescription={(description) => setDescription(column.name, description)}
-              onTogglePrimaryKey={() => togglePrimaryKey(column)}
-              showMergeFields={isSQLMerge}
-              onToggleUpdateOnMerge={() => toggleUpdateOnMerge(column)}
-              onCommitMergeSQL={(mergeSQL) => commitMergeSQL(column, mergeSQL)}
-              onDrop={() => dropColumn(column.name)}
-            />
-          ))}
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[11px] text-muted-foreground">
+            Select a column to edit its type, description, and behavior.
+          </p>
+          <div className="divide-y overflow-hidden rounded-md border">
+            {columns.map((column) => (
+              <ColumnRow
+                key={column.name}
+                column={column}
+                status={columnStatus(column.name, provenance)}
+                onCommitType={(type) => commitType(column, type)}
+                onCommitDescription={(description) => setDescription(column.name, description)}
+                onTogglePrimaryKey={() => togglePrimaryKey(column)}
+                showMergeFields={isSQLMerge}
+                onToggleUpdateOnMerge={() => toggleUpdateOnMerge(column)}
+                onCommitMergeSQL={(mergeSQL) => commitMergeSQL(column, mergeSQL)}
+                onDrop={() => dropColumn(column.name)}
+              />
+            ))}
+          </div>
         </div>
       )}
 
@@ -1470,110 +1478,135 @@ function ColumnRow({
   onCommitMergeSQL: (mergeSQL: string) => void;
   onDrop: () => void;
 }) {
+  const fieldIdPrefix = `${useId()}-column`;
+  const typeInputId = `${fieldIdPrefix}-type`;
+  const descriptionInputId = `${fieldIdPrefix}-description`;
+  const primaryKeyInputId = `${fieldIdPrefix}-primary-key`;
+  const updateOnMergeInputId = `${fieldIdPrefix}-update-on-merge`;
+  const mergeSQLInputId = `${fieldIdPrefix}-merge-sql`;
+
   return (
-    <div className="group px-2.5 py-2">
-      <div className="flex items-center gap-1.5">
-        <span className="min-w-0 flex-1 truncate font-monaco text-xs">{column.name}</span>
-        <ColumnStatusBadge status={status} primaryKey={column.primary_key} />
+    <Collapsible className="group/column">
+      <CollapsibleTrigger asChild>
         <Button
           variant="ghost"
-          size="xs"
-          className={cn(
-            "size-6 shrink-0 p-0",
-            column.primary_key
-              ? "text-amber-600 dark:text-amber-400"
-              : "text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-          )}
-          title={column.primary_key ? "Unset primary key" : "Set as primary key"}
-          aria-label={`${column.primary_key ? "Unset" : "Set"} ${column.name} as primary key`}
-          onClick={onTogglePrimaryKey}
+          className="h-auto w-full justify-start rounded-none px-2.5 py-2 text-left hover:bg-muted/60"
+          aria-label={`Edit column ${column.name}`}
         >
-          <KeyRound className="size-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="xs"
-          className="size-6 shrink-0 p-0 text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-          title="Remove column"
-          aria-label={`Remove ${column.name}`}
-          onClick={onDrop}
-        >
-          <Trash2 className="size-3" />
-        </Button>
-      </div>
-      <div className="mt-1 flex items-center gap-1.5">
-        <CommitInput
-          mono
-          value={column.type ?? ""}
-          placeholder="type"
-          onCommit={onCommitType}
-          className="h-7 w-28 shrink-0"
-        />
-        <CommitInput
-          value={column.description ?? ""}
-          placeholder="describe this column"
-          onCommit={onCommitDescription}
-          className="h-7 flex-1"
-        />
-      </div>
-      {showMergeFields ? (
-        <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
-          <Button
-            variant={column.update_on_merge ? "secondary" : "outline"}
-            size="xs"
-            title="Update this column when a primary-key match is found"
-            aria-label={`${column.update_on_merge ? "Do not update" : "Update"} ${column.name} on merge`}
-            aria-pressed={Boolean(column.update_on_merge)}
-            onClick={onToggleUpdateOnMerge}
-          >
-            <RefreshCw data-icon="inline-start" />
-            Update on merge
-          </Button>
-          <CommitInput
-            mono
-            value={column.merge_sql ?? ""}
-            placeholder="merge SQL (optional)"
-            onCommit={onCommitMergeSQL}
-            className="h-7 min-w-0 flex-1"
+          <ChevronRight
+            data-icon="inline-start"
+            className="text-muted-foreground transition-transform group-data-[state=open]/column:rotate-90"
           />
-        </div>
-      ) : null}
-    </div>
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className="min-w-0 truncate font-monaco text-xs font-medium">
+                {column.name}
+              </span>
+              <Badge variant="outline" size="xs" className="font-monaco">
+                {column.type?.trim() || "Unknown type"}
+              </Badge>
+              {column.primary_key ? (
+                <Badge variant="secondary" size="xs">
+                  <KeyRound data-icon="inline-start" />
+                  Primary key
+                </Badge>
+              ) : null}
+              <ColumnStatusBadge status={status} />
+            </span>
+            <span className="truncate text-[11px] font-normal text-muted-foreground">
+              {column.description?.trim() || "No description"}
+            </span>
+          </span>
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="border-t bg-muted/20 px-3 py-3">
+        <FieldGroup className="gap-3">
+          <Field>
+            <FieldLabel htmlFor={typeInputId}>Type</FieldLabel>
+            <CommitInput
+              id={typeInputId}
+              mono
+              value={column.type ?? ""}
+              placeholder="Unknown"
+              onCommit={onCommitType}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={descriptionInputId}>Description</FieldLabel>
+            <CommitInput
+              id={descriptionInputId}
+              value={column.description ?? ""}
+              placeholder="Describe this column"
+              onCommit={onCommitDescription}
+            />
+          </Field>
+          <Field orientation="horizontal" className="w-auto gap-2">
+            <Checkbox
+              id={primaryKeyInputId}
+              checked={Boolean(column.primary_key)}
+              onCheckedChange={(checked) => {
+                if ((checked === true) !== Boolean(column.primary_key)) onTogglePrimaryKey();
+              }}
+            />
+            <FieldLabel htmlFor={primaryKeyInputId} className="cursor-pointer font-normal">
+              Primary key
+            </FieldLabel>
+          </Field>
+          {showMergeFields ? (
+            <>
+              <Field orientation="horizontal" className="w-auto gap-2">
+                <Checkbox
+                  id={updateOnMergeInputId}
+                  checked={Boolean(column.update_on_merge)}
+                  onCheckedChange={(checked) => {
+                    if ((checked === true) !== Boolean(column.update_on_merge)) {
+                      onToggleUpdateOnMerge();
+                    }
+                  }}
+                />
+                <FieldLabel htmlFor={updateOnMergeInputId} className="cursor-pointer font-normal">
+                  Update on merge
+                </FieldLabel>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor={mergeSQLInputId}>Merge expression</FieldLabel>
+                <CommitInput
+                  id={mergeSQLInputId}
+                  mono
+                  value={column.merge_sql ?? ""}
+                  placeholder="Optional SQL expression"
+                  onCommit={onCommitMergeSQL}
+                />
+                <FieldDescription>
+                  Overrides the ordinary update behavior for this column.
+                </FieldDescription>
+              </Field>
+            </>
+          ) : null}
+          <div className="flex justify-end">
+            <Button variant="destructive" size="xs" onClick={onDrop}>
+              <Trash2 data-icon="inline-start" />
+              Remove column
+            </Button>
+          </div>
+        </FieldGroup>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
-function ColumnStatusBadge({
-  status,
-  primaryKey,
-}: {
-  status: ReturnType<typeof columnStatus>;
-  primaryKey?: boolean;
-}) {
-  const styles: Record<string, string> = {
-    inferred: "bg-muted text-muted-foreground",
-    manual: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
-    "type-owned": "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
-    "table-inferred": "bg-secondary text-secondary-foreground",
-    "live-inferred": "bg-secondary text-secondary-foreground",
-  };
+function ColumnStatusBadge({ status }: { status: ReturnType<typeof columnStatus> }) {
   const labels: Record<string, string> = {
-    inferred: "SQL inferred",
-    manual: "manual",
-    "type-owned": "type owned",
-    "table-inferred": "table inferred",
-    "live-inferred": "live inferred",
+    inferred: "Inferred from SQL",
+    manual: "Added manually",
+    "type-owned": "Type overridden",
+    "table-inferred": "Inferred from table",
+    "live-inferred": "Inferred from response",
   };
   return (
-    <span className="flex items-center gap-1">
-      {primaryKey ? (
-        <span className="rounded bg-amber-100 px-1 text-[10px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-          pk
-        </span>
-      ) : null}
-      <span className={cn("rounded px-1 text-[10px]", styles[status] ?? styles.inferred)}>
-        {labels[status] ?? status}
-      </span>
-    </span>
+    <Badge variant="muted" size="xs">
+      {labels[status] ?? status}
+    </Badge>
   );
 }
 
