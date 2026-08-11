@@ -22,9 +22,9 @@
 		Referrer-Policy strict-origin-when-cross-origin
 	}
 
-	# Runtime tracking injection for static HTML.
-	# Set RENART_TRACKING_HEAD to raw HTML such as analytics <script> tags.
-	# For build-time injection instead, set PUBLIC_RENART_TRACKING_HEAD before `astro build`.
+	# Runtime substitution keeps the public legal identity out of Git and provides
+	# the Umami website ID to the consent controller. The tracker itself is never
+	# emitted by Caddy; browser code creates it only after affirmative consent.
 	templates {
 		mime text/html
 		# Keep documentation examples that use Go/Jinja's {{ ... }} syntax

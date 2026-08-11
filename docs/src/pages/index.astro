@@ -1,14 +1,15 @@
 ---
 import { execSync } from 'node:child_process';
 import { Font } from 'astro:assets';
+import PrivacyConsent from '../components/PrivacyConsent.astro';
 
 const repoUrl = 'https://github.com/renart-data/renart';
+const discordUrl = 'https://discord.gg/jTH758KNP8';
 const installCommand = 'curl -LsSf getrenart.com/install.sh | sh';
 const siteUrl = 'https://getrenart.com';
 const pageTitle = 'Renart public alpha - The whole data platform, in the box';
 const pageDescription = 'Renart is the whole data platform in one open-source package: editor, notebooks, scheduler, catalog, and staleness tracking, working on plain SQL and Python files in your git repo and running on the warehouse you already use.';
 const socialImage = `${siteUrl}/landing/og-image.png`;
-const trackingHead = import.meta.env.PUBLIC_RENART_TRACKING_HEAD?.trim() || '[[RENART env "RENART_TRACKING_HEAD" RENART]]';
 
 function readGitValue(command: string, fallback: string) {
   try {
@@ -71,7 +72,7 @@ const landingStructuredData = JSON.stringify({
       name: 'Renart',
       url: siteUrl,
       logo: `${siteUrl}/icons/icon.svg`,
-      sameAs: [repoUrl],
+      sameAs: [repoUrl, discordUrl],
     },
     {
       '@type': 'SoftwareApplication',
@@ -137,7 +138,6 @@ const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Redshift', '
     <meta name="twitter:image" content={socialImage} />
     <meta name="twitter:image:alt" content="The Renart workspace: pipeline canvas with freshness badges next to a SQL editor" />
     <script is:inline type="application/ld+json" set:html={landingStructuredData}></script>
-    <Fragment set:html={trackingHead} />
     <title>{pageTitle}</title>
     <Font cssVariable="--font-geist" preload />
     <Font cssVariable="--font-geist-mono" />
@@ -488,18 +488,23 @@ const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Redshift', '
           <h2>Community</h2>
           <ul>
             <li><a href={repoUrl}>GitHub</a></li>
+            <li><a href={discordUrl}>Discord</a></li>
           </ul>
         </div>
       </div>
       <div class="foot-bottom">
         <span>© {currentYear} Renart / Apache 2.0</span>
-          <div class="meta">
-            <span>{latestVersion} / public alpha</span>
-          </div>
+        <div class="meta">
+          <a href="/impressum/">Impressum</a>
+          <a href="/datenschutz/">Datenschutzerklärung</a>
+          <button type="button" data-open-privacy-settings>Privacy settings</button>
+          <span>{latestVersion} / public alpha</span>
+        </div>
       </div>
     </footer>
 
     <div class="toast" id="toast">copied to clipboard</div>
+    <PrivacyConsent />
 
     <script is:inline>
       document.querySelectorAll('.install-copy').forEach((button) => {
@@ -883,7 +888,10 @@ const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Redshift', '
   .foot-col a { font-size: 13.5px; color: var(--fg-2); }
   .foot-col a:hover { color: var(--accent); }
   .foot-bottom { max-width: 1200px; margin: 0 auto; padding: 20px 28px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 16px; font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); }
-  .meta { display: flex; gap: 16px; align-items: center; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  .meta a, .meta button { padding: 0; color: inherit; background: none; border: 0; font: inherit; text-decoration: none; cursor: pointer; }
+  .meta a:hover, .meta button:hover { color: var(--accent); }
+  .meta [hidden] { display: none; }
   .toast { position: fixed; bottom: 24px; left: 50%; transform: translate(-50%, 12px); background: var(--bg-2); color: var(--accent); border: 1px solid var(--accent-soft-2); font-family: var(--mono); font-size: 12px; padding: 8px 14px; border-radius: var(--r-2); box-shadow: var(--shadow-pop); z-index: 1000; opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
 

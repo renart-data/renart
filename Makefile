@@ -33,7 +33,7 @@ help:
 	@printf "  make docs-media        Regenerate docs screenshots\n"
 	@printf "  make cli-recordings    Regenerate interactive CLI recordings\n"
 	@printf "  make docs-docker       Build Caddy docs image\n"
-	@printf "  make docs-docker-run   Serve docs image on http://127.0.0.1:8099\n"
+	@printf "  make docs-docker-run   Serve docs image on http://127.0.0.1:8099 (legal env required)\n"
 
 build: web-build go-build docs-build
 
@@ -125,7 +125,16 @@ docs-docker:
 	$(DOCKER) build -f Dockerfile.docs --build-arg RENART_VERSION=$(RENART_VERSION) --build-arg RENART_COMMIT=$(RENART_COMMIT) -t $(DOCS_IMAGE) .
 
 docs-docker-run:
-	$(DOCKER) run --rm -p 127.0.0.1:8099:80 $(DOCS_IMAGE)
+	$(DOCKER) run --rm -p 127.0.0.1:8099:80 \
+		-e RENART_LEGAL_NAME \
+		-e RENART_LEGAL_ADDRESS_LINE_1 \
+		-e RENART_LEGAL_POSTAL_CODE \
+		-e RENART_LEGAL_CITY \
+		-e RENART_LEGAL_COUNTRY \
+		-e RENART_LEGAL_EMAIL \
+		-e RENART_ANALYTICS_RETENTION_DAYS \
+		-e RENART_UMAMI_WEBSITE_ID \
+		$(DOCS_IMAGE)
 
 clean:
 	rm -rf dist web/dist docs/dist docs/.astro

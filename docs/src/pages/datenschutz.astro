@@ -1,0 +1,166 @@
+---
+import LegalLayout from '../layouts/LegalLayout.astro';
+
+const runtimeValue = (name: string, buildValue?: string) =>
+  buildValue?.trim() || `[[RENART env \`${name}\` | html RENART]]`;
+
+const legalName = runtimeValue('RENART_LEGAL_NAME', import.meta.env.PUBLIC_RENART_LEGAL_NAME);
+const addressLine = runtimeValue(
+  'RENART_LEGAL_ADDRESS_LINE_1',
+  import.meta.env.PUBLIC_RENART_LEGAL_ADDRESS_LINE_1,
+);
+const postalCode = runtimeValue(
+  'RENART_LEGAL_POSTAL_CODE',
+  import.meta.env.PUBLIC_RENART_LEGAL_POSTAL_CODE,
+);
+const city = runtimeValue('RENART_LEGAL_CITY', import.meta.env.PUBLIC_RENART_LEGAL_CITY);
+const country = runtimeValue(
+  'RENART_LEGAL_COUNTRY',
+  import.meta.env.PUBLIC_RENART_LEGAL_COUNTRY,
+);
+const email = runtimeValue('RENART_LEGAL_EMAIL', import.meta.env.PUBLIC_RENART_LEGAL_EMAIL);
+const analyticsRetentionDays = runtimeValue(
+  'RENART_ANALYTICS_RETENTION_DAYS',
+  import.meta.env.PUBLIC_RENART_ANALYTICS_RETENTION_DAYS,
+);
+---
+
+<LegalLayout
+  title="Datenschutzerklärung"
+  description="Wie getrenart.com personenbezogene Daten verarbeitet und welche Wahlmöglichkeiten Sie haben."
+>
+  <p><strong>Stand: 11. August 2026</strong></p>
+
+  <h2>1. Verantwortlicher</h2>
+  <address>
+    <strong>{legalName}</strong><br />
+    {addressLine}<br />
+    {postalCode} {city}<br />
+    {country}<br />
+    E-Mail: {email}
+  </address>
+
+  <h2>2. Bereitstellung und Schutz der Website</h2>
+  <p>
+    Diese Website wird auf einem Server der netcup GmbH, Emmy-Noether-Straße 10,
+    76131 Karlsruhe, in Deutschland gehostet. Mit netcup besteht ein Vertrag zur
+    Auftragsverarbeitung nach Art. 28 DSGVO. Der von Renart betriebene Webserver
+    führt kein eigenes Zugriffsprotokoll.
+  </p>
+  <p>
+    Cloudflare, Inc., 101 Townsend St, San Francisco, CA 94107, USA, stellt DNS-,
+    Reverse-Proxy-, Sicherheits- und Auslieferungsfunktionen bereit. Deshalb laufen
+    Aufrufe dieser Website zunächst über das Cloudflare-Netzwerk. Dabei können
+    insbesondere IP-Adresse, Zeitpunkt, angeforderte Adresse, HTTP- und
+    Geräteinformationen sowie Daten zur Erkennung und Abwehr missbräuchlicher
+    Zugriffe verarbeitet werden. Cloudflare kann Daten auch außerhalb der EU bzw.
+    des EWR verarbeiten; hierfür gelten die mit Cloudflare vereinbarten
+    Datenschutzgarantien einschließlich der EU-Standardvertragsklauseln.
+  </p>
+  <p>
+    Die Verarbeitung ist für die sichere, zuverlässige und schnelle Bereitstellung
+    des ausdrücklich aufgerufenen Angebots erforderlich. Rechtsgrundlage ist Art. 6
+    Abs. 1 lit. f DSGVO. Unser berechtigtes Interesse liegt im sicheren und
+    störungsfreien Betrieb der Website. Technische Daten werden nur so lange
+    verarbeitet, wie dies für Auslieferung, Fehleranalyse, Missbrauchsabwehr oder
+    gesetzliche Pflichten erforderlich ist.
+  </p>
+  <p>
+    Weitere Informationen finden Sie in den Datenschutzhinweisen von{' '}
+    <a href="https://www.netcup.com/de/kontakt/datenschutzerklaerung">netcup</a> und{' '}
+    <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare</a>.
+  </p>
+
+  <h2>3. Speicherung Ihrer Datenschutzauswahl</h2>
+  <p>
+    Wenn Sie die Analytics-Auswahl treffen, speichern wir ausschließlich die Werte{' '}
+    <code>granted</code> oder <code>denied</code> unter dem Schlüssel{' '}
+    <code>renart.analytics-consent.v1</code> im lokalen Speicher Ihres Browsers.
+    Diese Information wird nicht an unseren Server übertragen. Sie ist erforderlich,
+    um Ihre Entscheidung bei weiteren Seitenaufrufen zu beachten, und bleibt dort,
+    bis Sie sie über <strong>Privacy settings</strong> ändern oder den lokalen
+    Browserspeicher löschen. Rechtsgrundlage ist § 25 Abs. 2 Nr. 2 TDDDG; soweit
+    dabei personenbezogene Daten verarbeitet werden, Art. 6 Abs. 1 lit. f DSGVO.
+  </p>
+
+  <h2>4. Optionale Reichweitenanalyse mit Umami</h2>
+  <p>
+    Nur wenn Sie ausdrücklich zustimmen, lädt diese Website ein Analyseskript von{' '}
+    <code>umami.getrenart.com</code>. Umami wird von uns selbst auf Infrastruktur in
+    Deutschland betrieben. Vor Ihrer Zustimmung wird weder das Skript angefordert
+    noch ein Analyseereignis gesendet.
+  </p>
+  <p>
+    Bei aktivierter Analyse werden Seitenpfad und Seitentitel, Referrer, Hostname,
+    Bildschirmauflösung und Browsersprache verarbeitet. Suchparameter und
+    URL-Fragmente werden ausgeschlossen. Aus den technisch übermittelten
+    Informationen, darunter IP-Adresse und User-Agent, bildet Umami eine wechselnde
+    Sitzungskennung; die rohe IP-Adresse wird nicht als Analysewert gespeichert.
+    Daraus entstehen Statistiken zu Seitenaufrufen, Sitzungen, Herkunftsländern,
+    Browsern, Betriebssystemen und Gerätetypen. Wir verwenden keine Umami-Funktion,
+    um Personen zu benennen oder über andere Websites hinweg zu verfolgen, und
+    setzen keine Analyse-Cookies. Eine aktivierte Do-Not-Track-Einstellung Ihres
+    Browsers wird zusätzlich beachtet.
+  </p>
+  <p>
+    Rechtsgrundlagen sind Ihre Einwilligung nach § 25 Abs. 1 TDDDG und Art. 6 Abs. 1
+    lit. a DSGVO. Analyseereignisse werden spätestens nach{' '}
+    <strong>{analyticsRetentionDays} Tagen</strong> gelöscht. Sie können Ihre
+    Einwilligung jederzeit über <strong>Privacy settings</strong> im Seitenfuß mit
+    Wirkung für die Zukunft widerrufen. Die Rechtmäßigkeit der Verarbeitung bis zum
+    Widerruf bleibt unberührt.
+  </p>
+
+  <h2>5. Externe Links und Discord-Community</h2>
+  <p>
+    Links zu GitHub und Discord sind gewöhnliche Verweise. Wir betten keine Inhalte
+    dieser Anbieter ein; eine Verbindung entsteht erst, wenn Sie einen Link öffnen.
+  </p>
+  <p>
+    Wenn Sie der Renart-Community auf Discord beitreten, verarbeitet Discord Ihre
+    Konto-, Nutzungs- und Kommunikationsdaten nach eigener Verantwortung. Für
+    Personen im EWR nennt Discord die Discord Netherlands B.V. als Verantwortliche.
+    Serveradministratoren können Ihren öffentlichen Profilnamen, Ihre Rollen, Ihre
+    Beiträge und erforderliche Moderationsvorgänge sehen. Wir verwenden nur die in
+    Discord integrierte AutoMod-Funktion und keine zusätzlichen Bots oder
+    eigenständigen Bot-Protokolle. Die Verarbeitung durch uns dient dem Betrieb und
+    Schutz der freiwillig genutzten Community auf Grundlage von Art. 6 Abs. 1 lit. b
+    und lit. f DSGVO. Unser berechtigtes Interesse ist eine hilfreiche und sichere
+    Projekt-Community. Discord kann Daten in Drittländern, insbesondere den USA,
+    verarbeiten. Details und Löschmöglichkeiten beschreibt die{' '}
+    <a href="https://discord.com/privacy">Datenschutzerklärung von Discord</a>.
+  </p>
+
+  <h2>6. Kontaktaufnahme</h2>
+  <p>
+    Wenn Sie uns per E-Mail kontaktieren, verarbeiten wir Ihre Absenderadresse, den
+    Inhalt und die zur Bearbeitung erforderlichen Begleitdaten. Rechtsgrundlage ist
+    Art. 6 Abs. 1 lit. b DSGVO, soweit es um vorvertragliche oder vertragliche Fragen
+    geht, andernfalls Art. 6 Abs. 1 lit. f DSGVO. Wir löschen die Korrespondenz, wenn
+    die Anfrage abschließend geklärt ist und keine gesetzlichen Aufbewahrungs- oder
+    Nachweispflichten entgegenstehen.
+  </p>
+
+  <h2>7. Ihre Rechte</h2>
+  <p>Unter den gesetzlichen Voraussetzungen haben Sie insbesondere das Recht auf:</p>
+  <ul>
+    <li>Auskunft über die zu Ihrer Person verarbeiteten Daten (Art. 15 DSGVO),</li>
+    <li>Berichtigung unrichtiger Daten (Art. 16 DSGVO),</li>
+    <li>Löschung oder Einschränkung der Verarbeitung (Art. 17 und 18 DSGVO),</li>
+    <li>Datenübertragbarkeit (Art. 20 DSGVO),</li>
+    <li>Widerspruch gegen Verarbeitungen nach Art. 6 Abs. 1 lit. f DSGVO (Art. 21 DSGVO),</li>
+    <li>Widerruf einer Einwilligung mit Wirkung für die Zukunft (Art. 7 Abs. 3 DSGVO).</li>
+  </ul>
+  <p>
+    Sie können sich außerdem bei einer Datenschutzaufsichtsbehörde beschweren,
+    insbesondere an Ihrem gewöhnlichen Aufenthaltsort, Ihrem Arbeitsplatz oder dem
+    Ort des vermuteten Verstoßes. Zur Ausübung Ihrer Rechte genügt eine Nachricht an
+    die oben genannte E-Mail-Adresse.
+  </p>
+
+  <h2>8. Automatisierte Entscheidungen</h2>
+  <p>
+    Wir treffen keine ausschließlich automatisierten Entscheidungen einschließlich
+    Profiling im Sinne von Art. 22 DSGVO.
+  </p>
+</LegalLayout>

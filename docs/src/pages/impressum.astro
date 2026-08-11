@@ -1,0 +1,52 @@
+---
+import LegalLayout from '../layouts/LegalLayout.astro';
+
+const runtimeValue = (name: string, buildValue?: string) =>
+  buildValue?.trim() || `[[RENART env \`${name}\` | html RENART]]`;
+
+const legalName = runtimeValue('RENART_LEGAL_NAME', import.meta.env.PUBLIC_RENART_LEGAL_NAME);
+const addressLine = runtimeValue(
+  'RENART_LEGAL_ADDRESS_LINE_1',
+  import.meta.env.PUBLIC_RENART_LEGAL_ADDRESS_LINE_1,
+);
+const postalCode = runtimeValue(
+  'RENART_LEGAL_POSTAL_CODE',
+  import.meta.env.PUBLIC_RENART_LEGAL_POSTAL_CODE,
+);
+const city = runtimeValue('RENART_LEGAL_CITY', import.meta.env.PUBLIC_RENART_LEGAL_CITY);
+const country = runtimeValue(
+  'RENART_LEGAL_COUNTRY',
+  import.meta.env.PUBLIC_RENART_LEGAL_COUNTRY,
+);
+const email = runtimeValue('RENART_LEGAL_EMAIL', import.meta.env.PUBLIC_RENART_LEGAL_EMAIL);
+---
+
+<LegalLayout
+  title="Impressum"
+  description="Anbieterkennzeichnung und Kontaktinformationen für getrenart.com."
+>
+  <h2>Anbieter</h2>
+  <address>
+    <strong>{legalName}</strong><br />
+    {addressLine}<br />
+    {postalCode} {city}<br />
+    {country}
+  </address>
+
+  <h2>Kontakt</h2>
+  <p>E-Mail: <strong>{email}</strong></p>
+
+  <h2>Rechtliche Einordnung</h2>
+  <p>
+    Angaben gemäß § 18 Abs. 1 Medienstaatsvertrag und, soweit auf dieses Angebot
+    anwendbar, § 5 Digitale-Dienste-Gesetz. Das Angebot enthält keine
+    journalistisch-redaktionell gestalteten Inhalte im Sinne von § 18 Abs. 2
+    Medienstaatsvertrag.
+  </p>
+
+  <h2>Verbraucherstreitbeilegung</h2>
+  <p>
+    Wir sind weder verpflichtet noch bereit, an einem Streitbeilegungsverfahren vor
+    einer Verbraucherschlichtungsstelle teilzunehmen.
+  </p>
+</LegalLayout>

@@ -1,0 +1,45 @@
+---
+import DefaultFooter from '@astrojs/starlight/components/Footer.astro';
+import PrivacyConsent from './PrivacyConsent.astro';
+---
+
+<DefaultFooter />
+<nav class="legal-links" aria-label="Legal and privacy links">
+  <a href="/impressum/">Impressum</a>
+  <a href="/datenschutz/">Datenschutzerklärung</a>
+  <button type="button" data-open-privacy-settings>Privacy settings</button>
+</nav>
+<PrivacyConsent />
+
+<style>
+  .legal-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin-top: 1.5rem;
+    color: var(--sl-color-gray-3);
+    font-size: var(--sl-text-xs);
+  }
+
+  .legal-links a,
+  .legal-links button {
+    padding: 0;
+    color: inherit;
+    background: none;
+    border: 0;
+    font: inherit;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .legal-links a:hover,
+  .legal-links button:hover {
+    color: var(--sl-color-white);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .legal-links [hidden] {
+    display: none;
+  }
+</style>

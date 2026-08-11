@@ -63,6 +63,7 @@ export default defineConfig({
     starlight({
       title: 'Renart Docs',
       components: {
+        Footer: './src/components/Footer.astro',
         Head: './src/components/Head.astro',
       },
       logo: {
@@ -98,6 +99,11 @@ export default defineConfig({
           icon: 'github',
           label: 'GitHub',
           href: 'https://github.com/renart-data/renart',
+        },
+        {
+          icon: 'discord',
+          label: 'Discord',
+          href: 'https://discord.gg/jTH758KNP8',
         },
       ],
       sidebar: [

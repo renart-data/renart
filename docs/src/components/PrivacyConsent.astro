@@ -1,0 +1,244 @@
+---
+const configuredWebsiteId = import.meta.env.PUBLIC_RENART_UMAMI_WEBSITE_ID?.trim();
+const websiteId =
+  configuredWebsiteId ||
+  '[[RENART env `RENART_UMAMI_WEBSITE_ID` | html RENART]]';
+---
+
+<div class="privacy-consent" data-privacy-consent-root>
+  <span data-umami-website-id hidden>{websiteId}</span>
+  <dialog
+    class="privacy-consent__dialog"
+    aria-labelledby="privacy-consent-title"
+    aria-describedby="privacy-consent-description"
+  >
+    <div class="privacy-consent__body">
+      <p class="privacy-consent__eyebrow">Privacy choices</p>
+      <h2 id="privacy-consent-title">Optional, privacy-friendly analytics</h2>
+      <p id="privacy-consent-description">
+        Renart can load our self-hosted Umami analytics to understand which pages are useful.
+        It is cookie-free, but it still processes page, device, and session information. It is
+        never loaded unless you allow it.
+      </p>
+      <p>
+        Your choice is stored only in this browser so it can be respected. You can change it
+        anytime through <strong>Privacy settings</strong> in the footer.
+      </p>
+      <p class="privacy-consent__status" data-privacy-consent-status></p>
+      <a class="privacy-consent__policy" href="/datenschutz/">Read the privacy policy</a>
+    </div>
+    <div class="privacy-consent__actions">
+      <button type="button" data-privacy-consent-decline>Decline analytics</button>
+      <button type="button" data-privacy-consent-allow>Allow analytics</button>
+    </div>
+  </dialog>
+</div>
+
+<script is:inline>
+  (() => {
+    const root = document.querySelector('[data-privacy-consent-root]');
+    if (!root || root.hasAttribute('data-initialized')) return;
+    root.setAttribute('data-initialized', 'true');
+
+    const storageKey = 'renart.analytics-consent.v1';
+    const allowed = 'granted';
+    const declined = 'denied';
+    const websiteId = root.querySelector('[data-umami-website-id]')?.textContent?.trim() || '';
+    const configured = Boolean(websiteId) && !websiteId.includes('RENART_UMAMI_WEBSITE_ID');
+    const dialog = root.querySelector('dialog');
+    const status = root.querySelector('[data-privacy-consent-status]');
+    const allowButton = root.querySelector('[data-privacy-consent-allow]');
+    const declineButton = root.querySelector('[data-privacy-consent-decline]');
+    const settingsButtons = document.querySelectorAll('[data-open-privacy-settings]');
+
+    const readChoice = () => {
+      try {
+        const choice = window.localStorage.getItem(storageKey);
+        return choice === allowed || choice === declined ? choice : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const writeChoice = (choice) => {
+      try {
+        window.localStorage.setItem(storageKey, choice);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const updateStatus = () => {
+      if (!status) return;
+      const choice = readChoice();
+      status.textContent =
+        choice === allowed
+          ? 'Current choice: analytics allowed.'
+          : choice === declined
+            ? 'Current choice: analytics declined.'
+            : 'No analytics choice is saved yet.';
+    };
+
+    const loadUmami = () => {
+      if (!configured || document.querySelector('script[data-renart-umami]')) return;
+      const script = document.createElement('script');
+      script.src = 'https://umami.getrenart.com/script.js';
+      script.async = true;
+      script.dataset.renartUmami = 'true';
+      script.dataset.websiteId = websiteId;
+      script.dataset.domains = 'getrenart.com,www.getrenart.com';
+      script.dataset.excludeSearch = 'true';
+      script.dataset.excludeHash = 'true';
+      script.dataset.doNotTrack = 'true';
+      document.head.append(script);
+    };
+
+    const openSettings = () => {
+      if (!configured || !dialog) return;
+      updateStatus();
+      if (!dialog.open) dialog.showModal();
+    };
+
+    settingsButtons.forEach((button) => {
+      if (!configured) {
+        button.setAttribute('hidden', '');
+        return;
+      }
+      button.addEventListener('click', openSettings);
+    });
+
+    allowButton?.addEventListener('click', () => {
+      writeChoice(allowed);
+      loadUmami();
+      dialog?.close();
+    });
+
+    declineButton?.addEventListener('click', () => {
+      const trackerWasLoaded = Boolean(document.querySelector('script[data-renart-umami]'));
+      writeChoice(declined);
+      if (trackerWasLoaded) {
+        window.location.reload();
+        return;
+      }
+      dialog?.close();
+    });
+
+    if (!configured) return;
+    if (readChoice() === allowed) {
+      loadUmami();
+    } else if (readChoice() === null) {
+      window.setTimeout(openSettings, 0);
+    }
+  })();
+</script>
+
+<style>
+  .privacy-consent__dialog {
+    width: min(35rem, calc(100vw - 2rem));
+    max-height: calc(100vh - 2rem);
+    margin: auto;
+    padding: 0;
+    overflow: auto;
+    color: var(--sl-color-white, #f2f5f3);
+    background: var(--sl-color-bg-nav, #111513);
+    border: 1px solid var(--sl-color-gray-5, #303834);
+    border-radius: 0.75rem;
+    box-shadow: 0 24px 80px rgb(0 0 0 / 45%);
+  }
+
+  .privacy-consent__dialog::backdrop {
+    background: rgb(3 7 5 / 70%);
+    backdrop-filter: blur(3px);
+  }
+
+  .privacy-consent__body {
+    padding: 1.5rem 1.5rem 1.25rem;
+  }
+
+  .privacy-consent__eyebrow {
+    margin: 0 0 0.6rem;
+    color: var(--sl-color-accent-high, #66d49c);
+    font-family: var(--font-geist-mono, ui-monospace, monospace);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+
+  .privacy-consent h2 {
+    margin: 0 0 0.8rem;
+    color: inherit;
+    font-family: var(--font-geist, system-ui, sans-serif);
+    font-size: 1.3rem;
+    line-height: 1.25;
+  }
+
+  .privacy-consent p {
+    margin: 0.65rem 0 0;
+    color: var(--sl-color-gray-2, #bcc6c0);
+    font-family: var(--font-geist, system-ui, sans-serif);
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+
+  .privacy-consent strong {
+    color: inherit;
+  }
+
+  .privacy-consent__status {
+    font-size: 0.8rem !important;
+  }
+
+  .privacy-consent__policy {
+    display: inline-block;
+    margin-top: 0.9rem;
+    color: var(--sl-color-accent-high, #66d49c);
+    font-family: var(--font-geist, system-ui, sans-serif);
+    font-size: 0.86rem;
+    text-underline-offset: 0.2em;
+  }
+
+  .privacy-consent__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    padding: 1rem 1.5rem 1.5rem;
+    border-top: 1px solid var(--sl-color-gray-5, #303834);
+  }
+
+  .privacy-consent__actions button {
+    min-height: 2.65rem;
+    padding: 0.65rem 0.8rem;
+    color: inherit;
+    background: var(--sl-color-gray-6, #202622);
+    border: 1px solid var(--sl-color-gray-4, #46514a);
+    border-radius: 0.45rem;
+    font-family: var(--font-geist, system-ui, sans-serif);
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .privacy-consent__actions button:hover {
+    background: var(--sl-color-gray-5, #303834);
+    border-color: var(--sl-color-accent-high, #66d49c);
+  }
+
+  .privacy-consent__actions button:focus-visible {
+    outline: 2px solid var(--sl-color-accent-high, #66d49c);
+    outline-offset: 2px;
+  }
+
+  @media (max-width: 30rem) {
+    .privacy-consent__actions {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .privacy-consent__dialog::backdrop {
+      backdrop-filter: none;
+    }
+  }
+</style>

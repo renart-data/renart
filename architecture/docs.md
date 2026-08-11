@@ -50,10 +50,11 @@ a PR; change them here first if they need to change.
 6. **Ownership: a "docs touched?" gate.** A user-facing change ships with its docs.
    PRs carry a docs checkbox (§7); reviewers enforce it.
 7. **Security copy is literal.** The Security & privacy page describes the
-   current local trust boundary only. The static build contains no analytics by
-   default; deployments may inject the explicitly documented self-hosted
-   analytics script. Caddy supplies CSP, framing, MIME-sniffing, permissions,
-   referrer, and HSTS headers for the deployed site.
+   current local trust boundary only. The static build contains no tracker.
+   The production site can load the explicitly configured self-hosted Umami
+   script only after affirmative visitor consent; decline and later revocation
+   remain equally accessible. Caddy supplies CSP, framing, MIME-sniffing,
+   permissions, referrer, and HSTS headers for the deployed site.
 
 ## 1. The four modes (Diátaxis)
 
@@ -282,3 +283,41 @@ shipped (July 2026; git history keeps the full plans).
   `docs/public/landing/`. The landing page selects them with `srcset` and
   `sizes`; if a capture changes dimensions, update the matching dimensions
   and source descriptors in `index.astro`.
+
+## 10. Production privacy and legal configuration
+
+The production docs container uses Caddy's custom `[[RENART ... RENART]]`
+template delimiters to insert public legal identity values at request time.
+The operator's name and address therefore never need to be committed. The
+container fails fast when any required legal value is absent instead of serving
+an incomplete Impressum.
+
+| Environment variable | Required | Purpose |
+| --- | --- | --- |
+| `RENART_LEGAL_NAME` | yes | natural person or legal entity operating the site |
+| `RENART_LEGAL_ADDRESS_LINE_1` | yes | street and house number |
+| `RENART_LEGAL_POSTAL_CODE` | yes | postal code |
+| `RENART_LEGAL_CITY` | yes | city |
+| `RENART_LEGAL_COUNTRY` | yes | country |
+| `RENART_LEGAL_EMAIL` | yes | direct contact address |
+| `RENART_ANALYTICS_RETENTION_DAYS` | yes | published maximum Umami event retention; must be a positive integer |
+| `RENART_UMAMI_WEBSITE_ID` | no | enables the optional analytics choice; blank means no tracker and no dialog |
+
+All legal values pass through the template engine's HTML escaping before they
+reach the response. `PUBLIC_RENART_LEGAL_*`,
+`PUBLIC_RENART_ANALYTICS_RETENTION_DAYS`, and
+`PUBLIC_RENART_UMAMI_WEBSITE_ID` are build-time equivalents for a non-container
+static deployment; the production container deliberately requires the runtime
+legal variables.
+
+`PrivacyConsent.astro` is the only tracker loader. It stores `granted` or
+`denied` under `renart.analytics-consent.v1`, creates the Umami script only for
+`granted`, excludes query strings and hashes, respects Do Not Track, and reloads
+after revocation so already-installed tracker listeners cannot continue. Do not
+reintroduce raw head injection such as `RENART_TRACKING_HEAD`; it bypasses this
+contract.
+
+`RENART_ANALYTICS_RETENTION_DAYS` publishes the retention promise; it does not
+delete Umami rows by itself. The deployment owner must configure and verify a
+matching cleanup policy in the self-hosted Umami database before enabling the
+tracker.
