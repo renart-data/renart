@@ -1640,6 +1640,7 @@ function PromoteCellDialog({
   const [targetName, setTargetName] = useState("");
   const [includeUpstream, setIncludeUpstream] = useState(false);
   const [includeDownstream, setIncludeDownstream] = useState(false);
+  const defaultPipelineId = pipelines[0]?.id ?? "";
 
   // Whether the cell has upstream/downstream sibling cells, so the options are
   // only offered when they would actually pull anything in.
@@ -1659,16 +1660,19 @@ function PromoteCellDialog({
     return { hasUpstream: up, hasDownstream: down };
   }, [cell, cells]);
 
-  // Re-seed the form each time a new cell opens the dialog.
+  // Re-seed the form each time a new cell opens the dialog. Depend on the
+  // default pipeline's stable id rather than the pipelines array: the parent
+  // maps that array during render, and unrelated workspace updates must not
+  // wipe choices the user already made in this open dialog.
   useEffect(() => {
     if (!cell) {
       return;
     }
-    setPipelineId(pipelines[0]?.id ?? "");
+    setPipelineId(defaultPipelineId);
     setTargetName(`marts.${cell.name}`);
     setIncludeUpstream(false);
     setIncludeDownstream(false);
-  }, [cell, pipelines]);
+  }, [cell, defaultPipelineId]);
 
   const canSubmit = !!cell && !!pipelineId && targetName.trim().length > 0;
 

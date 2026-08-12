@@ -1477,15 +1477,21 @@ test.describe("app notebooks live", () => {
     const downstreamCheckbox = dialog.getByRole("checkbox", { name: /Downstream assets/ });
     await downstreamCheckbox.check();
     await expect(downstreamCheckbox).toBeChecked();
-    // Radix reports the controlled checked state before Playwright's next
-    // action, but give React a paint boundary so the Promote handler comes
-    // from the same committed render.
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-        }),
+    // A notebook/workspace refresh re-renders the parent and rebuilds its
+    // pipeline options. Keep the user's dialog choice through that refresh.
+    const refreshedChildSQL = "select sum(amount) as total from base where amount >= 0";
+    await setCell(request, liveApp.baseURL, notebook.id, childCell, refreshedChildSQL);
+    await page.waitForFunction(
+      (expectedSQL) => {
+        const monaco = (window as typeof window & { monaco?: any }).monaco;
+        return monaco?.editor
+          .getEditors?.()
+          .some((editor: any) => editor.getModel?.()?.getValue().trim() === expectedSQL);
+      },
+      refreshedChildSQL,
+      { timeout: 15000 },
     );
+    await expect(downstreamCheckbox).toBeChecked();
     const promoteRequest = page.waitForRequest(
       (request) =>
         request.url().includes(`/cells/${baseCell}/promote`) && request.method() === "POST",
