@@ -28,8 +28,10 @@ const analyticsRetentionDays = runtimeValue(
 <LegalLayout
   title="Datenschutzerklärung"
   description="Wie getrenart.com personenbezogene Daten verarbeitet und welche Wahlmöglichkeiten Sie haben."
+  language="de"
+  alternateHref="/privacy/"
 >
-  <p><strong>Stand: 11. August 2026</strong></p>
+  <p><strong>Stand: 12. August 2026</strong></p>
 
   <h2>1. Verantwortlicher</h2>
   <address>
@@ -71,36 +73,47 @@ const analyticsRetentionDays = runtimeValue(
     <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare</a>.
   </p>
 
-  <h2>3. Speicherung Ihrer Datenschutzauswahl</h2>
+  <h2>3. Speicherung Ihrer Datenschutz- und Oberflächenauswahl</h2>
   <p>
-    Wenn Sie die Analytics-Auswahl treffen, speichern wir ausschließlich die Werte{' '}
-    <code>granted</code> oder <code>denied</code> unter dem Schlüssel{' '}
-    <code>renart.analytics-consent.v1</code> im lokalen Speicher Ihres Browsers.
-    Diese Information wird nicht an unseren Server übertragen. Sie ist erforderlich,
-    um Ihre Entscheidung bei weiteren Seitenaufrufen zu beachten, und bleibt dort,
-    bis Sie sie über <strong>Privacy settings</strong> ändern oder den lokalen
-    Browserspeicher löschen. Rechtsgrundlage ist § 25 Abs. 2 Nr. 2 TDDDG; soweit
-    dabei personenbezogene Daten verarbeitet werden, Art. 6 Abs. 1 lit. f DSGVO.
+    Nach Ihrer Datenschutzauswahl speichert der Consent-Manager das technisch notwendige
+    Cookie <code>renart_consent</code>. Es enthält die akzeptierten Kategorien, die Version
+    der Einwilligung, die Sprache, eine zufällig erzeugte Einwilligungskennung sowie die
+    Zeitpunkte Ihrer ersten und letzten Auswahl. Das Cookie wird bei Anfragen an
+    getrenart.com mitgesendet, vom Webserver jedoch nicht ausgewertet. Es läuft nach 180
+    Tagen ab, sofern Sie Ihre Auswahl nicht vorher ändern oder das Cookie löschen. Dadurch
+    erscheint der Banner nicht bei jedem Seitenaufruf erneut und wir können Ihre Entscheidung
+    beachten. Sie können die Auswahl jederzeit über <strong>Datenschutzeinstellungen</strong>{' '}
+    im Footer ändern. Rechtsgrundlage ist § 25 Abs. 2 Nr. 2 TDDDG; soweit dabei
+    personenbezogene Daten verarbeitet werden, Art. 6 Abs. 1 lit. f DSGVO.
+  </p>
+  <p>
+    Wenn Sie den Discord-Hinweis schließen, speichern wir den Wert <code>1</code> unter
+    dem Schlüssel <code>renart.discord-invite-dismissed.v1</code> ebenfalls ausschließlich
+    im lokalen Speicher Ihres Browsers. Dadurch wird der bereits abgelehnte Hinweis auf
+    weiteren Seiten nicht erneut eingeblendet. Auch diese Einstellung wird nicht an unseren
+    Server übertragen und kann durch Löschen des lokalen Browserspeichers zurückgesetzt
+    werden. Rechtsgrundlage ist § 25 Abs. 2 Nr. 2 TDDDG; soweit dabei personenbezogene Daten
+    verarbeitet werden, Art. 6 Abs. 1 lit. f DSGVO.
   </p>
 
-  <h2>4. Optionale Reichweitenanalyse mit Umami</h2>
+  <h2>4. Optionale Reichweitenmessung</h2>
   <p>
-    Nur wenn Sie ausdrücklich zustimmen, lädt diese Website ein Analyseskript von{' '}
-    <code>umami.getrenart.com</code>. Umami wird von uns selbst auf Infrastruktur in
-    Deutschland betrieben. Vor Ihrer Zustimmung wird weder das Skript angefordert
-    noch ein Analyseereignis gesendet.
+    Nur wenn Sie ausdrücklich zustimmen, aktiviert diese Website unsere selbst betriebene,
+    Cookie-freie Reichweitenmessung. Wir betreiben sie auf Infrastruktur in Deutschland;
+    die Daten werden keinem eigenständigen Analytics-Anbieter offengelegt. Vor Ihrer
+    Zustimmung wird kein Analysecode geladen und kein Analyseereignis gesendet.
   </p>
   <p>
-    Bei aktivierter Analyse werden Seitenpfad und Seitentitel, Referrer, Hostname,
-    Bildschirmauflösung und Browsersprache verarbeitet. Suchparameter und
-    URL-Fragmente werden ausgeschlossen. Aus den technisch übermittelten
-    Informationen, darunter IP-Adresse und User-Agent, bildet Umami eine wechselnde
-    Sitzungskennung; die rohe IP-Adresse wird nicht als Analysewert gespeichert.
-    Daraus entstehen Statistiken zu Seitenaufrufen, Sitzungen, Herkunftsländern,
-    Browsern, Betriebssystemen und Gerätetypen. Wir verwenden keine Umami-Funktion,
-    um Personen zu benennen oder über andere Websites hinweg zu verfolgen, und
-    setzen keine Analyse-Cookies. Eine aktivierte Do-Not-Track-Einstellung Ihres
-    Browsers wird zusätzlich beachtet.
+    Bei aktivierter Reichweitenmessung verarbeiten wir Seitenpfad und Seitentitel,
+    Referrer, Hostname, Bildschirmauflösung und Browsersprache. Suchparameter und
+    URL-Fragmente werden ausgeschlossen. Aus den technisch übermittelten Informationen,
+    darunter IP-Adresse und User-Agent, wird eine wechselnde Sitzungskennung gebildet;
+    die rohe IP-Adresse wird nicht als Analysewert gespeichert. Daraus entstehen
+    Statistiken zu Seitenaufrufen, Sitzungen, Herkunftsländern, Browsern,
+    Betriebssystemen und Gerätetypen. Wir verwenden die Reichweitenmessung nicht, um
+    Personen zu identifizieren oder über andere Websites hinweg zu verfolgen, und sie
+    setzt keine Analyse-Cookies. Eine aktivierte Do-Not-Track-Einstellung Ihres Browsers
+    wird zusätzlich beachtet.
   </p>
   <p>
     Rechtsgrundlagen sind Ihre Einwilligung nach § 25 Abs. 1 TDDDG und Art. 6 Abs. 1

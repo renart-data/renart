@@ -1,244 +1,354 @@
 ---
+import 'vanilla-cookieconsent/dist/cookieconsent.css';
+
+interface Props {
+  language?: 'de' | 'en';
+  policyHref?: string;
+}
+
+const { language = 'en', policyHref = '/privacy/' } = Astro.props;
+const isDevelopmentPreview = import.meta.env.DEV;
 const configuredWebsiteId = import.meta.env.PUBLIC_RENART_UMAMI_WEBSITE_ID?.trim();
 const websiteId =
   configuredWebsiteId ||
   '[[RENART env `RENART_UMAMI_WEBSITE_ID` | html RENART]]';
 ---
 
-<div class="privacy-consent" data-privacy-consent-root>
-  <span data-umami-website-id hidden>{websiteId}</span>
-  <dialog
-    class="privacy-consent__dialog"
-    aria-labelledby="privacy-consent-title"
-    aria-describedby="privacy-consent-description"
-  >
-    <div class="privacy-consent__body">
-      <p class="privacy-consent__eyebrow">Privacy choices</p>
-      <h2 id="privacy-consent-title">Optional, privacy-friendly analytics</h2>
-      <p id="privacy-consent-description">
-        Renart can load our self-hosted Umami analytics to understand which pages are useful.
-        It is cookie-free, but it still processes page, device, and session information. It is
-        never loaded unless you allow it.
-      </p>
-      <p>
-        Your choice is stored only in this browser so it can be respected. You can change it
-        anytime through <strong>Privacy settings</strong> in the footer.
-      </p>
-      <p class="privacy-consent__status" data-privacy-consent-status></p>
-      <a class="privacy-consent__policy" href="/datenschutz/">Read the privacy policy</a>
-    </div>
-    <div class="privacy-consent__actions">
-      <button type="button" data-privacy-consent-decline>Decline analytics</button>
-      <button type="button" data-privacy-consent-allow>Allow analytics</button>
-    </div>
-  </dialog>
+<div
+  data-privacy-consent-root
+  data-language={language}
+  data-policy-href={policyHref}
+  data-privacy-consent-preview={isDevelopmentPreview ? 'true' : undefined}
+  hidden
+>
+  <span data-umami-website-id>{websiteId}</span>
 </div>
 
-<script is:inline>
-  (() => {
-    const root = document.querySelector('[data-privacy-consent-root]');
-    if (!root || root.hasAttribute('data-initialized')) return;
+<script>
+  import { acceptedCategory, run, showPreferences } from 'vanilla-cookieconsent';
+
+  const root = document.querySelector<HTMLElement>('[data-privacy-consent-root]');
+
+  if (root && !root.hasAttribute('data-initialized')) {
     root.setAttribute('data-initialized', 'true');
 
-    const storageKey = 'renart.analytics-consent.v1';
-    const allowed = 'granted';
-    const declined = 'denied';
-    const websiteId = root.querySelector('[data-umami-website-id]')?.textContent?.trim() || '';
-    const configured = Boolean(websiteId) && !websiteId.includes('RENART_UMAMI_WEBSITE_ID');
-    const dialog = root.querySelector('dialog');
-    const status = root.querySelector('[data-privacy-consent-status]');
-    const allowButton = root.querySelector('[data-privacy-consent-allow]');
-    const declineButton = root.querySelector('[data-privacy-consent-decline]');
-    const settingsButtons = document.querySelectorAll('[data-open-privacy-settings]');
+    const legacyStorageKey = 'renart.analytics-consent.v1';
+    const websiteId = root.querySelector('[data-umami-website-id]')?.textContent?.trim() ?? '';
+    const preview = root.dataset.privacyConsentPreview === 'true';
+    const configuredWebsiteId =
+      websiteId.length > 0 && !websiteId.includes('RENART_UMAMI_WEBSITE_ID');
+    const configured = preview || configuredWebsiteId;
+    const language = root.dataset.language === 'de' ? 'de' : 'en';
+    const requestedPolicyHref = root.dataset.policyHref ?? '';
+    const policyHref = requestedPolicyHref.startsWith('/')
+      ? requestedPolicyHref
+      : language === 'de'
+        ? '/datenschutz/'
+        : '/privacy/';
 
-    const readChoice = () => {
-      try {
-        const choice = window.localStorage.getItem(storageKey);
-        return choice === allowed || choice === declined ? choice : null;
-      } catch {
-        return null;
-      }
-    };
-
-    const writeChoice = (choice) => {
-      try {
-        window.localStorage.setItem(storageKey, choice);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    const updateStatus = () => {
-      if (!status) return;
-      const choice = readChoice();
-      status.textContent =
-        choice === allowed
-          ? 'Current choice: analytics allowed.'
-          : choice === declined
-            ? 'Current choice: analytics declined.'
-            : 'No analytics choice is saved yet.';
-    };
-
-    const loadUmami = () => {
-      if (!configured || document.querySelector('script[data-renart-umami]')) return;
-      const script = document.createElement('script');
-      script.src = 'https://umami.getrenart.com/script.js';
-      script.async = true;
-      script.dataset.renartUmami = 'true';
-      script.dataset.websiteId = websiteId;
-      script.dataset.domains = 'getrenart.com,www.getrenart.com';
-      script.dataset.excludeSearch = 'true';
-      script.dataset.excludeHash = 'true';
-      script.dataset.doNotTrack = 'true';
-      document.head.append(script);
-    };
-
-    const openSettings = () => {
-      if (!configured || !dialog) return;
-      updateStatus();
-      if (!dialog.open) dialog.showModal();
-    };
-
-    settingsButtons.forEach((button) => {
-      if (!configured) {
-        button.setAttribute('hidden', '');
-        return;
-      }
-      button.addEventListener('click', openSettings);
-    });
-
-    allowButton?.addEventListener('click', () => {
-      writeChoice(allowed);
-      loadUmami();
-      dialog?.close();
-    });
-
-    declineButton?.addEventListener('click', () => {
-      const trackerWasLoaded = Boolean(document.querySelector('script[data-renart-umami]'));
-      writeChoice(declined);
-      if (trackerWasLoaded) {
-        window.location.reload();
-        return;
-      }
-      dialog?.close();
-    });
-
-    if (!configured) return;
-    if (readChoice() === allowed) {
-      loadUmami();
-    } else if (readChoice() === null) {
-      window.setTimeout(openSettings, 0);
+    try {
+      window.localStorage.removeItem(legacyStorageKey);
+    } catch {
+      // Consent storage must still work when localStorage is unavailable.
     }
-  })();
+
+    const settingsButtons = document.querySelectorAll<HTMLElement>(
+      '[data-open-privacy-settings]',
+    );
+
+    if (configured) {
+      const trackerIsLoaded = () =>
+        Boolean(document.querySelector('script[data-renart-umami]'));
+
+      const loadUmami = () => {
+        if (preview || !configuredWebsiteId || trackerIsLoaded()) return;
+
+        const script = document.createElement('script');
+        script.src = 'https://umami.getrenart.com/script.js';
+        script.async = true;
+        script.dataset.renartUmami = 'true';
+        script.dataset.websiteId = websiteId;
+        script.dataset.domains = 'getrenart.com,www.getrenart.com';
+        script.dataset.excludeSearch = 'true';
+        script.dataset.excludeHash = 'true';
+        script.dataset.doNotTrack = 'true';
+        document.head.append(script);
+      };
+
+      const syncAnalytics = () => {
+        if (acceptedCategory('analytics')) loadUmami();
+      };
+
+      const translations = {
+        en: {
+          consentModal: {
+            label: 'Privacy choices',
+            title:
+              '<span class="renart-consent__eyebrow">Your choice</span><span class="renart-consent__headline">Cookies stay in your control</span>',
+            description: `Only if you consent, we use optional analytics to learn how people discover Renart and which pages help. The essential cookie cannot be turned off; it keeps your privacy choice working. <a class="cc__link" href="${policyHref}">Privacy policy</a>.`,
+            acceptAllBtn: 'Accept all',
+            acceptNecessaryBtn: 'Only essential',
+          },
+          preferencesModal: {
+            title: 'Privacy preferences',
+            acceptAllBtn: 'Accept all',
+            acceptNecessaryBtn: 'Only essential',
+            savePreferencesBtn: 'Save preferences',
+            closeIconLabel: 'Close preferences',
+            sections: [
+              {
+                title: 'Choose what may load',
+                description:
+                  'Optional analytics never loads before you consent. You can change this choice at any time through Privacy settings in the footer.',
+              },
+              {
+                title: 'Strictly necessary',
+                description:
+                  'Stores your privacy choice so the banner does not keep returning.',
+                linkedCategory: 'necessary',
+                cookieTable: {
+                  headers: {
+                    name: 'Name',
+                    purpose: 'Purpose',
+                    duration: 'Duration',
+                  },
+                  body: [
+                    {
+                      name: 'renart_consent',
+                      purpose: 'Stores your consent categories and consent timestamps.',
+                      duration: '180 days',
+                    },
+                  ],
+                },
+              },
+              {
+                title: 'Optional analytics',
+                description:
+                  'Loads our self-hosted, cookie-free analytics and sends privacy-friendly audience measurements. Query strings and URL fragments are excluded, and Do Not Track is respected.',
+                linkedCategory: 'analytics',
+              },
+              {
+                title: 'More information',
+                description: `The <a class="cc__link" href="${policyHref}">privacy policy</a> explains what is processed and how long it is kept.`,
+              },
+            ],
+          },
+        },
+        de: {
+          consentModal: {
+            label: 'Datenschutzauswahl',
+            title:
+              '<span class="renart-consent__eyebrow">Ihre Entscheidung</span><span class="renart-consent__headline">Cookies bleiben unter Ihrer Kontrolle</span>',
+            description: `Nur wenn Sie zustimmen, nutzen wir optionale Reichweitenmessung, um zu erfahren, wie Menschen Renart entdecken und welche Seiten hilfreich sind. Das notwendige Cookie kann nicht deaktiviert werden; es sorgt dafür, dass Ihre Datenschutzauswahl gespeichert bleibt. <a class="cc__link" href="${policyHref}">Datenschutzerklärung</a>.`,
+            acceptAllBtn: 'Alle akzeptieren',
+            acceptNecessaryBtn: 'Nur notwendige',
+          },
+          preferencesModal: {
+            title: 'Datenschutzeinstellungen',
+            acceptAllBtn: 'Alle akzeptieren',
+            acceptNecessaryBtn: 'Nur notwendige',
+            savePreferencesBtn: 'Auswahl speichern',
+            closeIconLabel: 'Einstellungen schließen',
+            sections: [
+              {
+                title: 'Wählen Sie, was geladen werden darf',
+                description:
+                  'Optionale Analytics werden niemals vor Ihrer Einwilligung geladen. Sie können Ihre Auswahl jederzeit über die Datenschutzeinstellungen im Footer ändern.',
+              },
+              {
+                title: 'Technisch notwendig',
+                description:
+                  'Speichert Ihre Datenschutzauswahl, damit der Banner nicht bei jedem Besuch erneut erscheint.',
+                linkedCategory: 'necessary',
+                cookieTable: {
+                  headers: {
+                    name: 'Name',
+                    purpose: 'Zweck',
+                    duration: 'Dauer',
+                  },
+                  body: [
+                    {
+                      name: 'renart_consent',
+                      purpose: 'Speichert Ihre Einwilligungskategorien und Zeitstempel.',
+                      duration: '180 Tage',
+                    },
+                  ],
+                },
+              },
+              {
+                title: 'Optionale Analytics',
+                description:
+                  'Lädt unsere selbst gehostete, Cookie-freie Reichweitenmessung. Suchparameter und URL-Fragmente werden ausgeschlossen und Do Not Track wird beachtet.',
+                linkedCategory: 'analytics',
+              },
+              {
+                title: 'Weitere Informationen',
+                description: `Die <a class="cc__link" href="${policyHref}">Datenschutzerklärung</a> erläutert die Verarbeitung und Speicherdauer.`,
+              },
+            ],
+          },
+        },
+      };
+
+      await run({
+        mode: 'opt-in',
+        revision: 1,
+        manageScriptTags: false,
+        disablePageInteraction: false,
+        hideFromBots: !preview,
+        cookie: {
+          name: 'renart_consent',
+          expiresAfterDays: 180,
+          sameSite: 'Lax',
+          secure: window.location.protocol === 'https:',
+        },
+        guiOptions: {
+          consentModal: {
+            layout: 'box wide',
+            position: 'bottom center',
+            flipButtons: true,
+            equalWeightButtons: true,
+          },
+          preferencesModal: {
+            layout: 'box',
+            flipButtons: true,
+            equalWeightButtons: true,
+          },
+        },
+        categories: {
+          necessary: {
+            enabled: true,
+            readOnly: true,
+          },
+          analytics: {
+            enabled: false,
+            readOnly: false,
+          },
+        },
+        language: {
+          default: language,
+          translations: {
+            [language]: translations[language],
+          },
+        },
+        onConsent: syncAnalytics,
+        onChange: ({ changedCategories }) => {
+          if (!changedCategories.includes('analytics')) return;
+
+          if (acceptedCategory('analytics')) {
+            loadUmami();
+          } else if (trackerIsLoaded() || 'umami' in window) {
+            window.location.reload();
+          }
+        },
+      });
+
+      settingsButtons.forEach((button) => {
+        button.removeAttribute('hidden');
+        button.addEventListener('click', () => showPreferences());
+      });
+
+      syncAnalytics();
+    }
+  }
 </script>
 
-<style>
-  .privacy-consent__dialog {
-    width: min(35rem, calc(100vw - 2rem));
-    max-height: calc(100vh - 2rem);
-    margin: auto;
-    padding: 0;
-    overflow: auto;
-    color: var(--sl-color-white, #f2f5f3);
-    background: var(--sl-color-bg-nav, #111513);
+<style is:global>
+  #cc-main {
+    --cc-font-family: var(--font-geist, system-ui, sans-serif);
+    --cc-modal-border-radius: 0.8rem;
+    --cc-btn-border-radius: 0.45rem;
+    --cc-bg: var(--sl-color-bg-nav, #111513);
+    --cc-primary-color: var(--sl-color-white, #eef3ef);
+    --cc-secondary-color: var(--sl-color-gray-2, #b7c2bc);
+    --cc-link-color: var(--sl-color-accent-high, #66d49c);
+    --cc-btn-primary-bg: var(--sl-color-accent-high, #66d49c);
+    --cc-btn-primary-color: #07120b;
+    --cc-btn-primary-border-color: var(--sl-color-accent-high, #66d49c);
+    --cc-btn-primary-hover-bg: #7de0ad;
+    --cc-btn-primary-hover-color: #07120b;
+    --cc-btn-primary-hover-border-color: #7de0ad;
+    --cc-btn-secondary-bg: var(--sl-color-gray-6, #202622);
+    --cc-btn-secondary-color: var(--sl-color-white, #eef3ef);
+    --cc-btn-secondary-border-color: var(--sl-color-gray-4, #46514a);
+    --cc-btn-secondary-hover-bg: var(--sl-color-gray-5, #303834);
+    --cc-btn-secondary-hover-color: var(--sl-color-white, #eef3ef);
+    --cc-btn-secondary-hover-border-color: var(--sl-color-accent-high, #66d49c);
+    --cc-separator-border-color: var(--sl-color-gray-5, #303834);
+    --cc-toggle-on-bg: var(--sl-color-accent-high, #66d49c);
+    --cc-toggle-off-bg: var(--sl-color-gray-4, #46514a);
+    --cc-toggle-on-knob-bg: #07120b;
+    --cc-toggle-off-knob-bg: var(--sl-color-gray-1, #dce4df);
+    --cc-toggle-readonly-bg: var(--sl-color-gray-5, #303834);
+    --cc-toggle-readonly-knob-bg: var(--sl-color-gray-3, #69756e);
+    --cc-toggle-readonly-knob-icon-color: var(--sl-color-gray-5, #303834);
+    --cc-cookie-category-block-bg: #171c19;
+    --cc-cookie-category-block-border: var(--sl-color-gray-5, #303834);
+    --cc-cookie-category-block-hover-bg: #1d2420;
+    --cc-cookie-category-block-hover-border: var(--sl-color-gray-4, #46514a);
+    --cc-cookie-category-expanded-block-bg: transparent;
+    --cc-cookie-category-expanded-block-hover-bg: var(--sl-color-gray-5, #303834);
+    --cc-footer-bg: #0d100e;
+    --cc-footer-color: var(--sl-color-gray-2, #b7c2bc);
+    --cc-footer-border-color: var(--sl-color-gray-5, #303834);
+    --cc-overlay-bg: rgb(3 7 5 / 72%);
+  }
+
+  #cc-main .cm,
+  #cc-main .pm {
     border: 1px solid var(--sl-color-gray-5, #303834);
-    border-radius: 0.75rem;
-    box-shadow: 0 24px 80px rgb(0 0 0 / 45%);
+    box-shadow: 0 24px 80px rgb(0 0 0 / 48%);
   }
 
-  .privacy-consent__dialog::backdrop {
-    background: rgb(3 7 5 / 70%);
-    backdrop-filter: blur(3px);
+  #cc-main .cm__title,
+  #cc-main .pm__title {
+    letter-spacing: -0.015em;
   }
 
-  .privacy-consent__body {
-    padding: 1.5rem 1.5rem 1.25rem;
-  }
-
-  .privacy-consent__eyebrow {
-    margin: 0 0 0.6rem;
+  #cc-main .renart-consent__eyebrow {
+    display: block;
+    margin-bottom: 0.55rem;
     color: var(--sl-color-accent-high, #66d49c);
     font-family: var(--font-geist-mono, ui-monospace, monospace);
-    font-size: 0.72rem;
-    font-weight: 600;
-    letter-spacing: 0.09em;
+    font-size: 0.68rem;
+    font-weight: 650;
+    letter-spacing: 0.1em;
     text-transform: uppercase;
   }
 
-  .privacy-consent h2 {
-    margin: 0 0 0.8rem;
-    color: inherit;
-    font-family: var(--font-geist, system-ui, sans-serif);
-    font-size: 1.3rem;
-    line-height: 1.25;
+  #cc-main .renart-consent__headline {
+    display: block;
+    font-size: 1.25rem;
+    line-height: 1.2;
   }
 
-  .privacy-consent p {
-    margin: 0.65rem 0 0;
-    color: var(--sl-color-gray-2, #bcc6c0);
-    font-family: var(--font-geist, system-ui, sans-serif);
-    font-size: 0.9rem;
+  #cc-main .cm__desc,
+  #cc-main .pm__section-desc {
     line-height: 1.55;
   }
 
-  .privacy-consent strong {
-    color: inherit;
+  #cc-main .cm__btn,
+  #cc-main .pm__btn {
+    font-weight: 650;
   }
 
-  .privacy-consent__status {
-    font-size: 0.8rem !important;
-  }
-
-  .privacy-consent__policy {
-    display: inline-block;
-    margin-top: 0.9rem;
-    color: var(--sl-color-accent-high, #66d49c);
-    font-family: var(--font-geist, system-ui, sans-serif);
-    font-size: 0.86rem;
-    text-underline-offset: 0.2em;
-  }
-
-  .privacy-consent__actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-    padding: 1rem 1.5rem 1.5rem;
-    border-top: 1px solid var(--sl-color-gray-5, #303834);
-  }
-
-  .privacy-consent__actions button {
-    min-height: 2.65rem;
-    padding: 0.65rem 0.8rem;
-    color: inherit;
-    background: var(--sl-color-gray-6, #202622);
-    border: 1px solid var(--sl-color-gray-4, #46514a);
-    border-radius: 0.45rem;
-    font-family: var(--font-geist, system-ui, sans-serif);
-    font-size: 0.86rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .privacy-consent__actions button:hover {
-    background: var(--sl-color-gray-5, #303834);
-    border-color: var(--sl-color-accent-high, #66d49c);
-  }
-
-  .privacy-consent__actions button:focus-visible {
+  #cc-main .cm__btn:focus-visible,
+  #cc-main .pm__btn:focus-visible,
+  #cc-main .pm__close-btn:focus-visible,
+  #cc-main .section__toggle:focus-visible + .toggle__label,
+  #cc-main .cc__link:focus-visible {
     outline: 2px solid var(--sl-color-accent-high, #66d49c);
     outline-offset: 2px;
   }
 
-  @media (max-width: 30rem) {
-    .privacy-consent__actions {
-      grid-template-columns: 1fr;
-    }
+  #cc-main .cm__footer a,
+  #cc-main .cc__link {
+    text-underline-offset: 0.2em;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .privacy-consent__dialog::backdrop {
-      backdrop-filter: none;
+    #cc-main {
+      --cc-modal-transition-duration: 0s;
     }
   }
 </style>

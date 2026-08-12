@@ -301,7 +301,7 @@ an incomplete Impressum.
 | `RENART_LEGAL_COUNTRY` | yes | country |
 | `RENART_LEGAL_EMAIL` | yes | direct contact address |
 | `RENART_ANALYTICS_RETENTION_DAYS` | yes | published maximum Umami event retention; must be a positive integer |
-| `RENART_UMAMI_WEBSITE_ID` | no | enables the optional analytics choice; blank means no tracker and no dialog |
+| `RENART_UMAMI_WEBSITE_ID` | no | enables the optional analytics choice; in production, blank means no tracker and no dialog |
 
 All legal values pass through the template engine's HTML escaping before they
 reach the response. `PUBLIC_RENART_LEGAL_*`,
@@ -310,12 +310,30 @@ reach the response. `PUBLIC_RENART_LEGAL_*`,
 static deployment; the production container deliberately requires the runtime
 legal variables.
 
-`PrivacyConsent.astro` is the only tracker loader. It stores `granted` or
-`denied` under `renart.analytics-consent.v1`, creates the Umami script only for
-`granted`, excludes query strings and hashes, respects Do Not Track, and reloads
-after revocation so already-installed tracker listeners cannot continue. Do not
-reintroduce raw head injection such as `RENART_TRACKING_HEAD`; it bypasses this
-contract.
+The German legal pages live at `/impressum/` and `/datenschutz/`; their English
+translations live at `/legal-notice/` and `/privacy/`. Each page links to its
+counterpart and declares it as an alternate language. The English landing page
+and documentation footer link to the English routes.
+
+`PrivacyConsent.astro` is the only tracker loader. It adapts the maintained
+`vanilla-cookieconsent` library to Renart's copy and visual language. The
+strictly necessary `renart_consent` cookie records consent categories and
+timestamps for 180 days; the optional `analytics` category creates the Umami
+script only after affirmative consent. The loader excludes query strings and
+hashes, respects Do Not Track, and reloads after revocation so already-installed
+tracker listeners cannot continue. Do not reintroduce raw head injection such
+as `RENART_TRACKING_HEAD`; it bypasses this contract.
+
+During `astro dev`, the same real consent and preferences dialogs run even
+without a website ID, and their cookie persists across reloads. Development
+mode never creates the Umami script or makes an analytics request. Clear the
+`renart_consent` cookie to repeat the first-visit path, or use **Privacy
+settings** in the footer to revisit the preferences dialog.
+
+`DiscordInvite.astro` provides the site-wide, bottom-right community invitation.
+Its callout can be dismissed while the direct Discord button remains available.
+Dismissal stores only `1` under `renart.discord-invite-dismissed.v1` in browser
+local storage; both legal-language versions disclose that preference.
 
 `RENART_ANALYTICS_RETENTION_DAYS` publishes the retention promise; it does not
 delete Umami rows by itself. The deployment owner must configure and verify a

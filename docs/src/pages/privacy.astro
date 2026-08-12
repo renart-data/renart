@@ -1,0 +1,174 @@
+---
+import LegalLayout from '../layouts/LegalLayout.astro';
+
+const runtimeValue = (name: string, buildValue?: string) =>
+  buildValue?.trim() || `[[RENART env \`${name}\` | html RENART]]`;
+
+const legalName = runtimeValue('RENART_LEGAL_NAME', import.meta.env.PUBLIC_RENART_LEGAL_NAME);
+const addressLine = runtimeValue(
+  'RENART_LEGAL_ADDRESS_LINE_1',
+  import.meta.env.PUBLIC_RENART_LEGAL_ADDRESS_LINE_1,
+);
+const postalCode = runtimeValue(
+  'RENART_LEGAL_POSTAL_CODE',
+  import.meta.env.PUBLIC_RENART_LEGAL_POSTAL_CODE,
+);
+const city = runtimeValue('RENART_LEGAL_CITY', import.meta.env.PUBLIC_RENART_LEGAL_CITY);
+const country = runtimeValue(
+  'RENART_LEGAL_COUNTRY',
+  import.meta.env.PUBLIC_RENART_LEGAL_COUNTRY,
+);
+const email = runtimeValue('RENART_LEGAL_EMAIL', import.meta.env.PUBLIC_RENART_LEGAL_EMAIL);
+const analyticsRetentionDays = runtimeValue(
+  'RENART_ANALYTICS_RETENTION_DAYS',
+  import.meta.env.PUBLIC_RENART_ANALYTICS_RETENTION_DAYS,
+);
+---
+
+<LegalLayout
+  title="Privacy policy"
+  description="How getrenart.com processes personal data and which choices you have."
+  alternateHref="/datenschutz/"
+>
+  <p>
+    <strong>Translation notice:</strong> This English version is provided for convenience. In
+    the event of discrepancies, the <a href="/datenschutz/" hreflang="de">German version</a>
+    applies.
+  </p>
+  <p><strong>Last updated: 12 August 2026</strong></p>
+
+  <h2>1. Controller</h2>
+  <address>
+    <strong>{legalName}</strong><br />
+    {addressLine}<br />
+    {postalCode} {city}<br />
+    {country}<br />
+    Email: {email}
+  </address>
+
+  <h2>2. Delivery and protection of the website</h2>
+  <p>
+    This website is hosted on a server operated by netcup GmbH, Emmy-Noether-Straße 10,
+    76131 Karlsruhe, Germany. We have concluded a data processing agreement with netcup
+    pursuant to Article 28 GDPR. The web server operated by Renart does not keep its own
+    access log.
+  </p>
+  <p>
+    Cloudflare, Inc., 101 Townsend St, San Francisco, CA 94107, USA, provides DNS, reverse
+    proxy, security, and content delivery functions. Requests to this website therefore pass
+    through the Cloudflare network first. In particular, Cloudflare may process the IP
+    address, time, requested address, HTTP and device information, and data used to detect
+    and prevent abusive access. Cloudflare may also process data outside the EU or EEA; the
+    agreed data protection safeguards, including the EU Standard Contractual Clauses, apply
+    to such processing.
+  </p>
+  <p>
+    This processing is necessary to deliver the expressly requested website securely,
+    reliably, and quickly. The legal basis is Article 6(1)(f) GDPR. Our legitimate interest
+    is the secure and uninterrupted operation of the website. Technical data is processed
+    only for as long as necessary for delivery, troubleshooting, abuse prevention, or legal
+    obligations.
+  </p>
+  <p>
+    Further information is available in the privacy notices of{' '}
+    <a href="https://www.netcup.com/de/kontakt/datenschutzerklaerung">netcup</a> and{' '}
+    <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare</a>.
+  </p>
+
+  <h2>3. Storage of your privacy and interface choices</h2>
+  <p>
+    The consent manager stores the technically necessary cookie <code>renart_consent</code>{' '}
+    after you make a privacy choice. It contains your accepted categories, consent version,
+    language, a randomly generated consent identifier, and the timestamps of your first and
+    latest choice. The cookie is sent with requests to getrenart.com but is not evaluated by
+    the web server. It expires after 180 days unless you change your choice or delete it
+    earlier. This prevents the banner from returning on every page visit and lets us respect
+    your decision. You can change it at any time through <strong>Privacy settings</strong> in
+    the footer. The legal basis is section 25(2)(2) TDDDG and, to the extent that personal
+    data is processed, Article 6(1)(f) GDPR.
+  </p>
+  <p>
+    If you dismiss the Discord invitation, we also store only the value <code>1</code> under
+    the key <code>renart.discord-invite-dismissed.v1</code> in your browser's local storage.
+    This prevents a dismissed invitation from appearing again on subsequent pages. This
+    preference is likewise not transmitted to our server and can be reset by clearing your
+    browser's local storage. The legal basis is section 25(2)(2) TDDDG and, to the extent
+    that personal data is processed, Article 6(1)(f) GDPR.
+  </p>
+
+  <h2>4. Optional audience measurement</h2>
+  <p>
+    Only if you expressly consent does this website activate our self-hosted, cookie-free
+    audience measurement. We operate it on infrastructure in Germany; the data is not
+    disclosed to a separate analytics provider. Before you consent, no analytics code is
+    loaded and no analytics event is sent.
+  </p>
+  <p>
+    When audience measurement is enabled, we process the page path and title, referrer,
+    hostname, screen resolution, and browser language. Search parameters and URL fragments
+    are excluded. Technically transmitted information, including the IP address and user
+    agent, is used to generate a rotating session identifier; the raw IP address is not
+    stored as an analytics value. This produces statistics about page views, sessions,
+    countries of origin, browsers, operating systems, and device types. We do not use the
+    analytics service to identify people or track them across other websites, and it does
+    not set analytics cookies. We also respect an enabled Do Not Track preference in your
+    browser.
+  </p>
+  <p>
+    The legal bases are your consent under section 25(1) TDDDG and Article 6(1)(a) GDPR.
+    Analytics events are deleted after no more than{' '}
+    <strong>{analyticsRetentionDays} days</strong>. You can withdraw your consent at any time
+    with future effect through <strong>Privacy settings</strong> in the page footer. The
+    lawfulness of processing before withdrawal remains unaffected.
+  </p>
+
+  <h2>5. External links and the Discord community</h2>
+  <p>
+    Links to GitHub and Discord are ordinary links. We do not embed content from these
+    providers; a connection is established only when you open a link.
+  </p>
+  <p>
+    If you join the Renart community on Discord, Discord processes your account, usage, and
+    communication data under its own responsibility. For people in the EEA, Discord names
+    Discord Netherlands B.V. as the controller. Server administrators can see your public
+    profile name, roles, contributions, and necessary moderation actions. We use only
+    Discord's built-in AutoMod feature and no additional bots or separate bot logs. Our
+    processing serves to operate and protect the voluntarily used community on the basis of
+    Article 6(1)(b) and (f) GDPR. Our legitimate interest is a helpful and safe project
+    community. Discord may process data in third countries, particularly the USA. Details
+    and deletion options are described in{' '}
+    <a href="https://discord.com/privacy">Discord's privacy policy</a>.
+  </p>
+
+  <h2>6. Contacting us</h2>
+  <p>
+    If you contact us by email, we process your sender address, the content of your message,
+    and any accompanying data required to respond. The legal basis is Article 6(1)(b) GDPR
+    where the request concerns pre-contractual or contractual matters, and otherwise Article
+    6(1)(f) GDPR. We delete correspondence once the request has been conclusively resolved,
+    unless statutory retention or evidence obligations require otherwise.
+  </p>
+
+  <h2>7. Your rights</h2>
+  <p>Subject to the statutory conditions, you have in particular the right to:</p>
+  <ul>
+    <li>access personal data processed about you (Article 15 GDPR),</li>
+    <li>rectification of inaccurate data (Article 16 GDPR),</li>
+    <li>erasure or restriction of processing (Articles 17 and 18 GDPR),</li>
+    <li>data portability (Article 20 GDPR),</li>
+    <li>object to processing under Article 6(1)(f) GDPR (Article 21 GDPR),</li>
+    <li>withdraw consent with future effect (Article 7(3) GDPR).</li>
+  </ul>
+  <p>
+    You also have the right to lodge a complaint with a data protection supervisory
+    authority, particularly in the place of your habitual residence, your place of work, or
+    the place of the alleged infringement. To exercise your rights, send a message to the
+    email address stated above.
+  </p>
+
+  <h2>8. Automated decisions</h2>
+  <p>
+    We do not make decisions based solely on automated processing, including profiling,
+    within the meaning of Article 22 GDPR.
+  </p>
+</LegalLayout>

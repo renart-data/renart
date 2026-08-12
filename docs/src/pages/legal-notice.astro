@@ -22,12 +22,17 @@ const email = runtimeValue('RENART_LEGAL_EMAIL', import.meta.env.PUBLIC_RENART_L
 ---
 
 <LegalLayout
-  title="Impressum"
-  description="Anbieterkennzeichnung und Kontaktinformationen für getrenart.com."
-  language="de"
-  alternateHref="/legal-notice/"
+  title="Legal notice"
+  description="Provider identification and contact information for getrenart.com."
+  alternateHref="/impressum/"
 >
-  <h2>Anbieter</h2>
+  <p>
+    <strong>Translation notice:</strong> This English version is provided for convenience. In
+    the event of discrepancies, the <a href="/impressum/" hreflang="de">German version</a>
+    applies.
+  </p>
+
+  <h2>Provider</h2>
   <address>
     <strong>{legalName}</strong><br />
     {addressLine}<br />
@@ -35,20 +40,21 @@ const email = runtimeValue('RENART_LEGAL_EMAIL', import.meta.env.PUBLIC_RENART_L
     {country}
   </address>
 
-  <h2>Kontakt</h2>
-  <p>E-Mail: <strong>{email}</strong></p>
+  <h2>Contact</h2>
+  <p>Email: <strong>{email}</strong></p>
 
-  <h2>Rechtliche Einordnung</h2>
+  <h2>Legal classification</h2>
   <p>
-    Angaben gemäß § 18 Abs. 1 Medienstaatsvertrag und, soweit auf dieses Angebot
-    anwendbar, § 5 Digitale-Dienste-Gesetz. Das Angebot enthält keine
-    journalistisch-redaktionell gestalteten Inhalte im Sinne von § 18 Abs. 2
-    Medienstaatsvertrag.
+    Information pursuant to section 18(1) of the German State Media Treaty
+    (Medienstaatsvertrag) and, where applicable to this website, section 5 of the German
+    Digital Services Act (Digitale-Dienste-Gesetz). This website does not contain
+    journalistic-editorial content within the meaning of section 18(2) of the German State
+    Media Treaty.
   </p>
 
-  <h2>Verbraucherstreitbeilegung</h2>
+  <h2>Consumer dispute resolution</h2>
   <p>
-    Wir sind weder verpflichtet noch bereit, an einem Streitbeilegungsverfahren vor
-    einer Verbraucherschlichtungsstelle teilzunehmen.
+    We are neither obliged nor willing to participate in dispute resolution proceedings
+    before a consumer arbitration board.
   </p>
 </LegalLayout>

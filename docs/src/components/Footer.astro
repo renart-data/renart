@@ -1,15 +1,17 @@
 ---
 import DefaultFooter from '@astrojs/starlight/components/Footer.astro';
+import DiscordInvite from './DiscordInvite.astro';
 import PrivacyConsent from './PrivacyConsent.astro';
 ---
 
 <DefaultFooter />
 <nav class="legal-links" aria-label="Legal and privacy links">
-  <a href="/impressum/">Impressum</a>
-  <a href="/datenschutz/">Datenschutzerklärung</a>
-  <button type="button" data-open-privacy-settings>Privacy settings</button>
+  <a href="/legal-notice/">Legal notice</a>
+  <a href="/privacy/">Privacy policy</a>
+  <button type="button" data-open-privacy-settings hidden>Privacy settings</button>
 </nav>
 <PrivacyConsent />
+<DiscordInvite />
 
 <style>
   .legal-links {

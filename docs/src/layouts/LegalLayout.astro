@@ -1,19 +1,50 @@
 ---
 import { Font } from 'astro:assets';
+import DiscordInvite from '../components/DiscordInvite.astro';
 import PrivacyConsent from '../components/PrivacyConsent.astro';
 
 interface Props {
   title: string;
   description: string;
+  language?: 'de' | 'en';
+  alternateHref: string;
 }
 
-const { title, description } = Astro.props;
+const { title, description, language = 'en', alternateHref } = Astro.props;
+const isGerman = language === 'de';
+const alternateLanguage = isGerman ? 'en' : 'de';
+const copy = isGerman
+  ? {
+      homeLabel: 'Renart Startseite',
+      navigationLabel: 'Seitennavigation',
+      eyebrow: 'Rechtliches',
+      alternateLabel: 'English version',
+      footerLabel: 'Rechtliche Links',
+      legalNoticeLabel: 'Impressum',
+      legalNoticeHref: '/impressum/',
+      privacyLabel: 'Datenschutzerklärung',
+      privacyHref: '/datenschutz/',
+      privacySettingsLabel: 'Datenschutzeinstellungen',
+    }
+  : {
+      homeLabel: 'Renart home',
+      navigationLabel: 'Page navigation',
+      eyebrow: 'Legal',
+      alternateLabel: 'Deutsche Fassung',
+      footerLabel: 'Legal links',
+      legalNoticeLabel: 'Legal notice',
+      legalNoticeHref: '/legal-notice/',
+      privacyLabel: 'Privacy policy',
+      privacyHref: '/privacy/',
+      privacySettingsLabel: 'Privacy settings',
+    };
 const canonical = new URL(Astro.url.pathname, 'https://getrenart.com');
+const alternate = new URL(alternateHref, 'https://getrenart.com');
 const currentYear = new Date().getFullYear();
 ---
 
 <!doctype html>
-<html lang="de">
+<html lang={language}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -22,24 +53,34 @@ const currentYear = new Date().getFullYear();
     <meta name="theme-color" content="#0b0d0c" />
     <link rel="icon" href="/icons/icon-32.png" type="image/png" sizes="32x32" />
     <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang={language} href={canonical} />
+    <link rel="alternate" hreflang={alternateLanguage} href={alternate} />
     <title>{title} · Renart</title>
     <Font cssVariable="--font-geist" preload />
     <Font cssVariable="--font-geist-mono" />
   </head>
   <body>
     <header class="legal-nav">
-      <a href="/" class="legal-logo" aria-label="Renart Startseite">
+      <a href="/" class="legal-logo" aria-label={copy.homeLabel}>
         <img src="/icons/icon-32.png" alt="" width="22" height="22" />
         renart
       </a>
-      <nav aria-label="Seitennavigation">
+      <nav aria-label={copy.navigationLabel}>
         <a href="/docs/">Docs</a>
         <a href="https://discord.gg/jTH758KNP8">Discord</a>
       </nav>
     </header>
 
     <main>
-      <p class="legal-eyebrow">Rechtliches</p>
+      <a
+        class="legal-language"
+        href={alternateHref}
+        hreflang={alternateLanguage}
+        lang={alternateLanguage}
+      >
+        {copy.alternateLabel}
+      </a>
+      <p class="legal-eyebrow">{copy.eyebrow}</p>
       <h1>{title}</h1>
       <p class="legal-lead">{description}</p>
       <article class="legal-copy">
@@ -49,14 +90,15 @@ const currentYear = new Date().getFullYear();
 
     <footer>
       <span>© {currentYear} Renart</span>
-      <nav aria-label="Rechtliche Links">
-        <a href="/impressum/">Impressum</a>
-        <a href="/datenschutz/">Datenschutzerklärung</a>
-        <button type="button" data-open-privacy-settings>Privacy settings</button>
+      <nav aria-label={copy.footerLabel}>
+        <a href={copy.legalNoticeHref}>{copy.legalNoticeLabel}</a>
+        <a href={copy.privacyHref}>{copy.privacyLabel}</a>
+        <button type="button" data-open-privacy-settings hidden>{copy.privacySettingsLabel}</button>
       </nav>
     </footer>
 
-    <PrivacyConsent />
+    <PrivacyConsent language={language} policyHref={copy.privacyHref} />
+    <DiscordInvite />
   </body>
 </html>
 
@@ -170,11 +212,25 @@ const currentYear = new Date().getFullYear();
     text-transform: uppercase;
   }
 
+  .legal-language {
+    display: inline-block;
+    margin-bottom: 1.2rem;
+    color: var(--legal-muted);
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    text-decoration: none;
+  }
+
+  .legal-language:hover {
+    color: var(--legal-accent);
+  }
+
   h1 {
     margin: 0;
     font-size: clamp(2.3rem, 7vw, 4.3rem);
     line-height: 1;
     letter-spacing: -0.04em;
+    overflow-wrap: anywhere;
   }
 
   .legal-lead {
@@ -220,6 +276,10 @@ const currentYear = new Date().getFullYear();
 
   .legal-copy strong {
     color: var(--legal-fg);
+  }
+
+  .legal-copy code {
+    overflow-wrap: anywhere;
   }
 
   .legal-copy ul {

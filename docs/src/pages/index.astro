@@ -1,6 +1,7 @@
 ---
 import { execSync } from 'node:child_process';
 import { Font } from 'astro:assets';
+import DiscordInvite from '../components/DiscordInvite.astro';
 import PrivacyConsent from '../components/PrivacyConsent.astro';
 
 const repoUrl = 'https://github.com/renart-data/renart';
@@ -495,9 +496,9 @@ const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Redshift', '
       <div class="foot-bottom">
         <span>© {currentYear} Renart / Apache 2.0</span>
         <div class="meta">
-          <a href="/impressum/">Impressum</a>
-          <a href="/datenschutz/">Datenschutzerklärung</a>
-          <button type="button" data-open-privacy-settings>Privacy settings</button>
+          <a href="/legal-notice/">Legal notice</a>
+          <a href="/privacy/">Privacy policy</a>
+          <button type="button" data-open-privacy-settings hidden>Privacy settings</button>
           <span>{latestVersion} / public alpha</span>
         </div>
       </div>
@@ -505,6 +506,7 @@ const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Redshift', '
 
     <div class="toast" id="toast">copied to clipboard</div>
     <PrivacyConsent />
+    <DiscordInvite />
 
     <script is:inline>
       document.querySelectorAll('.install-copy').forEach((button) => {
