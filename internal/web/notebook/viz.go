@@ -170,7 +170,7 @@ func parseVizLine(line string, col, lineNumber int) (*VizDirective, []VizDiagnos
 	kind := strings.TrimSpace(parts[0])
 	if !vizKinds[kind] {
 		diagnostics = append(diagnostics, VizDiagnostic{
-			Message: fmt.Sprintf("unknown chart kind %q; expected table, bar, line, area, pie, or kpi", kind),
+			Message:  fmt.Sprintf("unknown chart kind %q; expected table, bar, line, area, pie, or kpi", kind),
 			Severity: "error", Line: lineNumber, Col: col, EndCol: len(line),
 		})
 		return nil, diagnostics
@@ -391,4 +391,123 @@ func formatVizValue(value any) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// MigrateLegacyVisualization converts the first valid @viz comment into the
+// structured v1 visualization definition and removes only that comment from
+// the cell. SQL outside the comment is preserved byte-for-byte.
+func MigrateLegacyVisualization(content string) (string, map[string]any, bool, error) {
+	directive, diagnostics := ParseViz(content)
+	if directive == nil {
+		for _, diagnostic := range diagnostics {
+			if diagnostic.Severity == "error" {
+				return content, nil, false, fmt.Errorf("cannot migrate @viz: %s", diagnostic.Message)
+			}
+		}
+		return content, nil, false, nil
+	}
+
+	definition := map[string]any{"version": 1, "type": directive.Kind}
+	field := func(key string) map[string]any {
+		value, _ := directive.Options[key].(string)
+		if strings.TrimSpace(value) == "" {
+			return nil
+		}
+		result := map[string]any{"field": value}
+		if format, ok := directive.Options["format"].(string); ok && strings.TrimSpace(format) != "" && (key == "value" || key == "y") {
+			result["format"] = format
+		}
+		return result
+	}
+	fields := func(key string) []map[string]any {
+		values := vizColumnRefs(directive.Options[key])
+		result := make([]map[string]any, 0, len(values))
+		for _, value := range values {
+			encoded := map[string]any{"field": value}
+			if format, ok := directive.Options["format"].(string); ok && strings.TrimSpace(format) != "" && key == "y" {
+				encoded["format"] = format
+			}
+			result = append(result, encoded)
+		}
+		return result
+	}
+	switch directive.Kind {
+	case "table":
+		if columns := fields("columns"); len(columns) > 0 {
+			definition["columns"] = columns
+		}
+	case "kpi":
+		definition["value"] = field("value")
+		if compare := field("compare"); compare != nil {
+			definition["compare"] = compare
+		}
+	default:
+		definition["encoding"] = map[string]any{
+			"x": field("x"),
+			"y": fields("y"),
+		}
+		if stacked, ok := directive.Options["stacked"].(bool); ok && stacked {
+			definition["stacked"] = true
+		}
+	}
+	if limit, ok := directive.Options["limit"].(float64); ok && limit > 0 {
+		definition["presentation_limit"] = int(limit)
+	}
+
+	without, removed := removeFirstVizComment(content)
+	if !removed {
+		return content, nil, false, fmt.Errorf("could not locate parsed @viz comment")
+	}
+	return without, definition, true, nil
+}
+
+func removeFirstVizComment(content string) (string, bool) {
+	lineStart := 0
+	for lineStart <= len(content) {
+		lineEnd := strings.IndexByte(content[lineStart:], '\n')
+		hasNewline := lineEnd >= 0
+		if hasNewline {
+			lineEnd += lineStart
+		} else {
+			lineEnd = len(content)
+		}
+		line := content[lineStart:lineEnd]
+		column := indexOfViz(line)
+		if column >= 0 {
+			parsed, _ := parseVizLine(line, column, 1)
+			if parsed != nil {
+				open := strings.Index(line[column:], "(") + column
+				closeParen := matchingCloseParen(line, open)
+				removeStart, removeEnd := -1, -1
+				if blockStart := strings.LastIndex(line[:column], "/*"); blockStart >= 0 {
+					if blockEnd := strings.Index(line[closeParen+1:], "*/"); blockEnd >= 0 {
+						removeStart = blockStart
+						removeEnd = closeParen + 1 + blockEnd + 2
+					}
+				} else if commentStart := strings.Index(line[:column], "--"); commentStart >= 0 {
+					removeStart = commentStart
+					removeEnd = lineEnd - lineStart
+				}
+				if removeStart >= 0 && removeEnd >= removeStart {
+					remainingLine := line[:removeStart] + line[removeEnd:]
+					if strings.TrimSpace(remainingLine) == "" {
+						end := lineEnd
+						if hasNewline {
+							end++
+						}
+						return content[:lineStart] + content[end:], true
+					}
+					if removeEnd < len(line) && line[removeEnd] == ' ' {
+						removeEnd++
+					}
+					return content[:lineStart+removeStart] + content[lineStart+removeEnd:], true
+				}
+			}
+		}
+		if !hasNewline {
+			break
+		}
+		lineStart = lineEnd + 1
+	}
+	return content, false
 }

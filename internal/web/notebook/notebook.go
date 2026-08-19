@@ -22,6 +22,7 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/spf13/afero"
+	"renart/internal/web/presentation"
 )
 
 // ManifestFileName is the file that marks a directory as a notebook.
@@ -40,14 +41,46 @@ const (
 	ClassNotebook = "notebook"
 )
 
-// Block is one ordered entry of a notebook: either a cell reference or a
-// markdown prose block. Prose blocks are not assets — no IDs in the DAG,
-// no fingerprints.
+// Manifest versions. Version 1 is the original flat cell/markdown shape;
+// version 2 gives every manifest-owned block durable identity and adds
+// structured visualization blocks.
+const (
+	ManifestVersionLegacy  = 1
+	ManifestVersionCurrent = 2
+)
+
+// VisualizationBlock is presentation metadata owned by notebook.yml. It is
+// deliberately not a pipeline asset and never enters the execution DAG.
+// Definition is a Renart-owned, versioned document interpreted and type-checked
+// by the presentation package.
+type VisualizationBlock struct {
+	ID         string
+	Source     string
+	Definition map[string]any
+}
+
+// Block is one ordered entry of a notebook: a cell reference, markdown prose,
+// or a visualization. Cell identity lives in Cell; manifest-owned blocks use
+// ID. Presentation blocks are not assets and have no execution fingerprints.
 type Block struct {
+	// ID is the durable identity of markdown and visualization blocks. It is
+	// empty for cell blocks because Cell is already the durable identity.
+	ID string
 	// Cell is the durable cell ID this block renders (cell blocks only).
 	Cell string
 	// Markdown is the prose content (markdown blocks only).
 	Markdown string
+	// Visualization is the structured presentation definition (visualization
+	// blocks only).
+	Visualization *VisualizationBlock
+}
+
+// StableID returns the identity used by semantic editors and artifact links.
+func (b Block) StableID() string {
+	if b.Cell != "" {
+		return b.Cell
+	}
+	return b.ID
 }
 
 // Cell is a loaded notebook cell: an ordinary Bruin asset plus its durable
@@ -63,6 +96,10 @@ type Cell struct {
 	// Raw is the full on-disk file content (frontmatter + body), kept so
 	// the rename engine can splice references without re-printing.
 	Raw string
+	// Source is non-nil for a Renart-owned .source.yml file. Source components
+	// still participate in the notebook DAG and produce a typed local relation,
+	// but they are not parsed or presented as SQL/Python assets.
+	Source *SourceDefinition
 	// ExternalRefs are referenced table names that did not resolve to a
 	// sibling cell — pipeline assets or raw warehouse tables, resolved by
 	// the session import machinery.
@@ -71,6 +108,9 @@ type Cell struct {
 
 // Notebook is a loaded notebook folder.
 type Notebook struct {
+	// Version is the notebook.yml format version. Missing version means the
+	// legacy v1 shape; newly created notebooks use ManifestVersionCurrent.
+	Version int
 	// UUID is the durable notebook identifier from notebook.yml `id:`.
 	UUID string
 	// Title is the display title (defaults to the folder name).
@@ -80,6 +120,9 @@ type Notebook struct {
 	// Target optionally overrides where sessions materialize
 	// (notebook.yml → environment → project default).
 	Target string
+	// Parameters are Git-tracked typed defaults. Runtime overrides live in the
+	// notebook runtime and never rewrite notebook.yml as a side effect of a run.
+	Parameters []presentation.ParameterDefinition
 	// Blocks is the ordered presentation list (cells + prose).
 	Blocks []Block
 	// Cells holds the loaded cell assets, ordered by their first
@@ -87,6 +130,10 @@ type Notebook struct {
 	Cells []*Cell
 	// Problems are non-fatal load/validation findings, surfaced in the UI.
 	Problems []string
+	// Revision identifies the exact authored notebook snapshot: manifest plus
+	// every cell file. It is stable across server restarts and is the CAS
+	// boundary for semantic multi-block changes.
+	Revision string
 }
 
 // CellByID returns the cell with the given durable ID, or nil.
@@ -174,10 +221,12 @@ func (l *Loader) Load(dir string) (*Notebook, error) {
 	}
 
 	nb := &Notebook{
-		UUID:   uuid,
-		Title:  manifest.Title,
-		Dir:    dir,
-		Target: manifest.Target,
+		Version:    manifest.Version,
+		UUID:       uuid,
+		Title:      manifest.Title,
+		Dir:        dir,
+		Target:     manifest.Target,
+		Parameters: append([]presentation.ParameterDefinition(nil), manifest.Parameters...),
 	}
 	if nb.Title == "" {
 		nb.Title = filepath.Base(dir)
@@ -193,6 +242,13 @@ func (l *Loader) Load(dir string) (*Notebook, error) {
 
 	l.deriveDependencies(nb)
 	validate(nb)
+
+	revision, revisionErr := SnapshotRevision(l.fs, nb)
+	if revisionErr != nil {
+		nb.Problems = append(nb.Problems, "could not compute notebook revision: "+revisionErr.Error())
+	} else {
+		nb.Revision = revision
+	}
 
 	return nb, nil
 }
@@ -213,6 +269,52 @@ func (l *Loader) loadCells(dir string) ([]*Cell, []string, error) {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
+		if IsSourcePath(entry.Name()) {
+			content, readErr := afero.ReadFile(l.fs, path)
+			if readErr != nil {
+				problems = append(problems, fmt.Sprintf("%s: %s", entry.Name(), readErr.Error()))
+				continue
+			}
+			definition, parseErr := ParseSourceDefinition(content)
+			if parseErr != nil {
+				problems = append(problems, fmt.Sprintf("%s: %s", entry.Name(), parseErr.Error()))
+				continue
+			}
+			cellID, generated, idErr := EnsureSourceID(l.fs, path)
+			if idErr != nil {
+				problems = append(problems, fmt.Sprintf("%s: failed to ensure source id: %s", entry.Name(), idErr.Error()))
+				continue
+			}
+			if generated {
+				content, readErr = afero.ReadFile(l.fs, path)
+				if readErr != nil {
+					problems = append(problems, fmt.Sprintf("%s: %s", entry.Name(), readErr.Error()))
+					continue
+				}
+				definition, parseErr = ParseSourceDefinition(content)
+				if parseErr != nil {
+					problems = append(problems, fmt.Sprintf("%s: %s", entry.Name(), parseErr.Error()))
+					continue
+				}
+			}
+			asset := &pipeline.Asset{
+				Name:       SourceCellName(entry.Name()),
+				Type:       SourceCellType(definition.Kind),
+				Connection: definition.Connection,
+				Columns:    definition.Columns,
+				Meta: map[string]string{
+					SnapshotModeMetaKey:     definition.Snapshot.Mode,
+					SnapshotRowLimitMetaKey: fmt.Sprintf("%d", definition.Snapshot.RowLimit),
+				},
+				ExecutableFile: pipeline.ExecutableFile{
+					Name: filepath.Base(path), Path: path, Content: string(content),
+				},
+			}
+			cells = append(cells, &Cell{
+				ID: cellID, Asset: asset, Path: path, Raw: string(content), Source: definition,
+			})
+			continue
+		}
 
 		asset, parseErr := l.creator(path)
 		if parseErr != nil {
@@ -357,7 +459,7 @@ func isCellFile(name string) bool {
 	if lower == ManifestFileName {
 		return false
 	}
-	return strings.HasSuffix(lower, ".sql") || strings.HasSuffix(lower, ".py")
+	return strings.HasSuffix(lower, ".sql") || strings.HasSuffix(lower, ".py") || IsSourcePath(lower)
 }
 
 // IsPythonCell reports whether a cell is a Python asset (by type or file
@@ -373,6 +475,9 @@ func IsPythonCell(cell *Cell) bool {
 }
 
 func cellNameFromFilename(filename string) string {
+	if IsSourcePath(filename) {
+		return SourceCellName(filename)
+	}
 	stem := strings.TrimSuffix(filename, filepath.Ext(filename))
 	return stem
 }

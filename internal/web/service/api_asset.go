@@ -576,6 +576,10 @@ func (e *HybridBruinExecutor) runAPIAsset(ctx context.Context, pl *pipeline.Pipe
 }
 
 func writeAPIAssetJSONL(ctx context.Context, renderer *jinja.Renderer, spec nativeAPISpec, path string, output io.Writer) (int, error) {
+	return writeAPIAssetJSONLLimited(ctx, renderer, spec, path, output, 0)
+}
+
+func writeAPIAssetJSONLLimited(ctx context.Context, renderer *jinja.Renderer, spec nativeAPISpec, path string, output io.Writer, rowLimit int64) (int, error) {
 	file, err := os.Create(path)
 	if err != nil {
 		return 0, err
@@ -634,6 +638,9 @@ func writeAPIAssetJSONL(ctx context.Context, renderer *jinja.Renderer, spec nati
 		pageState := newAPIPaginationState(spec.Pagination)
 		nextURL := strings.TrimSpace(baseURL)
 		for {
+			if rowLimit > 0 && int64(count) >= rowLimit {
+				return count, nil
+			}
 			requestURL, pageParams, err := pageState.request(nextURL, baseParams)
 			if err != nil {
 				return count, err
@@ -672,6 +679,9 @@ func writeAPIAssetJSONL(ctx context.Context, renderer *jinja.Renderer, spec nati
 			}
 			records := recordsAtPath(decoded, spec.Response.RecordsPath)
 			for _, record := range records {
+				if rowLimit > 0 && int64(count) >= rowLimit {
+					return count, nil
+				}
 				var out map[string]any
 				if len(spec.Response.Fields) > 0 {
 					mapped := make(map[string]any, len(spec.Response.Fields))

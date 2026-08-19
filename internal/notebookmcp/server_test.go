@@ -1,0 +1,558 @@
+package notebookmcp
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"renart/internal/web/model"
+	"renart/internal/web/notebook"
+	"renart/internal/web/presentation"
+	"renart/internal/web/service"
+)
+
+type fakeBackend struct {
+	mu sync.Mutex
+
+	workspace model.WorkspaceState
+	notebook  model.Notebook
+	runtime   service.NotebookRuntimeSnapshot
+	prepared  service.NotebookChangeSet
+	applied   service.NotebookChangeSet
+	run       func(context.Context, string, service.RunNotebookRequest) (service.RunNotebookResult, error)
+	cancels   int
+}
+
+func (f *fakeBackend) Workspace(context.Context) (model.WorkspaceState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.workspace, nil
+}
+
+func (f *fakeBackend) Notebook(context.Context, string) (model.Notebook, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.notebook, nil
+}
+
+func (f *fakeBackend) Runtime(context.Context, string) (service.NotebookRuntimeSnapshot, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.runtime, nil
+}
+
+func (f *fakeBackend) PrepareChangeSet(_ context.Context, _ string, change service.NotebookChangeSet) (service.NotebookChangePlan, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if change.BaseRevision != f.notebook.Revision {
+		return service.NotebookChangePlan{}, fmt.Errorf("revision conflict")
+	}
+	normalized := change
+	for index := range normalized.Operations {
+		if normalized.Operations[index].Kind == service.NotebookOperationMarkdownCreate && normalized.Operations[index].BlockID == "" {
+			normalized.Operations[index].BlockID = "block_generated"
+		}
+	}
+	normalized.ExpectedRevision = "rev2"
+	f.prepared = normalized
+	return service.NotebookChangePlan{
+		Status: "ok", ChangeSet: normalized, CanApply: true,
+		Diff: []service.NotebookChangeDiff{{Path: "/secret/workspace/notebook.yml", Status: "modified", Before: "secret-before", After: "secret-after"}},
+	}, nil
+}
+
+func (f *fakeBackend) ApplyChangeSet(_ context.Context, _ string, change service.NotebookChangeSet) (service.NotebookChangeApplyResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !reflect.DeepEqual(change, f.prepared) {
+		return service.NotebookChangeApplyResult{}, fmt.Errorf("change differs from prepared operation")
+	}
+	f.applied = change
+	f.notebook.Revision = change.ExpectedRevision
+	return service.NotebookChangeApplyResult{Status: "ok", Notebook: f.notebook}, nil
+}
+
+func (f *fakeBackend) CheckVisualization(_ context.Context, _ string, _ service.NotebookVisualizationCheckRequest) (service.NotebookVisualizationCheckResult, error) {
+	return service.NotebookVisualizationCheckResult{
+		Status: "ok", CanApply: false,
+		Findings: []presentation.Finding{{Code: "field-missing", Severity: "error", Message: "missing amount", Path: "encoding.y", Field: "amount"}},
+	}, nil
+}
+
+func (f *fakeBackend) Run(ctx context.Context, id string, request service.RunNotebookRequest) (service.RunNotebookResult, error) {
+	if f.run != nil {
+		return f.run(ctx, id, request)
+	}
+	return service.RunNotebookResult{Status: "ok", Results: []notebook.CellRunResult{{
+		CellID: "cell_sql", Name: "orders", Status: notebook.CellRunOK,
+		Columns: []string{"id"}, ColumnTypes: []string{"BIGINT"}, TotalRows: 2,
+	}}}, nil
+}
+
+func (f *fakeBackend) Cancel(context.Context, string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cancels++
+	return nil
+}
+
+func fixtureBackend() *fakeBackend {
+	source := model.Asset{
+		CellID: "cell_source", Name: "accounts_api", Type: "renart.http", Connection: "object-secret",
+		NotebookSource: &model.NotebookSourceDefinition{
+			Version: 1, ID: "cell_source", Kind: "http",
+			URI: "https://user:password@example.test/data?signature=secret",
+			Request: model.NotebookSourceRequest{
+				URL: "https://user:password@example.test/data?signature=secret", Method: "POST",
+				Headers: map[string]string{"authorization": "Bearer very-secret"},
+				Body:    map[string]any{"api_key": "also-secret"},
+			},
+			Response: model.NotebookSourceResponse{RecordsPath: "data.items"},
+			Snapshot: model.NotebookSourceSnapshot{Mode: "sample", RowLimit: 100},
+		},
+	}
+	sql := model.Asset{
+		CellID: "cell_sql", Name: "orders", Type: "duckdb.sql", Content: "select * from accounts_api",
+		Upstreams: []string{"accounts_api"}, Columns: []model.Column{{Name: "id", Type: "BIGINT"}},
+	}
+	python := model.Asset{
+		CellID: "cell_python", Name: "forecast", Type: notebook.PythonCellType,
+		Content:   "def materialize():\n    return query('select * from orders')",
+		Upstreams: []string{"orders"},
+	}
+	nb := model.Notebook{
+		ID: "notebook_opaque", UUID: "nb_uuid", Title: "Revenue", ManifestVersion: 2, Revision: "rev1",
+		Blocks: []model.NotebookBlock{
+			{Cell: "cell_source"}, {Cell: "cell_sql"}, {Cell: "cell_python"},
+			{ID: "viz_sales", Visualization: &model.NotebookVisualization{ID: "viz_sales", Source: "cell_sql", Definition: map[string]any{"version": 1, "type": "line"}}},
+			{ID: "block_notes", Markdown: "## Notes"},
+		},
+		Cells: []model.Asset{source, sql, python},
+	}
+	rows := make([][]any, 0, 80)
+	for index := 0; index < 80; index++ {
+		rows = append(rows, []any{index, strings.Repeat("x", 2048)})
+	}
+	runtime := service.NotebookRuntimeSnapshot{Results: map[string]notebook.CellRunResult{
+		"cell_sql": {
+			CellID: "cell_sql", Name: "orders", Status: notebook.CellRunOK,
+			Columns: []string{"id", "payload"}, ColumnTypes: []string{"BIGINT", "VARCHAR"},
+			Rows: rows, TotalRows: 80, Materialized: "view",
+		},
+		"cell_source": {
+			CellID: "cell_source", Name: "accounts_api", Status: notebook.CellRunOK,
+			Columns: []string{"id"}, ColumnTypes: []string{"BIGINT"}, TotalRows: 100, Sampled: true,
+			Snapshot: &notebook.SnapshotRecord{
+				BlockID: "cell_source", SourceKind: "http", Environment: "default",
+				ImportedAt: "2026-08-12T12:00:00Z", RowCount: 100, ByteCount: 4096,
+				Sampled: true, Complete: false, Schema: []notebook.TabularColumn{{Name: "id", Type: "BIGINT"}},
+			},
+		},
+	}}
+	return &fakeBackend{
+		workspace: model.WorkspaceState{Notebooks: []model.Notebook{nb}}, notebook: nb, runtime: runtime,
+	}
+}
+
+type protocolFixture struct {
+	client *mcp.ClientSession
+	close  func()
+}
+
+func connectTestServer(t *testing.T, backend Backend) protocolFixture {
+	t.Helper()
+	ctx := context.Background()
+	server := New(ctx, backend, "test", nil)
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Protocol().Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "test"}, nil)
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		serverSession.Close()
+		t.Fatal(err)
+	}
+	return protocolFixture{
+		client: clientSession,
+		close: func() {
+			_ = clientSession.Close()
+			_ = serverSession.Close()
+		},
+	}
+}
+
+func callTool[T any](t *testing.T, client *mcp.ClientSession, name string, arguments any) T {
+	t.Helper()
+	result, err := client.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: arguments})
+	if err != nil {
+		t.Fatalf("call %s: %v", name, err)
+	}
+	if result.IsError {
+		t.Fatalf("call %s returned a tool error: %s", name, toolText(result))
+	}
+	encoded, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal %s output: %v", name, err)
+	}
+	var output T
+	if err := json.Unmarshal(encoded, &output); err != nil {
+		t.Fatalf("decode %s output: %v\n%s", name, err, encoded)
+	}
+	return output
+}
+
+func callToolError(t *testing.T, client *mcp.ClientSession, name string, arguments any) string {
+	t.Helper()
+	result, err := client.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: arguments})
+	if err != nil {
+		t.Fatalf("call %s: %v", name, err)
+	}
+	if !result.IsError {
+		t.Fatalf("call %s unexpectedly succeeded", name)
+	}
+	return toolText(result)
+}
+
+func toolText(result *mcp.CallToolResult) string {
+	var parts []string
+	for _, content := range result.Content {
+		if text, ok := content.(*mcp.TextContent); ok {
+			parts = append(parts, text.Text)
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func TestProtocolSurfaceIsBoundedAndAnnotated(t *testing.T) {
+	fixture := connectTestServer(t, fixtureBackend())
+	defer fixture.close()
+	listed, err := fixture.client.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(listed.Tools), 15; got != want {
+		t.Fatalf("tool count = %d, want %d", got, want)
+	}
+	for _, tool := range listed.Tools {
+		lower := strings.ToLower(tool.Name)
+		for _, forbidden := range []string{"filesystem", "shell", "git", "generic_api", "execute_sql"} {
+			if strings.Contains(lower, forbidden) {
+				t.Errorf("tool %q exposes forbidden capability %q", tool.Name, forbidden)
+			}
+		}
+		if tool.Annotations == nil {
+			t.Errorf("tool %q has no behavior annotations", tool.Name)
+		}
+	}
+	apply := findTool(t, listed.Tools, "apply_notebook_change_set")
+	if apply.Annotations.ReadOnlyHint || apply.Annotations.DestructiveHint == nil || !*apply.Annotations.DestructiveHint {
+		t.Fatalf("apply annotations do not identify a destructive write: %+v", apply.Annotations)
+	}
+	run := findTool(t, listed.Tools, "run_notebook_cells")
+	if run.Annotations.OpenWorldHint == nil || !*run.Annotations.OpenWorldHint {
+		t.Fatalf("run annotations do not identify external/code execution: %+v", run.Annotations)
+	}
+}
+
+func findTool(t *testing.T, tools []*mcp.Tool, name string) *mcp.Tool {
+	t.Helper()
+	for _, tool := range tools {
+		if tool.Name == name {
+			return tool
+		}
+	}
+	t.Fatalf("tool %q not found", name)
+	return nil
+}
+
+func TestReadToolsRedactSourcesAndBoundSamples(t *testing.T) {
+	fixture := connectTestServer(t, fixtureBackend())
+	defer fixture.close()
+
+	list := callTool[ListNotebooksOutput](t, fixture.client, "list_notebooks", map[string]any{})
+	if len(list.Notebooks) != 1 || list.Notebooks[0].Revision != "rev1" {
+		t.Fatalf("unexpected notebook list: %+v", list)
+	}
+	block := callTool[NotebookBlockOutput](t, fixture.client, "get_notebook_block", map[string]any{
+		"notebook_id": "notebook_opaque", "block_id": "cell_source",
+	})
+	encoded, _ := json.Marshal(block)
+	for _, secret := range []string{"password", "signature=", "very-secret", "also-secret", "/secret/workspace"} {
+		if strings.Contains(string(encoded), secret) {
+			t.Errorf("source block leaked %q: %s", secret, encoded)
+		}
+	}
+	if block.Source == nil || block.Source.RequestURL != "https://example.test/data" {
+		t.Fatalf("unexpected safe source definition: %+v", block.Source)
+	}
+	sample := callTool[NotebookResultSampleOutput](t, fixture.client, "get_notebook_result_sample", map[string]any{
+		"notebook_id": "notebook_opaque", "cell_id": "cell_sql", "limit": 500,
+	})
+	if len(sample.Rows) > maxSampleRows || !sample.Truncated {
+		t.Fatalf("sample was not bounded: rows=%d truncated=%v", len(sample.Rows), sample.Truncated)
+	}
+	sampleJSON, _ := json.Marshal(sample.Rows)
+	if len(sampleJSON) > maxSampleBytes {
+		t.Fatalf("sample payload = %d bytes, exceeds %d", len(sampleJSON), maxSampleBytes)
+	}
+	sources := callTool[ListNotebookSourcesOutput](t, fixture.client, "list_notebook_sources", map[string]any{"notebook_id": "notebook_opaque"})
+	if len(sources.Sources) != 1 || sources.Sources[0].Snapshot == nil || !sources.Sources[0].Snapshot.Sampled {
+		t.Fatalf("unexpected sources: %+v", sources.Sources)
+	}
+}
+
+func TestPreparedChangeAppliesExactNormalizedOperations(t *testing.T) {
+	backend := fixtureBackend()
+	fixture := connectTestServer(t, backend)
+	defer fixture.close()
+	prepared := callTool[PreparedChangeOutput](t, fixture.client, "prepare_notebook_change_set", map[string]any{
+		"notebook_id": "notebook_opaque", "base_revision": "rev1",
+		"operations": []map[string]any{{"kind": "markdown.create", "content": "## Analysis", "position": "end"}},
+	})
+	if prepared.PreparedID == "" || prepared.ExpectedRevision != "rev2" || prepared.Operations[0].BlockID != "block_generated" {
+		t.Fatalf("unexpected prepared change: %+v", prepared)
+	}
+	preparedJSON, _ := json.Marshal(prepared)
+	if strings.Contains(string(preparedJSON), "/secret/workspace") || strings.Contains(string(preparedJSON), "secret-before") {
+		t.Fatalf("prepared output leaked backend diff bytes: %s", preparedJSON)
+	}
+	validated := callTool[PreparedChangeOutput](t, fixture.client, "validate_notebook_change_set", map[string]any{"prepared_id": prepared.PreparedID})
+	if !validated.CanApply || validated.ExpectedRevision != prepared.ExpectedRevision {
+		t.Fatalf("unexpected validation: %+v", validated)
+	}
+	applied := callTool[ApplyChangeOutput](t, fixture.client, "apply_notebook_change_set", map[string]any{"prepared_id": prepared.PreparedID})
+	if !applied.Applied || applied.Notebook.Revision != "rev2" {
+		t.Fatalf("unexpected apply result: %+v", applied)
+	}
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	if !reflect.DeepEqual(backend.applied, backend.prepared) {
+		t.Fatalf("applied change differs from reviewed normalized change\nprepared: %#v\napplied: %#v", backend.prepared, backend.applied)
+	}
+}
+
+func TestMCPRejectsDeleteAndSourceUpdateOperations(t *testing.T) {
+	fixture := connectTestServer(t, fixtureBackend())
+	defer fixture.close()
+	for _, kind := range []string{service.NotebookOperationCellDelete, service.NotebookOperationSourceUpdate} {
+		message := callToolError(t, fixture.client, "prepare_notebook_change_set", map[string]any{
+			"notebook_id": "notebook_opaque", "base_revision": "rev1",
+			"operations": []map[string]any{{"kind": kind, "cell_id": "cell_sql"}},
+		})
+		if !strings.Contains(message, "not available through MCP") {
+			t.Fatalf("unexpected rejection for %s: %s", kind, message)
+		}
+	}
+}
+
+func TestRunRequiresPythonApprovalAndReturnsAsyncStatus(t *testing.T) {
+	backend := fixtureBackend()
+	fixture := connectTestServer(t, backend)
+	defer fixture.close()
+	message := callToolError(t, fixture.client, "run_notebook_cells", map[string]any{
+		"notebook_id": "notebook_opaque", "all": true,
+	})
+	if !strings.Contains(message, "allow_python=true") {
+		t.Fatalf("unexpected Python approval error: %s", message)
+	}
+	accepted := callTool[RunAcceptedOutput](t, fixture.client, "run_notebook_cells", map[string]any{
+		"notebook_id": "notebook_opaque", "all": true, "allow_python": true,
+	})
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		status := callTool[RunStatusOutput](t, fixture.client, "get_notebook_run_status", map[string]any{"run_id": accepted.RunID})
+		if status.Status == "succeeded" {
+			if len(status.Results) != 1 || status.Results[0].Columns[0].Type != "BIGINT" {
+				t.Fatalf("unexpected run results: %+v", status.Results)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("run did not finish: %+v", status)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestCancelNotebookRunPropagatesToBackend(t *testing.T) {
+	backend := fixtureBackend()
+	started := make(chan struct{})
+	backend.run = func(ctx context.Context, _ string, _ service.RunNotebookRequest) (service.RunNotebookResult, error) {
+		close(started)
+		<-ctx.Done()
+		return service.RunNotebookResult{Status: "cancelled"}, nil
+	}
+	fixture := connectTestServer(t, backend)
+	defer fixture.close()
+	accepted := callTool[RunAcceptedOutput](t, fixture.client, "run_notebook_cells", map[string]any{
+		"notebook_id": "notebook_opaque", "cells": []string{"cell_sql"},
+	})
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("run did not start")
+	}
+	status := callTool[RunStatusOutput](t, fixture.client, "cancel_notebook_run", map[string]any{"run_id": accepted.RunID})
+	if status.Status != "cancelling" && status.Status != "cancelled" {
+		t.Fatalf("unexpected cancellation status: %+v", status)
+	}
+	backend.mu.Lock()
+	cancels := backend.cancels
+	backend.mu.Unlock()
+	if cancels != 1 {
+		t.Fatalf("backend cancel calls = %d, want 1", cancels)
+	}
+}
+
+func TestValidatePreparedChangeDetectsHumanRevisionConflict(t *testing.T) {
+	backend := fixtureBackend()
+	fixture := connectTestServer(t, backend)
+	defer fixture.close()
+	prepared := callTool[PreparedChangeOutput](t, fixture.client, "prepare_notebook_change_set", map[string]any{
+		"notebook_id": "notebook_opaque", "base_revision": "rev1",
+		"operations": []map[string]any{{"kind": "cell.update", "cell_id": "cell_sql", "content": "select 2"}},
+	})
+	backend.mu.Lock()
+	backend.notebook.Revision = "human-revision"
+	backend.mu.Unlock()
+	message := callToolError(t, fixture.client, "validate_notebook_change_set", map[string]any{"prepared_id": prepared.PreparedID})
+	if !strings.Contains(message, "revision conflict") {
+		t.Fatalf("unexpected conflict message: %s", message)
+	}
+}
+
+func TestPreparedChangeExpiry(t *testing.T) {
+	store := newChangeStore()
+	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+	stored, err := store.put("notebook", service.NotebookChangePlan{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(preparedChangeTTL + time.Second)
+	if _, err := store.get(stored.id); err == nil {
+		t.Fatal("expired prepared change remained available")
+	} else if !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("unexpected expiry error: %v", err)
+	}
+}
+
+type serviceBackend struct {
+	root      string
+	service   *service.NotebookService
+	workspace *service.WorkspaceService
+}
+
+func (b serviceBackend) Workspace(ctx context.Context) (model.WorkspaceState, error) {
+	return b.workspace.ComputeState(ctx)
+}
+
+func (b serviceBackend) Notebook(_ context.Context, id string) (model.Notebook, error) {
+	result, apiErr := b.service.Get(id)
+	if apiErr != nil {
+		return model.Notebook{}, apiErr
+	}
+	return result, nil
+}
+
+func (b serviceBackend) Runtime(_ context.Context, id string) (service.NotebookRuntimeSnapshot, error) {
+	result, apiErr := b.service.Runtime(id)
+	if apiErr != nil {
+		return service.NotebookRuntimeSnapshot{}, apiErr
+	}
+	return result, nil
+}
+
+func (b serviceBackend) PrepareChangeSet(_ context.Context, id string, change service.NotebookChangeSet) (service.NotebookChangePlan, error) {
+	result, apiErr := b.service.PrepareChangeSet(id, change)
+	if apiErr != nil {
+		return service.NotebookChangePlan{}, apiErr
+	}
+	return result, nil
+}
+
+func (b serviceBackend) ApplyChangeSet(_ context.Context, id string, change service.NotebookChangeSet) (service.NotebookChangeApplyResult, error) {
+	result, apiErr := b.service.ApplyChangeSet(id, change)
+	if apiErr != nil {
+		return service.NotebookChangeApplyResult{}, apiErr
+	}
+	return result, nil
+}
+
+func (b serviceBackend) CheckVisualization(ctx context.Context, id string, request service.NotebookVisualizationCheckRequest) (service.NotebookVisualizationCheckResult, error) {
+	result, apiErr := b.service.CheckVisualization(ctx, id, request)
+	if apiErr != nil {
+		return service.NotebookVisualizationCheckResult{}, apiErr
+	}
+	return result, nil
+}
+
+func (b serviceBackend) Run(ctx context.Context, id string, request service.RunNotebookRequest) (service.RunNotebookResult, error) {
+	result, apiErr := b.service.Run(ctx, id, request)
+	if apiErr != nil {
+		return service.RunNotebookResult{}, apiErr
+	}
+	return result, nil
+}
+
+func (b serviceBackend) Cancel(ctx context.Context, id string) error {
+	if apiErr := b.service.CancelRuns(ctx, id); apiErr != nil {
+		return apiErr
+	}
+	return nil
+}
+
+func TestProtocolAppliesRealNotebookTransaction(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workspace := service.NewWorkspaceService(root, "")
+	notebookService := service.NewNotebookService(service.NotebookDependencies{
+		WorkspaceRoot: root,
+		CurrentState: func() model.WorkspaceState {
+			state, _ := workspace.ComputeState(context.Background())
+			return state
+		},
+	})
+	created, apiErr := notebookService.Create(service.CreateNotebookRequest{Title: "Agent review"})
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	fixture := connectTestServer(t, serviceBackend{root: root, service: notebookService, workspace: workspace})
+	defer fixture.close()
+
+	outline := callTool[NotebookOutlineOutput](t, fixture.client, "get_notebook_outline", map[string]any{"notebook_id": created.ID})
+	if outline.Notebook.Revision != created.Revision || len(outline.Blocks) != 1 {
+		t.Fatalf("unexpected real outline: %+v", outline)
+	}
+	prepared := callTool[PreparedChangeOutput](t, fixture.client, "prepare_notebook_change_set", map[string]any{
+		"notebook_id":   created.ID,
+		"base_revision": created.Revision,
+		"operations": []map[string]any{
+			{"kind": "cell.create", "name": "agent_totals", "language": "sql", "content": "select 42::bigint as total\n"},
+			{"kind": "markdown.create", "content": "## Agent finding", "position": "end"},
+		},
+	})
+	if !prepared.CanApply || len(prepared.Operations) != 2 || prepared.Operations[0].CellID == "" || prepared.Operations[1].BlockID == "" {
+		t.Fatalf("real service did not normalize the change: %+v", prepared)
+	}
+	callTool[PreparedChangeOutput](t, fixture.client, "validate_notebook_change_set", map[string]any{"prepared_id": prepared.PreparedID})
+	applied := callTool[ApplyChangeOutput](t, fixture.client, "apply_notebook_change_set", map[string]any{"prepared_id": prepared.PreparedID})
+	if !applied.Applied || applied.Notebook.Revision != prepared.ExpectedRevision || applied.Notebook.CellCount != 2 {
+		t.Fatalf("unexpected real apply: %+v", applied)
+	}
+	if _, err := os.Stat(filepath.Join(root, "notebooks", "agent-review", "agent_totals.sql")); err != nil {
+		t.Fatalf("semantic apply did not create the SQL cell: %v", err)
+	}
+}

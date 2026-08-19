@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/git"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	gogit "github.com/go-git/go-git/v5"
@@ -427,6 +428,12 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 				query,
 			)
 		},
+		NewConnectionManager: func(ctx context.Context, environment string) (config.ConnectionAndDetailsGetter, error) {
+			return server.newConnectionManager(
+				secretstore.WithPurpose(ctx, secretstore.PurposeNotebookQuery),
+				environment,
+			)
+		},
 		PushWorkspaceUpdate: server.pushWorkspaceUpdate,
 		// Validate cells for server-side auto-recompute with the same
 		// parse-context the editor uses (constructed below; referenced lazily).
@@ -454,9 +461,10 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		},
 	})
 	server.sqlLSPSvc = service.NewSQLLSPService(service.SQLLSPDependencies{
-		WorkspaceRoot:           absRoot,
-		DisableFilesystemAccess: cfg.disableFilesystemAccess,
-		ResolveAssetByID:        server.resolveAssetByID,
+		WorkspaceRoot:               absRoot,
+		DisableFilesystemAccess:     cfg.disableFilesystemAccess,
+		ResolveAssetByID:            server.resolveAssetByID,
+		ResolveNotebookJinjaContext: server.notebookSvc.JinjaContextForAsset,
 		CurrentState: func() service.WorkspaceState {
 			return server.currentState()
 		},
@@ -465,7 +473,8 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 	})
 	sqlformat.PrewarmPolyglotCompiler()
 	server.jinjaRenderSvc = service.NewJinjaRenderService(service.JinjaRenderDependencies{
-		ResolveAssetByID: server.resolveAssetByID,
+		ResolveAssetByID:            server.resolveAssetByID,
+		ResolveNotebookJinjaContext: server.notebookSvc.JinjaContextForAsset,
 	})
 	server.assetRenderSvc = service.NewAssetRenderService(absRoot)
 

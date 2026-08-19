@@ -45,6 +45,9 @@ export type JinjaRenderResponse = {
   spans: JinjaRenderSpan[];
   variables: JinjaRenderVariable[];
   macros: JinjaRenderMacro[];
+  // Client-owned typed namespaces augment the server render context for
+  // artifact-local values such as notebook parameters.
+  namespaces?: Record<string, JinjaRenderVariable[]>;
   error?: string;
 };
 
@@ -176,6 +179,7 @@ export function registerJinjaProviders(
           });
           const renderResult = getRenderResult(model);
           const variables = renderResult?.variables ?? [];
+          const namespaces = renderResult?.namespaces ?? {};
 
           if (/\|\s*[A-Za-z_]*$/.test(before)) {
             return { suggestions: filterSuggestions(monaco, range) };
@@ -184,6 +188,17 @@ export function registerJinjaProviders(
           if (/\bvar\.[A-Za-z_]*$/.test(before)) {
             return { suggestions: variablePropertySuggestions(monaco, variables, range) };
           }
+          const namespaceMatch = before.match(/\b([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_]*$/);
+          if (namespaceMatch && namespaces[namespaceMatch[1]]) {
+            return {
+              suggestions: namespacePropertySuggestions(
+                monaco,
+                namespaceMatch[1],
+                namespaces[namespaceMatch[1]],
+                range,
+              ),
+            };
+          }
 
           if (span.type === "statement") {
             const statementBefore = before.replace(/^\{%[-]?\s*/, "");
@@ -191,6 +206,7 @@ export function registerJinjaProviders(
               monaco,
               variables,
               renderResult?.macros ?? [],
+              namespaces,
               range,
               statementBefore,
             );
@@ -200,6 +216,7 @@ export function registerJinjaProviders(
           return {
             suggestions: [
               ...builtinVariableSuggestions(monaco, range),
+              ...namespaceModuleSuggestions(monaco, namespaces, range),
               ...macroSuggestions(monaco, renderResult?.macros ?? [], range),
             ],
           };
@@ -391,10 +408,51 @@ function variableNamespaceSuggestions(
   }));
 }
 
+function namespacePropertySuggestions(
+  monaco: Monaco,
+  namespace: string,
+  variables: JinjaRenderVariable[],
+  range: MonacoNS.IRange,
+) {
+  return variables.map((variable) => ({
+    label: variable.name,
+    kind: monaco.languages.CompletionItemKind.Variable,
+    detail: variable.type ? `${variable.type} notebook parameter` : "Notebook parameter",
+    documentation:
+      namespace === "parameter"
+        ? "Safely rendered as a SQL literal."
+        : "Typed value for Jinja conditions and source templates.",
+    insertText: variable.name,
+    range,
+    sortText: `0${variable.name}`,
+  }));
+}
+
+function namespaceModuleSuggestions(
+  monaco: Monaco,
+  namespaces: Record<string, JinjaRenderVariable[]>,
+  range: MonacoNS.IRange,
+) {
+  return Object.keys(namespaces)
+    .sort()
+    .map((namespace) => ({
+      label: namespace,
+      kind: monaco.languages.CompletionItemKind.Module,
+      detail:
+        namespace === "parameter"
+          ? "SQL-safe notebook parameters"
+          : "Typed notebook parameter values",
+      insertText: namespace,
+      range,
+      sortText: `0${namespace}`,
+    }));
+}
+
 function statementExpressionSuggestions(
   monaco: Monaco,
   variables: JinjaRenderVariable[],
   macros: JinjaRenderMacro[],
+  namespaces: Record<string, JinjaRenderVariable[]>,
   range: MonacoNS.IRange,
   statementBefore: string,
 ): MonacoNS.languages.CompletionItem[] {
@@ -404,12 +462,14 @@ function statementExpressionSuggestions(
     return [
       ...variableNamespaceSuggestions(monaco, variables, range),
       ...builtinVariableSuggestions(monaco, range),
+      ...namespaceModuleSuggestions(monaco, namespaces, range),
       ...macroSuggestions(monaco, macros, range),
     ];
   }
 
   const expressionSuggestions = [
     ...builtinVariableSuggestions(monaco, range),
+    ...namespaceModuleSuggestions(monaco, namespaces, range),
     ...variableNamespaceSuggestions(monaco, variables, range),
     ...macroSuggestions(monaco, macros, range),
   ];

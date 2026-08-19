@@ -2128,6 +2128,29 @@ func TestSQLLSPServiceNotebookDiagnosticsResolveSiblingsAndExternalRefs(t *testi
 	}
 }
 
+func TestSQLLSPServiceDoesNotExposeLocalSiblingRelationsToWarehouseSourceCell(t *testing.T) {
+	state := notebookLSPState()
+	state.Connections = map[string]string{"postgres-other": "postgres"}
+	for index := range state.Notebooks[0].Cells {
+		if state.Notebooks[0].Cells[index].ID == "nb1-summary" {
+			state.Notebooks[0].Cells[index].Type = "pg.sql"
+			state.Notebooks[0].Cells[index].Connection = "postgres-other"
+			state.Notebooks[0].Cells[index].ExternalRefs = nil
+		}
+	}
+	service := notebookLSPService(t, state)
+	response, apiErr := service.Diagnostics(context.Background(), SQLLSPRequest{
+		AssetID: "nb1-summary",
+		Content: "select b.metric_value from base_stats b",
+	})
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	if !hasDiagnosticCode(response.Diagnostics, "unresolved-relation") {
+		t.Fatalf("remote source cell incorrectly saw a local notebook relation: %#v", response.Diagnostics)
+	}
+}
+
 func TestSQLLSPServiceScopesNotebookCellsToTheirNotebook(t *testing.T) {
 	service := notebookLSPService(t, notebookLSPState())
 

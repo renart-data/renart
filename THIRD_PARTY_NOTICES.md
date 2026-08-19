@@ -127,6 +127,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/golang/groupcache | v0.0.0-20241129210726-2c02b8208cf8 | [license](third_party/licenses/73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68.txt) |
 | github.com/golang/snappy | v1.0.0 | [license](third_party/licenses/f69f157b0be75da373605dbc8bbf142e8924ee82d8f44f11bcaf351335bf98cf.txt) |
 | github.com/google/flatbuffers | v25.12.19+incompatible | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/google/jsonschema-go | v0.4.3 | [license](third_party/licenses/2d56c53449691d85d9aea245eb8dac12713e9075d70d5557b82ae1e94805b357.txt) |
 | github.com/google/s2a-go | v0.1.9 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/google/uuid | v1.6.0 | [license](third_party/licenses/0a8d61ed3cbfd5312326e8126c31ce9c627a283adc99131b56896d29ada04b2d.txt) |
 | github.com/googleapis/enterprise-certificate-proxy | v0.3.14 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
@@ -168,6 +169,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/mfridman/interpolate | v0.0.2 | [license](third_party/licenses/21408182c12c98d402fa38a8b678560dc63fd6bada5a0017722883e4b79e6620.txt) |
 | github.com/microsoft/go-mssqldb | v1.10.0 | [license](third_party/licenses/7d0793489653bfe020de7ea32047bad266f5e2e204ba12025d5300f39555addc.txt) |
 | github.com/Microsoft/go-winio | v0.6.2 | [license](third_party/licenses/9b45236978bb5cd5de992021769e1eeaa79f0116d3b02cf8ba065a1ed603d5fa.txt) |
+| github.com/modelcontextprotocol/go-sdk | v1.6.1 | [license](third_party/licenses/63fdc8779c4dbc95833261e3ed41761b80831cf64cb50e8a4aa4bf812703abcc.txt), [license](third_party/licenses/af679003d933f045393a6a029f43da113f9ae364eac651d9ae268392985580f5.txt) |
 | github.com/modern-go/concurrent | v0.0.0-20180306012644-bacd9c7ef1dd | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
 | github.com/modern-go/reflect2 | v1.0.2 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
 | github.com/montanaflynn/stats | v0.7.1 | [license](third_party/licenses/343e5aa281da8fa9a32e0163c5bcefbfb6381a1cc7a85820354b15f4b2fbce4c.txt) |
@@ -199,6 +201,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/samber/lo | v1.51.0 | [license](third_party/licenses/adb3ac2e3e382989de6befdd489f4714785af8aca47c01193a9892e8b26b3860.txt) |
 | github.com/segmentio/asm | v1.2.1 | [license](third_party/licenses/cca993712df289a5958bdef69031a5dac0f951ac15afeb313f9eeea55ed59443.txt) |
 | github.com/segmentio/backo-go | v1.1.0 | [license](third_party/licenses/a6db78484c10a2586e0af6e052b3a3cda126e2bd9fda3f728e1907ff7acdf090.txt) |
+| github.com/segmentio/encoding | v0.5.4 | [license](third_party/licenses/d6d71a1f7dc6539e371120cc7af6e3257e55ca79634d473211f217b8965b0f16.txt) |
 | github.com/sergi/go-diff | v1.4.0 | [license](third_party/licenses/52d919c62838dda4384b14b7c501d90721dc6487b2961cdfd3017c918171ab19.txt) |
 | github.com/sethvargo/go-retry | v0.3.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/shopspring/decimal | v1.4.0 | [license](third_party/licenses/b92ba0f6ee02f2309628bfdadb123668a17c016e475ba477b857d33470d9d625.txt) |
@@ -230,6 +233,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/xeipuuv/gojsonreference | v0.0.0-20180127040603-bd5ef7bd5415 | [license](third_party/licenses/745f8f53e61ad2f8463a27b77aac1636dc3a121ed8bd841e82397226fdcb4bae.txt) |
 | github.com/xeipuuv/gojsonschema | v1.2.0 | [license](third_party/licenses/745f8f53e61ad2f8463a27b77aac1636dc3a121ed8bd841e82397226fdcb4bae.txt) |
 | github.com/xwb1989/sqlparser | v0.0.0-20180606152119-120387863bf2 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
+| github.com/yosida95/uritemplate/v3 | v3.0.2 | [license](third_party/licenses/0761aadfb1921103752869ee942d4a71bdd54494697684d4b13dc17ad9781191.txt) |
 | github.com/youmark/pkcs8 | v0.0.0-20240726163527-a2c0da244d78 | [license](third_party/licenses/e71725b8bb3e3c2ebf3a88c5f76b03246b71fe8b7784f4a56bf2e815737dca21.txt) |
 | github.com/yourbasic/graph | v0.0.0-20210606180040-8ecfec1c2869 | [license](third_party/licenses/15b162926414ffc1f5a23b84acaeb454d1e3e59b0ff7f26c84016a9c117d5e05.txt) |
 | github.com/zalando/go-keyring | v0.2.8 | [license](third_party/licenses/14bc00f1a298eb6af250216b9e60027a4386c8a84fa2c7ddc2b5c10908e06d0d.txt) |

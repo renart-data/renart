@@ -14,7 +14,8 @@ import (
 )
 
 type JinjaRenderDependencies struct {
-	ResolveAssetByID func(ctx context.Context, assetID string) (string, *pipeline.Pipeline, *pipeline.Asset, error)
+	ResolveAssetByID            func(ctx context.Context, assetID string) (string, *pipeline.Pipeline, *pipeline.Asset, error)
+	ResolveNotebookJinjaContext func(ctx context.Context, assetID string) (NotebookJinjaContext, bool, error)
 }
 
 type JinjaRenderService struct {
@@ -77,7 +78,7 @@ func (s *JinjaRenderService) Render(ctx context.Context, assetID string, req Jin
 		content = asset.ExecutableFile.Content
 	}
 
-	renderer, err := buildJinjaPreviewRenderer(ctx, parsed, asset, req.StartDate, req.EndDate)
+	renderer, err := s.previewRenderer(ctx, assetID, parsed, asset, req.StartDate, req.EndDate)
 	if err != nil {
 		return JinjaRenderResult{}, &APIError{Status: 400, Code: "renderer_failed", Message: err.Error()}
 	}
@@ -99,6 +100,26 @@ func (s *JinjaRenderService) Render(ctx context.Context, assetID string, req Jin
 
 	result.Rendered = rendered
 	return result, nil
+}
+
+func (s *JinjaRenderService) previewRenderer(
+	ctx context.Context,
+	assetID string,
+	parsed *pipeline.Pipeline,
+	asset *pipeline.Asset,
+	start string,
+	end string,
+) (jinja.RendererInterface, error) {
+	if s.deps.ResolveNotebookJinjaContext != nil {
+		notebookContext, found, err := s.deps.ResolveNotebookJinjaContext(ctx, assetID)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			return buildNotebookJinjaPreviewRenderer(start, end, notebookContext)
+		}
+	}
+	return buildJinjaPreviewRenderer(ctx, parsed, asset, start, end)
 }
 
 func buildJinjaPreviewRenderer(ctx context.Context, parsed *pipeline.Pipeline, asset *pipeline.Asset, start, end string) (jinja.RendererInterface, error) {

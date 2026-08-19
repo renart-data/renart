@@ -59,13 +59,16 @@ export function useJinjaIntellisense(
   asset: WebAsset | null,
   content: string,
   onGoToVariable?: (variableName: string) => void,
+  namespaces?: Record<string, JinjaRenderResponse["variables"]>,
 ) {
   const [renderResult, setRenderResult] = useState<JinjaRenderResponse | null>(null);
   const selectedExecutionTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
   const renderResultRef = useRef<JinjaRenderResponse | null>(null);
   const goToVariableRef = useRef(onGoToVariable);
+  const namespacesRef = useRef(namespaces);
   renderResultRef.current = renderResult;
   goToVariableRef.current = onGoToVariable;
+  namespacesRef.current = namespaces;
   const assetId = asset?.id ?? null;
   const isSqlAsset =
     asset !== null &&
@@ -86,7 +89,23 @@ export function useJinjaIntellisense(
     const model = editor.getModel();
     if (!model) return;
     const uri = model.uri.toString();
-    jinjaRenderGetters.set(uri, () => renderResultRef.current);
+    jinjaRenderGetters.set(uri, () => {
+      const currentNamespaces = namespacesRef.current;
+      const rendered = renderResultRef.current;
+      if (rendered) {
+        return { ...rendered, namespaces: currentNamespaces };
+      }
+      if (currentNamespaces && Object.keys(currentNamespaces).length > 0) {
+        return {
+          status: "ok",
+          spans: [],
+          variables: [],
+          macros: [],
+          namespaces: currentNamespaces,
+        };
+      }
+      return null;
+    });
     jinjaVariableDefinitionHandlers.set(uri, (variableName) =>
       goToVariableRef.current?.(variableName),
     );

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bruin-data/bruin/pkg/jinja"
 	"renart/internal/web/notebook"
 )
 
@@ -13,6 +14,7 @@ import (
 // descendants stale and (when auto-recompute is on) kicks off a debounced
 // recompute pass. Safe to call for any mutation that changes a cell's content.
 func (s *NotebookService) onCellChanged(notebookID string, nb *notebook.Notebook, cellID string) {
+	s.hydrateRuntime(nb)
 	rt := s.runtimes.get(nb.UUID)
 
 	cell := nb.CellByID(cellID)
@@ -152,13 +154,14 @@ func (s *NotebookService) runAutoWave(uuid string, nb *notebook.Notebook, wave [
 	rt := s.runtimes.get(uuid)
 	rt.mu.Lock()
 	environment := rt.environment
+	parameterValues := cloneNotebookParameterValues(rt.parameterValues)
 	rt.mu.Unlock()
 
 	cells, selectErr := s.selectRunCells(nb, RunNotebookRequest{Cells: wave})
 	if selectErr != nil || len(cells) == 0 {
 		return nil, false
 	}
-	renderSQL, renderErr := s.newNotebookJinjaRenderer("", "")
+	renderer, renderErr := s.newNotebookJinjaRenderer("", "", nb.Parameters, parameterValues)
 	if renderErr != nil {
 		return nil, false
 	}
@@ -166,7 +169,7 @@ func (s *NotebookService) runAutoWave(uuid string, nb *notebook.Notebook, wave [
 	ctx, finishRun := rt.beginAutoRun(context.Background())
 	defer finishRun()
 
-	runner := s.newRunner(renderSQL, environment)
+	runner := s.newRunner(renderer, environment, parameterValues)
 	results, runErr := runner.RunCells(ctx, nb, cells, notebook.RunOptions{})
 	if ctx.Err() != nil {
 		return nil, true
@@ -237,11 +240,12 @@ func (s *NotebookService) buildAutoCells(nb *notebook.Notebook, rt *notebookRunt
 	for _, cell := range nb.Cells {
 		isPython := notebook.IsPythonCell(cell)
 		info := autoCellInfo{
-			cellID:     cell.ID,
-			stale:      stale[cell.ID],
-			ranOk:      ranOk[cell.ID] || (!hasResult[cell.ID] && existingObjects[notebook.CellObjectName(cell.ID)]),
-			isPython:   isPython,
-			autoFailed: autoFailed[cell.ID],
+			cellID:         cell.ID,
+			stale:          stale[cell.ID],
+			ranOk:          ranOk[cell.ID] || (!hasResult[cell.ID] && existingObjects[notebook.CellObjectName(cell.ID)]),
+			isPython:       isPython,
+			isRemoteSource: strings.TrimSpace(cell.Asset.Connection) != "" || notebook.IsSourceCell(cell),
+			autoFailed:     autoFailed[cell.ID],
 		}
 		for _, upstream := range cell.Asset.Upstreams {
 			if id, ok := nameToID[strings.ToLower(upstream.Value)]; ok {
@@ -250,7 +254,7 @@ func (s *NotebookService) buildAutoCells(nb *notebook.Notebook, rt *notebookRunt
 		}
 		// Only stale, non-Python cells need a validity verdict (a fresh upstream
 		// short-circuits eligibility; Python is never auto-run).
-		if info.stale && !isPython {
+		if info.stale && !isPython && !info.isRemoteSource {
 			selectOnly, hasErr, ok := s.validateCellSQL(nb, cell, rt)
 			info.statusLoaded = ok
 			info.isSelectOnly = selectOnly
@@ -295,10 +299,10 @@ func (s *NotebookService) validateCellSQL(nb *notebook.Notebook, cell *notebook.
 // but column checks against them stay lenient).
 func (s *NotebookService) buildCellSchemaTables(nb *notebook.Notebook, cell *notebook.Cell, rt *notebookRuntime) []ParseContextSchemaTable {
 	rt.mu.Lock()
-	resultsCopy := make(map[string][]string, len(rt.results))
+	resultsCopy := make(map[string]notebook.CellRunResult, len(rt.results))
 	for id, result := range rt.results {
 		if result.Status == notebook.CellRunOK && len(result.Columns) > 0 {
-			resultsCopy[id] = result.Columns
+			resultsCopy[id] = result
 		}
 	}
 	rt.mu.Unlock()
@@ -315,13 +319,17 @@ func (s *NotebookService) buildCellSchemaTables(nb *notebook.Notebook, cell *not
 		}
 		seen[strings.ToLower(name)] = true
 		var columns []ParseContextSchemaColumn
-		if runColumns, ok := resultsCopy[sibling.ID]; ok {
-			for _, column := range runColumns {
-				columns = append(columns, ParseContextSchemaColumn{Name: column, SourceMethods: []string{"notebook-run"}})
+		if runResult, ok := resultsCopy[sibling.ID]; ok {
+			for index, column := range runResult.Columns {
+				columnType := ""
+				if index < len(runResult.ColumnTypes) {
+					columnType = runResult.ColumnTypes[index]
+				}
+				columns = append(columns, ParseContextSchemaColumn{Name: column, Type: columnType, SourceMethods: []string{"notebook-run"}})
 			}
 		} else {
 			for _, column := range sibling.Asset.Columns {
-				columns = append(columns, ParseContextSchemaColumn{Name: column.Name})
+				columns = append(columns, ParseContextSchemaColumn{Name: column.Name, Type: column.SQLType()})
 			}
 		}
 		tables = append(tables, ParseContextSchemaTable{Name: name, Columns: columns})
@@ -348,12 +356,25 @@ func (s *NotebookService) cellAssetID(cell *notebook.Cell) string {
 
 // newRunner builds a cell runner sharing the service's parser, store, fetcher,
 // and Python materializer.
-func (s *NotebookService) newRunner(renderSQL func(string) (string, error), environment string) *notebook.Runner {
+func (s *NotebookService) newRunner(renderer *jinja.Renderer, environment string, parameterValues map[string]any) *notebook.Runner {
+	transfer := &slingNotebookTransferService{
+		workspaceRoot:        s.deps.WorkspaceRoot,
+		configPath:           s.deps.ConfigPath,
+		newConnectionManager: s.deps.NewConnectionManager,
+	}
+	var renderSQL func(string) (string, error)
+	if renderer != nil {
+		renderSQL = renderer.Render
+	}
 	return &notebook.Runner{
 		Store:              s.store,
 		RenameTables:       s.renameTables,
 		RenderSQL:          renderSQL,
 		Fetcher:            &pipelineSourceFetcher{service: s, environment: environment},
+		WarehouseExecutor:  &warehouseSQLSourceExecutor{transfer: transfer, validate: s.validateNotebookSourceQuery},
+		SourceExecutor:     &notebookSourceExecutor{transfer: transfer, renderer: renderer},
+		Environment:        environment,
 		PythonMaterializer: s.materializePythonCell,
+		ParameterValues:    cloneNotebookParameterValues(parameterValues),
 	}
 }

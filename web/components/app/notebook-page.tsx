@@ -1,28 +1,26 @@
 "use client";
 
 import { useNavigate } from "@tanstack/react-router";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   AlertTriangle,
-  AreaChart,
   ArrowUpFromLine,
-  BarChart3,
   BookOpen,
   Check,
   ChevronRight,
   Database,
-  Hash,
-  LineChart,
+  Download,
+  FileInput,
+  Globe2,
   Loader2,
   MoreHorizontal,
   Package,
   Pencil,
-  PieChart,
   Play,
   Plus,
   RotateCw,
+  SlidersHorizontal,
   Square,
-  Table2,
   Trash2,
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -56,34 +54,57 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   cancelNotebookRun,
   closeNotebookSession,
+  configureNotebookCellSource,
+  createNotebookMarkdown,
+  createNotebookVisualization,
   createNotebookCell,
+  createNotebookSource,
+  createNotebookWarehouseSource,
+  deleteNotebookBlock,
   deleteNotebook,
   deleteNotebookCell,
   getNotebook,
   getNotebookRuntime,
   joinCellContent,
+  migrateLegacyNotebookVisualization,
+  notebookCellExportURL,
   NotebookCellRunResult,
   promoteNotebookCell,
+  replaceNotebookParameters,
   renameNotebookCell,
   runNotebook,
   setNotebookSettings,
   splitCellContent,
-  updateNotebookBlocks,
   updateNotebookCell,
+  updateNotebookBlocks,
   updateNotebookDependencies,
-  VizKind,
+  updateNotebookMarkdown,
+  updateNotebookVisualization,
+  upgradeNotebookManifest,
 } from "@/lib/api-notebooks";
 import { notebookRuntimeEventsAtom } from "@/lib/atoms/domains/results";
 import {
@@ -91,26 +112,20 @@ import {
   selectedExecutionTimeWindowAtom,
   workspaceAtom,
 } from "@/lib/atoms/domains/workspace";
+import { sqlDiscoveryTablesAtom } from "@/lib/atoms/sql-discovery";
 import { usesPythonSource } from "@/lib/asset-types";
 import { addDependency, missingPythonImports } from "@/lib/notebook-python-deps";
-import { WebAsset, WebNotebook, WebNotebookBlock } from "@/lib/types";
+import { WebAsset, WebNotebook, WebNotebookBlock, WorkspaceQueryConnection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 import { MissingPythonDepsBanner } from "./missing-python-deps";
 import { NewNotebookDialog } from "./new-notebook-dialog";
 import { buildNotebookSchemaTables, NotebookCellMonaco } from "./notebook-cell-editor";
-import { applyVizKind } from "./notebook-viz-directive";
 import { NotebookVizRenderer } from "./notebook-viz";
+import { NotebookVisualizationBlockCard } from "./notebook-visualization-block";
+import { NotebookParametersDialog } from "./notebook-parameters-dialog";
+import { LoadStreamPicker } from "./load-stream-picker";
 import { PageHeader, AppPage, AppPanel, SimpleTable } from "./app-primitives";
-
-const VIZ_KIND_ICONS: Record<VizKind, typeof Table2> = {
-  table: Table2,
-  bar: BarChart3,
-  line: LineChart,
-  area: AreaChart,
-  pie: PieChart,
-  kpi: Hash,
-};
 
 const ReactMarkdown = lazy(() => import("react-markdown"));
 
@@ -122,11 +137,17 @@ const NOTEBOOK_CELL_JUMP_HIGHLIGHT_MS = 1600;
 const NOTEBOOK_BLOCK_ENTER_ANIMATION =
   "animate-in fade-in-0 slide-in-from-bottom-2 duration-300 motion-reduce:animate-none";
 
-type PendingNotebookBlockKind = "sql" | "python" | "markdown";
+type PendingNotebookBlockKind = "sql" | "python" | "markdown" | "visualization";
 type NotebookCellDeleteTarget = { id: string; name: string };
 
 function notebookBlockKey(block: WebNotebookBlock, index: number) {
-  return block.cell ? `cell:${block.cell}` : `markdown:${index}`;
+  if (block.cell) {
+    return `cell:${block.cell}`;
+  }
+  if (block.id) {
+    return `block:${block.id}`;
+  }
+  return `legacy-markdown:${index}`;
 }
 
 export function AppNotebooksIndexPage() {
@@ -284,6 +305,8 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const [cellToDelete, setCellToDelete] = useState<NotebookCellDeleteTarget | null>(null);
   const [deletingCell, setDeletingCell] = useState(false);
   const [depsOpen, setDepsOpen] = useState(false);
+  const [parametersOpen, setParametersOpen] = useState(false);
+  const [addDataOpen, setAddDataOpen] = useState(false);
   const [promoting, setPromoting] = useState<WebAsset | null>(null);
   const notebookViewportRef = useRef<HTMLDivElement>(null);
   const pendingBlockSequenceRef = useRef(0);
@@ -294,6 +317,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       typeof window === "undefined" ||
       window.localStorage.getItem("renart-notebook-autorecompute") !== "off",
   );
+  const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({});
   useEffect(() => {
     window.localStorage.setItem("renart-notebook-autorecompute", autoRecompute ? "on" : "off");
   }, [autoRecompute]);
@@ -314,6 +338,9 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     setJumpHighlightedCellId(null);
     setCellToDelete(null);
     setDeletingCell(false);
+    setAddDataOpen(false);
+    setParametersOpen(false);
+    setParameterValues({});
     if (jumpHighlightFrameRef.current !== null) {
       window.cancelAnimationFrame(jumpHighlightFrameRef.current);
       jumpHighlightFrameRef.current = null;
@@ -388,6 +415,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       auto_pending: string[];
       running?: string[];
       results?: Record<string, NotebookCellRunResult>;
+      parameter_values?: Record<string, unknown>;
     }) => {
       setStaleCells(new Set(runtime.stale));
       setAutoPending(new Set(runtime.auto_pending));
@@ -396,6 +424,9 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       }
       if (runtime.results && Object.keys(runtime.results).length > 0) {
         setResults((current) => ({ ...current, ...runtime.results }));
+      }
+      if (runtime.parameter_values) {
+        setParameterValues(runtime.parameter_values);
       }
     },
     [],
@@ -639,21 +670,47 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       const existingCellIDs = new Set(
         notebook.cells.map((cell) => cell.cell_id).filter((cellID): cellID is string => !!cellID),
       );
+      const existingBlockIDs = new Set(notebook.blocks.map((block) => block.id).filter(Boolean));
       setPendingBlock({ id, kind });
       setEnteringBlockKey(null);
       setScrollRevision((current) => current + 1);
 
       const updated = await mutateWithResult(() => {
         if (kind === "markdown") {
-          const blocks: WebNotebookBlock[] = [...notebook.blocks, { markdown: "## Notes" }];
-          return updateNotebookBlocks(notebookId, blocks);
+          if (notebook.manifest_version < 2) {
+            return updateNotebookBlocks(notebookId, [...notebook.blocks, { markdown: "## Notes" }]);
+          }
+          const lastBlock = notebook.blocks.at(-1);
+          return createNotebookMarkdown(notebookId, {
+            content: "## Notes",
+            after_block_id: lastBlock
+              ? notebookBlockKey(lastBlock, notebook.blocks.length - 1)
+              : undefined,
+          });
+        }
+        if (kind === "visualization") {
+          const sourceBlock = [...notebook.blocks].reverse().find((block) => block.cell);
+          if (!sourceBlock?.cell) {
+            throw new Error("Add a data-producing cell before creating a visualization.");
+          }
+          return createNotebookVisualization(notebookId, {
+            source: sourceBlock.cell,
+            definition: { version: 1, type: "table", presentation_limit: 200 },
+            after_block_id: sourceBlock.cell,
+          });
         }
         return createNotebookCell(notebookId, kind === "python" ? { language: "python" } : {});
       });
 
       if (updated) {
         if (kind === "markdown") {
-          setEnteringBlockKey(`markdown:${updated.blocks.length - 1}`);
+          const blockIndex = updated.blocks.length - 1;
+          setEnteringBlockKey(notebookBlockKey(updated.blocks[blockIndex], blockIndex));
+        } else if (kind === "visualization") {
+          const createdBlock = updated.blocks.find(
+            (block) => block.visualization && block.id && !existingBlockIDs.has(block.id),
+          );
+          if (createdBlock?.id) setEnteringBlockKey(`block:${createdBlock.id}`);
         } else {
           const createdBlock = updated.blocks.find(
             (block) => block.cell && !existingCellIDs.has(block.cell),
@@ -669,6 +726,117 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     [mutateWithResult, notebook, notebookId, pendingBlock],
   );
 
+  const configureCellSource = useCallback(
+    async (
+      cellId: string,
+      input: { connection?: string; snapshot_mode?: "full" | "sample"; row_limit?: number },
+    ) => {
+      await flushPendingSaves();
+      await mutateWithResult(() => configureNotebookCellSource(notebookId, cellId, input));
+    },
+    [flushPendingSaves, mutateWithResult, notebookId],
+  );
+
+  const createWarehouseSource = useCallback(
+    async (input: {
+      connection: string;
+      relation: string;
+      snapshotMode: "full" | "sample";
+      rowLimit?: number;
+    }) => {
+      if (!notebook) return;
+      await flushPendingSaves();
+      const existing = new Set(
+        notebook.cells.map((cell) => cell.cell_id).filter((id): id is string => Boolean(id)),
+      );
+      const updated = await mutateWithResult(() =>
+        createNotebookWarehouseSource(notebookId, {
+          connection: input.connection,
+          query: `select * from ${input.relation}\n`,
+          snapshot_mode: input.snapshotMode,
+          row_limit: input.rowLimit,
+        }),
+      );
+      const created = updated?.cells.find((cell) => cell.cell_id && !existing.has(cell.cell_id));
+      if (created?.cell_id) {
+        setEnteringBlockKey(`cell:${created.cell_id}`);
+        setScrollRevision((current) => current + 1);
+      }
+      setAddDataOpen(false);
+    },
+    [flushPendingSaves, mutateWithResult, notebook, notebookId],
+  );
+
+  const createDataSource = useCallback(
+    async (
+      input:
+        | {
+            kind: "warehouse";
+            connection: string;
+            relation: string;
+            snapshotMode: "full" | "sample";
+            rowLimit?: number;
+          }
+        | {
+            kind: "file";
+            connection?: string;
+            uri: string;
+            format?: string;
+            snapshotMode: "full" | "sample";
+            rowLimit?: number;
+          }
+        | {
+            kind: "http";
+            url: string;
+            method: string;
+            body?: unknown;
+            recordsPath?: string;
+            snapshotMode: "full" | "sample";
+            rowLimit?: number;
+          },
+    ) => {
+      if (input.kind === "warehouse") {
+        await createWarehouseSource(input);
+        return;
+      }
+      if (!notebook) return;
+      await flushPendingSaves();
+      const existing = new Set(
+        notebook.cells.map((cell) => cell.cell_id).filter((id): id is string => Boolean(id)),
+      );
+      const updated = await mutateWithResult(() =>
+        createNotebookSource(
+          notebookId,
+          input.kind === "file"
+            ? {
+                kind: "file",
+                connection: input.connection,
+                uri: input.uri,
+                format: input.format,
+                snapshot: { mode: input.snapshotMode, row_limit: input.rowLimit },
+              }
+            : {
+                kind: "http",
+                request: {
+                  url: input.url,
+                  method: input.method,
+                  body: input.body,
+                },
+                response: { records_path: input.recordsPath },
+                snapshot: { mode: input.snapshotMode, row_limit: input.rowLimit },
+              },
+        ),
+      );
+      const created = updated?.cells.find((cell) => cell.cell_id && !existing.has(cell.cell_id));
+      if (created?.cell_id) {
+        setEnteringBlockKey(`cell:${created.cell_id}`);
+        setScrollRevision((current) => current + 1);
+      }
+      setAddDataOpen(false);
+    },
+    [createWarehouseSource, flushPendingSaves, mutateWithResult, notebook, notebookId],
+  );
+
   const dependencies = useMemo(() => notebook?.dependencies ?? [], [notebook?.dependencies]);
   const installedModules = useMemo(
     () => notebook?.installed_modules ?? [],
@@ -681,6 +849,41 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const updateDependencies = useCallback(
     (next: string[]) => mutate(() => updateNotebookDependencies(notebookId, next)),
     [mutate, notebookId],
+  );
+  const saveParameterDefinitions = useCallback(
+    async (next: NonNullable<WebNotebook["parameters"]>) => {
+      setActionError("");
+      try {
+        const updated = await replaceNotebookParameters(notebookId, next);
+        setMutated(updated);
+        setParameterValues(
+          Object.fromEntries(
+            (updated.parameters ?? []).map((parameter) => [parameter.id, parameter.default]),
+          ),
+        );
+      } catch (error) {
+        setActionError(String(error));
+        throw error;
+      }
+    },
+    [notebookId],
+  );
+  const saveParameterValues = useCallback(
+    async (next: Record<string, unknown>) => {
+      setActionError("");
+      try {
+        await setNotebookSettings(notebookId, {
+          auto_recompute: autoRecompute,
+          environment: selectedEnvironment,
+          parameter_values: next,
+        });
+        setParameterValues(next);
+      } catch (error) {
+        setActionError(String(error));
+        throw error;
+      }
+    },
+    [autoRecompute, notebookId, selectedEnvironment],
   );
 
   // Ctrl+Click / F12 targets: pipeline assets open in the build page, sibling
@@ -809,6 +1012,24 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                   </Button>
                 </div>
               ) : null}
+              <Button variant="outline" size="sm" onClick={() => setAddDataOpen(true)}>
+                <Database className="size-3.5" />
+                <span className="hidden sm:inline">Add data</span>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label="Notebook parameters"
+                onClick={() => setParametersOpen(true)}
+              >
+                <SlidersHorizontal className="size-3.5" />
+                <span className="hidden sm:inline">Parameters</span>
+                {(notebook.parameters?.length ?? 0) > 0 ? (
+                  <span className="text-[10px] text-muted-foreground">
+                    {notebook.parameters?.length}
+                  </span>
+                ) : null}
+              </Button>
               {hasPythonCell ? (
                 <Button
                   variant="outline"
@@ -846,51 +1067,67 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-64">
-                  <DropdownMenuCheckboxItem
-                    checked={autoRecompute}
-                    onCheckedChange={(checked) => setAutoRecompute(checked === true)}
-                    onSelect={(event) => event.preventDefault()}
-                  >
-                    Auto-recompute stale cells
-                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuGroup>
+                    <DropdownMenuCheckboxItem
+                      checked={autoRecompute}
+                      onCheckedChange={(checked) => setAutoRecompute(checked === true)}
+                      onSelect={(event) => event.preventDefault()}
+                    >
+                      Auto-recompute stale cells
+                    </DropdownMenuCheckboxItem>
+                  </DropdownMenuGroup>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={busy}
-                    onSelect={() =>
-                      void runRequest({ all: true, refresh_imports: true }, allCellIds)
-                    }
-                  >
-                    <RotateCw className="size-4" />
-                    Run all, refresh imports
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => {
-                      void closeNotebookSession(notebookId)
-                        .then(() => {
-                          setResults({});
-                          setStaleCells(new Set(allCellIds));
-                        })
-                        .catch((error) => setActionError(String(error)));
-                    }}
-                  >
-                    <Database className="size-4" />
-                    Reset session (delete local DB)
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onSelect={() => {
-                      if (!window.confirm(`Delete notebook "${notebook.title}" and its files?`)) {
-                        return;
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem
+                      disabled={busy}
+                      onSelect={() =>
+                        void runRequest({ all: true, refresh_imports: true }, allCellIds)
                       }
-                      void deleteNotebook(notebookId)
-                        .then(() => navigate({ to: "/" }))
-                        .catch((error) => setActionError(String(error)));
-                    }}
-                  >
-                    <Trash2 className="size-4" />
-                    Delete notebook
-                  </DropdownMenuItem>
+                    >
+                      <RotateCw />
+                      Run all, refresh imports
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        void closeNotebookSession(notebookId)
+                          .then(() => {
+                            setResults({});
+                            setStaleCells(new Set(allCellIds));
+                          })
+                          .catch((error) => setActionError(String(error)));
+                      }}
+                    >
+                      <Database />
+                      Reset session (delete local DB)
+                    </DropdownMenuItem>
+                    {notebook.manifest_version < 2 ? (
+                      <DropdownMenuItem
+                        onSelect={() =>
+                          void mutate(() => upgradeNotebookManifest(notebookId, notebook.revision))
+                        }
+                      >
+                        <ArrowUpFromLine />
+                        Upgrade notebook format
+                      </DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => {
+                        if (!window.confirm(`Delete notebook "${notebook.title}" and its files?`)) {
+                          return;
+                        }
+                        void deleteNotebook(notebookId)
+                          .then(() => navigate({ to: "/" }))
+                          .catch((error) => setActionError(String(error)));
+                      }}
+                    >
+                      <Trash2 />
+                      Delete notebook
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -903,6 +1140,24 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         onOpenChange={setDepsOpen}
         dependencies={dependencies}
         onSave={updateDependencies}
+      />
+
+      <NotebookParametersDialog
+        open={parametersOpen}
+        onOpenChange={setParametersOpen}
+        parameters={notebook.parameters ?? []}
+        values={parameterValues}
+        onSaveDefinitions={saveParameterDefinitions}
+        onSaveValues={saveParameterValues}
+      />
+
+      <NotebookAddDataDialog
+        open={addDataOpen}
+        onOpenChange={setAddDataOpen}
+        queryConnections={workspace?.query_connections ?? []}
+        connections={workspace?.connections ?? {}}
+        environment={selectedEnvironment ?? ""}
+        onCreate={createDataSource}
       />
 
       <PromoteCellDialog
@@ -969,43 +1224,117 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                     }
                     className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
                   >
-                    <NotebookCellCard
-                      cell={cell}
-                      cells={notebook.cells}
-                      dependencies={dependencies}
-                      installedModules={installedModules}
-                      onAddDependency={(pkg) =>
-                        updateDependencies(addDependency(dependencies, pkg))
-                      }
-                      resultColumnsByCell={resultColumnsByCell}
-                      result={results[block.cell]}
-                      stale={staleCells.has(block.cell)}
-                      running={runningCells.has(block.cell)}
-                      busy={busy}
-                      onRun={() =>
-                        void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
-                      }
-                      onCancel={cancelRun}
-                      onRunFromHere={() =>
-                        void runRequest({ from: block.cell }, [block.cell ?? ""])
-                      }
-                      onDelete={() => setCellToDelete({ id: block.cell ?? "", name: cell.name })}
-                      onRename={(name) =>
-                        mutate(() => renameNotebookCell(notebookId, block.cell ?? "", name))
-                      }
-                      onPromote={() => void promoteCell(cell)}
-                      onSaveBody={(body, baseRevision) => saveCellBody(cell, body, baseRevision)}
-                      autoCommit={autoRecompute}
-                      pendingAuto={autoPending.has(block.cell ?? "")}
-                      onGoToAsset={goToAsset}
-                      onGoToCell={goToCell}
-                    />
+                    {cell.notebook_source ? (
+                      <NotebookSourceCard
+                        notebookId={notebookId}
+                        cell={cell}
+                        result={results[block.cell]}
+                        stale={staleCells.has(block.cell)}
+                        running={runningCells.has(block.cell)}
+                        busy={busy}
+                        onRun={() =>
+                          void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
+                        }
+                        onCancel={cancelRun}
+                        onRunFromHere={() =>
+                          void runRequest({ from: block.cell }, [block.cell ?? ""])
+                        }
+                        onDelete={() => setCellToDelete({ id: block.cell ?? "", name: cell.name })}
+                        onRename={(name) =>
+                          mutate(() => renameNotebookCell(notebookId, block.cell ?? "", name))
+                        }
+                      />
+                    ) : (
+                      <NotebookCellCard
+                        notebookId={notebookId}
+                        cell={cell}
+                        cells={notebook.cells}
+                        dependencies={dependencies}
+                        installedModules={installedModules}
+                        parameters={notebook.parameters ?? []}
+                        onAddDependency={(pkg) =>
+                          updateDependencies(addDependency(dependencies, pkg))
+                        }
+                        resultColumnsByCell={resultColumnsByCell}
+                        result={results[block.cell]}
+                        stale={staleCells.has(block.cell)}
+                        running={runningCells.has(block.cell)}
+                        busy={busy}
+                        onRun={() =>
+                          void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
+                        }
+                        onCancel={cancelRun}
+                        onRunFromHere={() =>
+                          void runRequest({ from: block.cell }, [block.cell ?? ""])
+                        }
+                        onDelete={() => setCellToDelete({ id: block.cell ?? "", name: cell.name })}
+                        onRename={(name) =>
+                          mutate(() => renameNotebookCell(notebookId, block.cell ?? "", name))
+                        }
+                        onPromote={() => void promoteCell(cell)}
+                        onSaveBody={(body, baseRevision) => saveCellBody(cell, body, baseRevision)}
+                        autoCommit={autoRecompute}
+                        pendingAuto={autoPending.has(block.cell ?? "")}
+                        queryConnections={workspace?.query_connections ?? []}
+                        onConfigureSource={(input) => configureCellSource(block.cell ?? "", input)}
+                        onMigrateLegacyViz={async () => {
+                          await flushPendingSaves();
+                          const existingBlockIDs = new Set(
+                            notebook.blocks.map((candidate) => candidate.id).filter(Boolean),
+                          );
+                          const updated = await mutateWithResult(() =>
+                            migrateLegacyNotebookVisualization(notebookId, block.cell ?? ""),
+                          );
+                          const migrated = updated?.blocks.find(
+                            (candidate) =>
+                              candidate.visualization &&
+                              candidate.id &&
+                              !existingBlockIDs.has(candidate.id),
+                          );
+                          if (migrated?.id) setEnteringBlockKey(`block:${migrated.id}`);
+                        }}
+                        onGoToAsset={goToAsset}
+                        onGoToCell={goToCell}
+                      />
+                    )}
                   </div>
                 );
               })()
+            ) : block.visualization && block.id ? (
+              <div
+                key={block.id}
+                data-notebook-block-id={block.id}
+                data-notebook-visualization-id={block.id}
+                data-notebook-block-entering={entering || undefined}
+                className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+              >
+                <NotebookVisualizationBlockCard
+                  notebookId={notebookId}
+                  blockId={block.id}
+                  visualization={block.visualization}
+                  cells={notebook.cells}
+                  results={results}
+                  busy={busy}
+                  onSave={async (source, definition) => {
+                    await flushPendingSaves();
+                    const updated = await mutateWithResult(() =>
+                      updateNotebookVisualization(notebookId, block.id ?? "", {
+                        source,
+                        definition,
+                      }),
+                    );
+                    return Boolean(updated);
+                  }}
+                  onDelete={async () => {
+                    await flushPendingSaves();
+                    await mutateWithResult(() => deleteNotebookBlock(notebookId, block.id ?? ""));
+                  }}
+                />
+              </div>
             ) : (
               <div
-                key={`md-${index}`}
+                key={block.id ?? `legacy-md-${index}`}
+                data-notebook-block-id={block.id || undefined}
                 data-notebook-markdown-index={index}
                 data-notebook-block-entering={entering || undefined}
                 className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
@@ -1013,17 +1342,25 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                 <MarkdownBlockCard
                   markdown={block.markdown ?? ""}
                   onSave={(markdown) => {
-                    const blocks: WebNotebookBlock[] = notebook.blocks.map(
-                      (candidate, candidateIndex) =>
-                        candidateIndex === index ? { markdown } : candidate,
-                    );
-                    void mutate(() => updateNotebookBlocks(notebookId, blocks));
+                    if (!block.id) {
+                      const blocks: WebNotebookBlock[] = notebook.blocks.map(
+                        (candidate, candidateIndex) =>
+                          candidateIndex === index ? { ...candidate, markdown } : candidate,
+                      );
+                      void mutate(() => updateNotebookBlocks(notebookId, blocks));
+                      return;
+                    }
+                    void mutate(() => updateNotebookMarkdown(notebookId, block.id!, markdown));
                   }}
                   onDelete={() => {
-                    const blocks = notebook.blocks.filter(
-                      (_, candidateIndex) => candidateIndex !== index,
-                    );
-                    void mutate(() => updateNotebookBlocks(notebookId, blocks));
+                    if (!block.id) {
+                      const blocks = notebook.blocks.filter(
+                        (_, candidateIndex) => candidateIndex !== index,
+                      );
+                      void mutate(() => updateNotebookBlocks(notebookId, blocks));
+                      return;
+                    }
+                    void mutate(() => deleteNotebookBlock(notebookId, block.id!));
                   }}
                 />
               </div>
@@ -1060,6 +1397,19 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
               <Plus className="size-3.5" />
               Markdown
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={
+                pendingBlock !== null ||
+                notebook.cells.length === 0 ||
+                notebook.manifest_version < 2
+              }
+              onClick={() => void createBlockAtBottom("visualization")}
+            >
+              <Plus className="size-3.5" />
+              Visualization
+            </Button>
           </div>
         </div>
       </ScrollArea>
@@ -1068,7 +1418,12 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
 }
 
 function PendingNotebookBlock({ kind }: { kind: PendingNotebookBlockKind }) {
-  const label = kind === "markdown" ? "Markdown block" : `${kind.toUpperCase()} cell`;
+  const label =
+    kind === "markdown"
+      ? "Markdown block"
+      : kind === "visualization"
+        ? "visualization"
+        : `${kind.toUpperCase()} cell`;
 
   return (
     <div
@@ -1099,6 +1454,448 @@ function PendingNotebookBlock({ kind }: { kind: PendingNotebookBlockKind }) {
         </DelimitedCardContent>
       </AppPanel>
     </div>
+  );
+}
+
+type NotebookDataSourceInput =
+  | {
+      kind: "warehouse";
+      connection: string;
+      relation: string;
+      snapshotMode: "full" | "sample";
+      rowLimit?: number;
+    }
+  | {
+      kind: "file";
+      connection?: string;
+      uri: string;
+      format?: string;
+      snapshotMode: "full" | "sample";
+      rowLimit?: number;
+    }
+  | {
+      kind: "http";
+      url: string;
+      method: string;
+      body?: unknown;
+      recordsPath?: string;
+      snapshotMode: "full" | "sample";
+      rowLimit?: number;
+    };
+
+function NotebookAddDataDialog({
+  open,
+  onOpenChange,
+  queryConnections,
+  connections,
+  environment,
+  onCreate,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  queryConnections: WorkspaceQueryConnection[];
+  connections: Record<string, string>;
+  environment: string;
+  onCreate: (input: NotebookDataSourceInput) => Promise<void>;
+}) {
+  const loadTables = useSetAtom(sqlDiscoveryTablesAtom);
+  const [kind, setKind] = useState<"warehouse" | "file" | "http">("warehouse");
+  const [connection, setConnection] = useState("");
+  const [relation, setRelation] = useState("");
+  const [filter, setFilter] = useState("");
+  const [tables, setTables] = useState<Array<{ name: string; short_name: string }>>([]);
+  const [fileConnection, setFileConnection] = useState("__local__");
+  const [fileURI, setFileURI] = useState("");
+  const [fileFormat, setFileFormat] = useState("__auto__");
+  const [requestURL, setRequestURL] = useState("");
+  const [requestMethod, setRequestMethod] = useState("GET");
+  const [requestBody, setRequestBody] = useState("");
+  const [recordsPath, setRecordsPath] = useState("");
+  const [snapshotMode, setSnapshotMode] = useState<"full" | "sample">("full");
+  const [rowLimit, setRowLimit] = useState(10000);
+  const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+  const storageConnections = useMemo(
+    () =>
+      Object.entries(connections)
+        .filter(([, type]) => ["s3", "gcs"].includes(type.trim().toLowerCase()))
+        .sort(([left], [right]) => left.localeCompare(right)),
+    [connections],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    setConnection((current) =>
+      queryConnections.some((candidate) => candidate.name === current)
+        ? current
+        : (queryConnections[0]?.name ?? ""),
+    );
+    setKind("warehouse");
+    setRelation("");
+    setFilter("");
+    setFileConnection("__local__");
+    setFileURI("");
+    setFileFormat("__auto__");
+    setRequestURL("");
+    setRequestMethod("GET");
+    setRequestBody("");
+    setRecordsPath("");
+    setSnapshotMode("full");
+    setRowLimit(10000);
+    setError("");
+  }, [open, queryConnections]);
+
+  useEffect(() => {
+    if (!open || kind !== "warehouse" || !connection) {
+      setTables([]);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    void loadTables({ connection, environment })
+      .then((result) => {
+        if (!cancelled) setTables(result);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setTables([]);
+          setError(cause instanceof Error ? cause.message : "Could not browse this connection.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [connection, environment, kind, loadTables, open]);
+
+  const visibleTables = tables.filter((table) =>
+    table.name.toLowerCase().includes(filter.trim().toLowerCase()),
+  );
+  const submit = async () => {
+    if (creating) return;
+    setCreating(true);
+    setError("");
+    try {
+      const snapshot = {
+        snapshotMode,
+        rowLimit: snapshotMode === "sample" ? rowLimit : undefined,
+      };
+      if (kind === "warehouse") {
+        await onCreate({ kind, connection, relation: relation.trim(), ...snapshot });
+      } else if (kind === "file") {
+        await onCreate({
+          kind,
+          connection: fileConnection === "__local__" ? undefined : fileConnection,
+          uri: fileURI.trim(),
+          format: fileFormat === "__auto__" ? undefined : fileFormat,
+          ...snapshot,
+        });
+      } else {
+        let body: unknown;
+        if (requestBody.trim()) {
+          try {
+            body = JSON.parse(requestBody);
+          } catch {
+            throw new Error("Request body must be valid JSON.");
+          }
+        }
+        await onCreate({
+          kind,
+          url: requestURL.trim(),
+          method: requestMethod,
+          body,
+          recordsPath: recordsPath.trim() || undefined,
+          ...snapshot,
+        });
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not add the data source.");
+    } finally {
+      setCreating(false);
+    }
+  };
+  const canSubmit =
+    (snapshotMode === "full" || rowLimit > 0) &&
+    ((kind === "warehouse" && Boolean(connection && relation.trim())) ||
+      (kind === "file" && Boolean(fileURI.trim())) ||
+      (kind === "http" && Boolean(requestURL.trim())));
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !creating && onOpenChange(next)}>
+      <DialogContent className="max-h-[min(90vh,52rem)] overflow-hidden sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Add data</DialogTitle>
+          <DialogDescription>
+            Create a typed local snapshot that SQL and Python cells can join with every other
+            notebook source.
+          </DialogDescription>
+        </DialogHeader>
+        <ScrollArea viewportClassName="max-h-[calc(min(90vh,52rem)-11rem)] pr-3">
+          <Tabs value={kind} onValueChange={(value) => setKind(value as typeof kind)}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="warehouse">
+                <Database />
+                Warehouse
+              </TabsTrigger>
+              <TabsTrigger value="file">
+                <FileInput />
+                File
+              </TabsTrigger>
+              <TabsTrigger value="http">
+                <Globe2 />
+                HTTP
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="warehouse" className="grid min-w-0 gap-4 pt-2">
+              {queryConnections.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  No query-capable connections are configured in this environment.
+                </div>
+              ) : (
+                <>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="notebook-source-connection">Source connection</Label>
+                    <Select
+                      value={connection}
+                      onValueChange={(value) => {
+                        setConnection(value);
+                        setRelation("");
+                      }}
+                    >
+                      <SelectTrigger id="notebook-source-connection" className="w-full">
+                        <SelectValue placeholder="Choose a connection" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {queryConnections.map((candidate) => (
+                          <SelectItem key={candidate.name} value={candidate.name}>
+                            {candidate.name} · {candidate.connection_type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid min-w-0 gap-1.5">
+                    <Label htmlFor="notebook-source-relation">Table or relation</Label>
+                    <Input
+                      id="notebook-source-relation"
+                      value={relation}
+                      onChange={(event) => setRelation(event.target.value)}
+                      placeholder="catalog.schema.table"
+                      className="font-mono"
+                    />
+                    <div className="overflow-hidden rounded-lg border">
+                      <div className="border-b p-2">
+                        <Input
+                          value={filter}
+                          onChange={(event) => setFilter(event.target.value)}
+                          placeholder="Filter discovered tables…"
+                          className="h-7"
+                        />
+                      </div>
+                      <ScrollArea className="h-48" viewportClassName="max-h-48">
+                        {loading ? (
+                          <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
+                            <Loader2 className="size-3.5 animate-spin" /> Discovering tables…
+                          </div>
+                        ) : visibleTables.length > 0 ? (
+                          <div className="grid">
+                            {visibleTables.map((table) => (
+                              <button
+                                type="button"
+                                key={table.name}
+                                className={cn(
+                                  "min-w-0 border-b px-3 py-2 text-left font-mono text-xs last:border-b-0 hover:bg-muted/50",
+                                  relation === table.name && "bg-primary/10 text-primary",
+                                )}
+                                onClick={() => setRelation(table.name)}
+                              >
+                                <span className="block truncate">{table.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="p-3 text-xs text-muted-foreground">
+                            {error ||
+                              "No tables discovered. You can enter a relation manually above."}
+                          </p>
+                        )}
+                      </ScrollArea>
+                    </div>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="file" className="grid min-w-0 gap-4 pt-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor="notebook-file-connection">Location</Label>
+                <Select
+                  value={fileConnection}
+                  onValueChange={(value) => {
+                    setFileConnection(value);
+                    setFileURI("");
+                  }}
+                >
+                  <SelectTrigger id="notebook-file-connection" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__local__">Workspace file</SelectItem>
+                    {storageConnections.map(([name, type]) => (
+                      <SelectItem key={name} value={name}>
+                        {name} · {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid min-w-0 gap-1.5">
+                <Label htmlFor="notebook-file-uri">File or object</Label>
+                {fileConnection === "__local__" ? (
+                  <Input
+                    id="notebook-file-uri"
+                    value={fileURI}
+                    onChange={(event) => setFileURI(event.target.value)}
+                    placeholder="data/events.parquet"
+                    className="font-mono"
+                  />
+                ) : (
+                  <LoadStreamPicker
+                    id="notebook-file-uri"
+                    variant="field"
+                    value={fileURI}
+                    connection={fileConnection}
+                    environment={environment}
+                    placeholder="bucket/path/events.parquet"
+                    ariaLabel="File or object"
+                    onCommit={setFileURI}
+                  />
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Local paths must stay inside this Git workspace. Credentials never enter the
+                  notebook file.
+                </p>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="notebook-file-format">Format</Label>
+                <Select value={fileFormat} onValueChange={setFileFormat}>
+                  <SelectTrigger id="notebook-file-format" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__auto__">Infer from file name</SelectItem>
+                    {["csv", "parquet", "json", "jsonl", "avro"].map((format) => (
+                      <SelectItem key={format} value={format}>
+                        {format}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="http" className="grid min-w-0 gap-4 pt-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor="notebook-http-url">Request URL</Label>
+                <Input
+                  id="notebook-http-url"
+                  value={requestURL}
+                  onChange={(event) => setRequestURL(event.target.value)}
+                  placeholder="https://api.example.com/events"
+                  className="font-mono"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="notebook-http-method">Method</Label>
+                <Select value={requestMethod} onValueChange={setRequestMethod}>
+                  <SelectTrigger id="notebook-http-method" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {["GET", "POST", "PUT", "PATCH"].map((method) => (
+                      <SelectItem key={method} value={method}>
+                        {method}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="notebook-http-records">Records path</Label>
+                <Input
+                  id="notebook-http-records"
+                  value={recordsPath}
+                  onChange={(event) => setRecordsPath(event.target.value)}
+                  placeholder="data.items (optional)"
+                  className="font-mono"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="notebook-http-body">JSON request body</Label>
+                <textarea
+                  id="notebook-http-body"
+                  value={requestBody}
+                  onChange={(event) => setRequestBody(event.target.value)}
+                  rows={5}
+                  spellCheck={false}
+                  placeholder={'{\n  "after": "{{ start_datetime }}"\n}'}
+                  className="w-full resize-y rounded-lg border bg-background p-3 font-mono text-xs leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+            </TabsContent>
+
+            <div className="mt-4 grid gap-1.5">
+              <Label>Snapshot</Label>
+              <div className="flex min-w-0 gap-2">
+                <Select
+                  value={snapshotMode}
+                  onValueChange={(value: "full" | "sample") => setSnapshotMode(value)}
+                >
+                  <SelectTrigger className="w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full">Complete result</SelectItem>
+                    <SelectItem value="sample">Explicit sample</SelectItem>
+                  </SelectContent>
+                </Select>
+                {snapshotMode === "sample" ? (
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10000000}
+                    value={rowLimit}
+                    onChange={(event) => setRowLimit(Math.max(1, Number(event.target.value) || 1))}
+                    aria-label="Sample row limit"
+                    className="w-40"
+                  />
+                ) : null}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                A complete snapshot fails if it exceeds Renart&apos;s transfer budget. A sample
+                stays marked as sampled in downstream results.
+              </p>
+            </div>
+          </Tabs>
+        </ScrollArea>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <DialogFooter>
+          <Button variant="outline" disabled={creating} onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button disabled={creating || !canSubmit} onClick={() => void submit()}>
+            {creating ? <Loader2 className="animate-spin" /> : <Database />}
+            {creating ? "Adding…" : "Add source"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1154,11 +1951,230 @@ function statusDotClass(result: NotebookCellRunResult | undefined, stale: boolea
   return "bg-muted-foreground/40";
 }
 
+function formatNotebookBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exponent;
+  return `${value >= 10 || exponent === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exponent]}`;
+}
+
+function downloadNotebookCell(notebookId: string, cellId: string, format: "csv" | "parquet") {
+  const anchor = document.createElement("a");
+  anchor.href = notebookCellExportURL(notebookId, cellId, format);
+  anchor.click();
+}
+
+function NotebookSourceCard({
+  notebookId,
+  cell,
+  result,
+  stale,
+  running,
+  busy,
+  onRun,
+  onCancel,
+  onRunFromHere,
+  onDelete,
+  onRename,
+}: {
+  notebookId: string;
+  cell: WebAsset;
+  result?: NotebookCellRunResult;
+  stale: boolean;
+  running: boolean;
+  busy: boolean;
+  onRun: () => void;
+  onCancel: () => void;
+  onRunFromHere: () => void;
+  onDelete: () => void;
+  onRename: (name: string) => Promise<void>;
+}) {
+  const source = cell.notebook_source;
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState(cell.name);
+  useEffect(() => setNameDraft(cell.name), [cell.name]);
+  if (!source) return null;
+
+  const commitRename = () => {
+    const trimmed = nameDraft.trim();
+    setRenaming(false);
+    if (trimmed && trimmed !== cell.name) void onRename(trimmed);
+    else setNameDraft(cell.name);
+  };
+  const sourceLabel =
+    source.kind === "http"
+      ? `${source.request?.method || "GET"} ${source.request?.url || ""}`
+      : source.uri || "";
+  const rowsShown = Math.min(result?.rows?.length ?? 0, RESULT_DISPLAY_CAP);
+
+  return (
+    <AppPanel className="border-cyan-500/25 border-l-2 border-l-cyan-500/70 bg-cyan-500/[0.025]">
+      <DelimitedCardHeader className={cn(stale && "notebook-stale-hatch")}>
+        <span className={cn("size-2 rounded-full", statusDotClass(result, stale))} />
+        {renaming ? (
+          <input
+            autoFocus
+            value={nameDraft}
+            spellCheck={false}
+            onChange={(event) => setNameDraft(event.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitRename();
+              if (event.key === "Escape") {
+                setNameDraft(cell.name);
+                setRenaming(false);
+              }
+            }}
+            className="w-40 rounded border bg-background px-1.5 py-0.5 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        ) : (
+          <button
+            type="button"
+            className="rounded font-mono text-sm font-medium hover:bg-muted"
+            onClick={() => setRenaming(true)}
+          >
+            {cell.name}
+          </button>
+        )}
+        <Badge variant="secondary" className="font-mono text-[10px]">
+          {source.kind === "http" ? <Globe2 /> : <FileInput />}
+          {source.connection ? "object" : source.kind}
+        </Badge>
+        <Badge variant="outline" className="text-[10px]">
+          {source.snapshot.mode === "sample"
+            ? `sample ${source.snapshot.row_limit?.toLocaleString() ?? ""}`
+            : "complete snapshot"}
+        </Badge>
+        {result?.snapshot ? (
+          <Badge
+            variant="outline"
+            className="text-[10px] text-cyan-700 dark:text-cyan-300"
+            title={result.snapshot.imported_at}
+          >
+            {result.snapshot.row_count.toLocaleString()} rows ·{" "}
+            {formatNotebookBytes(result.snapshot.byte_count)}
+          </Badge>
+        ) : null}
+        <span className="ml-auto text-[11px] text-muted-foreground">
+          {running ? "refreshing…" : result?.status === "ok" ? `${result.duration_ms} ms` : null}
+        </span>
+        {running ? (
+          <Button variant="ghost" size="icon-sm" onClick={onCancel} title="Stop refresh">
+            <Square className="size-3.5 fill-current" />
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            disabled={busy}
+            onClick={onRun}
+            title="Refresh source"
+          >
+            <RotateCw className="size-3.5" />
+          </Button>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label="Source actions">
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem disabled={busy} onSelect={onRunFromHere}>
+              <Play />
+              Refresh and run downstream
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setRenaming(true)}>
+              <Pencil />
+              Rename source
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={result?.status !== "ok" || stale}
+              onSelect={() => downloadNotebookCell(notebookId, cell.cell_id ?? "", "csv")}
+            >
+              <Download />
+              Download CSV
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={result?.status !== "ok" || stale}
+              onSelect={() => downloadNotebookCell(notebookId, cell.cell_id ?? "", "parquet")}
+            >
+              <Download />
+              Download Parquet
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+              <Trash2 />
+              Delete source
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </DelimitedCardHeader>
+      <DelimitedCardContent className="space-y-3">
+        <div className="grid min-w-0 gap-2 rounded-lg border bg-background/70 p-3 text-xs sm:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="min-w-0">
+            <p className="text-muted-foreground">Source</p>
+            <p className="truncate font-mono" title={sourceLabel}>
+              {sourceLabel}
+            </p>
+          </div>
+          <div className="min-w-0 sm:text-right">
+            <p className="text-muted-foreground">Context</p>
+            <p className="truncate font-mono">
+              {source.connection ||
+                source.format ||
+                (source.kind === "http" ? "HTTP" : "workspace")}
+            </p>
+          </div>
+          {source.kind === "http" && source.response?.records_path ? (
+            <div className="min-w-0 sm:col-span-2">
+              <span className="text-muted-foreground">Records path </span>
+              <span className="font-mono">{source.response.records_path}</span>
+            </div>
+          ) : null}
+        </div>
+        {result?.snapshot?.warnings?.map((warning) => (
+          <p
+            key={warning}
+            className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
+          >
+            {warning}
+          </p>
+        ))}
+        {result?.status === "error" || result?.status === "blocked" ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-mono text-xs text-red-800 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-200">
+            {result.error}
+          </div>
+        ) : null}
+        {result?.status === "ok" && result.columns.length > 0 ? (
+          <div className="overflow-hidden rounded-lg border">
+            <SimpleTable
+              viewportClassName="max-h-72"
+              columns={result.columns}
+              rows={result.rows
+                .slice(0, RESULT_DISPLAY_CAP)
+                .map((row) => row.map((value) => (value == null ? "" : String(value))))}
+            />
+            {result.total_rows > rowsShown ? (
+              <div className="border-t bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
+                showing {rowsShown} of {result.total_rows} rows
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </DelimitedCardContent>
+    </AppPanel>
+  );
+}
+
 function NotebookCellCard({
+  notebookId,
   cell,
   cells,
   dependencies,
   installedModules,
+  parameters,
   onAddDependency,
   resultColumnsByCell,
   result,
@@ -1174,13 +2190,18 @@ function NotebookCellCard({
   onSaveBody,
   autoCommit,
   pendingAuto,
+  queryConnections,
+  onConfigureSource,
+  onMigrateLegacyViz,
   onGoToAsset,
   onGoToCell,
 }: {
+  notebookId: string;
   cell: WebAsset;
   cells: WebAsset[];
   dependencies: string[];
   installedModules: string[];
+  parameters: NonNullable<WebNotebook["parameters"]>;
   onAddDependency: (pkg: string) => void;
   resultColumnsByCell: Map<string, string[]>;
   result?: NotebookCellRunResult;
@@ -1198,6 +2219,13 @@ function NotebookCellCard({
   autoCommit: boolean;
   /** Stale, but auto-recompute will refresh it on its own — don't flag it stale. */
   pendingAuto: boolean;
+  queryConnections: WorkspaceQueryConnection[];
+  onConfigureSource: (input: {
+    connection?: string;
+    snapshot_mode?: "full" | "sample";
+    row_limit?: number;
+  }) => Promise<void>;
+  onMigrateLegacyViz: () => Promise<void>;
   onGoToAsset?: (pipelineId: string, assetId: string) => void;
   onGoToCell?: (cellId: string) => void;
 }) {
@@ -1207,6 +2235,11 @@ function NotebookCellCard({
     [workspace, cells, cell, resultColumnsByCell],
   );
   const isPythonCell = usesPythonSource(cell);
+  const sourceConnection = cell.connection?.trim() ?? "";
+  const snapshotMode = cell.meta?.renart_notebook_snapshot_mode === "sample" ? "sample" : "full";
+  const snapshotRowLimit = Number(cell.meta?.renart_notebook_snapshot_row_limit ?? 10000);
+  const [sourceChanging, setSourceChanging] = useState(false);
+  const [migratingViz, setMigratingViz] = useState(false);
   const { body } = useMemo(() => splitCellContent(cell.content), [cell.content]);
   const [draft, setDraft] = useState(body);
 
@@ -1291,19 +2324,6 @@ function NotebookCellCard({
     return () => window.clearTimeout(timer);
   }, [autoCommit, draft]);
 
-  // Chart type is a view over the @viz directive line: changing it rewrites
-  // the cell body (text stays the source of truth, invariant 3).
-  const setChartKind = (kind: VizKind) => {
-    const next = applyVizKind(draft, kind, result?.columns ?? []);
-    setDraft(next);
-    savingBodyRef.current = next;
-    void onSaveBody(next, lastSavedRevisionRef.current).finally(() => {
-      if (savingBodyRef.current === next) {
-        savingBodyRef.current = null;
-      }
-    });
-  };
-
   const vizDiagnostics = result?.viz_diagnostics ?? [];
   const rowsShown = Math.min(result?.rows?.length ?? 0, RESULT_DISPLAY_CAP);
   // Only surface staleness for cells the user must act on. A cell auto-recompute
@@ -1311,7 +2331,11 @@ function NotebookCellCard({
   const showStale = stale && !pendingAuto;
 
   return (
-    <AppPanel>
+    <AppPanel
+      className={cn(
+        sourceConnection && "border-primary/25 border-l-2 border-l-primary/60 bg-primary/[0.02]",
+      )}
+    >
       <DelimitedCardHeader className={cn(showStale && "notebook-stale-hatch")}>
         <span className={cn("size-2 rounded-full", statusDotClass(result, showStale))} />
         {renaming ? (
@@ -1346,6 +2370,65 @@ function NotebookCellCard({
         <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
           {isPythonCell ? "python" : "sql"}
         </span>
+        {!isPythonCell && queryConnections.length > 0 ? (
+          <Select
+            value={sourceConnection || "__local__"}
+            disabled={busy || sourceChanging}
+            onValueChange={(value) => {
+              const connection = value === "__local__" ? undefined : value;
+              setSourceChanging(true);
+              void onConfigureSource({
+                connection,
+                snapshot_mode: connection ? snapshotMode : undefined,
+                row_limit: connection && snapshotMode === "sample" ? snapshotRowLimit : undefined,
+              }).finally(() => setSourceChanging(false));
+            }}
+          >
+            <SelectTrigger size="sm" aria-label="Source connection" className="max-w-52">
+              {sourceChanging ? <Loader2 className="animate-spin" /> : <Database />}
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectGroup>
+                <SelectLabel>Execution context</SelectLabel>
+                <SelectItem value="__local__">Local notebook DuckDB</SelectItem>
+                {sourceConnection &&
+                !queryConnections.some((connection) => connection.name === sourceConnection) ? (
+                  <SelectItem value={sourceConnection}>{sourceConnection} (unavailable)</SelectItem>
+                ) : null}
+                {queryConnections.map((connection) => (
+                  <SelectItem key={connection.name} value={connection.name}>
+                    {connection.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        ) : null}
+        {sourceConnection ? (
+          <Select
+            value={snapshotMode}
+            disabled={busy || sourceChanging}
+            onValueChange={(value: "full" | "sample") => {
+              setSourceChanging(true);
+              void onConfigureSource({
+                connection: sourceConnection,
+                snapshot_mode: value,
+                row_limit: value === "sample" ? snapshotRowLimit : undefined,
+              }).finally(() => setSourceChanging(false));
+            }}
+          >
+            <SelectTrigger size="sm" aria-label="Snapshot mode">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectItem value="full">Full snapshot</SelectItem>
+              <SelectItem value="sample">
+                Sample {snapshotRowLimit.toLocaleString()} rows
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        ) : null}
         {result?.materialized === "table" ? (
           <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
             table
@@ -1361,6 +2444,19 @@ function NotebookCellCard({
             {imported.complete ? "" : " ⚠"}
           </span>
         ))}
+        {result?.snapshot ? (
+          <span
+            title={`${result.snapshot.environment ?? "default"} · ${result.snapshot.row_count.toLocaleString()} rows · ${formatNotebookBytes(result.snapshot.byte_count)} · ${result.snapshot.imported_at}`}
+            className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
+          >
+            {result.snapshot.sampled ? "sampled" : "snapshotted"} ·{" "}
+            {formatNotebookBytes(result.snapshot.byte_count)}
+          </span>
+        ) : result?.sampled ? (
+          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-200">
+            derived from sample
+          </span>
+        ) : null}
         <span className="ml-auto text-[11px] text-muted-foreground">
           {running
             ? "running…"
@@ -1403,6 +2499,20 @@ function NotebookCellCard({
               <ArrowUpFromLine className="size-4" />
               Promote to pipeline
             </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={result?.status !== "ok" || showStale}
+              onSelect={() => downloadNotebookCell(notebookId, cell.cell_id ?? "", "csv")}
+            >
+              <Download className="size-4" />
+              Download CSV
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={result?.status !== "ok" || showStale}
+              onSelect={() => downloadNotebookCell(notebookId, cell.cell_id ?? "", "parquet")}
+            >
+              <Download className="size-4" />
+              Download Parquet
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={onDelete}>
               <Trash2 className="size-4" />
@@ -1416,13 +2526,13 @@ function NotebookCellCard({
           cell={cell}
           value={draft}
           schemaTables={schemaTables}
-          resultColumns={result?.columns ?? []}
           onChange={setDraft}
           onCommit={commit}
           onRun={onRun}
           onRename={() => setRenaming(true)}
           onGoToAsset={onGoToAsset}
           onGoToCell={onGoToCell}
+          parameters={parameters}
         />
         <MissingPythonDepsBanner missingImports={missingDeps} onAddDependency={onAddDependency} />
         {result?.status === "error" ? (
@@ -1455,29 +2565,29 @@ function NotebookCellCard({
             ))}
           </div>
         ) : null}
-        {result?.status === "ok" && result.columns.length > 0 && !isPythonCell ? (
-          <div className="flex items-center gap-1">
-            <span className="mr-1 text-[11px] text-muted-foreground">View</span>
-            {(["table", "bar", "line", "area", "pie", "kpi"] as VizKind[]).map((kind) => {
-              const Icon = VIZ_KIND_ICONS[kind];
-              const active = (result.viz?.kind ?? "table") === kind;
-              return (
-                <Button
-                  key={kind}
-                  variant={active ? "secondary" : "ghost"}
-                  size="icon-sm"
-                  title={kind}
-                  onClick={() => setChartKind(kind)}
-                >
-                  <Icon className="size-3.5" />
-                </Button>
-              );
-            })}
-          </div>
-        ) : null}
         {result?.status === "ok" && result.columns.length > 0 ? (
-          result.viz && result.viz.kind !== "table" ? (
-            <NotebookVizRenderer result={result} />
+          result.viz ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <span>
+                  Legacy <span className="font-mono">@viz</span> preview
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  disabled={busy || migratingViz}
+                  onClick={() => {
+                    setMigratingViz(true);
+                    void onMigrateLegacyViz().finally(() => setMigratingViz(false));
+                  }}
+                >
+                  {migratingViz ? <Loader2 className="animate-spin" /> : <RotateCw />}
+                  Move to visualization block
+                </Button>
+              </div>
+              <NotebookVizRenderer result={result} />
+            </div>
           ) : (
             <div className="overflow-hidden rounded-lg border">
               <SimpleTable

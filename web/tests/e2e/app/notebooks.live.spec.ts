@@ -14,6 +14,20 @@ type NotebookEnvelope = {
       name: string;
       content: string;
       content_revision?: string;
+      notebook_source?: {
+        kind: "file" | "http";
+        uri?: string;
+        snapshot: { mode: "full" | "sample"; row_limit?: number };
+      };
+    }>;
+    blocks?: Array<{
+      id?: string;
+      cell?: string;
+      visualization?: {
+        id: string;
+        source: string;
+        definition: Record<string, unknown>;
+      };
     }>;
   };
 };
@@ -148,6 +162,26 @@ async function setNotebookEditorValue(
       cursorOffset: options.cursorOffset,
       triggerSuggest: options.triggerSuggest,
     },
+  );
+}
+
+async function setVisualizationDefinitionValue(page: Page, blockId: string, value: string) {
+  await page.evaluate(
+    ({ targetBlockId, nextValue }) => {
+      const monaco = (window as typeof window & { monaco?: any }).monaco;
+      const model = monaco?.editor
+        .getModels?.()
+        .find((candidate: any) =>
+          candidate.uri.toString().includes(`/notebook-visualization/${targetBlockId}.yml`),
+        );
+      const editor = monaco?.editor
+        .getEditors?.()
+        .find((candidate: any) => candidate.getModel?.() === model);
+      if (!editor) throw new Error(`Visualization editor for ${targetBlockId} is not mounted`);
+      editor.setValue(nextValue);
+      editor.focus();
+    },
+    { targetBlockId: blockId, nextValue: value },
   );
 }
 
@@ -292,6 +326,80 @@ test.describe("app notebooks live", () => {
     expect(result.rows[0][0]).toBe("2024-01-15");
   });
 
+  test("typed notebook parameters keep defaults in Git and values in runtime", async ({
+    liveApp,
+    page,
+  }) => {
+    const notebook = await createNotebook(page.request, liveApp.baseURL, "Typed Parameters");
+    const cell = notebook.cells[0];
+    await setCell(
+      page.request,
+      liveApp.baseURL,
+      notebook.id,
+      cell.cell_id,
+      "select {{ parameter.region }} as region",
+    );
+
+    await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
+    await page.getByRole("button", { name: "Notebook parameters" }).click();
+    const dialog = page.getByRole("dialog", { name: "Notebook parameters" });
+    await dialog.getByRole("button", { name: "Add parameter" }).click();
+    await dialog.getByLabel("ID").fill("region");
+    await dialog.getByLabel("Label").fill("Region");
+    await dialog.getByLabel("Default").fill("eu");
+    const definitionResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/notebooks/${notebook.id}/changes/apply`) && response.ok(),
+    );
+    await dialog.getByRole("button", { name: "Save definitions" }).click();
+    await definitionResponse;
+
+    await dialog.getByLabel("Region").fill("us");
+    const settingsResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/notebooks/${notebook.id}/settings`) && response.ok(),
+    );
+    await dialog.getByRole("button", { name: "Apply values" }).click();
+    await settingsResponse;
+    await expect(dialog).toBeHidden();
+
+    const runResponse = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/notebooks/${notebook.id}/run`) && response.ok(),
+    );
+    await page.getByRole("button", { name: "Run all" }).click();
+    const runPayload = (await (await runResponse).json()) as {
+      results: Array<{ cell_id: string; rows: unknown[][] }>;
+    };
+    expect(runPayload.results.find((result) => result.cell_id === cell.cell_id)?.rows).toEqual([
+      ["us"],
+    ]);
+
+    const definition = (await (
+      await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`)
+    ).json()) as NotebookEnvelope & {
+      notebook: { parameters?: Array<{ id: string; default: unknown }> };
+    };
+    expect(definition.notebook.parameters).toEqual([
+      expect.objectContaining({ id: "region", default: "eu" }),
+    ]);
+    const runtime = (await (
+      await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}/runtime`)
+    ).json()) as { parameter_values: Record<string, unknown> };
+    expect(runtime.parameter_values).toEqual({ region: "us" });
+
+    if (!test.info().project.name.includes("mobile")) {
+      const query = "select {{ parameter. }} as region";
+      await setNotebookEditorValue(page, cell.cell_id, query, {
+        cursorOffset: query.indexOf(" }}"),
+        triggerSuggest: true,
+      });
+      const suggestWidget = page.locator(".suggest-widget.visible").first();
+      await expect(suggestWidget.getByText("region", { exact: true }).first()).toBeVisible({
+        timeout: 15000,
+      });
+    }
+  });
+
   test("create, edit, and run a notebook against the local session", async ({ liveApp, page }) => {
     test.setTimeout(timeoutForRetry(test.info(), 90000, 60000));
     const { request } = page;
@@ -343,6 +451,89 @@ test.describe("app notebooks live", () => {
     await expect(page.getByText("40", { exact: true }).first()).toBeVisible({
       timeout: timeoutForRetry(test.info(), 15000),
     });
+  });
+
+  test("adds a local file source and joins its typed snapshot", async ({ liveApp, page }) => {
+    test.setTimeout(timeoutForRetry(test.info(), 120000, 60000));
+    writeFileSync(
+      join(liveApp.workspaceDir, "notebook-events.csv"),
+      "event_id,amount\n1,10\n2,20\n",
+      "utf8",
+    );
+    const notebook = await createNotebook(page.request, liveApp.baseURL, "File Sources");
+    await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
+    await expect(page.getByText("File Sources").first()).toBeVisible({ timeout: 15000 });
+
+    await page.getByRole("button", { name: "Add data" }).click();
+    const dialog = page.getByRole("dialog", { name: "Add data" });
+    await dialog.getByRole("tab", { name: "File" }).click();
+    await dialog.getByLabel("File or object").fill("notebook-events.csv");
+    await dialog.getByRole("button", { name: "Add source" }).click();
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+
+    const snapshot = (await (
+      await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`)
+    ).json()) as NotebookEnvelope;
+    const source = snapshot.notebook.cells.find((cell) => cell.notebook_source?.kind === "file");
+    expect(source?.notebook_source?.uri).toBe("notebook-events.csv");
+    const sourceCard = page.locator(`[data-notebook-cell-id="${source!.cell_id}"]`);
+    await expect(sourceCard.getByText("notebook-events.csv")).toBeVisible();
+    const sourceRun = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/notebooks/${notebook.id}/run`) && response.ok(),
+      { timeout: 90000 },
+    );
+    await sourceCard.getByTitle("Refresh source").click();
+    const sourcePayload = (await (await sourceRun).json()) as {
+      results: Array<{
+        cell_id: string;
+        status: string;
+        column_types?: string[];
+        total_rows: number;
+      }>;
+    };
+    expect(sourcePayload.results[0]).toMatchObject({
+      cell_id: source!.cell_id,
+      status: "ok",
+      total_rows: 2,
+    });
+    expect(sourcePayload.results[0].column_types?.length).toBe(2);
+
+    const totalCell = await addCell(page.request, liveApp.baseURL, notebook.id, "file_total");
+    await setCell(
+      page.request,
+      liveApp.baseURL,
+      notebook.id,
+      totalCell,
+      `select sum(amount) as total from ${source!.name}`,
+    );
+    const joined = await page.request.post(`${liveApp.baseURL}/api/notebooks/${notebook.id}/run`, {
+      data: { cells: [totalCell] },
+      timeout: 90000,
+    });
+    expect(joined.ok()).toBe(true);
+    const joinedPayload = (await joined.json()) as {
+      results: Array<{ cell_id: string; status: string; rows: unknown[][] }>;
+    };
+    expect(joinedPayload.results.at(-1)).toMatchObject({
+      cell_id: totalCell,
+      status: "ok",
+      rows: [[30]],
+    });
+
+    const csvExport = await page.request.get(
+      `${liveApp.baseURL}/api/notebooks/${notebook.id}/cells/${totalCell}/export?format=csv`,
+    );
+    expect(csvExport.ok()).toBe(true);
+    expect(csvExport.headers()["content-disposition"]).toContain("file_total.csv");
+    expect(await csvExport.text()).toContain("total\n30");
+
+    const parquetExport = await page.request.get(
+      `${liveApp.baseURL}/api/notebooks/${notebook.id}/cells/${totalCell}/export?format=parquet`,
+    );
+    expect(parquetExport.ok()).toBe(true);
+    const parquet = await parquetExport.body();
+    expect(parquet.subarray(0, 4).toString()).toBe("PAR1");
+    expect(parquet.subarray(-4).toString()).toBe("PAR1");
   });
 
   test("highlights a sibling cell after definition navigation", async ({ liveApp, page }) => {
@@ -1172,7 +1363,7 @@ test.describe("app notebooks live", () => {
     ).toBeVisible({ timeout: 15000 });
   });
 
-  test("rename is reference-rewriting and the chart type writes a @viz directive", async ({
+  test("rename is reference-rewriting and visualization blocks have a checked definition editor", async ({
     liveApp,
     page,
   }) => {
@@ -1195,8 +1386,7 @@ test.describe("app notebooks live", () => {
     );
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
-    await page.getByRole("button", { name: "Run all" }).click();
-    await page.waitForResponse(
+    const runSeen = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === `/api/notebooks/${notebook.id}/run` &&
         response.request().method() === "POST" &&
@@ -1205,27 +1395,87 @@ test.describe("app notebooks live", () => {
         timeout: 30000,
       },
     );
+    await page.getByRole("button", { name: "Run all" }).click();
+    await runSeen;
     // Result table renders the column.
     await expect(page.getByText("revenue", { exact: true }).first()).toBeVisible({
       timeout: 15000,
     });
 
-    // Switching to a bar chart writes a @viz directive into the chart cell.
-    const updateSeen = page.waitForResponse(
+    // A new visualization is a durable manifest block, not a SQL comment.
+    const createSeen = page.waitForResponse(
       (response) =>
-        response.url().includes(`/api/notebooks/${notebook.id}/cells/${chartCell}`) &&
-        response.request().method() === "PUT" &&
+        response.url().includes(`/api/notebooks/${notebook.id}/changes/apply`) &&
+        response.request().method() === "POST" &&
         response.ok(),
       { timeout: 15000 },
     );
-    await page.getByRole("button", { name: "bar", exact: true }).last().click();
-    await updateSeen;
-    // The directive landed in the cell file.
+    await page.getByRole("button", { name: "Visualization", exact: true }).click();
+    await createSeen;
+    const afterCreate = (await (
+      await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`)
+    ).json()) as NotebookEnvelope;
+    const visualization = afterCreate.notebook.blocks?.find((block) => block.visualization);
+    if (!visualization?.id || !visualization.visualization) {
+      throw new Error("Visualization block was not persisted");
+    }
+    expect(visualization.visualization.source).toBe(chartCell);
+    expect(
+      afterCreate.notebook.cells.find((cell) => cell.cell_id === chartCell)?.content,
+    ).not.toContain("@viz");
+
+    const visualizationCard = page.locator(
+      `[data-notebook-visualization-id="${visualization.id}"]`,
+    );
+    await expect(visualizationCard).toBeVisible({ timeout: 15000 });
+    const definitionTab = visualizationCard.getByRole("tab", { name: "Definition" });
+    await expect(definitionTab).toBeEnabled({ timeout: 15000 });
+    await definitionTab.click();
+    await expect(visualizationCard.getByRole("textbox", { name: "Editor content" })).toBeVisible({
+      timeout: 15000,
+    });
+    const checked = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/notebooks/${notebook.id}/visualizations/check`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+      { timeout: 15000 },
+    );
+    await setVisualizationDefinitionValue(
+      page,
+      visualization.id,
+      [
+        "version: 1",
+        "type: bar",
+        "title: Monthly revenue",
+        "encoding:",
+        "  x:",
+        "    field: month",
+        "  y:",
+        "    - field: revenue",
+      ].join("\n"),
+    );
+    await checked;
+    const applySeen = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/notebooks/${notebook.id}/changes/apply`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+      { timeout: 15000 },
+    );
+    const applyButton = visualizationCard.getByRole("button", { name: "Apply visualization" });
+    await expect(applyButton).toBeEnabled({ timeout: 15000 });
+    await applyButton.click();
+    await applySeen;
+    await expect(visualizationCard.getByText("Monthly revenue", { exact: true })).toBeVisible();
+
     const afterViz = (await (
       await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`)
     ).json()) as NotebookEnvelope;
-    const chartContent = afterViz.notebook.cells.find((cell) => cell.cell_id === chartCell)!;
-    expect(chartContent.content).toContain("@viz(bar");
+    const savedVisualization = afterViz.notebook.blocks?.find(
+      (block) => block.id === visualization.id,
+    );
+    expect(savedVisualization?.visualization?.definition.type).toBe("bar");
 
     // Rename base → revenue and confirm the chart cell's reference updated.
     const renamed = await page.request.post(
@@ -1241,6 +1491,7 @@ test.describe("app notebooks live", () => {
     ).json()) as NotebookEnvelope;
     const chartFinal = final.notebook.cells.find((cell) => cell.cell_id === chartCell)!;
     expect(chartFinal.content).toContain("from revenue");
+    expect(chartFinal.content).not.toContain("@viz");
     expect(final.notebook.cells.find((cell) => cell.cell_id === baseCell)!.name).toBe("revenue");
   });
 

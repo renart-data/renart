@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"renart/internal/web/model"
 	"renart/internal/web/notebook"
 )
 
@@ -128,6 +129,9 @@ func TestNotebookServiceLifecycle(t *testing.T) {
 	if created.Path != "notebooks/revenue-exploration" {
 		t.Fatalf("unexpected path: %q", created.Path)
 	}
+	if created.ManifestVersion != notebook.ManifestVersionCurrent || created.Revision == "" {
+		t.Fatalf("new notebook did not use the revisioned v2 format: %+v", created)
+	}
 	notebookID := created.ID
 
 	// A new notebook seeds one runnable cell with a concise two-word name.
@@ -213,6 +217,158 @@ func TestNotebookServiceLifecycle(t *testing.T) {
 	}
 	if _, err := os.Stat(svc.SessionStore().DBPath(uuid)); !os.IsNotExist(err) {
 		t.Fatal("session db still exists")
+	}
+}
+
+func TestNotebookParametersRenderAndPersistOnlyInRuntime(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewNotebookService(NotebookDependencies{WorkspaceRoot: root})
+	created, apiErr := svc.Create(CreateNotebookRequest{Title: "Parameterized"})
+	if apiErr != nil {
+		t.Fatalf("create failed: %+v", apiErr)
+	}
+	if apiErr := svc.SetAutoRecompute(created.ID, false, "", nil); apiErr != nil {
+		t.Fatalf("disable auto-recompute: %+v", apiErr)
+	}
+
+	plan, apiErr := svc.PrepareChangeSet(created.ID, NotebookChangeSet{
+		BaseRevision: created.Revision,
+		Operations: []NotebookOperation{{
+			Kind: NotebookOperationParametersReplace,
+			Parameters: []model.NotebookParameter{
+				{ID: "customer", Label: "Customer", Type: "text", Default: "default"},
+				{ID: "minimum", Type: "number", Default: float64(3)},
+				{ID: "active", Type: "boolean", Default: true},
+			},
+		}},
+	})
+	if apiErr != nil || !plan.CanApply {
+		t.Fatalf("prepare parameters failed: plan=%+v err=%+v", plan, apiErr)
+	}
+	withParameters, apiErr := svc.ApplyChangeSet(created.ID, plan.ChangeSet)
+	if apiErr != nil {
+		t.Fatalf("apply parameters failed: %+v", apiErr)
+	}
+	cell := withParameters.Notebook.Cells[0]
+	content := "/* @bruin\ntype: duckdb.sql\n@bruin */\n" +
+		"select {{ parameter.customer }} as customer, {{ parameter.minimum }} as minimum, {{ parameter.active }} as active\n"
+	if _, apiErr := svc.UpdateCell(created.ID, cell.CellID, UpdateCellRequest{Content: content}); apiErr != nil {
+		t.Fatalf("update cell failed: %+v", apiErr)
+	}
+
+	result, apiErr := svc.Run(context.Background(), created.ID, RunNotebookRequest{
+		All: true,
+		Parameters: map[string]any{
+			"customer": "O'Reilly",
+			"minimum":  float64(7),
+		},
+	})
+	if apiErr != nil || len(result.Results) != 1 || result.Results[0].Status != notebook.CellRunOK {
+		t.Fatalf("parameterized run failed: result=%+v err=%+v", result, apiErr)
+	}
+	row := result.Results[0].Rows[0]
+	if fmt.Sprint(row[0]) != "O'Reilly" || fmt.Sprint(row[1]) != "7" || fmt.Sprint(row[2]) != "true" {
+		t.Fatalf("unexpected parameterized row: %+v", row)
+	}
+	runtime, runtimeErr := svc.Runtime(created.ID)
+	if runtimeErr != nil {
+		t.Fatalf("runtime failed: %+v", runtimeErr)
+	}
+	if runtime.ParameterValues["customer"] != "O'Reilly" || fmt.Sprint(runtime.ParameterValues["minimum"]) != "7" {
+		t.Fatalf("runtime values were not retained: %+v", runtime.ParameterValues)
+	}
+
+	if _, apiErr := svc.Run(context.Background(), created.ID, RunNotebookRequest{
+		All: true, Parameters: map[string]any{"missing": "value"},
+	}); apiErr == nil || apiErr.Code != "invalid_notebook_parameter_values" {
+		t.Fatalf("unknown parameter override was not rejected: %+v", apiErr)
+	}
+	loaded, loadErr := svc.Get(created.ID)
+	if loadErr != nil || loaded.Parameters[0].Default != "default" {
+		t.Fatalf("runtime override leaked into notebook.yml: notebook=%+v err=%+v", loaded.Parameters, loadErr)
+	}
+}
+
+func TestNotebookServiceStructuredBlocksUseStableIdentity(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewNotebookService(NotebookDependencies{WorkspaceRoot: root})
+	created, apiErr := svc.Create(CreateNotebookRequest{Title: "Presentation"})
+	if apiErr != nil {
+		t.Fatalf("create failed: %+v", apiErr)
+	}
+	cellID := created.Cells[0].CellID
+
+	updated, apiErr := svc.UpdateBlocks(created.ID, []model.NotebookBlock{
+		{Cell: cellID},
+		{Markdown: "## Findings"},
+		{Visualization: &model.NotebookVisualization{
+			Source: cellID,
+			Definition: map[string]any{
+				"version": 1,
+				"type":    "line",
+				"encoding": map[string]any{
+					"x": map[string]any{"field": "greeting"},
+					"y": []any{map[string]any{"field": "answer"}},
+				},
+			},
+		}},
+	})
+	if apiErr != nil {
+		t.Fatalf("update blocks failed: %+v", apiErr)
+	}
+	if updated.Revision == created.Revision {
+		t.Fatal("block update did not advance notebook revision")
+	}
+	if len(updated.Blocks) != 3 || !strings.HasPrefix(updated.Blocks[1].ID, "md_") {
+		t.Fatalf("markdown block did not receive identity: %+v", updated.Blocks)
+	}
+	visualization := updated.Blocks[2]
+	if !strings.HasPrefix(visualization.ID, "viz_") || visualization.Visualization == nil || visualization.Visualization.ID != visualization.ID {
+		t.Fatalf("visualization block did not receive consistent identity: %+v", visualization)
+	}
+
+	reloaded, apiErr := svc.Get(created.ID)
+	if apiErr != nil {
+		t.Fatalf("reload failed: %+v", apiErr)
+	}
+	if reloaded.Blocks[1].ID != updated.Blocks[1].ID || reloaded.Blocks[2].ID != updated.Blocks[2].ID {
+		t.Fatalf("block identities changed across reload: before=%+v after=%+v", updated.Blocks, reloaded.Blocks)
+	}
+}
+
+func TestNotebookServiceExplicitlyUpgradesLegacyManifest(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeWorkspaceFile(t, root, "notebooks/legacy/notebook.yml", "id: 0c8e3c93-0000-0000-0000-0000000000dd\ntitle: Legacy\nblocks:\n  - markdown: Notes\n  - cell: aaaa1111\n")
+	writeWorkspaceFile(t, root, "notebooks/legacy/query.sql", "/* @bruin\nid: aaaa1111\nclass: notebook\ntype: duckdb.sql\n@bruin */\nselect 1\n")
+	svc := NewNotebookService(NotebookDependencies{WorkspaceRoot: root})
+	notebookID := EncodeID("notebooks/legacy")
+	legacy, apiErr := svc.Get(notebookID)
+	if apiErr != nil {
+		t.Fatalf("get legacy failed: %+v", apiErr)
+	}
+	if legacy.ManifestVersion != notebook.ManifestVersionLegacy {
+		t.Fatalf("legacy notebook loaded as version %d", legacy.ManifestVersion)
+	}
+
+	upgraded, apiErr := svc.UpgradeManifest(notebookID, legacy.Revision)
+	if apiErr != nil {
+		t.Fatalf("upgrade failed: %+v", apiErr)
+	}
+	if upgraded.ManifestVersion != notebook.ManifestVersionCurrent || !strings.HasPrefix(upgraded.Blocks[0].ID, "md_") {
+		t.Fatalf("unexpected upgraded notebook: %+v", upgraded)
+	}
+	_, apiErr = svc.UpgradeManifest(notebookID, legacy.Revision)
+	if apiErr == nil || apiErr.Status != http.StatusConflict || apiErr.Code != "notebook_edit_conflict" {
+		t.Fatalf("stale notebook revision was not rejected: %+v", apiErr)
 	}
 }
 
@@ -546,5 +702,46 @@ func TestResolveNotebookCellByID(t *testing.T) {
 	}
 	if parsed == nil || len(parsed.Assets) != 1 {
 		t.Fatalf("expected synthetic pipeline with 1 cell, got %+v", parsed)
+	}
+}
+
+func TestNotebookJinjaContextForAssetUsesRuntimeValues(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeWorkspaceFile(t, root, "notebooks/revenue/notebook.yml", `version: 2
+id: 0c8e3c93-0000-0000-0000-0000000000f2
+title: Revenue
+parameters:
+  - id: region
+    type: text
+    default: eu
+blocks:
+  - cell: aaaa1111
+`)
+	writeWorkspaceFile(t, root, "notebooks/revenue/clean.sql", "/* @bruin\nid: aaaa1111\nclass: notebook\ntype: duckdb.sql\n@bruin */\nselect {{ parameter.region }} as region\n")
+
+	svc := NewNotebookService(NotebookDependencies{WorkspaceRoot: root})
+	notebookID := EncodeID("notebooks/revenue")
+	nb, apiErr := svc.load(notebookID)
+	if apiErr != nil {
+		t.Fatalf("load notebook: %+v", apiErr)
+	}
+	if _, apiErr := svc.updateNotebookParameterValues(notebookID, nb, map[string]any{"region": "us"}, false); apiErr != nil {
+		t.Fatalf("set runtime parameter: %+v", apiErr)
+	}
+
+	resolved, found, err := svc.JinjaContextForAsset(context.Background(), EncodeID("notebooks/revenue/clean.sql"))
+	if err != nil || !found {
+		t.Fatalf("resolve notebook Jinja context: found=%v err=%v", found, err)
+	}
+	if len(resolved.Definitions) != 1 || resolved.Values["region"] != "us" {
+		t.Fatalf("unexpected notebook Jinja context: %+v", resolved)
+	}
+
+	_, found, err = svc.JinjaContextForAsset(context.Background(), EncodeID("analytics/assets/orders.sql"))
+	if err != nil || found {
+		t.Fatalf("ordinary asset resolved as notebook: found=%v err=%v", found, err)
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"renart/internal/web/presentation"
 )
 
 var cellNamePattern = regexp.MustCompile(`^\w+$`)
@@ -12,6 +14,10 @@ var cellNamePattern = regexp.MustCompile(`^\w+$`)
 // invalid cell names and dependency cycles. Problems are surfaced in the
 // UI, not fatal — a broken notebook still loads so it can be fixed there.
 func validate(nb *Notebook) {
+	for _, finding := range presentation.CheckParameterDefinitions(nb.Parameters) {
+		nb.Problems = append(nb.Problems, "parameter definition: "+finding.Message)
+	}
+
 	seen := make(map[string]string, len(nb.Cells))
 	for _, cell := range nb.Cells {
 		name := cell.Asset.Name
@@ -28,6 +34,33 @@ func validate(nb *Notebook) {
 
 	for _, cycle := range findCycles(nb) {
 		nb.Problems = append(nb.Problems, "dependency cycle: "+strings.Join(cycle, " → "))
+	}
+
+	if nb.Version >= ManifestVersionCurrent {
+		seenBlocks := make(map[string]int, len(nb.Blocks))
+		for index, block := range nb.Blocks {
+			id := strings.TrimSpace(block.StableID())
+			if id == "" {
+				nb.Problems = append(nb.Problems, fmt.Sprintf("block %d is missing a durable id", index+1))
+				continue
+			}
+			if previous, exists := seenBlocks[id]; exists {
+				nb.Problems = append(nb.Problems, fmt.Sprintf("block id %q is duplicated at positions %d and %d", id, previous+1, index+1))
+			} else {
+				seenBlocks[id] = index
+			}
+			if block.Visualization == nil {
+				continue
+			}
+			if strings.TrimSpace(block.Visualization.Source) == "" {
+				nb.Problems = append(nb.Problems, fmt.Sprintf("visualization %q has no source cell", id))
+			} else if nb.CellByID(block.Visualization.Source) == nil {
+				nb.Problems = append(nb.Problems, fmt.Sprintf("visualization %q references unknown source cell %q", id, block.Visualization.Source))
+			}
+			if len(block.Visualization.Definition) == 0 {
+				nb.Problems = append(nb.Problems, fmt.Sprintf("visualization %q has no definition", id))
+			}
+		}
 	}
 }
 

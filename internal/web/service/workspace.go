@@ -385,6 +385,7 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 
 	s.appendNotebooks(&state)
 	validateAssetClassDirection(&state)
+	state.ArtifactIndex = BuildArtifactIndex(state)
 
 	state.Metadata["pipeline_definition_files"] = PipelineDefinitionFiles
 	state.Metadata["asset_directories"] = AssetsDirectoryNames

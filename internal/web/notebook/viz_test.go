@@ -71,7 +71,7 @@ func TestParseVizDiagnostics(t *testing.T) {
 		wantSeverity string
 		wantContains string
 	}{
-		{"-- @viz(bar, y: revenue)\nselect 1", false, "error", "require"},      // missing x
+		{"-- @viz(bar, y: revenue)\nselect 1", false, "error", "require"}, // missing x
 		{"-- @viz(donut, x: a, y: b)\nselect 1", true, "error", "unknown chart kind"},
 		{"-- @viz(bar, x: a, y: b, color: red)\nselect 1", false, "warning", "unknown key"},
 		{"-- @viz(line, x: a, y: b)\n-- @viz(bar, x: a, y: b)\nselect 1", false, "warning", "duplicate"},
@@ -138,6 +138,36 @@ func TestVizIsOutsideFingerprint(t *testing.T) {
 	fpB := CellFingerprint(nbB, nbB.Cells[0])
 	if fpA != fpB {
 		t.Fatalf("viz directive leaked into fingerprint: %s vs %s", fpA, fpB)
+	}
+}
+
+func TestMigrateLegacyVisualizationPreservesSQLBytes(t *testing.T) {
+	tests := map[string]struct {
+		content string
+		want    string
+	}{
+		"line": {
+			content: "-- @viz(line, x: month, y: [actual, forecast])\nselect month, actual, forecast from metrics\n",
+			want:    "select month, actual, forecast from metrics\n",
+		},
+		"formatted inline": {
+			content: "/* @viz(bar, x: month, y: revenue) */ select month, revenue from metrics\n",
+			want:    "select month, revenue from metrics\n",
+		},
+	}
+	for name, testCase := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, definition, migrated, err := MigrateLegacyVisualization(testCase.content)
+			if err != nil || !migrated {
+				t.Fatalf("migration failed: migrated=%v err=%v", migrated, err)
+			}
+			if got != testCase.want {
+				t.Fatalf("SQL changed unexpectedly:\ngot:  %q\nwant: %q", got, testCase.want)
+			}
+			if definition["version"] != 1 || definition["type"] == "" {
+				t.Fatalf("invalid structured definition: %+v", definition)
+			}
+		})
 	}
 }
 

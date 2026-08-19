@@ -72,7 +72,13 @@ func (b *boundedLogBuffer) String() string {
 // materializePythonCell runs a Python cell's materialize() through the Renart
 // Python operator, writing its result to parquetPath. SDK queries are delegated
 // to runQuery, which targets the runner's already-open notebook session.
-func (s *NotebookService) materializePythonCell(ctx context.Context, cell *notebook.Cell, parquetPath string, runQuery notebook.PythonQueryFunc) (string, error) {
+func (s *NotebookService) materializePythonCell(
+	ctx context.Context,
+	cell *notebook.Cell,
+	parquetPath string,
+	runQuery notebook.PythonQueryFunc,
+	parameterValues map[string]any,
+) (string, error) {
 	notebookDir := filepath.Dir(cell.Path)
 
 	cfg := &config.Config{
@@ -96,8 +102,9 @@ func (s *NotebookService) materializePythonCell(ctx context.Context, cell *noteb
 	}
 
 	runPipeline := &pipeline.Pipeline{
-		Name:   "renart-notebook",
-		Assets: []*pipeline.Asset{&runAsset},
+		Name:      "renart-notebook",
+		Assets:    []*pipeline.Asset{&runAsset},
+		Variables: notebookPythonVariables(parameterValues),
 	}
 
 	// The Python operator reads the run window (start/end/execution date),
@@ -139,4 +146,21 @@ func (s *NotebookService) materializePythonCell(ctx context.Context, cell *noteb
 	})
 	runErr := operator.RunTask(runCtx, runPipeline, &runAsset)
 	return logs.String(), runErr
+}
+
+func notebookPythonVariables(values map[string]any) pipeline.Variables {
+	variables := make(pipeline.Variables, len(values))
+	for name, value := range values {
+		variableType := "string"
+		switch value.(type) {
+		case bool:
+			variableType = "boolean"
+		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+			variableType = "number"
+		case []any, []string:
+			variableType = "array"
+		}
+		variables[name] = map[string]any{"type": variableType, "default": cloneJSONValue(value)}
+	}
+	return variables
 }

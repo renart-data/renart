@@ -1,10 +1,15 @@
 # Notebook platform: release readiness, multi-source data, visualizations, and local agents
 
-> **Status (2026-08-12): proposed.** The current implementation is documented
-> in [`architecture/notebooks.md`](../architecture/notebooks.md). This plan
-> replaces the narrower agent-only proposal and deliberately treats data access,
-> execution, presentation, reproducibility, and agent tooling as one notebook
-> product.
+> **Status (2026-08-12): partially implemented.** The current implementation is
+> documented in [`architecture/notebooks.md`](../architecture/notebooks.md).
+> Phases 0 and 1 are complete; the Phase 2 visualization/source/export core and
+> Phase 3 MCP server are implemented. Phase 4's typed notebook parameters,
+> shared filter contract/checker, and SQL/Python/source rendering are also
+> implemented. Source-block promotion, client-specific MCP acceptance runs,
+> remaining release hardening, dashboard filter hosts, and dashboards/reports
+> remain. This plan replaces the narrower agent-only proposal and deliberately
+> treats data access, execution, presentation, reproducibility, and agent tooling
+> as one notebook product.
 
 ## 1. Decision summary
 

@@ -18,13 +18,11 @@ import { useJinjaIntellisense } from "@/hooks/use-jinja-intellisense";
 import { usePythonIntellisense } from "@/hooks/use-python-intellisense";
 import { usePythonQueryIntellisense } from "@/hooks/use-python-query-intellisense";
 import { useSQLLSP } from "@/hooks/use-sql-lsp";
-import { useVizIntellisense } from "@/hooks/use-viz-intellisense";
 import { useWorkspaceTheme } from "@/hooks/use-workspace-theme";
 import { formatSQLAsset } from "@/lib/api-assets-crud";
 import { usesPythonSource } from "@/lib/asset-types";
 import { defineBruinMonacoThemes } from "@/lib/monaco-theme";
 import { applyExternalModelValue } from "@/lib/monaco-model-sync";
-import { normalizeVizDirectiveLine } from "@/components/app/notebook-viz-directive";
 import {
   buildSchemaForAsset,
   parseQualifiedTableName,
@@ -32,6 +30,7 @@ import {
   SchemaTable,
 } from "@/lib/sql-schema";
 import { WebAsset, WebColumn, WorkspaceState } from "@/lib/types";
+import type { NotebookParameter } from "@/lib/generated/api-types";
 
 const NOTEBOOK_EDITOR_LINE_HEIGHT = 19;
 const NOTEBOOK_EDITOR_VERTICAL_PADDING = 16;
@@ -68,7 +67,10 @@ export function buildNotebookSchemaTables(
   const tables: SchemaTable[] = [];
   const seen = new Set<string>();
 
-  for (const cell of cells) {
+  // A source-native cell runs in its selected warehouse, where sibling
+  // notebook relations do not exist. Connectionless cells run in the local
+  // notebook DuckDB and can read every materialized sibling/source snapshot.
+  for (const cell of currentCell.connection?.trim() ? [] : cells) {
     if (cell.cell_id && currentCell.cell_id && cell.cell_id === currentCell.cell_id) {
       continue;
     }
@@ -134,24 +136,24 @@ export function NotebookCellMonaco({
   cell,
   value,
   schemaTables,
-  resultColumns,
   onChange,
   onCommit,
   onRun,
   onRename,
   onGoToAsset,
   onGoToCell,
+  parameters = [],
 }: {
   cell: WebAsset;
   value: string;
   schemaTables: SchemaTable[];
-  resultColumns: string[];
   onChange: (value: string) => void;
   onCommit: () => void;
   onRun: () => void;
   onRename: () => void;
   onGoToAsset?: (pipelineId: string, assetId: string) => void;
   onGoToCell?: (cellId: string) => void;
+  parameters?: NotebookParameter[];
 }) {
   const { monacoTheme } = useWorkspaceTheme();
   const [monacoInstance, setMonacoInstance] = useState<Monaco | null>(null);
@@ -174,7 +176,7 @@ export function NotebookCellMonaco({
   const isPython = usesPythonSource(cell);
   const ext = isPython ? "py" : "sql";
 
-  // SQL intellisense (completion, parse-context, @viz, Jinja) is SQL-only;
+  // SQL intellisense (completion, parse-context, Jinja) is SQL-only;
   // passing null monaco/editor disables the hooks for Python cells, which fall
   // back to Monaco's built-in Python highlighting.
   const sqlMonaco = isPython ? null : monacoInstance;
@@ -182,8 +184,20 @@ export function NotebookCellMonaco({
   useSQLLSP(sqlMonaco, sqlEditor, cell, value, schemaTables, onGoToAsset, onGoToCell, {
     includeNotebookRuntimeColumns: true,
   });
-  useJinjaIntellisense(sqlMonaco, sqlEditor, cell, value);
-  useVizIntellisense(sqlMonaco, sqlEditor, value, resultColumns);
+  useJinjaIntellisense(sqlMonaco, sqlEditor, cell, value, undefined, {
+    parameter: parameters.map((parameter) => ({
+      name: parameter.id,
+      type: parameter.type,
+      default_value: parameter.default,
+      description: parameter.label,
+    })),
+    parameters: parameters.map((parameter) => ({
+      name: parameter.id,
+      type: parameter.type,
+      default_value: parameter.default,
+      description: parameter.label,
+    })),
+  });
 
   // Python intellisense (ty: diagnostics, completion, hover, signature, goto,
   // format) is the mirror of the SQL hooks for Python cells; null monaco/editor
@@ -240,9 +254,7 @@ export function NotebookCellMonaco({
     void formatSQLAsset(cell.id, content, { persist: false })
       .then((response) => {
         if (response.status === "ok") {
-          // The formatter pulls the @viz block comment onto the SELECT line;
-          // restore it to its own line so the directive reads as a header.
-          onChange(normalizeVizDirectiveLine(response.content));
+          onChange(response.content);
         }
       })
       .catch(() => undefined);

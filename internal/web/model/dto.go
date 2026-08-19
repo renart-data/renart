@@ -200,10 +200,44 @@ type Asset struct {
 	// ExternalRefs lists referenced table names that are not sibling cells
 	// (pipeline assets or warehouse tables); notebook cells only.
 	ExternalRefs []string `json:"external_refs,omitempty"`
+	// NotebookSource is present for Renart-owned .source.yml notebook
+	// components. It is a credential-free authored summary used by the source
+	// card; the exact YAML remains available in Content for Git-native editing.
+	NotebookSource *NotebookSourceDefinition `json:"notebook_source,omitempty"`
 	// ParseError is set when the asset file could not be parsed. The asset is
 	// still surfaced (with its raw content) so the pipeline stays visible and the
 	// user can open and fix it, rather than the whole pipeline disappearing.
 	ParseError string `json:"parse_error,omitempty"`
+}
+
+type NotebookSourceSnapshot struct {
+	Mode     string `json:"mode"`
+	RowLimit int64  `json:"row_limit,omitempty"`
+}
+
+type NotebookSourceRequest struct {
+	URL     string            `json:"url"`
+	Method  string            `json:"method,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	Params  map[string]any    `json:"params,omitempty"`
+	Body    any               `json:"body,omitempty"`
+}
+
+type NotebookSourceResponse struct {
+	RecordsPath string            `json:"records_path,omitempty"`
+	Fields      map[string]string `json:"fields,omitempty"`
+}
+
+type NotebookSourceDefinition struct {
+	Version    int                    `json:"version"`
+	ID         string                 `json:"id"`
+	Kind       string                 `json:"kind"`
+	Connection string                 `json:"connection,omitempty"`
+	URI        string                 `json:"uri,omitempty"`
+	Format     string                 `json:"format,omitempty"`
+	Request    NotebookSourceRequest  `json:"request,omitempty"`
+	Response   NotebookSourceResponse `json:"response,omitempty"`
+	Snapshot   NotebookSourceSnapshot `json:"snapshot"`
 }
 
 // Column represents a column in an asset.
@@ -269,11 +303,40 @@ type Pipeline struct {
 	Assets   []Asset `json:"assets"`
 }
 
-// NotebookBlock is one ordered entry of a notebook: a cell reference or a
-// markdown prose block.
+// NotebookVisualization is a manifest-owned, structured presentation block.
+// Definition is versioned Renart data, not executable SQL or a pipeline asset.
+type NotebookVisualization struct {
+	ID         string         `json:"id"`
+	Source     string         `json:"source"`
+	Definition map[string]any `json:"definition"`
+}
+
+// NotebookParameterOptions constrains an authored parameter with static
+// values or a future named-dataset option source.
+type NotebookParameterOptions struct {
+	Values     []any  `json:"values,omitempty"`
+	Dataset    string `json:"dataset,omitempty"`
+	ValueField string `json:"value_field,omitempty"`
+	LabelField string `json:"label_field,omitempty"`
+}
+
+// NotebookParameter is the transport form of a Git-tracked typed parameter
+// declaration. Current runtime values are returned by the runtime endpoint.
+type NotebookParameter struct {
+	ID      string                    `json:"id"`
+	Label   string                    `json:"label,omitempty"`
+	Type    string                    `json:"type"`
+	Default any                       `json:"default"`
+	Options *NotebookParameterOptions `json:"options,omitempty"`
+}
+
+// NotebookBlock is one ordered entry of a notebook: a cell reference,
+// identity-bearing markdown prose, or a structured visualization.
 type NotebookBlock struct {
-	Cell     string `json:"cell,omitempty"`
-	Markdown string `json:"markdown,omitempty"`
+	ID            string                 `json:"id,omitempty"`
+	Cell          string                 `json:"cell,omitempty"`
+	Markdown      string                 `json:"markdown,omitempty"`
+	Visualization *NotebookVisualization `json:"visualization,omitempty"`
 }
 
 // Notebook represents a web API notebook: a folder of class-tagged cell
@@ -281,13 +344,16 @@ type NotebookBlock struct {
 type Notebook struct {
 	ID string `json:"id"`
 	// UUID is the stable identity stored in notebook.yml (`id:`).
-	UUID     string          `json:"uuid,omitempty"`
-	Title    string          `json:"title"`
-	Path     string          `json:"path"`
-	Target   string          `json:"target,omitempty"`
-	Blocks   []NotebookBlock `json:"blocks"`
-	Cells    []Asset         `json:"cells"`
-	Problems []string        `json:"problems,omitempty"`
+	UUID            string              `json:"uuid,omitempty"`
+	ManifestVersion int                 `json:"manifest_version"`
+	Revision        string              `json:"revision"`
+	Title           string              `json:"title"`
+	Path            string              `json:"path"`
+	Target          string              `json:"target,omitempty"`
+	Parameters      []NotebookParameter `json:"parameters,omitempty"`
+	Blocks          []NotebookBlock     `json:"blocks"`
+	Cells           []Asset             `json:"cells"`
+	Problems        []string            `json:"problems,omitempty"`
 	// Dependencies are the notebook's Python package specifiers, stored in
 	// pyproject.toml ([project].dependencies) and installed by uv.
 	Dependencies []string `json:"dependencies,omitempty"`
@@ -319,6 +385,7 @@ type WorkspaceQueryConnection struct {
 type WorkspaceState struct {
 	Pipelines               []Pipeline                      `json:"pipelines"`
 	Notebooks               []Notebook                      `json:"notebooks,omitempty"`
+	ArtifactIndex           ArtifactIndex                   `json:"artifact_index,omitempty"`
 	Connections             map[string]string               `json:"connections"`
 	QueryConnections        []WorkspaceQueryConnection      `json:"query_connections,omitempty"`
 	AssetCapabilities       []AssetAuthoringCapability      `json:"asset_capabilities,omitempty"`

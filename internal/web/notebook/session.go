@@ -233,11 +233,52 @@ func (s *Session) objectType(ctx context.Context, objectName string) (string, er
 
 // manifest bookkeeping for imported sources (the import cache).
 const importManifestTable = "__renart_imports"
+const snapshotManifestTable = "__renart_imports_v2"
+const cellRunManifestTable = "__renart_cell_runs"
 
 func (s *Session) ensureManifest(ctx context.Context) error {
-	return s.Exec(ctx, fmt.Sprintf(
+	if err := s.Exec(ctx, fmt.Sprintf(
 		`create table if not exists %s (ref varchar primary key, object_name varchar, imported_at timestamp, row_count bigint, complete boolean)`,
-		importManifestTable))
+		importManifestTable)); err != nil {
+		return err
+	}
+	if err := s.Exec(ctx, fmt.Sprintf(
+		`create table if not exists %s (
+block_id varchar primary key,
+object_name varchar not null,
+source_kind varchar not null,
+environment varchar,
+connection varchar,
+definition_fingerprint varchar not null,
+source_fingerprint varchar,
+imported_at timestamp not null,
+row_count bigint not null,
+byte_count bigint not null,
+complete boolean not null,
+sampled boolean not null,
+schema_json varchar not null,
+warnings_json varchar
+)`, snapshotManifestTable)); err != nil {
+		return err
+	}
+	if err := s.Exec(ctx, fmt.Sprintf(
+		`create table if not exists %s (
+cell_id varchar primary key,
+cell_fingerprint varchar not null,
+finished_at timestamp not null,
+status varchar not null,
+materialized_as varchar,
+row_count bigint not null,
+schema_json varchar not null,
+duration_ms bigint not null,
+source_snapshot_ids varchar,
+sampled boolean not null default false
+)`, cellRunManifestTable)); err != nil {
+		return err
+	}
+	return s.Exec(ctx, fmt.Sprintf(
+		"alter table %s add column if not exists sampled boolean default false",
+		cellRunManifestTable))
 }
 
 // ImportRecord describes one cached upstream import in the session DB.

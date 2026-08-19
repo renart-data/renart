@@ -301,6 +301,207 @@ func TestManifestRoundTripIsStable(t *testing.T) {
 	}
 }
 
+func TestLegacyManifestLoadsWithoutImplicitUpgrade(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	dir := "/ws/notebooks/revenue"
+	writeNotebookFixture(t, fs, dir)
+	path := filepath.Join(dir, ManifestFileName)
+	before, err := afero.ReadFile(fs, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nb, err := newTestLoader(fs).Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nb.Version != ManifestVersionLegacy {
+		t.Fatalf("legacy manifest loaded as version %d", nb.Version)
+	}
+	if nb.Revision == "" {
+		t.Fatal("notebook-wide revision is empty")
+	}
+	after, err := afero.ReadFile(fs, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("loading implicitly rewrote the legacy manifest:\n--- before ---\n%s\n--- after ---\n%s", before, after)
+	}
+}
+
+func TestManifestV2LoadsStructuredPresentationBlocks(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	dir := "/ws/notebooks/v2"
+	manifest := `version: 2
+id: 11111111-2222-3333-4444-555555555555
+title: Revenue
+parameters:
+  - id: region
+    label: Region
+    type: select
+    default: eu
+    options:
+      values:
+        - eu
+        - us
+blocks:
+  - markdown:
+      id: md_intro
+      content: |-
+        ## Revenue
+        Explore monthly revenue.
+  - cell: aaaa1111
+  - visualization:
+      id: viz_monthly
+      source: aaaa1111
+      definition:
+        version: 1
+        type: line
+        encoding:
+          x:
+            field: month
+          y:
+            - field: revenue
+`
+	if err := afero.WriteFile(fs, filepath.Join(dir, ManifestFileName), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := afero.WriteFile(fs, filepath.Join(dir, "monthly.sql"), []byte("/* @bruin\nid: aaaa1111\ntype: duckdb.sql\nclass: notebook\n@bruin */\nselect 1 as revenue\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	nb, err := newTestLoader(fs).Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nb.Version != ManifestVersionCurrent || len(nb.Blocks) != 3 {
+		t.Fatalf("unexpected v2 notebook: version=%d blocks=%+v", nb.Version, nb.Blocks)
+	}
+	if len(nb.Parameters) != 1 || nb.Parameters[0].ID != "region" || nb.Parameters[0].Default != "eu" {
+		t.Fatalf("typed parameters were not loaded: %+v", nb.Parameters)
+	}
+	if nb.Blocks[0].ID != "md_intro" || nb.Blocks[0].Markdown == "" {
+		t.Fatalf("markdown identity/content lost: %+v", nb.Blocks[0])
+	}
+	viz := nb.Blocks[2].Visualization
+	if nb.Blocks[2].ID != "viz_monthly" || viz == nil || viz.Source != "aaaa1111" || viz.Definition["type"] != "line" {
+		t.Fatalf("visualization lost: %+v", nb.Blocks[2])
+	}
+	if len(nb.Problems) != 0 {
+		t.Fatalf("unexpected v2 problems: %v", nb.Problems)
+	}
+
+	if err := SaveManifest(fs, nb); err != nil {
+		t.Fatal(err)
+	}
+	first, err := afero.ReadFile(fs, filepath.Join(dir, ManifestFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := newTestLoader(fs).Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveManifest(fs, reloaded); err != nil {
+		t.Fatal(err)
+	}
+	second, err := afero.ReadFile(fs, filepath.Join(dir, ManifestFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) {
+		t.Fatalf("v2 manifest is not stable:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	}
+}
+
+func TestUpgradeManifestV2IsExplicitAndDeterministic(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	dir := "/ws/notebooks/revenue"
+	writeNotebookFixture(t, fs, dir)
+	loader := newTestLoader(fs)
+	nb, err := loader.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := UpgradeManifestV2(fs, nb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed || nb.Version != ManifestVersionCurrent || !strings.HasPrefix(nb.Blocks[0].ID, "md_") {
+		t.Fatalf("unexpected upgrade result: changed=%v version=%d block=%+v", changed, nb.Version, nb.Blocks[0])
+	}
+	first, err := afero.ReadFile(fs, filepath.Join(dir, ManifestFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(first), "version: 2") || !strings.Contains(string(first), "content: |-") {
+		t.Fatalf("upgrade did not emit v2 structure:\n%s", first)
+	}
+
+	reloaded, err := loader.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err = UpgradeManifestV2(fs, reloaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("already-upgraded manifest changed again")
+	}
+	second, err := afero.ReadFile(fs, filepath.Join(dir, ManifestFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) {
+		t.Fatalf("upgrade is not deterministic:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	}
+}
+
+func TestSnapshotRevisionCoversManifestCellNamesAndContent(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	dir := "/ws/notebooks/revenue"
+	writeNotebookFixture(t, fs, dir)
+	loader := newTestLoader(fs)
+	nb, err := loader.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := nb.Revision
+	if original == "" {
+		t.Fatal("initial revision is empty")
+	}
+
+	cell := nb.CellByName("clean_sales")
+	content, err := afero.ReadFile(fs, cell.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := afero.WriteFile(fs, cell.Path, append(content, []byte("\n-- changed\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changedContent, err := loader.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedContent.Revision == original {
+		t.Fatal("cell content change did not advance notebook revision")
+	}
+
+	newPath := filepath.Join(dir, "renamed.sql")
+	if err := fs.Rename(cell.Path, newPath); err != nil {
+		t.Fatal(err)
+	}
+	renamed, err := loader.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed.Revision == changedContent.Revision {
+		t.Fatal("cell filename change did not advance notebook revision")
+	}
+}
+
 func TestReconcileAppendsUnreferencedCells(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	dir := "/ws/notebooks/revenue"

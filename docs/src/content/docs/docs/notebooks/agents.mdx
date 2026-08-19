@@ -1,0 +1,116 @@
+---
+title: Notebook agents
+description: Connect a local coding agent to Renart's reviewed notebook tools over MCP.
+---
+
+:::caution[Developer preview]
+The notebook MCP surface is intentionally small and its tool schemas may evolve
+while the preview is evaluated. Keep approval enabled for tools that write
+notebooks or execute code.
+:::
+
+`renart mcp --workspace .` starts a local stdio MCP server for one Git-backed
+workspace. It connects to the Renart process that already owns the workspace,
+or starts the same notebook services in-process when the IDE is closed. It does
+not open another network listener.
+
+The server exposes semantic notebook operations rather than arbitrary paths or
+REST endpoints. An agent can inspect notebook outlines, blocks, dependencies,
+diagnostics, source provenance, and bounded result samples. It can prepare and
+validate a revision-bound change, but writing files requires the separate
+`apply_notebook_change_set` tool. Runs are explicit and asynchronous; executing
+Python additionally requires `allow_python: true`.
+
+Renart's MCP server does **not** provide shell, filesystem, Git, connection
+configuration, credential, arbitrary SQL, or generic HTTP tools. A coding
+agent may have those capabilities independently, depending on how you configure
+that client. This integration is a cooperative local workflow, not a sandbox
+for the whole agent process.
+
+## Before connecting
+
+Install the `renart` binary somewhere on the coding agent's `PATH`, and run the
+agent from the workspace you want it to use. Renart never writes an agent
+configuration file for you.
+
+## Codex
+
+Run this from the workspace:
+
+```bash
+codex mcp add renart -- renart mcp --workspace .
+codex mcp list
+```
+
+Codex also supports project-local `.codex/config.toml`. If you use that form,
+keep write approval enabled:
+
+```toml
+[mcp_servers.renart]
+command = "renart"
+args = ["mcp", "--workspace", "."]
+cwd = "."
+default_tools_approval_mode = "writes"
+tool_timeout_sec = 3600
+```
+
+See the [official Codex MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+for configuration scope and current client options.
+
+## Claude Code
+
+Add the server to the current project only:
+
+```bash
+claude mcp add --scope local --transport stdio renart -- \
+  renart mcp --workspace .
+claude mcp list
+```
+
+The `--` is significant: everything after it is the stdio server command. See
+the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for
+scope, trust, and permission settings.
+
+## OpenCode
+
+Add a local server to `opencode.jsonc`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "renart": {
+      "type": "local",
+      "command": ["renart", "mcp", "--workspace", "."],
+      "cwd": ".",
+      "enabled": true
+    }
+  }
+}
+```
+
+Use `opencode mcp list` to check the connection. See the
+[OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/) for current
+configuration and per-agent tool controls.
+
+## Suggested agent instruction
+
+Add this instruction to the local, untracked agent configuration you use for
+the workspace:
+
+```text
+When working on Renart notebooks, inspect and modify them only through the
+Renart MCP tools. Start with list_notebooks and get_notebook_outline. Read only
+the blocks and bounded result samples needed for the task. Prepare a semantic
+change set, validate it, show me the proposed operations and diagnostics, and
+wait for approval before apply_notebook_change_set. Never use shell or direct
+filesystem edits for notebook files. Run cells only when requested; set
+allow_python only after the Python code has been reviewed.
+```
+
+## Removing the integration
+
+Use `codex mcp remove renart` or `claude mcp remove renart`, or remove the
+`renart` entry from `opencode.jsonc`. No notebook data or Renart runtime state
+is stored in the agent configuration.
+

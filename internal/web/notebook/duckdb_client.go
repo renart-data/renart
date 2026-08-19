@@ -47,11 +47,24 @@ func (c *notebookDuckDBClient) exec(ctx context.Context, sqlText string) error {
 	return err
 }
 
+// trustedExec runs a statement generated entirely by the notebook backend
+// without applying the user-facing filesystem policy. It exists for narrow
+// server-owned operations such as exporting a relation into a private
+// .renart staging directory; authored notebook SQL must always use exec.
+func (c *notebookDuckDBClient) trustedExec(ctx context.Context, sqlText string) error {
+	_, err := c.executeSQL(ctx, sqlText, false)
+	return err
+}
+
 func (c *notebookDuckDBClient) query(ctx context.Context, sqlText string) (*query.QueryResult, error) {
 	return c.execute(ctx, sqlText, true)
 }
 
 func (c *notebookDuckDBClient) execute(ctx context.Context, sqlText string, returnRows bool) (*query.QueryResult, error) {
+	return c.executeSQL(ctx, c.withWorkspace(sqlText), returnRows)
+}
+
+func (c *notebookDuckDBClient) executeSQL(ctx context.Context, sqlText string, returnRows bool) (*query.QueryResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -74,7 +87,7 @@ func (c *notebookDuckDBClient) execute(ctx context.Context, sqlText string, retu
 		return nil, err
 	}
 	defer statement.Close()
-	if err := statement.SetSqlQuery(c.withWorkspace(sqlText)); err != nil {
+	if err := statement.SetSqlQuery(sqlText); err != nil {
 		return nil, err
 	}
 

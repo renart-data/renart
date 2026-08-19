@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,9 +28,10 @@ const (
 // NotebookRuntimeEvent is pushed on the workspace SSE stream whenever a
 // notebook's staleness, running set, or results change.
 type NotebookRuntimeEvent struct {
-	Type          string `json:"type"`
-	NotebookID    string `json:"notebook_id"`
-	AutoRecompute bool   `json:"auto_recompute"`
+	Type            string         `json:"type"`
+	NotebookID      string         `json:"notebook_id"`
+	AutoRecompute   bool           `json:"auto_recompute"`
+	ParameterValues map[string]any `json:"parameter_values"`
 	// Stale is every cell that needs recomputing. AutoPending is the subset
 	// auto-recompute will refresh on its own (this wave or a later one), so the
 	// client shows the stale treatment only on Stale minus AutoPending.
@@ -48,6 +50,11 @@ type notebookRuntime struct {
 	results       map[string]notebook.CellRunResult
 	autoFailed    map[string]bool
 	autoRecompute bool
+	// parameterValues are local runtime overrides resolved against the
+	// Git-tracked definitions. parameterDefinitionKey detects definition edits
+	// without resetting values for unrelated cell changes.
+	parameterValues        map[string]any
+	parameterDefinitionKey string
 	// environment selects the connection environment for upstream imports in
 	// auto runs (set by the client via the settings endpoint).
 	environment string
@@ -63,6 +70,10 @@ type notebookRuntime struct {
 	manualRuns map[*activeNotebookRun]struct{}
 	autoRun    *activeNotebookRun
 	cancelling bool
+	// hydrateOnce reconstructs restart-safe result summaries from the notebook
+	// DuckDB exactly once for this server process. Authored edits still flow
+	// through the ordinary stale/result state after hydration.
+	hydrateOnce sync.Once
 }
 
 type activeNotebookRun struct {
@@ -201,15 +212,16 @@ func (m *notebookRuntimes) get(uuid string) *notebookRuntime {
 // autoCellInfo is the per-cell input to the eligibility computation, mirroring
 // the client's AutoRecomputeCell.
 type autoCellInfo struct {
-	cellID       string
-	stale        bool
-	ranOk        bool
-	isPython     bool
-	isSelectOnly bool
-	hasSqlError  bool
-	statusLoaded bool
-	autoFailed   bool
-	upstreamIDs  []string
+	cellID         string
+	stale          bool
+	ranOk          bool
+	isPython       bool
+	isRemoteSource bool
+	isSelectOnly   bool
+	hasSqlError    bool
+	statusLoaded   bool
+	autoFailed     bool
+	upstreamIDs    []string
 }
 
 func autoIsFresh(c autoCellInfo) bool { return !c.stale && c.ranOk }
@@ -234,7 +246,7 @@ func computeAutoRecomputeWave(cells []autoCellInfo) []string {
 		if !c.stale {
 			return false
 		}
-		if c.isPython || !c.statusLoaded || !c.isSelectOnly || c.hasSqlError || c.autoFailed {
+		if c.isPython || c.isRemoteSource || !c.statusLoaded || !c.isSelectOnly || c.hasSqlError || c.autoFailed {
 			return false
 		}
 		for _, up := range c.upstreamIDs {
@@ -279,7 +291,7 @@ func computeAutoRecomputeClosure(cells []autoCellInfo) map[string]bool {
 			memo[id] = true
 			return true
 		}
-		if c.isPython || !c.statusLoaded || !c.isSelectOnly || c.hasSqlError || c.autoFailed {
+		if c.isPython || c.isRemoteSource || !c.statusLoaded || !c.isSelectOnly || c.hasSqlError || c.autoFailed {
 			memo[id] = false
 			return false
 		}
@@ -319,13 +331,14 @@ func (s *NotebookService) publishRuntime(notebookID, uuid string, autoPending, r
 		autoPending = nil
 	}
 	event := NotebookRuntimeEvent{
-		Type:          notebookRuntimeEventType,
-		NotebookID:    notebookID,
-		AutoRecompute: rt.autoRecompute,
-		Stale:         sortedKeys(rt.stale),
-		AutoPending:   autoPending,
-		Running:       running,
-		Results:       results,
+		Type:            notebookRuntimeEventType,
+		NotebookID:      notebookID,
+		AutoRecompute:   rt.autoRecompute,
+		ParameterValues: cloneNotebookParameterValues(rt.parameterValues),
+		Stale:           sortedKeys(rt.stale),
+		AutoPending:     autoPending,
+		Running:         running,
+		Results:         results,
 	}
 	rt.mu.Unlock()
 	if event.AutoPending == nil {
@@ -340,15 +353,17 @@ func (s *NotebookService) publishRuntime(notebookID, uuid string, autoPending, r
 // NotebookRuntimeSnapshot is the recompute state embedded in the notebook GET
 // payload, so a freshly opened tab renders correct staleness and results.
 type NotebookRuntimeSnapshot struct {
-	AutoRecompute bool                              `json:"auto_recompute"`
-	Stale         []string                          `json:"stale"`
-	AutoPending   []string                          `json:"auto_pending"`
-	Results       map[string]notebook.CellRunResult `json:"results"`
+	AutoRecompute   bool                              `json:"auto_recompute"`
+	ParameterValues map[string]any                    `json:"parameter_values"`
+	Stale           []string                          `json:"stale"`
+	AutoPending     []string                          `json:"auto_pending"`
+	Results         map[string]notebook.CellRunResult `json:"results"`
 }
 
 // runtimeSnapshot returns the current recompute state for a notebook UUID,
 // validating staleness to derive the auto-pending set.
 func (s *NotebookService) runtimeSnapshot(nb *notebook.Notebook) NotebookRuntimeSnapshot {
+	s.hydrateRuntime(nb)
 	rt := s.runtimes.get(nb.UUID)
 	cells := s.buildAutoCells(nb, rt)
 	closure := computeAutoRecomputeClosure(cells)
@@ -364,11 +379,36 @@ func (s *NotebookService) runtimeSnapshot(nb *notebook.Notebook) NotebookRuntime
 		autoPending = []string{}
 	}
 	return NotebookRuntimeSnapshot{
-		AutoRecompute: rt.autoRecompute,
-		Stale:         sortedKeys(rt.stale),
-		AutoPending:   autoPending,
-		Results:       results,
+		AutoRecompute:   rt.autoRecompute,
+		ParameterValues: cloneNotebookParameterValues(rt.parameterValues),
+		Stale:           sortedKeys(rt.stale),
+		AutoPending:     autoPending,
+		Results:         results,
 	}
+}
+
+func (s *NotebookService) hydrateRuntime(nb *notebook.Notebook) {
+	if nb == nil {
+		return
+	}
+	rt := s.runtimes.get(nb.UUID)
+	rt.hydrateOnce.Do(func() {
+		results, stale, err := s.store.RestoreCellRunResults(context.Background(), nb, 100)
+		if err != nil {
+			return
+		}
+		rt.mu.Lock()
+		defer rt.mu.Unlock()
+		for cellID, result := range results {
+			if _, alreadyRecorded := rt.results[cellID]; !alreadyRecorded {
+				rt.results[cellID] = result
+			}
+		}
+		for cellID := range stale {
+			rt.stale[cellID] = true
+		}
+	})
+	ensureNotebookParameterRuntime(nb, rt)
 }
 
 // forgetCell drops a deleted cell from the runtime so it leaves no ghost stale
@@ -394,16 +434,45 @@ func (s *NotebookService) Runtime(notebookID string) (NotebookRuntimeSnapshot, *
 
 // SetAutoRecompute updates the per-notebook toggle (and import environment).
 // Turning it on triggers a pass for any already-stale cells.
-func (s *NotebookService) SetAutoRecompute(notebookID string, enabled bool, environment string) *APIError {
+func (s *NotebookService) SetAutoRecompute(notebookID string, enabled bool, environment string, parameterValues map[string]any) *APIError {
 	nb, apiErr := s.load(notebookID)
 	if apiErr != nil {
 		return apiErr
 	}
+	s.hydrateRuntime(nb)
+	if parameterValues != nil {
+		if _, parameterErr := s.updateNotebookParameterValues(notebookID, nb, parameterValues, false); parameterErr != nil {
+			return parameterErr
+		}
+	}
 	rt := s.runtimes.get(nb.UUID)
+	environment = strings.TrimSpace(environment)
 	rt.mu.Lock()
 	rt.autoRecompute = enabled
+	previousEnvironment := strings.TrimSpace(rt.environment)
 	if environment != "" {
 		rt.environment = environment
+	}
+	changedEnvironment := environment != "" && !strings.EqualFold(previousEnvironment, environment)
+	if changedEnvironment {
+		for _, cell := range nb.Cells {
+			if strings.TrimSpace(cell.Asset.Connection) == "" && !notebook.IsSourceCell(cell) {
+				continue
+			}
+			// On the first settings sync after a restart, a restored snapshot from
+			// the same environment remains valid. A real environment switch makes
+			// the source and every downstream transform stale.
+			if previousEnvironment == "" {
+				if result, ok := rt.results[cell.ID]; ok && result.Snapshot != nil &&
+					strings.EqualFold(strings.TrimSpace(result.Snapshot.Environment), environment) {
+					continue
+				}
+			}
+			rt.stale[cell.ID] = true
+			for _, descendant := range notebook.Descendants(nb, cell) {
+				rt.stale[descendant.ID] = true
+			}
+		}
 	}
 	rt.mu.Unlock()
 	if enabled {

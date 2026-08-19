@@ -53,6 +53,13 @@ func PlanRename(nb *Notebook, cellID, newName string) ([]RenameEdit, error) {
 
 	// Move the cell file itself (preserving its directory and extension).
 	ext := filepath.Ext(cell.Path)
+	if IsSourcePath(cell.Path) {
+		if strings.HasSuffix(strings.ToLower(cell.Path), ".source.yaml") {
+			ext = ".source.yaml"
+		} else {
+			ext = ".source.yml"
+		}
+	}
 	newPath := filepath.Join(filepath.Dir(cell.Path), newName+ext)
 	edits = append(edits, RenameEdit{Path: cell.Path, NewPath: newPath})
 

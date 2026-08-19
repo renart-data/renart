@@ -22,6 +22,21 @@ type stubFetcher struct {
 	fetches  int
 }
 
+type stubWarehouseExecutor struct {
+	artifact TabularArtifact
+	calls    int
+}
+
+func (executor *stubWarehouseExecutor) Analyze(_ context.Context, _ AnalyzeBlockInput) (BlockAnalysis, error) {
+	return BlockAnalysis{Kind: "warehouse_sql"}, nil
+}
+
+func (executor *stubWarehouseExecutor) Execute(_ context.Context, _ ExecuteBlockInput) (BlockOutput, error) {
+	executor.calls++
+	artifact := executor.artifact
+	return BlockOutput{Artifact: &artifact}, nil
+}
+
 func (s *stubFetcher) LocalDuckDBPath(_ context.Context, _ string) (string, bool) {
 	return s.duckPath, s.duckPath != ""
 }
@@ -107,6 +122,71 @@ func TestRunCellsExecutesDAGInSession(t *testing.T) {
 	}
 }
 
+func TestWarehouseSQLSourceSnapshotsTypedParquetBeforeLocalTransforms(t *testing.T) {
+	parquetPath := filepath.Join(t.TempDir(), "warehouse.parquet")
+	client, err := duck.NewClient(duck.Config{Path: ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	copySQL := fmt.Sprintf(
+		"copy (select cast(12.34 as decimal(8,2)) as amount, date '2026-01-01' as day) to %s (format parquet)",
+		sqlStringLiteral(parquetPath),
+	)
+	if err := client.RunQueryWithoutResult(context.Background(), &query.Query{Query: copySQL}); err != nil {
+		client.Close()
+		t.Fatal(err)
+	}
+	client.Close()
+	artifact, err := InspectParquetArtifact(context.Background(), parquetPath, SnapshotProvenance{
+		SourceKind: "warehouse_sql", Environment: "default", Connection: "postgres-other",
+		DefinitionFingerprint: "nb1:source",
+	}, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := &stubWarehouseExecutor{artifact: artifact}
+	nb := loadRunFixture(t, map[string]string{
+		ManifestFileName: "id: 11111111-0000-0000-0000-000000000099\nblocks:\n  - cell: source01\n  - cell: local001\n",
+		"source.sql":     "/* @bruin\nid: source01\ntype: pg.sql\nconnection: postgres-other\n@bruin */\nselect amount, day from public.orders\n",
+		"local.sql":      "/* @bruin\nid: local001\ntype: duckdb.sql\n@bruin */\nselect amount * 2 as doubled, day from source\n",
+	})
+	runner := &Runner{
+		Store: NewSessionStore(filepath.Join(t.TempDir(), "sessions")), RenameTables: realRenameTables(t),
+		WarehouseExecutor: executor, Environment: "default",
+	}
+	results, err := runner.RunCells(context.Background(), nb, TopoOrder(nb), RunOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 || results[0].Status != CellRunOK || results[1].Status != CellRunOK {
+		t.Fatalf("warehouse/local run failed: %+v", results)
+	}
+	if executor.calls != 1 {
+		t.Fatalf("warehouse executor called %d times", executor.calls)
+	}
+	if results[0].Snapshot == nil || !results[0].Snapshot.Complete || results[0].Snapshot.Connection != "postgres-other" {
+		t.Fatalf("source snapshot provenance missing: %+v", results[0])
+	}
+	if len(results[0].ColumnTypes) != 2 || !strings.Contains(results[0].ColumnTypes[0], "DECIMAL") || results[0].ColumnTypes[1] != "DATE" {
+		t.Fatalf("source physical types were not preserved: %+v", results[0].ColumnTypes)
+	}
+	if fmt.Sprint(results[1].Rows[0][0]) != "24.68" {
+		t.Fatalf("local transform did not read the warehouse snapshot: %+v", results[1].Rows)
+	}
+	session, err := runner.Store.Open(nb.UUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	manifest, err := session.Query(context.Background(), "select block_id, connection, complete, sampled from __renart_imports_v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Rows) != 1 || fmt.Sprint(manifest.Rows[0]) != "[source01 postgres-other true false]" {
+		t.Fatalf("snapshot manifest was not committed with the table: %+v", manifest.Rows)
+	}
+}
+
 func TestRunCellsHidesSlingLoadedAtFromResults(t *testing.T) {
 	nb := loadRunFixture(t, map[string]string{
 		ManifestFileName: "id: 11111111-0000-0000-0000-0000000000f1\nblocks:\n  - cell: aaaa1111\n",
@@ -188,6 +268,44 @@ func TestRunCellsIsRepeatable(t *testing.T) {
 	}
 }
 
+func TestRestoreCellRunResultsAfterRestartAndDetectDefinitionDrift(t *testing.T) {
+	nb := loadRunFixture(t, map[string]string{
+		ManifestFileName: "id: 11111111-0000-0000-0000-0000000000f1\nblocks:\n  - cell: aaaa1111\n  - cell: bbbb2222\n",
+		"base.sql":       "/* @bruin\nid: aaaa1111\ntype: duckdb.sql\n@bruin */\nselect cast(42 as bigint) as answer\n",
+		"child.sql":      "/* @bruin\nid: bbbb2222\ntype: duckdb.sql\n@bruin */\nselect answer * 2 as doubled from base\n",
+	})
+	sessionRoot := filepath.Join(t.TempDir(), "sessions")
+	runner := &Runner{Store: NewSessionStore(sessionRoot), RenameTables: realRenameTables(t)}
+	results, err := runner.RunCells(context.Background(), nb, TopoOrder(nb), RunOptions{})
+	if err != nil || len(results) != 2 || results[1].Status != CellRunOK {
+		t.Fatalf("initial run failed: results=%+v err=%v", results, err)
+	}
+
+	restartedStore := NewSessionStore(sessionRoot)
+	restored, stale, err := restartedStore.RestoreCellRunResults(context.Background(), nb, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stale) != 0 || len(restored) != 2 {
+		t.Fatalf("restart did not restore both valid results: restored=%+v stale=%+v", restored, stale)
+	}
+	if got := restored["aaaa1111"].ColumnTypes; len(got) != 1 || got[0] != "BIGINT" {
+		t.Fatalf("restored schema lost physical type: %v", got)
+	}
+
+	if err := os.WriteFile(nb.Cells[0].Path, []byte("/* @bruin\nid: aaaa1111\ntype: duckdb.sql\n@bruin */\nselect 43 as answer\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changed := loadRunFixtureReload(t, nb)
+	restored, stale, err = restartedStore.RestoreCellRunResults(context.Background(), changed, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stale["aaaa1111"] || !stale["bbbb2222"] || len(restored) != 0 {
+		t.Fatalf("definition drift did not invalidate the cell closure: restored=%+v stale=%+v", restored, stale)
+	}
+}
+
 func loadRunFixtureReload(t *testing.T, nb *Notebook) *Notebook {
 	t.Helper()
 	fs := afero.NewOsFs()
@@ -211,9 +329,13 @@ func TestRunPythonCellCapturesLogs(t *testing.T) {
 
 	// Success path: the captured stdout/stderr rides along on the result.
 	okRunner := &Runner{
-		Store:        NewSessionStore(filepath.Join(t.TempDir(), "sessions")),
-		RenameTables: realRenameTables(t),
-		PythonMaterializer: func(ctx context.Context, _ *Cell, parquetPath string, runQuery PythonQueryFunc) (string, error) {
+		Store:           NewSessionStore(filepath.Join(t.TempDir(), "sessions")),
+		RenameTables:    realRenameTables(t),
+		ParameterValues: map[string]any{"region": "eu"},
+		PythonMaterializer: func(ctx context.Context, _ *Cell, parquetPath string, runQuery PythonQueryFunc, parameters map[string]any) (string, error) {
+			if parameters["region"] != "eu" {
+				return "", fmt.Errorf("unexpected Python parameter values: %+v", parameters)
+			}
 			result, err := runQuery(ctx, NotebookConnectionName, "select 42 as answer")
 			if err != nil {
 				return "", err
@@ -247,7 +369,7 @@ func TestRunPythonCellCapturesLogs(t *testing.T) {
 	// Failure path: logs are still attached so a traceback is visible.
 	errRunner := &Runner{
 		Store: NewSessionStore(filepath.Join(t.TempDir(), "sessions")),
-		PythonMaterializer: func(context.Context, *Cell, string, PythonQueryFunc) (string, error) {
+		PythonMaterializer: func(context.Context, *Cell, string, PythonQueryFunc, map[string]any) (string, error) {
 			return "partial output\nTraceback: boom", fmt.Errorf("python cell failed")
 		},
 	}
@@ -321,7 +443,7 @@ func TestRunCellsMaterializeDirectivePinsTable(t *testing.T) {
 	}
 }
 
-func TestImportGenericFetchIsCachedAndCapped(t *testing.T) {
+func TestImportGenericFetchRejectsOversizedResultWithoutPublishingPartialTable(t *testing.T) {
 	nb := loadRunFixture(t, map[string]string{
 		ManifestFileName: "id: 11111111-0000-0000-0000-000000000004\nblocks:\n  - cell: aaaa1111\n",
 		"reader.sql":     "/* @bruin\nid: aaaa1111\ntype: duckdb.sql\n@bruin */\nselect sum(amount) as total from marts.orders\n",
@@ -346,38 +468,52 @@ func TestImportGenericFetchIsCachedAndCapped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if results[0].Status != CellRunOK {
-		t.Fatalf("run failed: %s", results[0].Error)
+	if results[0].Status != CellRunError || !strings.Contains(results[0].Error, "safe buffered import limit of 2 rows") {
+		t.Fatalf("oversized import was not rejected clearly: %+v", results[0])
 	}
-	if len(results[0].Imports) != 1 {
-		t.Fatalf("expected one import, got %+v", results[0].Imports)
+	if len(results[0].Imports) != 0 {
+		t.Fatalf("oversized import was exposed as a snapshot: %+v", results[0].Imports)
 	}
-	imported := results[0].Imports[0]
-	if imported.Complete {
-		t.Fatalf("expected truncated import (cap 2), got %+v", imported)
-	}
-	if imported.RowCount != 2 {
-		t.Fatalf("expected 2 imported rows, got %d", imported.RowCount)
-	}
-	// 10.5 + 20 = 30.5 over the capped rows.
-	if fmt.Sprintf("%v", results[0].Rows[0][0]) != "30.5" {
-		t.Fatalf("unexpected total: %v", results[0].Rows)
-	}
-
-	// Second run reuses the cache.
-	if _, err := runner.RunCells(context.Background(), nb, TopoOrder(nb), RunOptions{}); err != nil {
+	session, err := runner.Store.Open(nb.UUID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if fetcher.fetches != 1 {
-		t.Fatalf("expected cached import, fetches=%d", fetcher.fetches)
+	defer session.Close()
+	if objectType, err := session.objectType(context.Background(), ImportObjectName("marts.orders")); err != nil || objectType != "" {
+		t.Fatalf("partial import table was published: type=%q err=%v", objectType, err)
 	}
+	if record, err := session.lookupImport(context.Background(), "marts.orders"); err != nil || record != nil {
+		t.Fatalf("partial import metadata was published: record=%+v err=%v", record, err)
+	}
+}
 
-	// RefreshImports forces a re-fetch.
-	if _, err := runner.RunCells(context.Background(), nb, TopoOrder(nb), RunOptions{RefreshImports: true}); err != nil {
+func TestImportDoesNotReuseLegacyIncompleteCacheEntry(t *testing.T) {
+	nb := loadRunFixture(t, map[string]string{
+		ManifestFileName: "id: 11111111-0000-0000-0000-000000000044\nblocks:\n  - cell: aaaa1111\n",
+		"reader.sql":     "/* @bruin\nid: aaaa1111\ntype: duckdb.sql\n@bruin */\nselect * from marts.orders\n",
+	})
+	store := NewSessionStore(filepath.Join(t.TempDir(), "sessions"))
+	session, err := store.Open(nb.UUID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if fetcher.fetches != 2 {
-		t.Fatalf("expected refresh to re-fetch, fetches=%d", fetcher.fetches)
+	if err := session.recordImport(context.Background(), ImportRecord{
+		Ref: "marts.orders", ObjectName: ImportObjectName("marts.orders"), RowCount: 2, Complete: false,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session.Close()
+	fetcher := &stubFetcher{columns: []string{"id"}, rows: [][]any{{1}}}
+	runner := &Runner{Store: store, RenameTables: realRenameTables(t), Fetcher: fetcher}
+	results, err := runner.RunCells(context.Background(), nb, TopoOrder(nb), RunOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if results[0].Status != CellRunError || !strings.Contains(results[0].Error, "cached upstream \"marts.orders\" is incomplete") {
+		t.Fatalf("legacy partial cache was not rejected: %+v", results[0])
+	}
+	if fetcher.fetches != 0 {
+		t.Fatalf("incomplete cache triggered an implicit refresh: %d fetches", fetcher.fetches)
 	}
 }
 

@@ -13,12 +13,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/jinja"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/bruin-data/bruin/pkg/sqlparser"
 	"github.com/spf13/afero"
 	"renart/internal/web/model"
 	"renart/internal/web/notebook"
+	"renart/internal/web/presentation"
 )
 
 // NotebookDependencies wires the notebook service into the rest of the app.
@@ -32,6 +34,11 @@ type NotebookDependencies struct {
 	// RunConnectionQuery executes a query on a named connection; used as
 	// the generic import fetch backend.
 	RunConnectionQuery func(ctx context.Context, connection, environment, query string) ([]string, []map[string]any, error)
+	// NewConnectionManager resolves the selected environment through Renart's
+	// runtime connection factory, including managed secrets and warehouse-
+	// specific compatibility. Warehouse notebook snapshots use it only long
+	// enough to derive Sling's private source connection payload.
+	NewConnectionManager func(ctx context.Context, environment string) (config.ConnectionAndDetailsGetter, error)
 	// PushWorkspaceUpdate triggers a workspace refresh + SSE push after
 	// mutations (optional).
 	PushWorkspaceUpdate func(ctx context.Context, eventType, eventPath string)
@@ -42,6 +49,15 @@ type NotebookDependencies struct {
 	// PublishEvent pushes a payload on the workspace SSE stream (notebook
 	// runtime events). Optional.
 	PublishEvent func(payload any)
+}
+
+// NotebookJinjaContext is the authored parameter contract plus the current
+// local runtime values used to render one notebook cell. It deliberately omits
+// paths and wider notebook state so SQL intelligence can consume the same
+// typed context as execution without gaining another persistence surface.
+type NotebookJinjaContext struct {
+	Definitions []presentation.ParameterDefinition
+	Values      map[string]any
 }
 
 // NotebookService implements notebook CRUD and cell execution on top of the
@@ -55,6 +71,12 @@ type NotebookService struct {
 	// atomic within this server process.
 	cellEditMu    sync.Mutex
 	cellEditLocks map[string]*cellEditLock
+	// notebookEditLocks serialize authored snapshot mutations across manifest
+	// and cell files. Cell-specific locks retain the precise conflict behavior
+	// for current editors; this wider lock is the substrate for notebook-wide
+	// revision-checked change sets.
+	notebookEditMu    sync.Mutex
+	notebookEditLocks map[string]*cellEditLock
 
 	// Bruin's SQL parser is created lazily and reused across every load and run
 	// instead of being spun up per operation.
@@ -122,16 +144,85 @@ func (s *NotebookService) validateNotebookPythonQuery(sqlText string) error {
 // (no pipeline variables or macros) — the same constructs the editor preview
 // resolves for date-driven cells. start/end are RFC3339; empty uses the
 // default daily window.
-func (s *NotebookService) newNotebookJinjaRenderer(start, end string) (func(string) (string, error), error) {
+func (s *NotebookService) newNotebookJinjaRenderer(
+	start, end string,
+	definitions []presentation.ParameterDefinition,
+	parameterValues map[string]any,
+) (*jinja.Renderer, error) {
+	return buildNotebookJinjaPreviewRenderer(start, end, NotebookJinjaContext{
+		Definitions: definitions,
+		Values:      parameterValues,
+	})
+}
+
+func buildNotebookJinjaPreviewRenderer(start, end string, notebookContext NotebookJinjaContext) (*jinja.Renderer, error) {
 	now := time.Now().UTC()
 	window, err := ResolveExecutionTimeWindow("", start, end, now)
 	if err != nil {
 		return nil, err
 	}
+	resolved, findings := presentation.ResolveParameterValues(notebookContext.Definitions, notebookContext.Values)
+	if len(findings) > 0 {
+		return nil, fmt.Errorf("invalid notebook parameter values: %s", findings[0].Message)
+	}
+	literals, err := presentation.ParameterSQLLiterals(notebookContext.Definitions, resolved)
+	if err != nil {
+		return nil, err
+	}
 	renderer := jinja.NewRendererWithStartEndDatesAndMacros(
-		&window.Start, &window.End, &now, "renart-notebook", "renart-notebook-run", nil, "",
+		&window.Start, &window.End, &now, "renart-notebook", "renart-notebook-run", jinja.Context(resolved), "",
 	)
-	return renderer.Render, nil
+	// `parameter` is the safe SQL-interpolation surface. `parameters` exposes
+	// typed values for Jinja conditions and non-SQL source templates.
+	renderer.SetContextValue("parameter", literals)
+	renderer.SetContextValue("parameters", resolved)
+	return renderer, nil
+}
+
+// JinjaContextForAsset resolves a notebook cell asset ID to the same typed
+// parameter snapshot used by execution. The boolean is false for ordinary
+// pipeline assets, allowing shared preview/LSP callers to fall back to the
+// pipeline renderer without guessing from synthetic pipeline metadata.
+func (s *NotebookService) JinjaContextForAsset(_ context.Context, assetID string) (NotebookJinjaContext, bool, error) {
+	relPath, err := DecodeID(assetID)
+	if err != nil {
+		return NotebookJinjaContext{}, false, nil
+	}
+	absPath, err := SafeJoin(s.deps.WorkspaceRoot, relPath)
+	if err != nil {
+		return NotebookJinjaContext{}, false, err
+	}
+	dir := filepath.Dir(absPath)
+	if _, err := os.Stat(filepath.Join(dir, notebook.ManifestFileName)); err != nil {
+		if os.IsNotExist(err) {
+			return NotebookJinjaContext{}, false, nil
+		}
+		return NotebookJinjaContext{}, false, err
+	}
+
+	relDir, err := filepath.Rel(s.deps.WorkspaceRoot, dir)
+	if err != nil {
+		return NotebookJinjaContext{}, false, err
+	}
+	nb, apiErr := s.load(EncodeID(filepath.ToSlash(relDir)))
+	if apiErr != nil {
+		return NotebookJinjaContext{}, true, fmt.Errorf("%s", apiErr.Message)
+	}
+	found := false
+	for _, cell := range nb.Cells {
+		if filepath.Clean(cell.Path) == filepath.Clean(absPath) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return NotebookJinjaContext{}, false, nil
+	}
+
+	return NotebookJinjaContext{
+		Definitions: append([]presentation.ParameterDefinition(nil), nb.Parameters...),
+		Values:      s.currentNotebookParameterValues(nb),
+	}, true, nil
 }
 
 // usedTables extracts referenced tables for dependency derivation using the
@@ -153,14 +244,39 @@ func (s *NotebookService) usedTables(sqlText, assetType string) ([]string, error
 // NewNotebookService constructs the service; session DBs live under
 // .renart/notebooks in the workspace.
 func NewNotebookService(deps NotebookDependencies) *NotebookService {
+	if strings.TrimSpace(deps.ConfigPath) == "" {
+		deps.ConfigPath = filepath.Join(deps.WorkspaceRoot, ".bruin.yml")
+	}
 	store := notebook.NewSessionStore(filepath.Join(deps.WorkspaceRoot, ".renart", "notebooks"), deps.WorkspaceRoot)
 	store.DisableFilesystemAccess = deps.DisableFilesystemAccess
 	return &NotebookService{
-		deps:          deps,
-		store:         store,
-		cellEditLocks: make(map[string]*cellEditLock),
-		runtimes:      newNotebookRuntimes(),
+		deps:              deps,
+		store:             store,
+		cellEditLocks:     make(map[string]*cellEditLock),
+		notebookEditLocks: make(map[string]*cellEditLock),
+		runtimes:          newNotebookRuntimes(),
 	}
+}
+
+func (s *NotebookService) validateNotebookSourceQuery(sqlText, assetType string) error {
+	dialect, dialectErr := sqlparser.AssetTypeToDialect(pipeline.AssetType(assetType))
+	if dialectErr != nil || strings.TrimSpace(dialect) == "" {
+		return fmt.Errorf("cannot determine the SQL dialect for notebook source type %q", assetType)
+	}
+	s.parserMu.Lock()
+	defer s.parserMu.Unlock()
+	parser, err := s.ensureParserLocked()
+	if err != nil {
+		return fmt.Errorf("could not initialize SQL validation: %w", err)
+	}
+	isSelect, err := parser.IsSingleSelectQuery(sqlText, dialect)
+	if err != nil {
+		return fmt.Errorf("could not validate warehouse source query: %w", err)
+	}
+	if !isSelect {
+		return fmt.Errorf("warehouse notebook sources only run a read-only single SELECT statement")
+	}
+	return nil
 }
 
 // lockCellEdit serializes optimistic-revision checks and writes for one cell.
@@ -189,6 +305,28 @@ func (s *NotebookService) lockCellEdit(notebookID, cellID string) func() {
 	}
 }
 
+func (s *NotebookService) lockNotebookEdit(notebookID string) func() {
+	s.notebookEditMu.Lock()
+	lock, ok := s.notebookEditLocks[notebookID]
+	if !ok {
+		lock = &cellEditLock{}
+		s.notebookEditLocks[notebookID] = lock
+	}
+	lock.refs++
+	s.notebookEditMu.Unlock()
+
+	lock.mu.Lock()
+	return func() {
+		lock.mu.Unlock()
+		s.notebookEditMu.Lock()
+		lock.refs--
+		if lock.refs == 0 && s.notebookEditLocks[notebookID] == lock {
+			delete(s.notebookEditLocks, notebookID)
+		}
+		s.notebookEditMu.Unlock()
+	}
+}
+
 // SessionStore exposes the store for startup sweeps.
 func (s *NotebookService) SessionStore() *notebook.SessionStore {
 	return s.store
@@ -197,6 +335,12 @@ func (s *NotebookService) SessionStore() *notebook.SessionStore {
 // SweepSessions removes session DB files for notebooks that no longer
 // exist; called once at startup.
 func (s *NotebookService) SweepSessions() ([]string, error) {
+	// Finish or roll back an interrupted authored-file transaction before any
+	// notebook is loaded. This keeps the filesystem snapshot coherent after a
+	// process or machine failure midway through a multi-file apply.
+	if err := recoverNotebookFileTransactions(s.deps.WorkspaceRoot); err != nil {
+		return nil, err
+	}
 	fs := afero.NewOsFs()
 	dirs, err := notebook.Discover(fs, s.deps.WorkspaceRoot)
 	if err != nil {
@@ -307,8 +451,13 @@ func (s *NotebookService) Create(req CreateNotebookRequest) (model.Notebook, *AP
 	if err := os.WriteFile(filepath.Join(absDir, exampleName+".sql"), []byte(exampleContent), 0o644); err != nil {
 		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "notebook_create_failed", Message: err.Error()}
 	}
-	manifest := fmt.Sprintf("title: %s\nblocks:\n  - cell: %s\n", title, exampleID)
-	if err := os.WriteFile(filepath.Join(absDir, notebook.ManifestFileName), []byte(manifest), 0o644); err != nil {
+	manifest := &notebook.Notebook{
+		Version: notebook.ManifestVersionCurrent,
+		Title:   title,
+		Dir:     absDir,
+		Blocks:  []notebook.Block{{Cell: exampleID}},
+	}
+	if err := notebook.SaveManifest(afero.NewOsFs(), manifest); err != nil {
 		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "notebook_create_failed", Message: err.Error()}
 	}
 
@@ -370,6 +519,9 @@ type UpdateCellRequest struct {
 
 // CreateCell writes a new cell file and appends it to the blocks.
 func (s *NotebookService) CreateCell(notebookID string, req CreateCellRequest) (model.Notebook, *APIError) {
+	unlockNotebook := s.lockNotebookEdit(notebookID)
+	defer unlockNotebook()
+
 	nb, apiErr := s.load(notebookID)
 	if apiErr != nil {
 		return model.Notebook{}, apiErr
@@ -417,6 +569,9 @@ func (s *NotebookService) CreateCell(notebookID string, req CreateCellRequest) (
 // and drops the old session object. Zero fingerprints change (invariant 1),
 // so nothing goes stale and the warehouse is untouched.
 func (s *NotebookService) RenameCell(notebookID, cellID, newName string) (model.Notebook, *APIError) {
+	unlockNotebook := s.lockNotebookEdit(notebookID)
+	defer unlockNotebook()
+
 	nb, apiErr := s.load(notebookID)
 	if apiErr != nil {
 		return model.Notebook{}, apiErr
@@ -467,6 +622,8 @@ func (s *NotebookService) RenameCell(notebookID, cellID, newName string) (model.
 func (s *NotebookService) UpdateCell(notebookID, cellID string, req UpdateCellRequest) (model.Notebook, *APIError) {
 	unlock := s.lockCellEdit(notebookID, cellID)
 	defer unlock()
+	unlockNotebook := s.lockNotebookEdit(notebookID)
+	defer unlockNotebook()
 
 	nb, apiErr := s.load(notebookID)
 	if apiErr != nil {
@@ -515,6 +672,9 @@ func (s *NotebookService) UpdateCell(notebookID, cellID string, req UpdateCellRe
 // DeleteCell removes the cell file, its block entry, and its materialized
 // session objects.
 func (s *NotebookService) DeleteCell(notebookID, cellID string) (model.Notebook, *APIError) {
+	unlockNotebook := s.lockNotebookEdit(notebookID)
+	defer unlockNotebook()
+
 	nb, apiErr := s.load(notebookID)
 	if apiErr != nil {
 		return model.Notebook{}, apiErr
@@ -530,7 +690,7 @@ func (s *NotebookService) DeleteCell(notebookID, cellID string) (model.Notebook,
 
 	blocks := make([]notebook.Block, 0, len(nb.Blocks))
 	for _, block := range nb.Blocks {
-		if block.Cell == cellID {
+		if block.Cell == cellID || (block.Visualization != nil && block.Visualization.Source == cellID) {
 			continue
 		}
 		blocks = append(blocks, block)
@@ -558,15 +718,22 @@ func (s *NotebookService) DeleteCell(notebookID, cellID string) (model.Notebook,
 // reordering). Cell blocks must reference existing cells; every cell must
 // remain referenced exactly once.
 func (s *NotebookService) UpdateBlocks(notebookID string, blocks []model.NotebookBlock) (model.Notebook, *APIError) {
+	unlockNotebook := s.lockNotebookEdit(notebookID)
+	defer unlockNotebook()
+
 	nb, apiErr := s.load(notebookID)
 	if apiErr != nil {
 		return model.Notebook{}, apiErr
 	}
 
 	seen := map[string]bool{}
+	seenBlockIDs := map[string]bool{}
 	next := make([]notebook.Block, 0, len(blocks))
 	for _, block := range blocks {
 		if block.Cell != "" {
+			if block.Visualization != nil || block.Markdown != "" || block.ID != "" {
+				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_notebook_block", Message: "a cell block cannot also contain presentation content"}
+			}
 			if nb.CellByID(block.Cell) == nil {
 				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "unknown_cell", Message: fmt.Sprintf("block references unknown cell %q", block.Cell)}
 			}
@@ -574,8 +741,58 @@ func (s *NotebookService) UpdateBlocks(notebookID string, blocks []model.Noteboo
 				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "duplicate_cell_block", Message: fmt.Sprintf("cell %q appears more than once", block.Cell)}
 			}
 			seen[block.Cell] = true
+			next = append(next, notebook.Block{Cell: block.Cell})
+			continue
 		}
-		next = append(next, notebook.Block{Cell: block.Cell, Markdown: block.Markdown})
+
+		if block.Visualization != nil {
+			if nb.Version < notebook.ManifestVersionCurrent {
+				return model.Notebook{}, &APIError{Status: http.StatusConflict, Code: "notebook_upgrade_required", Message: "upgrade this notebook before adding structured visualizations"}
+			}
+			id := strings.TrimSpace(block.ID)
+			visualizationID := strings.TrimSpace(block.Visualization.ID)
+			if id != "" && visualizationID != "" && id != visualizationID {
+				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_notebook_block", Message: "visualization block ids do not match"}
+			}
+			if id == "" {
+				id = visualizationID
+			}
+			if id == "" {
+				id = notebook.NewBlockID("viz")
+			}
+			if seenBlockIDs[id] {
+				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "duplicate_notebook_block", Message: fmt.Sprintf("block id %q appears more than once", id)}
+			}
+			seenBlockIDs[id] = true
+			source := strings.TrimSpace(block.Visualization.Source)
+			if nb.CellByID(source) == nil {
+				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "unknown_visualization_source", Message: fmt.Sprintf("visualization %q references unknown source cell %q", id, source)}
+			}
+			if len(block.Visualization.Definition) == 0 {
+				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_visualization_definition", Message: fmt.Sprintf("visualization %q has no definition", id)}
+			}
+			next = append(next, notebook.Block{
+				ID: id,
+				Visualization: &notebook.VisualizationBlock{
+					ID:         id,
+					Source:     source,
+					Definition: cloneStringAnyMap(block.Visualization.Definition),
+				},
+			})
+			continue
+		}
+
+		id := strings.TrimSpace(block.ID)
+		if nb.Version >= notebook.ManifestVersionCurrent {
+			if id == "" {
+				id = notebook.NewBlockID("md")
+			}
+			if seenBlockIDs[id] {
+				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "duplicate_notebook_block", Message: fmt.Sprintf("block id %q appears more than once", id)}
+			}
+			seenBlockIDs[id] = true
+		}
+		next = append(next, notebook.Block{ID: id, Markdown: block.Markdown})
 	}
 	for _, cell := range nb.Cells {
 		if !seen[cell.ID] {
@@ -584,11 +801,45 @@ func (s *NotebookService) UpdateBlocks(notebookID string, blocks []model.Noteboo
 	}
 
 	nb.Blocks = next
+	if _, blocking := s.notebookVisualizationProblems(context.Background(), nb); len(blocking) > 0 {
+		return model.Notebook{}, &APIError{
+			Status: http.StatusBadRequest, Code: "invalid_visualization_definition",
+			Message: strings.Join(blocking, "; "),
+		}
+	}
 	if err := notebook.SaveManifest(afero.NewOsFs(), nb); err != nil {
 		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "blocks_update_failed", Message: err.Error()}
 	}
 
 	s.pushUpdate(filepath.Join(nb.Dir, notebook.ManifestFileName))
+	return s.Get(notebookID)
+}
+
+// UpgradeManifest upgrades a legacy notebook.yml to the identity-bearing v2
+// block format. BaseRevision is required by interactive callers so an external
+// edit cannot be overwritten by the migration.
+func (s *NotebookService) UpgradeManifest(notebookID, baseRevision string) (model.Notebook, *APIError) {
+	unlockNotebook := s.lockNotebookEdit(notebookID)
+	defer unlockNotebook()
+
+	nb, apiErr := s.load(notebookID)
+	if apiErr != nil {
+		return model.Notebook{}, apiErr
+	}
+	if baseRevision != "" && baseRevision != nb.Revision {
+		return model.Notebook{}, &APIError{
+			Status:  http.StatusConflict,
+			Code:    "notebook_edit_conflict",
+			Message: "This notebook changed after the upgrade was prepared. Reload it before upgrading.",
+		}
+	}
+	changed, err := notebook.UpgradeManifestV2(afero.NewOsFs(), nb)
+	if err != nil {
+		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "notebook_upgrade_failed", Message: err.Error()}
+	}
+	if changed {
+		s.pushUpdate(filepath.Join(nb.Dir, notebook.ManifestFileName))
+	}
 	return s.Get(notebookID)
 }
 
@@ -621,6 +872,9 @@ type PromoteCellResult struct {
 // promoted asset is never_built in pipeline envs (its fingerprint changed),
 // which is the correct prompt to build and deploy it.
 func (s *NotebookService) PromoteCell(notebookID, cellID string, req PromoteCellRequest) (PromoteCellResult, *APIError) {
+	unlockNotebook := s.lockNotebookEdit(notebookID)
+	defer unlockNotebook()
+
 	nb, apiErr := s.load(notebookID)
 	if apiErr != nil {
 		return PromoteCellResult{}, apiErr
@@ -845,6 +1099,9 @@ type RunNotebookRequest struct {
 	// back to the default daily window, matching the editor's preview.
 	StartDate string `json:"start_date,omitempty"`
 	EndDate   string `json:"end_date,omitempty"`
+	// Parameters are partial local runtime overrides. They are validated against
+	// notebook.yml and persist only in this server process.
+	Parameters map[string]any `json:"parameters,omitempty"`
 }
 
 // RunNotebookResult is the batch outcome.
@@ -859,6 +1116,15 @@ func (s *NotebookService) Run(ctx context.Context, notebookID string, req RunNot
 	if apiErr != nil {
 		return RunNotebookResult{}, apiErr
 	}
+	s.hydrateRuntime(nb)
+	parameterValues := s.currentNotebookParameterValues(nb)
+	if req.Parameters != nil {
+		var parameterErr *APIError
+		parameterValues, parameterErr = s.updateNotebookParameterValues(notebookID, nb, req.Parameters, false)
+		if parameterErr != nil {
+			return RunNotebookResult{}, parameterErr
+		}
+	}
 	rt := s.runtimes.get(nb.UUID)
 	runCtx, finishRun := rt.beginManualRun(ctx)
 	defer finishRun()
@@ -871,12 +1137,12 @@ func (s *NotebookService) Run(ctx context.Context, notebookID string, req RunNot
 		return RunNotebookResult{Status: "ok", Results: []notebook.CellRunResult{}}, nil
 	}
 
-	renderSQL, renderErr := s.newNotebookJinjaRenderer(req.StartDate, req.EndDate)
+	renderer, renderErr := s.newNotebookJinjaRenderer(req.StartDate, req.EndDate, nb.Parameters, parameterValues)
 	if renderErr != nil {
-		return RunNotebookResult{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_time_window", Message: renderErr.Error()}
+		return RunNotebookResult{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_notebook_render_context", Message: renderErr.Error()}
 	}
 
-	runner := s.newRunner(renderSQL, req.Environment)
+	runner := s.newRunner(renderer, req.Environment, parameterValues)
 
 	results, runErr := runner.RunCells(runCtx, nb, cells, notebook.RunOptions{RefreshImports: req.RefreshImports})
 	if runErr != nil {

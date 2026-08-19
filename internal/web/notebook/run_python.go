@@ -70,7 +70,7 @@ func (r *Runner) runPython(ctx context.Context, session *Session, nb *Notebook, 
 		return session.Query(queryCtx, rewritten)
 	}
 
-	logs, materializeErr := r.PythonMaterializer(ctx, cell, parquetPath, runQuery)
+	logs, materializeErr := r.PythonMaterializer(ctx, cell, parquetPath, runQuery, r.ParameterValues)
 	result.Logs = logs
 	if materializeErr != nil {
 		result.Error = normalizePythonError(materializeErr)
@@ -108,6 +108,7 @@ func (r *Runner) runPython(ctx context.Context, session *Session, nb *Notebook, 
 		return result
 	}
 	result.Columns = preview.Columns
+	result.ColumnTypes = append([]string(nil), preview.ColumnTypes...)
 	result.Rows = normalizeRows(preview.Rows)
 
 	if count, countErr := session.Query(ctx, fmt.Sprintf("select count(*) from %s", object)); countErr == nil && len(count.Rows) == 1 && len(count.Rows[0]) == 1 {

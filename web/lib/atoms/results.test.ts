@@ -27,6 +27,7 @@ function runtimeEvent(overrides: Partial<NotebookRuntimeEvent> = {}): NotebookRu
     type: "notebook.runtime",
     notebook_id: "notebook-1",
     auto_recompute: true,
+    parameter_values: {},
     stale: [],
     auto_pending: [],
     running: [],

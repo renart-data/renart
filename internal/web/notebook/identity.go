@@ -30,13 +30,28 @@ func CellAssetID(notebookUUID, cellID string) string {
 // space is per-notebook, so collisions are vanishingly rare; callers should
 // still check against existing siblings.
 func NewCellID() string {
+	return newShortID("")
+}
+
+// NewBlockID generates a durable manifest-owned block ID. Prefix should be a
+// short semantic namespace such as "md" or "viz"; cell blocks continue to use
+// their existing cell ID directly.
+func NewBlockID(prefix string) string {
+	return newShortID(strings.TrimSpace(prefix))
+}
+
+func newShortID(prefix string) string {
 	buf := make([]byte, 4)
 	if _, err := rand.Read(buf); err != nil {
 		// crypto/rand failing is unrecoverable in practice; fall back to a
 		// constant-free panic rather than silently reusing IDs.
 		panic(fmt.Sprintf("notebook: cannot generate cell id: %v", err))
 	}
-	return hex.EncodeToString(buf)
+	id := hex.EncodeToString(buf)
+	if prefix == "" {
+		return id
+	}
+	return prefix + "_" + id
 }
 
 // EnsureCellID returns the durable cell ID from the cell file's frontmatter

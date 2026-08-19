@@ -18,6 +18,7 @@ func TestRootSurface(t *testing.T) {
 	wantVisible := map[string]string{
 		"web":        categoryIDE,
 		"standalone": categoryIDE,
+		"mcp":        categoryIDE,
 		"run":        categoryPipeline,
 		"plan":       categoryPipeline,
 		"render":     categoryPipeline,

@@ -31,6 +31,7 @@ func Root(version string) *cli.Command {
 		Commands: []*cli.Command{
 			Web(),
 			Standalone(),
+			MCP(),
 			Run(),
 			Plan(),
 			Render(),

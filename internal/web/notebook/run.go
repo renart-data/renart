@@ -45,12 +45,23 @@ type Runner struct {
 	// SQL the editor previews. nil leaves the SQL untouched (tests).
 	RenderSQL func(content string) (string, error)
 	Fetcher   SourceFetcher
+	// WarehouseExecutor runs connection-bound SQL on its source warehouse and
+	// returns a typed Parquet snapshot for atomic local publication.
+	WarehouseExecutor NotebookBlockExecutor
+	// SourceExecutor runs Renart-owned file/object/HTTP source definitions and
+	// returns the same typed artifact contract as warehouse SQL sources.
+	SourceExecutor NotebookBlockExecutor
+	Environment    string
 	// PythonMaterializer runs a Python cell, writing its materialize() result
 	// to a Parquet staging file. nil when Python execution is not wired (the
 	// cell then reports a clear error instead of crashing).
 	PythonMaterializer PythonMaterializer
-	// ImportRowCap caps generic (non-DuckDB) upstream imports; guardrail
-	// with an explicit refresh/full-import escape hatch later.
+	// ParameterValues is the validated runtime snapshot used consistently by
+	// SQL rendering, Python context, source fingerprints, and run records.
+	ParameterValues map[string]any
+	// ImportRowCap is a strict safety limit for the legacy buffered importer.
+	// Results above it fail before publication; a partial result must never
+	// masquerade as an ordinary downstream relation.
 	ImportRowCap int
 	// PreviewLimit caps the rows returned to the UI per cell run.
 	PreviewLimit int
@@ -71,7 +82,7 @@ type PythonQueryFunc func(ctx context.Context, connection, sql string) (*query.Q
 // parquetPath. runQuery is the only data-access path provided to Python; no
 // session database path or credentials cross the process boundary. It returns
 // combined stdout/stderr even on failure so the traceback can be shown.
-type PythonMaterializer func(ctx context.Context, cell *Cell, parquetPath string, runQuery PythonQueryFunc) (logs string, err error)
+type PythonMaterializer func(ctx context.Context, cell *Cell, parquetPath string, runQuery PythonQueryFunc, parameterValues map[string]any) (logs string, err error)
 
 const (
 	defaultImportRowCap = 50000
@@ -87,17 +98,22 @@ const (
 
 // CellRunResult is the outcome of executing one cell.
 type CellRunResult struct {
-	CellID       string         `json:"cell_id"`
-	Name         string         `json:"name"`
-	ObjectName   string         `json:"object_name"`
-	Status       string         `json:"status"`
-	Error        string         `json:"error,omitempty"`
-	Columns      []string       `json:"columns"`
-	Rows         [][]any        `json:"rows"`
-	TotalRows    int64          `json:"total_rows"`
-	Materialized string         `json:"materialized"` // view | table
-	Imports      []ImportRecord `json:"imports,omitempty"`
-	RewrittenSQL string         `json:"rewritten_sql,omitempty"`
+	CellID       string          `json:"cell_id"`
+	Name         string          `json:"name"`
+	ObjectName   string          `json:"object_name"`
+	Status       string          `json:"status"`
+	Error        string          `json:"error,omitempty"`
+	Columns      []string        `json:"columns"`
+	Rows         [][]any         `json:"rows"`
+	TotalRows    int64           `json:"total_rows"`
+	Materialized string          `json:"materialized"` // view | table
+	Imports      []ImportRecord  `json:"imports,omitempty"`
+	ColumnTypes  []string        `json:"column_types,omitempty"`
+	Snapshot     *SnapshotRecord `json:"snapshot,omitempty"`
+	// Sampled propagates through the notebook DAG: a local result derived from
+	// an explicitly sampled source remains visibly sampled.
+	Sampled      bool   `json:"sampled,omitempty"`
+	RewrittenSQL string `json:"rewritten_sql,omitempty"`
 	// Logs is the combined stdout/stderr a Python cell printed while running.
 	Logs       string `json:"logs,omitempty"`
 	DurationMS int64  `json:"duration_ms"`
@@ -132,6 +148,13 @@ func (r *Runner) RunCells(ctx context.Context, nb *Notebook, cells []*Cell, opts
 	defer session.Close()
 
 	failed := map[string]bool{}
+	priorRuns, _ := session.listCellRuns(ctx)
+	sampledByName := map[string]bool{}
+	for _, candidate := range nb.Cells {
+		if record, ok := priorRuns[candidate.ID]; ok && record.Sampled {
+			sampledByName[strings.ToLower(candidate.Asset.Name)] = true
+		}
+	}
 	results := make([]CellRunResult, 0, len(cells))
 	for _, cell := range cells {
 		// Stop promptly when the caller cancels (the client aborted the run):
@@ -162,10 +185,25 @@ func (r *Runner) RunCells(ctx context.Context, nb *Notebook, cells []*Cell, opts
 			continue
 		}
 
+		inheritedSample := false
+		for _, upstream := range cell.Asset.Upstreams {
+			if nb.CellByName(upstream.Value) != nil && sampledByName[strings.ToLower(upstream.Value)] {
+				inheritedSample = true
+				break
+			}
+		}
 		result := r.runOne(ctx, session, nb, cell, opts)
+		result.Sampled = result.Sampled || inheritedSample || (result.Snapshot != nil && result.Snapshot.Sampled)
+		if result.Status == CellRunOK {
+			if recordErr := session.recordCellRun(ctx, nb, cell, result, r.ParameterValues); recordErr != nil {
+				result.Status = CellRunError
+				result.Error = "could not persist notebook run metadata: " + recordErr.Error()
+			}
+		}
 		if result.Status != CellRunOK {
 			failed[strings.ToLower(cell.Asset.Name)] = true
 		}
+		sampledByName[strings.ToLower(cell.Asset.Name)] = result.Status == CellRunOK && result.Sampled
 		results = append(results, result)
 	}
 	return results, nil
@@ -194,8 +232,14 @@ func (r *Runner) runOne(ctx context.Context, session *Session, nb *Notebook, cel
 		Rows:       [][]any{},
 	}
 
+	if IsSourceCell(cell) {
+		return r.runSource(ctx, session, nb, cell, result, startedAt, opts)
+	}
 	if IsPythonCell(cell) {
 		return r.runPython(ctx, session, nb, cell, result, startedAt)
+	}
+	if strings.TrimSpace(cell.Asset.Connection) != "" {
+		return r.runWarehouseSQLSource(ctx, session, nb, cell, result, startedAt, opts)
 	}
 
 	content := strings.TrimSpace(cell.Asset.ExecutableFile.Content)
@@ -304,7 +348,7 @@ func (r *Runner) runOne(ctx context.Context, session *Session, nb *Notebook, cel
 		result.DurationMS = time.Since(startedAt).Milliseconds()
 		return result
 	}
-	result.Columns, result.Rows = stripNotebookBookkeepingColumns(preview.Columns, preview.Rows)
+	result.Columns, result.ColumnTypes, result.Rows = stripNotebookBookkeeping(preview.Columns, preview.ColumnTypes, preview.Rows)
 	result.Rows = normalizeRows(result.Rows)
 	if viz != nil {
 		result.VizDiagnostics = append(result.VizDiagnostics, ValidateVizColumns(viz, result.Columns, 0)...)
@@ -323,6 +367,9 @@ func (r *Runner) runOne(ctx context.Context, session *Session, nb *Notebook, cel
 // the session DB, importing (or re-importing) it when needed.
 func (r *Runner) ensureImport(ctx context.Context, session *Session, ref string, refresh bool) (*ImportRecord, error) {
 	if existing, err := session.lookupImport(ctx, ref); err == nil && existing != nil && !refresh {
+		if !existing.Complete {
+			return nil, fmt.Errorf("cached upstream %q is incomplete; refresh it with a complete or explicitly sampled snapshot before running downstream cells", ref)
+		}
 		return existing, nil
 	}
 
@@ -350,16 +397,18 @@ func (r *Runner) ensureImport(ctx context.Context, session *Session, ref string,
 	if len(columns) == 0 {
 		return nil, fmt.Errorf("upstream %q returned no columns", ref)
 	}
-	complete := len(rows) <= r.importRowCap()
-	if !complete {
-		rows = rows[:r.importRowCap()]
+	if len(rows) > r.importRowCap() {
+		return nil, fmt.Errorf(
+			"upstream %q returned more than the safe buffered import limit of %d rows; aggregate or filter it at the source, or use a typed snapshot adapter",
+			ref, r.importRowCap(),
+		)
 	}
 
 	if err := r.createImportTable(ctx, session, object, columns, rows); err != nil {
 		return nil, err
 	}
 
-	record := ImportRecord{Ref: ref, ObjectName: object, RowCount: int64(len(rows)), Complete: complete}
+	record := ImportRecord{Ref: ref, ObjectName: object, RowCount: int64(len(rows)), Complete: true}
 	if err := session.recordImport(ctx, record); err != nil {
 		return nil, err
 	}
@@ -547,17 +596,26 @@ func normalizeRows(rows [][]any) [][]any {
 const slingLoadedAtColumn = "_sling_loaded_at"
 
 func stripNotebookBookkeepingColumns(columns []string, rows [][]any) ([]string, [][]any) {
+	filteredColumns, _, filteredRows := stripNotebookBookkeeping(columns, nil, rows)
+	return filteredColumns, filteredRows
+}
+
+func stripNotebookBookkeeping(columns, columnTypes []string, rows [][]any) ([]string, []string, [][]any) {
 	keep := make([]int, 0, len(columns))
 	filteredColumns := make([]string, 0, len(columns))
+	filteredTypes := make([]string, 0, len(columns))
 	for index, column := range columns {
 		if strings.EqualFold(strings.TrimSpace(column), slingLoadedAtColumn) {
 			continue
 		}
 		keep = append(keep, index)
 		filteredColumns = append(filteredColumns, column)
+		if index < len(columnTypes) {
+			filteredTypes = append(filteredTypes, columnTypes[index])
+		}
 	}
 	if len(keep) == len(columns) {
-		return columns, rows
+		return columns, columnTypes, rows
 	}
 
 	filteredRows := make([][]any, len(rows))
@@ -570,7 +628,7 @@ func stripNotebookBookkeepingColumns(columns []string, rows [][]any) ([]string, 
 		}
 		filteredRows[rowIndex] = filteredRow
 	}
-	return filteredColumns, filteredRows
+	return filteredColumns, filteredTypes, filteredRows
 }
 
 func toInt64(value any) int64 {

@@ -80,6 +80,19 @@ func TestComputeAutoRecomputeWaveExcludesPythonAndUnloaded(t *testing.T) {
 	}
 }
 
+func TestComputeAutoRecomputeNeverRefreshesRemoteSourcesImplicitly(t *testing.T) {
+	cells := []autoCellInfo{
+		{cellID: "source", stale: true, isRemoteSource: true, isSelectOnly: true, statusLoaded: true},
+		{cellID: "local", stale: true, isSelectOnly: true, statusLoaded: true, upstreamIDs: []string{"source"}},
+	}
+	if got := computeAutoRecomputeWave(cells); len(got) != 0 {
+		t.Fatalf("remote source refresh must require an explicit run, got wave %v", got)
+	}
+	if closure := computeAutoRecomputeClosure(cells); len(closure) != 0 {
+		t.Fatalf("remote source and blocked downstream must remain user-visible stale, got %v", closure)
+	}
+}
+
 func TestScheduleRecomputeRecordsWakeupWhilePassIsActive(t *testing.T) {
 	svc := &NotebookService{runtimes: newNotebookRuntimes()}
 	rt := svc.runtimes.get("notebook-uuid")

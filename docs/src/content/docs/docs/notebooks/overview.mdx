@@ -1,29 +1,52 @@
 ---
 title: Notebooks
-description: SQL and Python scratchpads with inline tables and charts that can graduate into pipeline assets.
+description: Version-controlled SQL and Python analysis across warehouses, files, APIs, and local DuckDB.
 ---
 
-Notebooks are where analysis starts before it deserves a place in the
-pipeline. Each notebook is a folder of SQL and Python cells that runs in its
-own local DuckDB session, reading the tables your pipeline has materialized —
-so you can explore freely without touching pipeline state.
+Notebooks are where analysis starts before it deserves a permanent place in a
+pipeline. Every notebook is a folder in your repository, with ordered SQL,
+Python, data-source, text, and visualization blocks. Renart executes the
+dataflow and keeps its integration tables in one local DuckDB file, so the
+notebook can combine unlike sources without creating scratch tables in your
+remote warehouses.
 
 <img
   src="/docs-media/notebook.webp"
-  alt="A notebook with a table result and a line chart from a @viz cell; the cell's actions menu is open showing Run from here, Rename cell, Promote to pipeline, and Delete cell"
+  alt="A Renart notebook with SQL cells and inline results"
   width="2800"
   height="1800"
 />
 
-## Cells
+## Add data from several systems
 
-Each cell is a named SQL query or Python transformation. Run one cell, run from
-a cell downward, or **Run all**. Results render inline as a table, with view
-toggles for bar, line, area, and pie charts.
+Choose **Add data** to create an explicit source block:
+
+- browse a configured warehouse connection and start from a generated
+  read-only query;
+- select a local file or an object from configured S3-compatible or Google
+  Cloud Storage credentials;
+- describe an HTTP request and the response records to extract.
+
+A warehouse query runs in that connection's native SQL dialect. Renart copies
+the typed result into the notebook's local DuckDB, where downstream SQL and
+Python cells can join it with snapshots from other connections. Source cards
+show the connection, environment, snapshot age, rows, bytes, and whether the
+snapshot is complete or intentionally sampled.
+
+Choose **Full** when downstream work needs the complete result. Choose
+**Sample** with an explicit row limit for exploratory work. Preview limits only
+control the rows rendered in the browser; Renart does not silently publish a
+truncated preview as a complete source table.
+
+## SQL and Python cells
+
+Connectionless SQL cells are local DuckDB transforms. They can refer to other
+notebook cells by their concise visible names, and Monaco provides DAG-aware
+completion and diagnostics. A SQL source cell instead uses its selected
+connection's catalog, dialect, and remote-table completion.
 
 Python cells use the same `materialize()` contract as Python pipeline assets.
-They can read an upstream notebook cell by its visible name through the built-in
-SDK:
+They query the notebook's live local session through Renart's built-in SDK:
 
 ```python
 from renart import query
@@ -34,42 +57,81 @@ def materialize():
     return orders
 ```
 
-Use **Dependencies** to manage third-party packages. Python cells run manually;
-editing one does not trigger notebook auto-recompute. The built-in runtime
-already includes pandas and PyArrow; adding any other package creates the
-notebook's Python project on demand.
+Use **Dependencies** to add third-party packages. The built-in runtime includes
+pandas and PyArrow. Python receives query results but never the DuckDB path or
+warehouse credentials, and it runs only when you request it; editing Python
+does not trigger automatic execution.
 
-SDK queries run against the notebook's live local session. Renart rewrites the
-visible upstream names inside the runner, so Python receives query results but
-never a database path or connection credentials.
+Run one cell, run from a cell downward, or **Run all**. Renart keeps successful
+result schemas, row counts, source provenance, and definition staleness in the
+notebook session so they survive a server restart. Completed relations can be
+downloaded as CSV or Parquet.
 
-## Charts with @viz
+## Parameters
 
-:::caution[Experimental]
-The `@viz` directive is experimental. Its syntax and behavior will most likely
-change in a future release.
-:::
+Choose **Parameters** to add typed notebook inputs. A parameter's ID, type,
+default, and optional choices are saved in `notebook.yml`; the value you are
+currently exploring stays local to your Renart session. This keeps useful
+defaults reviewable in Git without turning every interactive selection into a
+file change.
 
-Pin a cell's default visualization with a `@viz` comment on its first line:
+Use the safe `parameter` namespace in SQL:
 
 ```sql
--- @viz(line, x: order_date, y: revenue)
-SELECT order_date, ROUND(revenue, 2) AS revenue
-FROM mart.daily_revenue
-ORDER BY order_date
+select *
+from daily_orders
+where region = {{ parameter.region }}
+  and order_total >= {{ parameter.minimum }}
 ```
 
-The arguments are `key: value` pairs — the chart kind first, then the
-columns to map.
+Renart quotes and escapes these values as typed SQL literals, and Monaco offers
+the declared IDs inside Jinja expressions. In Python, read the same typed
+values from `context.vars`:
+
+```python
+from renart import context, query
+
+
+def materialize():
+    region = context.vars["region"]
+    orders = query("select * from daily_orders").to_pandas()
+    return orders.loc[orders["region"] == region]
+```
+
+For file/object paths and HTTP request templates, use
+`{{ parameters.region }}`. Exact placeholders in HTTP JSON bodies preserve
+boolean, numeric, and list types. Changing a value marks affected notebook
+results stale; the runtime value is also part of result fingerprints, so an
+export cannot accidentally reuse output produced with another selection.
+
+## Visualizations
+
+Add a **Visualization** block and choose its source result. The visual builder
+supports tables, KPIs, bar, line, area, scatter, pie, and donut charts. Use the
+**Visual / Definition** switch to edit the same versioned definition through
+controls or YAML; switching views does not rewrite the source SQL.
+
+Renart checks referenced fields and compatible field types in the backend. A
+renamed or removed result column therefore becomes a targeted visualization
+diagnostic while the saved definition remains editable. Multiple
+visualizations can read the same cell.
+
+Older notebooks with an `@viz` SQL comment continue to render. Use the
+migration action to replace a legacy directive with a durable visualization
+block; new visualization edits do not write `@viz` comments.
 
 ## Promote a cell to the pipeline
 
-When a query earns a permanent place, open the cell's actions menu and
-choose **Promote to pipeline**. The cell becomes a real SQL asset in the
-pipeline you pick — same repo, same review flow as everything else.
+When a query earns a permanent place, open the cell's actions menu and choose
+**Promote to pipeline**. Renart previews the target pipeline and dialect
+consequences, then turns the cell into an ordinary pipeline asset in the same
+repository and review flow.
 
 ## Files like everything else
 
-A notebook lives in your repository as a folder of `.sql` cell files, so
-notebooks are versioned, diffable, and reviewable exactly like pipeline
-code.
+`notebook.yml` owns block order and durable block IDs. SQL and Python remain
+ordinary Bruin asset files, while non-SQL source definitions use small YAML
+files beside them. The complete authored state is versioned, diffable, and
+protected by a notebook-wide revision when Renart applies a compound change.
+
+For a local coding-agent workflow, see [Notebook agents](/docs/notebooks/agents/).

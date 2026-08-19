@@ -1,6 +1,7 @@
 package service
 
 import (
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -61,5 +62,22 @@ func TestBoundedLogBufferConcurrentWrites(t *testing.T) {
 	// check that something was captured.
 	if !strings.Contains(buf.String(), "concurrent") {
 		t.Fatal("expected captured output")
+	}
+}
+
+func TestNotebookPythonVariablesPreserveTypedValues(t *testing.T) {
+	values := map[string]any{
+		"region":   "eu",
+		"minimum":  float64(12.5),
+		"active":   true,
+		"segments": []any{"new", "returning"},
+	}
+	variables := notebookPythonVariables(values)
+	if got := variables.Value(); !reflect.DeepEqual(got, values) {
+		t.Fatalf("Python variables lost typed values: got=%#v want=%#v", got, values)
+	}
+	if variables["region"]["type"] != "string" || variables["minimum"]["type"] != "number" ||
+		variables["active"]["type"] != "boolean" || variables["segments"]["type"] != "array" {
+		t.Fatalf("unexpected Python variable schemas: %#v", variables)
 	}
 }

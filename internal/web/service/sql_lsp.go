@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bruin-data/bruin/pkg/jinja"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/spf13/afero"
 	polyglot "github.com/tobilg/polyglot/packages/go"
@@ -50,11 +51,12 @@ type SQLLSPResponse struct {
 }
 
 type SQLLSPDependencies struct {
-	WorkspaceRoot           string
-	DisableFilesystemAccess bool
-	CurrentState            func() model.WorkspaceState
-	ResolveAssetByID        func(context.Context, string) (string, *pipeline.Pipeline, *pipeline.Asset, error)
-	RemoteCatalog           RemoteCatalogProvider
+	WorkspaceRoot               string
+	DisableFilesystemAccess     bool
+	CurrentState                func() model.WorkspaceState
+	ResolveAssetByID            func(context.Context, string) (string, *pipeline.Pipeline, *pipeline.Asset, error)
+	ResolveNotebookJinjaContext func(context.Context, string) (NotebookJinjaContext, bool, error)
+	RemoteCatalog               RemoteCatalogProvider
 	// PolyglotClient returns a shared SQL validation client, or nil when one is
 	// not (yet) available. It is consulted on every request so an
 	// asynchronously-loaded client is picked up as soon as it is ready. May be
@@ -495,6 +497,15 @@ func (s *SQLLSPService) graphAndDocument(ctx context.Context, req SQLLSPRequest)
 	doc := sqllsp.TextDocumentItem{URI: assetURI(s.deps.WorkspaceRoot, asset), LanguageID: "sql", Text: content}
 	doc = s.withJinjaProjection(ctx, req.AssetID, doc)
 	graph := s.graphForRequest(ctx, state, notebook)
+	// A connection-bound notebook cell executes in the remote warehouse, where
+	// local notebook session objects do not exist. Keep the current source cell
+	// in the document graph but do not advertise sibling cells as relations.
+	// Connectionless transforms retain the complete notebook-local graph.
+	if notebook != nil && (strings.TrimSpace(asset.Connection) != "" || strings.TrimSpace(req.Connection) != "") {
+		sourceOnly := *notebook
+		sourceOnly.Cells = []model.Asset{asset}
+		graph = s.graphWithNotebookCells(ctx, s.graphForState(ctx, state), sourceOnly)
+	}
 	if strings.EqualFold(strings.TrimSpace(req.DocumentContext), "custom_check") || strings.EqualFold(strings.TrimSpace(req.DocumentContext), "hook") {
 		graph = graphWithCustomCheckDialect(graph, doc.URI, asset, state.Connections)
 	}
@@ -741,7 +752,19 @@ func (s *SQLLSPService) withJinjaProjection(
 	if err != nil || parsed == nil || asset == nil {
 		return doc
 	}
-	renderer, err := buildJinjaPreviewRenderer(ctx, parsed, asset, "", "")
+	var renderer jinja.RendererInterface
+	if s.deps.ResolveNotebookJinjaContext != nil {
+		notebookContext, found, contextErr := s.deps.ResolveNotebookJinjaContext(ctx, assetID)
+		if contextErr != nil {
+			return doc
+		}
+		if found {
+			renderer, err = buildNotebookJinjaPreviewRenderer("", "", notebookContext)
+		}
+	}
+	if renderer == nil {
+		renderer, err = buildJinjaPreviewRenderer(ctx, parsed, asset, "", "")
+	}
 	if err != nil {
 		return doc
 	}

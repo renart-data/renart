@@ -12,6 +12,8 @@ import {
   LineChart,
   Pie,
   PieChart,
+  Scatter,
+  ScatterChart,
   XAxis,
   YAxis,
 } from "recharts";
@@ -24,10 +26,15 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { NotebookCellRunResult, VizDirective } from "@/lib/api-notebooks";
+import {
+  NotebookCellRunResult,
+  NotebookVisualizationDefinition,
+  VisualizationFieldEncoding,
+  VizDirective,
+} from "@/lib/api-notebooks";
 
 const CHART_ROW_CAP = 200;
-const PIE_COLORS = [
+const SERIES_COLORS = [
   "var(--chart-1)",
   "var(--chart-2)",
   "var(--chart-3)",
@@ -36,12 +43,8 @@ const PIE_COLORS = [
 ];
 
 function asArray(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map(String);
-  }
-  if (typeof value === "string" && value) {
-    return [value];
-  }
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string" && value) return [value];
   return [];
 }
 
@@ -60,21 +63,27 @@ function MissingColumnNotice({ columns }: { columns: string[] }) {
     <div className="flex h-full min-h-32 items-center justify-center rounded-lg border border-dashed bg-muted/30 px-4 text-center text-xs text-muted-foreground">
       {columns.length === 1
         ? `Column '${columns[0]}' is not in the result.`
-        : `Columns ${columns.map((c) => `'${c}'`).join(", ")} are not in the result.`}
+        : `Columns ${columns.map((column) => `'${column}'`).join(", ")} are not in the result.`}
     </div>
   );
 }
 
 function missingColumns(needed: string[], present: string[]): string[] {
-  const lower = new Set(present.map((c) => c.toLowerCase()));
+  const lower = new Set(present.map((column) => column.toLowerCase()));
   return needed.filter((column) => !lower.has(column.toLowerCase()));
+}
+
+function fieldName(encoding?: VisualizationFieldEncoding): string {
+  return encoding?.field?.trim() ?? "";
+}
+
+function resolvedFieldName(authored: string, columns: string[]): string {
+  return columns.find((column) => column.toLowerCase() === authored.toLowerCase()) ?? authored;
 }
 
 function formatNumber(value: unknown, format?: string): string {
   const numeric = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(numeric)) {
-    return String(value ?? "");
-  }
+  if (!Number.isFinite(numeric)) return String(value ?? "");
   if (format === "currency") {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
@@ -83,109 +92,208 @@ function formatNumber(value: unknown, format?: string): string {
     }).format(numeric);
   }
   if (format === "percent") {
-    return new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(
-      numeric,
-    );
+    return new Intl.NumberFormat(undefined, {
+      style: "percent",
+      maximumFractionDigits: 1,
+    }).format(numeric);
   }
   return new Intl.NumberFormat().format(numeric);
 }
 
-/**
- * Renders a cell's result according to its @viz directive. The directive is
- * the single source of truth (it lives in the cell text); this component is
- * a pure view over the typed config plus the run result, with graceful
- * row-cap and missing-column states.
- */
-export function NotebookVizRenderer({ result }: { result: NotebookCellRunResult }) {
-  const viz = result.viz ?? null;
-  const data = useMemo(() => rowsToObjects(result), [result]);
+function resultLimit(definition: NotebookVisualizationDefinition): number {
+  const requested = definition.presentation_limit ?? CHART_ROW_CAP;
+  return Math.max(1, Math.min(requested, 1_000));
+}
 
-  if (!viz || viz.kind === "table") {
-    return null; // table is the default; the cell card renders it directly.
+function pivotSeries(
+  rows: Record<string, unknown>[],
+  xKey: string,
+  valueKey: string,
+  seriesKey: string,
+) {
+  const byX = new Map<string, Record<string, unknown>>();
+  const series: string[] = [];
+  const seenSeries = new Set<string>();
+  for (const row of rows) {
+    const x = String(row[xKey] ?? "");
+    const seriesValue = String(row[seriesKey] ?? "");
+    const target = byX.get(x) ?? { [xKey]: row[xKey] };
+    target[seriesValue] = row[valueKey];
+    byX.set(x, target);
+    if (!seenSeries.has(seriesValue)) {
+      seenSeries.add(seriesValue);
+      series.push(seriesValue);
+    }
+  }
+  return { data: [...byX.values()], series };
+}
+
+/** Pure renderer for the durable, versioned visualization definition. */
+export function NotebookVisualizationRenderer({
+  definition,
+  result,
+}: {
+  definition: NotebookVisualizationDefinition;
+  result: NotebookCellRunResult;
+}) {
+  const rows = useMemo(() => rowsToObjects(result), [result]);
+  const limit = resultLimit(definition);
+
+  if (definition.type === "table") {
+    const requested = (definition.columns ?? []).map(fieldName).filter(Boolean);
+    const columns = requested.length > 0 ? requested : result.columns;
+    const missing = missingColumns(columns, result.columns);
+    if (missing.length > 0) return <MissingColumnNotice columns={missing} />;
+    const indexes = columns.map((column) =>
+      result.columns.findIndex((candidate) => candidate.toLowerCase() === column.toLowerCase()),
+    );
+    const visibleRows = result.rows.slice(0, limit);
+    return (
+      <div className="overflow-hidden rounded-lg border">
+        <div className="max-h-72 overflow-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-muted/90 backdrop-blur">
+              <tr>
+                {columns.map((column) => (
+                  <th key={column} className="whitespace-nowrap border-b px-2 py-1.5 font-medium">
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.map((row, rowIndex) => (
+                <tr key={rowIndex} className="border-b last:border-0">
+                  {indexes.map((index, columnIndex) => (
+                    <td key={columnIndex} className="max-w-80 truncate px-2 py-1.5 font-mono">
+                      {row[index] === null || row[index] === undefined ? "" : String(row[index])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {result.total_rows > visibleRows.length ? (
+          <div className="border-t bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
+            showing {visibleRows.length} of {result.total_rows} rows
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
-  if (viz.kind === "kpi") {
-    return <KpiCard viz={viz} result={result} />;
+  if (definition.type === "kpi") {
+    return <KpiDefinitionCard definition={definition} result={result} />;
   }
 
-  const xKey = String(viz.options.x ?? "");
-  const yKeys = asArray(viz.options.y);
-  const needed = [xKey, ...yKeys].filter(Boolean);
+  const authoredXKey = fieldName(definition.encoding?.x);
+  const yFields = definition.encoding?.y ?? [];
+  const authoredYKeys = yFields.map(fieldName).filter(Boolean);
+  const authoredSeriesKey = fieldName(definition.encoding?.series ?? definition.encoding?.color);
+  const needed = [authoredXKey, ...authoredYKeys, authoredSeriesKey].filter(Boolean);
   const missing = missingColumns(needed, result.columns);
-  if (missing.length > 0) {
-    return <MissingColumnNotice columns={missing} />;
+  if (missing.length > 0) return <MissingColumnNotice columns={missing} />;
+
+  const xKey = resolvedFieldName(authoredXKey, result.columns);
+  const yKeys = authoredYKeys.map((field) => resolvedFieldName(field, result.columns));
+  const seriesKey = authoredSeriesKey ? resolvedFieldName(authoredSeriesKey, result.columns) : "";
+
+  const capped = rows.slice(0, limit);
+  let chartData = capped;
+  let renderedSeries = yKeys;
+  let pivotedSeries = false;
+  if (seriesKey && yKeys.length === 1) {
+    const pivoted = pivotSeries(capped, xKey, yKeys[0], seriesKey);
+    chartData = pivoted.data;
+    renderedSeries = pivoted.series;
+    pivotedSeries = true;
   }
-
-  const capped = data.slice(0, CHART_ROW_CAP);
   const config: ChartConfig = {};
-  yKeys.forEach((key, index) => {
-    config[key] = { label: key, color: PIE_COLORS[index % PIE_COLORS.length] };
+  renderedSeries.forEach((key, index) => {
+    const authored = yFields[index];
+    config[key] = {
+      label: pivotedSeries ? key : authored?.label || key,
+    };
   });
-
-  const truncated = data.length > capped.length;
-  const stacked = viz.options.stacked === true;
+  const showLegend = definition.show_legend ?? renderedSeries.length > 1;
+  const truncated = rows.length > capped.length || result.total_rows > rows.length;
 
   return (
     <div>
-      <ChartContainer config={config} className="h-56 w-full">
-        {viz.kind === "bar" ? (
-          <BarChart data={capped} accessibilityLayer>
+      <ChartContainer config={config} className="h-64 w-full">
+        {definition.type === "bar" ? (
+          <BarChart data={chartData} accessibilityLayer>
             <CartesianGrid vertical={false} />
             <XAxis dataKey={xKey} tickLine={false} axisLine={false} tickMargin={8} />
             <YAxis tickLine={false} axisLine={false} tickMargin={8} />
             <ChartTooltip content={(props) => <ChartTooltipContent {...props} />} />
-            <ChartLegend content={<ChartLegendContent />} />
-            {yKeys.map((key) => (
+            {showLegend ? <ChartLegend content={<ChartLegendContent />} /> : null}
+            {renderedSeries.map((key, index) => (
               <Bar
                 key={key}
                 dataKey={key}
-                fill={`var(--color-${key})`}
-                stackId={stacked ? "stack" : undefined}
-                radius={stacked ? 0 : 4}
+                fill={SERIES_COLORS[index % SERIES_COLORS.length]}
+                stackId={definition.stacked ? "stack" : undefined}
+                radius={definition.stacked ? 0 : 4}
               />
             ))}
           </BarChart>
-        ) : viz.kind === "area" ? (
-          <AreaChart data={capped} accessibilityLayer>
+        ) : definition.type === "area" ? (
+          <AreaChart data={chartData} accessibilityLayer>
             <CartesianGrid vertical={false} />
             <XAxis dataKey={xKey} tickLine={false} axisLine={false} tickMargin={8} />
             <YAxis tickLine={false} axisLine={false} tickMargin={8} />
             <ChartTooltip content={(props) => <ChartTooltipContent {...props} />} />
-            <ChartLegend content={<ChartLegendContent />} />
-            {yKeys.map((key) => (
+            {showLegend ? <ChartLegend content={<ChartLegendContent />} /> : null}
+            {renderedSeries.map((key, index) => (
               <Area
                 key={key}
                 dataKey={key}
                 type="monotone"
-                fill={`var(--color-${key})`}
-                stroke={`var(--color-${key})`}
-                stackId={stacked ? "stack" : undefined}
+                fill={SERIES_COLORS[index % SERIES_COLORS.length]}
+                stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
+                stackId={definition.stacked ? "stack" : undefined}
                 fillOpacity={0.2}
               />
             ))}
           </AreaChart>
-        ) : viz.kind === "pie" ? (
+        ) : definition.type === "pie" || definition.type === "donut" ? (
           <PieChart>
             <ChartTooltip content={(props) => <ChartTooltipContent {...props} />} />
-            <Pie data={capped} dataKey={yKeys[0]} nameKey={xKey} outerRadius={88}>
+            <Pie
+              data={capped}
+              dataKey={yKeys[0]}
+              nameKey={xKey}
+              outerRadius={92}
+              innerRadius={definition.type === "donut" ? 50 : 0}
+            >
               {capped.map((_, index) => (
-                <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                <Cell key={index} fill={SERIES_COLORS[index % SERIES_COLORS.length]} />
               ))}
             </Pie>
           </PieChart>
+        ) : definition.type === "scatter" ? (
+          <ScatterChart accessibilityLayer>
+            <CartesianGrid />
+            <XAxis dataKey={xKey} name={definition.encoding?.x?.label || xKey} />
+            <YAxis dataKey={yKeys[0]} name={yFields[0]?.label || yKeys[0]} />
+            <ChartTooltip cursor={{ strokeDasharray: "3 3" }} />
+            <Scatter data={capped} fill={SERIES_COLORS[0]} />
+          </ScatterChart>
         ) : (
-          <LineChart data={capped} accessibilityLayer>
+          <LineChart data={chartData} accessibilityLayer>
             <CartesianGrid vertical={false} />
             <XAxis dataKey={xKey} tickLine={false} axisLine={false} tickMargin={8} />
             <YAxis tickLine={false} axisLine={false} tickMargin={8} />
             <ChartTooltip content={(props) => <ChartTooltipContent {...props} />} />
-            <ChartLegend content={<ChartLegendContent />} />
-            {yKeys.map((key) => (
+            {showLegend ? <ChartLegend content={<ChartLegendContent />} /> : null}
+            {renderedSeries.map((key, index) => (
               <Line
                 key={key}
                 dataKey={key}
                 type="monotone"
-                stroke={`var(--color-${key})`}
+                stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
                 strokeWidth={2}
                 dot={false}
               />
@@ -195,48 +303,84 @@ export function NotebookVizRenderer({ result }: { result: NotebookCellRunResult 
       </ChartContainer>
       {truncated ? (
         <div className="mt-1 text-[11px] text-muted-foreground">
-          showing {capped.length} of {result.total_rows} rows
+          previewing at most {Math.min(limit, rows.length)} of {result.total_rows} rows
         </div>
       ) : null}
     </div>
   );
 }
 
-function KpiCard({ viz, result }: { viz: VizDirective; result: NotebookCellRunResult }) {
-  const valueKey = String(viz.options.value ?? "");
-  const compareKey = viz.options.compare ? String(viz.options.compare) : "";
+function KpiDefinitionCard({
+  definition,
+  result,
+}: {
+  definition: NotebookVisualizationDefinition;
+  result: NotebookCellRunResult;
+}) {
+  const valueKey = fieldName(definition.value);
+  const compareKey = fieldName(definition.compare);
   const missing = missingColumns([valueKey, compareKey].filter(Boolean), result.columns);
-  if (missing.length > 0) {
-    return <MissingColumnNotice columns={missing} />;
-  }
-
-  const valueIndex = result.columns.findIndex((c) => c.toLowerCase() === valueKey.toLowerCase());
+  if (missing.length > 0) return <MissingColumnNotice columns={missing} />;
+  const valueIndex = result.columns.findIndex(
+    (column) => column.toLowerCase() === valueKey.toLowerCase(),
+  );
   const compareIndex = compareKey
-    ? result.columns.findIndex((c) => c.toLowerCase() === compareKey.toLowerCase())
+    ? result.columns.findIndex((column) => column.toLowerCase() === compareKey.toLowerCase())
     : -1;
   const firstRow = result.rows[0] ?? [];
   const value = valueIndex >= 0 ? firstRow[valueIndex] : undefined;
   const compare = compareIndex >= 0 ? firstRow[compareIndex] : undefined;
-  const format = typeof viz.options.format === "string" ? viz.options.format : undefined;
-
   const delta =
     typeof value === "number" && typeof compare === "number" && compare !== 0
       ? (value - compare) / Math.abs(compare)
       : null;
-
   return (
     <div className="rounded-lg border p-4">
       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {valueKey}
+        {definition.value?.label || valueKey}
       </div>
       <div className="mt-1 text-3xl font-semibold tracking-tight">
-        {formatNumber(value, format)}
+        {formatNumber(value, definition.value?.format)}
       </div>
       {delta !== null ? (
         <div className={`mt-1 text-xs ${delta >= 0 ? "text-emerald-600" : "text-red-500"}`}>
-          {delta >= 0 ? "▲" : "▼"} {formatNumber(Math.abs(delta), "percent")} vs {compareKey}
+          {delta >= 0 ? "▲" : "▼"} {formatNumber(Math.abs(delta), "percent")} vs{" "}
+          {definition.compare?.label || compareKey}
         </div>
       ) : null}
     </div>
+  );
+}
+
+function legacyDefinition(viz: VizDirective): NotebookVisualizationDefinition {
+  const x = typeof viz.options.x === "string" ? { field: viz.options.x } : undefined;
+  const y = asArray(viz.options.y).map((field) => ({
+    field,
+    ...(typeof viz.options.format === "string" ? { format: viz.options.format } : {}),
+  }));
+  return {
+    version: 1,
+    type: viz.kind,
+    encoding: { x, y },
+    columns: asArray(viz.options.columns).map((field) => ({ field })),
+    value:
+      typeof viz.options.value === "string"
+        ? {
+            field: viz.options.value,
+            ...(typeof viz.options.format === "string" ? { format: viz.options.format } : {}),
+          }
+        : undefined,
+    compare: typeof viz.options.compare === "string" ? { field: viz.options.compare } : undefined,
+    stacked: viz.options.stacked === true,
+    presentation_limit:
+      typeof viz.options.limit === "number" ? Math.trunc(viz.options.limit) : undefined,
+  };
+}
+
+/** Read-only compatibility renderer for legacy SQL @viz comments. */
+export function NotebookVizRenderer({ result }: { result: NotebookCellRunResult }) {
+  if (!result.viz) return null;
+  return (
+    <NotebookVisualizationRenderer definition={legacyDefinition(result.viz)} result={result} />
   );
 }

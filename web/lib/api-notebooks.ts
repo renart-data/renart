@@ -1,4 +1,11 @@
 import { fetchJSON, fetchJSONWithBody } from "@/lib/api-core";
+import type {
+  NotebookChangeApplyResult,
+  NotebookChangePlan,
+  NotebookChangeSet,
+  NotebookParameter,
+  NotebookSourceDefinition,
+} from "@/lib/generated/api-types";
 import { WebNotebook, WebNotebookBlock } from "@/lib/types";
 
 export type NotebookImportRecord = {
@@ -24,6 +31,71 @@ export type VizDiagnostic = {
   end_col: number;
 };
 
+export type VisualizationFieldEncoding = {
+  field: string;
+  label?: string;
+  format?: string;
+};
+
+export type NotebookVisualizationDefinition = {
+  version: number;
+  type: "table" | "kpi" | "bar" | "line" | "area" | "scatter" | "pie" | "donut";
+  title?: string;
+  encoding?: {
+    x?: VisualizationFieldEncoding;
+    y?: VisualizationFieldEncoding[];
+    series?: VisualizationFieldEncoding;
+    color?: VisualizationFieldEncoding;
+    tooltip?: VisualizationFieldEncoding[];
+  };
+  columns?: VisualizationFieldEncoding[];
+  value?: VisualizationFieldEncoding;
+  compare?: VisualizationFieldEncoding;
+  stacked?: boolean;
+  show_legend?: boolean;
+  require_complete?: boolean;
+  presentation_limit?: number;
+};
+
+export type PresentationResolvedColumn = {
+  name: string;
+  physical_type: string;
+  semantic_type:
+    | "unknown"
+    | "numeric"
+    | "temporal"
+    | "categorical"
+    | "boolean"
+    | "binary"
+    | "semi_structured"
+    | "geospatial";
+  nullable?: boolean;
+};
+
+export type PresentationFinding = {
+  code: string;
+  severity: "error" | "warning";
+  message: string;
+  path?: string;
+  field?: string;
+  physical_type?: string;
+};
+
+export type NotebookVisualizationCheckResult = {
+  status: "ok";
+  source: string;
+  definition?: Record<string, unknown>;
+  definition_yaml?: string;
+  schema: {
+    source: { kind: string; artifact_id: string; component_id?: string };
+    columns: PresentationResolvedColumn[];
+    complete: boolean;
+    sampled: boolean;
+  };
+  findings: PresentationFinding[];
+  can_apply: boolean;
+};
+
 export type NotebookCellRunResult = {
   cell_id: string;
   name: string;
@@ -35,6 +107,23 @@ export type NotebookCellRunResult = {
   total_rows: number;
   materialized: "view" | "table";
   imports?: NotebookImportRecord[];
+  column_types?: string[];
+  sampled?: boolean;
+  snapshot?: {
+    block_id: string;
+    object_name: string;
+    source_kind: string;
+    environment?: string;
+    connection?: string;
+    definition_fingerprint: string;
+    imported_at: string;
+    row_count: number;
+    byte_count: number;
+    complete: boolean;
+    sampled: boolean;
+    schema: Array<{ name: string; type: string; nullable?: boolean }>;
+    warnings?: string[];
+  };
   rewritten_sql?: string;
   logs?: string;
   duration_ms: number;
@@ -51,6 +140,7 @@ export type RunNotebookResponse = {
 // which of those it will refresh on its own, and the last result per cell.
 export type NotebookRuntimeSnapshot = {
   auto_recompute: boolean;
+  parameter_values: Record<string, unknown>;
   stale: string[];
   auto_pending: string[];
   results: Record<string, NotebookCellRunResult>;
@@ -61,6 +151,7 @@ export type NotebookRuntimeEvent = {
   type: "notebook.runtime";
   notebook_id: string;
   auto_recompute: boolean;
+  parameter_values: Record<string, unknown>;
   stale: string[];
   auto_pending: string[];
   running: string[];
@@ -75,7 +166,11 @@ export async function getNotebookRuntime(notebookId: string) {
 
 export async function setNotebookSettings(
   notebookId: string,
-  input: { auto_recompute: boolean; environment?: string },
+  input: {
+    auto_recompute: boolean;
+    environment?: string;
+    parameter_values?: Record<string, unknown>;
+  },
 ) {
   return fetchJSONWithBody<{ status: string }>(
     `/api/notebooks/${notebookId}/settings`,
@@ -113,6 +208,14 @@ export async function closeNotebookSession(notebookId: string) {
   return fetchJSON<{ status: string }>(`/api/notebooks/${notebookId}/session`, {
     method: "DELETE",
   });
+}
+
+export function notebookCellExportURL(
+  notebookId: string,
+  cellId: string,
+  format: "csv" | "parquet",
+) {
+  return `/api/notebooks/${encodeURIComponent(notebookId)}/cells/${encodeURIComponent(cellId)}/export?format=${format}`;
 }
 
 export async function createNotebookCell(
@@ -160,6 +263,8 @@ export async function deleteNotebookCell(notebookId: string, cellId: string) {
   return payload.notebook;
 }
 
+// Compatibility path for manifest v1 notebooks, whose markdown blocks do not
+// have stable IDs. Manifest v2 UI mutations use semantic change operations.
 export async function updateNotebookBlocks(notebookId: string, blocks: WebNotebookBlock[]) {
   const payload = await fetchJSONWithBody<NotebookEnvelope>(
     `/api/notebooks/${notebookId}/blocks`,
@@ -167,6 +272,178 @@ export async function updateNotebookBlocks(notebookId: string, blocks: WebNotebo
     { blocks },
   );
   return payload.notebook;
+}
+
+export async function upgradeNotebookManifest(notebookId: string, baseRevision: string) {
+  const payload = await fetchJSONWithBody<NotebookEnvelope>(
+    `/api/notebooks/${notebookId}/upgrade`,
+    "POST",
+    { base_revision: baseRevision },
+  );
+  return payload.notebook;
+}
+
+export async function prepareNotebookChangeSet(notebookId: string, changeSet: NotebookChangeSet) {
+  return fetchJSONWithBody<NotebookChangePlan>(
+    `/api/notebooks/${notebookId}/changes/prepare`,
+    "POST",
+    changeSet,
+  );
+}
+
+export async function applyNotebookChangeSet(notebookId: string, changeSet: NotebookChangeSet) {
+  return fetchJSONWithBody<NotebookChangeApplyResult>(
+    `/api/notebooks/${notebookId}/changes/apply`,
+    "POST",
+    changeSet,
+  );
+}
+
+async function prepareAndApplyNotebookChange(
+  notebookId: string,
+  operations: NotebookChangeSet["operations"],
+) {
+  const current = await getNotebook(notebookId);
+  const plan = await prepareNotebookChangeSet(notebookId, {
+    base_revision: current.revision,
+    operations,
+  });
+  if (!plan.can_apply) {
+    throw new Error(plan.blocking_problems?.join("; ") || "Notebook change is not valid.");
+  }
+  const result = await applyNotebookChangeSet(notebookId, plan.change_set);
+  return result.notebook;
+}
+
+export async function configureNotebookCellSource(
+  notebookId: string,
+  cellId: string,
+  input: { connection?: string; snapshot_mode?: "full" | "sample"; row_limit?: number },
+) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    {
+      kind: "cell.source.configure",
+      cell_id: cellId,
+      connection: input.connection,
+      snapshot_mode: input.snapshot_mode,
+      row_limit: input.row_limit,
+    },
+  ]);
+}
+
+export async function createNotebookWarehouseSource(
+  notebookId: string,
+  input: {
+    connection: string;
+    query: string;
+    snapshot_mode: "full" | "sample";
+    row_limit?: number;
+  },
+) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    {
+      kind: "cell.create",
+      language: "sql",
+      content: input.query,
+      connection: input.connection,
+      snapshot_mode: input.snapshot_mode,
+      row_limit: input.row_limit,
+      position: "end",
+    },
+  ]);
+}
+
+export async function createNotebookSource(
+  notebookId: string,
+  input: Omit<NotebookSourceDefinition, "id" | "version">,
+) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    {
+      kind: "source.create",
+      source: { ...input, id: "", version: 1 },
+      position: "end",
+    },
+  ]);
+}
+
+export async function checkNotebookVisualization(
+  notebookId: string,
+  input: {
+    source: string;
+    definition?: Record<string, unknown>;
+    definition_yaml?: string;
+  },
+) {
+  return fetchJSONWithBody<NotebookVisualizationCheckResult>(
+    `/api/notebooks/${notebookId}/visualizations/check`,
+    "POST",
+    input,
+  );
+}
+
+export async function createNotebookVisualization(
+  notebookId: string,
+  input: { source: string; definition: Record<string, unknown>; after_block_id?: string },
+) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    {
+      kind: "visualization.create",
+      visualization: { id: "", source: input.source, definition: input.definition },
+      position: input.after_block_id ? "after" : "end",
+      after_block_id: input.after_block_id,
+    },
+  ]);
+}
+
+export async function updateNotebookVisualization(
+  notebookId: string,
+  blockId: string,
+  input: { source: string; definition: Record<string, unknown> },
+) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    {
+      kind: "visualization.update",
+      block_id: blockId,
+      visualization: { id: blockId, source: input.source, definition: input.definition },
+    },
+  ]);
+}
+
+export async function deleteNotebookBlock(notebookId: string, blockId: string) {
+  return prepareAndApplyNotebookChange(notebookId, [{ kind: "block.delete", block_id: blockId }]);
+}
+
+export async function createNotebookMarkdown(
+  notebookId: string,
+  input: { content: string; after_block_id?: string },
+) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    {
+      kind: "markdown.create",
+      content: input.content,
+      position: input.after_block_id ? "after" : "end",
+      after_block_id: input.after_block_id,
+    },
+  ]);
+}
+
+export async function updateNotebookMarkdown(notebookId: string, blockId: string, content: string) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    { kind: "markdown.update", block_id: blockId, content },
+  ]);
+}
+
+export async function migrateLegacyNotebookVisualization(notebookId: string, cellId: string) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    { kind: "visualization.migrate_legacy", cell_id: cellId },
+  ]);
+}
+
+export async function replaceNotebookParameters(
+  notebookId: string,
+  parameters: NotebookParameter[],
+) {
+  return prepareAndApplyNotebookChange(notebookId, [{ kind: "parameters.replace", parameters }]);
 }
 
 export async function updateNotebookDependencies(notebookId: string, dependencies: string[]) {
@@ -214,6 +491,7 @@ export async function runNotebook(
     environment?: string;
     start_date?: string;
     end_date?: string;
+    parameters?: Record<string, unknown>;
   },
   signal?: AbortSignal,
 ) {

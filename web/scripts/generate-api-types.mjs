@@ -8,6 +8,18 @@ const outputPath = resolve(repoRoot, "web", "lib", "generated", "api-types.ts");
 
 const sources = [
   {
+    file: resolve(repoRoot, "internal", "web", "model", "artifact.go"),
+    types: [
+      "ArtifactIndex",
+      "ArtifactDescriptor",
+      "ArtifactComponent",
+      "ArtifactRef",
+      "ArtifactContainment",
+      "ArtifactColumnUsage",
+      "ArtifactDependency",
+    ],
+  },
+  {
     file: resolve(repoRoot, "internal", "web", "model", "dto.go"),
     types: [
       "MaterializationCapability",
@@ -22,12 +34,19 @@ const sources = [
       "ColumnSchemaResolution",
       "AssetDependency",
       "WorkspaceDependencyDiagnostic",
+      "NotebookSourceSnapshot",
+      "NotebookSourceRequest",
+      "NotebookSourceResponse",
+      "NotebookSourceDefinition",
       "ColumnCheck",
       "CustomCheck",
       "ColumnReference",
       "Column",
       "Asset",
       "Pipeline",
+      "NotebookVisualization",
+      "NotebookParameterOptions",
+      "NotebookParameter",
       "NotebookBlock",
       "Notebook",
       "EnvironmentPolicy",
@@ -38,6 +57,16 @@ const sources = [
   {
     file: resolve(repoRoot, "internal", "web", "service", "workspace_coordinator.go"),
     types: ["WorkspaceEvent"],
+  },
+  {
+    file: resolve(repoRoot, "internal", "web", "service", "notebook_changes.go"),
+    types: [
+      "NotebookOperation",
+      "NotebookChangeSet",
+      "NotebookChangeDiff",
+      "NotebookChangePlan",
+      "NotebookChangeApplyResult",
+    ],
   },
   {
     file: resolve(repoRoot, "internal", "web", "service", "config.go"),
@@ -251,6 +280,10 @@ const scalarMap = new Map([
   ["time.Time", "string"],
   ["any", "unknown"],
   ["policy.EnvironmentPolicy", "EnvironmentPolicy"],
+  ["model.NotebookVisualization", "NotebookVisualization"],
+  ["model.NotebookSourceDefinition", "NotebookSourceDefinition"],
+  ["model.NotebookParameter", "NotebookParameter"],
+  ["model.Notebook", "WebNotebook"],
   ["AssetRenderStatus", '"ok" | "partial" | "unsupported" | "error"'],
   ["AssetRenderStageStatus", '"ok" | "unsupported" | "error"'],
   ["AssetRenderFidelity", '"exact" | "semantic" | "runtime_only" | "unsupported"'],

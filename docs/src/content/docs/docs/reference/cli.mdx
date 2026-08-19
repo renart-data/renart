@@ -16,6 +16,7 @@ with your installed version.
 | `renart` | Start the desktop app; fall back to the browser when the native helper is unavailable. |
 | `renart web` | Start the browser-based IDE. |
 | `renart standalone` | Start the desktop app explicitly. |
+| `renart mcp` | Serve workspace-scoped notebook tools to a local coding agent over stdio. |
 | `renart run` | Execute a pipeline or asset. |
 | `renart plan` | Review readiness, selection, and planned operations without executing. |
 | `renart render` | Preview the saved operations for one asset without executing. |
@@ -75,6 +76,27 @@ platform webview is unavailable, it opens the browser instead.
 | `--scheduler-state` | `.renart/state.db` | Scheduler SQLite state path. |
 | `--port` | `0` | Loopback port; `0` selects a free port. |
 | `--gui-binary` | beside `renart` | Override the native-helper path. The `RENART_GUI_BINARY` environment variable provides the same override. |
+
+## `renart mcp`
+
+```bash
+renart mcp [--workspace <project root>]
+```
+
+`renart mcp` is a stdio protocol process intended to be launched by a local MCP
+client. It discovers the Renart server that owns the workspace and otherwise
+starts the notebook service in-process. Standard output is reserved for MCP
+JSON-RPC; diagnostics use standard error.
+
+The command exposes bounded notebook reads, reviewed semantic change sets, and
+explicit run/cancel/status tools. It does not expose generic filesystem, shell,
+Git, secret, SQL, HTTP, or REST forwarding. See
+[Notebook agents](/docs/notebooks/agents/) for setup examples and the complete
+authority boundary.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--workspace` | discovered | Pin the stdio server to one Git-backed project root. |
 
 ## `renart run`
 
