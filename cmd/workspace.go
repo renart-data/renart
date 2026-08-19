@@ -187,19 +187,24 @@ func workspaceFlag() *cli.StringFlag {
 // resolvePipelineTarget combines the walk-up and the target grammar: it
 // returns the pipeline directory for the command's positional target.
 func resolvePipelineTarget(c *cli.Command) (string, error) {
+	_, dir, err := resolvePipelineTargetAndWorkspace(c)
+	return dir, err
+}
+
+func resolvePipelineTargetAndWorkspace(c *cli.Command) (string, string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	workspaceRoot, err := findWorkspaceRoot(c.String("workspace"), cwd)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	dir, err := resolvePipelineDir(workspaceRoot, c.Args().Get(0), cwd)
 	if err != nil {
-		return "", cli.Exit(err.Error(), 2)
+		return "", "", cli.Exit(err.Error(), 2)
 	}
-	return dir, nil
+	return workspaceRoot, dir, nil
 }
 
 func hasPipelineManifest(dir string) bool {

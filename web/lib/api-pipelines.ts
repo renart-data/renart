@@ -88,6 +88,25 @@ export type PipelineTypeCheckAsset = {
   findings: PipelineTypeCheckFinding[];
 };
 
+export type PipelineTypeCheckPresentationFinding = {
+  code: string;
+  severity: "error" | "warning";
+  message: string;
+  path?: string;
+  field?: string;
+  physical_type?: string;
+};
+
+export type PipelineTypeCheckPresentation = {
+  id: string;
+  workspace_id: string;
+  kind: "dashboard" | "report";
+  title: string;
+  path: string;
+  status: "ok" | "warning" | "error";
+  findings: PipelineTypeCheckPresentationFinding[];
+};
+
 export type PipelineTypeCheckReport = {
   status: "ok" | "warning" | "error";
   pipeline_id?: string;
@@ -95,9 +114,10 @@ export type PipelineTypeCheckReport = {
   start_date?: string;
   end_date?: string;
   assets: PipelineTypeCheckAsset[];
+  presentations?: PipelineTypeCheckPresentation[];
   external_relations?: PipelineTypeCheckExternalRelation[];
   cross_pipeline_references?: PipelineTypeCheckCrossPipelineReference[];
-  summary: { assets: number; errors: number; warnings: number };
+  summary: { assets: number; presentations?: number; errors: number; warnings: number };
 };
 
 export type PipelineTypeCheckExternalRelation = {

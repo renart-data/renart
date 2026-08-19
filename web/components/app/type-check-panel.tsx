@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   AlertTriangle,
@@ -99,6 +100,9 @@ export function TypeCheckPanel({
   }
 
   const flagged = report.assets.filter((asset) => asset.findings.length > 0);
+  const flaggedPresentations = (report.presentations ?? []).filter(
+    (artifact) => artifact.findings.length > 0,
+  );
   const checkedAt = report.start_date ? new Date(report.start_date) : null;
 
   return (
@@ -114,6 +118,9 @@ export function TypeCheckPanel({
         </span>
         <span className="text-muted-foreground">
           {report.summary.assets} asset{report.summary.assets === 1 ? "" : "s"} checked
+          {(report.summary.presentations ?? 0) > 0
+            ? ` · ${report.summary.presentations} presentation${report.summary.presentations === 1 ? "" : "s"}`
+            : ""}
         </span>
         {checkedAt ? (
           <span className="hidden text-muted-foreground/70 sm:inline">
@@ -145,11 +152,15 @@ export function TypeCheckPanel({
         data-testid="type-check-scroll-area"
       >
         <div className="p-2">
-          {flagged.length === 0 ? (
+          {flagged.length === 0 && flaggedPresentations.length === 0 ? (
             <div className="flex items-center gap-2 px-2 py-3 text-xs text-emerald-600 dark:text-emerald-400">
               <CheckCircle2 className="size-4" />
               No type errors found across {report.summary.assets} asset
-              {report.summary.assets === 1 ? "" : "s"}.
+              {report.summary.assets === 1 ? "" : "s"}
+              {(report.summary.presentations ?? 0) > 0
+                ? ` and ${report.summary.presentations} presentation${report.summary.presentations === 1 ? "" : "s"}`
+                : ""}
+              .
             </div>
           ) : (
             <div className="flex flex-col gap-2">
@@ -291,6 +302,51 @@ export function TypeCheckPanel({
                             L{finding.line}:C{finding.column}
                           </span>
                         ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              {flaggedPresentations.map((artifact) => (
+                <div key={`${artifact.kind}:${artifact.id}`} className="rounded-md border">
+                  <Link
+                    to={
+                      artifact.kind === "dashboard"
+                        ? "/dashboards/$presentationId"
+                        : "/reports/$presentationId"
+                    }
+                    params={{ presentationId: artifact.workspace_id }}
+                    className="flex w-full items-center gap-2 border-b bg-muted/30 px-2.5 py-1.5 text-left text-xs hover:bg-muted"
+                  >
+                    {artifact.status === "error" ? (
+                      <XCircle className="size-3.5 shrink-0 text-red-500" />
+                    ) : (
+                      <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate font-medium">{artifact.title}</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      {artifact.kind}
+                    </span>
+                  </Link>
+                  <ul className="divide-y">
+                    {artifact.findings.map((finding, index) => (
+                      <li
+                        key={`${finding.code}:${finding.path ?? ""}:${index}`}
+                        className="flex items-start gap-2 px-2.5 py-1.5 text-xs"
+                      >
+                        {finding.severity === "error" ? (
+                          <XCircle className="mt-0.5 size-3.5 shrink-0 text-red-500" />
+                        ) : (
+                          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p>{finding.message}</p>
+                          {finding.path ? (
+                            <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+                              {finding.path}
+                            </p>
+                          ) : null}
+                        </div>
                       </li>
                     ))}
                   </ul>

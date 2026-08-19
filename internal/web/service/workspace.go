@@ -384,6 +384,7 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 	}
 
 	s.appendNotebooks(&state)
+	s.appendPresentations(ctx, &state)
 	validateAssetClassDirection(&state)
 	state.ArtifactIndex = BuildArtifactIndex(state)
 

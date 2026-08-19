@@ -69,6 +69,7 @@ type webServer struct {
 	pipelinePlanSvc   *service.PipelinePlanService
 	runSvc            *service.RunService
 	notebookSvc       *service.NotebookService
+	presentationSvc   *service.PresentationService
 	onboardingSvc     *service.OnboardingService
 	sourceControlSvc  *service.SourceControlService
 	schedulerSvc      *webscheduler.Service
@@ -354,6 +355,7 @@ func (s *webServer) registerRoutes(router chi.Router) {
 	webhttpapi.RegisterPipelinePlanRoutes(router, &webhttpapi.PipelinePlanAPI{Service: s.pipelinePlanSvc, Runs: s})
 	webhttpapi.RegisterRunRoutes(router, &webhttpapi.RunAPI{Service: s.runSvc})
 	webhttpapi.RegisterNotebookRoutes(router, &webhttpapi.NotebookAPI{Service: s.notebookSvc})
+	webhttpapi.RegisterPresentationRoutes(router, &webhttpapi.PresentationAPI{Service: s.presentationSvc})
 	webhttpapi.RegisterPythonPackageRoutes(router, &webhttpapi.PythonPackagesAPI{Search: service.SearchPyPIPackages})
 	// Warm the PyPI package index in the background so the first dependency
 	// search does not pay the download cost.

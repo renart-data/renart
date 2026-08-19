@@ -20,6 +20,7 @@ import (
 	"renart/internal/web/fingerprint"
 	"renart/internal/web/identity"
 	"renart/internal/web/matlog"
+	webmodel "renart/internal/web/model"
 	"renart/internal/web/policy"
 	"renart/internal/web/runcontext"
 	"renart/internal/web/snapshot"
@@ -309,6 +310,7 @@ type PipelinePlanDependencies struct {
 	Staleness                 PipelinePlanStaleness
 	DependencyGraph           WorkspaceDependencyGraphResolver
 	WorkspaceGraph            func(context.Context) (sqllsp.CanonicalGraph, error)
+	CurrentState              func() webmodel.WorkspaceState
 	Fingerprints              *fingerprint.Engine
 	Materializations          *matlog.Store
 	ResolveProducerDeployment func(context.Context, string, string) (PipelinePlanProducerDeployment, error)
@@ -536,7 +538,20 @@ func (s *PipelinePlanService) Plan(
 		timeWindow, executionTime, checkOptions,
 	)
 	base.Readiness.CodeChecks.PipelineID = pipelineID
+	if purpose == PipelinePlanPurposeDeployment && s.deps.CurrentState != nil {
+		AppendPresentationTypeChecks(
+			ctx,
+			afero.NewOsFs(),
+			s.deps.WorkspaceRoot,
+			pipelineID,
+			s.deps.CurrentState(),
+			&base.Readiness.CodeChecks,
+		)
+	}
 	s.addCodeCheckIssues(&base)
+	if purpose == PipelinePlanPurposeDeployment {
+		s.addPresentationCheckIssues(&base)
+	}
 	staleSnapshot := staleness.Snapshot{}
 	dataStateAvailable := false
 	if purpose == PipelinePlanPurposeExecution && !req.SkipDataStateCheck {
@@ -1399,6 +1414,33 @@ func (s *PipelinePlanService) addCodeCheckIssues(plan *PipelinePlan) {
 				Message:   finding.Message,
 				AssetID:   assetID,
 				AssetName: asset.Name,
+			}
+			if finding.Severity == typeCheckSeverityError {
+				plan.Readiness.Blockers = append(plan.Readiness.Blockers, issue)
+			} else {
+				plan.Readiness.Warnings = append(plan.Readiness.Warnings, issue)
+			}
+		}
+	}
+}
+
+func (s *PipelinePlanService) addPresentationCheckIssues(plan *PipelinePlan) {
+	for _, artifact := range plan.Readiness.CodeChecks.Presentations {
+		label := strings.TrimSpace(artifact.Title)
+		if label == "" {
+			label = artifact.ID
+		}
+		kind := strings.TrimSpace(artifact.Kind)
+		if kind != "" {
+			kind = strings.ToUpper(kind[:1]) + kind[1:]
+		} else {
+			kind = "Presentation"
+		}
+		for _, finding := range artifact.Findings {
+			issue := PipelinePlanIssue{
+				Code:     "presentation_check_" + finding.Severity,
+				Severity: finding.Severity,
+				Message:  fmt.Sprintf("%s %q: %s", kind, label, finding.Message),
 			}
 			if finding.Severity == typeCheckSeverityError {
 				plan.Readiness.Blockers = append(plan.Readiness.Blockers, issue)

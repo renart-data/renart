@@ -442,6 +442,29 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		},
 		PublishEvent: func(payload any) { server.hub.PublishImmediate(payload) },
 	})
+	server.presentationSvc = service.NewPresentationService(service.PresentationDependencies{
+		WorkspaceRoot:    absRoot,
+		ConfigPath:       resolveConfigFilePath(absRoot),
+		CurrentState:     func() service.WorkspaceState { return server.currentState() },
+		ResolveAssetByID: server.resolveAssetByID,
+		NewConnectionManager: func(ctx context.Context, environment string) (config.ConnectionAndDetailsGetter, error) {
+			return server.newConnectionManager(secretstore.WithPurpose(ctx, secretstore.PurposeQuery), environment)
+		},
+		RunConnectionQuery: func(
+			ctx context.Context,
+			connection string,
+			environment string,
+			query string,
+		) ([]string, []map[string]any, error) {
+			return server.executionSvc.RunConnectionQueryForEnvironment(
+				secretstore.WithPurpose(ctx, secretstore.PurposeQuery),
+				connection,
+				environment,
+				query,
+			)
+		},
+		PushWorkspaceUpdate: server.pushWorkspaceUpdate,
+	})
 
 	server.suggestionsSvc = service.NewSuggestionsService(service.SuggestionsDependencies{
 		WorkspaceRoot:           absRoot,
@@ -586,6 +609,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		Staleness:        server.stalenessSvc,
 		DependencyGraph:  server.resolveWorkspaceDependencyGraph,
 		WorkspaceGraph:   server.sqlLSPSvc.WorkspaceGraph,
+		CurrentState:     func() service.WorkspaceState { return server.currentState() },
 		Fingerprints:     server.fingerprintEngine,
 		Materializations: server.matlogStore,
 		ResolveProducerDeployment: func(ctx context.Context, pipelineUUID, environment string) (service.PipelinePlanProducerDeployment, error) {

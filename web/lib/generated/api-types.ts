@@ -51,6 +51,111 @@ export type ArtifactDependency = {
   columns?: ArtifactColumnUsage[];
 };
 
+export type PresentationArtifact = {
+  id: string;
+  workspace_id: string;
+  kind: string;
+  version: number;
+  revision: string;
+  title: string;
+  path: string;
+  datasets?: PresentationDataset[];
+  filters?: PresentationFilter[];
+  visualizations?: PresentationVisualization[];
+  layout?: PresentationLayoutItem[];
+  sections?: PresentationSection[];
+  problems?: PresentationFinding[];
+};
+
+export type PresentationDataset = {
+  id: string;
+  asset?: string;
+  connection?: string;
+  query?: string;
+  columns?: WebColumn[];
+};
+
+export type PresentationFilterOptions = {
+  values?: unknown[];
+  dataset?: string;
+  value_field?: string;
+  label_field?: string;
+};
+
+export type PresentationFilter = {
+  id: string;
+  label?: string;
+  type: string;
+  default: unknown;
+  options?: PresentationFilterOptions;
+};
+
+export type PresentationFilterBinding = {
+  filter: string;
+  dataset?: string;
+  column: string;
+  operator: string;
+};
+
+export type PresentationVisualization = {
+  id: string;
+  dataset: string;
+  definition: Record<string, unknown>;
+  filter_bindings?: PresentationFilterBinding[];
+};
+
+export type PresentationLayoutItem = {
+  visualization: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+};
+
+export type PresentationSection = {
+  id: string;
+  title?: string;
+  markdown?: string;
+  visualization?: string;
+  page_break?: boolean;
+};
+
+export type PresentationFinding = {
+  code: string;
+  severity: string;
+  message: string;
+  path?: string;
+  field?: string;
+  physical_type?: string;
+};
+
+export type PresentationRunRequest = {
+  environment?: string;
+  filter_values?: Record<string, unknown>;
+  visualization_ids?: string[];
+  include_options?: boolean;
+};
+
+export type PresentationRunResult = {
+  status: string;
+  artifact_revision: string;
+  filter_values: Record<string, unknown>;
+  visualizations: Record<string, PresentationDatasetResult>;
+  options?: Record<string, PresentationDatasetResult>;
+};
+
+export type PresentationDatasetResult = {
+  dataset: string;
+  status: string;
+  columns: string[];
+  column_types?: string[];
+  rows: unknown[][];
+  total_rows: number;
+  truncated?: boolean;
+  duration_ms: number;
+  error?: string;
+};
+
 export type MaterializationCapability = {
   mode: string;
   type: string;
@@ -356,6 +461,7 @@ export type WorkspaceQueryConnection = {
 export type WorkspaceState = {
   pipelines: WebPipeline[];
   notebooks?: WebNotebook[];
+  presentations?: PresentationArtifact[];
   artifact_index?: ArtifactIndex;
   connections: Record<string, string>;
   query_connections?: WorkspaceQueryConnection[];
@@ -423,6 +529,26 @@ export type NotebookChangeApplyResult = {
   status: string;
   notebook: WebNotebook;
   diff: NotebookChangeDiff[];
+};
+
+export type PresentationDocument = {
+  artifact: PresentationArtifact;
+  content: string;
+};
+
+export type CreatePresentationRequest = {
+  kind: string;
+  title: string;
+};
+
+export type UpdatePresentationRequest = {
+  expected_revision: string;
+  content: string;
+};
+
+export type ReplacePresentationRequest = {
+  expected_revision: string;
+  artifact: PresentationArtifact;
 };
 
 export type WorkspaceConfigFieldDef = {
@@ -1084,8 +1210,28 @@ export type TypeCheckAsset = {
   findings: TypeCheckFinding[];
 };
 
+export type TypeCheckPresentationFinding = {
+  code: string;
+  severity: string;
+  message: string;
+  path?: string;
+  field?: string;
+  physical_type?: string;
+};
+
+export type TypeCheckPresentation = {
+  id: string;
+  workspace_id: string;
+  kind: string;
+  title: string;
+  path: string;
+  status: string;
+  findings: TypeCheckPresentationFinding[];
+};
+
 export type TypeCheckSummary = {
   assets: number;
+  presentations?: number;
   errors: number;
   warnings: number;
 };
@@ -1125,6 +1271,7 @@ export type TypeCheckReport = {
   start_date?: string;
   end_date?: string;
   assets: TypeCheckAsset[];
+  presentations?: TypeCheckPresentation[];
   external_relations?: TypeCheckExternalRelation[];
   cross_pipeline_references?: TypeCheckCrossPipelineReference[];
   summary: TypeCheckSummary;

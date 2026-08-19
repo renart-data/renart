@@ -121,6 +121,71 @@ func TestBuildArtifactIndexDoesNotResolveAmbiguousNotebookExternalRelation(t *te
 	}
 }
 
+func TestBuildArtifactIndexProjectsDashboardDatasetsFiltersAndColumnLineage(t *testing.T) {
+	state := model.WorkspaceState{
+		Pipelines: []model.Pipeline{{
+			UUID: "pipeline-uuid",
+			Assets: []model.Asset{{
+				ID: "sales-workspace-id", Name: "analytics.monthly_sales", URI: "renart://local/monthly-sales",
+				Columns: []model.Column{
+					{Name: "month", Type: "date"}, {Name: "revenue", Type: "numeric"}, {Name: "region", Type: "varchar"},
+				},
+			}},
+		}},
+		Presentations: []model.PresentationArtifact{{
+			ID: "sales_overview", Kind: "dashboard", Title: "Sales overview", Path: "dashboards/sales.dashboard.yml",
+			Datasets: []model.PresentationDataset{{ID: "monthly_sales", Asset: "renart://local/monthly-sales"}},
+			Filters: []model.PresentationFilter{{
+				ID: "region", Type: "select", Default: "eu",
+				Options: &model.PresentationFilterOptions{Dataset: "monthly_sales", ValueField: "region"},
+			}},
+			Visualizations: []model.PresentationVisualization{{
+				ID: "revenue_by_month", Dataset: "monthly_sales",
+				Definition: map[string]any{
+					"version": 1, "type": "line",
+					"encoding": map[string]any{
+						"x": map[string]any{"field": "month"},
+						"y": []any{map[string]any{"field": "revenue"}},
+					},
+				},
+				FilterBindings: []model.PresentationFilterBinding{{Filter: "region", Column: "region", Operator: "equals"}},
+			}},
+		}},
+	}
+
+	index := BuildArtifactIndex(state)
+	dashboard := findArtifact(t, index, artifactKindDashboard, "sales_overview")
+	if len(dashboard.Components) != 3 || dashboard.Components[0].Kind != componentKindDataset ||
+		dashboard.Components[1].Kind != componentKindFilter || dashboard.Components[2].Kind != componentKindVisualization {
+		t.Fatalf("unexpected dashboard components: %+v", dashboard.Components)
+	}
+	if !reflect.DeepEqual(dashboard.Components[0].Columns, state.Pipelines[0].Assets[0].Columns) {
+		t.Fatalf("asset-backed dataset did not inherit its schema: %+v", dashboard.Components[0].Columns)
+	}
+
+	wantEdges := map[string]bool{
+		"pipeline-uuid:analytics.monthly_sales->sales_overview/dataset:monthly_sales":         true,
+		"sales_overview/dataset:monthly_sales->sales_overview/filter:region":                  true,
+		"sales_overview/dataset:monthly_sales->sales_overview/visualization:revenue_by_month": true,
+		"sales_overview/filter:region->sales_overview/visualization:revenue_by_month":         true,
+	}
+	for _, dependency := range index.Dependencies {
+		delete(wantEdges, readableArtifactEdge(dependency))
+		if dependency.Consumer.ComponentID == "visualization:revenue_by_month" && dependency.Producer.ComponentID == "dataset:monthly_sales" {
+			if !reflect.DeepEqual(dependency.Columns, []model.ArtifactColumnUsage{
+				{Name: "month", Role: "encoding.x.field"},
+				{Name: "revenue", Role: "encoding.y[0].field"},
+				{Name: "region", Role: "filter_bindings[0].column"},
+			}) {
+				t.Fatalf("dashboard visualization column lineage is wrong: %+v", dependency.Columns)
+			}
+		}
+	}
+	if len(wantEdges) != 0 {
+		t.Fatalf("missing dashboard lineage edges: %v (all=%+v)", wantEdges, index.Dependencies)
+	}
+}
+
 func findArtifact(t *testing.T, index model.ArtifactIndex, kind, id string) model.ArtifactDescriptor {
 	t.Helper()
 	for _, artifact := range index.Artifacts {

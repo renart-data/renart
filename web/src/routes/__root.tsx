@@ -27,6 +27,14 @@ function RootComponent() {
 }
 
 function getDocumentTitle(pathname: string) {
+  if (pathname.startsWith("/dashboards")) {
+    return "Dashboards · renart";
+  }
+
+  if (pathname.startsWith("/reports")) {
+    return "Reports · renart";
+  }
+
   if (pathname.includes("/connections")) {
     return "Connections · Settings · renart";
   }

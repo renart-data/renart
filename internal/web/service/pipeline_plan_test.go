@@ -18,6 +18,7 @@ import (
 	"renart/internal/web/fingerprint"
 	"renart/internal/web/identity"
 	"renart/internal/web/matlog"
+	webmodel "renart/internal/web/model"
 	"renart/internal/web/policy"
 	"renart/internal/web/scheduler"
 	"renart/internal/web/snapshot"
@@ -192,6 +193,59 @@ select id from public.accounts
 	assert.Equal(t, "analytics.report", plan.ExecutionUnits[0].AssetName)
 	require.Len(t, plan.ExecutionContracts, 1)
 	assert.Equal(t, "analytics.report", plan.ExecutionContracts[0].AssetName)
+}
+
+func TestPipelineDeploymentPlanBlocksInvalidPresentationConsumer(t *testing.T) {
+	_, root := writeTypeCheckWorkspace(t, "id: pipeline-uuid\nname: analytics", map[string]string{
+		"orders.sql": `
+/* @bruin
+name: analytics.orders
+type: duckdb.sql
+columns:
+  - name: id
+    type: bigint
+@bruin */
+select 1::bigint as id
+`,
+	})
+	writeWorkspaceFile(t, root, "dashboards/orders.dashboard.yml", `
+version: 1
+id: orders
+title: Orders
+datasets:
+  orders:
+    asset: analytics.orders
+visualizations:
+  - id: total
+    dataset: orders
+    definition:
+      version: 1
+      type: metric
+      value:
+        field: missing_total
+layout:
+  - visualization: total
+`)
+	state, err := NewWorkspaceService(root, filepath.Join(root, ".bruin.yml")).ComputeState(context.Background())
+	require.NoError(t, err)
+	planner := newTestPipelinePlanService(root, &pipelinePlanStalenessStub{}, nil)
+	planner.deps.CurrentState = func() webmodel.WorkspaceState { return state }
+
+	plan, apiErr := planner.Plan(context.Background(), EncodeID("analytics"), PipelinePlanRequest{
+		Purpose:     PipelinePlanPurposeDeployment,
+		Environment: "default",
+		Selection:   PipelinePlanSelectionRequest{Mode: PipelinePlanSelectionAll},
+	})
+
+	require.Nil(t, apiErr)
+	assert.Equal(t, PipelinePlanStatusBlocked, plan.Status)
+	assert.Contains(t, pipelinePlanIssueCodes(plan.Readiness.Blockers), "presentation_check_error")
+	require.Len(t, plan.Readiness.CodeChecks.Presentations, 1)
+	messages := make([]string, 0, len(plan.Readiness.Blockers))
+	for _, blocker := range plan.Readiness.Blockers {
+		messages = append(messages, blocker.Message)
+	}
+	assert.Contains(t, strings.Join(messages, "\n"), "Orders")
 }
 
 func TestPipelinePlanBlocksFullCrossPipelineDependenciesWhenEvidenceIsUnavailable(t *testing.T) {

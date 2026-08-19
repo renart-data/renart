@@ -49,14 +49,18 @@ File-based routes under [src/routes](../web/src/routes):
 - [__root.tsx](../web/src/routes/__root.tsx) → [_shell.tsx](../web/src/routes/_shell.tsx),
   a pathless layout route that renders the app shell.
 - Pages live under [src/routes/_shell](../web/src/routes/_shell): the build IDE at
-  `/pipelines/$pipelineId/...`, plus `catalog`, `notebooks`, `runs`, `schedules`,
-  and `project` (settings). `/` waits for the workspace, then redirects to the
+  `/pipelines/$pipelineId/...`, plus `catalog`, `notebooks`, `dashboards`,
+  `reports`, `runs`, `schedules`, and `project` (settings). `/` waits for the
+  workspace, then redirects to the
   first pipeline's canvas — or to `/welcome` when the workspace has no
   pipelines.
 - Schedule operations use a real TanStack layout route rather than component
   pathname checks: `/schedules` is desired schedule state,
   `/schedules/deployments` is retained immutable versions, and
   `/schedules/timeline` is actual local run activity.
+- The pathless `_presentations` layout owns sibling `/dashboards` and `/reports`
+  routes without inserting an implementation-only segment into the URL. Each
+  artifact has a live child route keyed by its encoded workspace path.
 - [welcome.tsx](../web/src/routes/welcome.tsx) (`/welcome`, outside the shell)
   is the first-run onboarding and new-project wizard
   ([welcome-page.tsx](../web/components/app/welcome-page.tsx)): demo / import /
@@ -92,7 +96,7 @@ not underscore-flattened route hacks.
 ### App shell + primary views
 
 - [components/app/app-shell.tsx](../web/components/app/app-shell.tsx) (`AppShell`):
-  top nav (Build / Catalog / Notebooks / Runs / Schedules, from
+  top nav (Build / Catalog / Notebooks / Present / Runs / Schedules, from
   [app-data.ts](../web/components/app/app-data.ts)), the
   [project switcher](../web/components/app/project-switcher.tsx), including the
   persisted Light / Dark / System appearance selector, the

@@ -20,6 +20,23 @@ const sources = [
     ],
   },
   {
+    file: resolve(repoRoot, "internal", "web", "model", "presentation.go"),
+    types: [
+      "PresentationArtifact",
+      "PresentationDataset",
+      "PresentationFilterOptions",
+      "PresentationFilter",
+      "PresentationFilterBinding",
+      "PresentationVisualization",
+      "PresentationLayoutItem",
+      "PresentationSection",
+      "PresentationFinding",
+      "PresentationRunRequest",
+      "PresentationRunResult",
+      "PresentationDatasetResult",
+    ],
+  },
+  {
     file: resolve(repoRoot, "internal", "web", "model", "dto.go"),
     types: [
       "MaterializationCapability",
@@ -66,6 +83,15 @@ const sources = [
       "NotebookChangeDiff",
       "NotebookChangePlan",
       "NotebookChangeApplyResult",
+    ],
+  },
+  {
+    file: resolve(repoRoot, "internal", "web", "service", "presentation_service.go"),
+    types: [
+      "PresentationDocument",
+      "CreatePresentationRequest",
+      "UpdatePresentationRequest",
+      "ReplacePresentationRequest",
     ],
   },
   {
@@ -210,6 +236,8 @@ const sources = [
       "TypeCheckResolution",
       "TypeCheckFinding",
       "TypeCheckAsset",
+      "TypeCheckPresentationFinding",
+      "TypeCheckPresentation",
       "TypeCheckSummary",
       "TypeCheckExternalRelation",
       "TypeCheckCrossPipelineReference",
@@ -284,6 +312,7 @@ const scalarMap = new Map([
   ["model.NotebookSourceDefinition", "NotebookSourceDefinition"],
   ["model.NotebookParameter", "NotebookParameter"],
   ["model.Notebook", "WebNotebook"],
+  ["model.PresentationArtifact", "PresentationArtifact"],
   ["AssetRenderStatus", '"ok" | "partial" | "unsupported" | "error"'],
   ["AssetRenderStageStatus", '"ok" | "unsupported" | "error"'],
   ["AssetRenderFidelity", '"exact" | "semantic" | "runtime_only" | "unsupported"'],

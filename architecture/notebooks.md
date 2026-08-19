@@ -216,7 +216,67 @@ Legacy `@viz` parsing/rendering is compatibility-only. Migration creates a
 stable visualization block and removes only the recognized comment; new UI and
 MCP operations never author the directive.
 
-## 9. Server-owned recompute and frontend state
+## 9. Git-native presentations
+
+Renart discovers `dashboard.yml`, `report.yml`, and named
+`*.dashboard.yml`/`*.report.yml` files outside hidden/generated trees. The
+version-1 definition contract is original to Renart and contains stable IDs,
+named asset- or query-backed datasets, typed filters, visualization definitions,
+dashboard layout entries, and ordered report sections. Loading uses strict YAML
+field checking and a content revision; malformed files surface as workspace
+errors, while structurally valid definitions remain visible with structured,
+path-addressed problems.
+
+The backend presentation checker resolves unique pipeline asset names or URIs,
+inherits their declared/derived columns, accepts declared schemas for query
+datasets, and strictly checks visualization fields/types plus filter options and
+bindings. The workspace DTO exposes these authored artifacts under
+`presentations`. `ArtifactIndex` registers dashboard/report containers and their
+dataset, filter, visualization, and section components, including asset and
+column-level lineage. These components do not enter a pipeline or notebook run
+graph.
+
+The `/dashboards` and `/reports` routes provide list/create flows plus a shared
+artifact editor. Its Visual mode edits asset- or query-backed datasets, declared
+query columns, typed filters and bindings, the shared visualization definition,
+responsive dashboard spans, and ordered report sections. Definition mode edits
+the complete strict YAML document in Monaco. Both modes write through the Go
+service, share one content revision, retain drafts on conflicts, and let
+workspace SSE reconcile outside changes. Typed snapshots are serialized
+deterministically by the server; malformed YAML never replaces the last valid
+file. Structural/schema findings remain visible after a save because invalid
+Git state must stay repairable rather than becoming impossible to author.
+
+`POST /api/presentations/{id}/run` executes only the requested visualizations
+and option datasets. Asset datasets resolve their physical relation and
+connection for the selected environment; query datasets execute as one
+read-only result query on their declared connection. Typed filter values are
+validated by the shared parameter checker and rendered as escaped,
+dialect-aware predicates. One visualization cannot bind a filter to a sibling
+dataset. Results are capped at 1,000 rows, report truncation explicitly, and
+are keyed per visualization so two charts can reuse one dataset with different
+bindings.
+
+Nested `/dashboards/{id}/view` and `/reports/{id}/view` routes render these
+bounded results with the same visualization renderer as notebooks. Filters use
+validated JSON URL state, retain authored defaults outside the URL, and rerun
+only affected visualizations. Each visualization has independent loading/error
+state and a request sequence guard, so a late response cannot overwrite a
+newer selection. Workspace changes reconcile through SSE; viewers do not poll.
+
+Pipeline type-check reports include dashboards/reports that resolve an
+asset-backed dataset to the checked pipeline. The CLI, HTTP bottom panel, and
+deployment review all consume the same strict findings. Errors block that
+producer pipeline's deployment and link back to the presentation editor;
+invalid presentations that consume only another pipeline do not block it.
+Repairing the artifact clears the blocker through the normal filesystem/SSE
+reconciliation path. Query-only datasets are checked but do not create a
+pipeline deployment edge because they have no declared producer asset.
+
+Publication is not implemented. The current viewer is a local, live workspace
+surface, not a hosted or access-controlled BI runtime.
+
+## 10. Server-owned recompute and frontend state
 
 The server owns definition staleness, last results, active runs, and the
 auto-recompute closure. Editing a SQL cell marks it and descendants stale,
@@ -234,7 +294,7 @@ Preview tables stay bounded, block editors grow with short content before
 using their internal scroll area, and output panes retain user scroll position
 unless the user is already following the end.
 
-## 10. Local MCP developer preview
+## 11. Local MCP developer preview
 
 `renart mcp --workspace <root>` serves the official MCP stdio transport. It
 discovers the owning Renart server through `.renart/server.json` and keeps the
@@ -269,7 +329,7 @@ generic REST/HTTP, or free-form SQL execution tool. This constrains Renart's
 integration, not a separately configured coding agent that may have its own
 shell or filesystem authority.
 
-## 11. Promotion and current limits
+## 12. Promotion and current limits
 
 Single SQL/Python cell promotion uses the existing rename/reference engine,
 changes `class` to `pipeline`, previews dialect consequences, and preserves the
@@ -279,13 +339,13 @@ asset explicitly.
 
 Still parked or incomplete:
 
-- dashboard/report filter hosts and dataset-backed option loading (the shared
-  typed parameter/binding checker is implemented);
+- dashboard/report publication (Git-native CRUD, visual/definition authoring,
+  local execution, viewers, typed URL filters, type-check, and producer-scoped
+  deployment gates are implemented);
 - remote scratch targets and direct remote reads from Python;
 - persistent Python kernels and Python auto-recompute;
 - cross-notebook data references;
 - native provider/chat UI (local MCP is the shipped agent surface);
-- Git-native dashboard/report artifacts and publication;
 - selective acceptance within one dependent change set.
 
 ## Test surface
@@ -301,4 +361,7 @@ and verifies the exact tool catalog, annotations, redaction, payload bounds,
 revision conflict, exact apply, Python approval, asynchronous status, and
 cancellation. Playwright live tests exercise warehouse/file/HTTP source chains,
 visual editing/migration, typed parameter editing/execution, export bytes, and
-race-sensitive notebook UI paths.
+race-sensitive notebook UI paths. Presentation live tests cover dashboard
+creation, typed visual editing, deterministic save, definition-mode
+round-tripping, URL-backed filters, dependency-aware viewer refresh, and a
+presentation error blocking/clearing its consumed pipeline deployment.

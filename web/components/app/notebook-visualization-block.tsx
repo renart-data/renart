@@ -81,7 +81,9 @@ const VISUALIZATION_TYPES = [
 
 type VisualizationType = (typeof VISUALIZATION_TYPES)[number]["value"];
 
-function normalizeDefinition(raw: Record<string, unknown>): NotebookVisualizationDefinition {
+export function normalizeVisualizationDefinition(
+  raw: Record<string, unknown>,
+): NotebookVisualizationDefinition {
   const authoredType = typeof raw.type === "string" ? raw.type : "table";
   const type = VISUALIZATION_TYPES.some((option) => option.value === authoredType)
     ? (authoredType as VisualizationType)
@@ -101,7 +103,9 @@ function normalizeDefinition(raw: Record<string, unknown>): NotebookVisualizatio
   };
 }
 
-function definitionRecord(definition: NotebookVisualizationDefinition): Record<string, unknown> {
+export function visualizationDefinitionRecord(
+  definition: NotebookVisualizationDefinition,
+): Record<string, unknown> {
   return definition as unknown as Record<string, unknown>;
 }
 
@@ -129,7 +133,7 @@ export function NotebookVisualizationBlockCard({
   onDelete: () => Promise<void>;
 }) {
   const initialDefinition = useMemo(
-    () => normalizeDefinition(visualization.definition),
+    () => normalizeVisualizationDefinition(visualization.definition),
     [visualization.definition],
   );
   const [mode, setMode] = useState<"visual" | "definition">("visual");
@@ -198,21 +202,22 @@ export function NotebookVisualizationBlockCard({
       if (mode === "definition") {
         void runCheck({ source, definition_yaml: definitionYAML });
       } else {
-        void runCheck({ source, definition: definitionRecord(definition) });
+        void runCheck({ source, definition: visualizationDefinitionRecord(definition) });
       }
     }, 180);
     return () => window.clearTimeout(timer);
   }, [definition, definitionYAML, mode, runCheck, source]);
 
   const previewDefinition = useMemo(() => {
-    if (mode === "definition" && check?.definition) return normalizeDefinition(check.definition);
+    if (mode === "definition" && check?.definition)
+      return normalizeVisualizationDefinition(check.definition);
     return definition;
   }, [check?.definition, definition, mode]);
   const sourceResult = results[source];
   const dirty =
     source !== visualization.source ||
-    JSON.stringify(definitionRecord(previewDefinition)) !==
-      JSON.stringify(definitionRecord(initialDefinition));
+    JSON.stringify(visualizationDefinitionRecord(previewDefinition)) !==
+      JSON.stringify(visualizationDefinitionRecord(initialDefinition));
   const canSave = Boolean(
     check?.can_apply && check.definition && dirty && !checking && !saving && !busy,
   );
@@ -222,7 +227,7 @@ export function NotebookVisualizationBlockCard({
     setSaving(true);
     const saved = await onSave(source, check.definition);
     if (saved) {
-      const normalized = normalizeDefinition(check.definition);
+      const normalized = normalizeVisualizationDefinition(check.definition);
       setDefinition(normalized);
       const yaml = check.definition_yaml ?? canonicalYAML;
       setCanonicalYAML(yaml);
@@ -275,7 +280,7 @@ export function NotebookVisualizationBlockCard({
                 const next = value as "visual" | "definition";
                 if (next === "definition") setDefinitionYAML(canonicalYAML);
                 if (next === "visual" && check?.definition && check.can_apply) {
-                  setDefinition(normalizeDefinition(check.definition));
+                  setDefinition(normalizeVisualizationDefinition(check.definition));
                 }
                 setMode(next);
               }}
@@ -372,7 +377,7 @@ export function NotebookVisualizationBlockCard({
   );
 }
 
-function VisualizationBuilder({
+export function VisualizationBuilder({
   definition,
   columns,
   onChange,

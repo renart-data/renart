@@ -99,6 +99,7 @@ type PresentationSchemaResolver interface {
 
 type PresentationTypeChecker interface {
 	CheckVisualization(ctx context.Context, definition VisualizationDefinition, schema ResolvedSchema, options CheckOptions) []Finding
+	CheckArtifact(ctx context.Context, artifact Artifact, datasets map[string]ResolvedSchema, options CheckOptions) []Finding
 }
 
 type Checker struct{}

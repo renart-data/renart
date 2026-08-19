@@ -1314,7 +1314,10 @@ function PlanExecutionSequence({ plan }: { plan: PipelinePlan }) {
 function PlanCodeReview({ plan }: { plan: PipelinePlan }) {
   const report = plan.readiness.code_checks;
   const withFindings = report.assets.filter((asset) => asset.findings.length > 0);
-  if (withFindings.length === 0) return null;
+  const presentationFindings = (report.presentations ?? []).filter(
+    (artifact) => artifact.findings.length > 0,
+  );
+  if (withFindings.length === 0 && presentationFindings.length === 0) return null;
   const passing = report.assets.length - withFindings.length;
   return (
     <section aria-labelledby="pipeline-plan-code-review">
@@ -1348,6 +1351,43 @@ function PlanCodeReview({ plan }: { plan: PipelinePlan }) {
                   }
                 >
                   {finding.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+        {presentationFindings.map((artifact) => (
+          <div key={`${artifact.kind}:${artifact.id}`} className="px-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <Link
+                to={
+                  artifact.kind === "dashboard"
+                    ? "/dashboards/$presentationId"
+                    : "/reports/$presentationId"
+                }
+                params={{ presentationId: artifact.workspace_id }}
+                className="min-w-0 truncate text-sm font-medium hover:underline"
+              >
+                {artifact.title}
+              </Link>
+              <Badge variant="muted" size="xs">
+                {artifact.kind}
+              </Badge>
+            </div>
+            <ul className="mt-1 flex flex-col gap-1 text-xs">
+              {artifact.findings.map((finding, index) => (
+                <li
+                  key={`${finding.code}:${finding.path ?? ""}:${index}`}
+                  className={
+                    finding.severity === "error"
+                      ? "text-destructive"
+                      : "text-amber-700 dark:text-amber-300"
+                  }
+                >
+                  {finding.message}
+                  {finding.path ? (
+                    <span className="ml-1 font-mono text-[10px] opacity-70">{finding.path}</span>
+                  ) : null}
                 </li>
               ))}
             </ul>

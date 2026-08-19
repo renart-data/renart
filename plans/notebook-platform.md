@@ -5,9 +5,14 @@
 > Phases 0 and 1 are complete; the Phase 2 visualization/source/export core and
 > Phase 3 MCP server are implemented. Phase 4's typed notebook parameters,
 > shared filter contract/checker, and SQL/Python/source rendering are also
-> implemented. Source-block promotion, client-specific MCP acceptance runs,
-> remaining release hardening, dashboard filter hosts, and dashboards/reports
-> remain. This plan replaces the narrower agent-only proposal and deliberately
+> implemented. Phase 5 now has its versioned dashboard/report file contract,
+> strict loader/checker, workspace DTO, artifact-index lineage, server-owned
+> CRUD, and visual/definition authoring routes.
+> Source-block promotion, client-specific MCP acceptance runs, remaining
+> release hardening remain. Presentation runtime, rendered viewers, typed URL
+> filters, pipeline type-check reporting, and producer-scoped deployment gates
+> are implemented.
+> This plan replaces the narrower agent-only proposal and deliberately
 > treats data access, execution, presentation, reproducibility, and agent tooling
 > as one notebook product.
 
@@ -1119,6 +1124,13 @@ exceptions, migrations are documented/reversible, and supported
 connection/source combinations are stated precisely.
 
 ### Phase 5 — Git-native dashboards and reports
+
+The artifact schema, discovery/index projection, strict checker, revisioned Go
+CRUD, dashboard/report routes, visual builder, whole-file Definition editor,
+responsive dashboard span ordering, report section composition, local runtime,
+rendered viewers, typed URL filters, pipeline type-check output, and
+producer-scoped deployment gates are now implemented. Hosted publication stays
+outside this local-first phase.
 
 - Add original, versioned dashboard/report artifact schemas that reference
   pipeline assets or statically analyzed named datasets.

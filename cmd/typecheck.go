@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
@@ -45,7 +46,7 @@ func TypeCheck() *cli.Command {
 			},
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
-			absTarget, err := resolvePipelineTarget(c)
+			workspaceRoot, absTarget, err := resolvePipelineTargetAndWorkspace(c)
 			if err != nil {
 				return err
 			}
@@ -64,7 +65,25 @@ func TypeCheck() *cli.Command {
 				return fmt.Errorf("failed to resolve execution window: %w", err)
 			}
 
-			report := service.CheckPipeline(ctx, fs, parsed, "", tw)
+			report := service.CheckPipeline(ctx, fs, parsed, workspaceRoot, tw)
+			state, stateErr := service.NewWorkspaceService(
+				workspaceRoot,
+				filepath.Join(workspaceRoot, ".bruin.yml"),
+			).ComputeState(ctx)
+			if stateErr != nil {
+				return fmt.Errorf("failed to load workspace presentation checks: %w", stateErr)
+			}
+			for _, candidate := range state.Pipelines {
+				candidatePath := filepath.Clean(filepath.Join(workspaceRoot, filepath.FromSlash(candidate.Path)))
+				if candidatePath != filepath.Clean(absTarget) {
+					continue
+				}
+				report.PipelineID = candidate.ID
+				service.AppendPresentationTypeChecks(
+					ctx, fs, workspaceRoot, candidate.ID, state, &report,
+				)
+				break
+			}
 
 			if c.Bool("json") {
 				encoded, err := json.MarshalIndent(report, "", "  ")
@@ -115,9 +134,29 @@ func printTypeCheckReport(w interface{ Write([]byte) (int, error) }, report serv
 			fmt.Fprintf(w, "      %s%s: %s\n", label, location, finding.Message)
 		}
 	}
+	for _, artifact := range report.Presentations {
+		marker := ok("✓")
+		if artifact.Status == "warning" {
+			marker = warn("⚠")
+		} else if artifact.Status == "error" {
+			marker = bad("✗")
+		}
+		fmt.Fprintf(w, "  %s %s %s\n", marker, artifact.Title, dim("("+artifact.Kind+")"))
+		for _, finding := range artifact.Findings {
+			label := warn("warning")
+			if finding.Severity == "error" {
+				label = bad("error")
+			}
+			location := ""
+			if finding.Path != "" {
+				location = dim(" [" + finding.Path + "]")
+			}
+			fmt.Fprintf(w, "      %s%s: %s\n", label, location, finding.Message)
+		}
+	}
 
-	summary := fmt.Sprintf("Summary: %d error(s), %d warning(s) across %d asset(s)",
-		report.Summary.Errors, report.Summary.Warnings, report.Summary.Assets)
+	summary := fmt.Sprintf("Summary: %d error(s), %d warning(s) across %d asset(s) and %d presentation(s)",
+		report.Summary.Errors, report.Summary.Warnings, report.Summary.Assets, report.Summary.Presentations)
 	switch {
 	case report.Summary.Errors > 0:
 		fmt.Fprintln(w, bad(summary))

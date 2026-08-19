@@ -15,9 +15,14 @@ import (
 const (
 	artifactKindPipelineAsset = "pipeline_asset"
 	artifactKindNotebook      = "notebook"
+	artifactKindDashboard     = "dashboard"
+	artifactKindReport        = "report"
 
 	componentKindCell          = "cell"
+	componentKindDataset       = "dataset"
+	componentKindFilter        = "filter"
 	componentKindSource        = "source"
+	componentKindSection       = "section"
 	componentKindMarkdown      = "markdown"
 	componentKindParameter     = "parameter"
 	componentKindVisualization = "visualization"
@@ -40,6 +45,7 @@ func BuildArtifactIndex(state model.WorkspaceState) model.ArtifactIndex {
 	}
 	workspaceAssetRefs := make(map[string]model.ArtifactRef)
 	assetNameRefs := make(map[string][]model.ArtifactRef)
+	artifactColumns := make(map[string][]model.Column)
 
 	for _, pipeline := range state.Pipelines {
 		for _, asset := range pipeline.Assets {
@@ -47,7 +53,11 @@ func BuildArtifactIndex(state model.WorkspaceState) model.ArtifactIndex {
 			ref := model.ArtifactRef{Kind: artifactKindPipelineAsset, ArtifactID: artifactID}
 			workspaceAssetRefs[asset.ID] = ref
 			nameKey := strings.ToLower(strings.TrimSpace(asset.Name))
-			assetNameRefs[nameKey] = append(assetNameRefs[nameKey], ref)
+			assetNameRefs[nameKey] = appendUniqueArtifactRef(assetNameRefs[nameKey], ref)
+			if uriKey := strings.ToLower(strings.TrimSpace(asset.URI)); uriKey != "" {
+				assetNameRefs[uriKey] = appendUniqueArtifactRef(assetNameRefs[uriKey], ref)
+			}
+			artifactColumns[artifactRefKey(ref)] = cloneArtifactColumns(asset.Columns)
 			index.Artifacts = append(index.Artifacts, model.ArtifactDescriptor{
 				ID:           artifactID,
 				Kind:         artifactKindPipelineAsset,
@@ -81,10 +91,22 @@ func BuildArtifactIndex(state model.WorkspaceState) model.ArtifactIndex {
 	for _, notebook := range state.Notebooks {
 		appendNotebookArtifact(&index, notebook, assetNameRefs)
 	}
+	for _, artifact := range state.Presentations {
+		appendPresentationArtifact(&index, artifact, assetNameRefs, artifactColumns)
+	}
 
 	sortArtifactIndex(&index)
 	index.Revision = artifactIndexRevision(index)
 	return index
+}
+
+func appendUniqueArtifactRef(refs []model.ArtifactRef, candidate model.ArtifactRef) []model.ArtifactRef {
+	for _, ref := range refs {
+		if artifactRefKey(ref) == artifactRefKey(candidate) {
+			return refs
+		}
+	}
+	return append(refs, candidate)
 }
 
 func pipelineAssetArtifactID(pipeline model.Pipeline, asset model.Asset) string {
@@ -218,6 +240,174 @@ func appendNotebookArtifact(index *model.ArtifactIndex, notebook model.Notebook,
 	}
 }
 
+func appendPresentationArtifact(
+	index *model.ArtifactIndex,
+	artifact model.PresentationArtifact,
+	assetRefs map[string][]model.ArtifactRef,
+	artifactColumns map[string][]model.Column,
+) {
+	kind := strings.ToLower(strings.TrimSpace(artifact.Kind))
+	if kind != artifactKindDashboard && kind != artifactKindReport {
+		return
+	}
+	artifactID := strings.TrimSpace(artifact.ID)
+	if artifactID == "" {
+		artifactID = artifact.Path
+	}
+	parent := model.ArtifactRef{Kind: kind, ArtifactID: artifactID}
+	components := make([]model.ArtifactComponent, 0,
+		len(artifact.Datasets)+len(artifact.Filters)+len(artifact.Visualizations)+len(artifact.Sections))
+	componentRefs := make(map[string]model.ArtifactRef)
+	position := 0
+
+	for _, dataset := range artifact.Datasets {
+		componentID := "dataset:" + strings.TrimSpace(dataset.ID)
+		columns := cloneArtifactColumns(dataset.Columns)
+		matches := assetRefs[strings.ToLower(strings.TrimSpace(dataset.Asset))]
+		if len(columns) == 0 && len(matches) == 1 {
+			columns = cloneArtifactColumns(artifactColumns[artifactRefKey(matches[0])])
+		}
+		capabilities := []string{artifactCapabilityProducesRelation, artifactCapabilityVersioned}
+		if len(columns) > 0 {
+			capabilities = append(capabilities, artifactCapabilityHasSchema)
+			sort.Strings(capabilities)
+		}
+		component := model.ArtifactComponent{
+			ID: componentID, Kind: componentKindDataset, Name: dataset.ID,
+			Capabilities: capabilities, Columns: columns,
+		}
+		components = append(components, component)
+		child := model.ArtifactRef{Kind: kind, ArtifactID: artifactID, ComponentID: componentID}
+		componentRefs[componentID] = child
+		index.Containment = append(index.Containment, model.ArtifactContainment{Parent: parent, Child: child, Position: position})
+		position++
+		if len(matches) == 1 {
+			index.Dependencies = appendArtifactDependency(index.Dependencies, model.ArtifactDependency{
+				Producer: matches[0], Consumer: child,
+			})
+		}
+	}
+
+	for _, filter := range artifact.Filters {
+		componentID := "filter:" + strings.TrimSpace(filter.ID)
+		component := model.ArtifactComponent{
+			ID: componentID, Kind: componentKindFilter,
+			Name:         filterDisplayName(filter),
+			Capabilities: []string{artifactCapabilityPresentation, artifactCapabilityVersioned},
+		}
+		components = append(components, component)
+		child := model.ArtifactRef{Kind: kind, ArtifactID: artifactID, ComponentID: componentID}
+		componentRefs[componentID] = child
+		index.Containment = append(index.Containment, model.ArtifactContainment{Parent: parent, Child: child, Position: position})
+		position++
+	}
+
+	for _, visualization := range artifact.Visualizations {
+		componentID := "visualization:" + strings.TrimSpace(visualization.ID)
+		component := model.ArtifactComponent{
+			ID: componentID, Kind: componentKindVisualization, Name: visualization.ID,
+			Capabilities: []string{artifactCapabilityPresentation, artifactCapabilityVersioned},
+		}
+		components = append(components, component)
+		child := model.ArtifactRef{Kind: kind, ArtifactID: artifactID, ComponentID: componentID}
+		componentRefs[componentID] = child
+		index.Containment = append(index.Containment, model.ArtifactContainment{Parent: parent, Child: child, Position: position})
+		position++
+	}
+
+	for _, section := range artifact.Sections {
+		componentID := "section:" + strings.TrimSpace(section.ID)
+		name := strings.TrimSpace(section.Title)
+		if name == "" {
+			name = section.ID
+		}
+		component := model.ArtifactComponent{
+			ID: componentID, Kind: componentKindSection, Name: name,
+			Capabilities: []string{artifactCapabilityPresentation, artifactCapabilityVersioned},
+		}
+		components = append(components, component)
+		child := model.ArtifactRef{Kind: kind, ArtifactID: artifactID, ComponentID: componentID}
+		componentRefs[componentID] = child
+		index.Containment = append(index.Containment, model.ArtifactContainment{Parent: parent, Child: child, Position: position})
+		position++
+	}
+
+	index.Artifacts = append(index.Artifacts, model.ArtifactDescriptor{
+		ID: artifactID, Kind: kind, WorkspaceID: EncodeID(artifact.Path), Path: artifact.Path,
+		Title:        artifact.Title,
+		Capabilities: []string{artifactCapabilityPresentation, artifactCapabilityVersioned},
+		Components:   components,
+	})
+
+	for _, filter := range artifact.Filters {
+		if filter.Options == nil || strings.TrimSpace(filter.Options.Dataset) == "" {
+			continue
+		}
+		producer, producerOK := componentRefs["dataset:"+strings.TrimSpace(filter.Options.Dataset)]
+		consumer, consumerOK := componentRefs["filter:"+strings.TrimSpace(filter.ID)]
+		if !producerOK || !consumerOK {
+			continue
+		}
+		columns := []model.ArtifactColumnUsage{{Name: strings.TrimSpace(filter.Options.ValueField), Role: "options.value_field"}}
+		if label := strings.TrimSpace(filter.Options.LabelField); label != "" {
+			columns = append(columns, model.ArtifactColumnUsage{Name: label, Role: "options.label_field"})
+		}
+		index.Dependencies = appendArtifactDependency(index.Dependencies, model.ArtifactDependency{
+			Producer: producer, Consumer: consumer, Columns: columns,
+		})
+	}
+
+	for _, visualization := range artifact.Visualizations {
+		consumer, consumerOK := componentRefs["visualization:"+strings.TrimSpace(visualization.ID)]
+		producer, producerOK := componentRefs["dataset:"+strings.TrimSpace(visualization.Dataset)]
+		if consumerOK && producerOK {
+			index.Dependencies = appendArtifactDependency(index.Dependencies, model.ArtifactDependency{
+				Producer: producer, Consumer: consumer,
+				Columns: visualizationColumnUsages(visualization.Definition),
+			})
+		}
+		for bindingIndex, binding := range visualization.FilterBindings {
+			filterRef, filterOK := componentRefs["filter:"+strings.TrimSpace(binding.Filter)]
+			if filterOK && consumerOK {
+				index.Dependencies = appendArtifactDependency(index.Dependencies, model.ArtifactDependency{
+					Producer: filterRef, Consumer: consumer,
+				})
+			}
+			datasetID := strings.TrimSpace(binding.Dataset)
+			if datasetID == "" {
+				datasetID = strings.TrimSpace(visualization.Dataset)
+			}
+			bindingProducer, bindingProducerOK := componentRefs["dataset:"+datasetID]
+			if bindingProducerOK && consumerOK && strings.TrimSpace(binding.Column) != "" {
+				index.Dependencies = appendArtifactDependency(index.Dependencies, model.ArtifactDependency{
+					Producer: bindingProducer, Consumer: consumer,
+					Columns: []model.ArtifactColumnUsage{{
+						Name: strings.TrimSpace(binding.Column),
+						Role: fmt.Sprintf("filter_bindings[%d].column", bindingIndex),
+					}},
+				})
+			}
+		}
+	}
+
+	for _, section := range artifact.Sections {
+		producer, producerOK := componentRefs["visualization:"+strings.TrimSpace(section.Visualization)]
+		consumer, consumerOK := componentRefs["section:"+strings.TrimSpace(section.ID)]
+		if producerOK && consumerOK {
+			index.Dependencies = appendArtifactDependency(index.Dependencies, model.ArtifactDependency{
+				Producer: producer, Consumer: consumer,
+			})
+		}
+	}
+}
+
+func filterDisplayName(filter model.PresentationFilter) string {
+	if label := strings.TrimSpace(filter.Label); label != "" {
+		return label
+	}
+	return filter.ID
+}
+
 func notebookArtifactComponent(block model.NotebookBlock, cellsByID map[string]model.Asset) (model.ArtifactComponent, bool) {
 	if block.Cell != "" {
 		cell, ok := cellsByID[block.Cell]
@@ -302,13 +492,36 @@ func visualizationColumnUsages(definition map[string]any) []model.ArtifactColumn
 }
 
 func appendArtifactDependency(existing []model.ArtifactDependency, candidate model.ArtifactDependency) []model.ArtifactDependency {
-	for _, dependency := range existing {
+	for index, dependency := range existing {
 		if artifactRefKey(dependency.Producer) == artifactRefKey(candidate.Producer) &&
 			artifactRefKey(dependency.Consumer) == artifactRefKey(candidate.Consumer) {
+			existing[index].Columns = mergeArtifactColumnUsages(dependency.Columns, candidate.Columns)
 			return existing
 		}
 	}
+	candidate.Columns = mergeArtifactColumnUsages(nil, candidate.Columns)
 	return append(existing, candidate)
+}
+
+func mergeArtifactColumnUsages(left, right []model.ArtifactColumnUsage) []model.ArtifactColumnUsage {
+	merged := append(append([]model.ArtifactColumnUsage(nil), left...), right...)
+	seen := make(map[string]bool, len(merged))
+	result := make([]model.ArtifactColumnUsage, 0, len(merged))
+	for _, usage := range merged {
+		key := strings.ToLower(strings.TrimSpace(usage.Name)) + "\x00" + strings.TrimSpace(usage.Role)
+		if strings.TrimSpace(usage.Name) == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		result = append(result, usage)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Role == result[j].Role {
+			return result[i].Name < result[j].Name
+		}
+		return result[i].Role < result[j].Role
+	})
+	return result
 }
 
 func artifactRefKey(ref model.ArtifactRef) string {

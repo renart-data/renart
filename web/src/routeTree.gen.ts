@@ -18,6 +18,7 @@ import { Route as ShellCatalogRouteImport } from './routes/_shell/catalog'
 import { Route as ShellSchedulesRouteRouteImport } from './routes/_shell/schedules/route'
 import { Route as ShellRunsRouteRouteImport } from './routes/_shell/runs/route'
 import { Route as ShellProjectRouteRouteImport } from './routes/_shell/project/route'
+import { Route as ShellPresentationsRouteRouteImport } from './routes/_shell/_presentations/route'
 import { Route as ShellSchedulesIndexRouteImport } from './routes/_shell/schedules/index'
 import { Route as ShellRunsIndexRouteImport } from './routes/_shell/runs/index'
 import { Route as ShellProjectIndexRouteImport } from './routes/_shell/project/index'
@@ -31,9 +32,17 @@ import { Route as ShellProjectConnectionsRouteImport } from './routes/_shell/pro
 import { Route as ShellNotebooksNotebookIdRouteImport } from './routes/_shell/notebooks/$notebookId'
 import { Route as ShellPipelinesPipelineIdRouteRouteImport } from './routes/_shell/pipelines/$pipelineId/route'
 import { Route as ShellPipelinesPipelineIdIndexRouteImport } from './routes/_shell/pipelines/$pipelineId/index'
+import { Route as ShellPresentationsReportsIndexRouteImport } from './routes/_shell/_presentations/reports/index'
+import { Route as ShellPresentationsDashboardsIndexRouteImport } from './routes/_shell/_presentations/dashboards/index'
 import { Route as ShellPipelinesPipelineIdSplitRouteImport } from './routes/_shell/pipelines/$pipelineId/split'
 import { Route as ShellPipelinesPipelineIdCodeRouteImport } from './routes/_shell/pipelines/$pipelineId/code'
 import { Route as ShellPipelinesPipelineIdCanvasRouteImport } from './routes/_shell/pipelines/$pipelineId/canvas'
+import { Route as ShellPresentationsReportsPresentationIdRouteRouteImport } from './routes/_shell/_presentations/reports/$presentationId/route'
+import { Route as ShellPresentationsDashboardsPresentationIdRouteRouteImport } from './routes/_shell/_presentations/dashboards/$presentationId/route'
+import { Route as ShellPresentationsReportsPresentationIdIndexRouteImport } from './routes/_shell/_presentations/reports/$presentationId/index'
+import { Route as ShellPresentationsDashboardsPresentationIdIndexRouteImport } from './routes/_shell/_presentations/dashboards/$presentationId/index'
+import { Route as ShellPresentationsReportsPresentationIdViewRouteImport } from './routes/_shell/_presentations/reports/$presentationId/view'
+import { Route as ShellPresentationsDashboardsPresentationIdViewRouteImport } from './routes/_shell/_presentations/dashboards/$presentationId/view'
 import { Route as ShellPipelinesPipelineIdAssetsAssetIdRouteRouteImport } from './routes/_shell/pipelines/$pipelineId/assets/$assetId/route'
 import { Route as ShellPipelinesPipelineIdAssetsAssetIdIndexRouteImport } from './routes/_shell/pipelines/$pipelineId/assets/$assetId/index'
 import { Route as ShellPipelinesPipelineIdAssetsAssetIdSplitRouteImport } from './routes/_shell/pipelines/$pipelineId/assets/$assetId/split'
@@ -82,6 +91,10 @@ const ShellRunsRouteRoute = ShellRunsRouteRouteImport.update({
 const ShellProjectRouteRoute = ShellProjectRouteRouteImport.update({
   id: '/project',
   path: '/project',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellPresentationsRouteRoute = ShellPresentationsRouteRouteImport.update({
+  id: '/_presentations',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellSchedulesIndexRoute = ShellSchedulesIndexRouteImport.update({
@@ -154,6 +167,18 @@ const ShellPipelinesPipelineIdIndexRoute =
     path: '/',
     getParentRoute: () => ShellPipelinesPipelineIdRouteRoute,
   } as any)
+const ShellPresentationsReportsIndexRoute =
+  ShellPresentationsReportsIndexRouteImport.update({
+    id: '/reports/',
+    path: '/reports/',
+    getParentRoute: () => ShellPresentationsRouteRoute,
+  } as any)
+const ShellPresentationsDashboardsIndexRoute =
+  ShellPresentationsDashboardsIndexRouteImport.update({
+    id: '/dashboards/',
+    path: '/dashboards/',
+    getParentRoute: () => ShellPresentationsRouteRoute,
+  } as any)
 const ShellPipelinesPipelineIdSplitRoute =
   ShellPipelinesPipelineIdSplitRouteImport.update({
     id: '/split',
@@ -171,6 +196,42 @@ const ShellPipelinesPipelineIdCanvasRoute =
     id: '/canvas',
     path: '/canvas',
     getParentRoute: () => ShellPipelinesPipelineIdRouteRoute,
+  } as any)
+const ShellPresentationsReportsPresentationIdRouteRoute =
+  ShellPresentationsReportsPresentationIdRouteRouteImport.update({
+    id: '/reports/$presentationId',
+    path: '/reports/$presentationId',
+    getParentRoute: () => ShellPresentationsRouteRoute,
+  } as any)
+const ShellPresentationsDashboardsPresentationIdRouteRoute =
+  ShellPresentationsDashboardsPresentationIdRouteRouteImport.update({
+    id: '/dashboards/$presentationId',
+    path: '/dashboards/$presentationId',
+    getParentRoute: () => ShellPresentationsRouteRoute,
+  } as any)
+const ShellPresentationsReportsPresentationIdIndexRoute =
+  ShellPresentationsReportsPresentationIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ShellPresentationsReportsPresentationIdRouteRoute,
+  } as any)
+const ShellPresentationsDashboardsPresentationIdIndexRoute =
+  ShellPresentationsDashboardsPresentationIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ShellPresentationsDashboardsPresentationIdRouteRoute,
+  } as any)
+const ShellPresentationsReportsPresentationIdViewRoute =
+  ShellPresentationsReportsPresentationIdViewRouteImport.update({
+    id: '/view',
+    path: '/view',
+    getParentRoute: () => ShellPresentationsReportsPresentationIdRouteRoute,
+  } as any)
+const ShellPresentationsDashboardsPresentationIdViewRoute =
+  ShellPresentationsDashboardsPresentationIdViewRouteImport.update({
+    id: '/view',
+    path: '/view',
+    getParentRoute: () => ShellPresentationsDashboardsPresentationIdRouteRoute,
   } as any)
 const ShellPipelinesPipelineIdAssetsAssetIdRouteRoute =
   ShellPipelinesPipelineIdAssetsAssetIdRouteRouteImport.update({
@@ -224,11 +285,19 @@ export interface FileRoutesByFullPath {
   '/project/': typeof ShellProjectIndexRoute
   '/runs/': typeof ShellRunsIndexRoute
   '/schedules/': typeof ShellSchedulesIndexRoute
+  '/dashboards/$presentationId': typeof ShellPresentationsDashboardsPresentationIdRouteRouteWithChildren
+  '/reports/$presentationId': typeof ShellPresentationsReportsPresentationIdRouteRouteWithChildren
   '/pipelines/$pipelineId/canvas': typeof ShellPipelinesPipelineIdCanvasRoute
   '/pipelines/$pipelineId/code': typeof ShellPipelinesPipelineIdCodeRoute
   '/pipelines/$pipelineId/split': typeof ShellPipelinesPipelineIdSplitRoute
+  '/dashboards/': typeof ShellPresentationsDashboardsIndexRoute
+  '/reports/': typeof ShellPresentationsReportsIndexRoute
   '/pipelines/$pipelineId/': typeof ShellPipelinesPipelineIdIndexRoute
   '/pipelines/$pipelineId/assets/$assetId': typeof ShellPipelinesPipelineIdAssetsAssetIdRouteRouteWithChildren
+  '/dashboards/$presentationId/view': typeof ShellPresentationsDashboardsPresentationIdViewRoute
+  '/reports/$presentationId/view': typeof ShellPresentationsReportsPresentationIdViewRoute
+  '/dashboards/$presentationId/': typeof ShellPresentationsDashboardsPresentationIdIndexRoute
+  '/reports/$presentationId/': typeof ShellPresentationsReportsPresentationIdIndexRoute
   '/pipelines/$pipelineId/assets/$assetId/canvas': typeof ShellPipelinesPipelineIdAssetsAssetIdCanvasRoute
   '/pipelines/$pipelineId/assets/$assetId/code': typeof ShellPipelinesPipelineIdAssetsAssetIdCodeRoute
   '/pipelines/$pipelineId/assets/$assetId/split': typeof ShellPipelinesPipelineIdAssetsAssetIdSplitRoute
@@ -236,9 +305,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/welcome': typeof WelcomeRoute
+  '/': typeof ShellIndexRoute
   '/catalog': typeof ShellCatalogRoute
   '/redesign/$': typeof RedesignSplatRoute
-  '/': typeof ShellIndexRoute
   '/redesign': typeof RedesignIndexRoute
   '/notebooks/$notebookId': typeof ShellNotebooksNotebookIdRoute
   '/project/connections': typeof ShellProjectConnectionsRoute
@@ -254,7 +323,13 @@ export interface FileRoutesByTo {
   '/pipelines/$pipelineId/canvas': typeof ShellPipelinesPipelineIdCanvasRoute
   '/pipelines/$pipelineId/code': typeof ShellPipelinesPipelineIdCodeRoute
   '/pipelines/$pipelineId/split': typeof ShellPipelinesPipelineIdSplitRoute
+  '/dashboards': typeof ShellPresentationsDashboardsIndexRoute
+  '/reports': typeof ShellPresentationsReportsIndexRoute
   '/pipelines/$pipelineId': typeof ShellPipelinesPipelineIdIndexRoute
+  '/dashboards/$presentationId/view': typeof ShellPresentationsDashboardsPresentationIdViewRoute
+  '/reports/$presentationId/view': typeof ShellPresentationsReportsPresentationIdViewRoute
+  '/dashboards/$presentationId': typeof ShellPresentationsDashboardsPresentationIdIndexRoute
+  '/reports/$presentationId': typeof ShellPresentationsReportsPresentationIdIndexRoute
   '/pipelines/$pipelineId/assets/$assetId/canvas': typeof ShellPipelinesPipelineIdAssetsAssetIdCanvasRoute
   '/pipelines/$pipelineId/assets/$assetId/code': typeof ShellPipelinesPipelineIdAssetsAssetIdCodeRoute
   '/pipelines/$pipelineId/assets/$assetId/split': typeof ShellPipelinesPipelineIdAssetsAssetIdSplitRoute
@@ -264,6 +339,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_shell': typeof ShellRouteWithChildren
   '/welcome': typeof WelcomeRoute
+  '/_shell/_presentations': typeof ShellPresentationsRouteRouteWithChildren
   '/_shell/project': typeof ShellProjectRouteRouteWithChildren
   '/_shell/runs': typeof ShellRunsRouteRouteWithChildren
   '/_shell/schedules': typeof ShellSchedulesRouteRouteWithChildren
@@ -283,11 +359,19 @@ export interface FileRoutesById {
   '/_shell/project/': typeof ShellProjectIndexRoute
   '/_shell/runs/': typeof ShellRunsIndexRoute
   '/_shell/schedules/': typeof ShellSchedulesIndexRoute
+  '/_shell/_presentations/dashboards/$presentationId': typeof ShellPresentationsDashboardsPresentationIdRouteRouteWithChildren
+  '/_shell/_presentations/reports/$presentationId': typeof ShellPresentationsReportsPresentationIdRouteRouteWithChildren
   '/_shell/pipelines/$pipelineId/canvas': typeof ShellPipelinesPipelineIdCanvasRoute
   '/_shell/pipelines/$pipelineId/code': typeof ShellPipelinesPipelineIdCodeRoute
   '/_shell/pipelines/$pipelineId/split': typeof ShellPipelinesPipelineIdSplitRoute
+  '/_shell/_presentations/dashboards/': typeof ShellPresentationsDashboardsIndexRoute
+  '/_shell/_presentations/reports/': typeof ShellPresentationsReportsIndexRoute
   '/_shell/pipelines/$pipelineId/': typeof ShellPipelinesPipelineIdIndexRoute
   '/_shell/pipelines/$pipelineId/assets/$assetId': typeof ShellPipelinesPipelineIdAssetsAssetIdRouteRouteWithChildren
+  '/_shell/_presentations/dashboards/$presentationId/view': typeof ShellPresentationsDashboardsPresentationIdViewRoute
+  '/_shell/_presentations/reports/$presentationId/view': typeof ShellPresentationsReportsPresentationIdViewRoute
+  '/_shell/_presentations/dashboards/$presentationId/': typeof ShellPresentationsDashboardsPresentationIdIndexRoute
+  '/_shell/_presentations/reports/$presentationId/': typeof ShellPresentationsReportsPresentationIdIndexRoute
   '/_shell/pipelines/$pipelineId/assets/$assetId/canvas': typeof ShellPipelinesPipelineIdAssetsAssetIdCanvasRoute
   '/_shell/pipelines/$pipelineId/assets/$assetId/code': typeof ShellPipelinesPipelineIdAssetsAssetIdCodeRoute
   '/_shell/pipelines/$pipelineId/assets/$assetId/split': typeof ShellPipelinesPipelineIdAssetsAssetIdSplitRoute
@@ -316,11 +400,19 @@ export interface FileRouteTypes {
     | '/project/'
     | '/runs/'
     | '/schedules/'
+    | '/dashboards/$presentationId'
+    | '/reports/$presentationId'
     | '/pipelines/$pipelineId/canvas'
     | '/pipelines/$pipelineId/code'
     | '/pipelines/$pipelineId/split'
+    | '/dashboards/'
+    | '/reports/'
     | '/pipelines/$pipelineId/'
     | '/pipelines/$pipelineId/assets/$assetId'
+    | '/dashboards/$presentationId/view'
+    | '/reports/$presentationId/view'
+    | '/dashboards/$presentationId/'
+    | '/reports/$presentationId/'
     | '/pipelines/$pipelineId/assets/$assetId/canvas'
     | '/pipelines/$pipelineId/assets/$assetId/code'
     | '/pipelines/$pipelineId/assets/$assetId/split'
@@ -328,9 +420,9 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/welcome'
+    | '/'
     | '/catalog'
     | '/redesign/$'
-    | '/'
     | '/redesign'
     | '/notebooks/$notebookId'
     | '/project/connections'
@@ -346,7 +438,13 @@ export interface FileRouteTypes {
     | '/pipelines/$pipelineId/canvas'
     | '/pipelines/$pipelineId/code'
     | '/pipelines/$pipelineId/split'
+    | '/dashboards'
+    | '/reports'
     | '/pipelines/$pipelineId'
+    | '/dashboards/$presentationId/view'
+    | '/reports/$presentationId/view'
+    | '/dashboards/$presentationId'
+    | '/reports/$presentationId'
     | '/pipelines/$pipelineId/assets/$assetId/canvas'
     | '/pipelines/$pipelineId/assets/$assetId/code'
     | '/pipelines/$pipelineId/assets/$assetId/split'
@@ -355,6 +453,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_shell'
     | '/welcome'
+    | '/_shell/_presentations'
     | '/_shell/project'
     | '/_shell/runs'
     | '/_shell/schedules'
@@ -374,11 +473,19 @@ export interface FileRouteTypes {
     | '/_shell/project/'
     | '/_shell/runs/'
     | '/_shell/schedules/'
+    | '/_shell/_presentations/dashboards/$presentationId'
+    | '/_shell/_presentations/reports/$presentationId'
     | '/_shell/pipelines/$pipelineId/canvas'
     | '/_shell/pipelines/$pipelineId/code'
     | '/_shell/pipelines/$pipelineId/split'
+    | '/_shell/_presentations/dashboards/'
+    | '/_shell/_presentations/reports/'
     | '/_shell/pipelines/$pipelineId/'
     | '/_shell/pipelines/$pipelineId/assets/$assetId'
+    | '/_shell/_presentations/dashboards/$presentationId/view'
+    | '/_shell/_presentations/reports/$presentationId/view'
+    | '/_shell/_presentations/dashboards/$presentationId/'
+    | '/_shell/_presentations/reports/$presentationId/'
     | '/_shell/pipelines/$pipelineId/assets/$assetId/canvas'
     | '/_shell/pipelines/$pipelineId/assets/$assetId/code'
     | '/_shell/pipelines/$pipelineId/assets/$assetId/split'
@@ -455,6 +562,13 @@ declare module '@tanstack/react-router' {
       path: '/project'
       fullPath: '/project'
       preLoaderRoute: typeof ShellProjectRouteRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/_presentations': {
+      id: '/_shell/_presentations'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof ShellPresentationsRouteRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/schedules/': {
@@ -548,6 +662,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPipelinesPipelineIdIndexRouteImport
       parentRoute: typeof ShellPipelinesPipelineIdRouteRoute
     }
+    '/_shell/_presentations/reports/': {
+      id: '/_shell/_presentations/reports/'
+      path: '/reports'
+      fullPath: '/reports/'
+      preLoaderRoute: typeof ShellPresentationsReportsIndexRouteImport
+      parentRoute: typeof ShellPresentationsRouteRoute
+    }
+    '/_shell/_presentations/dashboards/': {
+      id: '/_shell/_presentations/dashboards/'
+      path: '/dashboards'
+      fullPath: '/dashboards/'
+      preLoaderRoute: typeof ShellPresentationsDashboardsIndexRouteImport
+      parentRoute: typeof ShellPresentationsRouteRoute
+    }
     '/_shell/pipelines/$pipelineId/split': {
       id: '/_shell/pipelines/$pipelineId/split'
       path: '/split'
@@ -568,6 +696,48 @@ declare module '@tanstack/react-router' {
       fullPath: '/pipelines/$pipelineId/canvas'
       preLoaderRoute: typeof ShellPipelinesPipelineIdCanvasRouteImport
       parentRoute: typeof ShellPipelinesPipelineIdRouteRoute
+    }
+    '/_shell/_presentations/reports/$presentationId': {
+      id: '/_shell/_presentations/reports/$presentationId'
+      path: '/reports/$presentationId'
+      fullPath: '/reports/$presentationId'
+      preLoaderRoute: typeof ShellPresentationsReportsPresentationIdRouteRouteImport
+      parentRoute: typeof ShellPresentationsRouteRoute
+    }
+    '/_shell/_presentations/dashboards/$presentationId': {
+      id: '/_shell/_presentations/dashboards/$presentationId'
+      path: '/dashboards/$presentationId'
+      fullPath: '/dashboards/$presentationId'
+      preLoaderRoute: typeof ShellPresentationsDashboardsPresentationIdRouteRouteImport
+      parentRoute: typeof ShellPresentationsRouteRoute
+    }
+    '/_shell/_presentations/reports/$presentationId/': {
+      id: '/_shell/_presentations/reports/$presentationId/'
+      path: '/'
+      fullPath: '/reports/$presentationId/'
+      preLoaderRoute: typeof ShellPresentationsReportsPresentationIdIndexRouteImport
+      parentRoute: typeof ShellPresentationsReportsPresentationIdRouteRoute
+    }
+    '/_shell/_presentations/dashboards/$presentationId/': {
+      id: '/_shell/_presentations/dashboards/$presentationId/'
+      path: '/'
+      fullPath: '/dashboards/$presentationId/'
+      preLoaderRoute: typeof ShellPresentationsDashboardsPresentationIdIndexRouteImport
+      parentRoute: typeof ShellPresentationsDashboardsPresentationIdRouteRoute
+    }
+    '/_shell/_presentations/reports/$presentationId/view': {
+      id: '/_shell/_presentations/reports/$presentationId/view'
+      path: '/view'
+      fullPath: '/reports/$presentationId/view'
+      preLoaderRoute: typeof ShellPresentationsReportsPresentationIdViewRouteImport
+      parentRoute: typeof ShellPresentationsReportsPresentationIdRouteRoute
+    }
+    '/_shell/_presentations/dashboards/$presentationId/view': {
+      id: '/_shell/_presentations/dashboards/$presentationId/view'
+      path: '/view'
+      fullPath: '/dashboards/$presentationId/view'
+      preLoaderRoute: typeof ShellPresentationsDashboardsPresentationIdViewRouteImport
+      parentRoute: typeof ShellPresentationsDashboardsPresentationIdRouteRoute
     }
     '/_shell/pipelines/$pipelineId/assets/$assetId': {
       id: '/_shell/pipelines/$pipelineId/assets/$assetId'
@@ -606,6 +776,65 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface ShellPresentationsDashboardsPresentationIdRouteRouteChildren {
+  ShellPresentationsDashboardsPresentationIdViewRoute: typeof ShellPresentationsDashboardsPresentationIdViewRoute
+  ShellPresentationsDashboardsPresentationIdIndexRoute: typeof ShellPresentationsDashboardsPresentationIdIndexRoute
+}
+
+const ShellPresentationsDashboardsPresentationIdRouteRouteChildren: ShellPresentationsDashboardsPresentationIdRouteRouteChildren =
+  {
+    ShellPresentationsDashboardsPresentationIdViewRoute:
+      ShellPresentationsDashboardsPresentationIdViewRoute,
+    ShellPresentationsDashboardsPresentationIdIndexRoute:
+      ShellPresentationsDashboardsPresentationIdIndexRoute,
+  }
+
+const ShellPresentationsDashboardsPresentationIdRouteRouteWithChildren =
+  ShellPresentationsDashboardsPresentationIdRouteRoute._addFileChildren(
+    ShellPresentationsDashboardsPresentationIdRouteRouteChildren,
+  )
+
+interface ShellPresentationsReportsPresentationIdRouteRouteChildren {
+  ShellPresentationsReportsPresentationIdViewRoute: typeof ShellPresentationsReportsPresentationIdViewRoute
+  ShellPresentationsReportsPresentationIdIndexRoute: typeof ShellPresentationsReportsPresentationIdIndexRoute
+}
+
+const ShellPresentationsReportsPresentationIdRouteRouteChildren: ShellPresentationsReportsPresentationIdRouteRouteChildren =
+  {
+    ShellPresentationsReportsPresentationIdViewRoute:
+      ShellPresentationsReportsPresentationIdViewRoute,
+    ShellPresentationsReportsPresentationIdIndexRoute:
+      ShellPresentationsReportsPresentationIdIndexRoute,
+  }
+
+const ShellPresentationsReportsPresentationIdRouteRouteWithChildren =
+  ShellPresentationsReportsPresentationIdRouteRoute._addFileChildren(
+    ShellPresentationsReportsPresentationIdRouteRouteChildren,
+  )
+
+interface ShellPresentationsRouteRouteChildren {
+  ShellPresentationsDashboardsPresentationIdRouteRoute: typeof ShellPresentationsDashboardsPresentationIdRouteRouteWithChildren
+  ShellPresentationsReportsPresentationIdRouteRoute: typeof ShellPresentationsReportsPresentationIdRouteRouteWithChildren
+  ShellPresentationsDashboardsIndexRoute: typeof ShellPresentationsDashboardsIndexRoute
+  ShellPresentationsReportsIndexRoute: typeof ShellPresentationsReportsIndexRoute
+}
+
+const ShellPresentationsRouteRouteChildren: ShellPresentationsRouteRouteChildren =
+  {
+    ShellPresentationsDashboardsPresentationIdRouteRoute:
+      ShellPresentationsDashboardsPresentationIdRouteRouteWithChildren,
+    ShellPresentationsReportsPresentationIdRouteRoute:
+      ShellPresentationsReportsPresentationIdRouteRouteWithChildren,
+    ShellPresentationsDashboardsIndexRoute:
+      ShellPresentationsDashboardsIndexRoute,
+    ShellPresentationsReportsIndexRoute: ShellPresentationsReportsIndexRoute,
+  }
+
+const ShellPresentationsRouteRouteWithChildren =
+  ShellPresentationsRouteRoute._addFileChildren(
+    ShellPresentationsRouteRouteChildren,
+  )
 
 interface ShellProjectRouteRouteChildren {
   ShellProjectConnectionsRoute: typeof ShellProjectConnectionsRoute
@@ -701,6 +930,7 @@ const ShellPipelinesPipelineIdRouteRouteWithChildren =
   )
 
 interface ShellRouteChildren {
+  ShellPresentationsRouteRoute: typeof ShellPresentationsRouteRouteWithChildren
   ShellProjectRouteRoute: typeof ShellProjectRouteRouteWithChildren
   ShellRunsRouteRoute: typeof ShellRunsRouteRouteWithChildren
   ShellSchedulesRouteRoute: typeof ShellSchedulesRouteRouteWithChildren
@@ -712,6 +942,7 @@ interface ShellRouteChildren {
 }
 
 const ShellRouteChildren: ShellRouteChildren = {
+  ShellPresentationsRouteRoute: ShellPresentationsRouteRouteWithChildren,
   ShellProjectRouteRoute: ShellProjectRouteRouteWithChildren,
   ShellRunsRouteRoute: ShellRunsRouteRouteWithChildren,
   ShellSchedulesRouteRoute: ShellSchedulesRouteRouteWithChildren,

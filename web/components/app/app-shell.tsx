@@ -120,7 +120,7 @@ export function AppShell() {
         <Outlet />
       </main>
 
-      <nav className="grid h-14 shrink-0 grid-cols-5 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
+      <nav className="grid h-14 shrink-0 grid-cols-6 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
         {navItems.map((item) => (
           <Link
             key={item.to}

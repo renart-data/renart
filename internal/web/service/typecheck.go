@@ -57,6 +57,8 @@ func (s *PipelineService) TypeCheck(ctx context.Context, pipelineID, startDate, 
 			[]webmodel.WorkspaceDependencyDiagnostic(nil),
 			state.DependencyDiagnostics...,
 		)
+		options.PresentationPipelineID = pipelineID
+		options.IncludePresentations = true
 	}
 	report := checkPipelineAt(ctx, afero.NewOsFs(), parsed, s.workspaceRoot, tw, time.Now().UTC(), options)
 	report.PipelineID = pipelineID
@@ -129,11 +131,35 @@ type TypeCheckAsset struct {
 	Findings []TypeCheckFinding `json:"findings"`
 }
 
+// TypeCheckPresentation is one Git-native dashboard or report that consumes
+// an asset in the checked pipeline. Presentation findings stay separate from
+// assets because presentation components do not have pipeline execution or
+// materialization semantics.
+type TypeCheckPresentation struct {
+	ID          string                         `json:"id"`
+	WorkspaceID string                         `json:"workspace_id"`
+	Kind        string                         `json:"kind"`
+	Title       string                         `json:"title"`
+	Path        string                         `json:"path"`
+	Status      string                         `json:"status"`
+	Findings    []TypeCheckPresentationFinding `json:"findings"`
+}
+
+type TypeCheckPresentationFinding struct {
+	Code         string `json:"code"`
+	Severity     string `json:"severity"`
+	Message      string `json:"message"`
+	Path         string `json:"path,omitempty"`
+	Field        string `json:"field,omitempty"`
+	PhysicalType string `json:"physical_type,omitempty"`
+}
+
 // TypeCheckSummary aggregates finding counts across the pipeline.
 type TypeCheckSummary struct {
-	Assets   int `json:"assets"`
-	Errors   int `json:"errors"`
-	Warnings int `json:"warnings"`
+	Assets        int `json:"assets"`
+	Presentations int `json:"presentations,omitempty"`
+	Errors        int `json:"errors"`
+	Warnings      int `json:"warnings"`
 }
 
 // TypeCheckExternalRelation is positive, ephemeral catalog evidence used by
@@ -178,6 +204,7 @@ type TypeCheckReport struct {
 	StartDate               string                            `json:"start_date,omitempty"`
 	EndDate                 string                            `json:"end_date,omitempty"`
 	Assets                  []TypeCheckAsset                  `json:"assets"`
+	Presentations           []TypeCheckPresentation           `json:"presentations,omitempty"`
 	ExternalRelations       []TypeCheckExternalRelation       `json:"external_relations,omitempty"`
 	CrossPipelineReferences []TypeCheckCrossPipelineReference `json:"cross_pipeline_references,omitempty"`
 	Summary                 TypeCheckSummary                  `json:"summary"`
@@ -216,11 +243,13 @@ func CheckPipelineAt(
 }
 
 type typeCheckOptions struct {
-	RemoteCatalog         RemoteCatalogProvider
-	Environment           string
-	WorkspaceGraph        *sqllsp.CanonicalGraph
-	WorkspaceState        *webmodel.WorkspaceState
-	DependencyDiagnostics []webmodel.WorkspaceDependencyDiagnostic
+	RemoteCatalog          RemoteCatalogProvider
+	Environment            string
+	WorkspaceGraph         *sqllsp.CanonicalGraph
+	WorkspaceState         *webmodel.WorkspaceState
+	DependencyDiagnostics  []webmodel.WorkspaceDependencyDiagnostic
+	PresentationPipelineID string
+	IncludePresentations   bool
 }
 
 func checkPipelineAt(
@@ -302,14 +331,18 @@ func checkPipelineAt(
 			}
 		}
 	}
+	if options.IncludePresentations && options.WorkspaceState != nil {
+		AppendPresentationTypeChecks(
+			ctx,
+			fs,
+			workspaceRoot,
+			options.PresentationPipelineID,
+			*options.WorkspaceState,
+			&report,
+		)
+	}
 
-	report.Status = typeCheckStatusOK
-	if report.Summary.Warnings > 0 {
-		report.Status = typeCheckStatusWarning
-	}
-	if report.Summary.Errors > 0 {
-		report.Status = typeCheckStatusError
-	}
+	updateTypeCheckReportStatus(&report)
 	sort.Slice(report.ExternalRelations, func(i, j int) bool {
 		if report.ExternalRelations[i].Connection != report.ExternalRelations[j].Connection {
 			return report.ExternalRelations[i].Connection < report.ExternalRelations[j].Connection
@@ -320,6 +353,19 @@ func checkPipelineAt(
 		return report.CrossPipelineReferences[i].ID < report.CrossPipelineReferences[j].ID
 	})
 	return report
+}
+
+func updateTypeCheckReportStatus(report *TypeCheckReport) {
+	if report == nil {
+		return
+	}
+	report.Status = typeCheckStatusOK
+	if report.Summary.Warnings > 0 {
+		report.Status = typeCheckStatusWarning
+	}
+	if report.Summary.Errors > 0 {
+		report.Status = typeCheckStatusError
+	}
 }
 
 func appendTypeCheckCrossPipelineReference(report *TypeCheckReport, reference TypeCheckCrossPipelineReference) {

@@ -385,6 +385,7 @@ type WorkspaceQueryConnection struct {
 type WorkspaceState struct {
 	Pipelines               []Pipeline                      `json:"pipelines"`
 	Notebooks               []Notebook                      `json:"notebooks,omitempty"`
+	Presentations           []PresentationArtifact          `json:"presentations,omitempty"`
 	ArtifactIndex           ArtifactIndex                   `json:"artifact_index,omitempty"`
 	Connections             map[string]string               `json:"connections"`
 	QueryConnections        []WorkspaceQueryConnection      `json:"query_connections,omitempty"`
