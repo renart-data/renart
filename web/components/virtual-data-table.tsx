@@ -15,11 +15,60 @@ import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
+import { cn } from "@/lib/utils";
 
 const tableScrollPositions = new Map<string, { top: number; left: number }>();
+const VIRTUALIZE_AFTER_ROWS = 50;
+const VIRTUAL_ROW_OVERSCAN = 6;
+
+export type VirtualTableRenderMeasurement = {
+  durationMs: number;
+  totalRows: number;
+  renderedRows: number;
+};
+
+export type VirtualRowWindow = {
+  start: number;
+  end: number;
+  topSpacerHeight: number;
+  bottomSpacerHeight: number;
+};
+
+export function virtualRowWindow({
+  rowCount,
+  scrollTop,
+  viewportHeight,
+  rowHeight,
+  overscan = VIRTUAL_ROW_OVERSCAN,
+}: {
+  rowCount: number;
+  scrollTop: number;
+  viewportHeight: number;
+  rowHeight: number;
+  overscan?: number;
+}): VirtualRowWindow {
+  if (rowCount <= 0) {
+    return { start: 0, end: 0, topSpacerHeight: 0, bottomSpacerHeight: 0 };
+  }
+
+  const safeRowHeight = Math.max(1, rowHeight);
+  const safeViewportHeight = Math.max(safeRowHeight, viewportHeight);
+  const firstVisible = Math.min(rowCount - 1, Math.floor(Math.max(0, scrollTop) / safeRowHeight));
+  const visibleCount = Math.ceil(safeViewportHeight / safeRowHeight);
+  const start = Math.max(0, firstVisible - Math.max(0, overscan));
+  const end = Math.min(rowCount, firstVisible + visibleCount + Math.max(0, overscan));
+
+  return {
+    start,
+    end,
+    topSpacerHeight: start * safeRowHeight,
+    bottomSpacerHeight: Math.max(0, rowCount - end) * safeRowHeight,
+  };
+}
 
 type Props = {
   columns: string[];
+  columnKeys?: string[];
   rows: Record<string, unknown>[];
   height?: number | string;
   dense?: boolean;
@@ -31,12 +80,16 @@ type Props = {
   scrollKey?: string;
   onWheelCapture?: WheelEventHandler<HTMLDivElement>;
   frameless?: boolean;
+  ariaLabel?: string;
+  viewportClassName?: string;
+  onRenderMeasured?: (measurement: VirtualTableRenderMeasurement) => void;
 };
 
 export function VirtualDataTable({
   columns,
+  columnKeys,
   rows,
-  height = 260,
+  height = 224,
   dense = false,
   loading = false,
   canLoadMore = false,
@@ -46,13 +99,34 @@ export function VirtualDataTable({
   scrollKey,
   onWheelCapture,
   frameless = false,
+  ariaLabel,
+  viewportClassName,
+  onRenderMeasured,
 }: Props) {
   const fillAvailableHeight = typeof height === "string";
+  const rowHeight = dense ? 23 : 27;
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRequestedRef = useRef(false);
   const scrollSnapshotRef = useRef({ top: 0, left: 0, height: 0 });
+  const measuredRowsRef = useRef<Record<string, unknown>[] | null>(null);
+  const renderStartedAtRef = useRef<number | null>(null);
+  const onRenderMeasuredRef = useRef(onRenderMeasured);
   const [copied, setCopied] = useState(false);
   const [nearBottom, setNearBottom] = useState(true);
+  const [viewportMetrics, setViewportMetrics] = useState({
+    scrollTop: scrollKey ? (tableScrollPositions.get(scrollKey)?.top ?? 0) : 0,
+    height: typeof height === "number" ? height : 224,
+  });
+
+  onRenderMeasuredRef.current = onRenderMeasured;
+  if (
+    measuredRowsRef.current !== rows &&
+    typeof performance !== "undefined" &&
+    typeof performance.now === "function"
+  ) {
+    measuredRowsRef.current = rows;
+    renderStartedAtRef.current = performance.now();
+  }
 
   const fallbackColumns = useMemo(() => {
     if (columns.length > 0) {
@@ -61,6 +135,29 @@ export function VirtualDataTable({
     const firstRow = rows[0];
     return firstRow ? Object.keys(firstRow) : [];
   }, [columns, rows]);
+  const shouldVirtualize = rows.length > VIRTUALIZE_AFTER_ROWS;
+  const resolvedColumnKeys = useMemo(
+    () => (columnKeys?.length === fallbackColumns.length ? [...columnKeys] : [...fallbackColumns]),
+    [columnKeys, fallbackColumns],
+  );
+  const rowWindow = useMemo(
+    () =>
+      shouldVirtualize
+        ? virtualRowWindow({
+            rowCount: rows.length,
+            scrollTop: viewportMetrics.scrollTop,
+            viewportHeight: viewportMetrics.height,
+            rowHeight,
+          })
+        : {
+            start: 0,
+            end: rows.length,
+            topSpacerHeight: 0,
+            bottomSpacerHeight: 0,
+          },
+    [rowHeight, rows.length, shouldVirtualize, viewportMetrics.height, viewportMetrics.scrollTop],
+  );
+  const visibleRows = rows.slice(rowWindow.start, rowWindow.end);
 
   const triggerLoadMore = () => {
     if (!canLoadMore || !onLoadMore || loading || loadMoreRequestedRef.current) {
@@ -78,8 +175,8 @@ export function VirtualDataTable({
   };
 
   const copyTable = async () => {
-    const tsv = serializeRowsAsTsv(fallbackColumns, rows);
-    const html = serializeRowsAsHtmlTable(fallbackColumns, rows);
+    const tsv = serializeRowsAsTsv(fallbackColumns, resolvedColumnKeys, rows);
+    const html = serializeRowsAsHtmlTable(fallbackColumns, resolvedColumnKeys, rows);
 
     if (await writeTableToClipboard({ html, text: tsv })) {
       setCopied(true);
@@ -88,25 +185,37 @@ export function VirtualDataTable({
   };
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    const element = event.currentTarget;
+    const scrollTop = element.scrollTop;
+    const viewportHeight = element.clientHeight;
     scrollSnapshotRef.current = {
-      top: event.currentTarget.scrollTop,
-      left: event.currentTarget.scrollLeft,
-      height: event.currentTarget.scrollHeight,
+      top: scrollTop,
+      left: element.scrollLeft,
+      height: element.scrollHeight,
     };
+    setViewportMetrics((current) => {
+      const next = {
+        scrollTop,
+        height: viewportHeight || current.height,
+      };
+      return current.scrollTop === next.scrollTop && current.height === next.height
+        ? current
+        : next;
+    });
 
     if (scrollKey) {
       tableScrollPositions.set(scrollKey, {
-        top: event.currentTarget.scrollTop,
-        left: event.currentTarget.scrollLeft,
+        top: scrollTop,
+        left: element.scrollLeft,
       });
     }
 
     if (!autoLoadMore || !canLoadMore || !onLoadMore) {
-      updateNearBottom(event.currentTarget);
+      updateNearBottom(element);
       return;
     }
 
-    const remaining = updateNearBottom(event.currentTarget);
+    const remaining = updateNearBottom(element);
     if (remaining < 64) {
       triggerLoadMore();
     }
@@ -131,6 +240,10 @@ export function VirtualDataTable({
     if (savedPosition) {
       element.scrollTop = savedPosition.top;
       element.scrollLeft = savedPosition.left;
+      setViewportMetrics((current) => ({
+        scrollTop: savedPosition.top,
+        height: element.clientHeight || current.height,
+      }));
       return;
     }
 
@@ -140,6 +253,26 @@ export function VirtualDataTable({
     }
   }, [rows.length, scrollKey]);
 
+  useLayoutEffect(() => {
+    const element = scrollContainerRef.current;
+    if (!element) {
+      return;
+    }
+    const updateSize = () => {
+      setViewportMetrics((current) => {
+        const height = element.clientHeight || current.height;
+        return current.height === height ? current : { ...current, height };
+      });
+    };
+    updateSize();
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     const element = scrollContainerRef.current;
     if (element) {
@@ -147,15 +280,36 @@ export function VirtualDataTable({
     }
   }, [rows.length, loading]);
 
+  useEffect(() => {
+    const startedAt = renderStartedAtRef.current;
+    if (startedAt === null || !onRenderMeasuredRef.current || typeof window === "undefined") {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      if (renderStartedAtRef.current !== startedAt) {
+        return;
+      }
+      renderStartedAtRef.current = null;
+      onRenderMeasuredRef.current?.({
+        durationMs: performance.now() - startedAt,
+        totalRows: rows.length,
+        renderedRows: visibleRows.length,
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [rows, visibleRows.length]);
+
   const showLoadMoreControl = Boolean(
     onLoadMore && (canLoadMore || loading) && (nearBottom || loading),
   );
 
   return (
     <div
-      className={`group/table relative overflow-hidden bg-background ${
-        frameless ? "" : "rounded border"
-      } ${fillAvailableHeight ? "flex h-full min-h-0 flex-col" : ""}`}
+      className={cn(
+        "group/table relative overflow-hidden bg-background",
+        !frameless && "rounded border",
+        fillAvailableHeight && "flex h-full min-h-0 flex-col",
+      )}
     >
       {rows.length > 0 && fallbackColumns.length > 0 ? (
         <Button
@@ -192,62 +346,106 @@ export function VirtualDataTable({
       ) : null}
 
       <ScrollArea
-        className={fillAvailableHeight ? "min-h-0 flex-1" : "h-fit max-h-56"}
+        className={fillAvailableHeight ? "min-h-0 flex-1" : "h-fit"}
         horizontalScrollBarClassName="left-12 w-[calc(100%-3rem)]"
-        viewportClassName={fillAvailableHeight ? undefined : "max-h-56"}
+        viewportClassName={cn(
+          !fillAvailableHeight && !viewportClassName && "max-h-56",
+          viewportClassName,
+        )}
+        viewportStyle={
+          !fillAvailableHeight && typeof height === "number" ? { maxHeight: height } : undefined
+        }
         viewportRef={scrollContainerRef}
         onViewportScroll={handleScroll}
         onWheelCapture={onWheelCapture}
       >
-        <table className="min-w-full border-collapse text-xs">
+        <table
+          aria-label={ariaLabel}
+          aria-rowcount={rows.length + 1}
+          className="min-w-full border-collapse text-xs"
+        >
           <thead className="sticky top-0 z-10 bg-muted/70 backdrop-blur">
-            <tr>
+            <tr aria-rowindex={1}>
               <th
-                className={`sticky left-0 z-30 w-12 min-w-12 border-b border-r bg-muted/95 text-right font-medium text-muted-foreground backdrop-blur ${
-                  dense ? "px-2 py-1" : "px-2 py-1.5"
-                }`}
+                className={cn(
+                  "sticky left-0 z-30 w-12 min-w-12 border-b border-r bg-muted/95 text-right font-medium text-muted-foreground backdrop-blur",
+                  dense ? "px-2 py-1" : "px-2 py-1.5",
+                )}
               >
                 #
               </th>
-              {fallbackColumns.map((column) => (
+              {fallbackColumns.map((column, columnIndex) => (
                 <th
-                  className={`sticky top-0 z-20 w-56 min-w-32 max-w-56 border-b border-r bg-muted/90 text-left font-medium whitespace-nowrap backdrop-blur last:border-r-0 ${
-                    dense ? "px-2 py-1" : "px-2 py-1.5"
-                  }`}
-                  key={column}
+                  className={cn(
+                    "sticky top-0 z-20 w-56 min-w-32 max-w-56 border-b border-r bg-muted/90 text-left font-medium whitespace-nowrap backdrop-blur last:border-r-0",
+                    dense ? "px-2 py-1" : "px-2 py-1.5",
+                  )}
+                  key={`${column}-${columnIndex}`}
                 >
                   <div className="w-56 max-w-56 truncate">{column}</div>
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody data-virtualized={shouldVirtualize || undefined}>
             {rows.length > 0 ? (
-              rows.map((row, rowIndex) => (
-                <tr className="odd:bg-muted/20" key={rowIndex}>
-                  <td
-                    className={`sticky left-0 z-10 w-12 min-w-12 border-b border-r bg-muted/75 text-right font-mono text-[11px] text-muted-foreground backdrop-blur ${
-                      dense ? "px-2 py-0.5" : "px-2 py-1"
-                    }`}
-                  >
-                    {rowIndex + 1}
-                  </td>
-                  {fallbackColumns.map((column) => {
-                    const cell = formatCell(row[column]);
-
-                    return (
+              <>
+                {rowWindow.topSpacerHeight > 0 ? (
+                  <tr aria-hidden="true" role="presentation">
+                    <td
+                      className="border-0 p-0"
+                      colSpan={Math.max(1, fallbackColumns.length + 1)}
+                      style={{ height: rowWindow.topSpacerHeight }}
+                    />
+                  </tr>
+                ) : null}
+                {visibleRows.map((row, visibleRowIndex) => {
+                  const rowIndex = rowWindow.start + visibleRowIndex;
+                  return (
+                    <tr
+                      aria-rowindex={rowIndex + 2}
+                      className={cn(rowIndex % 2 === 0 && "bg-muted/20")}
+                      data-row-index={rowIndex}
+                      key={rowIndex}
+                      style={{ height: rowHeight }}
+                    >
                       <td
-                        key={`${rowIndex}-${column}`}
-                        className={`w-56 min-w-32 max-w-56 border-b border-r align-top last:border-r-0 ${
-                          dense ? "px-2 py-0.5" : "px-2 py-1"
-                        } ${cell.className}`}
+                        className={cn(
+                          "sticky left-0 z-10 w-12 min-w-12 border-b border-r bg-muted/75 text-right font-mono text-[11px] text-muted-foreground backdrop-blur",
+                          dense ? "px-2 py-0.5" : "px-2 py-1",
+                        )}
                       >
-                        <TableCellContent cell={cell} />
+                        {rowIndex + 1}
                       </td>
-                    );
-                  })}
-                </tr>
-              ))
+                      {fallbackColumns.map((column, columnIndex) => {
+                        const cell = formatCell(row[resolvedColumnKeys[columnIndex]]);
+
+                        return (
+                          <td
+                            key={`${rowIndex}-${columnIndex}`}
+                            className={cn(
+                              "w-56 min-w-32 max-w-56 border-b border-r align-top last:border-r-0",
+                              dense ? "px-2 py-0.5" : "px-2 py-1",
+                              cell.className,
+                            )}
+                          >
+                            <TableCellContent cell={cell} />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                {rowWindow.bottomSpacerHeight > 0 ? (
+                  <tr aria-hidden="true" role="presentation">
+                    <td
+                      className="border-0 p-0"
+                      colSpan={Math.max(1, fallbackColumns.length + 1)}
+                      style={{ height: rowWindow.bottomSpacerHeight }}
+                    />
+                  </tr>
+                ) : null}
+              </>
             ) : (
               <tr>
                 <td
@@ -408,24 +606,34 @@ function formatCellDetail(
   return { value: fallback, kind: "text" };
 }
 
-function serializeRowsAsTsv(columns: string[], rows: Record<string, unknown>[]) {
+function serializeRowsAsTsv(
+  columns: string[],
+  columnKeys: string[],
+  rows: Record<string, unknown>[],
+) {
   const header = columns.map(escapeTsvValue).join("\t");
   const body = rows.map((row) =>
-    columns
-      .map((column) =>
-        escapeTsvValue(formatCellDetail(row[column], formatCellValue(row[column]).value).value),
+    columnKeys
+      .map((columnKey) =>
+        escapeTsvValue(
+          formatCellDetail(row[columnKey], formatCellValue(row[columnKey]).value).value,
+        ),
       )
       .join("\t"),
   );
   return [header, ...body].join("\n");
 }
 
-function serializeRowsAsHtmlTable(columns: string[], rows: Record<string, unknown>[]) {
+function serializeRowsAsHtmlTable(
+  columns: string[],
+  columnKeys: string[],
+  rows: Record<string, unknown>[],
+) {
   const header = `<tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr>`;
   const body = rows
     .map(
       (row) =>
-        `<tr>${columns.map((column) => `<td>${escapeHtml(formatCellDetail(row[column], formatCellValue(row[column]).value).value)}</td>`).join("")}</tr>`,
+        `<tr>${columnKeys.map((columnKey) => `<td>${escapeHtml(formatCellDetail(row[columnKey], formatCellValue(row[columnKey]).value).value)}</td>`).join("")}</tr>`,
     )
     .join("");
   return `<table><thead>${header}</thead><tbody>${body}</tbody></table>`;

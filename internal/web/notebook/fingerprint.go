@@ -48,6 +48,9 @@ func CellFingerprintWithParameters(nb *Notebook, cell *Cell, values map[string]a
 		hasher.Write(parameterFingerprint)
 		return "nb1:" + hex.EncodeToString(hasher.Sum(nil))
 	}
+	if IsPythonCell(cell) {
+		return pythonCellFingerprint(nb, cell, parameterFingerprint, nb.PythonEnvironmentFingerprint)
+	}
 	mapping := make(map[string]string, len(nb.Cells)+len(cell.ExternalRefs))
 	for _, sibling := range nb.Cells {
 		if sibling.ID == cell.ID {
@@ -98,6 +101,68 @@ func CellFingerprintWithParameters(nb *Notebook, cell *Cell, values map[string]a
 	hasher.Write([]byte("\x00parameters\x00"))
 	hasher.Write(parameterFingerprint)
 	return "nb1:" + hex.EncodeToString(hasher.Sum(nil))
+}
+
+// SnapshotDefinitionFingerprint binds a durable source snapshot to the
+// effective definition that was actually executed. Cell fingerprints already
+// cover authored configuration and typed parameter values; the rendered input
+// additionally prevents a Jinja execution window or rendered URI from reusing
+// an older snapshot.
+func SnapshotDefinitionFingerprint(cellFingerprint, renderedDefinition string) string {
+	hasher := sha256.New()
+	hasher.Write([]byte("nbsnapshot1\x00"))
+	hasher.Write([]byte(strings.TrimSpace(cellFingerprint)))
+	hasher.Write([]byte("\x00definition\x00"))
+	hasher.Write([]byte(strings.TrimSpace(renderedDefinition)))
+	return "nbs1:" + hex.EncodeToString(hasher.Sum(nil))
+}
+
+// SQLSnapshotDefinitionFingerprint ignores presentation-only SQL formatting
+// while retaining the rendered semantics used for the warehouse read.
+func SQLSnapshotDefinitionFingerprint(cellFingerprint, renderedSQL string) string {
+	renderedSQL = strings.TrimRight(strings.TrimSpace(renderedSQL), ";")
+	return SnapshotDefinitionFingerprint(cellFingerprint, fingerprint.CanonicalSQL(renderedSQL))
+}
+
+func pythonCellFingerprint(nb *Notebook, cell *Cell, parameterFingerprint []byte, environmentFingerprint string) string {
+	upstreamIDs := make([]string, 0, len(cell.Asset.Upstreams))
+	for _, upstream := range cell.Asset.Upstreams {
+		if sibling := nb.CellByName(upstream.Value); sibling != nil {
+			upstreamIDs = append(upstreamIDs, sibling.ID)
+		}
+	}
+	sort.Strings(upstreamIDs)
+	externals := append([]string{}, cell.ExternalRefs...)
+	sort.Strings(externals)
+
+	content := cell.Raw
+	if content == "" {
+		content = cell.Asset.ExecutableFile.Content
+	}
+	input := struct {
+		Version     string   `json:"version"`
+		Content     string   `json:"content"`
+		Environment string   `json:"environment"`
+		Upstreams   []string `json:"upstreams"`
+		Externals   []string `json:"externals"`
+		Type        string   `json:"type"`
+		Connection  string   `json:"connection"`
+		Image       string   `json:"image"`
+		Parameters  string   `json:"parameters"`
+	}{
+		Version:     notebookPythonFingerprintVersion,
+		Content:     content,
+		Environment: environmentFingerprint,
+		Upstreams:   upstreamIDs,
+		Externals:   externals,
+		Type:        strings.ToLower(strings.TrimSpace(string(cell.Asset.Type))),
+		Connection:  strings.ToLower(strings.TrimSpace(cell.Asset.Connection)),
+		Image:       strings.ToLower(strings.TrimSpace(cell.Asset.Image)),
+		Parameters:  string(parameterFingerprint),
+	}
+	encoded, _ := json.Marshal(input)
+	sum := sha256.Sum256(encoded)
+	return "nb1:" + hex.EncodeToString(sum[:])
 }
 
 func notebookParameterFingerprint(nb *Notebook, values map[string]any) []byte {

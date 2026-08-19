@@ -16,10 +16,9 @@ import (
 )
 
 type stubFetcher struct {
-	duckPath string
-	columns  []string
-	rows     [][]any
-	fetches  int
+	duckPath  string
+	artifact  TabularArtifact
+	snapshots int
 }
 
 type stubWarehouseExecutor struct {
@@ -31,23 +30,33 @@ func (executor *stubWarehouseExecutor) Analyze(_ context.Context, _ AnalyzeBlock
 	return BlockAnalysis{Kind: "warehouse_sql"}, nil
 }
 
-func (executor *stubWarehouseExecutor) Execute(_ context.Context, _ ExecuteBlockInput) (BlockOutput, error) {
+func (executor *stubWarehouseExecutor) Execute(ctx context.Context, input ExecuteBlockInput) (BlockOutput, error) {
 	executor.calls++
 	artifact := executor.artifact
+	fingerprint, err := executor.SnapshotDefinitionFingerprint(ctx, input)
+	if err != nil {
+		return BlockOutput{}, err
+	}
+	artifact.Provenance.DefinitionFingerprint = fingerprint
+	artifact.Provenance.Environment = input.Environment
+	artifact.Provenance.Connection = input.Cell.Asset.Connection
 	return BlockOutput{Artifact: &artifact}, nil
+}
+
+func (executor *stubWarehouseExecutor) SnapshotDefinitionFingerprint(_ context.Context, input ExecuteBlockInput) (string, error) {
+	return SQLSnapshotDefinitionFingerprint(
+		CellFingerprintWithParameters(input.Notebook, input.Cell, input.ParameterValues),
+		input.SQL,
+	), nil
 }
 
 func (s *stubFetcher) LocalDuckDBPath(_ context.Context, _ string) (string, bool) {
 	return s.duckPath, s.duckPath != ""
 }
 
-func (s *stubFetcher) Fetch(_ context.Context, _ string, limit int) ([]string, [][]any, error) {
-	s.fetches++
-	rows := s.rows
-	if len(rows) > limit {
-		rows = rows[:limit]
-	}
-	return s.columns, rows, nil
+func (s *stubFetcher) Snapshot(_ context.Context, _ string) (TabularArtifact, error) {
+	s.snapshots++
+	return s.artifact, nil
 }
 
 func realRenameTables(t *testing.T) RenameTablesFunc {
@@ -120,6 +129,10 @@ func TestRunCellsExecutesDAGInSession(t *testing.T) {
 	if doubled.Materialized != "view" {
 		t.Fatalf("expected view by default, got %q", doubled.Materialized)
 	}
+	if doubled.Performance == nil || doubled.Performance.SessionOpenMS == nil || doubled.Performance.BatchRunMS == nil ||
+		doubled.Performance.MaterializeMS == nil || doubled.Performance.PreviewQueryMS == nil || doubled.Performance.MetadataWriteMS == nil {
+		t.Fatalf("run phase telemetry is incomplete: %+v", doubled.Performance)
+	}
 }
 
 func TestWarehouseSQLSourceSnapshotsTypedParquetBeforeLocalTransforms(t *testing.T) {
@@ -187,6 +200,64 @@ func TestWarehouseSQLSourceSnapshotsTypedParquetBeforeLocalTransforms(t *testing
 	}
 }
 
+func TestFullNotebookRunReusesUnchangedWarehouseSnapshot(t *testing.T) {
+	parquetPath := filepath.Join(t.TempDir(), "warehouse.parquet")
+	client, err := duck.NewClient(duck.Config{Path: ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	copySQL := fmt.Sprintf(
+		"copy (select 42::bigint as answer) to %s (format parquet)",
+		sqlStringLiteral(parquetPath),
+	)
+	if err := client.RunQueryWithoutResult(t.Context(), &query.Query{Query: copySQL}); err != nil {
+		client.Close()
+		t.Fatal(err)
+	}
+	client.Close()
+	artifact, err := InspectParquetArtifact(t.Context(), parquetPath, SnapshotProvenance{
+		SourceKind: "warehouse_sql", Environment: "default", Connection: "postgres-other",
+	}, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := &stubWarehouseExecutor{artifact: artifact}
+	nb := loadRunFixture(t, map[string]string{
+		ManifestFileName: "id: 11111111-0000-0000-0000-0000000000f3\nblocks:\n  - cell: source01\n",
+		"source.sql":     "/* @bruin\nid: source01\ntype: pg.sql\nconnection: postgres-other\n@bruin */\nselect answer from public.source_table\n",
+	})
+	runner := &Runner{
+		Store: NewSessionStore(filepath.Join(t.TempDir(), "sessions")), RenameTables: realRenameTables(t),
+		WarehouseExecutor: executor, Environment: "default",
+	}
+	options := RunOptions{ReuseSourceSnapshots: true}
+	first, err := runner.RunCells(t.Context(), nb, TopoOrder(nb), options)
+	if err != nil || len(first) != 1 || first[0].Status != CellRunOK {
+		t.Fatalf("first warehouse snapshot failed: results=%+v err=%v", first, err)
+	}
+	second, err := runner.RunCells(t.Context(), nb, TopoOrder(nb), options)
+	if err != nil || len(second) != 1 || second[0].Status != CellRunOK {
+		t.Fatalf("cached warehouse snapshot failed: results=%+v err=%v", second, err)
+	}
+	if executor.calls != 1 {
+		t.Fatalf("unchanged full-notebook run called warehouse executor %d times", executor.calls)
+	}
+	if second[0].Snapshot == nil || second[0].TotalRows != 1 || fmt.Sprint(second[0].Rows[0][0]) != "42" {
+		t.Fatalf("cached snapshot did not restore the published preview: %+v", second[0])
+	}
+	if second[0].Performance == nil || second[0].Performance.TransferBytes != 0 {
+		t.Fatalf("cached snapshot reported transferred bytes: %+v", second[0].Performance)
+	}
+
+	refreshed, err := runner.RunCells(t.Context(), nb, TopoOrder(nb), RunOptions{})
+	if err != nil || len(refreshed) != 1 || refreshed[0].Status != CellRunOK {
+		t.Fatalf("explicit source refresh failed: results=%+v err=%v", refreshed, err)
+	}
+	if executor.calls != 2 {
+		t.Fatalf("explicit source run did not refresh the warehouse snapshot; calls=%d", executor.calls)
+	}
+}
+
 func TestRunCellsHidesSlingLoadedAtFromResults(t *testing.T) {
 	nb := loadRunFixture(t, map[string]string{
 		ManifestFileName: "id: 11111111-0000-0000-0000-0000000000f1\nblocks:\n  - cell: aaaa1111\n",
@@ -209,6 +280,58 @@ func TestRunCellsHidesSlingLoadedAtFromResults(t *testing.T) {
 	}
 	if got := results[0].Rows; len(got) != 1 || len(got[0]) != 1 || fmt.Sprint(got[0][0]) != "42" {
 		t.Fatalf("bookkeeping column was not removed from rows: %v", got)
+	}
+}
+
+func TestRunCellsCountsPreviewRowsInOneQueryWithoutExposingBookkeeping(t *testing.T) {
+	nb := loadRunFixture(t, map[string]string{
+		ManifestFileName: "id: 11111111-0000-0000-0000-0000000000f2\nblocks:\n  - cell: aaaa1111\n",
+		"preview.sql":    "/* @bruin\nid: aaaa1111\ntype: duckdb.sql\n@bruin */\nselect range as __renart_preview_total_rows, range * 2 as value from range(7)\n",
+	})
+	runner := &Runner{
+		Store:        NewSessionStore(filepath.Join(t.TempDir(), "sessions")),
+		RenameTables: realRenameTables(t),
+		PreviewLimit: 3,
+	}
+
+	results, err := runner.RunCells(context.Background(), nb, TopoOrder(nb), RunOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Status != CellRunOK {
+		t.Fatalf("unexpected result: %+v", results)
+	}
+	result := results[0]
+	if result.TotalRows != 7 || len(result.Rows) != 3 {
+		t.Fatalf("preview total/rows = %d/%d, want 7/3", result.TotalRows, len(result.Rows))
+	}
+	if got := fmt.Sprint(result.Columns); got != "[__renart_preview_total_rows value]" {
+		t.Fatalf("user columns were changed: %s", got)
+	}
+	if len(result.Rows[0]) != 2 {
+		t.Fatalf("window bookkeeping leaked into preview row: %v", result.Rows[0])
+	}
+}
+
+func TestRunCellsReportsZeroRowsFromWindowPreview(t *testing.T) {
+	nb := loadRunFixture(t, map[string]string{
+		ManifestFileName: "id: 11111111-0000-0000-0000-0000000000f3\nblocks:\n  - cell: aaaa1111\n",
+		"empty.sql":      "/* @bruin\nid: aaaa1111\ntype: duckdb.sql\n@bruin */\nselect 1 as value where false\n",
+	})
+	runner := &Runner{
+		Store:        NewSessionStore(filepath.Join(t.TempDir(), "sessions")),
+		RenameTables: realRenameTables(t),
+	}
+
+	results, err := runner.RunCells(context.Background(), nb, TopoOrder(nb), RunOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Status != CellRunOK {
+		t.Fatalf("unexpected result: %+v", results)
+	}
+	if results[0].TotalRows != 0 || len(results[0].Rows) != 0 || fmt.Sprint(results[0].Columns) != "[value]" {
+		t.Fatalf("unexpected empty preview: %+v", results[0])
 	}
 }
 
@@ -292,6 +415,9 @@ func TestRestoreCellRunResultsAfterRestartAndDetectDefinitionDrift(t *testing.T)
 	if got := restored["aaaa1111"].ColumnTypes; len(got) != 1 || got[0] != "BIGINT" {
 		t.Fatalf("restored schema lost physical type: %v", got)
 	}
+	if performance := restored["aaaa1111"].Performance; performance == nil || performance.SessionBytes <= 0 {
+		t.Fatalf("restored result lost local performance observations: %+v", performance)
+	}
 
 	if err := os.WriteFile(nb.Cells[0].Path, []byte("/* @bruin\nid: aaaa1111\ntype: duckdb.sql\n@bruin */\nselect 43 as answer\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -332,30 +458,36 @@ func TestRunPythonCellCapturesLogs(t *testing.T) {
 		Store:           NewSessionStore(filepath.Join(t.TempDir(), "sessions")),
 		RenameTables:    realRenameTables(t),
 		ParameterValues: map[string]any{"region": "eu"},
-		PythonMaterializer: func(ctx context.Context, _ *Cell, parquetPath string, runQuery PythonQueryFunc, parameters map[string]any) (string, error) {
+		PythonMaterializer: func(ctx context.Context, _ *Cell, parquetPath string, runQuery PythonQueryFunc, parameters map[string]any) (PythonMaterializationOutput, error) {
 			if parameters["region"] != "eu" {
-				return "", fmt.Errorf("unexpected Python parameter values: %+v", parameters)
+				return PythonMaterializationOutput{}, fmt.Errorf("unexpected Python parameter values: %+v", parameters)
 			}
 			result, err := runQuery(ctx, NotebookConnectionName, "select 42 as answer")
 			if err != nil {
-				return "", err
+				return PythonMaterializationOutput{}, err
 			}
 			if len(result.Rows) != 1 || fmt.Sprint(result.Rows[0][0]) != "42" {
-				return "", fmt.Errorf("unexpected live notebook query result: %+v", result.Rows)
+				return PythonMaterializationOutput{}, fmt.Errorf("unexpected live notebook query result: %+v", result.Rows)
 			}
 			client, err := duck.NewClient(duck.Config{Path: ""})
 			if err != nil {
-				return "", err
+				return PythonMaterializationOutput{}, err
 			}
 			defer client.Close()
 			copySQL := fmt.Sprintf("copy (select 42 as answer) to %s (format parquet)", sqlStringLiteral(parquetPath))
 			if err := client.RunQueryWithoutResult(ctx, &query.Query{Query: copySQL}); err != nil {
-				return "", err
+				return PythonMaterializationOutput{}, err
 			}
-			return "hello from stdout", nil
+			return PythonMaterializationOutput{
+				Logs:                   "hello from stdout",
+				TransferBytes:          128,
+				PythonStartupMS:        12.5,
+				EnvironmentFingerprint: "nbpython2:post-run",
+			}, nil
 		},
 	}
-	okResults, err := okRunner.RunCells(context.Background(), build(), TopoOrder(build()), RunOptions{})
+	okNotebook := build()
+	okResults, err := okRunner.RunCells(context.Background(), okNotebook, TopoOrder(okNotebook), RunOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,12 +497,25 @@ func TestRunPythonCellCapturesLogs(t *testing.T) {
 	if okResults[0].Logs != "hello from stdout" {
 		t.Fatalf("expected captured logs, got %q", okResults[0].Logs)
 	}
+	if okResults[0].Performance == nil || okResults[0].Performance.TransferBytes != 128 ||
+		okResults[0].Performance.PythonStartupMS != 12.5 || okResults[0].Performance.SessionBytes <= 0 {
+		t.Fatalf("expected Python performance measurements, got %+v", okResults[0].Performance)
+	}
+	expectedFingerprint := pythonCellFingerprint(
+		okNotebook,
+		okNotebook.Cells[0],
+		notebookParameterFingerprint(okNotebook, okRunner.ParameterValues),
+		"nbpython2:post-run",
+	)
+	if okResults[0].Fingerprint != expectedFingerprint {
+		t.Fatalf("run result used the pre-run Python environment: got=%q want=%q", okResults[0].Fingerprint, expectedFingerprint)
+	}
 
 	// Failure path: logs are still attached so a traceback is visible.
 	errRunner := &Runner{
 		Store: NewSessionStore(filepath.Join(t.TempDir(), "sessions")),
-		PythonMaterializer: func(context.Context, *Cell, string, PythonQueryFunc, map[string]any) (string, error) {
-			return "partial output\nTraceback: boom", fmt.Errorf("python cell failed")
+		PythonMaterializer: func(context.Context, *Cell, string, PythonQueryFunc, map[string]any) (PythonMaterializationOutput, error) {
+			return PythonMaterializationOutput{Logs: "partial output\nTraceback: boom"}, fmt.Errorf("python cell failed")
 		},
 	}
 	errResults, err := errRunner.RunCells(context.Background(), build(), TopoOrder(build()), RunOptions{})
@@ -443,36 +588,30 @@ func TestRunCellsMaterializeDirectivePinsTable(t *testing.T) {
 	}
 }
 
-func TestImportGenericFetchRejectsOversizedResultWithoutPublishingPartialTable(t *testing.T) {
+func TestImportTypedSnapshotRejectsAmbiguousPartialArtifactWithoutPublishing(t *testing.T) {
 	nb := loadRunFixture(t, map[string]string{
 		ManifestFileName: "id: 11111111-0000-0000-0000-000000000004\nblocks:\n  - cell: aaaa1111\n",
 		"reader.sql":     "/* @bruin\nid: aaaa1111\ntype: duckdb.sql\n@bruin */\nselect sum(amount) as total from marts.orders\n",
 	})
 
-	fetcher := &stubFetcher{
-		columns: []string{"id", "amount", "note"},
-		rows: [][]any{
-			{float64(1), float64(10.5), "a"},
-			{float64(2), float64(20), nil},
-			{float64(3), float64(30), "c"},
-		},
-	}
+	fetcher := &stubFetcher{artifact: TabularArtifact{
+		Schema: []TabularColumn{{Name: "amount", Type: "DECIMAL(8,2)"}},
+	}}
 	runner := &Runner{
 		Store:        NewSessionStore(filepath.Join(t.TempDir(), "sessions")),
 		RenameTables: realRenameTables(t),
 		Fetcher:      fetcher,
-		ImportRowCap: 2,
 	}
 
 	results, err := runner.RunCells(context.Background(), nb, TopoOrder(nb), RunOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if results[0].Status != CellRunError || !strings.Contains(results[0].Error, "safe buffered import limit of 2 rows") {
-		t.Fatalf("oversized import was not rejected clearly: %+v", results[0])
+	if results[0].Status != CellRunError || !strings.Contains(results[0].Error, "must be exactly one of complete or sampled") {
+		t.Fatalf("ambiguous partial import was not rejected clearly: %+v", results[0])
 	}
 	if len(results[0].Imports) != 0 {
-		t.Fatalf("oversized import was exposed as a snapshot: %+v", results[0].Imports)
+		t.Fatalf("partial import was exposed as a snapshot: %+v", results[0].Imports)
 	}
 	session, err := runner.Store.Open(nb.UUID)
 	if err != nil {
@@ -484,6 +623,67 @@ func TestImportGenericFetchRejectsOversizedResultWithoutPublishingPartialTable(t
 	}
 	if record, err := session.lookupImport(context.Background(), "marts.orders"); err != nil || record != nil {
 		t.Fatalf("partial import metadata was published: record=%+v err=%v", record, err)
+	}
+}
+
+func TestImportTypedSnapshotPreservesPhysicalTypesAndProvenance(t *testing.T) {
+	parquetPath := filepath.Join(t.TempDir(), "pipeline-asset.parquet")
+	client, err := duck.NewClient(duck.Config{Path: ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	copySQL := fmt.Sprintf(
+		"copy (select cast(12.34 as decimal(8,2)) as amount, date '2026-08-17' as day, timestamp '2026-08-17 09:30:00' as happened_at) to %s (format parquet)",
+		sqlStringLiteral(parquetPath),
+	)
+	if err := client.RunQueryWithoutResult(t.Context(), &query.Query{Query: copySQL}); err != nil {
+		client.Close()
+		t.Fatal(err)
+	}
+	client.Close()
+	artifact, err := InspectParquetArtifact(t.Context(), parquetPath, SnapshotProvenance{
+		SourceKind: "pipeline_asset", Environment: "default", Connection: "postgres-other",
+		DefinitionFingerprint: "nbs1:definition", SourceFingerprint: "asset-revision",
+	}, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nb := loadRunFixture(t, map[string]string{
+		ManifestFileName: "id: 11111111-0000-0000-0000-000000000045\nblocks:\n  - cell: aaaa1111\n",
+		"reader.sql":     "/* @bruin\nid: aaaa1111\ntype: duckdb.sql\n@bruin */\nselect amount, day, happened_at from marts.orders\n",
+	})
+	fetcher := &stubFetcher{artifact: artifact}
+	runner := &Runner{
+		Store:        NewSessionStore(filepath.Join(t.TempDir(), "sessions")),
+		RenameTables: realRenameTables(t),
+		Fetcher:      fetcher,
+	}
+	results, err := runner.RunCells(t.Context(), nb, TopoOrder(nb), RunOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if results[0].Status != CellRunOK {
+		t.Fatalf("typed import failed: %+v", results[0])
+	}
+	if len(results[0].ColumnTypes) != 3 || !strings.Contains(results[0].ColumnTypes[0], "DECIMAL") || results[0].ColumnTypes[1] != "DATE" || !strings.Contains(results[0].ColumnTypes[2], "TIMESTAMP") {
+		t.Fatalf("typed import lost physical types: %+v", results[0].ColumnTypes)
+	}
+	if fetcher.snapshots != 1 || len(results[0].Imports) != 1 || results[0].Imports[0].RowCount != 1 {
+		t.Fatalf("unexpected typed import bookkeeping: snapshots=%d imports=%+v", fetcher.snapshots, results[0].Imports)
+	}
+
+	session, err := runner.Store.Open(nb.UUID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	manifest, err := session.Query(t.Context(), "select block_id, source_kind, connection, source_fingerprint, complete from __renart_imports_v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Rows) != 1 || fmt.Sprint(manifest.Rows[0]) != "[implicit:src_marts_orders pipeline_asset postgres-other asset-revision true]" {
+		t.Fatalf("typed import provenance was not persisted: %+v", manifest.Rows)
 	}
 }
 
@@ -503,7 +703,7 @@ func TestImportDoesNotReuseLegacyIncompleteCacheEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	session.Close()
-	fetcher := &stubFetcher{columns: []string{"id"}, rows: [][]any{{1}}}
+	fetcher := &stubFetcher{}
 	runner := &Runner{Store: store, RenameTables: realRenameTables(t), Fetcher: fetcher}
 	results, err := runner.RunCells(context.Background(), nb, TopoOrder(nb), RunOptions{})
 	if err != nil {
@@ -512,8 +712,8 @@ func TestImportDoesNotReuseLegacyIncompleteCacheEntry(t *testing.T) {
 	if results[0].Status != CellRunError || !strings.Contains(results[0].Error, "cached upstream \"marts.orders\" is incomplete") {
 		t.Fatalf("legacy partial cache was not rejected: %+v", results[0])
 	}
-	if fetcher.fetches != 0 {
-		t.Fatalf("incomplete cache triggered an implicit refresh: %d fetches", fetcher.fetches)
+	if fetcher.snapshots != 0 {
+		t.Fatalf("incomplete cache triggered an implicit refresh: %d snapshots", fetcher.snapshots)
 	}
 }
 
@@ -550,8 +750,8 @@ func TestImportViaAttachFastPath(t *testing.T) {
 	if results[0].Status != CellRunOK {
 		t.Fatalf("run failed: %s", results[0].Error)
 	}
-	if fetcher.fetches != 0 {
-		t.Fatalf("expected attach fast path, but generic fetch ran %d times", fetcher.fetches)
+	if fetcher.snapshots != 0 {
+		t.Fatalf("expected attach fast path, but typed snapshot ran %d times", fetcher.snapshots)
 	}
 	if len(results[0].Imports) != 1 || !results[0].Imports[0].Complete || results[0].Imports[0].RowCount != 2 {
 		t.Fatalf("unexpected import record: %+v", results[0].Imports)
@@ -569,6 +769,9 @@ func TestSessionStoreRemoveAndSweep(t *testing.T) {
 		t.Fatal(err)
 	}
 	session.Close()
+	if version := store.manifestVersion("nb-active"); version != sessionManifestVersion {
+		t.Fatalf("manifest cache version = %d, want %d", version, sessionManifestVersion)
+	}
 	session, err = store.Open("nb-deleted")
 	if err != nil {
 		t.Fatal(err)
@@ -594,5 +797,8 @@ func TestSessionStoreRemoveAndSweep(t *testing.T) {
 	}
 	if _, statErr := os.Stat(store.DBPath("nb-active")); !os.IsNotExist(statErr) {
 		t.Fatal("Remove left the session file behind")
+	}
+	if version := store.manifestVersion("nb-active"); version != 0 {
+		t.Fatalf("Remove left manifest cache version %d", version)
 	}
 }

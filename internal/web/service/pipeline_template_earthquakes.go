@@ -65,7 +65,10 @@ func earthquakeEventsAPIYAML() string {
 	return `name: earthquakes.events
 type: api
 connection: duckdb-default
-description: Earthquakes reported by the USGS during the selected run window.
+description: Retained event history built by merging USGS earthquakes from every selected run window.
+tags:
+  - history
+  - event-history
 
 materialization:
   type: table
@@ -126,7 +129,10 @@ func earthquakeNotableEventsSQL() string {
 	return `/* @bruin
 name: earthquakes.notable_events
 type: duckdb.sql
-description: Replaces the current notable-event shortlist on every run.
+description: Current notable-event shortlist, replaced on every run; use window_summary or run_log for historical analysis.
+tags:
+  - current-snapshot
+  - shortlist
 depends:
   - earthquakes.events
 materialization:
@@ -178,7 +184,11 @@ func earthquakeWindowSummarySQL() string {
 	return `/* @bruin
 name: earthquakes.window_summary
 type: duckdb.sql
-description: One replay-safe summary row for each selected execution window.
+description: Replay-safe historical time series with one summary row per execution window; preferred for trend analysis.
+tags:
+  - history
+  - time-series
+  - recommended-analysis
 depends:
   - earthquakes.events
 materialization:
@@ -231,7 +241,10 @@ func earthquakeMagnitudeBandsSQL() string {
 	return `/* @bruin
 name: earthquakes.magnitude_bands
 type: duckdb.sql
-description: A live view over every earthquake collected so far.
+description: Current aggregate view over the retained earthquake event history.
+tags:
+  - historical-aggregate
+  - current-view
 depends:
   - earthquakes.events
 materialization:
@@ -271,7 +284,11 @@ func earthquakeRunLogSQL() string {
 	return `/* @bruin
 name: earthquakes.run_log
 type: duckdb.sql
-description: Appends one audit row after each completed window summary.
+description: Append-only execution audit history with the key metrics observed in each completed run window.
+tags:
+  - history
+  - append-only
+  - execution-audit
 depends:
   - earthquakes.window_summary
 materialization:
@@ -284,7 +301,9 @@ hooks:
           run_id VARCHAR,
           window_start TIMESTAMP,
           window_end TIMESTAMP,
-          earthquake_count BIGINT
+          earthquake_count BIGINT,
+          average_magnitude DOUBLE,
+          maximum_magnitude DOUBLE
         )
 columns:
   - name: run_id
@@ -295,13 +314,19 @@ columns:
     type: timestamp
   - name: earthquake_count
     type: bigint
+  - name: average_magnitude
+    type: double
+  - name: maximum_magnitude
+    type: double
 @bruin */
 
 SELECT
     '{{ run_id }}' AS run_id,
     window_start,
     window_end,
-    earthquake_count
+    earthquake_count,
+    average_magnitude,
+    maximum_magnitude
 FROM earthquakes.window_summary
 WHERE window_start = CAST('{{ start_timestamp }}' AS TIMESTAMP)
 `

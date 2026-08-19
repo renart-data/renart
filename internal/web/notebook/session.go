@@ -25,13 +25,18 @@ type SessionStore struct {
 	// notebook connection. The zero value keeps access enabled.
 	DisableFilesystemAccess bool
 
-	mu    sync.Mutex
-	locks map[string]*sync.Mutex
+	mu               sync.Mutex
+	locks            map[string]*sync.Mutex
+	manifestVersions map[string]int
 }
 
 // NewSessionStore creates a store rooted at the given directory.
 func NewSessionStore(root string, workspaceRoot ...string) *SessionStore {
-	store := &SessionStore{Root: root, locks: map[string]*sync.Mutex{}}
+	store := &SessionStore{
+		Root:             root,
+		locks:            map[string]*sync.Mutex{},
+		manifestVersions: map[string]int{},
+	}
 	if len(workspaceRoot) > 0 {
 		store.WorkspaceRoot = workspaceRoot[0]
 	}
@@ -77,6 +82,8 @@ func (s *SessionStore) Open(notebookUUID string) (*Session, error) {
 	lock.Lock()
 
 	path := s.DBPath(notebookUUID)
+	_, statErr := os.Stat(path)
+	databaseExists := statErr == nil
 	client, err := newNotebookDuckDBClient(context.Background(), path, s.WorkspaceRoot, s.DisableFilesystemAccess)
 	if err != nil {
 		lock.Unlock()
@@ -89,9 +96,12 @@ func (s *SessionStore) Open(notebookUUID string) (*Session, error) {
 		client:       client,
 		unlock:       lock.Unlock,
 	}
-	if err := session.ensureManifest(context.Background()); err != nil {
-		session.Close()
-		return nil, err
+	if !databaseExists || s.manifestVersion(notebookUUID) < sessionManifestVersion {
+		if err := session.ensureManifest(context.Background()); err != nil {
+			session.Close()
+			return nil, err
+		}
+		s.setManifestVersion(notebookUUID, sessionManifestVersion)
 	}
 	return session, nil
 }
@@ -102,7 +112,30 @@ func (s *SessionStore) Remove(notebookUUID string) error {
 	lock := s.lockFor(notebookUUID)
 	lock.Lock()
 	defer lock.Unlock()
-	return removeSessionFiles(s.DBPath(notebookUUID))
+	if err := removeSessionFiles(s.DBPath(notebookUUID)); err != nil {
+		return err
+	}
+	s.setManifestVersion(notebookUUID, 0)
+	return nil
+}
+
+func (s *SessionStore) manifestVersion(notebookUUID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.manifestVersions[notebookUUID]
+}
+
+func (s *SessionStore) setManifestVersion(notebookUUID string, version int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.manifestVersions == nil {
+		s.manifestVersions = map[string]int{}
+	}
+	if version == 0 {
+		delete(s.manifestVersions, notebookUUID)
+		return
+	}
+	s.manifestVersions[notebookUUID] = version
 }
 
 // Sweep removes session files whose notebook no longer exists. Called on
@@ -191,6 +224,17 @@ func removeSessionFiles(path string) error {
 	return nil
 }
 
+func sessionDiskUsage(path string) int64 {
+	var total int64
+	for _, candidate := range []string{path, path + ".wal", path + ".tmp"} {
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			total += info.Size()
+		}
+	}
+	return total
+}
+
 // Close releases the session handle and the per-notebook lock.
 func (s *Session) Close() {
 	if s.client != nil {
@@ -235,6 +279,11 @@ func (s *Session) objectType(ctx context.Context, objectName string) (string, er
 const importManifestTable = "__renart_imports"
 const snapshotManifestTable = "__renart_imports_v2"
 const cellRunManifestTable = "__renart_cell_runs"
+
+// sessionManifestVersion invalidates the process-local migration cache when
+// the session schema changes. Migrations remain idempotent so the first open
+// after each Renart restart also repairs databases created by older versions.
+const sessionManifestVersion = 1
 
 func (s *Session) ensureManifest(ctx context.Context) error {
 	if err := s.Exec(ctx, fmt.Sprintf(

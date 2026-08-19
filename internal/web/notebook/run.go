@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -18,17 +16,16 @@ import (
 // untouched instead of failing the cell.
 var ErrUnknownSource = errors.New("unknown source")
 
-// SourceFetcher resolves an external reference (a pipeline asset or raw
-// warehouse table) into data the session can use. The interface is the
-// future cloud-gateway read path: asset → stream → local DuckDB; today the
-// backend is the direct connection.
+// SourceFetcher resolves a pipeline asset reference into a typed artifact the
+// session can publish without reconstructing physical types from JSON values.
 type SourceFetcher interface {
 	// LocalDuckDBPath returns the path of a local DuckDB database that
 	// already contains ref, enabling the zero-copy ATTACH import. ok is
 	// false when the upstream lives elsewhere.
 	LocalDuckDBPath(ctx context.Context, ref string) (path string, ok bool)
-	// Fetch returns up to limit rows of the referenced upstream.
-	Fetch(ctx context.Context, ref string, limit int) (columns []string, rows [][]any, err error)
+	// Snapshot creates a complete typed artifact for non-local upstreams. The
+	// caller owns Cleanup and publishes only after validation succeeds.
+	Snapshot(ctx context.Context, ref string) (TabularArtifact, error)
 }
 
 // RenameTablesFunc rewrites table references in a SQL statement according
@@ -59,10 +56,6 @@ type Runner struct {
 	// ParameterValues is the validated runtime snapshot used consistently by
 	// SQL rendering, Python context, source fingerprints, and run records.
 	ParameterValues map[string]any
-	// ImportRowCap is a strict safety limit for the legacy buffered importer.
-	// Results above it fail before publication; a partial result must never
-	// masquerade as an ordinary downstream relation.
-	ImportRowCap int
 	// PreviewLimit caps the rows returned to the UI per cell run.
 	PreviewLimit int
 }
@@ -81,13 +74,18 @@ type PythonQueryFunc func(ctx context.Context, connection, sql string) (*query.Q
 // PythonMaterializer runs cell's materialize() and writes the result to
 // parquetPath. runQuery is the only data-access path provided to Python; no
 // session database path or credentials cross the process boundary. It returns
-// combined stdout/stderr even on failure so the traceback can be shown.
-type PythonMaterializer func(ctx context.Context, cell *Cell, parquetPath string, runQuery PythonQueryFunc, parameterValues map[string]any) (logs string, err error)
+// logs and local-only process measurements even on failure so the traceback
+// and performance inspector can be shown.
+type PythonMaterializationOutput struct {
+	Logs                   string
+	TransferBytes          int64
+	PythonStartupMS        float64
+	EnvironmentFingerprint string
+}
 
-const (
-	defaultImportRowCap = 50000
-	defaultPreviewLimit = 100
-)
+type PythonMaterializer func(ctx context.Context, cell *Cell, parquetPath string, runQuery PythonQueryFunc, parameterValues map[string]any) (PythonMaterializationOutput, error)
+
+const defaultPreviewLimit = 100
 
 // CellStatus values for a cell run.
 const (
@@ -115,8 +113,13 @@ type CellRunResult struct {
 	Sampled      bool   `json:"sampled,omitempty"`
 	RewrittenSQL string `json:"rewritten_sql,omitempty"`
 	// Logs is the combined stdout/stderr a Python cell printed while running.
-	Logs       string `json:"logs,omitempty"`
-	DurationMS int64  `json:"duration_ms"`
+	Logs        string              `json:"logs,omitempty"`
+	DurationMS  int64               `json:"duration_ms"`
+	Performance *CellRunPerformance `json:"performance,omitempty"`
+	// Fingerprint binds this in-memory result to the authored/runtime inputs
+	// that produced it. It is persisted separately in the session manifest and
+	// never exposed as part of the public run response.
+	Fingerprint string `json:"-"`
 	// Viz is the parsed @viz directive (nil → render as a plain table).
 	Viz *VizDirective `json:"viz,omitempty"`
 	// VizDiagnostics are directive parse/validation findings (including
@@ -124,10 +127,53 @@ type CellRunResult struct {
 	VizDiagnostics []VizDiagnostic `json:"viz_diagnostics,omitempty"`
 }
 
+// CellRunPerformance contains local runtime measurements intended for the
+// notebook's performance inspector. They are observations, not authored state,
+// and may be absent after older runs or when a phase cannot be measured.
+type CellRunPerformance struct {
+	RequestTotalMS  *float64 `json:"request_total_ms,omitempty"`
+	RequestSetupMS  *float64 `json:"request_setup_ms,omitempty"`
+	BatchRunMS      *float64 `json:"batch_run_ms,omitempty"`
+	SessionOpenMS   *float64 `json:"session_open_ms,omitempty"`
+	MaterializeMS   *float64 `json:"materialize_ms,omitempty"`
+	PreviewQueryMS  *float64 `json:"preview_query_ms,omitempty"`
+	MetadataWriteMS *float64 `json:"metadata_write_ms,omitempty"`
+	RuntimeSyncMS   *float64 `json:"runtime_sync_ms,omitempty"`
+	SessionBytes    int64    `json:"session_bytes,omitempty"`
+	TransferBytes   int64    `json:"transfer_bytes,omitempty"`
+	PythonStartupMS float64  `json:"python_startup_ms,omitempty"`
+}
+
+func (r *CellRunResult) performance() *CellRunPerformance {
+	if r.Performance == nil {
+		r.Performance = &CellRunPerformance{}
+	}
+	return r.Performance
+}
+
+func (r *CellRunResult) observePreviewQuery(startedAt time.Time) {
+	duration := elapsedMilliseconds(startedAt)
+	r.performance().PreviewQueryMS = &duration
+}
+
+func (r *CellRunResult) observeMaterialize(startedAt time.Time) {
+	duration := elapsedMilliseconds(startedAt)
+	r.performance().MaterializeMS = &duration
+}
+
+func elapsedMilliseconds(startedAt time.Time) float64 {
+	return float64(time.Since(startedAt)) / float64(time.Millisecond)
+}
+
 // RunOptions tunes a batch run.
 type RunOptions struct {
-	// RefreshImports forces re-fetching cached upstream imports.
+	// RefreshImports forces explicit source snapshots and cached upstream
+	// imports to be fetched again. The legacy name remains on the API DTO.
 	RefreshImports bool
+	// ReuseSourceSnapshots allows unchanged explicit source cells to keep their
+	// last published snapshot. It is enabled only by an ordinary full-notebook
+	// run; running a source cell directly remains an explicit refresh.
+	ReuseSourceSnapshots bool
 }
 
 // materializeDirective detects @materialize(table) in either comment form:
@@ -141,11 +187,14 @@ var materializeDirective = regexp.MustCompile(`(?m)(^\s*--\s*@materialize\(\s*ta
 // upstream failed or was blocked in this batch is reported as blocked, not
 // executed — the prototype's behavior.
 func (r *Runner) RunCells(ctx context.Context, nb *Notebook, cells []*Cell, opts RunOptions) ([]CellRunResult, error) {
+	batchStartedAt := time.Now()
+	sessionStartedAt := time.Now()
 	session, err := r.Store.Open(nb.UUID)
 	if err != nil {
 		return nil, err
 	}
 	defer session.Close()
+	sessionOpenMS := elapsedMilliseconds(sessionStartedAt)
 
 	failed := map[string]bool{}
 	priorRuns, _ := session.listCellRuns(ctx)
@@ -157,6 +206,7 @@ func (r *Runner) RunCells(ctx context.Context, nb *Notebook, cells []*Cell, opts
 	}
 	results := make([]CellRunResult, 0, len(cells))
 	for _, cell := range cells {
+		currentFingerprint := CellFingerprintWithParameters(nb, cell, r.ParameterValues)
 		// Stop promptly when the caller cancels (the client aborted the run):
 		// don't start further cells, release the session lock, and let the
 		// already-cancelled DuckDB statement unwind. The discarded response is
@@ -174,13 +224,14 @@ func (r *Runner) RunCells(ctx context.Context, nb *Notebook, cells []*Cell, opts
 		if blockedBy != "" {
 			failed[strings.ToLower(cell.Asset.Name)] = true
 			results = append(results, CellRunResult{
-				CellID:     cell.ID,
-				Name:       cell.Asset.Name,
-				ObjectName: CellObjectName(cell.ID),
-				Status:     CellRunBlocked,
-				Error:      fmt.Sprintf("upstream cell %q did not run successfully", blockedBy),
-				Columns:    []string{},
-				Rows:       [][]any{},
+				CellID:      cell.ID,
+				Name:        cell.Asset.Name,
+				ObjectName:  CellObjectName(cell.ID),
+				Status:      CellRunBlocked,
+				Error:       fmt.Sprintf("upstream cell %q did not run successfully", blockedBy),
+				Columns:     []string{},
+				Rows:        [][]any{},
+				Fingerprint: currentFingerprint,
 			})
 			continue
 		}
@@ -193,18 +244,33 @@ func (r *Runner) RunCells(ctx context.Context, nb *Notebook, cells []*Cell, opts
 			}
 		}
 		result := r.runOne(ctx, session, nb, cell, opts)
+		if result.Fingerprint == "" {
+			result.Fingerprint = currentFingerprint
+		}
 		result.Sampled = result.Sampled || inheritedSample || (result.Snapshot != nil && result.Snapshot.Sampled)
 		if result.Status == CellRunOK {
+			metadataStartedAt := time.Now()
 			if recordErr := session.recordCellRun(ctx, nb, cell, result, r.ParameterValues); recordErr != nil {
 				result.Status = CellRunError
 				result.Error = "could not persist notebook run metadata: " + recordErr.Error()
 			}
+			metadataWriteMS := elapsedMilliseconds(metadataStartedAt)
+			result.performance().MetadataWriteMS = &metadataWriteMS
 		}
 		if result.Status != CellRunOK {
 			failed[strings.ToLower(cell.Asset.Name)] = true
 		}
 		sampledByName[strings.ToLower(cell.Asset.Name)] = result.Status == CellRunOK && result.Sampled
 		results = append(results, result)
+	}
+	sessionBytes := sessionDiskUsage(session.Path)
+	session.Close()
+	batchRunMS := elapsedMilliseconds(batchStartedAt)
+	for index := range results {
+		performance := results[index].performance()
+		performance.SessionBytes = sessionBytes
+		performance.SessionOpenMS = &sessionOpenMS
+		performance.BatchRunMS = &batchRunMS
 	}
 	return results, nil
 }
@@ -321,6 +387,7 @@ func (r *Runner) runOne(ctx context.Context, session *Session, nb *Notebook, cel
 	result.Materialized = kind
 
 	object := quoteIdent(result.ObjectName)
+	materializeStartedAt := time.Now()
 	// Drop whatever object currently exists under this name, by its actual
 	// type. DuckDB's `drop table if exists` errors when the name exists as a
 	// view (and vice-versa), so a cell re-run — or a view↔table switch —
@@ -331,31 +398,36 @@ func (r *Runner) runOne(ctx context.Context, session *Session, nb *Notebook, cel
 			dropKind = "table"
 		}
 		if err := session.Exec(ctx, fmt.Sprintf("drop %s if exists %s", dropKind, object)); err != nil {
+			result.observeMaterialize(materializeStartedAt)
 			result.Error = normalizeDuckDBError(err)
 			result.DurationMS = time.Since(startedAt).Milliseconds()
 			return result
 		}
 	}
 	if err := session.Exec(ctx, fmt.Sprintf("create or replace %s %s as (\n%s\n)", kind, object, rewritten)); err != nil {
+		result.observeMaterialize(materializeStartedAt)
 		result.Error = normalizeDuckDBError(err)
 		result.DurationMS = time.Since(startedAt).Milliseconds()
 		return result
 	}
+	result.observeMaterialize(materializeStartedAt)
 
-	preview, err := session.Query(ctx, fmt.Sprintf("select * from %s limit %d", object, r.previewLimit()))
+	previewStartedAt := time.Now()
+	preview, err := session.Query(ctx, fmt.Sprintf(
+		"select *, count(*) over () as %s from %s limit %d",
+		quoteIdent(notebookPreviewTotalColumn), object, r.previewLimit()))
+	result.observePreviewQuery(previewStartedAt)
 	if err != nil {
 		result.Error = normalizeDuckDBError(err)
 		result.DurationMS = time.Since(startedAt).Milliseconds()
 		return result
 	}
-	result.Columns, result.ColumnTypes, result.Rows = stripNotebookBookkeeping(preview.Columns, preview.ColumnTypes, preview.Rows)
+	previewColumns, previewTypes, previewRows, totalRows := splitNotebookPreviewTotal(preview)
+	result.Columns, result.ColumnTypes, result.Rows = stripNotebookBookkeeping(previewColumns, previewTypes, previewRows)
 	result.Rows = normalizeRows(result.Rows)
+	result.TotalRows = totalRows
 	if viz != nil {
 		result.VizDiagnostics = append(result.VizDiagnostics, ValidateVizColumns(viz, result.Columns, 0)...)
-	}
-
-	if count, countErr := session.Query(ctx, fmt.Sprintf("select count(*) from %s", object)); countErr == nil && len(count.Rows) == 1 && len(count.Rows[0]) == 1 {
-		result.TotalRows = toInt64(count.Rows[0][0])
 	}
 
 	result.Status = CellRunOK
@@ -387,28 +459,27 @@ func (r *Runner) ensureImport(ctx context.Context, session *Session, ref string,
 			}
 		}
 		// Attach can fail (locked file, missing table); fall through to the
-		// generic fetch.
+		// generic typed snapshot.
 	}
 
-	columns, rows, err := r.Fetcher.Fetch(ctx, ref, r.importRowCap()+1)
+	artifact, err := r.Fetcher.Snapshot(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
-	if len(columns) == 0 {
-		return nil, fmt.Errorf("upstream %q returned no columns", ref)
+	if artifact.Cleanup != nil {
+		defer func() { _ = artifact.Cleanup() }()
 	}
-	if len(rows) > r.importRowCap() {
-		return nil, fmt.Errorf(
-			"upstream %q returned more than the safe buffered import limit of %d rows; aggregate or filter it at the source, or use a typed snapshot adapter",
-			ref, r.importRowCap(),
-		)
+	if err := artifact.ValidateForPublication(); err != nil {
+		return nil, fmt.Errorf("upstream %q returned an invalid typed snapshot: %w", ref, err)
 	}
-
-	if err := r.createImportTable(ctx, session, object, columns, rows); err != nil {
+	if !artifact.Complete {
+		return nil, fmt.Errorf("upstream %q requires a complete snapshot for implicit notebook imports", ref)
+	}
+	if _, err := session.publishSnapshot(ctx, implicitImportBlockID(ref), object, artifact); err != nil {
 		return nil, err
 	}
 
-	record := ImportRecord{Ref: ref, ObjectName: object, RowCount: int64(len(rows)), Complete: true}
+	record := ImportRecord{Ref: ref, ObjectName: object, RowCount: artifact.RowCount, Complete: true}
 	if err := session.recordImport(ctx, record); err != nil {
 		return nil, err
 	}
@@ -417,6 +488,10 @@ func (r *Runner) ensureImport(ctx context.Context, session *Session, ref string,
 		return &record, nil
 	}
 	return stored, nil
+}
+
+func implicitImportBlockID(ref string) string {
+	return "implicit:" + ImportObjectName(ref)
 }
 
 func (r *Runner) importViaAttach(ctx context.Context, session *Session, ref, object, sourcePath string) error {
@@ -462,113 +537,6 @@ func attachedQualifiedRef(ref string) string {
 	}
 }
 
-func (r *Runner) createImportTable(ctx context.Context, session *Session, object string, columns []string, rows [][]any) error {
-	types := inferColumnTypes(columns, rows)
-	defs := make([]string, 0, len(columns))
-	for index, column := range columns {
-		defs = append(defs, quoteIdent(column)+" "+types[index])
-	}
-	if err := session.Exec(ctx, fmt.Sprintf("create or replace table %s (%s)", quoteIdent(object), strings.Join(defs, ", "))); err != nil {
-		return err
-	}
-
-	const batchSize = 500
-	for start := 0; start < len(rows); start += batchSize {
-		end := start + batchSize
-		if end > len(rows) {
-			end = len(rows)
-		}
-		values := make([]string, 0, end-start)
-		for _, row := range rows[start:end] {
-			cells := make([]string, len(columns))
-			for index := range columns {
-				var value any
-				if index < len(row) {
-					value = row[index]
-				}
-				cells[index] = formatSQLValue(value)
-			}
-			values = append(values, "("+strings.Join(cells, ", ")+")")
-		}
-		if err := session.Exec(ctx, fmt.Sprintf("insert into %s values %s", quoteIdent(object), strings.Join(values, ", "))); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// inferColumnTypes picks DuckDB column types from the fetched values:
-// BOOLEAN, BIGINT (all-integral numbers), DOUBLE, else VARCHAR.
-func inferColumnTypes(columns []string, rows [][]any) []string {
-	types := make([]string, len(columns))
-	for index := range columns {
-		sawValue := false
-		isBool := true
-		isNumber := true
-		isIntegral := true
-		for _, row := range rows {
-			if index >= len(row) || row[index] == nil {
-				continue
-			}
-			sawValue = true
-			switch v := row[index].(type) {
-			case bool:
-				isNumber = false
-			case float64:
-				isBool = false
-				if v != math.Trunc(v) {
-					isIntegral = false
-				}
-			case int, int32, int64:
-				isBool = false
-			default:
-				isBool = false
-				isNumber = false
-			}
-		}
-		switch {
-		case !sawValue:
-			types[index] = "VARCHAR"
-		case isBool:
-			types[index] = "BOOLEAN"
-		case isNumber && isIntegral:
-			types[index] = "BIGINT"
-		case isNumber:
-			types[index] = "DOUBLE"
-		default:
-			types[index] = "VARCHAR"
-		}
-	}
-	return types
-}
-
-func formatSQLValue(value any) string {
-	switch v := value.(type) {
-	case nil:
-		return "NULL"
-	case bool:
-		if v {
-			return "TRUE"
-		}
-		return "FALSE"
-	case float64:
-		if v == math.Trunc(v) && math.Abs(v) < 1e15 {
-			return strconv.FormatInt(int64(v), 10)
-		}
-		return strconv.FormatFloat(v, 'g', -1, 64)
-	case int:
-		return strconv.Itoa(v)
-	case int32:
-		return strconv.FormatInt(int64(v), 10)
-	case int64:
-		return strconv.FormatInt(v, 10)
-	case string:
-		return sqlStringLiteral(v)
-	default:
-		return sqlStringLiteral(fmt.Sprintf("%v", v))
-	}
-}
-
 // normalizeRows converts driver values into JSON-friendly ones.
 func normalizeRows(rows [][]any) [][]any {
 	normalized := make([][]any, len(rows))
@@ -594,6 +562,35 @@ func normalizeRows(rows [][]any) [][]any {
 // results makes imported data look as if the user selected an extra column and
 // also pollutes runtime completion schemas.
 const slingLoadedAtColumn = "_sling_loaded_at"
+
+// notebookPreviewTotalColumn is appended to local SQL previews by a window
+// function so preview rows and their exact result count need only one DuckDB
+// scan. It is removed by position (the final column), preserving a user column
+// even if it happens to use the same reserved name.
+const notebookPreviewTotalColumn = "__renart_preview_total_rows"
+
+func splitNotebookPreviewTotal(result *query.QueryResult) ([]string, []string, [][]any, int64) {
+	if result == nil || len(result.Columns) == 0 {
+		return []string{}, []string{}, [][]any{}, 0
+	}
+	totalIndex := len(result.Columns) - 1
+	totalRows := int64(0)
+	if len(result.Rows) > 0 && totalIndex < len(result.Rows[0]) {
+		totalRows = toInt64(result.Rows[0][totalIndex])
+	}
+
+	columns := append([]string(nil), result.Columns[:totalIndex]...)
+	columnTypes := result.ColumnTypes
+	if totalIndex < len(result.ColumnTypes) {
+		columnTypes = append([]string(nil), result.ColumnTypes[:totalIndex]...)
+	}
+	rows := make([][]any, len(result.Rows))
+	for rowIndex, row := range result.Rows {
+		end := min(totalIndex, len(row))
+		rows[rowIndex] = append([]any(nil), row[:end]...)
+	}
+	return columns, columnTypes, rows, totalRows
+}
 
 func stripNotebookBookkeepingColumns(columns []string, rows [][]any) ([]string, [][]any) {
 	filteredColumns, _, filteredRows := stripNotebookBookkeeping(columns, nil, rows)
@@ -644,13 +641,6 @@ func toInt64(value any) int64 {
 	default:
 		return 0
 	}
-}
-
-func (r *Runner) importRowCap() int {
-	if r.ImportRowCap > 0 {
-		return r.ImportRowCap
-	}
-	return defaultImportRowCap
 }
 
 func (r *Runner) previewLimit() int {

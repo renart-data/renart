@@ -10,12 +10,24 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bruin-data/bruin/pkg/config"
 	duck "github.com/bruin-data/bruin/pkg/duckdb"
 	"github.com/bruin-data/bruin/pkg/query"
+	"renart/internal/web/model"
 	"renart/internal/web/notebook"
 )
+
+type recordingNotebookTransfer struct {
+	request  notebook.SnapshotRequest
+	artifact notebook.TabularArtifact
+}
+
+func (transfer *recordingNotebookTransfer) Snapshot(_ context.Context, request notebook.SnapshotRequest) (notebook.TabularArtifact, error) {
+	transfer.request = request
+	return transfer.artifact, nil
+}
 
 func TestSlingNotebookTransferUsesSQLFileAndProducesTypedParquet(t *testing.T) {
 	root := t.TempDir()
@@ -159,6 +171,191 @@ cp "$RENART_TEST_PARQUET" "$target"
 	}
 }
 
+func TestNotebookTransferUsesNativeDuckDBSnapshot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, ".bruin.yml")
+	writeWorkspaceFile(t, root, ".bruin.yml", `
+default_environment: default
+environments:
+  default:
+    connections:
+      duckdb:
+        - name: duckdb-source
+          path: source.duckdb
+`)
+
+	sourcePath := filepath.Join(root, "source.duckdb")
+	createNotebookDuckDBSource(t, sourcePath)
+	markerPath := filepath.Join(root, "sling-was-called")
+	fakeSling := filepath.Join(root, "fake-sling")
+	if err := os.WriteFile(fakeSling, []byte("#!/bin/sh\ntouch \"$RENART_TEST_SLING_MARKER\"\nexit 91\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RENART_SLING_BINARY", fakeSling)
+	t.Setenv("RENART_TEST_SLING_MARKER", markerPath)
+
+	transfer := &slingNotebookTransferService{
+		workspaceRoot: root,
+		configPath:    configPath,
+		newConnectionManager: func(context.Context, string) (config.ConnectionAndDetailsGetter, error) {
+			// The native path must not resolve a Sling URI or initialize a
+			// second Bruin DuckDB client.
+			return loadConnectionManagerWithDetails{
+				connectionType: "duckdb",
+				details: &config.DuckDBConnection{
+					ConnectionMetadata: config.ConnectionMetadata{Name: "duckdb-source"},
+					Path:               "source.duckdb",
+				},
+			}, nil
+		},
+		maxBytes: 10 << 20,
+	}
+	artifact, err := transfer.Snapshot(t.Context(), notebook.SnapshotRequest{
+		NotebookID: "notebook-id", BlockID: "cell-id", Environment: "default",
+		Connection: "duckdb-source",
+		Query:      "select id, amount, observed_at, attributes from source_rows order by id",
+		Mode:       notebook.SnapshotModeSample, RowLimit: 2,
+		DefinitionFingerprint: "nb1:native-definition",
+	})
+	if err != nil {
+		t.Fatalf("native DuckDB snapshot: %v", err)
+	}
+	defer artifact.Cleanup()
+	if artifact.Complete || !artifact.Sampled || artifact.RowCount != 2 {
+		t.Fatalf("unexpected native sample state: %+v", artifact)
+	}
+	if len(artifact.Schema) != 4 || artifact.Schema[0].Type != "BIGINT" ||
+		!strings.Contains(artifact.Schema[1].Type, "DECIMAL") ||
+		artifact.Schema[2].Type != "TIMESTAMP" ||
+		!strings.Contains(artifact.Schema[3].Type, "STRUCT") {
+		t.Fatalf("native DuckDB schema was not preserved: %+v", artifact.Schema)
+	}
+	if artifact.Provenance.Connection != "duckdb-source" || artifact.Provenance.DefinitionFingerprint != "nb1:native-definition" {
+		t.Fatalf("native snapshot provenance was not preserved: %+v", artifact.Provenance)
+	}
+	if _, err := os.Stat(markerPath); !os.IsNotExist(err) {
+		t.Fatalf("native DuckDB snapshot unexpectedly invoked Sling: %v", err)
+	}
+}
+
+func TestNotebookTransferFallsBackToSlingAfterNativeDuckDBFailure(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, ".bruin.yml")
+	writeWorkspaceFile(t, root, ".bruin.yml", `
+default_environment: default
+environments:
+  default:
+    connections:
+      duckdb:
+        - name: duckdb-source
+          path: source.duckdb
+`)
+
+	sourcePath := filepath.Join(root, "source.duckdb")
+	createNotebookDuckDBSource(t, sourcePath)
+	fixturePath := filepath.Join(root, "fallback.parquet")
+	createNotebookParquetFixture(t, fixturePath)
+	markerPath := filepath.Join(root, "sling-was-called")
+	fakeSling := filepath.Join(root, "fake-sling")
+	writeNotebookSnapshotFakeSling(t, fakeSling)
+	t.Setenv("RENART_SLING_BINARY", fakeSling)
+	t.Setenv("RENART_TEST_SLING_MARKER", markerPath)
+	t.Setenv("RENART_TEST_PARQUET", fixturePath)
+
+	client, err := duck.NewClient(duck.Config{Path: sourcePath, ReadOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	transfer := &slingNotebookTransferService{
+		workspaceRoot: root,
+		configPath:    configPath,
+		newConnectionManager: func(context.Context, string) (config.ConnectionAndDetailsGetter, error) {
+			return loadConnectionManagerWithDetails{
+				connection: client, connectionType: "duckdb",
+				details: &config.DuckDBConnection{
+					ConnectionMetadata: config.ConnectionMetadata{Name: "duckdb-source"},
+					Path:               sourcePath,
+				},
+			}, nil
+		},
+		maxBytes: 10 << 20,
+	}
+	artifact, err := transfer.Snapshot(t.Context(), notebook.SnapshotRequest{
+		NotebookID: "notebook-id", BlockID: "cell-id", Environment: "default",
+		Connection: "duckdb-source", Query: "select * from missing_source_table",
+		Mode: notebook.SnapshotModeFull, DefinitionFingerprint: "nb1:fallback-definition",
+	})
+	if err != nil {
+		t.Fatalf("Sling fallback snapshot: %v", err)
+	}
+	defer artifact.Cleanup()
+	if artifact.RowCount != 1 || !artifact.Complete || artifact.Sampled {
+		t.Fatalf("unexpected fallback artifact: %+v", artifact)
+	}
+	if _, err := os.Stat(markerPath); err != nil {
+		t.Fatalf("Sling fallback was not invoked: %v", err)
+	}
+}
+
+func TestNotebookTransferDoesNotFallbackAfterNativeTransferLimit(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, ".bruin.yml")
+	writeWorkspaceFile(t, root, ".bruin.yml", `
+default_environment: default
+environments:
+  default:
+    connections:
+      duckdb:
+        - name: duckdb-source
+          path: source.duckdb
+`)
+	sourcePath := filepath.Join(root, "source.duckdb")
+	createNotebookDuckDBSource(t, sourcePath)
+	markerPath := filepath.Join(root, "sling-was-called")
+	fakeSling := filepath.Join(root, "fake-sling")
+	if err := os.WriteFile(fakeSling, []byte("#!/bin/sh\ntouch \"$RENART_TEST_SLING_MARKER\"\nexit 91\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RENART_SLING_BINARY", fakeSling)
+	t.Setenv("RENART_TEST_SLING_MARKER", markerPath)
+
+	transfer := &slingNotebookTransferService{
+		workspaceRoot: root,
+		configPath:    configPath,
+		newConnectionManager: func(context.Context, string) (config.ConnectionAndDetailsGetter, error) {
+			return loadConnectionManagerWithDetails{
+				connectionType: "duckdb",
+				details: &config.DuckDBConnection{
+					ConnectionMetadata: config.ConnectionMetadata{Name: "duckdb-source"},
+					Path:               sourcePath,
+				},
+			}, nil
+		},
+		maxBytes: 1,
+	}
+	_, err := transfer.Snapshot(t.Context(), notebook.SnapshotRequest{
+		NotebookID: "notebook-id", BlockID: "cell-id", Environment: "default",
+		Connection: "duckdb-source", Query: "select * from source_rows",
+		Mode: notebook.SnapshotModeFull, DefinitionFingerprint: "nb1:limited-definition",
+	})
+	if err == nil || !strings.Contains(err.Error(), "transfer limit") {
+		t.Fatalf("expected native transfer limit error, got %v", err)
+	}
+	if _, statErr := os.Stat(markerPath); !os.IsNotExist(statErr) {
+		t.Fatalf("transfer-limit failure unexpectedly invoked Sling: %v", statErr)
+	}
+}
+
 func TestSlingNotebookTransferIncludesCommandOutputOnFailure(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
@@ -192,6 +389,63 @@ func TestWarehouseNotebookSourceRejectsSideEffectingSQL(t *testing.T) {
 	}
 }
 
+func TestPipelineAssetImportUsesSharedTypedSnapshotTransport(t *testing.T) {
+	recorder := &recordingNotebookTransfer{artifact: notebook.TabularArtifact{
+		Schema:   []notebook.TabularColumn{{Name: "created_at", Type: "TIMESTAMP"}},
+		Complete: true,
+	}}
+	service := NewNotebookService(NotebookDependencies{
+		WorkspaceRoot: t.TempDir(),
+		CurrentState: func() model.WorkspaceState {
+			return model.WorkspaceState{Pipelines: []model.Pipeline{{
+				ID: "pipeline", Assets: []model.Asset{{
+					Name: "analytics.orders", Connection: "postgres-other",
+					Content: "select * from raw.orders", ContentRevision: "asset-revision",
+				}},
+			}}}
+		},
+	})
+	fetcher := &pipelineSourceFetcher{
+		service: service, environment: "staging", transfer: recorder,
+	}
+	artifact, err := fetcher.Snapshot(t.Context(), "analytics.orders")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(artifact.Schema) != 1 || artifact.Schema[0].Type != "TIMESTAMP" {
+		t.Fatalf("typed artifact was not returned unchanged: %+v", artifact)
+	}
+	request := recorder.request
+	if request.Connection != "postgres-other" || request.Environment != "staging" || request.Query != `select * from "analytics"."orders"` {
+		t.Fatalf("unexpected pipeline asset snapshot request: %+v", request)
+	}
+	if request.Mode != notebook.SnapshotModeFull || request.SourceKind != "pipeline_asset" || request.SourceFingerprint != "" || request.DefinitionFingerprint == "" {
+		t.Fatalf("pipeline asset snapshot provenance is incomplete: %+v", request)
+	}
+}
+
+func TestNewRunnerAppliesConfiguredSnapshotBudgetsToEverySourceExecutor(t *testing.T) {
+	service := NewNotebookService(NotebookDependencies{
+		WorkspaceRoot: t.TempDir(), SnapshotMaxBytes: 123456, SnapshotTimeout: 45 * time.Second,
+	})
+	runner := service.newRunner(nil, "default", nil)
+	warehouseExecutor, ok := runner.WarehouseExecutor.(*warehouseSQLSourceExecutor)
+	if !ok {
+		t.Fatalf("unexpected warehouse executor %T", runner.WarehouseExecutor)
+	}
+	transfer, ok := warehouseExecutor.transfer.(*slingNotebookTransferService)
+	if !ok {
+		t.Fatalf("unexpected warehouse transfer %T", warehouseExecutor.transfer)
+	}
+	if transfer.maxBytes != 123456 || transfer.timeout != 45*time.Second {
+		t.Fatalf("snapshot budgets were not applied: bytes=%d timeout=%s", transfer.maxBytes, transfer.timeout)
+	}
+	sourceExecutor, ok := runner.SourceExecutor.(*notebookSourceExecutor)
+	if !ok || sourceExecutor.transfer != transfer {
+		t.Fatalf("explicit sources do not share the configured transfer service")
+	}
+}
+
 func argumentAfter(args []string, flag string) string {
 	for index, arg := range args {
 		if arg == flag && index+1 < len(args) {
@@ -199,4 +453,60 @@ func argumentAfter(args []string, flag string) string {
 		}
 	}
 	return ""
+}
+
+func createNotebookDuckDBSource(t *testing.T, path string) {
+	t.Helper()
+	client, err := duck.NewClient(duck.Config{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	statement := `
+create table source_rows as
+select * from (values
+  (1::bigint, 9.99::decimal(8,2), timestamp '2026-08-12 12:00:00', {'label': 'first', 'rank': 1}),
+  (2::bigint, 4.25::decimal(8,2), timestamp '2026-08-13 12:00:00', {'label': 'second', 'rank': 2}),
+  (3::bigint, 1.50::decimal(8,2), timestamp '2026-08-14 12:00:00', {'label': 'third', 'rank': 3})
+) rows(id, amount, observed_at, attributes)`
+	if err := client.RunQueryWithoutResult(t.Context(), &query.Query{Query: statement}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func createNotebookParquetFixture(t *testing.T, path string) {
+	t.Helper()
+	client, err := duck.NewClient(duck.Config{Path: ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	statement := fmt.Sprintf(
+		"copy (select 42::bigint as fallback_id) to '%s' (format parquet)",
+		strings.ReplaceAll(path, "'", "''"),
+	)
+	if err := client.RunQueryWithoutResult(t.Context(), &query.Query{Query: statement}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeNotebookSnapshotFakeSling(t *testing.T, path string) {
+	t.Helper()
+	script := `#!/bin/sh
+touch "$RENART_TEST_SLING_MARKER"
+replication=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--replication" ]; then
+    shift
+    replication="$1"
+  fi
+  shift
+done
+target="$(tr ',' '\n' < "$replication" | awk -F'"' '$2 == "object" { print $4; exit }')"
+target="${target#file://}"
+cp "$RENART_TEST_PARQUET" "$target"
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
 }

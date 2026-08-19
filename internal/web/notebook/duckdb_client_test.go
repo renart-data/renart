@@ -15,6 +15,7 @@ func TestNotebookDuckDBClientCancelsActiveStatement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer client.close()
 
 	ctx, cancel := context.WithCancel(t.Context())
 	result := make(chan error, 1)
@@ -33,6 +34,16 @@ func TestNotebookDuckDBClientCancelsActiveStatement(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("DuckDB statement did not stop after context cancellation")
 	}
+
+	// Cancellation is statement-scoped: the persistent session connection must
+	// remain usable for the next run.
+	next, err := client.query(t.Context(), "select 1 as value")
+	if err != nil {
+		t.Fatalf("query after cancellation failed: %v", err)
+	}
+	if got := fmt.Sprint(next.Rows); got != "[[1]]" {
+		t.Fatalf("query after cancellation returned %s", got)
+	}
 }
 
 func TestNotebookDuckDBClientPreservesResultsAndWorkspaceFiles(t *testing.T) {
@@ -44,6 +55,7 @@ func TestNotebookDuckDBClientPreservesResultsAndWorkspaceFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer client.close()
 
 	result, err := client.query(t.Context(), `
 		select
@@ -56,6 +68,7 @@ func TestNotebookDuckDBClientPreservesResultsAndWorkspaceFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer client.close()
 	if got, want := fmt.Sprint(result.Columns), "[row_count names metadata ratio]"; got != want {
 		t.Fatalf("columns = %s, want %s", got, want)
 	}
@@ -96,5 +109,23 @@ func TestNotebookDuckDBClientCanDisableLocalFilesystemAccess(t *testing.T) {
 	}
 	if got := fmt.Sprint(result.Rows); got != "[[1]]" {
 		t.Fatalf("ordinary query result = %s, want [[1]]", got)
+	}
+}
+
+func TestNotebookDuckDBClientTrustedExecUsesSeparateFilesystemPolicy(t *testing.T) {
+	root := t.TempDir()
+	client, err := newNotebookDuckDBClient(t.Context(), filepath.Join(root, "session.duckdb"), root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.close()
+
+	outputPath := filepath.Join(root, "trusted.parquet")
+	statement := fmt.Sprintf("copy (select 1 as value) to '%s' (format parquet)", strings.ReplaceAll(outputPath, "'", "''"))
+	if err := client.trustedExec(t.Context(), statement); err != nil {
+		t.Fatalf("trusted export should bypass authored filesystem policy: %v", err)
+	}
+	if _, err := os.Stat(outputPath); err != nil {
+		t.Fatalf("trusted export did not create output: %v", err)
 	}
 }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CheckCircle2, LoaderCircle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ConnectionSelect } from "@/components/app/connection-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -127,24 +128,24 @@ export function WorkspaceConnectionFormFields({
         </Field>
         <Field>
           <FieldLabel htmlFor="workspace-connection-type">Type</FieldLabel>
-          <Select
+          <ConnectionSelect
             value={connectionForm.type || undefined}
+            groups={[
+              {
+                label: "Connection types",
+                options: connectionTypes.map((connectionType) => ({
+                  value: connectionType.type_name,
+                  label: connectionType.type_name,
+                  connectionType: connectionType.type_name,
+                })),
+              },
+            ]}
             onValueChange={onTypeChange}
             disabled={typeDisabled}
-          >
-            <SelectTrigger id="workspace-connection-type" className="w-full">
-              <SelectValue placeholder="Select connection type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {connectionTypes.map((connectionType) => (
-                  <SelectItem key={connectionType.type_name} value={connectionType.type_name}>
-                    {connectionType.type_name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            id="workspace-connection-type"
+            className="w-full"
+            placeholder="Select connection type"
+          />
         </Field>
       </div>
 

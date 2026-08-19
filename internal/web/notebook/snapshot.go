@@ -8,6 +8,36 @@ import (
 	"strings"
 )
 
+// ExportDuckDBQueryToParquet executes a server-validated read-only source query
+// directly against a local DuckDB database and writes its typed result to a
+// private Parquet artifact. It deliberately bypasses the authored notebook
+// filesystem policy: both databasePath and parquetPath are resolved and owned
+// by the Go service before this helper is called.
+func ExportDuckDBQueryToParquet(ctx context.Context, databasePath, workspaceRoot, query, parquetPath string) error {
+	databasePath = strings.TrimSpace(databasePath)
+	query = strings.TrimRight(strings.TrimSpace(query), ";")
+	parquetPath = strings.TrimSpace(parquetPath)
+	if databasePath == "" || query == "" || parquetPath == "" {
+		return fmt.Errorf("DuckDB notebook snapshot requires a database path, query, and output path")
+	}
+
+	client, err := newNotebookDuckDBClientWithAccess(ctx, databasePath, workspaceRoot, false, true)
+	if err != nil {
+		return fmt.Errorf("open DuckDB notebook source: %w", err)
+	}
+	defer client.close()
+
+	statement := fmt.Sprintf(
+		"copy (\n%s\n) to %s (format parquet)",
+		query,
+		sqlStringLiteral(parquetPath),
+	)
+	if err := client.exec(ctx, statement); err != nil {
+		return fmt.Errorf("export DuckDB notebook source: %w", err)
+	}
+	return nil
+}
+
 // SnapshotRecord is durable runtime provenance for one data-producing source
 // block in the notebook session database.
 type SnapshotRecord struct {

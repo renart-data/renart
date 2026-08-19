@@ -43,9 +43,15 @@ func (r *Runner) runWarehouseSQLSource(
 		}
 		content = strings.TrimSpace(rendered)
 	}
-	output, err := r.WarehouseExecutor.Execute(ctx, ExecuteBlockInput{
+	input := ExecuteBlockInput{
 		Notebook: nb, Cell: cell, Environment: r.Environment, SQL: content,
 		Refresh: opts.RefreshImports, ParameterValues: r.ParameterValues,
-	})
+	}
+	if opts.ReuseSourceSnapshots {
+		if cached, ok := r.reuseSourceSnapshot(ctx, session, cell, result, startedAt, r.WarehouseExecutor, input, content); ok {
+			return cached
+		}
+	}
+	output, err := r.WarehouseExecutor.Execute(ctx, input)
 	return r.publishSourceOutput(ctx, session, cell, result, startedAt, content, output, err)
 }

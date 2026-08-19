@@ -115,6 +115,7 @@ func (s *NotebookService) updateNotebookParameterValues(
 	rt.parameterValues = cloneNotebookParameterValues(resolved)
 	for _, cell := range nb.Cells {
 		rt.stale[cell.ID] = true
+		rt.authoredFingerprints[cell.ID] = notebook.CellFingerprintWithParameters(nb, cell, resolved)
 		delete(rt.autoFailed, cell.ID)
 	}
 	autoRun := rt.autoRun

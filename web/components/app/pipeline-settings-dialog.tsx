@@ -15,6 +15,7 @@ import {
 import { useCallback, useEffect, useId, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { ConnectionSelect } from "@/components/app/connection-select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -542,6 +543,7 @@ function PipelineSettingsSectionBody({
                   );
                 }}
                 placeholder="Choose platform"
+                valuesAreConnectionTypes
               />
               <PipelineConnectionSelect
                 label="Connection"
@@ -555,6 +557,7 @@ function PipelineSettingsSectionBody({
                   )
                 }
                 placeholder="Choose connection"
+                connectionType={connection.platform}
               />
               <PipelineConnectionSettingsLink
                 environment={environment}
@@ -864,6 +867,8 @@ function PipelineConnectionSelect({
   options,
   onChange,
   placeholder,
+  connectionType,
+  valuesAreConnectionTypes = false,
 }: {
   label: string;
   hideLabel?: boolean;
@@ -871,6 +876,8 @@ function PipelineConnectionSelect({
   options: string[];
   onChange: (value: string) => void;
   placeholder: string;
+  connectionType?: string;
+  valuesAreConnectionTypes?: boolean;
 }) {
   const id = useId();
   const unavailable = Boolean(value && !options.includes(value));
@@ -882,25 +889,36 @@ function PipelineConnectionSelect({
       >
         {label}
       </FieldLabel>
-      <Select value={value || undefined} onValueChange={onChange}>
-        <SelectTrigger id={id} className="w-full" aria-invalid={unavailable || undefined}>
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {unavailable ? (
-              <SelectItem value={value} disabled>
-                {value} (not available)
-              </SelectItem>
-            ) : null}
-            {options.map((option) => (
-              <SelectItem key={option} value={option}>
-                {option}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+      <ConnectionSelect
+        value={value || undefined}
+        groups={[
+          {
+            options: [
+              ...(unavailable
+                ? [
+                    {
+                      value,
+                      label: value,
+                      connectionType: valuesAreConnectionTypes ? value : connectionType,
+                      badge: "unavailable",
+                      badgeVariant: "destructive" as const,
+                      disabled: true,
+                    },
+                  ]
+                : []),
+              ...options.map((option) => ({
+                value: option,
+                label: option,
+                connectionType: valuesAreConnectionTypes ? option : connectionType,
+              })),
+            ],
+          },
+        ]}
+        onValueChange={onChange}
+        id={id}
+        className="w-full"
+        placeholder={placeholder}
+      />
       {unavailable ? (
         <FieldDescription className="text-[11px] text-destructive">
           Choose a configured {label.toLocaleLowerCase()}.

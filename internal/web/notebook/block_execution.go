@@ -97,6 +97,13 @@ type NotebookBlockExecutor interface {
 	Execute(ctx context.Context, input ExecuteBlockInput) (BlockOutput, error)
 }
 
+// SnapshotDefinitionFingerprinter is an optional source-executor capability.
+// It lets the runner reuse a published snapshot only when the executor can
+// describe the exact rendered source definition it would execute now.
+type SnapshotDefinitionFingerprinter interface {
+	SnapshotDefinitionFingerprint(ctx context.Context, input ExecuteBlockInput) (string, error)
+}
+
 type SnapshotRequest struct {
 	NotebookID            string
 	BlockID               string
@@ -104,6 +111,8 @@ type SnapshotRequest struct {
 	Connection            string
 	Query                 string
 	DefinitionFingerprint string
+	SourceKind            string
+	SourceFingerprint     string
 	Mode                  string // full | sample
 	RowLimit              int64
 }

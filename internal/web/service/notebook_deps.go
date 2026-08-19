@@ -3,9 +3,11 @@ package service
 import (
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"renart/internal/web/model"
+	"renart/internal/web/notebook"
 )
 
 // readNotebookDependencies returns the `[project].dependencies` list from a
@@ -39,13 +41,31 @@ func dependenciesFromText(content string) []string {
 // UpdateDependencies replaces the notebook's Python dependencies (pyproject.toml
 // `[project].dependencies`) and returns the refreshed notebook.
 func (s *NotebookService) UpdateDependencies(notebookID, content string) (model.Notebook, *APIError) {
+	unlockNotebook := s.lockNotebookEdit(notebookID)
+	defer unlockNotebook()
+
 	nb, apiErr := s.load(notebookID)
 	if apiErr != nil {
 		return model.Notebook{}, apiErr
 	}
-	if err := writeNotebookDependencies(nb.Dir, dependenciesFromText(content)); err != nil {
+	dependencies := dependenciesFromText(content)
+	if slices.Equal(readNotebookDependencies(nb.Dir), dependencies) {
+		return s.toModel(nb), nil
+	}
+	if err := writeNotebookDependencies(nb.Dir, dependencies); err != nil {
 		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "dependencies_update_failed", Message: err.Error()}
 	}
+	fresh, loadErr := s.load(notebookID)
+	if loadErr != nil {
+		return model.Notebook{}, loadErr
+	}
+	pythonCellIDs := make([]string, 0)
+	for _, cell := range fresh.Cells {
+		if notebook.IsPythonCell(cell) {
+			pythonCellIDs = append(pythonCellIDs, cell.ID)
+		}
+	}
+	s.onCellsChanged(notebookID, fresh, pythonCellIDs)
 	s.pushUpdate(filepath.Join(nb.Dir, pyprojectFile))
-	return s.Get(notebookID)
+	return s.toModel(fresh), nil
 }

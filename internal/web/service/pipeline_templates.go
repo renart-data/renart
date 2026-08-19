@@ -149,7 +149,7 @@ func pipelineTemplates() []pipelineTemplate {
 			info: PipelineTemplateInfo{
 				ID:            PipelineTemplateEarthquakeDemo,
 				Title:         "Earthquake monitoring",
-				Description:   "Ingest windowed USGS earthquake data and exercise merge, time-interval, append, truncate, and view materializations.",
+				Description:   "Build retained USGS event history, replay-safe window trends, and an append-only run audit while exercising five materialization modes.",
 				Category:      PipelineTemplateCategoryOperations,
 				Offline:       false,
 				SuggestedPath: "earthquake_monitoring",

@@ -159,6 +159,20 @@
   --sidebar-accent-foreground: oklch(0.218 0.008 223.9);
   --sidebar-border: oklch(0.925 0.005 214.3);
   --sidebar-ring: oklch(0.723 0.014 214.4);
+  --connection-postgres: oklch(0.55 0.16 252);
+  --connection-duckdb: oklch(0.68 0.15 92);
+  --connection-bigquery: oklch(0.58 0.17 257);
+  --connection-snowflake: oklch(0.68 0.13 225);
+  --connection-redshift: oklch(0.57 0.18 20);
+  --connection-databricks: oklch(0.58 0.2 28);
+  --connection-trino: oklch(0.57 0.16 318);
+  --connection-clickhouse: oklch(0.7 0.15 86);
+  --connection-mysql: oklch(0.55 0.13 230);
+  --connection-mssql: oklch(0.55 0.17 25);
+  --connection-oracle: oklch(0.56 0.2 28);
+  --connection-storage: oklch(0.64 0.16 55);
+  --connection-gcs: oklch(0.57 0.16 254);
+  --connection-default: var(--muted-foreground);
 }
 
 .dark {
@@ -194,6 +208,78 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --connection-postgres: oklch(0.73 0.13 246);
+  --connection-duckdb: oklch(0.78 0.14 90);
+  --connection-bigquery: oklch(0.72 0.13 252);
+  --connection-snowflake: oklch(0.78 0.11 222);
+  --connection-redshift: oklch(0.72 0.15 24);
+  --connection-databricks: oklch(0.72 0.17 29);
+  --connection-trino: oklch(0.72 0.13 318);
+  --connection-clickhouse: oklch(0.8 0.14 88);
+  --connection-mysql: oklch(0.72 0.11 228);
+  --connection-mssql: oklch(0.72 0.14 25);
+  --connection-oracle: oklch(0.72 0.17 28);
+  --connection-storage: oklch(0.77 0.14 60);
+  --connection-gcs: oklch(0.72 0.13 250);
+  --connection-default: var(--muted-foreground);
+}
+
+.connection-type-icon {
+  color: var(--connection-default);
+}
+
+.connection-type-icon[data-connection-engine="postgres"] {
+  color: var(--connection-postgres);
+}
+
+.connection-type-icon[data-connection-engine="duckdb"] {
+  color: var(--connection-duckdb);
+}
+
+.connection-type-icon[data-connection-engine="bigquery"] {
+  color: var(--connection-bigquery);
+}
+
+.connection-type-icon[data-connection-engine="snowflake"] {
+  color: var(--connection-snowflake);
+}
+
+.connection-type-icon[data-connection-engine="redshift"] {
+  color: var(--connection-redshift);
+}
+
+.connection-type-icon[data-connection-engine="databricks"] {
+  color: var(--connection-databricks);
+}
+
+.connection-type-icon[data-connection-engine="trino"] {
+  color: var(--connection-trino);
+}
+
+.connection-type-icon[data-connection-engine="clickhouse"],
+.connection-type-icon[data-connection-engine="doris"],
+.connection-type-icon[data-connection-engine="starrocks"] {
+  color: var(--connection-clickhouse);
+}
+
+.connection-type-icon[data-connection-engine="mysql"] {
+  color: var(--connection-mysql);
+}
+
+.connection-type-icon[data-connection-engine="mssql"] {
+  color: var(--connection-mssql);
+}
+
+.connection-type-icon[data-connection-engine="oracle"] {
+  color: var(--connection-oracle);
+}
+
+.connection-type-icon[data-connection-engine="s3"] {
+  color: var(--connection-storage);
+}
+
+.connection-type-icon[data-connection-engine="gcs"] {
+  color: var(--connection-gcs);
 }
 
 .monaco-editor .bruin-sql-token-schema {

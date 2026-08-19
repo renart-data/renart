@@ -5,7 +5,6 @@ import {
   Loader2,
   Monitor,
   PanelLeft,
-  Plus,
   Redo2,
   RefreshCw,
   Smartphone,
@@ -14,7 +13,7 @@ import {
   TriangleAlert,
   Undo2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +53,7 @@ import {
 } from "@/lib/authored-controls";
 
 import type { ChartType } from "../chart-type-picker";
+import { DocumentAuthoringCommandBar, DocumentAuthoringShell } from "../document-authoring-shell";
 import { datasetColumns, nextID, workspaceAssetChoices } from "../presentation-visual-editor";
 import { initialFilterValues } from "../presentation-viewer";
 import { AddVisualizationDialog } from "./add-visualization-dialog";
@@ -80,12 +80,20 @@ export function PresentationBuilder({
   artifact: externalArtifact,
   workspace,
   paused = false,
+  navigation,
+  modeControl,
+  documentActions,
+  banner,
   onChange,
 }: {
   presentationId: string;
   artifact: PresentationArtifact;
   workspace: WorkspaceState | null;
   paused?: boolean;
+  navigation: ReactNode;
+  modeControl: ReactNode;
+  documentActions: ReactNode;
+  banner?: ReactNode;
   onChange: (artifact: PresentationArtifact) => void;
 }) {
   const { artifact, replace, commit, undo, redo, canUndo, canRedo } = usePresentationDraft(
@@ -623,23 +631,28 @@ export function PresentationBuilder({
     />
   );
 
-  return (
-    <div data-testid="presentation-builder" className="flex h-full min-h-0 flex-col bg-muted/30">
-      <div className="flex min-h-12 shrink-0 items-center gap-1.5 border-b bg-background px-2">
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          className="xl:hidden"
-          aria-label="Open builder tools"
-          onClick={() => setDataOpen(true)}
-        >
-          <PanelLeft />
-        </Button>
+  const commandBar = (
+    <DocumentAuthoringCommandBar
+      navigation={
+        <>
+          {navigation}
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="xl:hidden"
+            aria-label="Open builder tools"
+            onClick={() => setDataOpen(true)}
+          >
+            <PanelLeft data-icon="inline-start" />
+          </Button>
+        </>
+      }
+      identity={
         <Input
           aria-label="Presentation title"
           data-testid="presentation-title"
           value={artifact.title}
-          className="h-8 min-w-24 max-w-sm border-transparent bg-transparent px-2 text-sm font-medium shadow-none hover:border-input focus-visible:border-input"
+          className="h-8 w-full border-transparent bg-transparent px-2 text-sm font-medium shadow-none hover:border-input focus-visible:border-input"
           onChange={(event) =>
             changeArtifact(
               { ...artifact, title: event.target.value },
@@ -647,32 +660,34 @@ export function PresentationBuilder({
             )
           }
         />
-        <Badge
-          variant="outline"
-          className="hidden shrink-0 font-normal text-muted-foreground sm:inline-flex"
-        >
-          {loading ? (
-            <Loader2 className="animate-spin" />
-          ) : previewStale ? (
-            <TriangleAlert />
-          ) : (
-            <Check />
-          )}
-          {previewLabel}
-        </Badge>
-        <div className="ml-auto flex items-center gap-1">
+      }
+      mode={modeControl}
+      status={
+        <>
+          <Badge
+            variant="outline"
+            className="hidden shrink-0 font-normal text-muted-foreground lg:inline-flex"
+          >
+            {loading ? (
+              <Loader2 className="animate-spin" />
+            ) : previewStale ? (
+              <TriangleAlert />
+            ) : (
+              <Check />
+            )}
+            {previewLabel}
+          </Badge>
           {activeFindings.length > 0 ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-amber-500/35 text-amber-700 dark:text-amber-300"
                   aria-label={`Review ${activeFindings.length} definition ${activeFindings.length === 1 ? "finding" : "findings"}`}
                 >
-                  <TriangleAlert />
+                  <TriangleAlert data-icon="inline-start" />
                   {activeFindings.length}
-                  <span className="hidden sm:inline">Review</span>
+                  <span className="hidden xl:inline">Review</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="max-h-80 w-[min(24rem,calc(100vw-2rem))]">
@@ -684,9 +699,7 @@ export function PresentationBuilder({
                   >
                     <TriangleAlert
                       className={
-                        finding.severity === "error"
-                          ? "text-destructive"
-                          : "text-amber-600 dark:text-amber-300"
+                        finding.severity === "error" ? "text-destructive" : "text-muted-foreground"
                       }
                     />
                     <span className="min-w-0">
@@ -704,6 +717,10 @@ export function PresentationBuilder({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
+        </>
+      }
+      history={
+        <>
           <Button
             size="icon-sm"
             variant="ghost"
@@ -711,7 +728,7 @@ export function PresentationBuilder({
             aria-label="Undo"
             onClick={undo}
           >
-            <Undo2 />
+            <Undo2 data-icon="inline-start" />
           </Button>
           <Button
             size="icon-sm"
@@ -720,33 +737,12 @@ export function PresentationBuilder({
             aria-label="Redo"
             onClick={redo}
           >
-            <Redo2 />
+            <Redo2 data-icon="inline-start" />
           </Button>
-          {artifact.kind === "dashboard" ? (
-            <ToggleGroup
-              type="single"
-              value={previewMode}
-              onValueChange={(value) => {
-                const next = value as PresentationPreviewMode | undefined;
-                if (next) setPreviewMode(next);
-              }}
-              variant="outline"
-              size="sm"
-              spacing={0}
-              className="hidden md:flex"
-              aria-label="Dashboard preview size"
-            >
-              <ToggleGroupItem value="desktop" aria-label="Desktop preview">
-                <Monitor />
-              </ToggleGroupItem>
-              <ToggleGroupItem value="tablet" aria-label="Tablet preview">
-                <Tablet />
-              </ToggleGroupItem>
-              <ToggleGroupItem value="mobile" aria-label="Mobile preview">
-                <Smartphone />
-              </ToggleGroupItem>
-            </ToggleGroup>
-          ) : null}
+        </>
+      }
+      tools={
+        <>
           <Button
             size="icon-sm"
             variant="ghost"
@@ -754,7 +750,11 @@ export function PresentationBuilder({
             disabled={loading || paused}
             onClick={() => void runPreview({ includeOptions: true, replaceResults: true })}
           >
-            {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+            {loading ? (
+              <Loader2 data-icon="inline-start" className="animate-spin" />
+            ) : (
+              <RefreshCw data-icon="inline-start" />
+            )}
           </Button>
           <Button
             size="icon-sm"
@@ -763,120 +763,143 @@ export function PresentationBuilder({
             aria-label="Open inspector"
             onClick={() => setInspectorOpen(true)}
           >
-            <SlidersHorizontal />
+            <SlidersHorizontal data-icon="inline-start" />
           </Button>
-          <Button
-            size="sm"
-            disabled={(artifact.datasets ?? []).length === 0}
-            onClick={() => openAddVisualization()}
-          >
-            <Plus /> Add
-          </Button>
+        </>
+      }
+      actions={documentActions}
+    />
+  );
+
+  return (
+    <div data-testid="presentation-builder" className="h-full min-h-0">
+      <DocumentAuthoringShell commandBar={commandBar} banner={banner} className="bg-muted/30">
+        <div className="flex min-h-0 flex-1">
+          {wideBuilder ? (
+            <aside className="w-60 shrink-0 border-r bg-background">{renderSidebar()}</aside>
+          ) : null}
+          <main className="min-w-0 flex-1">
+            <ScrollArea className="h-full">
+              <div
+                className="min-h-full p-3 sm:p-5"
+                style={{
+                  backgroundImage:
+                    artifact.kind === "dashboard"
+                      ? "radial-gradient(color-mix(in srgb, var(--border) 70%, transparent) 0.7px, transparent 0.7px)"
+                      : undefined,
+                  backgroundSize: artifact.kind === "dashboard" ? "18px 18px" : undefined,
+                }}
+              >
+                {previewError ? (
+                  <Alert className="mx-auto mb-3 max-w-5xl border-amber-500/35 bg-background/95">
+                    <TriangleAlert />
+                    <AlertTitle>Draft preview needs attention</AlertTitle>
+                    <AlertDescription>{previewError}</AlertDescription>
+                  </Alert>
+                ) : null}
+                {artifact.kind === "dashboard" ? (
+                  <div className="mx-auto flex w-full max-w-[94rem] flex-col gap-3">
+                    <div className="flex justify-end">
+                      <ToggleGroup
+                        type="single"
+                        value={previewMode}
+                        onValueChange={(value) => {
+                          const next = value as PresentationPreviewMode | undefined;
+                          if (next) setPreviewMode(next);
+                        }}
+                        variant="outline"
+                        size="sm"
+                        spacing={0}
+                        aria-label="Dashboard preview size"
+                      >
+                        <ToggleGroupItem value="desktop" aria-label="Desktop preview">
+                          <Monitor />
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="tablet" aria-label="Tablet preview">
+                          <Tablet />
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="mobile" aria-label="Mobile preview">
+                          <Smartphone />
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </div>
+                    <DashboardFilterStrip
+                      filters={artifact.filters ?? []}
+                      values={filterValues}
+                      optionResults={optionResults}
+                      selection={selection}
+                      onValueChange={handleFilterValue}
+                      onSelect={setSelection}
+                      onAdd={openAddFilter}
+                      onDropControl={addBlankFilter}
+                    />
+                    <DashboardCanvas
+                      artifact={artifact}
+                      results={results}
+                      loadingIDs={loadingIDs}
+                      selection={selection}
+                      previewMode={previewMode}
+                      findings={activeFindings}
+                      onSelect={setSelection}
+                      onLayoutCommit={(layout: PresentationLayoutItem[]) =>
+                        commit({ type: "layout.commit", layout })
+                      }
+                      onVisualizationChange={updateVisualization}
+                      onDuplicate={duplicateVisualization}
+                      onDelete={deleteVisualization}
+                      onAdd={() => openAddVisualization()}
+                      onDropVisualization={(type, dashboard) =>
+                        addDroppedVisualization(type, dashboard ? { dashboard } : undefined)
+                      }
+                    />
+                  </div>
+                ) : (
+                  <div className="mx-auto flex w-full max-w-[94rem] flex-col gap-3">
+                    <DashboardFilterStrip
+                      filters={artifact.filters ?? []}
+                      values={filterValues}
+                      optionResults={optionResults}
+                      selection={selection}
+                      onValueChange={handleFilterValue}
+                      onSelect={setSelection}
+                      onAdd={openAddFilter}
+                      onDropControl={addBlankFilter}
+                    />
+                    <ReportCanvas
+                      artifact={artifact}
+                      results={results}
+                      loadingIDs={loadingIDs}
+                      selection={selection}
+                      findings={activeFindings}
+                      onSelect={setSelection}
+                      onSectionChange={updateSection}
+                      onMove={moveSection}
+                      onDelete={(sectionID) => {
+                        changeArtifact({
+                          ...artifact,
+                          sections: (artifact.sections ?? []).filter(
+                            (section) => section.id !== sectionID,
+                          ),
+                        });
+                        setSelection({ kind: "artifact" });
+                      }}
+                      onInsert={insertReportBlock}
+                      onDropVisualization={(reportIndex, type) =>
+                        addDroppedVisualization(type, { reportIndex })
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </main>
+          {wideBuilder ? (
+            <aside className="w-[clamp(22rem,25vw,28rem)] min-w-0 shrink-0 overflow-hidden border-l bg-background">
+              <ScrollArea className="h-full">{renderInspector()}</ScrollArea>
+            </aside>
+          ) : null}
         </div>
-      </div>
-
-      <div className="flex min-h-0 flex-1">
-        {wideBuilder ? (
-          <aside className="w-60 shrink-0 border-r bg-background">{renderSidebar()}</aside>
-        ) : null}
-        <main className="min-w-0 flex-1">
-          <ScrollArea className="h-full">
-            <div
-              className="min-h-full p-3 sm:p-5"
-              style={{
-                backgroundImage:
-                  artifact.kind === "dashboard"
-                    ? "radial-gradient(color-mix(in srgb, var(--border) 70%, transparent) 0.7px, transparent 0.7px)"
-                    : undefined,
-                backgroundSize: artifact.kind === "dashboard" ? "18px 18px" : undefined,
-              }}
-            >
-              {previewError ? (
-                <Alert className="mx-auto mb-3 max-w-5xl border-amber-500/35 bg-background/95">
-                  <TriangleAlert />
-                  <AlertTitle>Draft preview needs attention</AlertTitle>
-                  <AlertDescription>{previewError}</AlertDescription>
-                </Alert>
-              ) : null}
-              {artifact.kind === "dashboard" ? (
-                <div className="mx-auto flex w-full max-w-[94rem] flex-col gap-3">
-                  <DashboardFilterStrip
-                    filters={artifact.filters ?? []}
-                    values={filterValues}
-                    optionResults={optionResults}
-                    selection={selection}
-                    onValueChange={handleFilterValue}
-                    onSelect={setSelection}
-                    onAdd={openAddFilter}
-                    onDropControl={addBlankFilter}
-                  />
-                  <DashboardCanvas
-                    artifact={artifact}
-                    results={results}
-                    loadingIDs={loadingIDs}
-                    selection={selection}
-                    previewMode={previewMode}
-                    findings={activeFindings}
-                    onSelect={setSelection}
-                    onLayoutCommit={(layout: PresentationLayoutItem[]) =>
-                      commit({ type: "layout.commit", layout })
-                    }
-                    onVisualizationChange={updateVisualization}
-                    onDuplicate={duplicateVisualization}
-                    onDelete={deleteVisualization}
-                    onAdd={() => openAddVisualization()}
-                    onDropVisualization={(type, dashboard) =>
-                      addDroppedVisualization(type, dashboard ? { dashboard } : undefined)
-                    }
-                  />
-                </div>
-              ) : (
-                <div className="mx-auto flex w-full max-w-[94rem] flex-col gap-3">
-                  <DashboardFilterStrip
-                    filters={artifact.filters ?? []}
-                    values={filterValues}
-                    optionResults={optionResults}
-                    selection={selection}
-                    onValueChange={handleFilterValue}
-                    onSelect={setSelection}
-                    onAdd={openAddFilter}
-                    onDropControl={addBlankFilter}
-                  />
-                  <ReportCanvas
-                    artifact={artifact}
-                    results={results}
-                    loadingIDs={loadingIDs}
-                    selection={selection}
-                    findings={activeFindings}
-                    onSelect={setSelection}
-                    onSectionChange={updateSection}
-                    onMove={moveSection}
-                    onDelete={(sectionID) => {
-                      changeArtifact({
-                        ...artifact,
-                        sections: (artifact.sections ?? []).filter(
-                          (section) => section.id !== sectionID,
-                        ),
-                      });
-                      setSelection({ kind: "artifact" });
-                    }}
-                    onInsert={insertReportBlock}
-                    onDropVisualization={(reportIndex, type) =>
-                      addDroppedVisualization(type, { reportIndex })
-                    }
-                  />
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </main>
-        {wideBuilder ? (
-          <aside className="w-[clamp(22rem,25vw,28rem)] min-w-0 shrink-0 overflow-hidden border-l bg-background">
-            <ScrollArea className="h-full">{renderInspector()}</ScrollArea>
-          </aside>
-        ) : null}
-      </div>
-
+      </DocumentAuthoringShell>
       {!wideBuilder ? (
         <>
           <Sheet open={dataOpen} onOpenChange={setDataOpen}>

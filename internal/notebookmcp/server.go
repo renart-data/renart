@@ -83,7 +83,7 @@ func (s *Server) Protocol() *mcp.Server { return s.mcp }
 func (s *Server) registerTools() {
 	mcp.AddTool(s.mcp, readTool(
 		"search_workspace_catalog",
-		"Search the credential-free workspace artifact catalog. Pipeline assets that produce relations include a safe sample-source recipe for prepare_notebook_change_set; this tool never queries a warehouse or writes the notebook.",
+		"Search the credential-free workspace artifact catalog. Results include bounded direct lineage plus declared descriptions, tags, schemas, and materialization policies. Pipeline assets that produce relations include a safe sample-source recipe for prepare_notebook_change_set; this tool never queries a warehouse or writes the notebook.",
 	), s.searchCatalog)
 	mcp.AddTool(s.mcp, readTool("list_notebooks", "List notebooks in this Renart workspace."), s.listNotebooks)
 	mcp.AddTool(s.mcp, readTool("get_notebook_outline", "Get ordered block identities and a notebook-wide revision."), s.getOutline)

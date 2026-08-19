@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/apache/arrow-adbc/go/adbc"
 	"github.com/apache/arrow-adbc/go/adbc/drivermgr"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -24,23 +25,72 @@ import (
 // a stronger contract: Stop must invoke the thread-safe ADBC statement cancel
 // operation and wait until execution has unwound.
 type notebookDuckDBClient struct {
-	path                    string
 	workspaceRoot           string
 	disableFilesystemAccess bool
+	database                adbc.Database
+	connection              adbc.Connection
+	trustedConnection       adbc.Connection
+	executionGate           chan struct{}
+	closed                  bool
 }
 
 func newNotebookDuckDBClient(ctx context.Context, path, workspaceRoot string, disableFilesystemAccess bool) (*notebookDuckDBClient, error) {
+	return newNotebookDuckDBClientWithAccess(ctx, path, workspaceRoot, disableFilesystemAccess, false)
+}
+
+func newNotebookDuckDBClientWithAccess(
+	ctx context.Context,
+	path, workspaceRoot string,
+	disableFilesystemAccess, readOnly bool,
+) (*notebookDuckDBClient, error) {
 	if err := duck.EnsureADBCDriverInstalled(ctx); err != nil {
 		return nil, err
 	}
-	return &notebookDuckDBClient{
-		path:                    path,
+	var driver drivermgr.Driver
+	options := map[string]string{"driver": "duckdb", "path": path}
+	if readOnly {
+		options["access_mode"] = "read_only"
+	}
+	database, err := driver.NewDatabase(options)
+	if err != nil {
+		return nil, err
+	}
+	connection, err := database.Open(ctx)
+	if err != nil {
+		_ = database.Close()
+		return nil, err
+	}
+	client := &notebookDuckDBClient{
 		workspaceRoot:           cleanNotebookWorkspaceRoot(workspaceRoot),
 		disableFilesystemAccess: disableFilesystemAccess,
-	}, nil
+		database:                database,
+		connection:              connection,
+		executionGate:           make(chan struct{}, 1),
+	}
+	client.executionGate <- struct{}{}
+	return client, nil
 }
 
-func (c *notebookDuckDBClient) close() {}
+func (c *notebookDuckDBClient) close() {
+	<-c.executionGate
+	defer func() { c.executionGate <- struct{}{} }()
+	if c.closed {
+		return
+	}
+	c.closed = true
+	if c.trustedConnection != nil {
+		_ = c.trustedConnection.Close()
+		c.trustedConnection = nil
+	}
+	if c.connection != nil {
+		_ = c.connection.Close()
+		c.connection = nil
+	}
+	if c.database != nil {
+		_ = c.database.Close()
+		c.database = nil
+	}
+}
 
 func (c *notebookDuckDBClient) exec(ctx context.Context, sqlText string) error {
 	_, err := c.execute(ctx, sqlText, false)
@@ -52,7 +102,7 @@ func (c *notebookDuckDBClient) exec(ctx context.Context, sqlText string) error {
 // server-owned operations such as exporting a relation into a private
 // .renart staging directory; authored notebook SQL must always use exec.
 func (c *notebookDuckDBClient) trustedExec(ctx context.Context, sqlText string) error {
-	_, err := c.executeSQL(ctx, sqlText, false)
+	_, err := c.executeSQL(ctx, sqlText, false, true)
 	return err
 }
 
@@ -61,26 +111,37 @@ func (c *notebookDuckDBClient) query(ctx context.Context, sqlText string) (*quer
 }
 
 func (c *notebookDuckDBClient) execute(ctx context.Context, sqlText string, returnRows bool) (*query.QueryResult, error) {
-	return c.executeSQL(ctx, c.withWorkspace(sqlText), returnRows)
+	return c.executeSQL(ctx, c.withWorkspace(sqlText), returnRows, false)
 }
 
-func (c *notebookDuckDBClient) executeSQL(ctx context.Context, sqlText string, returnRows bool) (*query.QueryResult, error) {
+func (c *notebookDuckDBClient) executeSQL(ctx context.Context, sqlText string, returnRows, trusted bool) (*query.QueryResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-
-	var driver drivermgr.Driver
-	database, err := driver.NewDatabase(map[string]string{"driver": "duckdb", "path": c.path})
-	if err != nil {
-		return nil, err
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-c.executionGate:
 	}
-	defer database.Close()
-
-	connection, err := database.Open(ctx)
-	if err != nil {
-		return nil, err
+	defer func() { c.executionGate <- struct{}{} }()
+	if c.closed || c.connection == nil {
+		return nil, fmt.Errorf("notebook session is closed")
 	}
-	defer connection.Close()
+
+	connection := c.connection
+	if trusted {
+		// Server-authored exports must not inherit the LocalFileSystem policy
+		// applied to notebook SQL. Keep that narrow path on a second connection,
+		// opened only when it is actually needed.
+		if c.trustedConnection == nil {
+			trustedConnection, err := c.database.Open(ctx)
+			if err != nil {
+				return nil, err
+			}
+			c.trustedConnection = trustedConnection
+		}
+		connection = c.trustedConnection
+	}
 
 	statement, err := connection.NewStatement()
 	if err != nil {

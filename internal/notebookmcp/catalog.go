@@ -16,6 +16,7 @@ const (
 	defaultCatalogResults = 20
 	maxCatalogResults     = 50
 	maxCatalogColumns     = 64
+	maxCatalogLineage     = 12
 	defaultSourceRows     = 10_000
 )
 
@@ -47,23 +48,30 @@ func (s *Server) searchCatalog(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	connections := workspaceConnectionTypes(state)
 	notebookCells := workspaceNotebookCells(state)
 
-	ranked := make([]rankedCatalogMatch, 0, len(index.Artifacts)*2)
+	matches := make([]CatalogMatch, 0, len(index.Artifacts)*2)
+	lineageRefs := make(map[string]CatalogLineageRef, len(index.Artifacts)*2)
 	for _, artifact := range index.Artifacts {
 		match := catalogArtifactMatch(artifact, assets[artifact.WorkspaceID], connections)
-		if catalogKindAllowed(match, kinds) {
-			if score := catalogMatchScore(match, query); score > 0 {
-				ranked = append(ranked, rankedCatalogMatch{match: match, score: score})
-			}
-		}
+		matches = append(matches, match)
+		lineageRefs[catalogRefKey(model.ArtifactRef{Kind: artifact.Kind, ArtifactID: artifact.ID})] = catalogLineageRef(match)
 		for _, component := range artifact.Components {
 			cell := notebookCells[artifact.WorkspaceID+"\x00"+component.ID]
 			match := catalogComponentMatch(artifact, component, cell, connections)
-			if !catalogKindAllowed(match, kinds) {
-				continue
-			}
-			if score := catalogMatchScore(match, query); score > 0 {
-				ranked = append(ranked, rankedCatalogMatch{match: match, score: score})
-			}
+			matches = append(matches, match)
+			lineageRefs[catalogRefKey(model.ArtifactRef{
+				Kind: artifact.Kind, ArtifactID: artifact.ID, ComponentID: component.ID,
+			})] = catalogLineageRef(match)
+		}
+	}
+	catalogAttachLineage(matches, index.Dependencies, lineageRefs)
+
+	ranked := make([]rankedCatalogMatch, 0, len(matches))
+	for _, match := range matches {
+		if !catalogKindAllowed(match, kinds) {
+			continue
+		}
+		if score := catalogMatchScore(match, query); score > 0 {
+			ranked = append(ranked, rankedCatalogMatch{match: match, score: score})
 		}
 	}
 
@@ -86,9 +94,9 @@ func (s *Server) searchCatalog(ctx context.Context, _ *mcp.CallToolRequest, inpu
 	if truncated {
 		ranked = ranked[:limit]
 	}
-	matches := make([]CatalogMatch, 0, len(ranked))
+	results := make([]CatalogMatch, 0, len(ranked))
 	for _, candidate := range ranked {
-		matches = append(matches, candidate.match)
+		results = append(results, candidate.match)
 	}
 	revision := strings.TrimSpace(index.Revision)
 	if revision == "" {
@@ -98,7 +106,7 @@ func (s *Server) searchCatalog(ctx context.Context, _ *mcp.CallToolRequest, inpu
 		SchemaVersion: SchemaVersion,
 		Revision:      revision,
 		Query:         strings.TrimSpace(input.Query),
-		Matches:       matches,
+		Matches:       results,
 		Truncated:     truncated,
 	}, nil
 }
@@ -126,6 +134,9 @@ func catalogArtifactMatch(
 	match.ConnectionType = connectionTypes[strings.ToLower(match.Connection)]
 	match.AssetType = strings.TrimSpace(asset.Type)
 	match.Relation = strings.TrimSpace(asset.Name)
+	match.Description = strings.TrimSpace(asset.Description)
+	match.Tags = catalogStrings(asset.Tags)
+	match.Materialization = catalogMaterialization(asset)
 	match.DataSourceEligible = hasCatalogCapability(artifact.Capabilities, "produces_relation")
 	if match.DataSourceEligible {
 		approvalRequired := catalogSourceApprovalRequired(match.Connection, match.ConnectionType, match.AssetType)
@@ -217,6 +228,128 @@ func catalogColumns(columns []model.Column) []ResultColumn {
 	return result
 }
 
+func catalogStrings(values []string) []string {
+	result := catalogOrderedStrings(values)
+	if len(result) == 0 {
+		return nil
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return strings.ToLower(result[i]) < strings.ToLower(result[j])
+	})
+	return result
+}
+
+func catalogOrderedStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			result = append(result, value)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func catalogMaterialization(asset model.Asset) *CatalogMaterialization {
+	materialization := CatalogMaterialization{
+		Type:            strings.TrimSpace(asset.MaterializationType),
+		Strategy:        strings.TrimSpace(asset.MaterializationStrategy),
+		IncrementalKey:  strings.TrimSpace(asset.IncrementalKey),
+		PartitionBy:     strings.TrimSpace(asset.PartitionBy),
+		ClusterBy:       catalogOrderedStrings(asset.ClusterBy),
+		TimeGranularity: strings.TrimSpace(asset.TimeGranularity),
+	}
+	if materialization.Type == "" && materialization.Strategy == "" &&
+		materialization.IncrementalKey == "" && materialization.PartitionBy == "" &&
+		len(materialization.ClusterBy) == 0 && materialization.TimeGranularity == "" {
+		return nil
+	}
+	return &materialization
+}
+
+func catalogLineageRef(match CatalogMatch) CatalogLineageRef {
+	return CatalogLineageRef{
+		ID:          match.ID,
+		Kind:        match.Kind,
+		ArtifactID:  match.ArtifactID,
+		ComponentID: match.ComponentID,
+		Title:       match.Title,
+		ParentTitle: match.ParentTitle,
+		Relation:    match.Relation,
+	}
+}
+
+func catalogRefKey(ref model.ArtifactRef) string {
+	return ref.Kind + "\x00" + ref.ArtifactID + "\x00" + ref.ComponentID
+}
+
+func catalogAttachLineage(
+	matches []CatalogMatch,
+	dependencies []model.ArtifactDependency,
+	refs map[string]CatalogLineageRef,
+) {
+	upstreams := make(map[string][]CatalogLineageRef)
+	downstreams := make(map[string][]CatalogLineageRef)
+	for _, dependency := range dependencies {
+		producerKey := catalogRefKey(dependency.Producer)
+		consumerKey := catalogRefKey(dependency.Consumer)
+		producer, producerOK := refs[producerKey]
+		consumer, consumerOK := refs[consumerKey]
+		if !producerOK || !consumerOK {
+			continue
+		}
+		upstreams[consumerKey] = appendCatalogLineageRef(upstreams[consumerKey], producer)
+		downstreams[producerKey] = appendCatalogLineageRef(downstreams[producerKey], consumer)
+	}
+	for index := range matches {
+		key := catalogRefKey(model.ArtifactRef{
+			Kind: matches[index].ArtifactKind, ArtifactID: matches[index].ArtifactID,
+			ComponentID: matches[index].ComponentID,
+		})
+		upstreamRefs := sortedCatalogLineageRefs(upstreams[key])
+		downstreamRefs := sortedCatalogLineageRefs(downstreams[key])
+		matches[index].UpstreamCount = len(upstreamRefs)
+		matches[index].DownstreamCount = len(downstreamRefs)
+		if len(upstreamRefs) > maxCatalogLineage {
+			upstreamRefs = upstreamRefs[:maxCatalogLineage]
+			matches[index].LineageTruncated = true
+		}
+		if len(downstreamRefs) > maxCatalogLineage {
+			downstreamRefs = downstreamRefs[:maxCatalogLineage]
+			matches[index].LineageTruncated = true
+		}
+		matches[index].Upstreams = upstreamRefs
+		matches[index].Downstreams = downstreamRefs
+	}
+}
+
+func appendCatalogLineageRef(existing []CatalogLineageRef, candidate CatalogLineageRef) []CatalogLineageRef {
+	for _, ref := range existing {
+		if ref.ID == candidate.ID {
+			return existing
+		}
+	}
+	return append(existing, candidate)
+}
+
+func sortedCatalogLineageRefs(refs []CatalogLineageRef) []CatalogLineageRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	result := append([]CatalogLineageRef(nil), refs...)
+	sort.Slice(result, func(i, j int) bool {
+		left := strings.ToLower(result[i].Title)
+		right := strings.ToLower(result[j].Title)
+		if left != right {
+			return left < right
+		}
+		return result[i].ID < result[j].ID
+	})
+	return result
+}
+
 func normalizedCatalogKinds(values []string) map[string]bool {
 	if len(values) == 0 {
 		return nil
@@ -247,7 +380,19 @@ func catalogMatchScore(match CatalogMatch, query string) int {
 	primary := []string{match.Title, match.Relation}
 	secondary := []string{
 		match.ParentTitle, match.Connection, match.ConnectionType, match.AssetType,
+		match.Description, strings.Join(match.Tags, " "),
 		strings.Join(match.Capabilities, " "), match.Kind, match.ArtifactKind,
+	}
+	if match.Materialization != nil {
+		secondary = append(secondary,
+			match.Materialization.Type,
+			match.Materialization.Strategy,
+			match.Materialization.IncrementalKey,
+			match.Materialization.TimeGranularity,
+		)
+	}
+	for _, ref := range append(append([]CatalogLineageRef(nil), match.Upstreams...), match.Downstreams...) {
+		secondary = append(secondary, ref.Title, ref.ParentTitle, ref.Relation)
 	}
 	best := 0
 	for _, value := range primary {

@@ -28,6 +28,14 @@ func TestNotebookAgentServiceStreamsAndResumesScopedTurns(t *testing.T) {
 			}
 			return nil
 		},
+		ResolveReferences: func(notebookID string, references []NotebookAgentReferenceRequest) ([]NotebookAgentReference, *APIError) {
+			if notebookID != "notebook-one" || len(references) != 1 || references[0].ID != "cell-one" {
+				t.Fatalf("unexpected reference request: %q %+v", notebookID, references)
+			}
+			return []NotebookAgentReference{{
+				Kind: "cell", ID: "cell-one", Label: "daily_sales", Detail: "duckdb.sql",
+			}}, nil
+		},
 		LookPath: func(file string) (string, error) {
 			if file == "codex" {
 				return "/usr/bin/codex", nil
@@ -64,12 +72,16 @@ func TestNotebookAgentServiceStreamsAndResumesScopedTurns(t *testing.T) {
 
 	started, apiErr := service.StartTurn("notebook-one", StartNotebookAgentTurnRequest{
 		Provider: "codex", Mode: NotebookAgentModeAsk, Message: "Explain this notebook",
+		References: []NotebookAgentReferenceRequest{{Kind: "cell", ID: "cell-one"}},
 	})
 	if apiErr != nil {
 		t.Fatal(apiErr)
 	}
 	if started.Status != "running" || len(started.Messages) != 1 || started.Messages[0].Role != "user" {
 		t.Fatalf("unexpected starting state: %+v", started)
+	}
+	if references := started.Messages[0].References; len(references) != 1 || references[0].Label != "daily_sales" {
+		t.Fatalf("resolved references were not retained: %+v", references)
 	}
 
 	first := waitForNotebookAgentState(t, service, "notebook-one", func(snapshot NotebookAgentSnapshot) bool {
@@ -107,7 +119,8 @@ func TestNotebookAgentServiceStreamsAndResumesScopedTurns(t *testing.T) {
 		t.Fatalf("resumed prompt duplicated transcript history: %s", requests[1].Prompt)
 	}
 	if !strings.Contains(requests[0].Prompt, "single notebook with opaque ID \"notebook-one\"") ||
-		!strings.Contains(requests[0].Prompt, "Do not prepare or apply changes") {
+		!strings.Contains(requests[0].Prompt, "Do not prepare or apply changes") ||
+		!strings.Contains(requests[0].Prompt, `cell "daily_sales" (id="cell-one", duckdb.sql)`) {
 		t.Fatalf("prompt is not scoped to Ask mode: %s", requests[0].Prompt)
 	}
 	if len(published) < 5 || published[len(published)-1].Status != "idle" {
@@ -172,6 +185,8 @@ func TestNotebookAgentEditPromptForbidsOperationNameProbing(t *testing.T) {
 		"visualization.create",
 		"never probe guessed operation names",
 		"search the workspace catalog",
+		"direct lineage",
+		"truncate-and-replace",
 		"first import or explicit refresh must be reviewed",
 		"one corrected retry",
 	} {

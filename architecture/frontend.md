@@ -114,7 +114,9 @@ not underscore-flattened route hacks.
   remain one review unit but render one inline diff per changed cell/file. Each
   file or notebook row makes its complete non-action area the diff target, so
   the path, icon, and status behave as one control rather than as separate
-  click hotspots.
+  click hotspots. The mobile navigation keeps a fixed 3.5rem content row and
+  adds the device safe-area inset outside that row, so Android/iOS system UI
+  cannot compress or push its icons out of alignment.
 - [components/app/build-page.tsx](../web/components/app/build-page.tsx): the primary
   IDE — the interactive lineage canvas
   ([lineage-canvas.tsx](../web/components/app/lineage-canvas.tsx), React Flow)
@@ -360,8 +362,10 @@ not underscore-flattened route hacks.
   consume the workspace's backend-provided `asset_capabilities` contract
   ([semantic-asset-create-fields.tsx](../web/components/app/semantic-asset-create-fields.tsx)).
   Its six top-level asset-kind choices use one fixed tile size and animate into
-  a compact selected-kind summary once chosen, while the creation fields use the
-  plain `Field` variant instead of nesting a bordered card around each input.
+  a compact selected-kind summary once chosen. SQL, Python, API, Seed, Sensor,
+  and Load use code-native miniature previews rather than generic product
+  glyphs, while the creation fields use the plain `Field` variant instead of
+  nesting a bordered card around each input.
   The dialog is shrink-safe, keeps focus rings inset inside its shadcn
   ScrollArea, and suppresses horizontal overflow around long horizontal
   fields. HTTP API creation defaults to the custom OpenAPI template and requires
@@ -396,6 +400,15 @@ not underscore-flattened route hacks.
   SQL-type and Load-category compatibility tables have been removed. The raw YAML editor is not exposed,
   but its Type and connection identity fields are also static so re-enabling it
   cannot bypass the reviewed migration.
+- Named connection pickers share `ConnectionSelect`: asset creation/editing,
+  ad-hoc SQL, notebook source import and execution, presentation query datasets,
+  pipeline defaults, project connection setup, and onboarding use the same
+  shrink-safe selected value and grouped option composition. A small engine tile
+  provides consistent type recognition with semantic per-engine color (for
+  example PostgreSQL blue and DuckDB amber). Exact engine marks come from the
+  bundled Simple Icons Iconify set; local glyphs cover file storage and engines
+  without a matching mark. Icon data is compiled into the web bundle and never
+  fetched from a third-party API at runtime.
 - Other pages: [catalog-page.tsx](../web/components/app/catalog-page.tsx),
   [notebook-page.tsx](../web/components/app/notebook-page.tsx),
   [runs-page.tsx](../web/components/app/runs-page.tsx),

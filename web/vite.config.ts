@@ -4,6 +4,7 @@ import path from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import { TanStackRouterVite } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
+import Icons from "unplugin-icons/vite";
 
 const require = createRequire(import.meta.url);
 const PROXY_TARGET = process.env.PROXY_TARGET ?? "http://127.0.0.1:3000";
@@ -62,6 +63,7 @@ export default defineConfig({
   plugins: [
     TanStackRouterVite({ target: "react", autoCodeSplitting: true }),
     react(),
+    Icons({ compiler: "jsx", jsx: "react" }),
     prepareMonacoAssetsPlugin(),
   ],
   build: {

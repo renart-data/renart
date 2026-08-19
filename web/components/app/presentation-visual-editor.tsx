@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import { AuthoredControlEditor } from "@/components/app/authored-control";
+import { ConnectionSelect } from "@/components/app/connection-select";
 import {
   normalizeVisualizationDefinition,
   VisualizationBuilder,
@@ -466,23 +467,25 @@ export function DatasetEditor({
             className="min-w-0"
           >
             <FieldLabel>Connection</FieldLabel>
-            <Select
+            <ConnectionSelect
               value={dataset.connection ?? ""}
+              groups={[
+                {
+                  label: "Query connections",
+                  options: connections.map((connection) => ({
+                    value: connection.name,
+                    label: connection.name,
+                    connectionType: connection.connection_type,
+                    detail: connection.dialect,
+                  })),
+                },
+              ]}
               onValueChange={(connection) =>
                 onChange({ ...dataset, connection, resolved_columns: undefined })
               }
-            >
-              <SelectTrigger className="w-full" aria-label="Dataset query connection">
-                <SelectValue placeholder="Choose a connection" />
-              </SelectTrigger>
-              <SelectContent>
-                {connections.map((connection) => (
-                  <SelectItem key={connection.name} value={connection.name}>
-                    {connection.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              className="w-full"
+              ariaLabel="Dataset query connection"
+            />
           </Field>
         )}
         <div className="flex items-end justify-end">

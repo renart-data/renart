@@ -45,12 +45,17 @@ type NotebookRuntimeEvent struct {
 
 // notebookRuntime is the in-memory recompute state for one notebook.
 type notebookRuntime struct {
-	mu            sync.Mutex
-	stale         map[string]bool
-	results       map[string]notebook.CellRunResult
-	autoFailed    map[string]bool
-	autoPending   map[string]bool
-	autoRecompute bool
+	mu      sync.Mutex
+	stale   map[string]bool
+	results map[string]notebook.CellRunResult
+	// authoredFingerprints remembers the latest filesystem definition observed
+	// for each attempted cell. Keeping it separate from the result fingerprint
+	// lets repeated runtime reads stay idempotent while a second direct edit can
+	// still clear a parked failure and restart recomputation.
+	authoredFingerprints map[string]string
+	autoFailed           map[string]bool
+	autoPending          map[string]bool
+	autoRecompute        bool
 	// parameterValues are local runtime overrides resolved against the
 	// Git-tracked definitions. parameterDefinitionKey detects definition edits
 	// without resetting values for unrelated cell changes.
@@ -85,12 +90,13 @@ type activeNotebookRun struct {
 
 func newNotebookRuntime() *notebookRuntime {
 	return &notebookRuntime{
-		stale:         map[string]bool{},
-		results:       map[string]notebook.CellRunResult{},
-		autoFailed:    map[string]bool{},
-		autoPending:   map[string]bool{},
-		autoRecompute: true,
-		manualRuns:    map[*activeNotebookRun]struct{}{},
+		stale:                map[string]bool{},
+		results:              map[string]notebook.CellRunResult{},
+		authoredFingerprints: map[string]string{},
+		autoFailed:           map[string]bool{},
+		autoPending:          map[string]bool{},
+		autoRecompute:        true,
+		manualRuns:           map[*activeNotebookRun]struct{}{},
 	}
 }
 
@@ -388,6 +394,18 @@ func (s *NotebookService) publishRuntime(notebookID, uuid string, autoPending []
 	s.deps.PublishEvent(event)
 }
 
+// publishCachedRuntime emits a running-state transition without reopening the
+// notebook database to rediscover the same eligibility set. The latest full
+// closure is cached whenever it is computed, and the run result transition
+// refreshes it before the finishing event.
+func (s *NotebookService) publishCachedRuntime(notebookID, uuid string, results map[string]notebook.CellRunResult) {
+	rt := s.runtimes.get(uuid)
+	rt.mu.Lock()
+	autoPending := sortedKeys(rt.autoPending)
+	rt.mu.Unlock()
+	s.publishRuntime(notebookID, uuid, autoPending, results)
+}
+
 // publishCurrentRuntime recomputes the pending closure before publishing a
 // running-only transition. It preserves the full-snapshot SSE contract while a
 // run starts or finishes instead of momentarily clearing unrelated pending
@@ -399,6 +417,15 @@ func (s *NotebookService) publishCurrentRuntime(notebookID, uuid string) {
 		return
 	}
 	rt := s.runtimes.get(uuid)
+	changed := s.reconcileRuntimeFingerprints(nb, rt)
+	if changed {
+		rt.mu.Lock()
+		auto := rt.autoRecompute
+		rt.mu.Unlock()
+		if auto {
+			s.scheduleRecompute(notebookID, uuid)
+		}
+	}
 	closure := computeAutoRecomputeClosure(s.buildAutoCells(nb, rt))
 	s.publishRuntime(notebookID, uuid, sortedKeys(closure), nil)
 }
@@ -416,9 +443,17 @@ type NotebookRuntimeSnapshot struct {
 
 // runtimeSnapshot returns the current recompute state for a notebook UUID,
 // validating staleness to derive the auto-pending set.
-func (s *NotebookService) runtimeSnapshot(nb *notebook.Notebook) NotebookRuntimeSnapshot {
+func (s *NotebookService) runtimeSnapshot(notebookID string, nb *notebook.Notebook) NotebookRuntimeSnapshot {
 	s.hydrateRuntime(nb)
 	rt := s.runtimes.get(nb.UUID)
+	if s.reconcileRuntimeFingerprints(nb, rt) {
+		rt.mu.Lock()
+		auto := rt.autoRecompute
+		rt.mu.Unlock()
+		if auto {
+			s.scheduleRecompute(notebookID, nb.UUID)
+		}
+	}
 
 	// Eligibility inspection touches the notebook session. During an active run
 	// that session is deliberately serialized, so recomputing here would make a
@@ -445,6 +480,50 @@ func (s *NotebookService) runtimeSnapshot(nb *notebook.Notebook) NotebookRuntime
 		rt.autoPending = map[string]bool{}
 	}
 	return runtimeSnapshotLocked(rt, rt.runningCellsLocked(), autoPending)
+}
+
+// reconcileRuntimeFingerprints compares attempted in-memory results with the
+// freshly loaded filesystem definition. This makes direct editor/CLI changes
+// converge through the ordinary runtime GET instead of relying only on
+// process-local mutation callbacks or a server restart.
+func (s *NotebookService) reconcileRuntimeFingerprints(nb *notebook.Notebook, rt *notebookRuntime) bool {
+	if nb == nil || rt == nil {
+		return false
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+
+	changed := false
+	parameterValues := cloneNotebookParameterValues(rt.parameterValues)
+	markStale := func(cellID string) {
+		if !rt.stale[cellID] || rt.autoFailed[cellID] {
+			changed = true
+		}
+		rt.stale[cellID] = true
+		delete(rt.autoFailed, cellID)
+	}
+	for _, cell := range nb.Cells {
+		result, ok := rt.results[cell.ID]
+		if !ok || result.Fingerprint == "" {
+			continue
+		}
+		observed := rt.authoredFingerprints[cell.ID]
+		if observed == "" {
+			observed = result.Fingerprint
+			rt.authoredFingerprints[cell.ID] = observed
+		}
+		current := notebook.CellFingerprintWithParameters(nb, cell, parameterValues)
+		if observed == current {
+			continue
+		}
+		changed = true
+		rt.authoredFingerprints[cell.ID] = current
+		markStale(cell.ID)
+		for _, descendant := range notebook.Descendants(nb, cell) {
+			markStale(descendant.ID)
+		}
+	}
+	return changed
 }
 
 func runtimeSnapshotLocked(rt *notebookRuntime, running, autoPending []string) NotebookRuntimeSnapshot {
@@ -478,6 +557,9 @@ func (s *NotebookService) hydrateRuntime(nb *notebook.Notebook) {
 			if _, alreadyRecorded := rt.results[cellID]; !alreadyRecorded {
 				rt.results[cellID] = result
 			}
+			if result.Fingerprint != "" {
+				rt.authoredFingerprints[cellID] = result.Fingerprint
+			}
 		}
 		for cellID := range stale {
 			rt.stale[cellID] = true
@@ -493,6 +575,7 @@ func (s *NotebookService) forgetCell(notebookID, uuid, cellID string) {
 	rt.mu.Lock()
 	delete(rt.stale, cellID)
 	delete(rt.results, cellID)
+	delete(rt.authoredFingerprints, cellID)
 	delete(rt.autoFailed, cellID)
 	rt.mu.Unlock()
 	s.publishRuntime(notebookID, uuid, nil, nil)
@@ -504,7 +587,7 @@ func (s *NotebookService) Runtime(notebookID string) (NotebookRuntimeSnapshot, *
 	if apiErr != nil {
 		return NotebookRuntimeSnapshot{}, apiErr
 	}
-	return s.runtimeSnapshot(nb), nil
+	return s.runtimeSnapshot(notebookID, nb), nil
 }
 
 // SetAutoRecompute updates the per-notebook toggle (and import environment).

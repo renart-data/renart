@@ -20,6 +20,7 @@ func TestWorkspaceExposesCompleteMaterializationContract(t *testing.T) {
 	writeWorkspaceFile(t, root, "analytics/assets/events.sql", `/* @bruin
 name: analytics.events
 type: bq.sql
+description: Retained customer event history.
 materialization:
   type: table
   strategy: time_interval
@@ -44,6 +45,7 @@ select current_date() as event_date, 'customer' as customer_id
 	require.Len(t, state.Pipelines[0].Assets, 1)
 
 	asset := state.Pipelines[0].Assets[0]
+	assert.Equal(t, "Retained customer event history.", asset.Description)
 	assert.Equal(t, "table", asset.MaterializationType)
 	assert.Equal(t, "time_interval", asset.MaterializationStrategy)
 	assert.Equal(t, "event_date", asset.IncrementalKey)

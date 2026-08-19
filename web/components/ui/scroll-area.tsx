@@ -11,6 +11,7 @@ function ScrollArea({
   horizontalScrollBarClassName,
   showHorizontalScrollBar = true,
   viewportClassName,
+  viewportStyle,
   viewportRef,
   onViewportScroll,
   ...props
@@ -18,6 +19,7 @@ function ScrollArea({
   horizontalScrollBarClassName?: string;
   showHorizontalScrollBar?: boolean;
   viewportClassName?: string;
+  viewportStyle?: React.CSSProperties;
   viewportRef?: React.Ref<HTMLDivElement>;
   onViewportScroll?: React.UIEventHandler<HTMLDivElement>;
 }) {
@@ -31,6 +33,7 @@ function ScrollArea({
         data-slot="scroll-area-viewport"
         ref={viewportRef}
         onScroll={onViewportScroll}
+        style={viewportStyle}
         className={cn("h-full w-full rounded-[inherit]", viewportClassName)}
       >
         {children}

@@ -33,6 +33,13 @@ Python cells can join it with snapshots from other connections. Source cards
 show the connection, environment, snapshot age, rows, bytes, and whether the
 snapshot is complete or intentionally sampled.
 
+Database transfers use typed Parquet snapshots. Renart does not fall back to
+JSON rows or guess physical column types when a connection cannot provide that
+transport; the source run fails and keeps its previous complete snapshot. Local
+DuckDB sources use a native read-only path, while other supported database
+connections use Sling. The server-wide byte and time budgets are configurable
+with `--notebook-snapshot-max-bytes` and `--notebook-snapshot-timeout`.
+
 Choose **Full** when downstream work needs the complete result. Choose
 **Sample** with an explicit row limit for exploratory work. Preview limits only
 control the rows rendered in the browser; Renart does not silently publish a
@@ -69,7 +76,7 @@ downloaded as CSV or Parquet.
 
 ## Parameters
 
-Choose **Parameters** to add typed notebook inputs. A parameter's ID, type,
+Open **Add** and choose a control to add typed notebook inputs. A control's ID, type,
 default, and optional choices are saved in `notebook.yml`; the value you are
 currently exploring stays local to your Renart session. This keeps useful
 defaults reviewable in Git without turning every interactive selection into a

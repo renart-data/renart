@@ -16,3 +16,19 @@ func TestRuntimeParameterValuesEnterCellFingerprint(t *testing.T) {
 		t.Fatal("runtime parameter override did not enter the cell fingerprint")
 	}
 }
+
+func TestSnapshotDefinitionFingerprintUsesRenderedSemantics(t *testing.T) {
+	base := "nb1:cell"
+	first := SQLSnapshotDefinitionFingerprint(base, "select *\nfrom events where day = date '2026-08-15'")
+	formatted := SQLSnapshotDefinitionFingerprint(base, " select  * from events where day = date '2026-08-15'; ")
+	if first != formatted {
+		t.Fatalf("presentation-only SQL formatting changed snapshot fingerprint: %q != %q", first, formatted)
+	}
+	second := SQLSnapshotDefinitionFingerprint(base, "select * from events where day = date '2026-08-16'")
+	if first == second {
+		t.Fatal("rendered execution-window change did not invalidate snapshot fingerprint")
+	}
+	if SnapshotDefinitionFingerprint(base, "s3://bucket/first.parquet") == SnapshotDefinitionFingerprint(base, "s3://bucket/second.parquet") {
+		t.Fatal("rendered source URI change did not invalidate snapshot fingerprint")
+	}
+}

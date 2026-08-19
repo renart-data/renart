@@ -34,12 +34,14 @@ import { cn } from "@/lib/utils";
 
 export type AuthoredControlDataset = {
   id: string;
+  label?: string;
   columns: Array<{ name: string; detail?: string }>;
 };
 
 export function AuthoredControlEditor({
   control,
   datasets = [],
+  resolvedOptions,
   idPrefix = "authored-control",
   pathPrefix,
   onChange,
@@ -48,6 +50,7 @@ export function AuthoredControlEditor({
 }: {
   control: AuthoredControlDefinition;
   datasets?: AuthoredControlDataset[];
+  resolvedOptions?: AuthoredControlOption[];
   idPrefix?: string;
   pathPrefix?: string;
   onChange: (control: AuthoredControlDefinition) => void;
@@ -144,7 +147,10 @@ export function AuthoredControlEditor({
           control={control}
           value={control.default}
           label="Default value"
-          options={authoredControlOptions(control)}
+          options={
+            resolvedOptions ??
+            (control.options?.values !== undefined ? authoredControlOptions(control) : undefined)
+          }
           idScope={`${idPrefix}-default`}
           path={pathPrefix ? `${pathPrefix}.default` : undefined}
           onChange={(value) => onChange({ ...control, default: value })}
@@ -255,7 +261,7 @@ export function AuthoredControlEditor({
                       <SelectGroup>
                         {datasets.map((dataset) => (
                           <SelectItem key={dataset.id} value={dataset.id}>
-                            {dataset.id}
+                            {dataset.label ?? dataset.id}
                           </SelectItem>
                         ))}
                       </SelectGroup>
@@ -328,6 +334,7 @@ export function AuthoredControlValueField({
   const title = label ?? control.label ?? control.id;
   const detail = description === undefined ? (label ? false : control.id) : description;
   const id = `${idScope}-${control.id}`;
+  const hasProvidedOptions = providedOptions !== undefined;
   const options = providedOptions ?? authoredControlOptions(control);
 
   if (type === "slider") {
@@ -387,12 +394,13 @@ export function AuthoredControlValueField({
     );
   }
 
-  if (type === "select" && options.length > 0) {
+  if (type === "select" && (options.length > 0 || hasProvidedOptions)) {
     const selected = comparableAuthoredControlValue(value);
     return (
       <Field data-presentation-path={path} className={cn(compact && "w-44 gap-1", className)}>
         <FieldLabel htmlFor={id}>{title}</FieldLabel>
         <Select
+          disabled={options.length === 0}
           value={selected}
           onValueChange={(next) => {
             const option = options.find(
@@ -402,7 +410,7 @@ export function AuthoredControlValueField({
           }}
         >
           <SelectTrigger id={id} className="w-full">
-            <SelectValue placeholder="Choose…" />
+            <SelectValue placeholder={options.length === 0 ? "No options loaded" : "Choose…"} />
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
@@ -422,7 +430,7 @@ export function AuthoredControlValueField({
     );
   }
 
-  if (type === "multi_select" && options.length > 0) {
+  if (type === "multi_select" && (options.length > 0 || hasProvidedOptions)) {
     const selected = new Set(Array.isArray(value) ? value.map(comparableAuthoredControlValue) : []);
     return (
       <Field data-presentation-path={path} className={cn(compact && "min-w-48 gap-1", className)}>
@@ -435,6 +443,9 @@ export function AuthoredControlValueField({
             compact && "flex min-h-7 max-w-md flex-wrap gap-x-3 gap-y-1 bg-background px-2 py-1",
           )}
         >
+          {options.length === 0 ? (
+            <span className="text-xs text-muted-foreground">No options loaded</span>
+          ) : null}
           {options.map((option) => {
             const key = comparableAuthoredControlValue(option.value);
             return (

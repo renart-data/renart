@@ -80,12 +80,15 @@ cell/block IDs, while prefixed React keys remain UI-only.
 Only data-producing cells enter the notebook DAG. Markdown, controls, and
 visualizations are ordered presentation components, not executable assets.
 
-The runner delegates block behavior through `NotebookBlockExecutor` and moves
-external data through `NotebookTransferService`. Every transferable result is
-a `TabularArtifact` with a physical schema, row/byte count, complete/sample
-state, and credential-free provenance. The runner owns DAG order,
-cancellation, serialized session access, preview creation, validation, and the
-atomic swap into the durable logical cell object.
+The runner delegates connection-bound warehouse SQL and Renart-owned source
+definitions through `NotebookBlockExecutor` and moves their external data
+through `NotebookTransferService`. Local DuckDB SQL and Python retain dedicated
+session/broker paths because their inputs and publication lifecycle are not a
+remote-source execution contract. Every transferable result is a
+`TabularArtifact` with a physical schema, row/byte count, complete/sample state,
+and credential-free provenance. The runner owns DAG order, cancellation,
+serialized session access, preview creation, validation, and the atomic swap
+into the durable logical cell object.
 
 Current roles are:
 
@@ -108,20 +111,31 @@ movement and lineage visible.
 The transfer boundary has no JSON-row-map fallback for ordinary warehouse
 snapshots:
 
-1. compatible local DuckDB sources use the attach/copy path;
-2. supported database/object/file sources use the shared hardened Sling
+1. compatible pipeline-relation imports already in a local DuckDB file use
+   the attach/copy path; a connection-backed query against a local DuckDB file
+   uses a native read-only DuckDB query-to-Parquet export, then the same bounded
+   snapshot publication path as every other source;
+2. non-DuckDB pipeline-asset references and explicit database/object/file
+   sources use the shared hardened Sling
    launcher to create typed Parquet in a mode-`0700` staging directory;
    warehouse SQL uses a private replication document with an explicit `sql`
    entry so Sling cannot confuse the query file with a file-data source;
-3. a small typed direct-query adapter is allowed only inside strict memory
-   limits when the connection cannot use Sling;
-4. unsupported or over-budget work fails and keeps the previous good snapshot.
+3. there is no JSON/map-row or inferred-type fallback. A connection that cannot
+   produce a typed Parquet snapshot is unsupported for notebook transfer;
+4. unsupported, cancelled, timed-out, or over-budget work fails and keeps the
+   previous good snapshot.
 
 Credentials are resolved for one operation and passed in scoped process
 environment. They are absent from argv, source provenance, browser DTOs, and
 MCP results. The shared process limiter, context cancellation, time limit, and
 byte/row monitors apply to source transfers. Temporary Parquet is deleted after
 publication.
+
+The server flags `--notebook-snapshot-max-bytes` (default 2 GiB) and
+`--notebook-snapshot-timeout` (default 30 minutes) configure the byte and time
+budgets for every explicit source and implicit pipeline-asset transfer. Values
+must be positive. Preview limits remain separate and do not change publication
+completeness.
 
 Snapshot policy is explicit:
 
@@ -143,12 +157,28 @@ materialization directive may pin a table. Python and source blocks publish
 tables. Closing/deleting a notebook removes its session, and startup sweeping
 removes orphaned session files.
 
+An open notebook run reuses one ADBC database connection for its serialized
+statements instead of reopening the driver for each query. Server-owned exports
+use a separate lazy connection so authored filesystem restrictions cannot leak
+into the trusted staging path. Session-manifest migrations are idempotent and
+versioned; a process-local version cache skips repeated DDL after the first open
+while a restart or recreated database runs the migrations again.
+
 Versioned session tables retain source snapshot provenance and successful cell
 run summaries: fingerprints, timestamps, schemas, row counts, durations,
 materialization kind, and source snapshot IDs. On restart, Renart reconstructs
 result summaries, verifies the current definition fingerprints, and queries
 only a bounded preview from live session objects. Definitions remain Git state;
 runtime observations do not.
+
+SQL fingerprints use the canonical ID-resolved query. Python fingerprints are
+deliberately conservative: they hash the exact cell bytes, typed parameter
+values, execution metadata, sibling/external references, and the effective uv
+dependency input. Dependency discovery matches execution precedence from the
+cell directory to the workspace root (`requirements.txt`, otherwise
+`pyproject.toml` plus its `uv.lock`). A successful run captures that environment
+again after uv exits, so a lockfile created or updated by the run describes the
+result that was actually published.
 
 Source blocks and connection-backed SQL cells render the same compact snapshot
 summary from that runtime record: complete/sample state, capture time,
@@ -158,6 +188,14 @@ previews remain bounded and expose a cell-specific accessible table name.
 Captured cell logs and source/cell failures use the shared ANSI renderer. It
 accepts both native escape bytes and escaped control-picture sequences, so
 command output keeps terminal colors without exposing raw control glyphs.
+
+An ordinary **Run all** reuses a source snapshot only when its rendered source
+definition, typed parameter values, environment, connection, and full/sample
+policy still match the published manifest. A changed Jinja execution window or
+source definition refreshes it. Running a source cell directly remains an
+explicit refresh, and **Refresh sources and run all** bypasses both source and
+external-import reuse. Cache reuse never guesses that the remote data itself is
+unchanged; the original capture timestamp stays visible.
 
 The in-process runtime tracks the cell IDs owned by every active manual run and
 the current auto-recompute wave. Both full SSE snapshots and
@@ -214,6 +252,25 @@ control strip. Presentation files retain `filters:` for their binding contract.
 This is one UI/domain primitive with host-specific storage adapters, not a
 second runtime state system.
 
+Notebook `select` and `multi_select` controls can source choices from a
+data-producing cell by declaring its durable cell ID plus `value_field` and an
+optional `label_field`. The editor writes durable IDs for new selections,
+continues to resolve legacy cell-name references, and offers the producer's
+last runtime columns (falling back to declared columns) in the field pickers.
+Notebook validation reports option sources that no longer resolve to a cell.
+
+Choices are route-local snapshots, not authored values. Renart reads distinct,
+deterministically ordered values from the producer's existing local DuckDB
+relation, caps the result at 1,000 choices, and never executes the producer or
+queries a source warehouse for this operation. A refresh requires a successful,
+current producer result. Users can refresh explicitly; a new successful result
+delta for that producer also refreshes affected controls through the existing
+SSE runtime stream. Opening a notebook, editing a control, and changing a
+control value do not query for choices. When a producer becomes stale, the last
+snapshot remains usable and visible, but refresh stays disabled until the
+producer runs again. Request sequencing prevents an older response from
+replacing a newer definition or route state.
+
 Current values are local runtime state. They are exposed in the initial runtime
 snapshot and `notebook.runtime` SSE events, but changing a value never rewrites
 `notebook.yml`. A definition change resets local values to the new defaults.
@@ -242,6 +299,11 @@ donut presentations, including axes/field encodings, multiple series, named
 color palettes, stacking, legends, labels, formatting, and a presentation row
 limit. Relational
 work such as joins and aggregation stays in an explicit SQL/Python cell.
+The shared renderer gives every chart, table, and KPI a stable accessible name;
+all chart families enable the Recharts keyboard/screen-reader layer. It converts
+only rows inside the presentation budget and caps rendered series at twenty,
+with a visible status message when rows or series are omitted. The same budget
+and semantics apply in notebooks, dashboards, reports, and audience viewers.
 
 Notebook Markdown is visual-first: a shared Tiptap editor parses the authored
 Markdown, serializes edits back to Markdown, and keeps an explicit source mode
@@ -308,9 +370,14 @@ column-level lineage. These components do not enter a pipeline or notebook run
 graph.
 
 The `/dashboards` and `/reports` routes provide list/create flows plus a shared
-canvas-first builder. Their rail and the notebook rail are composed from one
-document-authoring sidebar primitive, while each host supplies its own tabs and
-canvas behavior. The center pane is the live draft: dashboards use a
+canvas-first builder. List headers contain the compact dashboard/report switch;
+detail routes use one responsive document-authoring command bar for navigation,
+title, Visual/Definition mode, validation and preview state, history, refresh,
+preview, discard, and save. The file path and duplicated presentation title are
+not editor chrome. The dashboard viewport control sits with the canvas preview,
+and creation remains owned by the Add rail. Their rail and the notebook rail are
+composed from one document-authoring sidebar primitive, while each host supplies
+its own canvas behavior. The center pane is the live draft: dashboards use a
 12-column drag/resize grid and reports use an ordered document canvas with
 inline Markdown, insert points, and page breaks. A compact left rail contains
 the component palette, report outline, and asset- or query-backed datasets; the
@@ -413,10 +480,15 @@ surface, not a hosted or access-controlled BI runtime.
 ## 10. Server-owned recompute and frontend state
 
 The server owns definition staleness, last results, active runs, and the
-auto-recompute closure. Editing a SQL cell marks it and descendants stale,
-coalesces saves, validates each dependency wave with the same parse context as
-Monaco, and publishes `notebook.runtime` deltas over workspace SSE. Python and
-remote source execution are never triggered merely by opening a notebook.
+auto-recompute closure. Editing an execution cell marks it and descendants
+stale; changing Python dependencies marks every Python cell and its descendants
+stale in one transition. Renart coalesces saves, validates each safe SQL
+dependency wave with the same parse context as Monaco, and publishes
+`notebook.runtime` deltas over workspace SSE. Runtime snapshots also compare
+the latest filesystem fingerprints with the last attempted definitions, so
+direct Git/editor changes converge without polling or a server restart. Python
+and remote source execution are never triggered merely by opening a notebook;
+Python remains manual even when auto-recompute is enabled.
 
 Manual and automatic runs register before entering the shared session. Cancel
 is a barrier: it cancels DuckDB, transfers, and Python work and waits for the
@@ -429,7 +501,25 @@ endpoint instead of briefly dropping newly authored blocks.
 
 Preview tables stay bounded, block editors grow with short content before
 using their internal scroll area, and output panes retain user scroll position
-unless the user is already following the end.
+unless the user is already following the end. The shared result table switches
+to fixed-row windowing above fifty loaded rows: only the viewport plus a small
+overscan is mounted, spacer rows retain the complete scroll geometry, and ARIA
+row counts/indexes retain the logical table position. Notebook cells show every
+row in the server's bounded preview instead of applying a second frontend cap.
+
+Local SQL previews append `count(*) over ()` to the bounded query and remove the
+final bookkeeping column by position, so exact row count and preview require one
+scan without exposing an internal column. Every cell result may also carry
+local-only performance observations: request setup/total/runtime-sync, batch and
+session-open duration, cell materialization/preview/metadata-write duration,
+notebook DuckDB file/WAL bytes, transferred snapshot or Python Parquet bytes,
+and time until a Python wrapper starts. The browser adds its preview render
+duration and mounted-row count. These measurements are shown in the result's
+**Performance** hover card, are never authored into the notebook, and are not
+sent to an external telemetry service. Restart restoration can recompute session
+size, source transfer size, and preview query time; ephemeral request, Python
+startup, and materialization observations are intentionally absent after
+restart.
 
 ## 11. Local notebook agents
 
@@ -465,11 +555,17 @@ Notebook mutations stay scoped to the selected notebook, while the read catalog
 also offers bounded workspace-wide metadata search. Search projects the current
 `ArtifactIndex`: pipeline assets, notebook components, dashboards, reports,
 datasets, and visualizations can be matched by title, type, connection,
-capability, or column. Results contain no filesystem path, asset URI, source
-credential, or live warehouse query. A relation-producing pipeline asset
-includes a conservative sampled `cell.create` recipe so the agent can add it
-through the ordinary semantic change-set path instead of inventing connector
-details.
+capability, description, tag, materialization policy, direct neighbor, or
+column. Pipeline results carry their declared materialization type/strategy and
+incremental fields plus direct upstream/downstream artifact references. Each
+lineage direction is capped at twelve references while retaining the full
+count and an explicit truncation flag. Results contain no filesystem path,
+asset URI, source credential, or live warehouse query. A relation-producing
+pipeline asset includes a conservative sampled `cell.create` recipe so the
+agent can add it through the ordinary semantic change-set path instead of
+inventing connector details. The native Edit prompt tells the agent to compare
+these facts and not mistake a truncate-and-replace snapshot for retained
+history.
 
 Edit's prepare tool publishes the exact supported dotted operation kinds as a
 JSON Schema enum with field-specific source descriptions. Validation errors
@@ -494,6 +590,15 @@ new output only while the user is at the live edge, and retains the transcript
 across notebook navigation. **New chat** removes provider session directories
 and state. A Renart server restart also clears chats; transcripts are not
 authored or durable state.
+
+The composer can attach notebook cells and current-workspace pipeline assets
+as structured references. The browser sends only a kind and opaque ID; the Go
+service resolves each target against the current filesystem-backed notebook or
+workspace snapshot, rejects out-of-scope IDs, and stores a canonical,
+credential-free label/type/connection summary with the user message. Provider
+prompts name those exact targets and require the agent to resolve their details
+through the scoped semantic tools. References remain visible with the turn and
+survive the same navigation/SSE restoration as the transcript.
 
 The HTTP surface is notebook-scoped:
 
@@ -572,9 +677,6 @@ interrupted promotion, and one logical workspace update reconciles the result.
 
 Still parked or incomplete:
 
-- dashboard/report publication (Git-native CRUD, visual/definition authoring,
-  local execution, viewers, typed URL filters, type-check, and producer-scoped
-  deployment gates are implemented);
 - remote scratch targets and direct remote reads from Python;
 - persistent Python kernels and Python auto-recompute;
 - cross-notebook data references;
@@ -585,7 +687,7 @@ Still parked or incomplete:
 
 `internal/web/notebook` covers loader/migration, DAGs, typed source execution,
 snapshot fidelity, session manifests, cancellation, exports, typed parameter
-fingerprints, Python broker,
+fingerprints, Python broker, local run-performance observations,
 rename invariance, and legacy directives. `internal/web/service` covers
 workspace/artifact projection, semantic transactions and recovery, runtime
 hydration, source adapters/policy, presentation checks, promotion, and
@@ -594,14 +696,17 @@ auto-recompute, including source-role translation and cross-directory rollback.
 and verifies the exact tool catalog, annotations, redaction, payload bounds,
 revision conflict, exact apply, Python approval, asynchronous status, and
 cancellation. Native-agent service tests cover provider commands, notebook and
-Ask/Edit scoping, normalized streaming, resumption, cancellation, private
-configuration, and generic-tool rejection. A deterministic fake-provider
-Playwright test covers desktop/mobile streaming and transcript restoration; a
+Ask/Edit scoping, structured reference resolution, normalized streaming,
+resumption, cancellation, private configuration, and generic-tool rejection. A
+deterministic fake-provider Playwright test covers desktop/mobile streaming,
+cell/asset references, and transcript restoration; a
 real local Codex smoke test covers launch, MCP discovery, a tool call, and
-session resumption. Playwright live tests also exercise warehouse/file/HTTP source chains,
+session resumption. Playwright live tests also exercise a complete two-named-
+connection Postgres-to-Parquet-to-DuckDB join, warehouse/file/HTTP source chains,
 visual editing/migration, typed parameter editing/execution, export bytes,
 reviewed source/connected-cell promotion, header-created durable markdown, and
-race-sensitive notebook UI paths.
+race-sensitive notebook UI paths. Frontend unit coverage verifies bounded
+virtual row windows, semantic row positions, and duplicate-column rendering.
 Presentation live tests cover dashboard
 creation, typed visual editing, deterministic save, definition-mode
 round-tripping, shrink-safe desktop/mobile inspectors, URL-backed filters,

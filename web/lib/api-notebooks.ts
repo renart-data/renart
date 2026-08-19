@@ -5,6 +5,7 @@ import type {
   NotebookChangeSet,
   NotebookParameter,
   NotebookSourceDefinition,
+  PresentationDatasetResult,
 } from "@/lib/generated/api-types";
 import { WebNotebook, WebNotebookBlock } from "@/lib/types";
 
@@ -141,6 +142,19 @@ export type NotebookCellRunResult = {
   rewritten_sql?: string;
   logs?: string;
   duration_ms: number;
+  performance?: {
+    request_total_ms?: number;
+    request_setup_ms?: number;
+    batch_run_ms?: number;
+    session_open_ms?: number;
+    materialize_ms?: number;
+    preview_query_ms?: number;
+    metadata_write_ms?: number;
+    runtime_sync_ms?: number;
+    session_bytes?: number;
+    transfer_bytes?: number;
+    python_startup_ms?: number;
+  };
   viz?: VizDirective | null;
   viz_diagnostics?: VizDiagnostic[];
 };
@@ -181,11 +195,19 @@ export type NotebookAgentProvider = {
   available: boolean;
 };
 
+export type NotebookAgentReference = {
+  kind: "cell" | "asset";
+  id: string;
+  label: string;
+  detail?: string;
+};
+
 export type NotebookAgentMessage = {
   id: string;
   turn_id: string;
   role: "user" | "assistant";
   content: string;
+  references?: NotebookAgentReference[];
   status: "streaming" | "complete" | "error" | "cancelled";
   created_at: string;
 };
@@ -234,6 +256,7 @@ export async function startNotebookAgentTurn(
     provider: NotebookAgentProvider["id"];
     mode: NotebookAgentMode;
     message: string;
+    references?: Array<Pick<NotebookAgentReference, "kind" | "id">>;
   },
 ) {
   const payload = await fetchJSONWithBody<{
@@ -263,6 +286,18 @@ export async function getNotebookRuntime(notebookId: string) {
   return fetchJSON<NotebookRuntimeSnapshot>(`/api/notebooks/${notebookId}/runtime`, {
     cache: "no-store",
   });
+}
+
+export async function refreshNotebookControlOptions(notebookId: string, controlId: string) {
+  const payload = await fetchJSONWithBody<{
+    status: "ok";
+    result: PresentationDatasetResult;
+  }>(
+    `/api/notebooks/${encodeURIComponent(notebookId)}/controls/${encodeURIComponent(controlId)}/options/refresh`,
+    "POST",
+    {},
+  );
+  return payload.result;
 }
 
 export async function setNotebookSettings(

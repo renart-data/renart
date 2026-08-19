@@ -1,12 +1,34 @@
 "use client";
 
 import { useAtomValue, useSetAtom } from "jotai";
-import { Bot, Check, CircleAlert, RotateCcw, Send, Square, UserRound, X } from "lucide-react";
+import {
+  AtSign,
+  Bot,
+  Check,
+  CircleAlert,
+  Database,
+  FileCode,
+  RotateCcw,
+  Send,
+  Square,
+  UserRound,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Empty,
   EmptyDescription,
@@ -36,6 +58,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -52,11 +75,13 @@ import {
   type NotebookAgentMessage,
   type NotebookAgentMode,
   type NotebookAgentProvider,
+  type NotebookAgentReference,
   resetNotebookAgent,
   startNotebookAgentTurn,
 } from "@/lib/api-notebooks";
 import { mergeNotebookAgentEvent, notebookAgentEventsAtom } from "@/lib/atoms/domains/results";
-import { workspaceReconnectSequenceAtom } from "@/lib/atoms/domains/workspace";
+import { workspaceAtom, workspaceReconnectSequenceAtom } from "@/lib/atoms/domains/workspace";
+import type { WorkspaceState } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type NotebookAgentTurn = {
@@ -64,6 +89,12 @@ type NotebookAgentTurn = {
   assistant?: NotebookAgentMessage;
   activities: NotebookAgentActivity[];
 };
+
+type NotebookAgentReferenceCandidate = NotebookAgentReference & {
+  group: "cells" | "assets";
+};
+
+const maxNotebookAgentReferences = 12;
 
 export function NotebookAgentChat({
   notebookId,
@@ -73,12 +104,15 @@ export function NotebookAgentChat({
   onClose?: () => void;
 }) {
   const conversation = useAtomValue(notebookAgentEventsAtom)[notebookId];
+  const workspace = useAtomValue(workspaceAtom);
   const workspaceReconnectSequence = useAtomValue(workspaceReconnectSequenceAtom);
   const setAgentEvents = useSetAtom(notebookAgentEventsAtom);
   const [providers, setProviders] = useState<NotebookAgentProvider[]>([]);
   const [provider, setProvider] = useState<NotebookAgentProvider["id"]>("codex");
   const [mode, setMode] = useState<NotebookAgentMode>("ask");
   const [draft, setDraft] = useState("");
+  const [references, setReferences] = useState<NotebookAgentReferenceCandidate[]>([]);
+  const [referencePickerOpen, setReferencePickerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [requestBusy, setRequestBusy] = useState(false);
   const [error, setError] = useState("");
@@ -136,6 +170,10 @@ export function NotebookAgentChat({
   const running = conversation?.status === "running" || conversation?.status === "cancelling";
   const selectedProvider = providers.find((candidate) => candidate.id === provider);
   const availableProviders = providers.filter((candidate) => candidate.available);
+  const referenceCandidates = useMemo(
+    () => buildNotebookAgentReferenceCandidates(notebookId, workspace),
+    [notebookId, workspace],
+  );
 
   const applyConversation = useCallback(
     (next: NonNullable<typeof conversation>) => {
@@ -148,12 +186,22 @@ export function NotebookAgentChat({
     const message = draft.trim();
     if (!message || running || requestBusy || !selectedProvider?.available) return;
     setDraft("");
+    const submittedReferences = references;
+    setReferences([]);
     setError("");
     setRequestBusy(true);
     try {
-      applyConversation(await startNotebookAgentTurn(notebookId, { provider, mode, message }));
+      applyConversation(
+        await startNotebookAgentTurn(notebookId, {
+          provider,
+          mode,
+          message,
+          references: submittedReferences.map(({ kind, id }) => ({ kind, id })),
+        }),
+      );
     } catch (cause) {
       setDraft(message);
+      setReferences(submittedReferences);
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setRequestBusy(false);
@@ -180,6 +228,7 @@ export function NotebookAgentChat({
     try {
       applyConversation(await resetNotebookAgent(notebookId));
       setDraft("");
+      setReferences([]);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -308,13 +357,11 @@ export function NotebookAgentChat({
 
       <div className="border-t bg-background p-3">
         {error || conversation?.error ? (
-          <div
-            role="alert"
-            className="mb-2 flex gap-2 rounded-md border border-destructive/20 bg-destructive/10 px-2.5 py-2 text-[11px] text-destructive"
-          >
-            <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-            <span className="min-w-0 wrap-break-word">{error || conversation?.error}</span>
-          </div>
+          <Alert variant="destructive" className="mb-2">
+            <CircleAlert />
+            <AlertTitle>Could not continue the chat</AlertTitle>
+            <AlertDescription>{error || conversation?.error}</AlertDescription>
+          </Alert>
         ) : null}
         <form
           onSubmit={(event) => {
@@ -322,10 +369,35 @@ export function NotebookAgentChat({
             void send();
           }}
         >
-          <InputGroup className="bg-background shadow-xs">
+          <InputGroup className="bg-background">
+            {references.length > 0 ? (
+              <InputGroupAddon align="block-start" className="flex-wrap gap-1.5">
+                {references.map((reference) => (
+                  <InputGroupButton
+                    key={`${reference.kind}:${reference.id}`}
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    title={`Remove ${reference.kind} reference ${reference.label}`}
+                    onClick={() =>
+                      setReferences((current) =>
+                        current.filter(
+                          (candidate) =>
+                            candidate.kind !== reference.kind || candidate.id !== reference.id,
+                        ),
+                      )
+                    }
+                  >
+                    <AtSign data-icon="inline-start" />
+                    <span className="max-w-36 truncate">{reference.label}</span>
+                    <X data-icon="inline-end" />
+                  </InputGroupButton>
+                ))}
+              </InputGroupAddon>
+            ) : null}
             <InputGroupTextarea
               value={draft}
-              rows={3}
+              rows={2}
               maxLength={32 << 10}
               placeholder={
                 mode === "ask"
@@ -333,19 +405,50 @@ export function NotebookAgentChat({
                   : "Describe what to change in this notebook…"
               }
               disabled={!selectedProvider?.available}
-              className="max-h-44 min-h-20"
+              className="max-h-44 min-h-16"
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
+                if (
+                  event.key === "@" &&
+                  !event.altKey &&
+                  !event.ctrlKey &&
+                  !event.metaKey &&
+                  referenceCandidates.length > 0
+                ) {
+                  event.preventDefault();
+                  setReferencePickerOpen(true);
+                  return;
+                }
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
                   void send();
                 }
               }}
             />
-            <InputGroupAddon align="block-end" className="justify-between border-t">
-              <span className="text-[10px] font-normal">
-                {selectedProvider?.label ?? "Local agent"} · {mode === "ask" ? "Ask" : "Edit"}
-              </span>
+            <InputGroupAddon align="block-end" className="justify-between">
+              <div className="flex min-w-0 items-center gap-1">
+                <NotebookAgentReferencePicker
+                  open={referencePickerOpen}
+                  onOpenChange={setReferencePickerOpen}
+                  candidates={referenceCandidates}
+                  selected={references}
+                  disabled={running || requestBusy || referenceCandidates.length === 0}
+                  onSelect={(reference) => {
+                    setReferences((current) => {
+                      if (current.length >= maxNotebookAgentReferences) return current;
+                      const exists = current.some(
+                        (candidate) =>
+                          candidate.kind === reference.kind && candidate.id === reference.id,
+                      );
+                      return exists ? current : [...current, reference];
+                    });
+                    setReferencePickerOpen(false);
+                  }}
+                />
+                <span className="truncate text-[10px] font-normal">
+                  {selectedProvider?.label ?? "Local agent"} · {mode === "ask" ? "Ask" : "Edit"}
+                </span>
+              </div>
               {running ? (
                 <InputGroupButton
                   type="button"
@@ -380,9 +483,6 @@ export function NotebookAgentChat({
             </InputGroupAddon>
           </InputGroup>
         </form>
-        <p className="mt-1.5 text-[10px] text-muted-foreground">
-          Enter to send · Shift+Enter for a new line
-        </p>
       </div>
     </div>
   );
@@ -426,6 +526,21 @@ function AgentMessage({ message }: { message: NotebookAgentMessage }) {
       </MessageAvatar>
       <MessageContent>
         <MessageHeader>{user ? "You" : "Renart assistant"}</MessageHeader>
+        {user && message.references?.length ? (
+          <div className="flex max-w-full flex-wrap justify-end gap-1">
+            {message.references.map((reference) => (
+              <Badge
+                key={`${reference.kind}:${reference.id}`}
+                variant="outline"
+                title={reference.detail}
+                className="max-w-48"
+              >
+                <AtSign data-icon="inline-start" />
+                <span className="truncate">{reference.label}</span>
+              </Badge>
+            ))}
+          </div>
+        ) : null}
         <Bubble variant={user ? "tinted" : "ghost"} align={user ? "end" : "start"}>
           <BubbleContent className={cn(user && "whitespace-pre-wrap", !user && "w-full")}>
             {user ? message.content : <AgentMarkdown content={message.content} />}
@@ -444,6 +559,119 @@ function AgentMessage({ message }: { message: NotebookAgentMessage }) {
       </MessageContent>
     </Message>
   );
+}
+
+function NotebookAgentReferencePicker({
+  open,
+  onOpenChange,
+  candidates,
+  selected,
+  disabled,
+  onSelect,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  candidates: NotebookAgentReferenceCandidate[];
+  selected: NotebookAgentReferenceCandidate[];
+  disabled: boolean;
+  onSelect: (reference: NotebookAgentReferenceCandidate) => void;
+}) {
+  const selectedKeys = useMemo(
+    () => new Set(selected.map((reference) => `${reference.kind}:${reference.id}`)),
+    [selected],
+  );
+  const groups = [
+    { id: "cells" as const, label: "Notebook cells" },
+    { id: "assets" as const, label: "Workspace assets" },
+  ];
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <InputGroupButton
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={disabled}
+          title="Reference a notebook cell or workspace asset"
+        >
+          <AtSign data-icon="inline-start" />
+          Reference
+        </InputGroupButton>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="w-[min(22rem,calc(100vw-2rem))] p-0">
+        <Command>
+          <CommandInput placeholder="Search cells and assets…" />
+          <CommandList>
+            <CommandEmpty>No matching cells or assets.</CommandEmpty>
+            {groups.map((group) => {
+              const items = candidates.filter((candidate) => candidate.group === group.id);
+              if (items.length === 0) return null;
+              return (
+                <CommandGroup key={group.id} heading={group.label}>
+                  {items.map((candidate) => {
+                    const selected = selectedKeys.has(`${candidate.kind}:${candidate.id}`);
+                    const Icon = candidate.kind === "cell" ? FileCode : Database;
+                    return (
+                      <CommandItem
+                        key={`${candidate.kind}:${candidate.id}`}
+                        value={`${candidate.label} ${candidate.detail ?? ""}`}
+                        disabled={
+                          selected || (!selected && selectedKeys.size >= maxNotebookAgentReferences)
+                        }
+                        data-checked={selected}
+                        onSelect={() => onSelect(candidate)}
+                      >
+                        <Icon />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">{candidate.label}</span>
+                          {candidate.detail ? (
+                            <span className="block truncate text-[10px] text-muted-foreground">
+                              {candidate.detail}
+                            </span>
+                          ) : null}
+                        </span>
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              );
+            })}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function buildNotebookAgentReferenceCandidates(
+  notebookId: string,
+  workspace: WorkspaceState | null,
+): NotebookAgentReferenceCandidate[] {
+  const notebook = workspace?.notebooks?.find((candidate) => candidate.id === notebookId);
+  const cells: NotebookAgentReferenceCandidate[] = (notebook?.cells ?? [])
+    .filter((cell) => Boolean(cell.cell_id?.trim()))
+    .map((cell) => ({
+      kind: "cell",
+      id: cell.cell_id!.trim(),
+      label: cell.name.trim() || cell.cell_id!.trim(),
+      detail: [cell.type, cell.connection].filter(Boolean).join(" · "),
+      group: "cells",
+    }));
+  const assets: NotebookAgentReferenceCandidate[] = (workspace?.pipelines ?? []).flatMap(
+    (pipeline) =>
+      pipeline.assets.map((asset) => ({
+        kind: "asset" as const,
+        id: asset.id,
+        label: asset.name,
+        detail: [pipeline.name, asset.type, asset.connection].filter(Boolean).join(" · "),
+        group: "assets" as const,
+      })),
+  );
+  return [...cells, ...assets].sort((left, right) => {
+    if (left.group !== right.group) return left.group === "cells" ? -1 : 1;
+    return left.label.localeCompare(right.label);
+  });
 }
 
 function AgentMarkdown({ content }: { content: string }) {

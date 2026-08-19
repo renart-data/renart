@@ -377,6 +377,7 @@ export type WebColumn = {
 export type WebAsset = {
   id: string;
   name: string;
+  description?: string;
   uri?: string;
   type: string;
   path: string;

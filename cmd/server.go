@@ -44,13 +44,15 @@ import (
 // serverConfig holds the validated settings shared by the web and
 // standalone entry points.
 type serverConfig struct {
-	workspaceRoot           string
-	staticDir               string
-	watchMode               string
-	watchPoll               time.Duration
-	schedulerEnabled        bool
-	schedulerStatePath      string
-	disableFilesystemAccess bool
+	workspaceRoot            string
+	staticDir                string
+	watchMode                string
+	watchPoll                time.Duration
+	schedulerEnabled         bool
+	schedulerStatePath       string
+	disableFilesystemAccess  bool
+	notebookSnapshotMaxBytes int64
+	notebookSnapshotTimeout  time.Duration
 	// bootstrapRoot is a temporary Git-backed workspace used only when the
 	// no-argument launcher starts outside a project. It lets the welcome UI
 	// load without treating the launch directory as a project or writing
@@ -100,6 +102,16 @@ func serverFlags() []cli.Flag {
 			Value: true,
 			Usage: "allow DuckDB connections and SQL analysis to access local files",
 		},
+		&cli.Int64Flag{
+			Name:  "notebook-snapshot-max-bytes",
+			Value: 2 << 30,
+			Usage: "maximum size in bytes for one staged notebook source snapshot",
+		},
+		&cli.DurationFlag{
+			Name:  "notebook-snapshot-timeout",
+			Value: 30 * time.Minute,
+			Usage: "maximum runtime for one staged notebook source snapshot",
+		},
 	}
 }
 
@@ -134,6 +146,14 @@ func serverConfigFromCommand(c *cli.Command) (serverConfig, error) {
 	if watchPoll <= 0 {
 		return serverConfig{}, fmt.Errorf("watch-poll-interval must be greater than zero")
 	}
+	notebookSnapshotMaxBytes := c.Int64("notebook-snapshot-max-bytes")
+	if notebookSnapshotMaxBytes <= 0 {
+		return serverConfig{}, fmt.Errorf("notebook-snapshot-max-bytes must be greater than zero")
+	}
+	notebookSnapshotTimeout := c.Duration("notebook-snapshot-timeout")
+	if notebookSnapshotTimeout <= 0 {
+		return serverConfig{}, fmt.Errorf("notebook-snapshot-timeout must be greater than zero")
+	}
 
 	workspaceRoot, bootstrapRoot, err := resolveServerWorkspaceRoot(launchRoot, rootArg == "")
 	if err != nil {
@@ -153,6 +173,8 @@ func serverConfigFromCommand(c *cli.Command) (serverConfig, error) {
 		schedulerEnabled:         c.Bool("scheduler"),
 		schedulerStatePath:       statePath,
 		disableFilesystemAccess:  !c.Bool("enable-filesystem-access"),
+		notebookSnapshotMaxBytes: notebookSnapshotMaxBytes,
+		notebookSnapshotTimeout:  notebookSnapshotTimeout,
 		bootstrapRoot:            bootstrapRoot,
 		suggestedCreateParentDir: launchRoot,
 	}, nil
@@ -414,20 +436,9 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		WorkspaceRoot:           absRoot,
 		ConfigPath:              resolveConfigFilePath(absRoot),
 		DisableFilesystemAccess: cfg.disableFilesystemAccess,
+		SnapshotMaxBytes:        cfg.notebookSnapshotMaxBytes,
+		SnapshotTimeout:         cfg.notebookSnapshotTimeout,
 		CurrentState:            func() service.WorkspaceState { return server.currentState() },
-		RunConnectionQuery: func(
-			ctx context.Context,
-			connection string,
-			environment string,
-			query string,
-		) ([]string, []map[string]any, error) {
-			return server.executionSvc.RunConnectionQueryForEnvironment(
-				secretstore.WithPurpose(ctx, secretstore.PurposeNotebookQuery),
-				connection,
-				environment,
-				query,
-			)
-		},
 		NewConnectionManager: func(ctx context.Context, environment string) (config.ConnectionAndDetailsGetter, error) {
 			return server.newConnectionManager(
 				secretstore.WithPurpose(ctx, secretstore.PurposeNotebookQuery),
@@ -452,6 +463,13 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		ValidateNotebook: func(notebookID string) *service.APIError {
 			_, apiErr := server.notebookSvc.Get(notebookID)
 			return apiErr
+		},
+		ResolveReferences: func(notebookID string, references []service.NotebookAgentReferenceRequest) ([]service.NotebookAgentReference, *service.APIError) {
+			notebook, apiErr := server.notebookSvc.Get(notebookID)
+			if apiErr != nil {
+				return nil, apiErr
+			}
+			return service.ResolveNotebookAgentReferences(notebook, server.currentState(), references)
 		},
 		PublishEvent: func(payload any) { server.hub.PublishImmediate(payload) },
 	})

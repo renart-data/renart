@@ -26,17 +26,48 @@ test.describe("notebook agent chat live", () => {
       data: { title: "Agent workspace" },
     });
     expect(created.ok()).toBe(true);
-    const payload = (await created.json()) as { notebook: { id: string } };
+    const payload = (await created.json()) as {
+      notebook: { id: string; cells: Array<{ cell_id?: string; name: string }> };
+    };
+    const referencedCell = payload.notebook.cells[0];
+    expect(referencedCell?.cell_id).toBeTruthy();
+    const workspaceResponse = await page.request.get(`${liveApp.baseURL}/api/workspace`);
+    expect(workspaceResponse.ok()).toBe(true);
+    const workspacePayload = (await workspaceResponse.json()) as {
+      pipelines: Array<{ assets: Array<{ id: string; name: string }> }>;
+    };
+    const referencedAsset = workspacePayload.pipelines[0]?.assets[0];
+    expect(referencedAsset).toBeTruthy();
 
     await page.goto(`${liveApp.baseURL}/notebooks/${payload.notebook.id}`);
     await openNotebookAssistant(page);
 
     await expect(page.getByText("Work on this notebook together")).toBeVisible();
     const composer = page.getByPlaceholder("Ask about this notebook…");
+    await page.getByRole("button", { name: "Reference" }).click();
+    await page.getByRole("option", { name: new RegExp(referencedCell.name) }).click();
+    await page.getByRole("button", { name: "Reference" }).click();
+    await page.getByRole("option", { name: new RegExp(referencedAsset.name) }).click();
+    await expect(page.getByTitle(`Remove cell reference ${referencedCell.name}`)).toBeVisible();
+    await expect(page.getByTitle(`Remove asset reference ${referencedAsset.name}`)).toBeVisible();
+
+    const messageRequest = page.waitForRequest(
+      (request) => request.url().includes("/agent/messages") && request.method() === "POST",
+    );
     await composer.fill("Summarize this notebook.");
     await composer.press("Enter");
+    const submitted = (await messageRequest).postDataJSON() as {
+      references?: Array<{ kind: string; id: string }>;
+    };
+    expect(submitted.references).toEqual([
+      { kind: "cell", id: referencedCell.cell_id },
+      { kind: "asset", id: referencedAsset.id },
+    ]);
 
     await expect(page.getByText("Summarize this notebook.")).toBeVisible();
+    const assistant = page.getByRole("tabpanel", { name: "AI" });
+    await expect(assistant.getByText(referencedCell.name, { exact: true })).toBeVisible();
+    await expect(assistant.getByText(referencedAsset.name, { exact: true })).toBeVisible();
     await expect(page.getByText("Reading the notebook outline")).toBeVisible();
     await expect(
       page.getByText("This notebook has one SQL cell and is ready to explore."),
@@ -47,6 +78,9 @@ test.describe("notebook agent chat live", () => {
     await openNotebookAssistant(page);
 
     await expect(page.getByText("Summarize this notebook.")).toBeVisible();
+    const restoredAssistant = page.getByRole("tabpanel", { name: "AI" });
+    await expect(restoredAssistant.getByText(referencedCell.name, { exact: true })).toBeVisible();
+    await expect(restoredAssistant.getByText(referencedAsset.name, { exact: true })).toBeVisible();
     await expect(
       page.getByText("This notebook has one SQL cell and is ready to explore."),
     ).toBeVisible();

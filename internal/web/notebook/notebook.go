@@ -142,6 +142,10 @@ type Notebook struct {
 	// every cell file. It is stable across server restarts and is the CAS
 	// boundary for semantic multi-block changes.
 	Revision string
+	// PythonEnvironmentFingerprint identifies the effective dependency inputs
+	// shared by Python cells in this flat notebook folder. It is derived while
+	// loading from the same requirements/pyproject precedence the runner uses.
+	PythonEnvironmentFingerprint string
 }
 
 // CellByID returns the cell with the given durable ID, or nil.
@@ -172,6 +176,10 @@ type UsedTablesFunc func(sql, assetType string) ([]string, error)
 // Loader loads notebook folders into Notebook structs.
 type Loader struct {
 	fs afero.Fs
+	// workspaceRoot bounds Python dependency discovery. An empty value keeps
+	// discovery inside the notebook directory, which is useful for standalone
+	// package callers and in-memory tests.
+	workspaceRoot string
 	// creator parses a cell file into a Bruin asset (the existing
 	// file-comments task creator).
 	creator pipeline.TaskCreator
@@ -183,6 +191,13 @@ type Loader struct {
 // NewLoader builds a Loader. creator must not be nil.
 func NewLoader(filesystem afero.Fs, creator pipeline.TaskCreator, usedTables UsedTablesFunc) *Loader {
 	return &Loader{fs: filesystem, creator: creator, usedTables: usedTables}
+}
+
+// WithWorkspaceRoot makes loader-side Python dependency discovery match the
+// repository boundary used by the execution operator.
+func (l *Loader) WithWorkspaceRoot(root string) *Loader {
+	l.workspaceRoot = filepath.Clean(root)
+	return l
 }
 
 // Discover walks root and returns the directories containing a notebook
@@ -235,6 +250,12 @@ func (l *Loader) Load(dir string) (*Notebook, error) {
 		Dir:        dir,
 		Target:     manifest.Target,
 		Parameters: append([]presentation.ParameterDefinition(nil), manifest.Parameters...),
+	}
+	pythonEnvironment, environmentErr := PythonEnvironmentFingerprint(l.fs, dir, l.workspaceRoot)
+	if environmentErr != nil {
+		nb.Problems = append(nb.Problems, "could not fingerprint the Python environment: "+environmentErr.Error())
+	} else {
+		nb.PythonEnvironmentFingerprint = pythonEnvironment
 	}
 	if nb.Title == "" {
 		nb.Title = filepath.Base(dir)

@@ -2,25 +2,12 @@
 
 import { ArrowUpRight, Plus, Settings } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type {
-  AssetCreationCandidate,
-  AssetCreationConnection,
-  AssetCreationRoleProfile,
-} from "@/lib/types";
+import type { AssetCreationCandidate, AssetCreationRoleProfile } from "@/lib/types";
+
+import { ConnectionSelect, type ConnectionSelectGroup } from "./connection-select";
 
 const PIPELINE_DEFAULT_VALUE = "__pipeline_default__";
 const NEW_CONNECTION_VALUE = "__new_connection__";
@@ -104,14 +91,62 @@ export function AssetConnectionField({
   const selection = resolveAssetConnectionSelection(role, value, currentConnectionType);
   const defaultSelectable = role?.default.status === "resolved";
   const currentIsMissing = Boolean(value && !role?.connections.some((item) => item.name === value));
+  const groups: ConnectionSelectGroup[] = [
+    {
+      label: "Available connections",
+      options: [
+        ...(role?.allow_default
+          ? [
+              {
+                value: PIPELINE_DEFAULT_VALUE,
+                label: pipelineDefaultLabel(role),
+                connectionType: role.default.connection_type,
+                detail: role.default.reason,
+                disabled: !defaultSelectable,
+              },
+            ]
+          : []),
+        ...(currentIsMissing
+          ? [
+              {
+                value,
+                label: value,
+                connectionType: currentConnectionType,
+                badge: "incompatible",
+                badgeVariant: "destructive" as const,
+                disabled: true,
+              },
+            ]
+          : []),
+        ...(role?.connections.map((connection) => ({
+          value: connection.name,
+          label: connection.name,
+          connectionType: connection.connection_type,
+        })) ?? []),
+      ],
+    },
+    {
+      options: [
+        {
+          value: NEW_CONNECTION_VALUE,
+          label: "New connection…",
+          icon: Plus,
+          disabled: !role?.connection_types.length,
+        },
+        { value: MANAGE_CONNECTIONS_VALUE, label: "Manage connections…", icon: Settings },
+      ],
+    },
+  ];
 
   return (
     <Field variant="plain" className="min-w-0">
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <div className="flex min-w-0 items-center gap-2">
         <div className="min-w-0 flex-1">
-          <Select
+          <ConnectionSelect
             value={value || PIPELINE_DEFAULT_VALUE}
+            groups={groups}
+            id={id}
             disabled={!role || disabled}
             onValueChange={(nextValue) => {
               if (nextValue === NEW_CONNECTION_VALUE) {
@@ -124,54 +159,9 @@ export function AssetConnectionField({
               }
               onChange(nextValue === PIPELINE_DEFAULT_VALUE ? "" : nextValue);
             }}
-          >
-            <SelectTrigger
-              id={id}
-              className="min-w-0 w-full overflow-hidden [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:overflow-hidden"
-            >
-              <SelectValue placeholder={role ? "Choose a connection" : "Loading connections…"} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectLabel>Available connections</SelectLabel>
-                {role?.allow_default ? (
-                  <SelectItem value={PIPELINE_DEFAULT_VALUE} disabled={!defaultSelectable}>
-                    {pipelineDefaultLabel(role)}
-                  </SelectItem>
-                ) : null}
-                {currentIsMissing ? (
-                  <SelectItem value={value} aria-label={value} disabled>
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span className="truncate">{value}</span>
-                      <Badge variant="destructive" size="xs" aria-hidden="true">
-                        incompatible
-                      </Badge>
-                    </span>
-                  </SelectItem>
-                ) : null}
-                {role?.connections.map((connection) => (
-                  <SelectItem
-                    key={connection.name}
-                    value={connection.name}
-                    aria-label={connection.name}
-                  >
-                    <ConnectionOption connection={connection} />
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-              <SelectSeparator />
-              <SelectGroup>
-                <SelectItem value={NEW_CONNECTION_VALUE} disabled={!role?.connection_types.length}>
-                  <Plus />
-                  New connection…
-                </SelectItem>
-                <SelectItem value={MANAGE_CONNECTIONS_VALUE}>
-                  <Settings />
-                  Manage connections…
-                </SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            className="w-full"
+            placeholder={role ? "Choose a connection" : "Loading connections…"}
+          />
         </div>
         {onOpenConnection && selection ? (
           <Tooltip>
@@ -216,21 +206,10 @@ export function AssetConnectionField({
   );
 }
 
-function ConnectionOption({ connection }: { connection: AssetCreationConnection }) {
-  return (
-    <span className="flex min-w-0 items-center gap-2 pr-5">
-      <span className="truncate">{connection.name}</span>
-      <Badge variant="outline" size="xs" aria-hidden="true">
-        {friendlyConnectionType(connection.connection_type)}
-      </Badge>
-    </span>
-  );
-}
-
 function pipelineDefaultLabel(role: AssetCreationRoleProfile) {
   switch (role.default.status) {
     case "resolved":
-      return `Pipeline default — ${role.default.connection} (${friendlyConnectionType(role.default.connection_type ?? "")})`;
+      return `Pipeline default — ${role.default.connection}`;
     case "ambiguous":
       return "Pipeline default — ambiguous";
     case "incompatible":
@@ -238,15 +217,4 @@ function pipelineDefaultLabel(role: AssetCreationRoleProfile) {
     default:
       return "Pipeline default — not configured";
   }
-}
-
-function friendlyConnectionType(connectionType: string) {
-  const names: Record<string, string> = {
-    aws: "AWS",
-    google_cloud_platform: "BigQuery",
-    mssql: "SQL Server",
-    postgres: "PostgreSQL",
-    s3: "S3",
-  };
-  return names[connectionType] ?? connectionType;
 }

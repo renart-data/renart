@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/bruin-data/bruin/pkg/config"
 	bruinexecutor "github.com/bruin-data/bruin/pkg/executor"
 	"github.com/bruin-data/bruin/pkg/pipeline"
+	"github.com/spf13/afero"
 	"go.uber.org/zap"
 
 	"renart/internal/web/notebook"
@@ -78,7 +80,7 @@ func (s *NotebookService) materializePythonCell(
 	parquetPath string,
 	runQuery notebook.PythonQueryFunc,
 	parameterValues map[string]any,
-) (string, error) {
+) (notebook.PythonMaterializationOutput, error) {
 	notebookDir := filepath.Dir(cell.Path)
 
 	cfg := &config.Config{
@@ -112,7 +114,7 @@ func (s *NotebookService) materializePythonCell(
 	now := time.Now().UTC()
 	timeWindow, err := ResolveExecutionTimeWindow("", "", "", now)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve the run window: %w", err)
+		return notebook.PythonMaterializationOutput{}, fmt.Errorf("failed to resolve the run window: %w", err)
 	}
 	logs := &boundedLogBuffer{}
 	runCtx := context.WithValue(ctx, pipeline.RunConfigFullRefresh, false)
@@ -129,10 +131,12 @@ func (s *NotebookService) materializePythonCell(
 	// server's os.Stdout, so it can be returned and shown next to the cell.
 	runCtx = context.WithValue(runCtx, bruinexecutor.KeyPrinter, io.Writer(logs))
 
+	readyPath := filepath.Join(filepath.Dir(parquetPath), "python-ready")
 	envVariables := map[string]string{
 		// Keep uv's project virtualenv out of the notebook folder (which is a
 		// git-tracked folder of cells) by placing it under .renart.
-		"UV_PROJECT_ENVIRONMENT": notebookVenvDir(s.deps.WorkspaceRoot, notebookDir),
+		"UV_PROJECT_ENVIRONMENT":   notebookVenvDir(s.deps.WorkspaceRoot, notebookDir),
+		"RENART_PYTHON_READY_FILE": readyPath,
 	}
 	operator := newRenartPythonOperator(nil, envVariables, renartPythonOperatorOptions{
 		enableBroker:            true,
@@ -144,8 +148,28 @@ func (s *NotebookService) materializePythonCell(
 		},
 		stagingOutputPath: parquetPath,
 	})
+	startedAt := time.Now()
 	runErr := operator.RunTask(runCtx, runPipeline, &runAsset)
-	return logs.String(), runErr
+	output := notebook.PythonMaterializationOutput{Logs: logs.String()}
+	if runErr == nil {
+		environmentFingerprint, fingerprintErr := notebook.PythonEnvironmentFingerprint(
+			afero.NewOsFs(), notebookDir, s.deps.WorkspaceRoot,
+		)
+		if fingerprintErr != nil {
+			return output, fmt.Errorf("fingerprint the Python environment after execution: %w", fingerprintErr)
+		}
+		output.EnvironmentFingerprint = environmentFingerprint
+	}
+	if info, statErr := os.Stat(parquetPath); statErr == nil && !info.IsDir() {
+		output.TransferBytes = info.Size()
+	}
+	if info, statErr := os.Stat(readyPath); statErr == nil {
+		startup := info.ModTime().Sub(startedAt)
+		if startup > 0 {
+			output.PythonStartupMS = float64(startup) / float64(time.Millisecond)
+		}
+	}
+	return output, runErr
 }
 
 func notebookPythonVariables(values map[string]any) pipeline.Variables {

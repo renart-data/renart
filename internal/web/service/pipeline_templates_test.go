@@ -170,6 +170,63 @@ func TestPipelineServiceEarthquakeTemplateIncludesEnvironmentSchedules(t *testin
 	assert.Contains(t, string(configContents), "earthquake_monitoring_production.duckdb")
 }
 
+func TestEarthquakeTemplateMakesHistoricalAssetRolesExplicit(t *testing.T) {
+	t.Parallel()
+
+	workspaceRoot := t.TempDir()
+	_, err := gogit.PlainInit(workspaceRoot, false)
+	require.NoError(t, err)
+	relPath, err := NewPipelineService(workspaceRoot).Create(
+		context.Background(),
+		"earthquake_monitoring",
+		"Earthquake monitoring",
+		"",
+		PipelineTemplateEarthquakeDemo,
+	)
+	require.NoError(t, err)
+	parsed, err := NewRenartPipelineBuilder(afero.NewOsFs()).CreatePipelineFromPath(
+		context.Background(),
+		filepath.Join(workspaceRoot, relPath),
+		pipeline.WithMutate(),
+	)
+	require.NoError(t, err)
+
+	assets := make(map[string]*pipeline.Asset, len(parsed.Assets))
+	for _, asset := range parsed.Assets {
+		assets[asset.Name] = asset
+	}
+
+	events := assets["earthquakes.events"]
+	require.NotNil(t, events)
+	assert.Contains(t, events.Description, "Retained event history")
+	assert.Contains(t, []string(events.Tags), "event-history")
+	assert.Equal(t, "merge", string(events.Materialization.Strategy))
+
+	notable := assets["earthquakes.notable_events"]
+	require.NotNil(t, notable)
+	assert.Contains(t, notable.Description, "Current notable-event shortlist")
+	assert.Contains(t, []string(notable.Tags), "current-snapshot")
+	assert.Equal(t, "truncate+insert", string(notable.Materialization.Strategy))
+
+	summary := assets["earthquakes.window_summary"]
+	require.NotNil(t, summary)
+	assert.Contains(t, summary.Description, "Replay-safe historical time series")
+	assert.Contains(t, []string(summary.Tags), "recommended-analysis")
+	assert.Equal(t, "time_interval", string(summary.Materialization.Strategy))
+
+	runLog := assets["earthquakes.run_log"]
+	require.NotNil(t, runLog)
+	assert.Contains(t, runLog.Description, "Append-only execution audit history")
+	assert.Contains(t, []string(runLog.Tags), "append-only")
+	assert.Equal(t, "append", string(runLog.Materialization.Strategy))
+	runColumns := make([]string, 0, len(runLog.Columns))
+	for _, column := range runLog.Columns {
+		runColumns = append(runColumns, column.Name)
+	}
+	assert.Contains(t, runColumns, "average_magnitude")
+	assert.Contains(t, runColumns, "maximum_magnitude")
+}
+
 func executePipelineTemplate(t *testing.T, template PipelineTemplateInfo, timeout time.Duration) {
 	t.Helper()
 

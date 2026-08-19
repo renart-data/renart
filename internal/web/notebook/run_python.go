@@ -70,8 +70,18 @@ func (r *Runner) runPython(ctx context.Context, session *Session, nb *Notebook, 
 		return session.Query(queryCtx, rewritten)
 	}
 
-	logs, materializeErr := r.PythonMaterializer(ctx, cell, parquetPath, runQuery, r.ParameterValues)
-	result.Logs = logs
+	materialized, materializeErr := r.PythonMaterializer(ctx, cell, parquetPath, runQuery, r.ParameterValues)
+	result.Logs = materialized.Logs
+	result.performance().TransferBytes = materialized.TransferBytes
+	result.performance().PythonStartupMS = materialized.PythonStartupMS
+	if materialized.EnvironmentFingerprint != "" {
+		result.Fingerprint = pythonCellFingerprint(
+			nb,
+			cell,
+			notebookParameterFingerprint(nb, r.ParameterValues),
+			materialized.EnvironmentFingerprint,
+		)
+	}
 	if materializeErr != nil {
 		result.Error = normalizePythonError(materializeErr)
 		result.DurationMS = time.Since(startedAt).Milliseconds()
@@ -101,7 +111,9 @@ func (r *Runner) runPython(ctx context.Context, session *Session, nb *Notebook, 
 	}
 	result.Materialized = "table"
 
+	previewStartedAt := time.Now()
 	preview, err := session.Query(ctx, fmt.Sprintf("select * from %s limit %d", object, r.previewLimit()))
+	result.observePreviewQuery(previewStartedAt)
 	if err != nil {
 		result.Error = normalizeDuckDBError(err)
 		result.DurationMS = time.Since(startedAt).Milliseconds()

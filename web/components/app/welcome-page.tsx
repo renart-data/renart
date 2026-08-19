@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AnsiOutput } from "@/components/ansi-output";
 import { DirectoryPickerDialog } from "@/components/app/directory-picker-dialog";
+import { ConnectionSelect } from "@/components/app/connection-select";
 import { TemplateCatalog } from "@/components/app/template-catalog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -636,8 +637,18 @@ export function WelcomePage({ forceNew = false }: { forceNew?: boolean }) {
           <div className="grid gap-4 rounded-xl border bg-background p-5">
             <div className="grid gap-1.5">
               <Label>Database type</Label>
-              <Select
+              <ConnectionSelect
                 value={connectionType}
+                groups={[
+                  {
+                    label: "Database types",
+                    options: connectionTypes.map((type) => ({
+                      value: type.type_name,
+                      label: type.type_name,
+                      connectionType: type.type_name,
+                    })),
+                  },
+                ]}
                 onValueChange={(value) => {
                   setConnectionType(value);
                   setConnectionValues(
@@ -652,18 +663,9 @@ export function WelcomePage({ forceNew = false }: { forceNew?: boolean }) {
                   );
                   setDiscovery(null);
                 }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a database type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {connectionTypes.map((type) => (
-                    <SelectItem key={type.type_name} value={type.type_name}>
-                      {type.type_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Select a database type"
+                className="w-full"
+              />
             </div>
             {connectionTypes
               .find((type) => type.type_name === connectionType)

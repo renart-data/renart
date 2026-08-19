@@ -41,7 +41,8 @@ func (s *WorkspaceService) appendNotebooks(state *model.WorkspaceState) {
 		state.Errors = append(state.Errors, "notebook dependency scan unavailable: "+parserErr.Error())
 	}
 
-	loader := notebook.NewLoader(fs, pipeline.CreateTaskFromFileComments(fs), usedTables)
+	loader := notebook.NewLoader(fs, pipeline.CreateTaskFromFileComments(fs), usedTables).
+		WithWorkspaceRoot(s.workspaceRoot)
 	for _, dir := range dirs {
 		nb, loadErr := loader.Load(dir)
 		if loadErr != nil {
@@ -145,6 +146,7 @@ func (s *WorkspaceService) notebookToModel(nb *notebook.Notebook) model.Notebook
 		result.Cells = append(result.Cells, model.Asset{
 			ID:                 EncodeID(filepath.ToSlash(relPath)),
 			Name:               cell.Asset.Name,
+			Description:        strings.TrimSpace(cell.Asset.Description),
 			Type:               string(cell.Asset.Type),
 			Path:               filepath.ToSlash(relPath),
 			Content:            content,

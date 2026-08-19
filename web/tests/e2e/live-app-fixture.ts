@@ -53,7 +53,10 @@ export const liveTest = base.extend<{
   liveAppEnv: [{}, { option: true }],
   livePostgres: [
     async ({ fixtureName }, use) => {
-      if (fixtureName !== "empty-workspace-postgres") {
+      if (
+        fixtureName !== "empty-workspace-postgres" &&
+        fixtureName !== "notebook-postgres-workspace"
+      ) {
         await use(null);
         return;
       }
@@ -163,6 +166,34 @@ export const liveTest = base.extend<{
     mkdirSync(join(workspaceDir, ".git"));
     mkdirSync(join(workspaceDir, "duckdb-files"));
     const configPath = join(workspaceDir, ".bruin.yml");
+    if (fixtureName === "notebook-postgres-workspace" && livePostgres) {
+      writeFileSync(
+        configPath,
+        `default_environment: default
+environments:
+  default:
+    connections:
+      postgres:
+        - name: postgres-orders
+          host: ${livePostgres.host}
+          port: ${livePostgres.port}
+          username: ${livePostgres.user}
+          password: ${livePostgres.password}
+          database: ${livePostgres.database}
+          schema: analytics
+          ssl_mode: disable
+        - name: postgres-customers
+          host: ${livePostgres.host}
+          port: ${livePostgres.port}
+          username: ${livePostgres.user}
+          password: ${livePostgres.password}
+          database: ${livePostgres.database}
+          schema: analytics
+          ssl_mode: disable
+`,
+        "utf8",
+      );
+    }
     if (!existsSync(configPath) && !fixtureName.startsWith("empty-workspace")) {
       writeFileSync(
         configPath,

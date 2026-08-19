@@ -28,12 +28,11 @@ type NotebookDependencies struct {
 	WorkspaceRoot           string
 	ConfigPath              string
 	DisableFilesystemAccess bool
+	SnapshotMaxBytes        int64
+	SnapshotTimeout         time.Duration
 	// CurrentState returns the latest workspace state (for pipeline asset
 	// lookups when importing upstream data).
 	CurrentState func() model.WorkspaceState
-	// RunConnectionQuery executes a query on a named connection; used as
-	// the generic import fetch backend.
-	RunConnectionQuery func(ctx context.Context, connection, environment, query string) ([]string, []map[string]any, error)
 	// NewConnectionManager resolves the selected environment through Renart's
 	// runtime connection factory, including managed secrets and warehouse-
 	// specific compatibility. Warehouse notebook snapshots use it only long
@@ -359,7 +358,8 @@ func (s *NotebookService) newLoader() (*notebook.Loader, func()) {
 	fs := afero.NewOsFs()
 	// Reuse the shared parser instead of spinning up a fresh embedded-Python
 	// instance per load; cleanup is a no-op (the parser outlives the loader).
-	return notebook.NewLoader(fs, pipeline.CreateTaskFromFileComments(fs), s.usedTables), func() {}
+	return notebook.NewLoader(fs, pipeline.CreateTaskFromFileComments(fs), s.usedTables).
+		WithWorkspaceRoot(s.deps.WorkspaceRoot), func() {}
 }
 
 // resolveDir maps an encoded notebook ID to its absolute folder, verifying
@@ -879,7 +879,8 @@ type RunNotebookRequest struct {
 	// Cells runs exactly these cells (plus any ancestors whose session
 	// objects do not exist yet), in dependency order.
 	Cells []string `json:"cells,omitempty"`
-	// RefreshImports forces re-fetching cached upstream imports.
+	// RefreshImports forces explicit source snapshots and cached upstream
+	// imports to be fetched again. The JSON name is retained for compatibility.
 	RefreshImports bool `json:"refresh_imports,omitempty"`
 	// Environment selects the connection environment for imports.
 	Environment string `json:"environment,omitempty"`
@@ -900,6 +901,7 @@ type RunNotebookResult struct {
 
 // Run executes the selected cells in the notebook's session.
 func (s *NotebookService) Run(ctx context.Context, notebookID string, req RunNotebookRequest) (RunNotebookResult, *APIError) {
+	requestStartedAt := time.Now()
 	nb, apiErr := s.load(notebookID)
 	if apiErr != nil {
 		return RunNotebookResult{}, apiErr
@@ -914,7 +916,20 @@ func (s *NotebookService) Run(ctx context.Context, notebookID string, req RunNot
 		}
 	}
 	rt := s.runtimes.get(nb.UUID)
-	cells, selectErr := s.selectRunCells(nb, req)
+	if s.reconcileRuntimeFingerprints(nb, rt) {
+		rt.mu.Lock()
+		auto := rt.autoRecompute
+		rt.mu.Unlock()
+		if auto {
+			s.scheduleRecompute(notebookID, nb.UUID)
+		}
+	}
+	existingObjects := map[string]bool{}
+	selectsAll := req.All || (req.From == "" && len(req.Cells) == 0)
+	if !selectsAll {
+		existingObjects = s.existingNotebookCellObjects(nb.UUID)
+	}
+	cells, selectErr := s.selectRunCellsWithExistingObjects(nb, req, existingObjects)
 	if selectErr != nil {
 		return RunNotebookResult{}, selectErr
 	}
@@ -931,15 +946,25 @@ func (s *NotebookService) Run(ctx context.Context, notebookID string, req RunNot
 		cellIDs = append(cellIDs, cell.ID)
 	}
 	runCtx, finishRun := rt.beginManualRun(ctx, cellIDs)
-	s.publishCurrentRuntime(notebookID, nb.UUID)
+	s.publishCachedRuntime(notebookID, nb.UUID, nil)
 	defer func() {
 		finishRun()
-		s.publishCurrentRuntime(notebookID, nb.UUID)
+		s.publishCachedRuntime(notebookID, nb.UUID, nil)
 	}()
 
-	runner := s.newRunner(renderer, req.Environment, parameterValues)
+	runEnvironment := strings.TrimSpace(req.Environment)
+	if runEnvironment == "" {
+		if selected, selectErr := loadSelectedConfig(s.deps.ConfigPath, ""); selectErr == nil {
+			runEnvironment = selected.SelectedEnvironmentName
+		}
+	}
+	runner := s.newRunner(renderer, runEnvironment, parameterValues)
 
-	results, runErr := runner.RunCells(runCtx, nb, cells, notebook.RunOptions{RefreshImports: req.RefreshImports})
+	requestSetupMS := elapsedNotebookServiceMilliseconds(requestStartedAt)
+	results, runErr := runner.RunCells(runCtx, nb, cells, notebook.RunOptions{
+		RefreshImports:       req.RefreshImports,
+		ReuseSourceSnapshots: selectsAll && !req.RefreshImports,
+	})
 	if runErr != nil {
 		// A cancelled run is an expected response, whether cancellation came
 		// from the request context or the explicit Stop endpoint.
@@ -951,8 +976,19 @@ func (s *NotebookService) Run(ctx context.Context, notebookID string, req RunNot
 
 	// Fold a manual run into the runtime so the server stays the source of
 	// truth, then push the update to any other open tabs.
+	runtimeSyncStartedAt := time.Now()
+	runtimeSyncMS := float64(0)
+	requestTotalMS := float64(0)
+	for index := range results {
+		if results[index].Performance == nil {
+			results[index].Performance = &notebook.CellRunPerformance{}
+		}
+		results[index].Performance.RequestSetupMS = &requestSetupMS
+		results[index].Performance.RuntimeSyncMS = &runtimeSyncMS
+		results[index].Performance.RequestTotalMS = &requestTotalMS
+	}
 	s.recordResults(rt, results)
-	s.publishRuntimeResultsDelta(notebookID, nb.UUID, results)
+	autoPending, delta := s.runtimeResultsDelta(nb, existingObjects, results)
 	// A manual run may unblock downstream cells (their upstream is now fresh);
 	// let auto-recompute pick them up if it is on.
 	rt.mu.Lock()
@@ -961,6 +997,9 @@ func (s *NotebookService) Run(ctx context.Context, notebookID string, req RunNot
 	if auto {
 		s.scheduleRecompute(notebookID, nb.UUID)
 	}
+	runtimeSyncMS = elapsedNotebookServiceMilliseconds(runtimeSyncStartedAt)
+	requestTotalMS = elapsedNotebookServiceMilliseconds(requestStartedAt)
+	s.publishRuntime(notebookID, nb.UUID, autoPending, delta)
 
 	status := "ok"
 	for _, result := range results {
@@ -972,24 +1011,37 @@ func (s *NotebookService) Run(ctx context.Context, notebookID string, req RunNot
 	return RunNotebookResult{Status: status, Results: results}, nil
 }
 
-// publishRuntimeResultsDelta recomputes the auto-pending closure and pushes a
-// results delta — used after a manual run so all clients converge.
-func (s *NotebookService) publishRuntimeResultsDelta(notebookID, uuid string, results []notebook.CellRunResult) {
-	nb, apiErr := s.load(notebookID)
-	if apiErr != nil {
-		return
-	}
-	rt := s.runtimes.get(uuid)
-	closure := computeAutoRecomputeClosure(s.buildAutoCells(nb, rt))
+// runtimeResultsDelta recomputes the auto-pending closure and prepares the
+// results delta used after a manual run so all clients converge. The caller
+// publishes it after finalizing the request phase timings stored on each result.
+func (s *NotebookService) runtimeResultsDelta(
+	nb *notebook.Notebook,
+	existingObjects map[string]bool,
+	results []notebook.CellRunResult,
+) ([]string, map[string]notebook.CellRunResult) {
+	rt := s.runtimes.get(nb.UUID)
+	closure := computeAutoRecomputeClosure(s.buildAutoCellsWithExistingObjects(nb, rt, existingObjects))
 	delta := make(map[string]notebook.CellRunResult, len(results))
 	for _, result := range results {
 		delta[result.CellID] = result
 	}
-	s.publishRuntime(notebookID, uuid, sortedKeys(closure), delta)
+	return sortedKeys(closure), delta
+}
+
+func elapsedNotebookServiceMilliseconds(startedAt time.Time) float64 {
+	return float64(time.Since(startedAt)) / float64(time.Millisecond)
 }
 
 // selectRunCells turns the request into an ordered execution list.
 func (s *NotebookService) selectRunCells(nb *notebook.Notebook, req RunNotebookRequest) ([]*notebook.Cell, *APIError) {
+	return s.selectRunCellsWithExistingObjects(nb, req, nil)
+}
+
+func (s *NotebookService) selectRunCellsWithExistingObjects(
+	nb *notebook.Notebook,
+	req RunNotebookRequest,
+	existingObjects map[string]bool,
+) ([]*notebook.Cell, *APIError) {
 	ordered := notebook.TopoOrder(nb)
 	if req.All || (req.From == "" && len(req.Cells) == 0) {
 		return ordered, nil
@@ -1016,16 +1068,15 @@ func (s *NotebookService) selectRunCells(nb *notebook.Notebook, req RunNotebookR
 
 	// Pull in ancestors whose session objects are missing, so a first run
 	// of a downstream cell does not fail on absent views.
-	existing, existErr := s.store.ExistingCellObjects(nb.UUID)
-	if existErr != nil {
-		existing = map[string]bool{}
+	if existingObjects == nil {
+		existingObjects = s.existingNotebookCellObjects(nb.UUID)
 	}
 	for _, cell := range nb.Cells {
 		if !wanted[cell.ID] {
 			continue
 		}
 		for _, ancestor := range notebook.Ancestors(nb, cell) {
-			if !wanted[ancestor.ID] && !existing[notebook.CellObjectName(ancestor.ID)] {
+			if !wanted[ancestor.ID] && !existingObjects[notebook.CellObjectName(ancestor.ID)] {
 				wanted[ancestor.ID] = true
 			}
 		}
@@ -1038,6 +1089,14 @@ func (s *NotebookService) selectRunCells(nb *notebook.Notebook, req RunNotebookR
 		}
 	}
 	return result, nil
+}
+
+func (s *NotebookService) existingNotebookCellObjects(uuid string) map[string]bool {
+	existingObjects, err := s.store.ExistingCellObjects(uuid)
+	if err != nil {
+		return map[string]bool{}
+	}
+	return existingObjects
 }
 
 var cellNameAdjectives = [...]string{
@@ -1121,11 +1180,12 @@ func (s *NotebookService) pushUpdate(path string) {
 
 // pipelineSourceFetcher resolves external cell references against pipeline
 // assets: DuckDB-backed assets are imported zero-copy via ATTACH, anything
-// else is fetched through its connection with a row cap. This is the
-// swappable read path the cloud gateway will later implement.
+// else uses the same typed snapshot transport as explicit warehouse source
+// cells.
 type pipelineSourceFetcher struct {
 	service     *NotebookService
 	environment string
+	transfer    notebook.NotebookTransferService
 }
 
 func (f *pipelineSourceFetcher) LocalDuckDBPath(_ context.Context, ref string) (string, bool) {
@@ -1154,28 +1214,30 @@ func (f *pipelineSourceFetcher) LocalDuckDBPath(_ context.Context, ref string) (
 	return "", false
 }
 
-func (f *pipelineSourceFetcher) Fetch(ctx context.Context, ref string, limit int) ([]string, [][]any, error) {
+func (f *pipelineSourceFetcher) Snapshot(ctx context.Context, ref string) (notebook.TabularArtifact, error) {
 	asset := f.service.pipelineAssetByName(ref)
 	if asset == nil || asset.Connection == "" {
-		return nil, nil, notebook.ErrUnknownSource
+		return notebook.TabularArtifact{}, notebook.ErrUnknownSource
 	}
-	if f.service.deps.RunConnectionQuery == nil {
-		return nil, nil, fmt.Errorf("no connection query backend configured")
-	}
-
-	query := fmt.Sprintf("select * from %s limit %d", QuoteQualifiedIdentifier(asset.Name), limit)
-	columns, rows, err := f.service.deps.RunConnectionQuery(ctx, asset.Connection, f.environment, query)
-	if err != nil {
-		return nil, nil, err
+	if f.transfer == nil {
+		return notebook.TabularArtifact{}, fmt.Errorf("notebook typed snapshot transport is unavailable")
 	}
 
-	ordered := make([][]any, 0, len(rows))
-	for _, row := range rows {
-		values := make([]any, len(columns))
-		for index, column := range columns {
-			values[index] = row[column]
-		}
-		ordered = append(ordered, values)
+	query := fmt.Sprintf("select * from %s", QuoteQualifiedIdentifier(asset.Name))
+	assetRevision := strings.TrimSpace(asset.ContentRevision)
+	if assetRevision == "" {
+		assetRevision = notebook.ContentRevision(asset.Content)
 	}
-	return columns, ordered, nil
+	definitionFingerprint := notebook.SQLSnapshotDefinitionFingerprint(
+		"pipeline-asset:"+assetRevision+":"+asset.Connection+":"+f.environment,
+		query,
+	)
+	return f.transfer.Snapshot(ctx, notebook.SnapshotRequest{
+		Environment:           f.environment,
+		Connection:            asset.Connection,
+		Query:                 query,
+		DefinitionFingerprint: definitionFingerprint,
+		SourceKind:            "pipeline_asset",
+		Mode:                  notebook.SnapshotModeFull,
+	})
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/sqlparser"
+	"renart/internal/web/duckcoord"
 	"renart/internal/web/notebook"
 )
 
@@ -64,6 +66,10 @@ func (executor *warehouseSQLSourceExecutor) Execute(ctx context.Context, input n
 	if executor.transfer == nil {
 		return notebook.BlockOutput{}, fmt.Errorf("notebook snapshot transfer is unavailable")
 	}
+	definitionFingerprint, err := executor.SnapshotDefinitionFingerprint(ctx, input)
+	if err != nil {
+		return notebook.BlockOutput{}, err
+	}
 	mode, rowLimit, err := notebook.SourceSnapshotPolicy(input.Cell)
 	if err != nil {
 		return notebook.BlockOutput{}, err
@@ -72,7 +78,7 @@ func (executor *warehouseSQLSourceExecutor) Execute(ctx context.Context, input n
 		NotebookID: input.Notebook.UUID, BlockID: input.Cell.ID,
 		Environment: input.Environment, Connection: analysis.Connection,
 		Query: query, Mode: mode, RowLimit: rowLimit,
-		DefinitionFingerprint: notebook.CellFingerprintWithParameters(input.Notebook, input.Cell, input.ParameterValues),
+		DefinitionFingerprint: definitionFingerprint,
 	})
 	if err != nil {
 		return notebook.BlockOutput{}, err
@@ -80,6 +86,23 @@ func (executor *warehouseSQLSourceExecutor) Execute(ctx context.Context, input n
 	cleanup := artifact.Cleanup
 	artifact.Cleanup = nil
 	return notebook.BlockOutput{Artifact: &artifact, Cleanup: cleanup}, nil
+}
+
+func (executor *warehouseSQLSourceExecutor) SnapshotDefinitionFingerprint(
+	_ context.Context,
+	input notebook.ExecuteBlockInput,
+) (string, error) {
+	if input.Notebook == nil || input.Cell == nil {
+		return "", fmt.Errorf("warehouse source cell is required")
+	}
+	query := strings.TrimSpace(input.SQL)
+	if query == "" {
+		return "", fmt.Errorf("warehouse source query is empty")
+	}
+	return notebook.SQLSnapshotDefinitionFingerprint(
+		notebook.CellFingerprintWithParameters(input.Notebook, input.Cell, input.ParameterValues),
+		query,
+	), nil
 }
 
 type slingNotebookTransferService struct {
@@ -120,20 +143,45 @@ func (service *slingNotebookTransferService) Snapshot(ctx context.Context, reque
 	if err != nil {
 		return notebook.TabularArtifact{}, fmt.Errorf("resolve notebook source environment: %w", err)
 	}
-	connectionURI, warning, err := loadConnectionURIWithWarning(manager, request.Connection)
-	if err != nil {
-		return notebook.TabularArtifact{}, err
+	sourceKind := strings.TrimSpace(request.SourceKind)
+	if sourceKind == "" {
+		sourceKind = "warehouse_sql"
+	}
+	provenance := notebook.SnapshotProvenance{
+		SourceKind: sourceKind, Environment: config.SelectedEnvironmentName,
+		Connection: request.Connection, DefinitionFingerprint: request.DefinitionFingerprint,
+		SourceFingerprint: request.SourceFingerprint,
+		CreatedAt:         time.Now().UTC(),
 	}
 
-	warnings := make([]string, 0, 1)
-	if warning != "" {
-		warnings = append(warnings, warning)
+	var nativeErr error
+	if sourcePath, eligible, pathErr := localDuckDBNotebookSourcePath(manager, request.Connection, service.workspaceRoot); eligible {
+		if pathErr != nil {
+			nativeErr = pathErr
+		} else {
+			artifact, err := service.snapshotFromLocalDuckDB(ctx, mode, provenance, sourcePath, query)
+			if err == nil || notebookSnapshotStopsFallback(err) {
+				return artifact, err
+			}
+			nativeErr = err
+		}
 	}
-	return service.snapshotFromSling(ctx, mode, notebook.SnapshotProvenance{
-		SourceKind: "warehouse_sql", Environment: config.SelectedEnvironmentName,
-		Connection: request.Connection, DefinitionFingerprint: request.DefinitionFingerprint,
-		CreatedAt: time.Now().UTC(), Warnings: warnings,
-	}, func(_ context.Context, stagingDir string, _ io.Writer) (notebookSnapshotSource, error) {
+
+	// Resolve the Sling URI only when the generic fallback is actually needed.
+	// For local DuckDB sources this may otherwise initialize a second database
+	// client before the native read-only snapshot has even started.
+	connectionURI, warning, err := loadConnectionURIWithWarning(manager, request.Connection)
+	if err != nil {
+		if nativeErr != nil {
+			return notebook.TabularArtifact{}, fmt.Errorf("native DuckDB notebook snapshot failed: %v; resolve Sling fallback: %w", nativeErr, err)
+		}
+		return notebook.TabularArtifact{}, err
+	}
+	if warning != "" {
+		provenance.Warnings = append(provenance.Warnings, warning)
+	}
+
+	artifact, slingErr := service.snapshotFromSling(ctx, mode, provenance, func(_ context.Context, stagingDir string, _ io.Writer) (notebookSnapshotSource, error) {
 		queryPath := filepath.Join(stagingDir, "query.sql")
 		if err := os.WriteFile(queryPath, []byte(query+"\n"), 0o600); err != nil {
 			return notebookSnapshotSource{}, err
@@ -143,6 +191,38 @@ func (service *slingNotebookTransferService) Snapshot(ctx context.Context, reque
 			QueryPath:     queryPath,
 		}}, nil
 	})
+	if slingErr != nil && nativeErr != nil {
+		return notebook.TabularArtifact{}, fmt.Errorf("native DuckDB notebook snapshot failed: %v; Sling fallback failed: %w", nativeErr, slingErr)
+	}
+	return artifact, slingErr
+}
+
+func localDuckDBNotebookSourcePath(
+	manager config.ConnectionDetailsGetter,
+	connectionName, workspaceRoot string,
+) (string, bool, error) {
+	if manager == nil {
+		return "", false, nil
+	}
+	var connection *config.DuckDBConnection
+	switch details := manager.GetConnectionDetails(strings.TrimSpace(connectionName)).(type) {
+	case *config.DuckDBConnection:
+		connection = details
+	case config.DuckDBConnection:
+		clone := details
+		connection = &clone
+	}
+	if connection == nil || connection.Lakehouse != nil {
+		return "", false, nil
+	}
+	path, err := duckcoord.CanonicalPath(workspaceRoot, connection.Path)
+	if err != nil {
+		return "", true, fmt.Errorf("resolve local DuckDB notebook source: %w", err)
+	}
+	if path == "" {
+		return "", false, nil
+	}
+	return path, true, nil
 }
 
 type notebookSnapshotSQLSource struct {
@@ -157,6 +237,21 @@ type notebookSnapshotSource struct {
 }
 
 type notebookSnapshotSourceBuilder func(ctx context.Context, stagingDir string, output io.Writer) (notebookSnapshotSource, error)
+
+type notebookParquetSnapshotProducer func(ctx context.Context, stagingDir, parquetPath string, output *streamCaptureWriter) error
+
+type notebookSnapshotLimitError struct {
+	maxBytes int64
+}
+
+func (err *notebookSnapshotLimitError) Error() string {
+	return fmt.Sprintf("notebook snapshot exceeded the %d-byte transfer limit", err.maxBytes)
+}
+
+func notebookSnapshotStopsFallback(err error) bool {
+	var limitErr *notebookSnapshotLimitError
+	return errors.As(err, &limitErr) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
 
 type notebookSlingReplication struct {
 	Source   string                                    `json:"source"`
@@ -179,15 +274,70 @@ type notebookSlingReplicationTargetOpts struct {
 	Format string `json:"format"`
 }
 
-// snapshotFromSling is the single bounded source-to-Parquet path for warehouse
-// SQL, file/object, and HTTP notebook sources. All callers inherit the same
-// private staging directory, process limiter, credential-to-environment
-// rewrite, cancellation, size budget, and typed artifact inspection.
+// snapshotFromSling adapts Sling sources to the shared bounded Parquet snapshot
+// path. It additionally owns process limiting and the credential-to-environment
+// rewrite used by external warehouse, file/object, and HTTP sources.
 func (service *slingNotebookTransferService) snapshotFromSling(
 	ctx context.Context,
 	mode string,
 	provenance notebook.SnapshotProvenance,
 	buildSource notebookSnapshotSourceBuilder,
+) (notebook.TabularArtifact, error) {
+	return service.snapshotFromParquetProducer(ctx, mode, provenance, "Sling", func(
+		runCtx context.Context,
+		stagingDir, parquetPath string,
+		output *streamCaptureWriter,
+	) error {
+		if buildSource == nil {
+			return fmt.Errorf("notebook snapshot source builder is required")
+		}
+		source, err := buildSource(runCtx, stagingDir, output)
+		if err != nil {
+			return err
+		}
+		args, connectionEnv, err := notebookSlingSnapshotArgs(stagingDir, parquetPath, source)
+		if err != nil {
+			return err
+		}
+		commandName, commandArgs, err := loadCommand(runCtx, args, output)
+		if err != nil {
+			return err
+		}
+		command := newStreamingCommand(runCtx, commandName, commandArgs, service.workspaceRoot, output)
+		command.Env = append(command.Env, connectionEnv...)
+		command.Env = append(command.Env, source.Env...)
+		command.Env = append(command.Env, "SLING_ALLOW_EMPTY=true")
+		if err := runStreamingCommand(runCtx, command, output); err != nil {
+			return fmt.Errorf("Sling notebook snapshot failed: %w", err)
+		}
+		return nil
+	})
+}
+
+func (service *slingNotebookTransferService) snapshotFromLocalDuckDB(
+	ctx context.Context,
+	mode string,
+	provenance notebook.SnapshotProvenance,
+	sourcePath, query string,
+) (notebook.TabularArtifact, error) {
+	return service.snapshotFromParquetProducer(ctx, mode, provenance, "DuckDB", func(
+		runCtx context.Context,
+		_, parquetPath string,
+		_ *streamCaptureWriter,
+	) error {
+		if err := notebook.ExportDuckDBQueryToParquet(runCtx, sourcePath, service.workspaceRoot, query, parquetPath); err != nil {
+			return fmt.Errorf("DuckDB notebook snapshot failed: %w", err)
+		}
+		return nil
+	})
+}
+
+func (service *slingNotebookTransferService) snapshotFromParquetProducer(
+	ctx context.Context,
+	mode string,
+	provenance notebook.SnapshotProvenance,
+	producerName string,
+	produce notebookParquetSnapshotProducer,
 ) (notebook.TabularArtifact, error) {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode != notebook.SnapshotModeFull && mode != notebook.SnapshotModeSample {
@@ -214,29 +364,10 @@ func (service *slingNotebookTransferService) snapshotFromSling(
 	}
 	runCtx, cancel := context.WithTimeout(ctx, runTimeout)
 	defer cancel()
-	if buildSource == nil {
+	if produce == nil {
 		_ = cleanup()
-		return notebook.TabularArtifact{}, fmt.Errorf("notebook snapshot source builder is required")
+		return notebook.TabularArtifact{}, fmt.Errorf("notebook snapshot producer is required")
 	}
-	source, err := buildSource(runCtx, stagingDir, writer)
-	if err != nil {
-		_ = cleanup()
-		return notebook.TabularArtifact{}, err
-	}
-	args, connectionEnv, err := notebookSlingSnapshotArgs(stagingDir, parquetPath, source)
-	if err != nil {
-		_ = cleanup()
-		return notebook.TabularArtifact{}, err
-	}
-	commandName, commandArgs, err := loadCommand(runCtx, args, writer)
-	if err != nil {
-		_ = cleanup()
-		return notebook.TabularArtifact{}, err
-	}
-	command := newStreamingCommand(runCtx, commandName, commandArgs, service.workspaceRoot, writer)
-	command.Env = append(command.Env, connectionEnv...)
-	command.Env = append(command.Env, source.Env...)
-	command.Env = append(command.Env, "SLING_ALLOW_EMPTY=true")
 
 	maxBytes := service.maxBytes
 	if maxBytes <= 0 {
@@ -260,13 +391,13 @@ func (service *slingNotebookTransferService) snapshotFromSling(
 			}
 		}
 	}()
-	runErr := runStreamingCommand(runCtx, command, writer)
+	runErr := produce(runCtx, stagingDir, parquetPath, writer)
 	close(monitorDone)
 	if runErr != nil {
 		output := strings.TrimSpace(writer.buffer.String())
 		_ = cleanup()
 		if exceeded.Load() {
-			return notebook.TabularArtifact{}, fmt.Errorf("notebook snapshot exceeded the %d-byte transfer limit", maxBytes)
+			return notebook.TabularArtifact{}, &notebookSnapshotLimitError{maxBytes: maxBytes}
 		}
 		if runCtx.Err() != nil {
 			return notebook.TabularArtifact{}, fmt.Errorf("notebook snapshot cancelled: %w", runCtx.Err())
@@ -275,16 +406,16 @@ func (service *slingNotebookTransferService) snapshotFromSling(
 			output = output[len(output)-4096:]
 		}
 		if output != "" {
-			return notebook.TabularArtifact{}, fmt.Errorf("Sling notebook snapshot failed: %w: %s", runErr, output)
+			return notebook.TabularArtifact{}, fmt.Errorf("%w: %s", runErr, output)
 		}
-		return notebook.TabularArtifact{}, fmt.Errorf("Sling notebook snapshot failed: %w", runErr)
+		return notebook.TabularArtifact{}, runErr
 	}
 	if info, err := os.Stat(parquetPath); err != nil {
 		_ = cleanup()
-		return notebook.TabularArtifact{}, fmt.Errorf("Sling did not produce a notebook snapshot: %w", err)
+		return notebook.TabularArtifact{}, fmt.Errorf("%s did not produce a notebook snapshot: %w", producerName, err)
 	} else if info.Size() > maxBytes {
 		_ = cleanup()
-		return notebook.TabularArtifact{}, fmt.Errorf("notebook snapshot exceeded the %d-byte transfer limit", maxBytes)
+		return notebook.TabularArtifact{}, &notebookSnapshotLimitError{maxBytes: maxBytes}
 	}
 	artifact, err := notebook.InspectParquetArtifact(runCtx, parquetPath, provenance, mode == notebook.SnapshotModeFull, mode == notebook.SnapshotModeSample)
 	if err != nil {

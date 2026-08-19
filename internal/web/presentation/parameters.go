@@ -29,8 +29,8 @@ const (
 )
 
 // ParameterOptions constrains a value either with authored static values or a
-// named dataset. Dataset-backed options are resolved by dashboard/report hosts;
-// notebook parameters initially use static values only.
+// named dataset. Dataset-backed options are resolved by each document host;
+// notebook hosts read them from an already-materialized local cell result.
 type ParameterOptions struct {
 	Values     []any  `yaml:"values,omitempty" json:"values,omitempty"`
 	Dataset    string `yaml:"dataset,omitempty" json:"dataset,omitempty"`

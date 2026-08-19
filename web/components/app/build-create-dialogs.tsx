@@ -1,17 +1,6 @@
 import { useAtomValue } from "jotai";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Cpu,
-  Download,
-  FileCode,
-  FolderPlus,
-  Globe,
-  Plus,
-  Radar,
-  Sprout,
-} from "lucide-react";
-import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle2, FolderPlus, Plus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -54,6 +43,7 @@ import { buildSuggestedAssetName } from "@/lib/workspace-shell-helpers";
 import { useAssetCreationProfile } from "@/hooks/use-asset-creation-profile";
 
 import { AssetConnectionField, resolveAssetConnectionSelection } from "./asset-connection-field";
+import { AssetTypePreview } from "./asset-type-preview";
 import { FilePathPicker } from "./file-path-picker";
 import { LoadStreamPicker } from "./load-stream-picker";
 import {
@@ -73,41 +63,36 @@ type AssetKindOption = {
   id: AssetCreationKind;
   label: string;
   description: string;
-  icon: ComponentType<{ className?: string }>;
 };
 
 const CREATABLE_ASSETS: AssetKindOption[] = [
-  { id: "sql", label: "SQL", description: "Transform with a SELECT", icon: FileCode },
-  { id: "python", label: "Python", description: "Custom Python transform", icon: Cpu },
+  { id: "sql", label: "SQL", description: "Transform with a SELECT" },
+  { id: "python", label: "Python", description: "Custom Python transform" },
   {
     id: "api",
     label: "HTTP API",
     description: "Pull records from an HTTP API endpoint",
-    icon: Globe,
   },
   {
     id: "seed",
     label: "Seed",
     description: "Load a file into a table",
-    icon: Sprout,
   },
   {
     id: "sensor",
     label: "Sensor",
     description: "Check an external readiness condition",
-    icon: Radar,
   },
-  { id: "load", label: "Load", description: "Replicate data between connections", icon: Download },
+  { id: "load", label: "Load", description: "Replicate data between connections" },
 ];
 
 const DOWNSTREAM_ASSETS: AssetKindOption[] = [
-  { id: "sql", label: "SQL", description: "select * from the upstream table", icon: FileCode },
-  { id: "python", label: "Python", description: "Read the upstream table from Python", icon: Cpu },
+  { id: "sql", label: "SQL", description: "select * from the upstream table" },
+  { id: "python", label: "Python", description: "Read the upstream table from Python" },
   {
     id: "load",
     label: "Load",
     description: "Replicate downstream between connections",
-    icon: Download,
   },
 ];
 
@@ -527,7 +512,7 @@ export function NewAssetDialog({
                           aria-label={option.label}
                           className="h-24 w-full min-w-0 flex-col items-start justify-start whitespace-normal p-3 text-left data-[state=on]:border-primary data-[state=on]:ring-1 data-[state=on]:ring-primary"
                         >
-                          <option.icon className="text-primary" />
+                          <AssetTypePreview type={option.id} className="h-10 max-w-16" />
                           <div className="font-medium">{option.label}</div>
                           <div className="text-xs text-muted-foreground">{option.description}</div>
                         </ToggleGroupItem>
@@ -547,7 +532,7 @@ export function NewAssetDialog({
                 >
                   <div className="min-h-0 min-w-0 overflow-hidden p-1">
                     <div className="flex min-w-0 items-center gap-2 rounded-md border bg-muted/20 px-2.5 py-2">
-                      <selected.icon className="size-4 shrink-0 text-primary" />
+                      <AssetTypePreview type={selected.id} className="h-8 w-12 shrink-0" />
                       <div className="min-w-0 flex-1">
                         <div className="text-xs font-medium">{selected.label}</div>
                         <div className="truncate text-[11px] text-muted-foreground">

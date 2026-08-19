@@ -812,8 +812,14 @@ func escapeForPython(path string) string {
 // missing-file case (materialize() returned None) is detected Go-side.
 const pythonParquetTemplate = `
 import importlib
+import os
 import sys
 from pathlib import Path
+
+
+ready_file = os.environ.get("RENART_PYTHON_READY_FILE")
+if ready_file:
+    Path(ready_file).touch()
 
 
 def import_module_from_path(module_path, module_name):

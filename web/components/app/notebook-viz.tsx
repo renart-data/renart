@@ -33,22 +33,17 @@ import {
   VizDirective,
 } from "@/lib/api-notebooks";
 import { visualizationPaletteColors } from "@/lib/visualization-palettes";
+import {
+  boundedRowsToObjects,
+  NOTEBOOK_CHART_SERIES_CAP,
+  pivotChartSeries,
+} from "@/lib/notebook-viz-data";
 
 const CHART_ROW_CAP = 200;
 function asArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);
   if (typeof value === "string" && value) return [value];
   return [];
-}
-
-function rowsToObjects(result: NotebookCellRunResult): Record<string, unknown>[] {
-  return result.rows.map((row) => {
-    const object: Record<string, unknown> = {};
-    result.columns.forEach((column, index) => {
-      object[column] = row[index];
-    });
-    return object;
-  });
 }
 
 function MissingColumnNotice({ columns }: { columns: string[] }) {
@@ -98,27 +93,27 @@ function resultLimit(definition: NotebookVisualizationDefinition): number {
   return Math.max(1, Math.min(requested, 1_000));
 }
 
-function pivotSeries(
-  rows: Record<string, unknown>[],
-  xKey: string,
-  valueKey: string,
-  seriesKey: string,
+function visualizationAriaLabel(
+  definition: NotebookVisualizationDefinition,
+  result: NotebookCellRunResult,
 ) {
-  const byX = new Map<string, Record<string, unknown>>();
-  const series: string[] = [];
-  const seenSeries = new Set<string>();
-  for (const row of rows) {
-    const x = String(row[xKey] ?? "");
-    const seriesValue = String(row[seriesKey] ?? "");
-    const target = byX.get(x) ?? { [xKey]: row[xKey] };
-    target[seriesValue] = row[valueKey];
-    byX.set(x, target);
-    if (!seenSeries.has(seriesValue)) {
-      seenSeries.add(seriesValue);
-      series.push(seriesValue);
-    }
-  }
-  return { data: [...byX.values()], series };
+  const title = definition.title?.trim();
+  const kind = definition.type === "kpi" ? "KPI" : `${definition.type} visualization`;
+  const fields = [
+    definition.encoding?.x,
+    ...(definition.encoding?.y ?? []),
+    definition.encoding?.series,
+    definition.encoding?.color,
+    definition.value,
+    definition.compare,
+    ...(definition.columns ?? []),
+  ]
+    .map(fieldName)
+    .filter(Boolean);
+  const fieldSummary = [...new Set(fields)].join(", ");
+  return [title, kind, fieldSummary ? `Fields: ${fieldSummary}` : "", `${result.total_rows} rows`]
+    .filter(Boolean)
+    .join(". ");
 }
 
 /** Pure renderer for the durable, versioned visualization definition. */
@@ -129,9 +124,13 @@ export function NotebookVisualizationRenderer({
   definition: NotebookVisualizationDefinition;
   result: NotebookCellRunResult;
 }) {
-  const rows = useMemo(() => rowsToObjects(result), [result]);
   const limit = resultLimit(definition);
+  const rows = useMemo(
+    () => boundedRowsToObjects(result.columns, result.rows, limit),
+    [limit, result.columns, result.rows],
+  );
   const seriesColors = visualizationPaletteColors(definition.palette);
+  const ariaLabel = visualizationAriaLabel(definition, result);
 
   if (definition.type === "table") {
     const requested = (definition.columns ?? []).map(fieldName).filter(Boolean);
@@ -145,7 +144,7 @@ export function NotebookVisualizationRenderer({
     return (
       <div className="overflow-hidden rounded-lg border">
         <div className="max-h-72 overflow-auto">
-          <table className="w-full text-left text-xs">
+          <table aria-label={ariaLabel} className="w-full text-left text-xs">
             <thead className="sticky top-0 bg-muted/90 backdrop-blur">
               <tr>
                 {columns.map((column) => (
@@ -193,14 +192,16 @@ export function NotebookVisualizationRenderer({
   const yKeys = authoredYKeys.map((field) => resolvedFieldName(field, result.columns));
   const seriesKey = authoredSeriesKey ? resolvedFieldName(authoredSeriesKey, result.columns) : "";
 
-  const capped = rows.slice(0, limit);
+  const capped = rows;
   let chartData = capped;
-  let renderedSeries = yKeys;
+  let renderedSeries = yKeys.slice(0, NOTEBOOK_CHART_SERIES_CAP);
+  let totalSeries = yKeys.length;
   let pivotedSeries = false;
   if (seriesKey && yKeys.length === 1) {
-    const pivoted = pivotSeries(capped, xKey, yKeys[0], seriesKey);
+    const pivoted = pivotChartSeries(capped, xKey, yKeys[0], seriesKey);
     chartData = pivoted.data;
     renderedSeries = pivoted.series;
+    totalSeries = pivoted.totalSeries;
     pivotedSeries = true;
   }
   const config: ChartConfig = {};
@@ -211,10 +212,11 @@ export function NotebookVisualizationRenderer({
     };
   });
   const showLegend = definition.show_legend ?? renderedSeries.length > 1;
-  const truncated = rows.length > capped.length || result.total_rows > rows.length;
+  const rowsTruncated = result.rows.length > rows.length || result.total_rows > result.rows.length;
+  const seriesTruncated = totalSeries > renderedSeries.length;
 
   return (
-    <div>
+    <figure aria-label={ariaLabel}>
       <ChartContainer config={config} className="h-64 w-full">
         {definition.type === "bar" ? (
           <BarChart data={chartData} accessibilityLayer>
@@ -253,7 +255,7 @@ export function NotebookVisualizationRenderer({
             ))}
           </AreaChart>
         ) : definition.type === "pie" || definition.type === "donut" ? (
-          <PieChart>
+          <PieChart accessibilityLayer>
             <ChartTooltip content={(props) => <ChartTooltipContent {...props} />} />
             <Pie
               data={capped}
@@ -295,12 +297,16 @@ export function NotebookVisualizationRenderer({
           </LineChart>
         )}
       </ChartContainer>
-      {truncated ? (
-        <div className="mt-1 text-[11px] text-muted-foreground">
-          previewing at most {Math.min(limit, rows.length)} of {result.total_rows} rows
-        </div>
+      {rowsTruncated || seriesTruncated ? (
+        <figcaption className="mt-1 text-[11px] text-muted-foreground" role="status">
+          {rowsTruncated ? `Previewing ${rows.length} of ${result.total_rows} rows.` : null}
+          {rowsTruncated && seriesTruncated ? " " : null}
+          {seriesTruncated
+            ? `Showing the first ${renderedSeries.length} of ${totalSeries} series.`
+            : null}
+        </figcaption>
       ) : null}
-    </div>
+    </figure>
   );
 }
 
@@ -329,7 +335,10 @@ function KpiDefinitionCard({
       ? (value - compare) / Math.abs(compare)
       : null;
   return (
-    <div className="rounded-lg border p-4">
+    <section
+      aria-label={visualizationAriaLabel(definition, result)}
+      className="rounded-lg border p-4"
+    >
       <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {definition.value?.label || valueKey}
       </div>
@@ -342,7 +351,7 @@ function KpiDefinitionCard({
           {definition.compare?.label || compareKey}
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }
 

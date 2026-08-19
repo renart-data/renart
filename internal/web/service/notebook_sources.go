@@ -52,7 +52,10 @@ func (executor *notebookSourceExecutor) Execute(ctx context.Context, input noteb
 	if err != nil {
 		return notebook.BlockOutput{}, err
 	}
-	definitionFingerprint := notebook.CellFingerprintWithParameters(input.Notebook, input.Cell, input.ParameterValues)
+	definitionFingerprint, err := executor.SnapshotDefinitionFingerprint(ctx, input)
+	if err != nil {
+		return notebook.BlockOutput{}, err
+	}
 	switch input.Cell.Source.Kind {
 	case notebook.SourceKindFile:
 		return executor.executeFile(ctx, input, analysis, mode, rowLimit, definitionFingerprint)
@@ -61,6 +64,36 @@ func (executor *notebookSourceExecutor) Execute(ctx context.Context, input noteb
 	default:
 		return notebook.BlockOutput{}, fmt.Errorf("unsupported notebook source kind %q", input.Cell.Source.Kind)
 	}
+}
+
+func (executor *notebookSourceExecutor) SnapshotDefinitionFingerprint(
+	_ context.Context,
+	input notebook.ExecuteBlockInput,
+) (string, error) {
+	if input.Notebook == nil || input.Cell == nil || input.Cell.Source == nil {
+		return "", fmt.Errorf("notebook source definition is required")
+	}
+	base := notebook.CellFingerprintWithParameters(input.Notebook, input.Cell, input.ParameterValues)
+	renderedDefinition := ""
+	switch input.Cell.Source.Kind {
+	case notebook.SourceKindFile:
+		renderedDefinition = input.Cell.Source.URI
+	case notebook.SourceKindHTTP:
+		renderedDefinition = input.Cell.Raw
+		if renderedDefinition == "" && input.Cell.Asset != nil {
+			renderedDefinition = input.Cell.Asset.ExecutableFile.Content
+		}
+	default:
+		return "", fmt.Errorf("unsupported notebook source kind %q", input.Cell.Source.Kind)
+	}
+	if executor.renderer != nil {
+		var err error
+		renderedDefinition, err = executor.renderer.Render(renderedDefinition)
+		if err != nil {
+			return "", fmt.Errorf("render notebook source definition: %w", err)
+		}
+	}
+	return notebook.SnapshotDefinitionFingerprint(base, renderedDefinition), nil
 }
 
 func (executor *notebookSourceExecutor) executeFile(

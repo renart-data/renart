@@ -34,6 +34,7 @@ type NotebookHandlers interface {
 	ExportCell(ctx context.Context, notebookID, cellID, format string) (service.NotebookCellExport, *service.APIError)
 	Run(ctx context.Context, notebookID string, req service.RunNotebookRequest) (service.RunNotebookResult, *service.APIError)
 	Runtime(notebookID string) (service.NotebookRuntimeSnapshot, *service.APIError)
+	RefreshControlOptions(ctx context.Context, notebookID, controlID string) (model.PresentationDatasetResult, *service.APIError)
 	SetAutoRecompute(notebookID string, enabled bool, environment string, parameterValues map[string]any) *service.APIError
 	CancelRuns(ctx context.Context, notebookID string) *service.APIError
 }
@@ -64,6 +65,7 @@ func RegisterNotebookRoutes(router chi.Router, handlers *NotebookAPI) {
 	router.Get("/api/notebooks/{id}/cells/{cellID}/export", handlers.HandleExportCell)
 	router.Post("/api/notebooks/{id}/run", handlers.HandleRun)
 	router.Get("/api/notebooks/{id}/runtime", handlers.HandleRuntime)
+	router.Post("/api/notebooks/{id}/controls/{controlID}/options/refresh", handlers.HandleRefreshControlOptions)
 	router.Put("/api/notebooks/{id}/settings", handlers.HandleSettings)
 	router.Post("/api/notebooks/{id}/cancel", handlers.HandleCancel)
 }
@@ -345,6 +347,17 @@ func (h *NotebookAPI) HandleRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	webapi.WriteJSON(w, http.StatusOK, snapshot)
+}
+
+func (h *NotebookAPI) HandleRefreshControlOptions(w http.ResponseWriter, r *http.Request) {
+	result, apiErr := h.Service.RefreshControlOptions(
+		r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "controlID"),
+	)
+	if apiErr != nil {
+		writeNotebookError(w, apiErr)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "result": result})
 }
 
 func (h *NotebookAPI) HandleSettings(w http.ResponseWriter, r *http.Request) {

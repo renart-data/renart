@@ -1,17 +1,29 @@
 "use client";
 
-import { Check, Loader2, Save, SlidersHorizontal, Trash2, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Loader2,
+  RefreshCw,
+  Save,
+  SlidersHorizontal,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import {
   AuthoredControlEditor,
   AuthoredControlValueField,
+  type AuthoredControlDataset,
 } from "@/components/app/authored-control";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import type { NotebookParameter } from "@/lib/generated/api-types";
+import type { PresentationDatasetResult } from "@/lib/generated/api-types";
+import { authoredControlOptions } from "@/lib/authored-controls";
 import { cn } from "@/lib/utils";
 
 export function NotebookControlBlock({
@@ -19,10 +31,15 @@ export function NotebookControlBlock({
   value,
   selected,
   busy,
+  datasets,
+  optionResult,
+  optionsLoading,
+  optionsStale,
   inspectorTarget,
   onSelect,
   onCloseInspector,
   onValueChange,
+  onRefreshOptions,
   onSave,
   onDelete,
 }: {
@@ -30,10 +47,15 @@ export function NotebookControlBlock({
   value: unknown;
   selected: boolean;
   busy: boolean;
+  datasets: AuthoredControlDataset[];
+  optionResult?: PresentationDatasetResult;
+  optionsLoading: boolean;
+  optionsStale: boolean;
   inspectorTarget: HTMLElement | null;
   onSelect: () => void;
   onCloseInspector: () => void;
   onValueChange: (value: unknown) => void;
+  onRefreshOptions: () => void;
   onSave: (control: NotebookParameter) => Promise<boolean>;
   onDelete: () => Promise<void>;
 }) {
@@ -47,6 +69,11 @@ export function NotebookControlBlock({
 
   const dirty = JSON.stringify(draft) !== signature;
   const title = control.label?.trim() || control.id;
+  const datasetBacked = Boolean(control.options?.dataset && control.options?.value_field);
+  const runtimeOptions = useMemo(
+    () => (datasetBacked ? authoredControlOptions(control, optionResult) : undefined),
+    [control, datasetBacked, optionResult],
+  );
   const inspector = (
     <div data-testid="notebook-control-inspector" className="flex min-w-0 flex-col gap-4 p-3">
       <div className="flex min-w-0 items-start gap-2">
@@ -78,6 +105,10 @@ export function NotebookControlBlock({
       <Separator />
       <AuthoredControlEditor
         control={draft}
+        datasets={datasets}
+        resolvedOptions={
+          notebookControlOptionSourceMatches(draft, control) ? runtimeOptions : undefined
+        }
         idPrefix="notebook-control-inspector"
         onChange={setDraft}
         onRename={(id) => setDraft((current) => ({ ...current, id }))}
@@ -122,15 +153,47 @@ export function NotebookControlBlock({
           if (event.target === event.currentTarget) onSelect();
         }}
       >
-        <div className="flex min-w-0 items-end gap-3">
+        <div className="flex min-w-0 flex-wrap items-end gap-3">
           <AuthoredControlValueField
             control={control}
             value={value}
+            options={runtimeOptions}
             idScope={`notebook-control-block-${control.id}`}
-            className="min-w-0 flex-1"
+            className="min-w-48 flex-1"
             onChange={onValueChange}
           />
-          <div className="mb-0.5 ml-auto flex shrink-0 items-center opacity-0 transition-opacity group-hover/notebook-control:opacity-100 group-focus-within/notebook-control:opacity-100">
+          {datasetBacked ? (
+            <div className="mb-0.5 ml-auto flex shrink-0 items-center gap-1.5">
+              {optionsStale ? (
+                <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300">
+                  <AlertTriangle className="size-3" /> Run source
+                </span>
+              ) : optionResult ? (
+                <Badge variant="outline" className="font-normal">
+                  {runtimeOptions?.length ?? 0} option{runtimeOptions?.length === 1 ? "" : "s"}
+                  {optionResult.truncated ? " · capped" : ""}
+                </Badge>
+              ) : null}
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy || optionsLoading || optionsStale}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRefreshOptions();
+                }}
+              >
+                {optionsLoading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                {optionResult ? "Refresh" : "Load options"}
+              </Button>
+            </div>
+          ) : null}
+          <div
+            className={cn(
+              "mb-0.5 flex shrink-0 items-center opacity-0 transition-opacity group-hover/notebook-control:opacity-100 group-focus-within/notebook-control:opacity-100",
+              !datasetBacked && "ml-auto",
+            )}
+          >
             <Button
               size="icon-sm"
               variant="ghost"
@@ -161,5 +224,16 @@ export function NotebookControlBlock({
       </section>
       {selected && inspectorTarget ? createPortal(inspector, inspectorTarget) : null}
     </>
+  );
+}
+
+function notebookControlOptionSourceMatches(
+  draft: NotebookParameter,
+  saved: NotebookParameter,
+): boolean {
+  return (
+    draft.options?.dataset?.trim() === saved.options?.dataset?.trim() &&
+    draft.options?.value_field?.trim() === saved.options?.value_field?.trim() &&
+    draft.options?.label_field?.trim() === saved.options?.label_field?.trim()
   );
 }

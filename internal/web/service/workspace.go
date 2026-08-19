@@ -308,6 +308,7 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 			pSummary.Assets = append(pSummary.Assets, model.Asset{
 				ID:                          EncodeID(filepath.ToSlash(relAssetPath)),
 				Name:                        asset.Name,
+				Description:                 strings.TrimSpace(asset.Description),
 				URI:                         strings.TrimSpace(asset.URI),
 				Type:                        string(asset.Type),
 				Path:                        filepath.ToSlash(relAssetPath),
@@ -516,7 +517,8 @@ func (s *WorkspaceService) resolveNotebookCellByID(assetID string) (string, *pip
 	}
 
 	fs := afero.NewOsFs()
-	loader := notebook.NewLoader(fs, pipeline.CreateTaskFromFileComments(fs), nil)
+	loader := notebook.NewLoader(fs, pipeline.CreateTaskFromFileComments(fs), nil).
+		WithWorkspaceRoot(s.workspaceRoot)
 	nb, err := loader.Load(dir)
 	if err != nil {
 		return "", nil, nil, err

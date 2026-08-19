@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // CellRunRecord is the restart-safe summary of one successful notebook cell
@@ -48,6 +49,10 @@ func (s *Session) recordCellRun(ctx context.Context, nb *Notebook, cell *Cell, r
 	if err != nil {
 		return err
 	}
+	cellFingerprint := result.Fingerprint
+	if cellFingerprint == "" {
+		cellFingerprint = CellFingerprintWithParameters(nb, cell, parameterValues)
+	}
 	return s.Exec(ctx, fmt.Sprintf(
 		`insert or replace into %s (
 cell_id, cell_fingerprint, finished_at, status, materialized_as,
@@ -55,7 +60,7 @@ row_count, schema_json, duration_ms, source_snapshot_ids, sampled
 ) values (%s, %s, now(), %s, %s, %d, %s, %d, %s, %t)`,
 		cellRunManifestTable,
 		sqlStringLiteral(cell.ID),
-		sqlStringLiteral(CellFingerprintWithParameters(nb, cell, parameterValues)),
+		sqlStringLiteral(cellFingerprint),
 		sqlStringLiteral(result.Status),
 		sqlStringLiteral(result.Materialized),
 		result.TotalRows,
@@ -134,6 +139,7 @@ func (store *SessionStore) RestoreCellRunResults(ctx context.Context, nb *Notebo
 	if previewLimit <= 0 {
 		previewLimit = defaultPreviewLimit
 	}
+	sessionBytes := sessionDiskUsage(session.Path)
 	for _, cell := range nb.Cells {
 		record, exists := records[cell.ID]
 		if !exists || record.Status != CellRunOK {
@@ -149,6 +155,7 @@ func (store *SessionStore) RestoreCellRunResults(ctx context.Context, nb *Notebo
 			stale[cell.ID] = true
 			continue
 		}
+		previewStartedAt := time.Now()
 		preview, queryErr := session.Query(ctx, fmt.Sprintf(
 			"select * from %s limit %d", quoteIdent(objectName), previewLimit))
 		if queryErr != nil {
@@ -161,8 +168,11 @@ func (store *SessionStore) RestoreCellRunResults(ctx context.Context, nb *Notebo
 			Status: CellRunOK, Columns: columns, ColumnTypes: columnTypes,
 			Rows: normalizeRows(rows), TotalRows: record.RowCount,
 			Materialized: record.MaterializedAs, DurationMS: record.DurationMS,
-			Sampled: record.Sampled,
+			Sampled:     record.Sampled,
+			Fingerprint: record.CellFingerprint,
 		}
+		result.observePreviewQuery(previewStartedAt)
+		result.performance().SessionBytes = sessionBytes
 		if !IsPythonCell(cell) && !IsSourceCell(cell) && strings.TrimSpace(cell.Asset.Connection) == "" {
 			result.Viz, result.VizDiagnostics = ParseViz(cell.Asset.ExecutableFile.Content)
 			if result.Viz != nil {
@@ -171,6 +181,9 @@ func (store *SessionStore) RestoreCellRunResults(ctx context.Context, nb *Notebo
 		}
 		if strings.TrimSpace(cell.Asset.Connection) != "" || IsSourceCell(cell) {
 			result.Snapshot, _ = session.lookupSnapshot(ctx, cell.ID)
+			if result.Snapshot != nil {
+				result.performance().TransferBytes = result.Snapshot.ByteCount
+			}
 		}
 		results[cell.ID] = result
 	}

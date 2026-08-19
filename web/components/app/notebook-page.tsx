@@ -11,6 +11,7 @@ import {
   Database,
   Download,
   FileInput,
+  Gauge,
   Globe2,
   ListTree,
   Loader2,
@@ -28,6 +29,7 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AnsiOutput } from "@/components/ansi-output";
+import { ConnectionSelect } from "@/components/app/connection-select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,6 +70,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
@@ -79,9 +82,7 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -110,6 +111,7 @@ import {
   NotebookCellRunResult,
   planNotebookCellPromotion,
   promoteNotebookCell,
+  refreshNotebookControlOptions,
   type PromoteCellPlan,
   replaceNotebookParameters,
   renameNotebookCell,
@@ -141,9 +143,13 @@ import {
   defaultAuthoredControlValue,
   type AuthoredControlType,
 } from "@/lib/authored-controls";
-import type { NotebookParameter } from "@/lib/generated/api-types";
+import type { NotebookParameter, PresentationDatasetResult } from "@/lib/generated/api-types";
 import { WebAsset, WebNotebook, WebNotebookBlock, WorkspaceQueryConnection } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import {
+  VirtualDataTable,
+  type VirtualTableRenderMeasurement,
+} from "@/components/virtual-data-table";
 
 import { hasAuthoringDragItem, readAuthoringDragItem } from "./authoring-drag";
 import { CHART_TYPE_OPTIONS, ChartTypePicker, type ChartType } from "./chart-type-picker";
@@ -153,6 +159,7 @@ import { MissingPythonDepsBanner } from "./missing-python-deps";
 import { NotebookAgentChat } from "./notebook-agent-panel";
 import { NotebookBlockTypePicker } from "./notebook-block-type-picker";
 import { NotebookControlBlock } from "./notebook-control-block";
+import type { AuthoredControlDataset } from "./authored-control";
 import { MarkdownEditor } from "./markdown-editor";
 import { NewNotebookDialog } from "./new-notebook-dialog";
 import { buildNotebookSchemaTables, NotebookCellMonaco } from "./notebook-cell-editor";
@@ -160,13 +167,12 @@ import { NotebookVizRenderer } from "./notebook-viz";
 import { NotebookVisualizationBlockCard } from "./notebook-visualization-block";
 import { NotebookParametersDialog } from "./notebook-parameters-dialog";
 import { LoadStreamPicker } from "./load-stream-picker";
-import { PageHeader, AppPage, AppPanel, SimpleTable } from "./app-primitives";
+import { PageHeader, AppPage, AppPanel } from "./app-primitives";
 import {
   semanticTypeForPhysicalType,
   visualizationSuggestionForType,
 } from "./presentation-builder/presentation-builder-model";
 
-const RESULT_DISPLAY_CAP = 50;
 // How long to wait after the last keystroke before auto-committing a cell's
 // draft. The save marks the cell stale on the server, which drives recompute.
 const AUTO_COMMIT_DEBOUNCE_MS = 350;
@@ -188,6 +194,32 @@ type NotebookBlockCreateOptions = {
   controlType?: AuthoredControlType;
 };
 type NotebookCellDeleteTarget = { id: string; name: string };
+type NotebookControlOptionSnapshot = {
+  signature: string;
+  result: PresentationDatasetResult;
+  refreshedAt: number;
+};
+
+function notebookControlOptionSignature(control: NotebookParameter): string {
+  return JSON.stringify({
+    type: control.type,
+    dataset: control.options?.dataset?.trim() ?? "",
+    valueField: control.options?.value_field?.trim() ?? "",
+    labelField: control.options?.label_field?.trim() ?? "",
+  });
+}
+
+function notebookControlProducer(
+  control: NotebookParameter,
+  cells: WebAsset[],
+): WebAsset | undefined {
+  const dataset = control.options?.dataset?.trim();
+  if (!dataset) return undefined;
+  return (
+    cells.find((cell) => cell.cell_id === dataset) ??
+    cells.find((cell) => cell.name.toLowerCase() === dataset.toLowerCase())
+  );
+}
 
 function notebookBlockKey(block: WebNotebookBlock, index: number) {
   if (block.cell) {
@@ -412,6 +444,13 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       window.localStorage.getItem("renart-notebook-autorecompute") !== "off",
   );
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({});
+  const [controlOptionSnapshots, setControlOptionSnapshots] = useState<
+    Record<string, NotebookControlOptionSnapshot>
+  >({});
+  const [loadingControlOptions, setLoadingControlOptions] = useState<Set<string>>(new Set());
+  const controlOptionRequestSequenceRef = useRef(0);
+  const controlOptionRequestTokensRef = useRef<Map<string, number>>(new Map());
+  const controlOptionRuntimeEventRef = useRef(notebookRuntimeEvent);
   const wideNotebookTools = useWideNotebookTools();
   useEffect(() => {
     window.localStorage.setItem("renart-notebook-autorecompute", autoRecompute ? "on" : "off");
@@ -442,6 +481,10 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     setVisualizationInspectorOpen(false);
     setVisualizationInspectorTarget(null);
     setParameterValues({});
+    setControlOptionSnapshots({});
+    setLoadingControlOptions(new Set());
+    controlOptionRequestTokensRef.current.clear();
+    controlOptionRuntimeEventRef.current = notebookRuntimeEventRef.current;
     parameterValuesRef.current = {};
     if (parameterSaveTimerRef.current !== null) {
       window.clearTimeout(parameterSaveTimerRef.current);
@@ -770,6 +813,97 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     }
     return map;
   }, [results]);
+
+  const controlDatasets = useMemo<AuthoredControlDataset[]>(
+    () =>
+      (notebook?.cells ?? []).map((cell) => {
+        const result = cell.cell_id ? results[cell.cell_id] : undefined;
+        const columns =
+          result?.status === "ok" && result.columns.length > 0
+            ? result.columns.map((name, index) => ({
+                name,
+                detail: result.column_types?.[index] || undefined,
+              }))
+            : (cell.columns ?? []).map((column) => ({
+                name: column.name,
+                detail: column.type || undefined,
+              }));
+        return {
+          id: cell.cell_id || cell.name,
+          label: cell.name,
+          columns,
+        };
+      }),
+    [notebook?.cells, results],
+  );
+
+  const refreshControlOptions = useCallback(
+    async (control: NotebookParameter, options: { silent?: boolean } = {}) => {
+      if (!control.options?.dataset?.trim() || !control.options.value_field?.trim()) return;
+
+      const requestKey = `${notebookId}\u0000${control.id}`;
+      const requestToken = ++controlOptionRequestSequenceRef.current;
+      controlOptionRequestTokensRef.current.set(requestKey, requestToken);
+      setLoadingControlOptions((current) => new Set(current).add(control.id));
+      if (!options.silent) setActionError("");
+
+      try {
+        const result = await refreshNotebookControlOptions(notebookId, control.id);
+        if (controlOptionRequestTokensRef.current.get(requestKey) !== requestToken) return;
+        setControlOptionSnapshots((current) => ({
+          ...current,
+          [control.id]: {
+            signature: notebookControlOptionSignature(control),
+            result,
+            refreshedAt: Date.now(),
+          },
+        }));
+      } catch (error) {
+        if (
+          !options.silent &&
+          controlOptionRequestTokensRef.current.get(requestKey) === requestToken
+        ) {
+          setActionError(String(error));
+        }
+      } finally {
+        if (controlOptionRequestTokensRef.current.get(requestKey) === requestToken) {
+          controlOptionRequestTokensRef.current.delete(requestKey);
+          setLoadingControlOptions((current) => {
+            const next = new Set(current);
+            next.delete(control.id);
+            return next;
+          });
+        }
+      }
+    },
+    [notebookId],
+  );
+
+  // Runtime SSE messages contain result deltas. Refresh dataset-backed control
+  // snapshots only when their producer publishes a new successful result; an
+  // initial runtime read or a state-only event must never issue a query.
+  useEffect(() => {
+    const previous = controlOptionRuntimeEventRef.current;
+    controlOptionRuntimeEventRef.current = notebookRuntimeEvent;
+    if (!notebookRuntimeEvent || notebookRuntimeEvent.notebook_id !== notebookId) {
+      return;
+    }
+
+    const changedSuccessfulCells = new Set<string>();
+    for (const [cellID, result] of Object.entries(notebookRuntimeEvent.results ?? {})) {
+      if (result.status === "ok" && previous?.results?.[cellID] !== result) {
+        changedSuccessfulCells.add(cellID);
+      }
+    }
+    if (changedSuccessfulCells.size === 0) return;
+
+    for (const control of notebook?.parameters ?? []) {
+      const producer = notebookControlProducer(control, notebook?.cells ?? []);
+      if (producer?.cell_id && changedSuccessfulCells.has(producer.cell_id)) {
+        void refreshControlOptions(control, { silent: true });
+      }
+    }
+  }, [notebook, notebookId, notebookRuntimeEvent, refreshControlOptions]);
 
   const mutateWithResult = useCallback(async (operation: () => Promise<WebNotebook>) => {
     setActionError("");
@@ -1269,50 +1403,66 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const unplacedControls = (notebook.parameters ?? []).filter(
     (parameter) => !placedControlIDs.has(parameter.id),
   );
-  const renderNotebookControl = (control: NotebookParameter, entering = false) => (
-    <div
-      key={`control:${control.id}`}
-      data-notebook-control-id={control.id}
-      data-notebook-block-entering={entering || undefined}
-      className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
-    >
-      <NotebookControlBlock
-        control={control}
-        value={parameterValues[control.id] ?? control.default}
-        busy={busy}
-        selected={selectedControlID === control.id}
-        inspectorTarget={visualizationInspectorTarget}
-        onSelect={() => selectControl(control.id)}
-        onCloseInspector={() => {
-          setSelectedControlID(null);
-          setVisualizationInspectorOpen(false);
-        }}
-        onValueChange={(value) => queueParameterValue(control.id, value)}
-        onSave={async (nextControl) => {
-          const updated = await mutateWithResult(() =>
-            updateNotebookControl(notebookId, control.id, nextControl),
-          );
-          if (!updated) return false;
-          if (nextControl.id !== control.id) {
-            setParameterValues((current) => {
-              const next = { ...current };
-              delete next[control.id];
-              next[nextControl.id] = nextControl.default;
-              parameterValuesRef.current = next;
-              return next;
-            });
-            setSelectedControlID(nextControl.id);
-          }
-          return true;
-        }}
-        onDelete={async () => {
-          await mutateWithResult(() => deleteNotebookControl(notebookId, control.id));
-          setSelectedControlID(null);
-          setVisualizationInspectorOpen(false);
-        }}
-      />
-    </div>
-  );
+  const renderNotebookControl = (control: NotebookParameter, entering = false) => {
+    const snapshot = controlOptionSnapshots[control.id];
+    const optionResult =
+      snapshot?.signature === notebookControlOptionSignature(control) ? snapshot.result : undefined;
+    const producer = notebookControlProducer(control, notebook.cells);
+    const producerResult = producer?.cell_id ? results[producer.cell_id] : undefined;
+    const optionsStale = Boolean(
+      !producer?.cell_id || staleCells.has(producer.cell_id) || producerResult?.status !== "ok",
+    );
+
+    return (
+      <div
+        key={`control:${control.id}`}
+        data-notebook-control-id={control.id}
+        data-notebook-block-entering={entering || undefined}
+        className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+      >
+        <NotebookControlBlock
+          control={control}
+          value={parameterValues[control.id] ?? control.default}
+          busy={busy}
+          datasets={controlDatasets}
+          optionResult={optionResult}
+          optionsLoading={loadingControlOptions.has(control.id)}
+          optionsStale={optionsStale}
+          selected={selectedControlID === control.id}
+          inspectorTarget={visualizationInspectorTarget}
+          onSelect={() => selectControl(control.id)}
+          onCloseInspector={() => {
+            setSelectedControlID(null);
+            setVisualizationInspectorOpen(false);
+          }}
+          onValueChange={(value) => queueParameterValue(control.id, value)}
+          onRefreshOptions={() => void refreshControlOptions(control)}
+          onSave={async (nextControl) => {
+            const updated = await mutateWithResult(() =>
+              updateNotebookControl(notebookId, control.id, nextControl),
+            );
+            if (!updated) return false;
+            if (nextControl.id !== control.id) {
+              setParameterValues((current) => {
+                const next = { ...current };
+                delete next[control.id];
+                next[nextControl.id] = nextControl.default;
+                parameterValuesRef.current = next;
+                return next;
+              });
+              setSelectedControlID(nextControl.id);
+            }
+            return true;
+          }}
+          onDelete={async () => {
+            await mutateWithResult(() => deleteNotebookControl(notebookId, control.id));
+            setSelectedControlID(null);
+            setVisualizationInspectorOpen(false);
+          }}
+        />
+      </div>
+    );
+  };
   const agentRunning =
     notebookAgentEvent?.status === "running" || notebookAgentEvent?.status === "cancelling";
   const renderNotebookTools = (onClose?: () => void) => (
@@ -1443,7 +1593,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                       }
                     >
                       <RotateCw />
-                      Run all, refresh imports
+                      Refresh sources and run all
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => {
@@ -2523,24 +2673,26 @@ function NotebookAddDataDialog({
                 <>
                   <div className="grid gap-1.5">
                     <Label htmlFor="notebook-source-connection">Source connection</Label>
-                    <Select
+                    <ConnectionSelect
                       value={connection}
+                      groups={[
+                        {
+                          label: "Query connections",
+                          options: queryConnections.map((candidate) => ({
+                            value: candidate.name,
+                            label: candidate.name,
+                            connectionType: candidate.connection_type,
+                            detail: candidate.dialect,
+                          })),
+                        },
+                      ]}
                       onValueChange={(value) => {
                         setConnection(value);
                         setRelation("");
                       }}
-                    >
-                      <SelectTrigger id="notebook-source-connection" className="w-full">
-                        <SelectValue placeholder="Choose a connection" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {queryConnections.map((candidate) => (
-                          <SelectItem key={candidate.name} value={candidate.name}>
-                            {candidate.name} · {candidate.connection_type}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      id="notebook-source-connection"
+                      className="w-full"
+                    />
                   </div>
 
                   <div className="grid min-w-0 gap-1.5">
@@ -2598,25 +2750,33 @@ function NotebookAddDataDialog({
             <TabsContent value="file" className="grid min-w-0 gap-4 pt-2">
               <div className="grid gap-1.5">
                 <Label htmlFor="notebook-file-connection">Location</Label>
-                <Select
+                <ConnectionSelect
                   value={fileConnection}
+                  groups={[
+                    {
+                      label: "File locations",
+                      options: [
+                        {
+                          value: "__local__",
+                          label: "Workspace file",
+                          connectionType: "file",
+                          detail: "This Git workspace",
+                        },
+                        ...storageConnections.map(([name, type]) => ({
+                          value: name,
+                          label: name,
+                          connectionType: type,
+                        })),
+                      ],
+                    },
+                  ]}
                   onValueChange={(value) => {
                     setFileConnection(value);
                     setFileURI("");
                   }}
-                >
-                  <SelectTrigger id="notebook-file-connection" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__local__">Workspace file</SelectItem>
-                    {storageConnections.map(([name, type]) => (
-                      <SelectItem key={name} value={name}>
-                        {name} · {type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  id="notebook-file-connection"
+                  className="w-full"
+                />
               </div>
               <div className="grid min-w-0 gap-1.5">
                 <Label htmlFor="notebook-file-uri">File or object</Label>
@@ -2891,6 +3051,140 @@ function NotebookSnapshotSummary({
   );
 }
 
+function formatNotebookDuration(milliseconds: number | undefined) {
+  if (milliseconds === undefined || !Number.isFinite(milliseconds)) return "Unknown";
+  if (milliseconds < 1) return "<1 ms";
+  if (milliseconds < 1_000) {
+    return `${milliseconds < 10 ? milliseconds.toFixed(1) : Math.round(milliseconds)} ms`;
+  }
+  return `${(milliseconds / 1_000).toFixed(2)} s`;
+}
+
+function NotebookPerformanceDetails({
+  result,
+  renderMeasurement,
+}: {
+  result: NotebookCellRunResult;
+  renderMeasurement?: VirtualTableRenderMeasurement;
+}) {
+  const metrics: Array<[string, string]> = [];
+  if (result.performance?.request_total_ms !== undefined) {
+    metrics.push(["Request total", formatNotebookDuration(result.performance.request_total_ms)]);
+  }
+  if (result.performance?.request_setup_ms !== undefined) {
+    metrics.push(["Request setup", formatNotebookDuration(result.performance.request_setup_ms)]);
+  }
+  if (result.performance?.batch_run_ms !== undefined) {
+    metrics.push(["Batch execution", formatNotebookDuration(result.performance.batch_run_ms)]);
+  }
+  if (result.performance?.session_open_ms !== undefined) {
+    metrics.push(["Session open", formatNotebookDuration(result.performance.session_open_ms)]);
+  }
+  metrics.push(["Cell execution", formatNotebookDuration(result.duration_ms)]);
+  if (result.performance?.materialize_ms !== undefined) {
+    metrics.push(["Materialize", formatNotebookDuration(result.performance.materialize_ms)]);
+  }
+  if (result.performance?.preview_query_ms !== undefined) {
+    metrics.push(["Preview query", formatNotebookDuration(result.performance.preview_query_ms)]);
+  }
+  if (result.performance?.metadata_write_ms !== undefined) {
+    metrics.push(["Run metadata", formatNotebookDuration(result.performance.metadata_write_ms)]);
+  }
+  if (result.performance?.runtime_sync_ms !== undefined) {
+    metrics.push(["Runtime sync", formatNotebookDuration(result.performance.runtime_sync_ms)]);
+  }
+  if (renderMeasurement) {
+    metrics.push(["Preview render", formatNotebookDuration(renderMeasurement.durationMs)]);
+    metrics.push([
+      "Mounted rows",
+      `${renderMeasurement.renderedRows.toLocaleString()} of ${renderMeasurement.totalRows.toLocaleString()}`,
+    ]);
+  }
+  if (result.performance?.transfer_bytes) {
+    metrics.push(["Transferred", formatNotebookBytes(result.performance.transfer_bytes)]);
+  }
+  if (result.performance?.session_bytes) {
+    metrics.push(["Notebook storage", formatNotebookBytes(result.performance.session_bytes)]);
+  }
+  if (result.performance?.python_startup_ms !== undefined) {
+    metrics.push(["Python startup", formatNotebookDuration(result.performance.python_startup_ms)]);
+  }
+
+  return (
+    <HoverCard closeDelay={100} openDelay={200}>
+      <HoverCardTrigger asChild>
+        <Button aria-label="Show local performance measurements" size="xs" variant="ghost">
+          <Gauge data-icon="inline-start" />
+          Performance
+        </Button>
+      </HoverCardTrigger>
+      <HoverCardContent align="end" className="w-64 p-3">
+        <p className="text-sm font-medium">Local performance</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Cell timings plus shared request measurements observed by this Renart process and browser.
+        </p>
+        <dl className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1.5 text-xs">
+          {metrics.map(([label, value]) => (
+            <Fragment key={label}>
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd className="text-right font-mono tabular-nums">{value}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
+function NotebookResultPreview({
+  cellName,
+  result,
+}: {
+  cellName: string;
+  result: NotebookCellRunResult;
+}) {
+  const [renderMeasurement, setRenderMeasurement] = useState<VirtualTableRenderMeasurement>();
+  const rows = useMemo(
+    () =>
+      result.rows.map((row) =>
+        Object.fromEntries(row.map((value, index) => [`column_${index}`, value])),
+      ),
+    [result.rows],
+  );
+  const columnKeys = useMemo(
+    () => result.columns.map((_, index) => `column_${index}`),
+    [result.columns],
+  );
+  useEffect(() => setRenderMeasurement(undefined), [rows]);
+
+  const rowsShown = result.rows.length;
+  const truncated = result.total_rows > rowsShown;
+
+  return (
+    <div className="overflow-hidden rounded-lg border">
+      <VirtualDataTable
+        ariaLabel={`${cellName} result preview`}
+        columnKeys={columnKeys}
+        columns={result.columns}
+        frameless
+        height={288}
+        onRenderMeasured={setRenderMeasurement}
+        rows={rows}
+        scrollKey={`notebook:${result.cell_id}:preview`}
+        viewportClassName="max-h-72"
+      />
+      <div className="flex min-h-8 items-center justify-between gap-2 border-t bg-muted/30 px-2 text-[11px] text-muted-foreground">
+        <span>
+          {truncated
+            ? `showing ${rowsShown.toLocaleString()} of ${result.total_rows.toLocaleString()} rows`
+            : `${rowsShown.toLocaleString()} rows`}
+        </span>
+        <NotebookPerformanceDetails result={result} renderMeasurement={renderMeasurement} />
+      </div>
+    </div>
+  );
+}
+
 function isDuckDBNotebookConnection(
   connection: string,
   assetType: string | undefined,
@@ -2980,7 +3274,6 @@ function NotebookSourceCard({
     source.kind === "http"
       ? `${source.request?.method || "GET"} ${source.request?.url || ""}`
       : source.uri || "";
-  const rowsShown = Math.min(result?.rows?.length ?? 0, RESULT_DISPLAY_CAP);
   const requiresImportReview =
     notebookSourceRequiresImportReview(cell, queryConnections) && (!result?.snapshot || stale);
 
@@ -3152,21 +3445,7 @@ function NotebookSourceCard({
           </div>
         ) : null}
         {result?.status === "ok" && result.columns.length > 0 ? (
-          <div className="overflow-hidden rounded-lg border">
-            <SimpleTable
-              ariaLabel={`${cell.name} result preview`}
-              viewportClassName="max-h-72"
-              columns={result.columns}
-              rows={result.rows
-                .slice(0, RESULT_DISPLAY_CAP)
-                .map((row) => row.map((value) => (value == null ? "" : String(value))))}
-            />
-            {result.total_rows > rowsShown ? (
-              <div className="border-t bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
-                showing {rowsShown} of {result.total_rows} rows
-              </div>
-            ) : null}
-          </div>
+          <NotebookResultPreview cellName={cell.name} result={result} />
         ) : null}
       </DelimitedCardContent>
     </AppPanel>
@@ -3330,7 +3609,6 @@ function NotebookCellCard({
   }, [autoCommit, draft]);
 
   const vizDiagnostics = result?.viz_diagnostics ?? [];
-  const rowsShown = Math.min(result?.rows?.length ?? 0, RESULT_DISPLAY_CAP);
   // Only surface staleness for cells the user must act on. A cell auto-recompute
   // is about to refresh is left unmarked — flagging it would just flicker.
   const showStale = stale && !pendingAuto;
@@ -3383,9 +3661,40 @@ function NotebookCellCard({
           {isPythonCell ? "python" : "sql"}
         </span>
         {!isPythonCell && queryConnections.length > 0 ? (
-          <Select
+          <ConnectionSelect
             value={sourceConnection || "__local__"}
+            groups={[
+              {
+                label: "Execution context",
+                options: [
+                  {
+                    value: "__local__",
+                    label: "Local notebook DuckDB",
+                    connectionType: "duckdb",
+                    detail: "Notebook session",
+                  },
+                  ...(sourceConnection &&
+                  !queryConnections.some((connection) => connection.name === sourceConnection)
+                    ? [
+                        {
+                          value: sourceConnection,
+                          label: sourceConnection,
+                          badge: "unavailable",
+                          badgeVariant: "destructive" as const,
+                        },
+                      ]
+                    : []),
+                  ...queryConnections.map((connection) => ({
+                    value: connection.name,
+                    label: connection.name,
+                    connectionType: connection.connection_type,
+                    detail: connection.dialect,
+                  })),
+                ],
+              },
+            ]}
             disabled={busy || sourceChanging}
+            loading={sourceChanging}
             onValueChange={(value) => {
               const connection = value === "__local__" ? undefined : value;
               setSourceChanging(true);
@@ -3395,27 +3704,11 @@ function NotebookCellCard({
                 row_limit: connection && snapshotMode === "sample" ? snapshotRowLimit : undefined,
               }).finally(() => setSourceChanging(false));
             }}
-          >
-            <SelectTrigger size="sm" aria-label="Source connection" className="max-w-52">
-              {sourceChanging ? <Loader2 className="animate-spin" /> : <Database />}
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-              <SelectGroup>
-                <SelectLabel>Execution context</SelectLabel>
-                <SelectItem value="__local__">Local notebook DuckDB</SelectItem>
-                {sourceConnection &&
-                !queryConnections.some((connection) => connection.name === sourceConnection) ? (
-                  <SelectItem value={sourceConnection}>{sourceConnection} (unavailable)</SelectItem>
-                ) : null}
-                {queryConnections.map((connection) => (
-                  <SelectItem key={connection.name} value={connection.name}>
-                    {connection.name}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            size="sm"
+            ariaLabel="Source connection"
+            className="max-w-52"
+            contentAlign="start"
+          />
         ) : null}
         {sourceConnection ? (
           <Select
@@ -3618,25 +3911,7 @@ function NotebookCellCard({
               <NotebookVizRenderer result={result} />
             </div>
           ) : (
-            <div className="overflow-hidden rounded-lg border">
-              <SimpleTable
-                ariaLabel={`${cell.name} result preview`}
-                viewportClassName="max-h-72"
-                columns={result.columns}
-                rows={result.rows
-                  .slice(0, RESULT_DISPLAY_CAP)
-                  .map((row) =>
-                    row.map((value) =>
-                      value === null || value === undefined ? "" : String(value),
-                    ),
-                  )}
-              />
-              {result.rows.length > rowsShown || result.total_rows > result.rows.length ? (
-                <div className="border-t bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
-                  showing {rowsShown} of {result.total_rows} rows
-                </div>
-              ) : null}
-            </div>
+            <NotebookResultPreview cellName={cell.name} result={result} />
           )
         ) : null}
       </DelimitedCardContent>

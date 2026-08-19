@@ -74,7 +74,10 @@ test.describe("app presentations live", () => {
       await expect(inspector.getByLabel("Dataset ID")).toHaveValue("dataset");
       await expectInspectorToFit(page);
       await inspector.getByRole("button", { name: "Close" }).click();
-      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByRole("button", { name: "Open builder tools" }).click();
+      const builderTools = page.getByRole("dialog", { name: "Builder tools" });
+      await builderTools.getByRole("tab", { name: "Add", exact: true }).click();
+      await builderTools.getByRole("button", { name: "Add visualization", exact: true }).click();
     } else {
       await page.getByRole("button", { name: "Add dataset", exact: true }).first().click();
       await expect(page.getByLabel("Dataset ID")).toHaveValue("dataset");
@@ -175,7 +178,7 @@ test.describe("app presentations live", () => {
     expect(shortcutSaved.document.artifact.title).toBe("Keyboard-saved title");
 
     await page.getByLabel("Presentation title").fill("Unsaved title");
-    await page.getByRole("link", { name: "Dashboards", exact: true }).first().click();
+    await page.getByRole("link", { name: "Back to dashboards", exact: true }).click();
     const leaveDialog = page.getByRole("dialog", { name: "Leave this unsaved draft?" });
     await expect(leaveDialog).toBeVisible();
     await leaveDialog.getByRole("button", { name: "Keep editing" }).click();
@@ -552,12 +555,16 @@ layout:
       const inspector = page.getByRole("dialog", { name: "Inspector" });
       await expect(inspector.getByLabel("Dataset ID")).toHaveValue("dataset");
       await inspector.getByRole("button", { name: "Close" }).click();
-      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByRole("button", { name: "Open builder tools" }).click();
+      const addTools = page.getByRole("dialog", { name: "Report outline" });
+      await addTools.getByRole("tab", { name: "Add", exact: true }).click();
+      await addTools.getByRole("button", { name: "Add visualization", exact: true }).click();
     } else {
       await page.getByRole("tab", { name: "Data" }).click();
       await page.getByRole("button", { name: "Add dataset", exact: true }).click();
       await expect(page.getByLabel("Dataset ID")).toHaveValue("dataset");
-      await page.getByRole("button", { name: "Add", exact: true }).click();
+      await page.getByRole("tab", { name: "Add", exact: true }).click();
+      await page.getByRole("button", { name: "Add visualization", exact: true }).click();
     }
     await page
       .getByRole("dialog")

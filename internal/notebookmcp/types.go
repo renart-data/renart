@@ -49,6 +49,30 @@ type CatalogSourceSuggestion struct {
 	ApprovalRequired bool   `json:"approval_required"`
 }
 
+// CatalogMaterialization describes the declared persistence behavior without
+// trying to infer higher-level semantics such as "historical". Agents can
+// combine this policy with descriptions, tags, and lineage for source choice.
+type CatalogMaterialization struct {
+	Type            string   `json:"type,omitempty"`
+	Strategy        string   `json:"strategy,omitempty"`
+	IncrementalKey  string   `json:"incremental_key,omitempty"`
+	PartitionBy     string   `json:"partition_by,omitempty"`
+	ClusterBy       []string `json:"cluster_by,omitempty"`
+	TimeGranularity string   `json:"time_granularity,omitempty"`
+}
+
+// CatalogLineageRef is a credential-free, path-free reference to one directly
+// connected workspace artifact or component.
+type CatalogLineageRef struct {
+	ID          string `json:"id"`
+	Kind        string `json:"kind"`
+	ArtifactID  string `json:"artifact_id"`
+	ComponentID string `json:"component_id,omitempty"`
+	Title       string `json:"title"`
+	ParentTitle string `json:"parent_title,omitempty"`
+	Relation    string `json:"relation,omitempty"`
+}
+
 type CatalogMatch struct {
 	ID                 string                   `json:"id"`
 	Kind               string                   `json:"kind"`
@@ -58,6 +82,8 @@ type CatalogMatch struct {
 	WorkspaceID        string                   `json:"workspace_id,omitempty"`
 	Title              string                   `json:"title"`
 	ParentTitle        string                   `json:"parent_title,omitempty"`
+	Description        string                   `json:"description,omitempty"`
+	Tags               []string                 `json:"tags,omitempty"`
 	Connection         string                   `json:"connection,omitempty"`
 	ConnectionType     string                   `json:"connection_type,omitempty"`
 	AssetType          string                   `json:"asset_type,omitempty"`
@@ -65,6 +91,12 @@ type CatalogMatch struct {
 	Capabilities       []string                 `json:"capabilities,omitempty"`
 	Columns            []ResultColumn           `json:"columns,omitempty"`
 	ColumnCount        int                      `json:"column_count"`
+	Materialization    *CatalogMaterialization  `json:"materialization,omitempty"`
+	Upstreams          []CatalogLineageRef      `json:"upstreams,omitempty"`
+	Downstreams        []CatalogLineageRef      `json:"downstreams,omitempty"`
+	UpstreamCount      int                      `json:"upstream_count"`
+	DownstreamCount    int                      `json:"downstream_count"`
+	LineageTruncated   bool                     `json:"lineage_truncated,omitempty"`
 	DataSourceEligible bool                     `json:"data_source_eligible"`
 	SuggestedSource    *CatalogSourceSuggestion `json:"suggested_source,omitempty"`
 }

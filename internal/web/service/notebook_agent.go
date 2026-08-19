@@ -20,6 +20,7 @@ const (
 	maxNotebookAgentMessages     = 100
 	maxNotebookAgentActivities   = 200
 	maxNotebookAgentTextBytes    = 256 << 10
+	maxNotebookAgentReferences   = 12
 	notebookAgentTurnTimeout     = 30 * time.Minute
 )
 
@@ -38,12 +39,31 @@ type NotebookAgentProvider struct {
 }
 
 type NotebookAgentMessage struct {
-	ID        string `json:"id"`
-	TurnID    string `json:"turn_id"`
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"created_at"`
+	ID         string                   `json:"id"`
+	TurnID     string                   `json:"turn_id"`
+	Role       string                   `json:"role"`
+	Content    string                   `json:"content"`
+	References []NotebookAgentReference `json:"references,omitempty"`
+	Status     string                   `json:"status"`
+	CreatedAt  string                   `json:"created_at"`
+}
+
+// NotebookAgentReferenceRequest is the untrusted address supplied by the
+// browser. Labels and connection/type context are always resolved by the
+// server from the current filesystem-backed workspace state.
+type NotebookAgentReferenceRequest struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+
+// NotebookAgentReference is a bounded, credential-free context attachment for
+// one user message. Cell references are restricted to the selected notebook;
+// asset references may address pipeline assets in the current workspace.
+type NotebookAgentReference struct {
+	Kind   string `json:"kind"`
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Detail string `json:"detail,omitempty"`
 }
 
 type NotebookAgentActivity struct {
@@ -80,9 +100,10 @@ type NotebookAgentState struct {
 }
 
 type StartNotebookAgentTurnRequest struct {
-	Provider string            `json:"provider"`
-	Mode     NotebookAgentMode `json:"mode"`
-	Message  string            `json:"message"`
+	Provider   string                          `json:"provider"`
+	Mode       NotebookAgentMode               `json:"mode"`
+	Message    string                          `json:"message"`
+	References []NotebookAgentReferenceRequest `json:"references,omitempty"`
 }
 
 type NotebookAgentStreamEvent struct {
@@ -113,14 +134,15 @@ type NotebookAgentProviderRunResult struct {
 }
 
 type NotebookAgentDependencies struct {
-	WorkspaceRoot    string
-	RenartExecutable string
-	ValidateNotebook func(notebookID string) *APIError
-	PublishEvent     func(payload any)
-	LookPath         func(file string) (string, error)
-	RunProvider      func(context.Context, NotebookAgentProviderRunRequest, func(NotebookAgentStreamEvent)) (NotebookAgentProviderRunResult, error)
-	Now              func() time.Time
-	NewID            func() string
+	WorkspaceRoot     string
+	RenartExecutable  string
+	ValidateNotebook  func(notebookID string) *APIError
+	ResolveReferences func(notebookID string, references []NotebookAgentReferenceRequest) ([]NotebookAgentReference, *APIError)
+	PublishEvent      func(payload any)
+	LookPath          func(file string) (string, error)
+	RunProvider       func(context.Context, NotebookAgentProviderRunRequest, func(NotebookAgentStreamEvent)) (NotebookAgentProviderRunResult, error)
+	Now               func() time.Time
+	NewID             func() string
 }
 
 type notebookAgentConversation struct {
@@ -214,6 +236,16 @@ func (s *NotebookAgentService) StartTurn(notebookID string, request StartNoteboo
 	if len(message) > maxNotebookAgentMessageBytes {
 		return NotebookAgentSnapshot{}, badRequestError("notebook_agent_message_too_large", fmt.Sprintf("agent messages may not exceed %d bytes", maxNotebookAgentMessageBytes))
 	}
+	if len(request.References) > maxNotebookAgentReferences {
+		return NotebookAgentSnapshot{}, badRequestError(
+			"notebook_agent_too_many_references",
+			fmt.Sprintf("agent messages may reference at most %d cells or assets", maxNotebookAgentReferences),
+		)
+	}
+	references, apiErr := s.resolveReferences(notebookID, request.References)
+	if apiErr != nil {
+		return NotebookAgentSnapshot{}, apiErr
+	}
 	if mode != NotebookAgentModeAsk && mode != NotebookAgentModeEdit {
 		return NotebookAgentSnapshot{}, badRequestError("notebook_agent_mode_invalid", "agent mode must be ask or edit")
 	}
@@ -265,7 +297,7 @@ func (s *NotebookAgentService) StartTurn(notebookID string, request StartNoteboo
 	conversation.snapshot.StartedAt = now.Format(time.RFC3339Nano)
 	conversation.snapshot.FinishedAt = ""
 	conversation.snapshot.Messages = append(conversation.snapshot.Messages, NotebookAgentMessage{
-		ID: s.deps.NewID(), TurnID: turnID, Role: "user", Content: message,
+		ID: s.deps.NewID(), TurnID: turnID, Role: "user", Content: message, References: references,
 		Status: "complete", CreatedAt: now.Format(time.RFC3339Nano),
 	})
 	conversation.snapshot.Messages = trimNotebookAgentMessages(conversation.snapshot.Messages)
@@ -509,6 +541,22 @@ func (s *NotebookAgentService) validateNotebook(notebookID string) *APIError {
 	return nil
 }
 
+func (s *NotebookAgentService) resolveReferences(
+	notebookID string,
+	references []NotebookAgentReferenceRequest,
+) ([]NotebookAgentReference, *APIError) {
+	if len(references) == 0 {
+		return nil, nil
+	}
+	if s.deps.ResolveReferences == nil {
+		return nil, badRequestError(
+			"notebook_agent_references_unavailable",
+			"cell and asset references are unavailable for this notebook",
+		)
+	}
+	return s.deps.ResolveReferences(notebookID, references)
+}
+
 func (s *NotebookAgentService) conversationLocked(notebookID string) *notebookAgentConversation {
 	conversation := s.items[notebookID]
 	if conversation == nil {
@@ -539,6 +587,12 @@ func cloneNotebookAgentSnapshot(snapshot NotebookAgentSnapshot) NotebookAgentSna
 	clone := snapshot
 	clone.Messages = make([]NotebookAgentMessage, len(snapshot.Messages))
 	copy(clone.Messages, snapshot.Messages)
+	for index := range clone.Messages {
+		clone.Messages[index].References = append(
+			[]NotebookAgentReference(nil),
+			snapshot.Messages[index].References...,
+		)
+	}
 	clone.Activities = make([]NotebookAgentActivity, len(snapshot.Activities))
 	copy(clone.Activities, snapshot.Activities)
 	return clone
@@ -584,7 +638,7 @@ func notebookAgentRunKey(provider string, mode NotebookAgentMode) string {
 func buildNotebookAgentPrompt(notebookID string, mode NotebookAgentMode, messages []NotebookAgentMessage, resumed bool) string {
 	capability := "Inspect the selected notebook and answer the user's question. You may search the credential-free workspace catalog when broader metadata context is relevant. Do not prepare or apply changes and do not run cells."
 	if mode == NotebookAgentModeEdit {
-		capability = "Complete the requested notebook task end to end. Inspect first and search the workspace catalog when the task needs existing data. Prepare and validate semantic changes, then apply them. Follow the prepare tool's dotted operation-kind enum exactly (for example visualization.create or cell.update); never probe guessed operation names or batch speculative retries. For visualizations, follow the typed prepare-tool schema exactly: this is Renart's definition grammar, not Vega, and uses version 1, encoding (singular), and array-valued y encodings. A catalog match may include a suggested sample source recipe: use that recipe through cell.create, and do not widen it to a full snapshot unless the user explicitly asks. A newly added non-DuckDB source can be configured by the agent, but its first import or explicit refresh must be reviewed and run by the user in Renart. If a tool fails, use its returned valid values before one corrected retry. Run only the cells needed to verify the result, and report what changed or what awaits source approval."
+		capability = "Complete the requested notebook task end to end. Inspect first and search the workspace catalog when the task needs existing data. When choosing among catalog sources, compare their descriptions, tags, direct lineage, and declared materialization policy: prefer retained append, merge, or replay-safe window history for historical analysis, and do not mistake a truncate-and-replace shortlist or current view for history. Prepare and validate semantic changes, then apply them. Follow the prepare tool's dotted operation-kind enum exactly (for example visualization.create or cell.update); never probe guessed operation names or batch speculative retries. For visualizations, follow the typed prepare-tool schema exactly: this is Renart's definition grammar, not Vega, and uses version 1, encoding (singular), and array-valued y encodings. A catalog match may include a suggested sample source recipe: use that recipe through cell.create, and do not widen it to a full snapshot unless the user explicitly asks. A newly added non-DuckDB source can be configured by the agent, but its first import or explicit refresh must be reviewed and run by the user in Renart. If a tool fails, use its returned valid values before one corrected retry. Run only the cells needed to verify the result, and report what changed or what awaits source approval."
 	}
 	var history strings.Builder
 	start := 0
@@ -597,7 +651,21 @@ func buildNotebookAgentPrompt(notebookID string, mode NotebookAgentMode, message
 		if strings.TrimSpace(message.Content) == "" {
 			continue
 		}
-		fmt.Fprintf(&history, "%s: %s\n\n", strings.ToUpper(message.Role), truncateNotebookAgentText(message.Content, 16<<10))
+		fmt.Fprintf(&history, "%s: %s\n", strings.ToUpper(message.Role), truncateNotebookAgentText(message.Content, 16<<10))
+		if len(message.References) > 0 {
+			history.WriteString("REFERENCED CONTEXT (resolve these exact targets with Renart tools before acting):\n")
+			for _, reference := range message.References {
+				fmt.Fprintf(
+					&history,
+					"- %s %q (id=%q%s)\n",
+					reference.Kind,
+					reference.Label,
+					reference.ID,
+					notebookAgentReferenceDetail(reference.Detail),
+				)
+			}
+		}
+		history.WriteString("\n")
 	}
 	contextLabel := "Conversation"
 	if resumed {
@@ -611,6 +679,14 @@ Capability for this turn: %s
 
 %s (the final USER entry is the current request):
 %s`, notebookID, capability, contextLabel, history.String())
+}
+
+func notebookAgentReferenceDetail(detail string) string {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return ""
+	}
+	return ", " + detail
 }
 
 func notebookAgentActivityTitle(event NotebookAgentStreamEvent) string {

@@ -50,6 +50,8 @@ renart web [options] [workspace root]
 | `--watch-poll-interval` | `2s` | Poll interval used by `poll` and by the polling fallback in `auto`. |
 | `--scheduler` | off | Run the local in-process scheduler. |
 | `--scheduler-state` | `.renart/state.db` | Scheduler SQLite state path. |
+| `--notebook-snapshot-max-bytes` | `2147483648` | Maximum staged size for one notebook source snapshot. |
+| `--notebook-snapshot-timeout` | `30m` | Maximum runtime for one notebook source snapshot. |
 | `--host` | `127.0.0.1` | Interface to bind. A non-loopback host requires `--unsafe-allow-remote`. |
 | `--port` | `8080` | HTTP port; Renart selects the next free port when it is occupied. |
 | `--unsafe-allow-remote` | off | Allow an unauthenticated non-loopback listener. Prefer a local tunnel. |
@@ -74,6 +76,8 @@ platform webview is unavailable, it opens the browser instead.
 | `--watch-poll-interval` | `2s` | Poll interval used by `poll` and by the polling fallback in `auto`. |
 | `--scheduler` | off | Run the local in-process scheduler. |
 | `--scheduler-state` | `.renart/state.db` | Scheduler SQLite state path. |
+| `--notebook-snapshot-max-bytes` | `2147483648` | Maximum staged size for one notebook source snapshot. |
+| `--notebook-snapshot-timeout` | `30m` | Maximum runtime for one notebook source snapshot. |
 | `--port` | `0` | Loopback port; `0` selects a free port. |
 | `--gui-binary` | beside `renart` | Override the native-helper path. The `RENART_GUI_BINARY` environment variable provides the same override. |
 

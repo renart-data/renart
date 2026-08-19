@@ -48,6 +48,7 @@ import { defineBruinMonacoThemes } from "@/lib/monaco-theme";
 import { useWorkspaceTheme } from "@/hooks/use-workspace-theme";
 
 import { AppPage, PageHeader } from "./app-primitives";
+import { DocumentAuthoringCommandBar, DocumentAuthoringShell } from "./document-authoring-shell";
 import { PresentationBuilder } from "./presentation-builder/presentation-builder";
 
 const MonacoEditor = lazy(async () => {
@@ -74,35 +75,8 @@ const presentationMeta = {
 
 export function AppPresentationsLayout() {
   return (
-    <div className="flex h-full min-h-0 flex-col bg-muted/40">
-      <nav
-        aria-label="Presentations"
-        className="flex h-10 shrink-0 items-center gap-1 border-b bg-background px-3"
-      >
-        <Button asChild size="sm" variant="ghost">
-          <Link
-            to="/dashboards"
-            activeOptions={{ exact: false }}
-            activeProps={{ className: "bg-muted text-foreground" }}
-          >
-            <LayoutDashboard data-icon="inline-start" />
-            Dashboards
-          </Link>
-        </Button>
-        <Button asChild size="sm" variant="ghost">
-          <Link
-            to="/reports"
-            activeOptions={{ exact: false }}
-            activeProps={{ className: "bg-muted text-foreground" }}
-          >
-            <FileText data-icon="inline-start" />
-            Reports
-          </Link>
-        </Button>
-      </nav>
-      <div className="min-h-0 flex-1">
-        <Outlet />
-      </div>
+    <div className="h-full min-h-0 bg-muted/40">
+      <Outlet />
     </div>
   );
 }
@@ -121,10 +95,38 @@ export function AppPresentationsIndexPage({ kind }: { kind: PresentationKind }) 
         title={meta.plural}
         subtitle={meta.description}
         actions={
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <Plus className="size-3.5" />
-            New {meta.singular}
-          </Button>
+          <>
+            <Button asChild size="icon-sm" variant="ghost" className="sm:hidden">
+              <Link
+                to={kind === "dashboard" ? "/reports" : "/dashboards"}
+                aria-label={kind === "dashboard" ? "Open reports" : "Open dashboards"}
+              >
+                {kind === "dashboard" ? (
+                  <FileText data-icon="inline-start" />
+                ) : (
+                  <LayoutDashboard data-icon="inline-start" />
+                )}
+              </Link>
+            </Button>
+            <div className="hidden items-center gap-1 sm:flex" aria-label="Presentation type">
+              <Button asChild size="sm" variant={kind === "dashboard" ? "secondary" : "ghost"}>
+                <Link to="/dashboards">
+                  <LayoutDashboard data-icon="inline-start" />
+                  Dashboards
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant={kind === "report" ? "secondary" : "ghost"}>
+                <Link to="/reports">
+                  <FileText data-icon="inline-start" />
+                  Reports
+                </Link>
+              </Button>
+            </div>
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <Plus data-icon="inline-start" />
+              New {meta.singular}
+            </Button>
+          </>
         }
       />
       <ScrollArea className="min-h-0 flex-1 px-3 pb-3">
@@ -383,51 +385,96 @@ export function AppPresentationLivePage({
   const kindMismatch = document && document.artifact.kind !== kind;
   const activeDirty = mode === "visual" ? visualDirty : definitionDirty;
 
+  const renderNavigation = () => (
+    <Button asChild variant="ghost" size="sm" aria-label={`Back to ${meta.plural.toLowerCase()}`}>
+      <Link to={kind === "dashboard" ? "/dashboards" : "/reports"}>
+        <ArrowLeft data-icon="inline-start" />
+        <span className="hidden xl:inline">{meta.plural}</span>
+      </Link>
+    </Button>
+  );
+  const renderModeControl = () => (
+    <TabsList aria-label="Presentation editor mode">
+      <TabsTrigger value="visual" disabled={definitionDirty}>
+        Visual
+      </TabsTrigger>
+      <TabsTrigger value="definition" disabled={visualDirty}>
+        Definition
+      </TabsTrigger>
+    </TabsList>
+  );
+  const renderDocumentActions = () => (
+    <>
+      {document ? (
+        <Button asChild variant="ghost" size="sm">
+          <Link
+            aria-label="Preview"
+            to={
+              kind === "dashboard"
+                ? "/dashboards/$presentationId/view"
+                : "/reports/$presentationId/view"
+            }
+            params={{ presentationId }}
+            search={{ filters: undefined }}
+          >
+            <Eye data-icon="inline-start" />
+            <span className="hidden 2xl:inline">Preview</span>
+          </Link>
+        </Button>
+      ) : null}
+      <Button
+        aria-label="Discard"
+        variant="ghost"
+        size="sm"
+        disabled={!activeDirty || saving}
+        onClick={resetActiveDraft}
+      >
+        <RotateCcw data-icon="inline-start" />
+        <span className="hidden 2xl:inline">Discard</span>
+      </Button>
+      <Button size="sm" disabled={!activeDirty || saving} onClick={() => void save()}>
+        {saving ? (
+          <Loader2 data-icon="inline-start" className="animate-spin" />
+        ) : (
+          <Save data-icon="inline-start" />
+        )}
+        Save
+      </Button>
+    </>
+  );
+  const banner =
+    externalRevision || error || activeDirty ? (
+      <div className="space-y-2">
+        {externalRevision ? (
+          <Alert>
+            <AlertTriangle />
+            <AlertTitle>This file changed outside the editor</AlertTitle>
+            <AlertDescription>
+              Your draft is still here. Reload the latest file before saving, then reconcile the
+              changes you want to keep.
+            </AlertDescription>
+            <Button size="sm" variant="outline" className="mt-2" onClick={() => void load()}>
+              Reload latest
+            </Button>
+          </Alert>
+        ) : null}
+        {error ? (
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>Could not save {meta.singular}</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+        {activeDirty ? (
+          <p className="text-center text-[11px] text-muted-foreground">
+            Save or discard this draft before switching editors.
+          </p>
+        ) : null}
+      </div>
+    ) : null;
+
   return (
     <AppPage>
-      <PageHeader
-        title={document?.artifact.title ?? `Loading ${meta.singular}…`}
-        subtitle={document?.artifact.path ?? meta.description}
-        actions={
-          <>
-            <Button asChild variant="ghost" size="sm">
-              <Link to={kind === "dashboard" ? "/dashboards" : "/reports"}>
-                <ArrowLeft />
-                {meta.plural}
-              </Link>
-            </Button>
-            {document ? (
-              <Button asChild variant="outline" size="sm">
-                <Link
-                  to={
-                    kind === "dashboard"
-                      ? "/dashboards/$presentationId/view"
-                      : "/reports/$presentationId/view"
-                  }
-                  params={{ presentationId }}
-                  search={{ filters: undefined }}
-                >
-                  <Eye /> Preview
-                </Link>
-              </Button>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!activeDirty || saving}
-              onClick={resetActiveDraft}
-            >
-              <RotateCcw />
-              Discard
-            </Button>
-            <Button size="sm" disabled={!activeDirty || saving} onClick={() => void save()}>
-              {saving ? <Loader2 className="animate-spin" /> : <Save />}
-              Save
-            </Button>
-          </>
-        }
-      />
-
       {loading ? (
         <PresentationEditorSkeleton />
       ) : error && !document ? (
@@ -457,72 +504,57 @@ export function AppPresentationLivePage({
           onValueChange={(value) => setMode(value as "visual" | "definition")}
           className="min-h-0 flex-1 gap-0"
         >
-          <div className="flex shrink-0 items-center gap-2 border-y bg-background px-3 py-1.5">
-            <TabsList>
-              <TabsTrigger value="visual" disabled={definitionDirty}>
-                Visual
-              </TabsTrigger>
-              <TabsTrigger value="definition" disabled={visualDirty}>
-                Definition
-              </TabsTrigger>
-            </TabsList>
-            {activeDirty ? (
-              <span className="text-[11px] text-muted-foreground">
-                Save or discard this draft before switching editors.
-              </span>
-            ) : null}
-            {document.artifact.problems?.length ? (
-              <Badge
-                variant="outline"
-                className="ml-auto border-amber-500/30 text-amber-700 dark:text-amber-300"
-              >
-                <AlertTriangle />
-                {document.artifact.problems.length} problem
-                {document.artifact.problems.length === 1 ? "" : "s"}
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="ml-auto font-normal text-emerald-700">
-                Definition valid
-              </Badge>
-            )}
-          </div>
-
-          {externalRevision ? (
-            <Alert className="mx-3 mt-3 shrink-0 border-amber-500/30 bg-amber-500/5">
-              <AlertTriangle />
-              <AlertTitle>This file changed outside the editor</AlertTitle>
-              <AlertDescription>
-                Your draft is still here. Reload the latest file before saving, then reconcile the
-                changes you want to keep.
-              </AlertDescription>
-              <Button size="sm" variant="outline" className="mt-2" onClick={() => void load()}>
-                Reload latest
-              </Button>
-            </Alert>
-          ) : null}
-          {error ? (
-            <Alert variant="destructive" className="mx-3 mt-3 shrink-0">
-              <AlertTriangle />
-              <AlertTitle>Could not save {meta.singular}</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          ) : null}
-
           <TabsContent value="visual" className="min-h-0 overflow-hidden">
             <PresentationBuilder
               presentationId={presentationId}
               artifact={visualDraft}
               workspace={workspace}
               paused={saving}
+              navigation={renderNavigation()}
+              modeControl={renderModeControl()}
+              documentActions={renderDocumentActions()}
+              banner={banner}
               onChange={setVisualDraft}
             />
           </TabsContent>
-          <TabsContent value="definition" className="min-h-0 overflow-hidden p-3">
-            <PresentationDefinitionEditor
-              presentationId={presentationId}
-              value={definitionDraft}
-              onChange={setDefinitionDraft}
-            />
+          <TabsContent value="definition" className="min-h-0 overflow-hidden">
+            <DocumentAuthoringShell
+              commandBar={
+                <DocumentAuthoringCommandBar
+                  navigation={renderNavigation()}
+                  identity={
+                    <span className="block truncate px-2 text-sm font-medium">
+                      {document.artifact.title}
+                    </span>
+                  }
+                  mode={renderModeControl()}
+                  status={
+                    document.artifact.problems?.length ? (
+                      <Badge variant="outline">
+                        <AlertTriangle />
+                        {document.artifact.problems.length} problem
+                        {document.artifact.problems.length === 1 ? "" : "s"}
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="hidden font-normal sm:inline-flex">
+                        Definition valid
+                      </Badge>
+                    )
+                  }
+                  actions={renderDocumentActions()}
+                />
+              }
+              banner={banner}
+              className="bg-muted/30"
+            >
+              <div className="h-full min-h-0 p-3">
+                <PresentationDefinitionEditor
+                  presentationId={presentationId}
+                  value={definitionDraft}
+                  onChange={setDefinitionDraft}
+                />
+              </div>
+            </DocumentAuthoringShell>
           </TabsContent>
         </Tabs>
       ) : null}

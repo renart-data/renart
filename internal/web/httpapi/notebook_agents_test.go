@@ -24,6 +24,11 @@ func TestNotebookAgentRoutes(t *testing.T) {
 			}
 			return nil
 		},
+		ResolveReferences: func(_ string, references []service.NotebookAgentReferenceRequest) ([]service.NotebookAgentReference, *service.APIError) {
+			return []service.NotebookAgentReference{{
+				Kind: "cell", ID: references[0].ID, Label: "daily_sales", Detail: "duckdb.sql",
+			}}, nil
+		},
 		LookPath: func(file string) (string, error) {
 			if file == "codex" {
 				return "/usr/bin/codex", nil
@@ -62,9 +67,12 @@ func TestNotebookAgentRoutes(t *testing.T) {
 		t.Fatalf("empty conversation arrays must encode as arrays: %+v", state.Agent.Conversation)
 	}
 
-	response = serveNotebookAgentRequest(router, http.MethodPost, "/api/notebooks/notebook-one/agent/messages", `{"provider":"codex","mode":"ask","message":"Explain this"}`)
+	response = serveNotebookAgentRequest(router, http.MethodPost, "/api/notebooks/notebook-one/agent/messages", `{"provider":"codex","mode":"ask","message":"Explain this","references":[{"kind":"cell","id":"cell-one"}]}`)
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("start status = %d: %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), `"label":"daily_sales"`) {
+		t.Fatalf("start response omitted resolved reference: %s", response.Body.String())
 	}
 	<-runner
 	response = serveNotebookAgentRequest(router, http.MethodPost, "/api/notebooks/notebook-one/agent/cancel", `{}`)

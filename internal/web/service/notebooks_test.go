@@ -184,6 +184,13 @@ func TestNotebookServiceLifecycle(t *testing.T) {
 	if fmt.Sprintf("%v", answer.Rows[0][0]) != "42" {
 		t.Fatalf("expected 42, got %v", answer.Rows[0][0])
 	}
+	if answer.Performance == nil || answer.Performance.RequestSetupMS == nil ||
+		answer.Performance.RuntimeSyncMS == nil || answer.Performance.RequestTotalMS == nil {
+		t.Fatalf("request phase telemetry is incomplete: %+v", answer.Performance)
+	}
+	if *answer.Performance.RequestTotalMS < *answer.Performance.RequestSetupMS {
+		t.Fatalf("request total %.3fms is smaller than setup %.3fms", *answer.Performance.RequestTotalMS, *answer.Performance.RequestSetupMS)
+	}
 
 	// Running just the downstream cell on a fresh session pulls in the
 	// missing ancestor automatically.

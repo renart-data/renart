@@ -14,18 +14,38 @@ import (
 // descendants stale and (when auto-recompute is on) kicks off a debounced
 // recompute pass. Safe to call for any mutation that changes a cell's content.
 func (s *NotebookService) onCellChanged(notebookID string, nb *notebook.Notebook, cellID string) {
+	s.onCellsChanged(notebookID, nb, []string{cellID})
+}
+
+// onCellsChanged marks multiple authored execution roots and their descendants
+// in one runtime transition. Dependency-file changes use this path for every
+// Python cell without publishing a separate transient state per cell.
+func (s *NotebookService) onCellsChanged(notebookID string, nb *notebook.Notebook, cellIDs []string) {
 	s.hydrateRuntime(nb)
 	rt := s.runtimes.get(nb.UUID)
 
-	cell := nb.CellByID(cellID)
-	closure := map[string]bool{cellID: true}
-	if cell != nil {
+	closure := make(map[string]bool, len(cellIDs))
+	for _, cellID := range cellIDs {
+		cell := nb.CellByID(cellID)
+		if cell == nil {
+			continue
+		}
+		closure[cellID] = true
 		for _, descendant := range notebook.Descendants(nb, cell) {
 			closure[descendant.ID] = true
 		}
 	}
+	if len(closure) == 0 {
+		return
+	}
 
 	rt.mu.Lock()
+	parameterValues := cloneNotebookParameterValues(rt.parameterValues)
+	for _, cellID := range cellIDs {
+		if cell := nb.CellByID(cellID); cell != nil {
+			rt.authoredFingerprints[cellID] = notebook.CellFingerprintWithParameters(nb, cell, parameterValues)
+		}
+	}
 	for id := range closure {
 		rt.stale[id] = true
 		// A fresh edit gives the whole affected subgraph another auto attempt.
@@ -106,7 +126,8 @@ func (s *NotebookService) runRecomputePass(notebookID, uuid string) {
 			return
 		}
 
-		cells := s.buildAutoCells(nb, rt)
+		existingObjects := s.existingNotebookCellObjects(nb.UUID)
+		cells := s.buildAutoCellsWithExistingObjects(nb, rt, existingObjects)
 		closure := computeAutoRecomputeClosure(cells)
 		wave := computeAutoRecomputeWave(cells)
 		if len(wave) == 0 {
@@ -124,7 +145,7 @@ func (s *NotebookService) runRecomputePass(notebookID, uuid string) {
 
 		runCtx, finishRun := rt.beginAutoRun(context.Background(), wave)
 		s.publishRuntime(notebookID, uuid, sortedKeys(closure), nil)
-		results, cancelled := s.runAutoWave(runCtx, uuid, nb, wave)
+		results, cancelled := s.runAutoWave(runCtx, uuid, nb, wave, existingObjects)
 		finishRun()
 		if cancelled {
 			// Superseded by an edit; loop with the new state.
@@ -154,14 +175,20 @@ func (s *NotebookService) runRecomputePass(notebookID, uuid string) {
 // runAutoWave executes the given cell ids in one session pass with a cancellable
 // context (stored so an edit can interrupt it). cancelled is true when the wave
 // was interrupted rather than completing.
-func (s *NotebookService) runAutoWave(ctx context.Context, uuid string, nb *notebook.Notebook, wave []string) (results []notebook.CellRunResult, cancelled bool) {
+func (s *NotebookService) runAutoWave(
+	ctx context.Context,
+	uuid string,
+	nb *notebook.Notebook,
+	wave []string,
+	existingObjects map[string]bool,
+) (results []notebook.CellRunResult, cancelled bool) {
 	rt := s.runtimes.get(uuid)
 	rt.mu.Lock()
 	environment := rt.environment
 	parameterValues := cloneNotebookParameterValues(rt.parameterValues)
 	rt.mu.Unlock()
 
-	cells, selectErr := s.selectRunCells(nb, RunNotebookRequest{Cells: wave})
+	cells, selectErr := s.selectRunCellsWithExistingObjects(nb, RunNotebookRequest{Cells: wave}, existingObjects)
 	if selectErr != nil || len(cells) == 0 {
 		return nil, false
 	}
@@ -189,6 +216,9 @@ func (s *NotebookService) recordResults(rt *notebookRuntime, results []notebook.
 	defer rt.mu.Unlock()
 	for _, result := range results {
 		rt.results[result.CellID] = result
+		if result.Fingerprint != "" {
+			rt.authoredFingerprints[result.CellID] = result.Fingerprint
+		}
 		if result.Status == notebook.CellRunOK {
 			delete(rt.stale, result.CellID)
 			delete(rt.autoFailed, result.CellID)
@@ -204,6 +234,14 @@ func (s *NotebookService) recordResults(rt *notebookRuntime, results []notebook.
 // columns (the same parse-context the editor uses — so a broken upstream change
 // surfaces as an error and blocks the downstream).
 func (s *NotebookService) buildAutoCells(nb *notebook.Notebook, rt *notebookRuntime) []autoCellInfo {
+	return s.buildAutoCellsWithExistingObjects(nb, rt, s.existingNotebookCellObjects(nb.UUID))
+}
+
+func (s *NotebookService) buildAutoCellsWithExistingObjects(
+	nb *notebook.Notebook,
+	rt *notebookRuntime,
+	existingObjects map[string]bool,
+) []autoCellInfo {
 	rt.mu.Lock()
 	stale := make(map[string]bool, len(rt.stale))
 	for id := range rt.stale {
@@ -232,11 +270,6 @@ func (s *NotebookService) buildAutoCells(nb *notebook.Notebook, rt *notebookRunt
 	// edited cell could never recompute. A persisted session object from a
 	// previous run counts as fresh — the same trust the manual-run path applies
 	// when it skips ancestors whose objects already exist.
-	existingObjects, existErr := s.store.ExistingCellObjects(nb.UUID)
-	if existErr != nil {
-		existingObjects = map[string]bool{}
-	}
-
 	out := make([]autoCellInfo, 0, len(nb.Cells))
 	for _, cell := range nb.Cells {
 		isPython := notebook.IsPythonCell(cell)
@@ -362,6 +395,8 @@ func (s *NotebookService) newRunner(renderer *jinja.Renderer, environment string
 		workspaceRoot:        s.deps.WorkspaceRoot,
 		configPath:           s.deps.ConfigPath,
 		newConnectionManager: s.deps.NewConnectionManager,
+		maxBytes:             s.deps.SnapshotMaxBytes,
+		timeout:              s.deps.SnapshotTimeout,
 	}
 	var renderSQL func(string) (string, error)
 	if renderer != nil {
@@ -371,7 +406,7 @@ func (s *NotebookService) newRunner(renderer *jinja.Renderer, environment string
 		Store:              s.store,
 		RenameTables:       s.renameTables,
 		RenderSQL:          renderSQL,
-		Fetcher:            &pipelineSourceFetcher{service: s, environment: environment},
+		Fetcher:            &pipelineSourceFetcher{service: s, environment: environment, transfer: transfer},
 		WarehouseExecutor:  &warehouseSQLSourceExecutor{transfer: transfer, validate: s.validateNotebookSourceQuery},
 		SourceExecutor:     &notebookSourceExecutor{transfer: transfer, renderer: renderer},
 		Environment:        environment,

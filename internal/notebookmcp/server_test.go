@@ -428,10 +428,29 @@ func TestCatalogSearchFindsTypedPipelineSourcesWithoutLeakingPaths(t *testing.T)
 	asset := model.Asset{
 		ID: "asset_orders", Name: "analytics.orders", URI: "renart://secret/catalog/orders",
 		Type: "pg.sql", Path: "/secret/workspace/orders.sql", Connection: "postgres-other",
-		Columns: columns,
+		Description:         "Replay-safe order history for longitudinal analysis.",
+		Tags:                []string{"recommended-analysis", "historical-analysis"},
+		MaterializationType: "table", MaterializationStrategy: "time_interval",
+		IncrementalKey: "ordered_at", ClusterBy: []string{"region", "ordered_at"}, TimeGranularity: "timestamp",
+		Columns:      columns,
+		Dependencies: []model.AssetDependency{{ResolvedAssetID: "asset_raw_orders"}},
+	}
+	rawAsset := model.Asset{
+		ID: "asset_raw_orders", Name: "raw.orders", Type: "pg.sql",
+		Path: "/secret/workspace/raw_orders.sql", Connection: "postgres-other",
+		MaterializationType: "table", MaterializationStrategy: "merge",
+		Columns: []model.Column{{Name: "order_id", Type: "BIGINT"}},
+	}
+	summaryAsset := model.Asset{
+		ID: "asset_order_summary", Name: "analytics.order_summary", Type: "pg.sql",
+		Path: "/secret/workspace/order_summary.sql", Connection: "postgres-other",
+		MaterializationType: "table", MaterializationStrategy: "truncate+insert",
+		Columns:      []model.Column{{Name: "order_count", Type: "BIGINT"}},
+		Dependencies: []model.AssetDependency{{ResolvedAssetID: "asset_orders"}},
 	}
 	backend.workspace.Pipelines = []model.Pipeline{{
-		ID: "pipeline_opaque", UUID: "pipeline_uuid", Name: "Warehouse", Assets: []model.Asset{asset},
+		ID: "pipeline_opaque", UUID: "pipeline_uuid", Name: "Warehouse",
+		Assets: []model.Asset{rawAsset, asset, summaryAsset},
 	}}
 	backend.workspace.QueryConnections = []model.WorkspaceQueryConnection{{
 		Name: "postgres-other", ConnectionType: "postgres", AssetType: "pg.sql", Dialect: "postgres",
@@ -456,11 +475,62 @@ func TestCatalogSearchFindsTypedPipelineSourcesWithoutLeakingPaths(t *testing.T)
 	if match.ColumnCount != len(columns) || len(match.Columns) != maxCatalogColumns {
 		t.Fatalf("catalog columns were not bounded: count=%d returned=%d", match.ColumnCount, len(match.Columns))
 	}
+	if match.Description != asset.Description || !reflect.DeepEqual(match.Tags, []string{"historical-analysis", "recommended-analysis"}) {
+		t.Fatalf("catalog metadata = description %q tags %v", match.Description, match.Tags)
+	}
+	if match.Materialization == nil || match.Materialization.Strategy != "time_interval" ||
+		match.Materialization.IncrementalKey != "ordered_at" ||
+		!reflect.DeepEqual(match.Materialization.ClusterBy, []string{"region", "ordered_at"}) ||
+		match.Materialization.TimeGranularity != "timestamp" {
+		t.Fatalf("catalog materialization = %+v", match.Materialization)
+	}
+	if match.UpstreamCount != 1 || len(match.Upstreams) != 1 || match.Upstreams[0].Relation != "raw.orders" {
+		t.Fatalf("catalog upstreams = count %d refs %+v", match.UpstreamCount, match.Upstreams)
+	}
+	if match.DownstreamCount != 1 || len(match.Downstreams) != 1 || match.Downstreams[0].Relation != "analytics.order_summary" {
+		t.Fatalf("catalog downstreams = count %d refs %+v", match.DownstreamCount, match.Downstreams)
+	}
+	history := callTool[CatalogSearchOutput](t, fixture.client, "search_workspace_catalog", map[string]any{
+		"query": "historical-analysis", "kinds": []string{"pipeline_asset"}, "limit": 50,
+	})
+	if len(history.Matches) != 1 || history.Matches[0].Relation != "analytics.orders" {
+		t.Fatalf("catalog did not search descriptions/tags: %+v", history.Matches)
+	}
 	encoded, _ := json.Marshal(output)
 	for _, hidden := range []string{"/secret/workspace", "renart://secret"} {
 		if strings.Contains(string(encoded), hidden) {
 			t.Fatalf("catalog output leaked %q: %s", hidden, encoded)
 		}
+	}
+}
+
+func TestCatalogLineageIsBoundedAndReportsFullCounts(t *testing.T) {
+	target := CatalogMatch{
+		ID: "target", Kind: "pipeline_asset", ArtifactKind: "pipeline_asset", ArtifactID: "target",
+	}
+	matches := []CatalogMatch{target}
+	refs := map[string]CatalogLineageRef{
+		catalogRefKey(model.ArtifactRef{Kind: "pipeline_asset", ArtifactID: "target"}): catalogLineageRef(target),
+	}
+	dependencies := make([]model.ArtifactDependency, 0, maxCatalogLineage+3)
+	for index := 0; index < maxCatalogLineage+3; index++ {
+		id := fmt.Sprintf("source-%02d", index)
+		source := CatalogMatch{
+			ID: id, Kind: "pipeline_asset", ArtifactKind: "pipeline_asset", ArtifactID: id,
+			Title: fmt.Sprintf("Source %02d", index), Relation: fmt.Sprintf("raw.source_%02d", index),
+		}
+		matches = append(matches, source)
+		ref := model.ArtifactRef{Kind: "pipeline_asset", ArtifactID: id}
+		refs[catalogRefKey(ref)] = catalogLineageRef(source)
+		dependencies = append(dependencies, model.ArtifactDependency{
+			Producer: ref,
+			Consumer: model.ArtifactRef{Kind: "pipeline_asset", ArtifactID: "target"},
+		})
+	}
+
+	catalogAttachLineage(matches, dependencies, refs)
+	if matches[0].UpstreamCount != maxCatalogLineage+3 || len(matches[0].Upstreams) != maxCatalogLineage || !matches[0].LineageTruncated {
+		t.Fatalf("lineage was not bounded with a full count: %+v", matches[0])
 	}
 }
 

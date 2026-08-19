@@ -90,15 +90,6 @@ import {
 import { Label } from "@/components/ui/label";
 import { deleteAsset } from "@/lib/api-assets";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -168,6 +159,7 @@ import { AppAssetEditor } from "./asset-editor";
 import { ApiParametersEditor } from "./api-parameters-editor";
 import { AssetGuidedCards, type QualityCheckFocus } from "./asset-guided-cards";
 import { NewAssetDialog, NewFolderDialog, NewPipelineDialog } from "./build-create-dialogs";
+import { ConnectionSelect } from "./connection-select";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { SqlPreview } from "./sql-preview";
 import { LoadParametersEditor } from "./load-parameters-editor";
@@ -2926,26 +2918,26 @@ function AdhocEditor({ showActionLabels }: { showActionLabels: boolean }) {
       data-testid="adhoc-editor-workspace"
     >
       <EditorFilenameHeader filename="Ad-hoc query" className="border-primary/20 bg-primary/10">
-        <Select
+        <ConnectionSelect
           value={adhocConnection?.name}
+          groups={[
+            {
+              label: "Query connection",
+              options: adhocConnections.map((connection) => ({
+                value: connection.name,
+                label: connection.name,
+                connectionType: connection.connection_type,
+                detail: connection.dialect,
+              })),
+            },
+          ]}
           onValueChange={setAdhocConnection}
           disabled={adhocLoading || adhocConnections.length === 0}
-        >
-          <SelectTrigger size="sm" className="min-w-32 max-w-48" aria-label="Ad-hoc connection">
-            <Database className="text-muted-foreground" />
-            <SelectValue placeholder="Connection" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectLabel>Query connection</SelectLabel>
-              {adhocConnections.map((connection) => (
-                <SelectItem key={connection.name} value={connection.name}>
-                  {connection.name}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+          size="sm"
+          className="min-w-32 max-w-48"
+          ariaLabel="Ad-hoc connection"
+          placeholder="Connection"
+        />
         <Button
           variant="outline"
           size={showActionLabels ? "sm" : "icon-sm"}

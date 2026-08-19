@@ -8,12 +8,15 @@ type NotebookEnvelope = {
   notebook: {
     id: string;
     path: string;
+    revision: string;
     cells: Array<{
       id: string;
       cell_id: string;
       name: string;
       content: string;
       content_revision?: string;
+      connection?: string;
+      type?: string;
       notebook_source?: {
         kind: "file" | "http";
         uri?: string;
@@ -36,6 +39,12 @@ type NotebookEnvelope = {
       label?: string;
       type: string;
       default: unknown;
+      options?: {
+        values?: unknown[];
+        dataset?: string;
+        value_field?: string;
+        label_field?: string;
+      };
     }>;
   };
 };
@@ -74,6 +83,37 @@ async function createNotebook(request: APIRequestContext, baseURL: string, title
   const response = await request.post(`${baseURL}/api/notebooks`, { data: { title } });
   expect(response.ok()).toBe(true);
   return ((await response.json()) as NotebookEnvelope).notebook;
+}
+
+async function createNotebookControl(
+  request: APIRequestContext,
+  baseURL: string,
+  notebookId: string,
+  parameter: NonNullable<NotebookEnvelope["notebook"]["parameters"]>[number],
+) {
+  const currentResponse = await request.get(`${baseURL}/api/notebooks/${notebookId}`);
+  expect(currentResponse.ok()).toBe(true);
+  const current = (await currentResponse.json()) as NotebookEnvelope;
+  const prepareResponse = await request.post(
+    `${baseURL}/api/notebooks/${notebookId}/changes/prepare`,
+    {
+      data: {
+        base_revision: current.notebook.revision,
+        operations: [{ kind: "control.create", parameter, position: "end" }],
+      },
+    },
+  );
+  expect(prepareResponse.ok()).toBe(true);
+  const plan = (await prepareResponse.json()) as {
+    can_apply: boolean;
+    blocking_problems?: string[];
+    change_set: Record<string, unknown>;
+  };
+  expect(plan.can_apply, plan.blocking_problems?.join("; ")).toBe(true);
+  const applyResponse = await request.post(`${baseURL}/api/notebooks/${notebookId}/changes/apply`, {
+    data: plan.change_set,
+  });
+  expect(applyResponse.ok()).toBe(true);
 }
 
 async function openNotebookToolsTab(page: Page, name: "Outline" | "Data" | "Add" | "AI") {
@@ -425,6 +465,62 @@ test.describe("app notebooks live", () => {
     }
   });
 
+  test("dataset-backed notebook controls refresh from a successful local cell result", async ({
+    liveApp,
+    page,
+  }) => {
+    const notebook = await createNotebook(page.request, liveApp.baseURL, "Dataset Controls");
+    const source = notebook.cells[0];
+    await setCell(
+      page.request,
+      liveApp.baseURL,
+      notebook.id,
+      source.cell_id,
+      "select * from (values ('de', 'Germany'), ('us', 'United States'), ('de', 'Germany')) as regions(code, label)",
+    );
+    await createNotebookControl(page.request, liveApp.baseURL, notebook.id, {
+      id: "region",
+      label: "Region",
+      type: "select",
+      default: "de",
+      options: {
+        dataset: source.cell_id,
+        value_field: "code",
+        label_field: "label",
+      },
+    });
+
+    await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
+    const control = page.getByRole("combobox", { name: "Region", exact: true });
+    await expect(control).toBeDisabled();
+    await expect(page.getByText("Run source", { exact: true })).toBeVisible();
+
+    const optionsResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/notebooks/${notebook.id}/controls/region/options/refresh`) &&
+        response.ok(),
+      { timeout: 15000 },
+    );
+    await page.getByRole("button", { name: "Run all" }).click();
+    const response = await optionsResponse;
+    const payload = (await response.json()) as {
+      result: { columns: string[]; rows: unknown[][]; total_rows: number; truncated?: boolean };
+    };
+    expect(payload.result.columns).toEqual(["code", "label"]);
+    expect(payload.result.rows).toEqual([
+      ["de", "Germany"],
+      ["us", "United States"],
+    ]);
+    expect(payload.result.total_rows).toBe(2);
+    expect(payload.result.truncated).toBeFalsy();
+
+    await expect(control).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
+    await control.click();
+    await expect(page.getByRole("option", { name: "Germany" })).toBeVisible();
+    await expect(page.getByRole("option", { name: "United States" })).toBeVisible();
+  });
+
   test("create, edit, and run a notebook against the local session", async ({ liveApp, page }) => {
     test.setTimeout(timeoutForRetry(test.info(), 90000, 60000));
     const { request } = page;
@@ -476,6 +572,92 @@ test.describe("app notebooks live", () => {
     await expect(page.getByText("40", { exact: true }).first()).toBeVisible({
       timeout: timeoutForRetry(test.info(), 15000),
     });
+  });
+
+  test("virtualizes large result previews and exposes local performance", async ({
+    liveApp,
+    page,
+  }) => {
+    const notebook = await createNotebook(page.request, liveApp.baseURL, "Large Result Preview");
+    const cellId = await addCell(page.request, liveApp.baseURL, notebook.id, "many_rows");
+    await setCell(
+      page.request,
+      liveApp.baseURL,
+      notebook.id,
+      cellId,
+      "select range as row_number from range(1000)",
+    );
+
+    await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
+    await expect(page.getByText("Large Result Preview").first()).toBeVisible({ timeout: 15000 });
+
+    const runResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === `/api/notebooks/${notebook.id}/run` &&
+        response.request().method() === "POST" &&
+        response.ok(),
+      { timeout: timeoutForRetry(test.info(), 30000) },
+    );
+    await page.getByRole("button", { name: "Run all" }).click();
+    const payload = (await (await runResponse).json()) as {
+      results: Array<{
+        name: string;
+        rows: unknown[][];
+        total_rows: number;
+        performance?: {
+          request_total_ms?: number;
+          request_setup_ms?: number;
+          batch_run_ms?: number;
+          session_open_ms?: number;
+          materialize_ms?: number;
+          preview_query_ms?: number;
+          metadata_write_ms?: number;
+          runtime_sync_ms?: number;
+          session_bytes?: number;
+        };
+      }>;
+    };
+    const result = payload.results.find((candidate) => candidate.name === "many_rows")!;
+    expect(result.rows).toHaveLength(100);
+    expect(result.total_rows).toBe(1000);
+    expect(result.performance?.request_total_ms).toBeGreaterThanOrEqual(0);
+    expect(result.performance?.request_setup_ms).toBeGreaterThanOrEqual(0);
+    expect(result.performance?.batch_run_ms).toBeGreaterThanOrEqual(0);
+    expect(result.performance?.session_open_ms).toBeGreaterThanOrEqual(0);
+    expect(result.performance?.materialize_ms).toBeGreaterThanOrEqual(0);
+    expect(result.performance?.preview_query_ms).toBeGreaterThanOrEqual(0);
+    expect(result.performance?.metadata_write_ms).toBeGreaterThanOrEqual(0);
+    expect(result.performance?.runtime_sync_ms).toBeGreaterThanOrEqual(0);
+    expect(result.performance?.session_bytes).toBeGreaterThan(0);
+
+    const table = page.getByRole("table", { name: "many_rows result preview" });
+    await expect(table).toHaveAttribute("aria-rowcount", "101");
+    await expect(table.locator("tbody")).toHaveAttribute("data-virtualized", "true");
+    await expect(table.locator("[data-row-index]")).toHaveCount(17);
+    await expect(page.getByText("showing 100 of 1,000 rows", { exact: true })).toBeVisible();
+
+    await table.evaluate((element) => {
+      const viewport = element.closest('[data-slot="scroll-area-viewport"]');
+      if (!(viewport instanceof HTMLElement)) throw new Error("Result viewport is missing");
+      viewport.scrollTop = 50 * 27;
+      viewport.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    await expect(table.locator('[data-row-index="50"]')).toBeAttached();
+    expect(await table.locator("[data-row-index]").count()).toBeLessThan(30);
+
+    const performanceButton = page
+      .locator(`[data-notebook-cell-id="${cellId}"]`)
+      .getByRole("button", {
+        name: "Show local performance measurements",
+      });
+    await expect(performanceButton).toBeVisible();
+    if (!test.info().project.name.includes("mobile")) {
+      await performanceButton.hover();
+      const details = page.getByText("Local performance", { exact: true });
+      await expect(details).toBeVisible();
+      await expect(page.getByText("Preview render", { exact: true })).toBeVisible();
+      await expect(page.getByText("Mounted rows", { exact: true })).toBeVisible();
+    }
   });
 
   test("adds a local file source and joins its typed snapshot", async ({ liveApp, page }) => {
@@ -1533,6 +1715,11 @@ test.describe("app notebooks live", () => {
       window.localStorage.setItem("renart-notebook-autorecompute", "off");
     });
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Viz And Rename");
+    const disableAutoRecompute = await page.request.put(
+      `${liveApp.baseURL}/api/notebooks/${notebook.id}/settings`,
+      { data: { auto_recompute: false, environment: "default" } },
+    );
+    expect(disableAutoRecompute.ok()).toBe(true);
     const baseCell = await addCell(page.request, liveApp.baseURL, notebook.id, "base");
     await setCell(
       page.request,
@@ -2049,5 +2236,129 @@ test.describe("app notebooks live", () => {
     const isolation = workspace.notebooks?.find((nb) => nb.title === "Catalog Isolation");
     expect(isolation).toBeTruthy();
     expect(isolation!.cells[0].class).toBe("notebook");
+  });
+});
+
+test.describe("notebook warehouse snapshots live", () => {
+  test.use({ fixtureName: "notebook-postgres-workspace" });
+
+  test("joins complete typed snapshots from two named Postgres sources", async ({
+    liveApp,
+    livePostgres,
+    page,
+  }) => {
+    test.skip(!livePostgres, "Postgres via docker is required for the notebook transfer flow.");
+    test.setTimeout(timeoutForRetry(test.info(), 240000, 120000));
+
+    const notebook = await createNotebook(page.request, liveApp.baseURL, "Postgres Sources");
+    const prepareResponse = await page.request.post(
+      `${liveApp.baseURL}/api/notebooks/${notebook.id}/changes/prepare`,
+      {
+        data: {
+          base_revision: notebook.revision,
+          operations: [
+            {
+              kind: "cell.create",
+              language: "sql",
+              connection: "postgres-orders",
+              snapshot_mode: "full",
+              content: "select order_id, order_total from analytics.orders order by order_id",
+              position: "end",
+            },
+            {
+              kind: "cell.create",
+              language: "sql",
+              connection: "postgres-customers",
+              snapshot_mode: "full",
+              content:
+                "select customer_id, customer_name from analytics.customers order by customer_id",
+              position: "end",
+            },
+          ],
+        },
+      },
+    );
+    expect(prepareResponse.ok()).toBe(true);
+    const plan = (await prepareResponse.json()) as {
+      can_apply: boolean;
+      blocking_problems?: string[];
+      change_set: Record<string, unknown>;
+    };
+    expect(plan.can_apply, plan.blocking_problems?.join("; ")).toBe(true);
+    const applyResponse = await page.request.post(
+      `${liveApp.baseURL}/api/notebooks/${notebook.id}/changes/apply`,
+      { data: plan.change_set },
+    );
+    expect(applyResponse.ok()).toBe(true);
+    const configured = ((await applyResponse.json()) as NotebookEnvelope).notebook;
+    const orders = configured.cells.find((cell) => cell.connection === "postgres-orders");
+    const customers = configured.cells.find((cell) => cell.connection === "postgres-customers");
+    expect(orders?.type).toBe("pg.sql");
+    expect(customers?.type).toBe("pg.sql");
+
+    const joinedCell = await addCell(page.request, liveApp.baseURL, notebook.id, "joined_sources");
+    await setCell(
+      page.request,
+      liveApp.baseURL,
+      notebook.id,
+      joinedCell,
+      `select o.order_id, o.order_total, c.customer_name
+from ${orders!.name} o
+join ${customers!.name} c on c.customer_id = o.order_id
+order by o.order_id`,
+    );
+    const runResponse = await page.request.post(
+      `${liveApp.baseURL}/api/notebooks/${notebook.id}/run`,
+      { data: { cells: [joinedCell] }, timeout: 210000 },
+    );
+    if (!runResponse.ok()) {
+      throw new Error(`Notebook run failed: ${await runResponse.text()}`);
+    }
+    const payload = (await runResponse.json()) as {
+      results: Array<{
+        cell_id: string;
+        status: string;
+        rows: unknown[][];
+        column_types?: string[];
+        snapshot?: {
+          connection: string;
+          environment: string;
+          row_count: number;
+          byte_count: number;
+          complete: boolean;
+          sampled: boolean;
+        };
+      }>;
+    };
+    expect(payload.results).toHaveLength(3);
+    const ordersResult = payload.results.find((result) => result.cell_id === orders!.cell_id)!;
+    const customersResult = payload.results.find(
+      (result) => result.cell_id === customers!.cell_id,
+    )!;
+    for (const [result, connection] of [
+      [ordersResult, "postgres-orders"],
+      [customersResult, "postgres-customers"],
+    ] as const) {
+      expect(result.status).toBe("ok");
+      expect(result.snapshot).toMatchObject({
+        connection,
+        environment: "default",
+        row_count: 2,
+        complete: true,
+        sampled: false,
+      });
+      expect(result.snapshot!.byte_count).toBeGreaterThan(0);
+    }
+    expect(ordersResult.column_types?.[0]).toMatch(/INTEGER|BIGINT/i);
+    expect(ordersResult.column_types?.[1]).not.toMatch(/VARCHAR/i);
+    expect(customersResult.column_types).toEqual(
+      expect.arrayContaining([expect.stringMatching(/INTEGER|BIGINT/i), "VARCHAR"]),
+    );
+    const joined = payload.results.at(-1)!;
+    expect(joined).toMatchObject({ cell_id: joinedCell, status: "ok" });
+    expect(joined.rows.map((row) => [Number(row[0]), Number(row[1]), row[2]])).toEqual([
+      [1, 10.5, "Ada"],
+      [2, 22, "Grace"],
+    ]);
   });
 });

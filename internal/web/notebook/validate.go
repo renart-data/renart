@@ -17,6 +17,18 @@ func validate(nb *Notebook) {
 	for _, finding := range presentation.CheckParameterDefinitions(nb.Parameters) {
 		nb.Problems = append(nb.Problems, "parameter definition: "+finding.Message)
 	}
+	for _, parameter := range nb.Parameters {
+		if parameter.Options == nil || strings.TrimSpace(parameter.Options.Dataset) == "" {
+			continue
+		}
+		dataset := strings.TrimSpace(parameter.Options.Dataset)
+		if nb.CellByID(dataset) == nil && nb.CellByName(dataset) == nil {
+			nb.Problems = append(nb.Problems, fmt.Sprintf(
+				"parameter definition: option dataset %q does not match a notebook cell",
+				dataset,
+			))
+		}
+	}
 
 	seen := make(map[string]string, len(nb.Cells))
 	for _, cell := range nb.Cells {

@@ -1,0 +1,6 @@
+id: 4d82246d-2c64-40ad-b869-45823c479169
+name: warehouse
+start_date: "2026-01-01"
+
+default_connections:
+  postgres: postgres-orders
