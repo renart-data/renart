@@ -442,6 +442,19 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		},
 		PublishEvent: func(payload any) { server.hub.PublishImmediate(payload) },
 	})
+	renartExecutable, executableErr := os.Executable()
+	if executableErr != nil {
+		logger.Warn("notebook agent executable discovery failed", zap.Error(executableErr))
+	}
+	server.notebookAgentSvc = service.NewNotebookAgentService(ctx, service.NotebookAgentDependencies{
+		WorkspaceRoot:    absRoot,
+		RenartExecutable: renartExecutable,
+		ValidateNotebook: func(notebookID string) *service.APIError {
+			_, apiErr := server.notebookSvc.Get(notebookID)
+			return apiErr
+		},
+		PublishEvent: func(payload any) { server.hub.PublishImmediate(payload) },
+	})
 	server.presentationSvc = service.NewPresentationService(service.PresentationDependencies{
 		WorkspaceRoot:    absRoot,
 		ConfigPath:       resolveConfigFilePath(absRoot),
@@ -1150,6 +1163,9 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 	}
 
 	cleanup := func() {
+		if server.notebookAgentSvc != nil {
+			server.notebookAgentSvc.Close()
+		}
 		server.secretVault.LockAll()
 		server.schedulerSvc.Stop()
 		server.schedulerStore.Close()

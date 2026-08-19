@@ -27,6 +27,7 @@
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@monaco-editor/react": "^4.7.0",
+    "@shadcn/react": "^0.3.0",
     "@tanstack/react-router": "^1.170.17",
     "ansi-to-html": "^0.7.2",
     "class-variance-authority": "^0.7.1",

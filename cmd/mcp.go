@@ -26,7 +26,12 @@ func MCP() *cli.Command {
 		Name:     "mcp",
 		Usage:    "serve workspace-scoped notebook tools over MCP stdio",
 		Category: categoryIDE,
-		Flags:    []cli.Flag{workspaceFlag()},
+		Flags: []cli.Flag{
+			workspaceFlag(),
+			&cli.StringFlag{Name: "notebook", Hidden: true},
+			&cli.BoolFlag{Name: "read-only", Hidden: true},
+			&cli.BoolFlag{Name: "no-runs", Hidden: true},
+		},
 		Description: "Starts a local MCP server for semantic notebook reads, reviewed edits, and explicit runs.\n" +
 			"It does not expose filesystem, shell, Git, secrets, or generic API tools.",
 		Action: func(ctx context.Context, command *cli.Command) error {
@@ -49,7 +54,11 @@ func MCP() *cli.Command {
 			// Suppress SDK internals here; command failures still return through the
 			// CLI and are printed to stderr, while stdout remains protocol-only.
 			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.Level(100)}))
-			server := notebookmcp.New(ctx, backend, buildVersion, logger)
+			server := notebookmcp.New(ctx, backend, buildVersion, logger, notebookmcp.Policy{
+				NotebookID: command.String("notebook"),
+				ReadOnly:   command.Bool("read-only"),
+				NoRuns:     command.Bool("no-runs"),
+			})
 			if err := server.Protocol().Run(ctx, &mcp.StdioTransport{}); err != nil && ctx.Err() == nil && !normalMCPClientClose(err) {
 				return fmt.Errorf("serve notebook MCP over stdio: %w", err)
 			}

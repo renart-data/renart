@@ -12,13 +12,15 @@ import {
   workspaceSyncSourceAtom,
 } from "@/lib/atoms/domains/workspace";
 import { getWorkspace } from "@/lib/api-workspace";
-import type { NotebookRuntimeEvent } from "@/lib/api-notebooks";
+import type { NotebookAgentSnapshot, NotebookRuntimeEvent } from "@/lib/api-notebooks";
 import type { StalenessUpdatedEvent } from "@/lib/api-staleness";
 import {
   ScheduleOccurrenceEvent,
   SchedulerRunEvent,
   appendSchedulerRunEventAtom,
   mergeNotebookRuntimeEvent,
+  mergeNotebookAgentEvent,
+  notebookAgentEventsAtom,
   notebookRuntimeEventsAtom,
   scheduleOccurrenceEventAtom,
   stalenessEventAtom,
@@ -139,6 +141,23 @@ function isNotebookRuntimeEvent(payload: unknown): payload is NotebookRuntimeEve
   );
 }
 
+function isNotebookAgentEvent(payload: unknown): payload is NotebookAgentSnapshot {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    "type" in payload &&
+    payload.type === "notebook.agent" &&
+    "notebook_id" in payload &&
+    typeof payload.notebook_id === "string" &&
+    "revision" in payload &&
+    typeof payload.revision === "number" &&
+    "messages" in payload &&
+    Array.isArray(payload.messages) &&
+    "activities" in payload &&
+    Array.isArray(payload.activities)
+  );
+}
+
 function isSQLCatalogReadyEvent(payload: unknown): payload is {
   type: "sql.catalog-ready";
   connection: string;
@@ -163,6 +182,7 @@ export function useWorkspaceSync() {
   const setScheduleOccurrenceEvent = useSetAtom(scheduleOccurrenceEventAtom);
   const setStalenessEvent = useSetAtom(stalenessEventAtom);
   const setNotebookRuntimeEvents = useSetAtom(notebookRuntimeEventsAtom);
+  const setNotebookAgentEvents = useSetAtom(notebookAgentEventsAtom);
   const setSQLCatalogReadyEvent = useSetAtom(sqlCatalogReadyEventAtom);
   const setWorkspaceSyncSource = useSetAtom(workspaceSyncSourceAtom);
   const setWorkspaceReconnectSequence = useSetAtom(workspaceReconnectSequenceAtom);
@@ -253,6 +273,11 @@ export function useWorkspaceSync() {
           return;
         }
 
+        if (isNotebookAgentEvent(payload)) {
+          setNotebookAgentEvents((current) => mergeNotebookAgentEvent(current, payload));
+          return;
+        }
+
         if (isSQLCatalogReadyEvent(payload)) {
           setSQLCatalogReadyEvent((current) => ({
             sequence: current.sequence + 1,
@@ -305,6 +330,7 @@ export function useWorkspaceSync() {
     };
   }, [
     appendSchedulerRunEvent,
+    setNotebookAgentEvents,
     setNotebookRuntimeEvents,
     setSQLCatalogReadyEvent,
     setServerOnline,

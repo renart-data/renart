@@ -534,6 +534,37 @@ test.describe("app notebooks live", () => {
     const parquet = await parquetExport.body();
     expect(parquet.subarray(0, 4).toString()).toBe("PAR1");
     expect(parquet.subarray(-4).toString()).toBe("PAR1");
+
+    // A full local source can be reviewed and promoted directly to the
+    // destination warehouse's Seed type. The remaining transform follows the
+    // new pipeline asset name.
+    await sourceCard.getByRole("button", { name: "Source actions" }).click();
+    await page.getByRole("menuitem", { name: "Promote to pipeline" }).click();
+    const promotionDialog = page.getByRole("dialog", { name: "Promote to pipeline" });
+    await expect(promotionDialog.getByText("duckdb.seed", { exact: true })).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(promotionDialog.getByText("duckdb-default", { exact: true })).toBeVisible();
+    await expect(promotionDialog.getByText(/^\d+ file changes$/)).toBeVisible();
+    const promotionResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname ===
+          `/api/notebooks/${notebook.id}/cells/${source!.cell_id}/promote` &&
+        response.request().method() === "POST" &&
+        response.ok(),
+      { timeout: 30000 },
+    );
+    await promotionDialog.getByRole("button", { name: "Promote", exact: true }).click();
+    const promotion = (await (await promotionResponse).json()) as {
+      promoted_count: number;
+      asset_path: string;
+      notebook: NotebookEnvelope["notebook"];
+    };
+    expect(promotion.promoted_count).toBe(1);
+    expect(promotion.asset_path).toContain(`assets/marts/${source!.name}.asset.yml`);
+    expect(
+      promotion.notebook.cells.find((candidate) => candidate.cell_id === totalCell)?.content,
+    ).toContain(`from marts.${source!.name}`);
   });
 
   test("highlights a sibling cell after definition navigation", async ({ liveApp, page }) => {
@@ -1737,13 +1768,16 @@ test.describe("app notebooks live", () => {
           requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
         }),
     );
+    await expect(dialog.getByText("marts.child", { exact: true })).toBeVisible({ timeout: 15000 });
     const promoteRequest = page.waitForRequest(
       (request) =>
-        request.url().includes(`/cells/${baseCell}/promote`) && request.method() === "POST",
+        new URL(request.url()).pathname.endsWith(`/cells/${baseCell}/promote`) &&
+        request.method() === "POST",
       { timeout: 30000 },
     );
     const promoteResponse = page.waitForResponse(
-      (response) => response.url().includes(`/cells/${baseCell}/promote`) && response.ok(),
+      (response) =>
+        new URL(response.url()).pathname.endsWith(`/cells/${baseCell}/promote`) && response.ok(),
       { timeout: 30000 },
     );
     await dialog.getByRole("button", { name: "Promote", exact: true }).click();

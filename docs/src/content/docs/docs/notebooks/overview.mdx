@@ -122,10 +122,22 @@ block; new visualization edits do not write `@viz` comments.
 
 ## Promote a cell to the pipeline
 
-When a query earns a permanent place, open the cell's actions menu and choose
-**Promote to pipeline**. Renart previews the target pipeline and dialect
-consequences, then turns the cell into an ordinary pipeline asset in the same
-repository and review flow.
+When a transform or source earns a permanent place, open its actions menu and
+choose **Promote to pipeline**. Before anything changes, Renart shows the target
+pipeline, asset type, source and target connections, materialization, files to
+change, and any dialect consequences.
+
+Local SQL and Python become ordinary pipeline assets. A full local-file source
+becomes a Seed asset where the target supports one, object-storage sources
+become Load assets, and HTTP sources become API assets while retaining the
+request and response settings. Connection-bound SQL keeps its source
+connection. An intentionally sampled source cannot be promoted until you
+change it to **Full**.
+
+Applying the reviewed plan creates the pipeline files, rewrites remaining
+notebook references, and removes the promoted blocks as one recoverable
+workspace change. If the notebook changed after review, Renart keeps both the
+notebook and pipeline untouched and asks you to review again.
 
 ## Files like everything else
 

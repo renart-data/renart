@@ -30,12 +30,28 @@ type Server struct {
 	mcp     *mcp.Server
 	changes *changeStore
 	runs    *runStore
+	policy  Policy
+}
+
+// Policy narrows an MCP server to the capabilities granted by its launcher.
+// The zero value preserves the public, workspace-wide MCP command's existing
+// behavior. Native notebook chat uses an explicit policy so an agent cannot
+// cross the selected notebook or gain write/run tools while in Ask mode.
+type Policy struct {
+	NotebookID string
+	ReadOnly   bool
+	NoRuns     bool
 }
 
 // New constructs a single-workspace notebook MCP server.
-func New(ctx context.Context, backend Backend, version string, logger *slog.Logger) *Server {
+func New(ctx context.Context, backend Backend, version string, logger *slog.Logger, policies ...Policy) *Server {
 	if strings.TrimSpace(version) == "" {
 		version = "dev"
+	}
+	var policy Policy
+	if len(policies) > 0 {
+		policy = policies[0]
+		policy.NotebookID = strings.TrimSpace(policy.NotebookID)
 	}
 	protocol := mcp.NewServer(
 		&mcp.Implementation{Name: "renart-notebooks", Version: version},
@@ -50,6 +66,7 @@ func New(ctx context.Context, backend Backend, version string, logger *slog.Logg
 		mcp:     protocol,
 		changes: newChangeStore(),
 		runs:    newRunStore(ctx, backend),
+		policy:  policy,
 	}
 	server.registerTools()
 	return server
@@ -69,14 +86,18 @@ func (s *Server) registerTools() {
 	mcp.AddTool(s.mcp, readTool("get_notebook_result_sample", "Get at most 50 rows and 64 KiB from a previously produced notebook result."), s.getResultSample)
 	mcp.AddTool(s.mcp, readTool("list_notebook_sources", "List credential-free source definitions, schemas, and snapshot provenance."), s.listSources)
 
-	mcp.AddTool(s.mcp, readTool("prepare_notebook_change_set", "Normalize and stage a bounded semantic notebook change without writing files."), s.prepareChangeSet)
-	mcp.AddTool(s.mcp, readTool("validate_notebook_change_set", "Revalidate a prepared notebook change against the current filesystem revision."), s.validateChangeSet)
-	mcp.AddTool(s.mcp, changeTool("apply_notebook_change_set", "Atomically apply the exact prepared notebook change after revision validation.", true, false), s.applyChangeSet)
-	mcp.AddTool(s.mcp, readTool("discard_notebook_change_set", "Discard a process-local prepared notebook change."), s.discardChangeSet)
+	if !s.policy.ReadOnly {
+		mcp.AddTool(s.mcp, readTool("prepare_notebook_change_set", "Normalize and stage a bounded semantic notebook change without writing files."), s.prepareChangeSet)
+		mcp.AddTool(s.mcp, readTool("validate_notebook_change_set", "Revalidate a prepared notebook change against the current filesystem revision."), s.validateChangeSet)
+		mcp.AddTool(s.mcp, changeTool("apply_notebook_change_set", "Atomically apply the exact prepared notebook change after revision validation.", true, false), s.applyChangeSet)
+		mcp.AddTool(s.mcp, readTool("discard_notebook_change_set", "Discard a process-local prepared notebook change."), s.discardChangeSet)
+	}
 
-	mcp.AddTool(s.mcp, runTool("run_notebook_cells", "Start an explicit notebook run. Python requires allow_python=true."), s.runNotebook)
-	mcp.AddTool(s.mcp, changeTool("cancel_notebook_run", "Cancel the selected asynchronous notebook run.", false, true), s.cancelRun)
-	mcp.AddTool(s.mcp, readTool("get_notebook_run_status", "Get bounded status and result summaries for an MCP-started notebook run."), s.getRunStatus)
+	if !s.policy.NoRuns && !s.policy.ReadOnly {
+		mcp.AddTool(s.mcp, runTool("run_notebook_cells", "Start an explicit notebook run. Python requires allow_python=true."), s.runNotebook)
+		mcp.AddTool(s.mcp, changeTool("cancel_notebook_run", "Cancel the selected asynchronous notebook run.", false, true), s.cancelRun)
+		mcp.AddTool(s.mcp, readTool("get_notebook_run_status", "Get bounded status and result summaries for an MCP-started notebook run."), s.getRunStatus)
+	}
 }
 
 func readTool(name, description string) *mcp.Tool {
@@ -115,6 +136,9 @@ func (s *Server) listNotebooks(ctx context.Context, _ *mcp.CallToolRequest, _ Em
 	}
 	result := ListNotebooksOutput{SchemaVersion: SchemaVersion, Notebooks: make([]NotebookSummary, 0, len(state.Notebooks))}
 	for _, nb := range state.Notebooks {
+		if s.policy.NotebookID != "" && nb.ID != s.policy.NotebookID {
+			continue
+		}
 		result.Notebooks = append(result.Notebooks, summarizeNotebook(nb))
 	}
 	sort.Slice(result.Notebooks, func(i, j int) bool {
@@ -402,8 +426,12 @@ func (s *Server) listSources(ctx context.Context, _ *mcp.CallToolRequest, input 
 }
 
 func (s *Server) loadNotebook(ctx context.Context, notebookID string) (model.Notebook, error) {
-	if strings.TrimSpace(notebookID) == "" {
+	notebookID = strings.TrimSpace(notebookID)
+	if notebookID == "" {
 		return model.Notebook{}, fmt.Errorf("notebook_id is required")
+	}
+	if s.policy.NotebookID != "" && notebookID != s.policy.NotebookID {
+		return model.Notebook{}, fmt.Errorf("notebook %q is outside this agent session", notebookID)
 	}
 	return s.backend.Notebook(ctx, notebookID)
 }

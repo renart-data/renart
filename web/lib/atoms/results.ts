@@ -1,7 +1,7 @@
 import { atom } from "jotai";
 
 import type { StalenessUpdatedEvent } from "@/lib/api-staleness";
-import type { NotebookRuntimeEvent } from "@/lib/api-notebooks";
+import type { NotebookAgentSnapshot, NotebookRuntimeEvent } from "@/lib/api-notebooks";
 import type {
   PipelineRun,
   PipelineRunLogLine,
@@ -118,3 +118,18 @@ export function mergeNotebookRuntimeEvent(
 }
 
 export const notebookRuntimeEventsAtom = atom<NotebookRuntimeEvents>({});
+
+export type NotebookAgentEvents = Record<string, NotebookAgentSnapshot>;
+
+export function mergeNotebookAgentEvent(
+  current: NotebookAgentEvents,
+  event: NotebookAgentSnapshot,
+): NotebookAgentEvents {
+  const previous = current[event.notebook_id];
+  if (previous && previous.revision > event.revision) {
+    return current;
+  }
+  return { ...current, [event.notebook_id]: event };
+}
+
+export const notebookAgentEventsAtom = atom<NotebookAgentEvents>({});

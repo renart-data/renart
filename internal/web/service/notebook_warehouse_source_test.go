@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -56,14 +58,19 @@ environments:
 	script := `#!/bin/sh
 printf '%s\n' "$@" > "$RENART_TEST_SLING_ARGS"
 printf '%s' "$RENART_SLING_SOURCE" > "$RENART_TEST_SLING_CONNECTION"
-target=""
+replication=""
 while [ "$#" -gt 0 ]; do
-  if [ "$1" = "--tgt-object" ]; then
+  if [ "$1" = "--src-stream" ]; then
+    printf 'ambiguous SQL source flag was used\n' >&2
+    exit 29
+  fi
+  if [ "$1" = "--replication" ]; then
     shift
-    target="$1"
+    replication="$1"
   fi
   shift
 done
+target="$(tr ',' '\n' < "$replication" | awk -F'"' '$2 == "object" { print $4; exit }')"
 target="${target#file://}"
 cp "$RENART_TEST_PARQUET" "$target"
 `
@@ -110,8 +117,23 @@ cp "$RENART_TEST_PARQUET" "$target"
 	if strings.Contains(string(argsBytes), sourceQuery) || strings.Contains(string(argsBytes), "private.revenue") {
 		t.Fatalf("source query leaked onto Sling argv: %s", argsBytes)
 	}
-	sourceStream := argumentAfter(args, "--src-stream")
-	parsedSource, err := url.Parse(sourceStream)
+	replicationPath := argumentAfter(args, "--replication")
+	replicationBytes, err := os.ReadFile(replicationPath)
+	if err != nil {
+		t.Fatalf("read staged Sling replication: %v", err)
+	}
+	var replication notebookSlingReplication
+	if err := json.Unmarshal(replicationBytes, &replication); err != nil {
+		t.Fatalf("parse staged Sling replication: %v", err)
+	}
+	if replication.Source != slingSourceConnectionEnv || replication.Target != "LOCAL" || replication.Defaults.Mode != "full-refresh" {
+		t.Fatalf("unexpected Sling replication envelope: %+v", replication)
+	}
+	stream, ok := replication.Streams["renart_notebook_snapshot"]
+	if !ok || stream.TargetOptions.Format != "parquet" {
+		t.Fatalf("missing typed notebook snapshot stream: %+v", replication.Streams)
+	}
+	parsedSource, err := url.Parse(stream.SQL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,12 +147,36 @@ cp "$RENART_TEST_PARQUET" "$target"
 	if info, err := os.Stat(parsedSource.Path); err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatalf("query file permissions are not private: info=%v err=%v", info, err)
 	}
+	if info, err := os.Stat(replicationPath); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("replication file permissions are not private: info=%v err=%v", info, err)
+	}
 	connectionBytes, err := os.ReadFile(connectionPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(string(argsBytes), "secret") || !strings.Contains(string(connectionBytes), "postgres") {
 		t.Fatalf("connection was not isolated in the Sling environment: args=%q connection=%q", argsBytes, connectionBytes)
+	}
+}
+
+func TestSlingNotebookTransferIncludesCommandOutputOnFailure(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeSling := filepath.Join(root, "fake-sling")
+	if err := os.WriteFile(fakeSling, []byte("#!/bin/sh\nprintf 'snapshot diagnostic from sling\\n' >&2\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RENART_SLING_BINARY", fakeSling)
+
+	transfer := &slingNotebookTransferService{workspaceRoot: root, maxBytes: 10 << 20}
+	_, err := transfer.snapshotFromSling(context.Background(), notebook.SnapshotModeFull, notebook.SnapshotProvenance{},
+		func(_ context.Context, _ string, _ io.Writer) (notebookSnapshotSource, error) {
+			return notebookSnapshotSource{Args: []string{"--src-stream", "file:///tmp/input.csv"}}, nil
+		})
+	if err == nil || !strings.Contains(err.Error(), "snapshot diagnostic from sling") {
+		t.Fatalf("Sling stderr was not preserved in the snapshot error: %v", err)
 	}
 }
 

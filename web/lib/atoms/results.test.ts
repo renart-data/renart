@@ -1,12 +1,38 @@
 import { describe, expect, it } from "vitest";
 
-import type { NotebookCellRunResult, NotebookRuntimeEvent } from "@/lib/api-notebooks";
+import type {
+  NotebookAgentSnapshot,
+  NotebookCellRunResult,
+  NotebookRuntimeEvent,
+} from "@/lib/api-notebooks";
 import {
   appendSchedulerRunEvent,
+  mergeNotebookAgentEvent,
   mergeNotebookRuntimeEvent,
   type SchedulerRunEvent,
   type SchedulerRunEventBuffer,
 } from "@/lib/atoms/domains/results";
+
+function agentEvent(revision: number): NotebookAgentSnapshot {
+  return {
+    type: "notebook.agent",
+    notebook_id: "notebook-1",
+    revision,
+    status: "idle",
+    messages: [],
+    activities: [],
+  };
+}
+
+describe("mergeNotebookAgentEvent", () => {
+  it("keeps the newest complete snapshot when an older SSE event arrives late", () => {
+    const newest = mergeNotebookAgentEvent({}, agentEvent(4));
+    const stale = mergeNotebookAgentEvent(newest, agentEvent(3));
+
+    expect(stale).toBe(newest);
+    expect(stale["notebook-1"]?.revision).toBe(4);
+  });
+});
 
 function result(cellId: string, value: number): NotebookCellRunResult {
   return {

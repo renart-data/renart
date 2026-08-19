@@ -39,6 +39,12 @@ type PromotePlan struct {
 type PromoteTarget struct {
 	CellID     string
 	TargetName string
+	// AssetType and Connection optionally override the destination pipeline's
+	// default for this block. Connection-bound warehouse source cells keep
+	// their native execution context when promoted; local transforms leave both
+	// fields empty and inherit the selected pipeline target.
+	AssetType  string
+	Connection string
 }
 
 // PlanPromote computes the promotion of a single cell. It is the one-cell case
@@ -81,10 +87,18 @@ func PlanPromoteCells(nb *Notebook, targets []PromoteTarget, pipelineAssetsDir, 
 	}
 
 	plan := &PromotePlan{}
+	needsDialectWarning := false
 
 	for _, target := range targets {
 		cell := promotedByID[target.CellID]
 		targetName := strings.TrimSpace(target.TargetName)
+		promotedType := strings.TrimSpace(target.AssetType)
+		if promotedType == "" {
+			promotedType = assetType
+		}
+		if IsPythonCell(cell) {
+			promotedType = PythonCellType
+		}
 
 		// Rewrite references to the OTHER promoted cells in this cell's body.
 		bodyRenames := map[string]string{}
@@ -96,11 +110,14 @@ func PlanPromoteCells(nb *Notebook, targets []PromoteTarget, pipelineAssetsDir, 
 		}
 
 		plan.Assets = append(plan.Assets, PromotedAsset{
-			Path:    promotedAssetFilePath(pipelineAssetsDir, targetName),
-			Content: promotedAssetContent(cell, targetName, assetType, bodyRenames),
+			Path:    promotedAssetFilePath(pipelineAssetsDir, targetName, cell),
+			Content: promotedAssetContent(cell, targetName, promotedType, strings.TrimSpace(target.Connection), bodyRenames),
 		})
 		plan.RemoveCellPaths = append(plan.RemoveCellPaths, cell.Path)
 		plan.RemoveBlockIDs = append(plan.RemoveBlockIDs, target.CellID)
+		if !IsPythonCell(cell) && !IsSourceCell(cell) && strings.TrimSpace(cell.Asset.Connection) == "" {
+			needsDialectWarning = true
+		}
 	}
 
 	// Rewrite the cells left behind that referenced any promoted cell so they
@@ -125,7 +142,7 @@ func PlanPromoteCells(nb *Notebook, targets []PromoteTarget, pipelineAssetsDir, 
 		}
 	}
 
-	if targetDialect != "" && targetDialect != "duckdb" {
+	if needsDialectWarning && targetDialect != "" && targetDialect != "duckdb" {
 		plan.DialectWarning = fmt.Sprintf(
 			"these cells are written in DuckDB SQL but the target connection is %s; review the SQL before running it in the pipeline (automatic transpilation is not available)",
 			targetDialect)
@@ -134,40 +151,54 @@ func PlanPromoteCells(nb *Notebook, targets []PromoteTarget, pipelineAssetsDir, 
 	return plan, nil
 }
 
-// promotedAssetFilePath returns the new asset's file path under the pipeline's
-// assets dir, encoding the target name's schema prefix as subdirectories
-// (e.g. "marts.orders" → <assets>/marts/orders.sql). This keeps the file path
-// consistent with the asset name so bruin can infer the name from the path and
-// downstream assets created from it land under the same prefix.
-func promotedAssetFilePath(pipelineAssetsDir, targetName string) string {
+// promotedAssetFilePath returns the new executable asset's file path under the
+// pipeline assets dir, encoding the target name's schema prefix as
+// subdirectories (for example marts.orders -> assets/marts/orders.sql).
+// Python cells retain .py; source definitions are replaced by the service with
+// a standalone .asset.yml after the shared graph/reference plan is built.
+func promotedAssetFilePath(pipelineAssetsDir, targetName string, cell *Cell) string {
 	parts := strings.Split(strings.TrimSpace(targetName), ".")
 	leaf := parts[len(parts)-1]
+	extension := ".sql"
+	if IsPythonCell(cell) {
+		extension = ".py"
+	}
 	segments := make([]string, 0, len(parts)+1)
 	segments = append(segments, pipelineAssetsDir)
 	segments = append(segments, parts[:len(parts)-1]...)
-	segments = append(segments, leaf+".sql")
+	segments = append(segments, leaf+extension)
 	return filepath.Join(segments...)
 }
 
-// promotedAssetContent builds the pipeline asset file: a fresh @bruin
-// frontmatter (name = the real target, materialized as a table, id kept for
-// traceability) followed by the cell's SQL body. bodyRenames rewrites
-// references to co-promoted cells. The notebook @viz/@materialize directives
-// are comments and carry over harmlessly.
-func promotedAssetContent(cell *Cell, targetName, assetType string, bodyRenames map[string]string) string {
+// promotedAssetContent builds a fresh SQL or Python pipeline asset frontmatter
+// (name = the real target, materialized as a table, ID retained for
+// traceability) followed by the executable body. bodyRenames rewrites
+// references to co-promoted cells.
+func promotedAssetContent(cell *Cell, targetName, assetType, connection string, bodyRenames map[string]string) string {
 	body := strings.TrimRight(cell.Asset.ExecutableFile.Content, "\n")
 	if len(bodyRenames) > 0 {
 		body = strings.TrimRight(spliceIdentifiers(body, bodyRenames), "\n")
 	}
 	var builder strings.Builder
-	builder.WriteString("/* @bruin\n")
+	if IsPythonCell(cell) {
+		builder.WriteString("\"\"\" @bruin\n")
+	} else {
+		builder.WriteString("/* @bruin\n")
+	}
 	builder.WriteString("name: " + targetName + "\n")
 	builder.WriteString("type: " + assetType + "\n")
 	if cell.ID != "" {
 		builder.WriteString("id: " + cell.ID + "\n")
 	}
+	if connection != "" {
+		builder.WriteString("connection: " + connection + "\n")
+	}
 	builder.WriteString("materialization:\n  type: table\n")
-	builder.WriteString("@bruin */\n\n")
+	if IsPythonCell(cell) {
+		builder.WriteString("@bruin \"\"\"\n\n")
+	} else {
+		builder.WriteString("@bruin */\n\n")
+	}
 	builder.WriteString(body)
 	builder.WriteString("\n")
 	return builder.String()

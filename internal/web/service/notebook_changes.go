@@ -1181,6 +1181,69 @@ func applyNotebookFileTransaction(workspaceRoot, notebookDir string, before, aft
 		return fmt.Errorf("notebook files changed before transaction commit")
 	}
 
+	notebookRel, err := filepath.Rel(workspaceRoot, notebookDir)
+	if err != nil || strings.HasPrefix(notebookRel, "..") {
+		return fmt.Errorf("notebook directory is outside the workspace")
+	}
+	return applyWorkspaceFileTransaction(
+		workspaceRoot,
+		prefixWorkspaceFileSet(notebookRel, before),
+		prefixWorkspaceFileSet(notebookRel, after),
+		hook,
+	)
+}
+
+func prefixWorkspaceFileSet(prefix string, files map[string][]byte) map[string][]byte {
+	result := make(map[string][]byte, len(files))
+	for rel, content := range files {
+		result[filepath.ToSlash(filepath.Join(prefix, filepath.FromSlash(rel)))] = content
+	}
+	return result
+}
+
+// applyWorkspaceFileTransaction commits an exact set of workspace-relative
+// file mutations through the notebook recovery journal. Notebook promotion
+// needs this wider boundary because it removes notebook blocks, rewrites
+// sibling cells, and creates pipeline assets as one logical operation. The
+// journal already stores workspace-relative targets, so startup recovery works
+// for both notebook-only and cross-artifact transactions.
+func applyWorkspaceFileTransaction(workspaceRoot string, before, after map[string][]byte, hook notebookTransactionHook) error {
+	paths := make(map[string]bool, len(before)+len(after))
+	for path := range before {
+		paths[filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))] = true
+	}
+	for path := range after {
+		paths[filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))] = true
+	}
+	ordered := make([]string, 0, len(paths))
+	for rel := range paths {
+		beforeContent, beforeExists := before[rel]
+		afterContent, afterExists := after[rel]
+		if beforeExists && afterExists && bytes.Equal(beforeContent, afterContent) {
+			continue
+		}
+		targetPath, err := SafeJoin(workspaceRoot, filepath.FromSlash(rel))
+		if err != nil {
+			return err
+		}
+		current, readErr := os.ReadFile(targetPath)
+		switch {
+		case beforeExists && readErr != nil:
+			return fmt.Errorf("workspace file %s changed before transaction commit", rel)
+		case beforeExists && !bytes.Equal(current, beforeContent):
+			return fmt.Errorf("workspace file %s changed before transaction commit", rel)
+		case !beforeExists && readErr == nil:
+			return fmt.Errorf("workspace file %s appeared before transaction commit", rel)
+		case !beforeExists && !os.IsNotExist(readErr):
+			return fmt.Errorf("inspect workspace file %s: %w", rel, readErr)
+		}
+		ordered = append(ordered, rel)
+	}
+	sort.Strings(ordered)
+	if len(ordered) == 0 {
+		return nil
+	}
+
 	journalRoot := filepath.Join(workspaceRoot, ".renart", "notebook-transactions")
 	if err := os.MkdirAll(journalRoot, 0o700); err != nil {
 		return err
@@ -1189,33 +1252,10 @@ func applyNotebookFileTransaction(workspaceRoot, notebookDir string, before, aft
 	if err != nil {
 		return err
 	}
-	notebookRel, err := filepath.Rel(workspaceRoot, notebookDir)
-	if err != nil || strings.HasPrefix(notebookRel, "..") {
-		_ = os.RemoveAll(journalDir)
-		return fmt.Errorf("notebook directory is outside the workspace")
-	}
-
-	paths := make(map[string]bool, len(before)+len(after))
-	for path := range before {
-		paths[path] = true
-	}
-	for path := range after {
-		paths[path] = true
-	}
-	ordered := make([]string, 0, len(paths))
-	for path := range paths {
-		if beforeContent, ok := before[path]; ok {
-			if afterContent, exists := after[path]; exists && bytes.Equal(beforeContent, afterContent) {
-				continue
-			}
-		}
-		ordered = append(ordered, path)
-	}
-	sort.Strings(ordered)
 	state := notebookTransactionState{Phase: "prepared", Entries: make([]notebookTransactionEntry, 0, len(ordered))}
 	for index, rel := range ordered {
 		entry := notebookTransactionEntry{
-			Path:         filepath.ToSlash(filepath.Join(notebookRel, filepath.FromSlash(rel))),
+			Path:         rel,
 			BeforeExists: false,
 		}
 		if content, exists := before[rel]; exists {
@@ -1245,7 +1285,13 @@ func applyNotebookFileTransaction(workspaceRoot, notebookDir string, before, aft
 
 	rollback := func() error { return rollbackNotebookTransaction(workspaceRoot, journalDir, state) }
 	for index, rel := range ordered {
-		targetPath := filepath.Join(notebookDir, filepath.FromSlash(rel))
+		targetPath, joinErr := SafeJoin(workspaceRoot, filepath.FromSlash(rel))
+		if joinErr != nil {
+			if rollbackErr := rollback(); rollbackErr != nil {
+				return fmt.Errorf("resolve %s: %v; rollback: %w", rel, joinErr, rollbackErr)
+			}
+			return joinErr
+		}
 		if hook != nil {
 			if hookErr := hook(index, targetPath); hookErr != nil {
 				if rollbackErr := rollback(); rollbackErr != nil {

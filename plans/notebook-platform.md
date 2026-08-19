@@ -1,17 +1,25 @@
 # Notebook platform: release readiness, multi-source data, visualizations, and local agents
 
-> **Status (2026-08-12): partially implemented.** The current implementation is
+> **Status (2026-08-13): partially implemented.** The current implementation is
 > documented in [`architecture/notebooks.md`](../architecture/notebooks.md).
 > Phases 0 and 1 are complete; the Phase 2 visualization/source/export core and
-> Phase 3 MCP server are implemented. Phase 4's typed notebook parameters,
+> Phase 3 MCP server and native Ask/Edit notebook chat are implemented. Phase 4's typed notebook parameters,
 > shared filter contract/checker, and SQL/Python/source rendering are also
 > implemented. Phase 5 now has its versioned dashboard/report file contract,
 > strict loader/checker, workspace DTO, artifact-index lineage, server-owned
 > CRUD, and visual/definition authoring routes.
-> Source-block promotion, client-specific MCP acceptance runs, remaining
-> release hardening remain. Presentation runtime, rendered viewers, typed URL
-> filters, pipeline type-check reporting, and producer-scoped deployment gates
-> are implemented.
+> Source-block promotion with reviewed Seed/API/Load translation and one
+> recoverable workspace transaction is implemented. Presentation runtime,
+> rendered viewers, typed URL filters, pipeline type-check reporting, and
+> producer-scoped deployment gates are implemented. A real Codex stdio/tool
+> acceptance run and Claude Code/OpenCode transport health checks pass; the
+> authenticated Claude Code/OpenCode task corpus and remaining release
+> hardening remain. The repository release check and the complete Chromium
+> notebook and presentation live-test files pass without retries. Remaining
+> release evidence is primarily the credentialed warehouse transfer matrix,
+> model-driven Claude Code/OpenCode native-chat corpus, persistent/shareable
+> agent history, and broader accessibility/performance
+> calibration.
 > This plan replaces the narrower agent-only proposal and deliberately
 > treats data access, execution, presentation, reproducibility, and agent tooling
 > as one notebook product.
@@ -54,11 +62,12 @@ The recommended notebook architecture is:
    verifies referenced fields and their semantic types, validates filter
    bindings/defaults/options, and feeds both editor diagnostics and
    `renart type-check`. A known-bad dashboard or report is a deployment blocker.
-8. **Start agentic notebooks as a local MCP developer preview.** `renart mcp`
-   runs over stdio for locally installed coding agents. It exposes notebook-only
-   semantic tools backed by the Go server; it does not expose paths, a shell,
-   Git, credentials, or generic REST forwarding. Codex, Claude Code, and OpenCode
-   can all launch local stdio MCP servers today.
+8. **Use one semantic MCP contract for external agents and native chat.**
+   `renart mcp` remains the project-local developer integration, while the
+   notebook Ask/Edit panel launches an installed Codex, Claude Code, or OpenCode
+   client in a private directory with a notebook-scoped MCP server. Ask exposes
+   only bounded reads; Edit grants reviewed semantic changes and explicit runs.
+   Neither surface exposes paths, Git, credentials, or generic REST forwarding.
 9. **Use one notebook-wide revision and transaction model.** The visual builder,
    ordinary UI edits, and MCP change sets must share the same semantic mutation,
    validation, conflict, and SSE reconciliation path. The filesystem remains the
@@ -493,9 +502,10 @@ Use an adapter chain, selected by source capability:
 1. **Local DuckDB:** keep the existing `ATTACH; CTAS; DETACH` path.
 2. **Database query to Parquet:** reuse Renart's hardened Sling launcher,
    connection-to-URI bridge, credential-in-environment handling, cancellation,
-   and shared process limiter. Sling accepts a SQL file as a source stream and
-   a local Parquet path as a target, so a source-native query can remain off the
-   command line and retain a columnar schema.
+   and shared process limiter. Use a private replication document whose
+   explicit `sql` field points at a private SQL file and whose target is local
+   Parquet. This keeps a source-native query off the command line, retains a
+   columnar schema, and avoids ambiguous SQL-file versus file-data detection.
 3. **Small typed direct result:** allow a bounded `SelectWithSchema` to Parquet
    fallback only when Sling does not support a query connection and the result
    stays below a strict in-memory budget. Do not route it through JSON or infer
@@ -790,18 +800,20 @@ the default, so a new visualization engine is not required for v1.
 
 ### 7.1 Product boundary
 
-The initial agent feature is not a built-in model provider or chat system. It
-is a local developer integration:
+The agent feature remains local and provider-neutral. Renart does not embed a
+model SDK, collect provider API keys, or host agent work. It offers two clients
+of the same notebook services:
 
 ```text
-Codex / Claude Code / OpenCode
-             |
-        MCP over stdio
-             |
-        renart mcp
-             |
+external Codex / Claude Code / OpenCode configuration
+                         |                       native notebook Ask/Edit panel
+                         |                                  |
+                    renart mcp                 local provider CLI adapter
+                         |                                  |
+                         +---------- MCP over stdio --------+
+                                            |
   notebook domain service + running Renart server
-             |
+                                            |
      notebook files / session / LSP
 ```
 
@@ -809,6 +821,14 @@ All three requested clients support launching local stdio MCP servers. Stdio is
 preferable to a second listening HTTP server because the client owns process
 lifecycle, stdout is the protocol, no port is exposed, and Renart can pin the
 process to one workspace at startup.
+
+For native chat, Renart discovers already installed and authenticated client
+binaries. It creates a private per-notebook/provider/mode working directory,
+passes messages over stdin, normalizes each client's structured event stream,
+and renders assistant text plus semantic tool progress in a docked/mobile chat.
+The user-facing capability boundary is explicit: Ask has only the scoped read
+catalog; Edit has semantic change-set and run tools. A provider/model switch
+does not create a second notebook mutation path.
 
 `renart mcp --workspace <path>` should:
 
@@ -918,18 +938,25 @@ Keep the boundary useful without building a hosted control plane:
 - redacted structural logs rather than retained result data;
 - cancellation propagated to DuckDB, transfers, and Python.
 
-This is a **cooperative least-privilege integration**, not containment. A
-general coding agent may independently have shell and filesystem tools and can
-bypass the MCP workflow if the user grants them. Renart can provide client
-instructions that say “modify notebooks only through Renart tools,” but it must
-not claim to sandbox the whole external process. Enforceable containment would
-require the user to disable those tools or run the agent in a separate sandbox.
+The external `renart mcp` setup is a **cooperative least-privilege integration**,
+not containment. A separately configured coding agent may independently have
+shell and filesystem tools and can bypass the MCP workflow if the user grants
+them.
+
+Native chat adds an enforceable product boundary without pretending to be a
+host security boundary: agents start outside the repository, Ask physically
+omits mutation/run tools, every tool rejects a different notebook ID, Claude
+Code and OpenCode built-ins are disabled, Codex uses read-only sandbox mode,
+and a normalized generic shell/filesystem/web event cancels the process. This
+is sufficient for a local IDE workflow; it does not claim to contain a hostile
+binary or replace OS sandboxing.
 
 ### 7.6 Client setup and evaluation
 
-Document copyable project-local configuration for Codex, Claude Code, and
-OpenCode using `renart mcp --workspace .`. Do not automatically write or commit
-agent configuration in the first version. Each guide must explain:
+Document the native panel first, then copyable project-local configuration for
+Codex, Claude Code, and OpenCode using `renart mcp --workspace .`. Do not
+automatically write or commit external agent configuration. The guide must
+explain:
 
 - which local binary is launched;
 - that the agent/model provider is selected and governed by that client;
@@ -937,18 +964,40 @@ agent configuration in the first version. Each guide must explain:
 - that users should keep mutating-tool approval enabled;
 - how to remove the integration.
 
+Native chat discovers clients on the Renart server's `PATH`; it never writes
+project configuration. The transcript is bounded server memory, survives route
+navigation and SSE reconnect, and is cleared by **New chat** or server restart.
+Provider sessions are isolated by provider and Ask/Edit mode. A structured
+full-snapshot SSE contract keeps the browser recoverable after dropped events.
+
 Test the same fixed task corpus with all three clients, but keep ordinary CI
 deterministic with an MCP protocol client and fake agent. Compatibility smoke
 tests are optional and credentialed.
 
-### 7.7 Parked agent directions
+Acceptance snapshot (2026-08-13): Codex CLI 0.147.0 launched the built Renart
+stdio server from an ephemeral, read-only session and successfully called
+`list_notebooks`. The native chat then launched the same installed Codex client,
+called the scoped `get_notebook_outline` tool against the Charts notebook,
+streamed the result into the UI, and resumed the thread on a second turn.
+Claude Code 2.1.220 launched the same binary from an isolated
+temporary configuration and reported a healthy connection; its model-driven
+tool call could not run because the local OAuth session had expired. OpenCode
+1.18.17 was run from its package cache with isolated data/config directories
+and an inline configuration; `opencode mcp list` reported the Renart server
+connected. The credential-free official Go SDK protocol suite remains the
+required deterministic test boundary; the remaining model-driven checks are
+release evidence, not CI gates.
 
-- A native Renart Ask/Edit panel may later consume the same snapshot,
-  diagnostics, change-set, and execution services.
+### 7.7 Native chat state and parked directions
+
+- The native Renart Ask/Edit panel consumes the same snapshot, diagnostics,
+  change-set, and execution services as external MCP clients. It shows bounded
+  assistant text and normalized progress, supports cancellation and fresh
+  chats, and keeps the notebook visible alongside the conversation.
 - Small inline “explain/fix this cell” actions may later be another client of
   the same service.
-- Provider adapters, thread storage, token streaming, billing, and a full chat
-  UI are not prerequisites for the local MCP preview.
+- Durable/shareable thread storage, provider billing/account management, and
+  cross-device chat are not part of the local integration.
 - Persistent agent/prompt cells, autonomous background runs, Git mutation, and
   scheduled agents remain out of scope.
 
@@ -1019,6 +1068,12 @@ Promotion must preview dialect/connection/materialization consequences and
 write through one server transaction. It must not silently turn an exploratory
 sample into a production source.
 
+Implemented: the shared planner now covers SQL, Python, local-file,
+object-storage, and HTTP blocks; the UI reviews its consequences and exact file
+count; apply uses the reviewed notebook revision and a cross-directory recovery
+journal. Sampled sources are a hard blocker. Visualization/markdown promotion
+remains intentionally deferred as described above.
+
 ## 9. Delivery plan
 
 ### Phase 0 — contracts and correctness
@@ -1074,7 +1129,7 @@ results. Credentialed warehouse adapters use the same contract.
 - Add one-click `@viz` migration and stop writing new directives.
 - Extend loader/executor support to local files, configured object storage, and
   HTTP sources by reusing existing storage/request DTOs and browser surfaces.
-- Add CSV/Parquet result export and source-block promotion plans.
+- Add CSV/Parquet result export and reviewed source-block promotion.
 
 Exit: a user can build/edit the same chart visually or as YAML, create multiple
 visualizations from one result, statically catch missing/incompatible columns,
@@ -1097,6 +1152,29 @@ and combine warehouse/file/API sources without hidden partial data.
 Exit: each client can perform the corpus using only Renart's MCP tools; tests
 prove revision conflicts, no generic path/API escape in the tool surface, and
 no commit/push side effect.
+
+### Phase 3b — native local-agent chat (implemented)
+
+- Add notebook-scoped Ask/Edit policies to the MCP adapter. Ask registers only
+  bounded reads; Edit registers the semantic change and run catalog.
+- Discover installed Codex, Claude Code, and OpenCode clients without storing
+  provider credentials or adding a hosted model SDK.
+- Launch providers in private non-repository directories, pass prompts over
+  stdin, normalize structured streams, cancel whole process trees, and reject
+  generic shell/filesystem/web tool events.
+- Publish bounded complete conversation snapshots over workspace SSE and
+  reconcile with a state GET after mount/reconnect.
+- Add a responsive shadcn chat surface with provider and capability selection,
+  visible semantic tool progress, stop/new-chat actions, markdown answers, and
+  live-edge-aware scrolling that does not drag a reader back to the bottom.
+- Cover the service/HTTP/MCP policies deterministically and exercise desktop
+  and mobile UI with a fake provider; keep real credentialed clients as smoke
+  evidence rather than CI dependencies.
+
+Exit: an installed local client can inspect or edit the selected notebook from
+inside Renart, notebook changes continue to flow through the normal filesystem
+and SSE paths, progress is visible without exposing hidden reasoning, and route
+navigation/reconnect cannot corrupt the transcript.
 
 Phase 3 may proceed alongside Phase 1 after Phase 0. The visualization part of
 Phase 2 can do the same, while its additional source adapters build on Phase 1's
@@ -1264,8 +1342,10 @@ warehouse guarantee.
   lineage without weakening execution types.
 - **Keep visualization state in SQL comments.** It prevents multiple views per
   result and makes visual editing a source-code rewrite.
-- **Build a native provider/chat subsystem before proving tools.** The local MCP
-  bridge validates notebook operations with far less permanent product surface.
+- **Build a native provider/chat subsystem before proving tools.** This ordering
+  remains rejected. The native panel was added only after the local MCP bridge,
+  semantic transactions, and deterministic protocol tests proved the notebook
+  operations it consumes.
 - **Give MCP generic filesystem or shell tools.** The user's coding agent may
   already have them, but Renart should not duplicate or endorse that path.
 
@@ -1276,7 +1356,7 @@ warehouse guarantee.
 - optional remote scratch schemas for data that cannot reasonably fit locally;
 - direct remote queries from Python;
 - a persistent Python kernel;
-- native Ask/Edit UI and provider adapters;
+- persistent/shareable native chat history and provider account management;
 - selective acceptance inside one dependent change set;
 - cross-notebook data references;
 - dashboard/report publication, access control, and scheduled refresh.
@@ -1300,8 +1380,8 @@ The design is grounded in current Renart code plus primary documentation:
   [Hex SQL cells](https://learn.hex.tech/docs/explore-data/cells/sql-cells/sql-cells-introduction),
   [Hex merging data sources](https://learn.hex.tech/tutorials/connect-to-data/merging-data-sources),
   [Deepnote SQL blocks](https://deepnote.com/docs/sql-cells).
-- Transfer feasibility: Sling's run command accepts a table, inline query, or
-  SQL file as `--src-stream` and a local file as the target:
+- Transfer feasibility: Sling supports an explicit SQL/SQL-file field in a
+  replication stream and a local file as the target:
   [Sling run](https://docs.slingdata.io/sling-cli/run),
   [database to file](https://docs.slingdata.io/examples/database-to-file).
 - Declarative visualization precedent: a versioned field-to-encoding document

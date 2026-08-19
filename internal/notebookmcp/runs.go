@@ -163,7 +163,7 @@ func (s *Server) runNotebook(ctx context.Context, _ *mcp.CallToolRequest, input 
 	if selectionCount != 1 {
 		return nil, RunAcceptedOutput{}, fmt.Errorf("select exactly one of all, from, or cells")
 	}
-	nb, err := s.backend.Notebook(ctx, input.NotebookID)
+	nb, err := s.loadNotebook(ctx, input.NotebookID)
 	if err != nil {
 		return nil, RunAcceptedOutput{}, err
 	}

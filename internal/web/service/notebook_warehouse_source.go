@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -132,19 +133,51 @@ func (service *slingNotebookTransferService) Snapshot(ctx context.Context, reque
 		SourceKind: "warehouse_sql", Environment: config.SelectedEnvironmentName,
 		Connection: request.Connection, DefinitionFingerprint: request.DefinitionFingerprint,
 		CreatedAt: time.Now().UTC(), Warnings: warnings,
-	}, func(_ context.Context, stagingDir string, _ io.Writer) ([]string, []string, error) {
+	}, func(_ context.Context, stagingDir string, _ io.Writer) (notebookSnapshotSource, error) {
 		queryPath := filepath.Join(stagingDir, "query.sql")
 		if err := os.WriteFile(queryPath, []byte(query+"\n"), 0o600); err != nil {
-			return nil, nil, err
+			return notebookSnapshotSource{}, err
 		}
-		return []string{
-			"--src-conn", connectionURI,
-			"--src-stream", notebookSnapshotFileURI(queryPath),
-		}, nil, nil
+		return notebookSnapshotSource{SQL: &notebookSnapshotSQLSource{
+			ConnectionURI: connectionURI,
+			QueryPath:     queryPath,
+		}}, nil
 	})
 }
 
-type notebookSnapshotSourceBuilder func(ctx context.Context, stagingDir string, output io.Writer) (args []string, env []string, err error)
+type notebookSnapshotSQLSource struct {
+	ConnectionURI string
+	QueryPath     string
+}
+
+type notebookSnapshotSource struct {
+	Args []string
+	Env  []string
+	SQL  *notebookSnapshotSQLSource
+}
+
+type notebookSnapshotSourceBuilder func(ctx context.Context, stagingDir string, output io.Writer) (notebookSnapshotSource, error)
+
+type notebookSlingReplication struct {
+	Source   string                                    `json:"source"`
+	Target   string                                    `json:"target"`
+	Defaults notebookSlingReplicationDefaults          `json:"defaults"`
+	Streams  map[string]notebookSlingReplicationStream `json:"streams"`
+}
+
+type notebookSlingReplicationDefaults struct {
+	Mode string `json:"mode"`
+}
+
+type notebookSlingReplicationStream struct {
+	SQL           string                             `json:"sql"`
+	Object        string                             `json:"object"`
+	TargetOptions notebookSlingReplicationTargetOpts `json:"target_options"`
+}
+
+type notebookSlingReplicationTargetOpts struct {
+	Format string `json:"format"`
+}
 
 // snapshotFromSling is the single bounded source-to-Parquet path for warehouse
 // SQL, file/object, and HTTP notebook sources. All callers inherit the same
@@ -185,17 +218,16 @@ func (service *slingNotebookTransferService) snapshotFromSling(
 		_ = cleanup()
 		return notebook.TabularArtifact{}, fmt.Errorf("notebook snapshot source builder is required")
 	}
-	sourceArgs, sourceEnv, err := buildSource(runCtx, stagingDir, writer)
+	source, err := buildSource(runCtx, stagingDir, writer)
 	if err != nil {
 		_ = cleanup()
 		return notebook.TabularArtifact{}, err
 	}
-	args := append([]string{"run"}, sourceArgs...)
-	args = append(args,
-		"--tgt-object", notebookSnapshotFileURI(parquetPath),
-		"--tgt-options", `{"format":"parquet"}`,
-	)
-	args, connectionEnv := slingCommandConnectionEnv(args)
+	args, connectionEnv, err := notebookSlingSnapshotArgs(stagingDir, parquetPath, source)
+	if err != nil {
+		_ = cleanup()
+		return notebook.TabularArtifact{}, err
+	}
 	commandName, commandArgs, err := loadCommand(runCtx, args, writer)
 	if err != nil {
 		_ = cleanup()
@@ -203,7 +235,7 @@ func (service *slingNotebookTransferService) snapshotFromSling(
 	}
 	command := newStreamingCommand(runCtx, commandName, commandArgs, service.workspaceRoot, writer)
 	command.Env = append(command.Env, connectionEnv...)
-	command.Env = append(command.Env, sourceEnv...)
+	command.Env = append(command.Env, source.Env...)
 	command.Env = append(command.Env, "SLING_ALLOW_EMPTY=true")
 
 	maxBytes := service.maxBytes
@@ -228,7 +260,7 @@ func (service *slingNotebookTransferService) snapshotFromSling(
 			}
 		}
 	}()
-	runErr := runSlingCommand(runCtx, command)
+	runErr := runStreamingCommand(runCtx, command, writer)
 	close(monitorDone)
 	if runErr != nil {
 		output := strings.TrimSpace(writer.buffer.String())
@@ -261,6 +293,57 @@ func (service *slingNotebookTransferService) snapshotFromSling(
 	}
 	artifact.Cleanup = cleanup
 	return artifact, nil
+}
+
+func notebookSlingSnapshotArgs(stagingDir, parquetPath string, source notebookSnapshotSource) ([]string, []string, error) {
+	if source.SQL == nil {
+		args := append([]string{"run"}, source.Args...)
+		args = append(args,
+			"--tgt-object", notebookSnapshotFileURI(parquetPath),
+			"--tgt-options", `{"format":"parquet"}`,
+		)
+		args, connectionEnv := slingCommandConnectionEnv(args)
+		return args, connectionEnv, nil
+	}
+	if len(source.Args) != 0 {
+		return nil, nil, fmt.Errorf("notebook SQL snapshot cannot also define Sling source arguments")
+	}
+	connectionURI := strings.TrimSpace(source.SQL.ConnectionURI)
+	queryPath := strings.TrimSpace(source.SQL.QueryPath)
+	if connectionURI == "" || queryPath == "" {
+		return nil, nil, fmt.Errorf("notebook SQL snapshot requires a connection and query file")
+	}
+
+	// Sling's flag form overloads --src-stream for both data files and SQL
+	// files. In Sling 1.5.x that auto-detection is non-deterministic: the same
+	// file://.../query.sql is sometimes opened as a data path. The replication
+	// schema has an explicit `sql` field, which removes that ambiguity while
+	// keeping both the query and credentials off the process command line.
+	replication := notebookSlingReplication{
+		Source:   slingSourceConnectionEnv,
+		Target:   "LOCAL",
+		Defaults: notebookSlingReplicationDefaults{Mode: "full-refresh"},
+		Streams: map[string]notebookSlingReplicationStream{
+			"renart_notebook_snapshot": {
+				SQL:    notebookSnapshotFileURI(queryPath),
+				Object: notebookSnapshotFileURI(parquetPath),
+				TargetOptions: notebookSlingReplicationTargetOpts{
+					Format: "parquet",
+				},
+			},
+		},
+	}
+	payload, err := json.Marshal(replication)
+	if err != nil {
+		return nil, nil, fmt.Errorf("encode notebook Sling replication: %w", err)
+	}
+	replicationPath := filepath.Join(stagingDir, "replication.json")
+	if err := os.WriteFile(replicationPath, payload, 0o600); err != nil {
+		return nil, nil, fmt.Errorf("write notebook Sling replication: %w", err)
+	}
+	return []string{"run", "--replication", replicationPath}, []string{
+		slingSourceConnectionEnv + "=" + connectionURI,
+	}, nil
 }
 
 func notebookSnapshotFileURI(path string) string {

@@ -29,6 +29,7 @@ type NotebookHandlers interface {
 	ApplyChangeSet(notebookID string, changeSet service.NotebookChangeSet) (service.NotebookChangeApplyResult, *service.APIError)
 	CheckVisualization(ctx context.Context, notebookID string, request service.NotebookVisualizationCheckRequest) (service.NotebookVisualizationCheckResult, *service.APIError)
 	UpdateDependencies(notebookID, content string) (model.Notebook, *service.APIError)
+	PlanPromoteCell(notebookID, cellID string, req service.PromoteCellRequest) (service.PromoteCellPlan, *service.APIError)
 	PromoteCell(notebookID, cellID string, req service.PromoteCellRequest) (service.PromoteCellResult, *service.APIError)
 	ExportCell(ctx context.Context, notebookID, cellID, format string) (service.NotebookCellExport, *service.APIError)
 	Run(ctx context.Context, notebookID string, req service.RunNotebookRequest) (service.RunNotebookResult, *service.APIError)
@@ -58,6 +59,7 @@ func RegisterNotebookRoutes(router chi.Router, handlers *NotebookAPI) {
 	router.Post("/api/notebooks/{id}/changes/apply", handlers.HandleApplyChangeSet)
 	router.Post("/api/notebooks/{id}/visualizations/check", handlers.HandleCheckVisualization)
 	router.Put("/api/notebooks/{id}/dependencies", handlers.HandleUpdateDependencies)
+	router.Post("/api/notebooks/{id}/cells/{cellID}/promote/plan", handlers.HandlePlanPromoteCell)
 	router.Post("/api/notebooks/{id}/cells/{cellID}/promote", handlers.HandlePromoteCell)
 	router.Get("/api/notebooks/{id}/cells/{cellID}/export", handlers.HandleExportCell)
 	router.Post("/api/notebooks/{id}/run", handlers.HandleRun)
@@ -271,6 +273,20 @@ func (h *NotebookAPI) HandlePromoteCell(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	result, apiErr := h.Service.PromoteCell(chi.URLParam(r, "id"), chi.URLParam(r, "cellID"), req)
+	if apiErr != nil {
+		writeNotebookError(w, apiErr)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h *NotebookAPI) HandlePlanPromoteCell(w http.ResponseWriter, r *http.Request) {
+	var req service.PromoteCellRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
+		return
+	}
+	result, apiErr := h.Service.PlanPromoteCell(chi.URLParam(r, "id"), chi.URLParam(r, "cellID"), req)
 	if apiErr != nil {
 		writeNotebookError(w, apiErr)
 		return

@@ -158,6 +158,92 @@ export type NotebookRuntimeEvent = {
   results?: Record<string, NotebookCellRunResult>;
 };
 
+export type NotebookAgentMode = "ask" | "edit";
+
+export type NotebookAgentProvider = {
+  id: "codex" | "claude" | "opencode";
+  label: string;
+  available: boolean;
+};
+
+export type NotebookAgentMessage = {
+  id: string;
+  turn_id: string;
+  role: "user" | "assistant";
+  content: string;
+  status: "streaming" | "complete" | "error" | "cancelled";
+  created_at: string;
+};
+
+export type NotebookAgentActivity = {
+  id: string;
+  turn_id: string;
+  kind: string;
+  title: string;
+  detail?: string;
+  status: "running" | "complete" | "error" | "cancelled";
+  started_at: string;
+  finished_at?: string;
+};
+
+export type NotebookAgentSnapshot = {
+  type: "notebook.agent";
+  notebook_id: string;
+  revision: number;
+  status: "idle" | "running" | "cancelling" | "cancelled" | "error";
+  provider?: NotebookAgentProvider["id"];
+  mode?: NotebookAgentMode;
+  messages: NotebookAgentMessage[];
+  activities: NotebookAgentActivity[];
+  error?: string;
+  started_at?: string;
+  finished_at?: string;
+};
+
+export type NotebookAgentState = {
+  conversation: NotebookAgentSnapshot;
+  providers: NotebookAgentProvider[];
+};
+
+export async function getNotebookAgent(notebookId: string) {
+  const payload = await fetchJSON<{ status: "ok"; agent: NotebookAgentState }>(
+    `/api/notebooks/${notebookId}/agent`,
+    { cache: "no-store" },
+  );
+  return payload.agent;
+}
+
+export async function startNotebookAgentTurn(
+  notebookId: string,
+  input: {
+    provider: NotebookAgentProvider["id"];
+    mode: NotebookAgentMode;
+    message: string;
+  },
+) {
+  const payload = await fetchJSONWithBody<{
+    status: "ok";
+    conversation: NotebookAgentSnapshot;
+  }>(`/api/notebooks/${notebookId}/agent/messages`, "POST", input);
+  return payload.conversation;
+}
+
+export async function cancelNotebookAgentTurn(notebookId: string) {
+  const payload = await fetchJSONWithBody<{
+    status: "ok";
+    conversation: NotebookAgentSnapshot;
+  }>(`/api/notebooks/${notebookId}/agent/cancel`, "POST", {});
+  return payload.conversation;
+}
+
+export async function resetNotebookAgent(notebookId: string) {
+  const payload = await fetchJSON<{
+    status: "ok";
+    conversation: NotebookAgentSnapshot;
+  }>(`/api/notebooks/${notebookId}/agent`, { method: "DELETE" });
+  return payload.conversation;
+}
+
 export async function getNotebookRuntime(notebookId: string) {
   return fetchJSON<NotebookRuntimeSnapshot>(`/api/notebooks/${notebookId}/runtime`, {
     cache: "no-store",
@@ -464,15 +550,51 @@ export type PromoteCellResponse = {
   notebook: WebNotebook;
 };
 
+export type PromoteCellInput = {
+  pipeline_id: string;
+  target_name: string;
+  include_upstream?: boolean;
+  include_downstream?: boolean;
+  base_revision?: string;
+};
+
+export type PromoteCellPlan = {
+  status: "ok";
+  base_revision: string;
+  assets: Array<{
+    cell_id: string;
+    cell_name: string;
+    target_name: string;
+    path: string;
+    asset_type: string;
+    connection?: string;
+    source_connection?: string;
+    materialization: string;
+  }>;
+  files: Array<{
+    path: string;
+    status: "added" | "modified" | "deleted";
+  }>;
+  warnings?: string[];
+  can_apply: boolean;
+};
+
+export async function planNotebookCellPromotion(
+  notebookId: string,
+  cellId: string,
+  input: PromoteCellInput,
+) {
+  return fetchJSONWithBody<PromoteCellPlan>(
+    `/api/notebooks/${notebookId}/cells/${cellId}/promote/plan`,
+    "POST",
+    input,
+  );
+}
+
 export async function promoteNotebookCell(
   notebookId: string,
   cellId: string,
-  input: {
-    pipeline_id: string;
-    target_name: string;
-    include_upstream?: boolean;
-    include_downstream?: boolean;
-  },
+  input: PromoteCellInput,
 ) {
   return fetchJSONWithBody<PromoteCellResponse>(
     `/api/notebooks/${notebookId}/cells/${cellId}/promote`,

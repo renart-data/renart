@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowUpFromLine,
   BookOpen,
+  Bot,
   Check,
   ChevronRight,
   Database,
@@ -93,7 +94,9 @@ import {
   migrateLegacyNotebookVisualization,
   notebookCellExportURL,
   NotebookCellRunResult,
+  planNotebookCellPromotion,
   promoteNotebookCell,
+  type PromoteCellPlan,
   replaceNotebookParameters,
   renameNotebookCell,
   runNotebook,
@@ -106,7 +109,7 @@ import {
   updateNotebookVisualization,
   upgradeNotebookManifest,
 } from "@/lib/api-notebooks";
-import { notebookRuntimeEventsAtom } from "@/lib/atoms/domains/results";
+import { notebookAgentEventsAtom, notebookRuntimeEventsAtom } from "@/lib/atoms/domains/results";
 import {
   selectedEnvironmentAtom,
   selectedExecutionTimeWindowAtom,
@@ -119,6 +122,7 @@ import { WebAsset, WebNotebook, WebNotebookBlock, WorkspaceQueryConnection } fro
 import { cn } from "@/lib/utils";
 
 import { MissingPythonDepsBanner } from "./missing-python-deps";
+import { NotebookAgentPanel } from "./notebook-agent-panel";
 import { NewNotebookDialog } from "./new-notebook-dialog";
 import { buildNotebookSchemaTables, NotebookCellMonaco } from "./notebook-cell-editor";
 import { NotebookVizRenderer } from "./notebook-viz";
@@ -241,6 +245,7 @@ export function AppNotebooksIndexPage() {
 export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const workspace = useAtomValue(workspaceAtom);
   const notebookRuntimeEvent = useAtomValue(notebookRuntimeEventsAtom)[notebookId] ?? null;
+  const notebookAgentEvent = useAtomValue(notebookAgentEventsAtom)[notebookId] ?? null;
   const notebookRuntimeEventRef = useRef(notebookRuntimeEvent);
   notebookRuntimeEventRef.current = notebookRuntimeEvent;
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
@@ -308,6 +313,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const [parametersOpen, setParametersOpen] = useState(false);
   const [addDataOpen, setAddDataOpen] = useState(false);
   const [promoting, setPromoting] = useState<WebAsset | null>(null);
+  const [agentOpen, setAgentOpen] = useState(false);
   const notebookViewportRef = useRef<HTMLDivElement>(null);
   const pendingBlockSequenceRef = useRef(0);
   const jumpHighlightFrameRef = useRef<number | null>(null);
@@ -340,6 +346,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     setDeletingCell(false);
     setAddDataOpen(false);
     setParametersOpen(false);
+    setAgentOpen(false);
     setParameterValues({});
     if (jumpHighlightFrameRef.current !== null) {
       window.cancelAnimationFrame(jumpHighlightFrameRef.current);
@@ -946,6 +953,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         target_name: string;
         include_upstream: boolean;
         include_downstream: boolean;
+        base_revision: string;
       },
     ) => {
       setActionError("");
@@ -1028,6 +1036,23 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                   <span className="text-[10px] text-muted-foreground">
                     {notebook.parameters?.length}
                   </span>
+                ) : null}
+              </Button>
+              <Button
+                variant={agentOpen ? "secondary" : "outline"}
+                size="sm"
+                aria-label="Notebook assistant"
+                aria-pressed={agentOpen}
+                onClick={() => setAgentOpen((current) => !current)}
+              >
+                <Bot data-icon="inline-start" />
+                <span className="hidden sm:inline">AI</span>
+                {notebookAgentEvent?.status === "running" ||
+                notebookAgentEvent?.status === "cancelling" ? (
+                  <span
+                    aria-label="Agent is working"
+                    className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse"
+                  />
                 ) : null}
               </Button>
               {hasPythonCell ? (
@@ -1163,6 +1188,8 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       <PromoteCellDialog
         cell={promoting}
         cells={notebook.cells}
+        notebookId={notebookId}
+        notebookRevision={notebook.revision}
         pipelines={pipelines.map((pipeline) => ({ id: pipeline.id, name: pipeline.name }))}
         onOpenChange={(open) => {
           if (!open) {
@@ -1195,224 +1222,236 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
           {actionError}
         </div>
       ) : null}
-      <ScrollArea
-        className="min-h-0 flex-1"
-        viewportClassName="px-3 pb-24"
-        viewportRef={notebookViewportRef}
-        onViewportScroll={(event) => {
-          const nextScrolled = event.currentTarget.scrollTop > 0;
-          setNotebookScrolled((current) => (current === nextScrolled ? current : nextScrolled));
-        }}
-      >
-        <div className="mx-auto flex max-w-5xl flex-col gap-3">
-          {notebook.blocks.map((block, index) => {
-            const blockKey = notebookBlockKey(block, index);
-            const entering = blockKey === enteringBlockKey;
-            return block.cell ? (
-              (() => {
-                const cell = cellsById.get(block.cell);
-                if (!cell) {
-                  return null;
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <ScrollArea
+          className="min-h-0 min-w-0 flex-1"
+          viewportClassName="px-3 pb-24"
+          viewportRef={notebookViewportRef}
+          onViewportScroll={(event) => {
+            const nextScrolled = event.currentTarget.scrollTop > 0;
+            setNotebookScrolled((current) => (current === nextScrolled ? current : nextScrolled));
+          }}
+        >
+          <div className="mx-auto flex max-w-5xl flex-col gap-3">
+            {notebook.blocks.map((block, index) => {
+              const blockKey = notebookBlockKey(block, index);
+              const entering = blockKey === enteringBlockKey;
+              return block.cell ? (
+                (() => {
+                  const cell = cellsById.get(block.cell);
+                  if (!cell) {
+                    return null;
+                  }
+                  return (
+                    <div
+                      key={block.cell}
+                      data-notebook-cell-id={block.cell}
+                      data-notebook-block-entering={entering || undefined}
+                      data-notebook-cell-jump-highlight={
+                        jumpHighlightedCellId === block.cell || undefined
+                      }
+                      className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+                    >
+                      {cell.notebook_source ? (
+                        <NotebookSourceCard
+                          notebookId={notebookId}
+                          cell={cell}
+                          result={results[block.cell]}
+                          stale={staleCells.has(block.cell)}
+                          running={runningCells.has(block.cell)}
+                          busy={busy}
+                          onRun={() =>
+                            void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
+                          }
+                          onCancel={cancelRun}
+                          onRunFromHere={() =>
+                            void runRequest({ from: block.cell }, [block.cell ?? ""])
+                          }
+                          onDelete={() =>
+                            setCellToDelete({ id: block.cell ?? "", name: cell.name })
+                          }
+                          onRename={(name) =>
+                            mutate(() => renameNotebookCell(notebookId, block.cell ?? "", name))
+                          }
+                          onPromote={() => void promoteCell(cell)}
+                        />
+                      ) : (
+                        <NotebookCellCard
+                          notebookId={notebookId}
+                          cell={cell}
+                          cells={notebook.cells}
+                          dependencies={dependencies}
+                          installedModules={installedModules}
+                          parameters={notebook.parameters ?? []}
+                          onAddDependency={(pkg) =>
+                            updateDependencies(addDependency(dependencies, pkg))
+                          }
+                          resultColumnsByCell={resultColumnsByCell}
+                          result={results[block.cell]}
+                          stale={staleCells.has(block.cell)}
+                          running={runningCells.has(block.cell)}
+                          busy={busy}
+                          onRun={() =>
+                            void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
+                          }
+                          onCancel={cancelRun}
+                          onRunFromHere={() =>
+                            void runRequest({ from: block.cell }, [block.cell ?? ""])
+                          }
+                          onDelete={() =>
+                            setCellToDelete({ id: block.cell ?? "", name: cell.name })
+                          }
+                          onRename={(name) =>
+                            mutate(() => renameNotebookCell(notebookId, block.cell ?? "", name))
+                          }
+                          onPromote={() => void promoteCell(cell)}
+                          onSaveBody={(body, baseRevision) =>
+                            saveCellBody(cell, body, baseRevision)
+                          }
+                          autoCommit={autoRecompute}
+                          pendingAuto={autoPending.has(block.cell ?? "")}
+                          queryConnections={workspace?.query_connections ?? []}
+                          onConfigureSource={(input) =>
+                            configureCellSource(block.cell ?? "", input)
+                          }
+                          onMigrateLegacyViz={async () => {
+                            await flushPendingSaves();
+                            const existingBlockIDs = new Set(
+                              notebook.blocks.map((candidate) => candidate.id).filter(Boolean),
+                            );
+                            const updated = await mutateWithResult(() =>
+                              migrateLegacyNotebookVisualization(notebookId, block.cell ?? ""),
+                            );
+                            const migrated = updated?.blocks.find(
+                              (candidate) =>
+                                candidate.visualization &&
+                                candidate.id &&
+                                !existingBlockIDs.has(candidate.id),
+                            );
+                            if (migrated?.id) setEnteringBlockKey(`block:${migrated.id}`);
+                          }}
+                          onGoToAsset={goToAsset}
+                          onGoToCell={goToCell}
+                        />
+                      )}
+                    </div>
+                  );
+                })()
+              ) : block.visualization && block.id ? (
+                <div
+                  key={block.id}
+                  data-notebook-block-id={block.id}
+                  data-notebook-visualization-id={block.id}
+                  data-notebook-block-entering={entering || undefined}
+                  className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+                >
+                  <NotebookVisualizationBlockCard
+                    notebookId={notebookId}
+                    blockId={block.id}
+                    visualization={block.visualization}
+                    cells={notebook.cells}
+                    results={results}
+                    busy={busy}
+                    onSave={async (source, definition) => {
+                      await flushPendingSaves();
+                      const updated = await mutateWithResult(() =>
+                        updateNotebookVisualization(notebookId, block.id ?? "", {
+                          source,
+                          definition,
+                        }),
+                      );
+                      return Boolean(updated);
+                    }}
+                    onDelete={async () => {
+                      await flushPendingSaves();
+                      await mutateWithResult(() => deleteNotebookBlock(notebookId, block.id ?? ""));
+                    }}
+                  />
+                </div>
+              ) : (
+                <div
+                  key={block.id ?? `legacy-md-${index}`}
+                  data-notebook-block-id={block.id || undefined}
+                  data-notebook-markdown-index={index}
+                  data-notebook-block-entering={entering || undefined}
+                  className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+                >
+                  <MarkdownBlockCard
+                    markdown={block.markdown ?? ""}
+                    onSave={(markdown) => {
+                      if (!block.id) {
+                        const blocks: WebNotebookBlock[] = notebook.blocks.map(
+                          (candidate, candidateIndex) =>
+                            candidateIndex === index ? { ...candidate, markdown } : candidate,
+                        );
+                        void mutate(() => updateNotebookBlocks(notebookId, blocks));
+                        return;
+                      }
+                      void mutate(() => updateNotebookMarkdown(notebookId, block.id!, markdown));
+                    }}
+                    onDelete={() => {
+                      if (!block.id) {
+                        const blocks = notebook.blocks.filter(
+                          (_, candidateIndex) => candidateIndex !== index,
+                        );
+                        void mutate(() => updateNotebookBlocks(notebookId, blocks));
+                        return;
+                      }
+                      void mutate(() => deleteNotebookBlock(notebookId, block.id!));
+                    }}
+                  />
+                </div>
+              );
+            })}
+
+            {pendingBlock ? <PendingNotebookBlock kind={pendingBlock.kind} /> : null}
+
+            <div className="flex gap-2" aria-busy={pendingBlock !== null}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pendingBlock !== null}
+                onClick={() => void createBlockAtBottom("sql")}
+              >
+                <Plus className="size-3.5" />
+                SQL cell
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pendingBlock !== null}
+                onClick={() => void createBlockAtBottom("python")}
+              >
+                <Plus className="size-3.5" />
+                Python cell
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={pendingBlock !== null}
+                onClick={() => void createBlockAtBottom("markdown")}
+              >
+                <Plus className="size-3.5" />
+                Markdown
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={
+                  pendingBlock !== null ||
+                  notebook.cells.length === 0 ||
+                  notebook.manifest_version < 2
                 }
-                return (
-                  <div
-                    key={block.cell}
-                    data-notebook-cell-id={block.cell}
-                    data-notebook-block-entering={entering || undefined}
-                    data-notebook-cell-jump-highlight={
-                      jumpHighlightedCellId === block.cell || undefined
-                    }
-                    className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
-                  >
-                    {cell.notebook_source ? (
-                      <NotebookSourceCard
-                        notebookId={notebookId}
-                        cell={cell}
-                        result={results[block.cell]}
-                        stale={staleCells.has(block.cell)}
-                        running={runningCells.has(block.cell)}
-                        busy={busy}
-                        onRun={() =>
-                          void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
-                        }
-                        onCancel={cancelRun}
-                        onRunFromHere={() =>
-                          void runRequest({ from: block.cell }, [block.cell ?? ""])
-                        }
-                        onDelete={() => setCellToDelete({ id: block.cell ?? "", name: cell.name })}
-                        onRename={(name) =>
-                          mutate(() => renameNotebookCell(notebookId, block.cell ?? "", name))
-                        }
-                      />
-                    ) : (
-                      <NotebookCellCard
-                        notebookId={notebookId}
-                        cell={cell}
-                        cells={notebook.cells}
-                        dependencies={dependencies}
-                        installedModules={installedModules}
-                        parameters={notebook.parameters ?? []}
-                        onAddDependency={(pkg) =>
-                          updateDependencies(addDependency(dependencies, pkg))
-                        }
-                        resultColumnsByCell={resultColumnsByCell}
-                        result={results[block.cell]}
-                        stale={staleCells.has(block.cell)}
-                        running={runningCells.has(block.cell)}
-                        busy={busy}
-                        onRun={() =>
-                          void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
-                        }
-                        onCancel={cancelRun}
-                        onRunFromHere={() =>
-                          void runRequest({ from: block.cell }, [block.cell ?? ""])
-                        }
-                        onDelete={() => setCellToDelete({ id: block.cell ?? "", name: cell.name })}
-                        onRename={(name) =>
-                          mutate(() => renameNotebookCell(notebookId, block.cell ?? "", name))
-                        }
-                        onPromote={() => void promoteCell(cell)}
-                        onSaveBody={(body, baseRevision) => saveCellBody(cell, body, baseRevision)}
-                        autoCommit={autoRecompute}
-                        pendingAuto={autoPending.has(block.cell ?? "")}
-                        queryConnections={workspace?.query_connections ?? []}
-                        onConfigureSource={(input) => configureCellSource(block.cell ?? "", input)}
-                        onMigrateLegacyViz={async () => {
-                          await flushPendingSaves();
-                          const existingBlockIDs = new Set(
-                            notebook.blocks.map((candidate) => candidate.id).filter(Boolean),
-                          );
-                          const updated = await mutateWithResult(() =>
-                            migrateLegacyNotebookVisualization(notebookId, block.cell ?? ""),
-                          );
-                          const migrated = updated?.blocks.find(
-                            (candidate) =>
-                              candidate.visualization &&
-                              candidate.id &&
-                              !existingBlockIDs.has(candidate.id),
-                          );
-                          if (migrated?.id) setEnteringBlockKey(`block:${migrated.id}`);
-                        }}
-                        onGoToAsset={goToAsset}
-                        onGoToCell={goToCell}
-                      />
-                    )}
-                  </div>
-                );
-              })()
-            ) : block.visualization && block.id ? (
-              <div
-                key={block.id}
-                data-notebook-block-id={block.id}
-                data-notebook-visualization-id={block.id}
-                data-notebook-block-entering={entering || undefined}
-                className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+                onClick={() => void createBlockAtBottom("visualization")}
               >
-                <NotebookVisualizationBlockCard
-                  notebookId={notebookId}
-                  blockId={block.id}
-                  visualization={block.visualization}
-                  cells={notebook.cells}
-                  results={results}
-                  busy={busy}
-                  onSave={async (source, definition) => {
-                    await flushPendingSaves();
-                    const updated = await mutateWithResult(() =>
-                      updateNotebookVisualization(notebookId, block.id ?? "", {
-                        source,
-                        definition,
-                      }),
-                    );
-                    return Boolean(updated);
-                  }}
-                  onDelete={async () => {
-                    await flushPendingSaves();
-                    await mutateWithResult(() => deleteNotebookBlock(notebookId, block.id ?? ""));
-                  }}
-                />
-              </div>
-            ) : (
-              <div
-                key={block.id ?? `legacy-md-${index}`}
-                data-notebook-block-id={block.id || undefined}
-                data-notebook-markdown-index={index}
-                data-notebook-block-entering={entering || undefined}
-                className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
-              >
-                <MarkdownBlockCard
-                  markdown={block.markdown ?? ""}
-                  onSave={(markdown) => {
-                    if (!block.id) {
-                      const blocks: WebNotebookBlock[] = notebook.blocks.map(
-                        (candidate, candidateIndex) =>
-                          candidateIndex === index ? { ...candidate, markdown } : candidate,
-                      );
-                      void mutate(() => updateNotebookBlocks(notebookId, blocks));
-                      return;
-                    }
-                    void mutate(() => updateNotebookMarkdown(notebookId, block.id!, markdown));
-                  }}
-                  onDelete={() => {
-                    if (!block.id) {
-                      const blocks = notebook.blocks.filter(
-                        (_, candidateIndex) => candidateIndex !== index,
-                      );
-                      void mutate(() => updateNotebookBlocks(notebookId, blocks));
-                      return;
-                    }
-                    void mutate(() => deleteNotebookBlock(notebookId, block.id!));
-                  }}
-                />
-              </div>
-            );
-          })}
-
-          {pendingBlock ? <PendingNotebookBlock kind={pendingBlock.kind} /> : null}
-
-          <div className="flex gap-2" aria-busy={pendingBlock !== null}>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={pendingBlock !== null}
-              onClick={() => void createBlockAtBottom("sql")}
-            >
-              <Plus className="size-3.5" />
-              SQL cell
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={pendingBlock !== null}
-              onClick={() => void createBlockAtBottom("python")}
-            >
-              <Plus className="size-3.5" />
-              Python cell
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={pendingBlock !== null}
-              onClick={() => void createBlockAtBottom("markdown")}
-            >
-              <Plus className="size-3.5" />
-              Markdown
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={
-                pendingBlock !== null ||
-                notebook.cells.length === 0 ||
-                notebook.manifest_version < 2
-              }
-              onClick={() => void createBlockAtBottom("visualization")}
-            >
-              <Plus className="size-3.5" />
-              Visualization
-            </Button>
+                <Plus className="size-3.5" />
+                Visualization
+              </Button>
+            </div>
           </div>
-        </div>
-      </ScrollArea>
+        </ScrollArea>
+        <NotebookAgentPanel notebookId={notebookId} open={agentOpen} onOpenChange={setAgentOpen} />
+      </div>
     </AppPage>
   );
 }
@@ -1977,6 +2016,7 @@ function NotebookSourceCard({
   onRunFromHere,
   onDelete,
   onRename,
+  onPromote,
 }: {
   notebookId: string;
   cell: WebAsset;
@@ -1989,6 +2029,7 @@ function NotebookSourceCard({
   onRunFromHere: () => void;
   onDelete: () => void;
   onRename: (name: string) => Promise<void>;
+  onPromote: () => void;
 }) {
   const source = cell.notebook_source;
   const [renaming, setRenaming] = useState(false);
@@ -2088,6 +2129,10 @@ function NotebookSourceCard({
             <DropdownMenuItem onSelect={() => setRenaming(true)}>
               <Pencil />
               Rename source
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onPromote}>
+              <ArrowUpFromLine />
+              Promote to pipeline
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={result?.status !== "ok" || stale}
@@ -2673,7 +2718,7 @@ function NotebookDependenciesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Package className="size-4 text-primary" />
@@ -2728,12 +2773,16 @@ function NotebookDependenciesDialog({
 function PromoteCellDialog({
   cell,
   cells,
+  notebookId,
+  notebookRevision,
   pipelines,
   onOpenChange,
   onPromote,
 }: {
   cell: WebAsset | null;
   cells: WebAsset[];
+  notebookId: string;
+  notebookRevision: string;
   pipelines: Array<{ id: string; name: string }>;
   onOpenChange: (open: boolean) => void;
   onPromote: (
@@ -2743,13 +2792,18 @@ function PromoteCellDialog({
       target_name: string;
       include_upstream: boolean;
       include_downstream: boolean;
+      base_revision: string;
     },
-  ) => void;
+  ) => Promise<void>;
 }) {
   const [pipelineId, setPipelineId] = useState("");
   const [targetName, setTargetName] = useState("");
   const [includeUpstream, setIncludeUpstream] = useState(false);
   const [includeDownstream, setIncludeDownstream] = useState(false);
+  const [plan, setPlan] = useState<PromoteCellPlan | null>(null);
+  const [planError, setPlanError] = useState("");
+  const [planning, setPlanning] = useState(false);
+  const [applying, setApplying] = useState(false);
 
   // Whether the cell has upstream/downstream sibling cells, so the options are
   // only offered when they would actually pull anything in.
@@ -2778,9 +2832,58 @@ function PromoteCellDialog({
     setTargetName(`marts.${cell.name}`);
     setIncludeUpstream(false);
     setIncludeDownstream(false);
+    setPlan(null);
+    setPlanError("");
+    setApplying(false);
   }, [cell, pipelines]);
 
-  const canSubmit = !!cell && !!pipelineId && targetName.trim().length > 0;
+  useEffect(() => {
+    const cellId = cell?.cell_id;
+    const normalizedTarget = targetName.trim();
+    if (!cellId || !pipelineId || !normalizedTarget) {
+      setPlan(null);
+      setPlanError("");
+      setPlanning(false);
+      return;
+    }
+
+    let cancelled = false;
+    setPlan(null);
+    setPlanError("");
+    setPlanning(true);
+    const timer = window.setTimeout(() => {
+      void planNotebookCellPromotion(notebookId, cellId, {
+        pipeline_id: pipelineId,
+        target_name: normalizedTarget,
+        include_upstream: includeUpstream,
+        include_downstream: includeDownstream,
+        base_revision: notebookRevision,
+      })
+        .then((nextPlan) => {
+          if (!cancelled) setPlan(nextPlan);
+        })
+        .catch((error) => {
+          if (!cancelled) setPlanError(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => {
+          if (!cancelled) setPlanning(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    cell?.cell_id,
+    includeDownstream,
+    includeUpstream,
+    notebookId,
+    notebookRevision,
+    pipelineId,
+    targetName,
+  ]);
+
+  const canSubmit = !!cell && !!plan?.can_apply && !planning && !applying;
 
   return (
     <Dialog open={!!cell} onOpenChange={onOpenChange}>
@@ -2791,95 +2894,178 @@ function PromoteCellDialog({
             Promote to pipeline
           </DialogTitle>
           <DialogDescription>
-            Move {cell ? <span className="font-mono">{cell.name}</span> : "this cell"} into a
-            pipeline as a real asset. Cells left behind that referenced it are rewritten to read the
-            new asset.
+            Move {cell ? <span className="font-mono">{cell.name}</span> : "this block"} into a
+            pipeline as a durable asset. Review the generated asset type, connection, and
+            materialization before applying the Git-tracked file changes.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {pipelines.length > 1 ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="promote-pipeline">Pipeline</Label>
-              <select
-                id="promote-pipeline"
-                value={pipelineId}
-                onChange={(event) => setPipelineId(event.target.value)}
-                className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {pipelines.map((pipeline) => (
-                  <option key={pipeline.id} value={pipeline.id}>
-                    {pipeline.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : null}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="promote-name">Target asset name</Label>
-            <input
-              id="promote-name"
-              autoFocus
-              value={targetName}
-              spellCheck={false}
-              placeholder="schema.table"
-              onChange={(event) => setTargetName(event.target.value)}
-              className="w-full rounded-lg border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
-
-          {hasUpstream || hasDownstream ? (
-            <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
-              <div className="text-[11px] font-medium text-muted-foreground">
-                Also promote connected cells
+        <ScrollArea className="max-h-[min(65vh,36rem)]" viewportClassName="pr-3">
+          <div className="space-y-4">
+            {pipelines.length > 1 ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="promote-pipeline">Pipeline</Label>
+                <select
+                  id="promote-pipeline"
+                  value={pipelineId}
+                  onChange={(event) => setPipelineId(event.target.value)}
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  {pipelines.map((pipeline) => (
+                    <option key={pipeline.id} value={pipeline.id}>
+                      {pipeline.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-              {hasUpstream ? (
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={includeUpstream}
-                    onCheckedChange={(value) => setIncludeUpstream(value === true)}
-                  />
-                  Upstream assets (its sources)
-                </label>
-              ) : null}
-              {hasDownstream ? (
-                <label className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={includeDownstream}
-                    onCheckedChange={(value) => setIncludeDownstream(value === true)}
-                  />
-                  Downstream assets (what depends on it)
-                </label>
-              ) : null}
-              <p className="text-[11px] text-muted-foreground">
-                Connected cells are named in the same schema (e.g.{" "}
-                <span className="font-mono">marts.&lt;cell&gt;</span>).
-              </p>
+            ) : null}
+
+            <div className="space-y-1.5">
+              <Label htmlFor="promote-name">Target asset name</Label>
+              <input
+                id="promote-name"
+                autoFocus
+                value={targetName}
+                spellCheck={false}
+                placeholder="schema.table"
+                onChange={(event) => setTargetName(event.target.value)}
+                className="w-full rounded-lg border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
             </div>
-          ) : null}
-        </div>
+
+            {hasUpstream || hasDownstream ? (
+              <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
+                <div className="text-[11px] font-medium text-muted-foreground">
+                  Also promote connected cells
+                </div>
+                {hasUpstream ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={includeUpstream}
+                      onCheckedChange={(value) => setIncludeUpstream(value === true)}
+                    />
+                    Upstream assets (its sources)
+                  </label>
+                ) : null}
+                {hasDownstream ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={includeDownstream}
+                      onCheckedChange={(value) => setIncludeDownstream(value === true)}
+                    />
+                    Downstream assets (what depends on it)
+                  </label>
+                ) : null}
+                <p className="text-[11px] text-muted-foreground">
+                  Connected cells are named in the same schema (e.g.{" "}
+                  <span className="font-mono">marts.&lt;cell&gt;</span>).
+                </p>
+              </div>
+            ) : null}
+
+            <div className="space-y-2" aria-label="Promotion preview">
+              <div className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+                <span>Promotion preview</span>
+                {plan ? <span>{plan.files.length} file changes</span> : null}
+              </div>
+              {planning ? (
+                <div className="flex min-h-20 items-center justify-center gap-2 rounded-lg border bg-muted/20 text-xs text-muted-foreground">
+                  <Spinner aria-label="Planning promotion" />
+                  Resolving pipeline consequences…
+                </div>
+              ) : planError ? (
+                <div className="rounded-lg border border-red-500/25 bg-red-500/10 px-3 py-2 text-xs text-red-700 dark:text-red-200">
+                  {planError}
+                </div>
+              ) : plan ? (
+                <div className="space-y-2">
+                  <div className="divide-y rounded-lg border bg-muted/20">
+                    {plan.assets.map((asset) => (
+                      <div
+                        key={asset.cell_id}
+                        className="grid min-w-0 gap-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_auto]"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-mono font-medium" title={asset.target_name}>
+                            {asset.target_name}
+                          </p>
+                          <p
+                            className="truncate text-[11px] text-muted-foreground"
+                            title={asset.path}
+                          >
+                            {asset.path}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1 sm:justify-end">
+                          <Badge variant="secondary" className="font-mono text-[10px]">
+                            {asset.asset_type}
+                          </Badge>
+                          {asset.source_connection ? (
+                            <Badge variant="outline" className="max-w-56 font-mono text-[10px]">
+                              <span className="truncate">
+                                {asset.source_connection} → {asset.connection}
+                              </span>
+                            </Badge>
+                          ) : asset.connection ? (
+                            <Badge variant="outline" className="max-w-48 font-mono text-[10px]">
+                              <span className="truncate">{asset.connection}</span>
+                            </Badge>
+                          ) : null}
+                          <Badge variant="outline" className="text-[10px]">
+                            {asset.materialization}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {plan.warnings?.map((warning) => (
+                    <div
+                      key={warning}
+                      className="flex gap-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
+                    >
+                      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                      <span>{warning}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="min-h-20 rounded-lg border border-dashed bg-muted/10" />
+              )}
+            </div>
+          </div>
+        </ScrollArea>
 
         <DialogFooter>
-          <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={applying}
+            onClick={() => onOpenChange(false)}
+          >
             Cancel
           </Button>
           <Button
             size="sm"
             disabled={!canSubmit}
             onClick={() => {
-              if (!cell) {
+              if (!cell || !plan) {
                 return;
               }
-              onPromote(cell, {
+              setApplying(true);
+              void onPromote(cell, {
                 pipeline_id: pipelineId,
                 target_name: targetName.trim(),
                 include_upstream: includeUpstream,
                 include_downstream: includeDownstream,
-              });
+                base_revision: plan.base_revision,
+              }).finally(() => setApplying(false));
             }}
           >
-            <ArrowUpFromLine className="size-3.5" />
+            {applying ? (
+              <Spinner aria-label="Promoting block" />
+            ) : (
+              <ArrowUpFromLine className="size-3.5" />
+            )}
             Promote
           </Button>
         </DialogFooter>

@@ -168,9 +168,13 @@ type protocolFixture struct {
 }
 
 func connectTestServer(t *testing.T, backend Backend) protocolFixture {
+	return connectTestServerWithPolicy(t, backend, Policy{})
+}
+
+func connectTestServerWithPolicy(t *testing.T, backend Backend, policy Policy) protocolFixture {
 	t.Helper()
 	ctx := context.Background()
-	server := New(ctx, backend, "test", nil)
+	server := New(ctx, backend, "test", nil, policy)
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	serverSession, err := server.Protocol().Connect(ctx, serverTransport, nil)
 	if err != nil {
@@ -188,6 +192,47 @@ func connectTestServer(t *testing.T, backend Backend) protocolFixture {
 			_ = clientSession.Close()
 			_ = serverSession.Close()
 		},
+	}
+}
+
+func TestNativeAgentPolicyScopesNotebookAndCapabilities(t *testing.T) {
+	backend := fixtureBackend()
+	other := backend.notebook
+	other.ID = "other_notebook"
+	other.Title = "Other"
+	backend.workspace.Notebooks = append(backend.workspace.Notebooks, other)
+
+	fixture := connectTestServerWithPolicy(t, backend, Policy{
+		NotebookID: "notebook_opaque",
+		ReadOnly:   true,
+		NoRuns:     true,
+	})
+	defer fixture.close()
+
+	listed, err := fixture.client.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(listed.Tools), 8; got != want {
+		t.Fatalf("read-only tool count = %d, want %d", got, want)
+	}
+	for _, tool := range listed.Tools {
+		for _, forbidden := range []string{"prepare_notebook_change_set", "apply_notebook_change_set", "run_notebook_cells"} {
+			if tool.Name == forbidden {
+				t.Fatalf("read-only policy exposed %q", tool.Name)
+			}
+		}
+	}
+
+	notebooks := callTool[ListNotebooksOutput](t, fixture.client, "list_notebooks", map[string]any{})
+	if got, want := len(notebooks.Notebooks), 1; got != want || notebooks.Notebooks[0].ID != "notebook_opaque" {
+		t.Fatalf("scoped notebook list = %+v", notebooks.Notebooks)
+	}
+	errorText := callToolError(t, fixture.client, "get_notebook_outline", map[string]any{
+		"notebook_id": "other_notebook",
+	})
+	if !strings.Contains(errorText, "outside this agent session") {
+		t.Fatalf("unexpected cross-notebook error: %s", errorText)
 	}
 }
 

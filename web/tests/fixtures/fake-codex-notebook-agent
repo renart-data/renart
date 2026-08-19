@@ -1,0 +1,29 @@
+#!/bin/sh
+
+case "$*" in
+  *--notebook*) ;;
+  *)
+    printf '%s\n' 'missing scoped notebook argument' >&2
+    exit 2
+    ;;
+esac
+
+case "$*" in
+  *--read-only*--no-runs*) ;;
+  *)
+    printf '%s\n' 'ask mode did not restrict MCP capabilities' >&2
+    exit 2
+    ;;
+esac
+
+# Consume the prompt from stdin so the fixture exercises the production
+# transport contract without putting user content in process arguments.
+while IFS= read -r _line; do :; done
+
+printf '%s\n' '{"type":"thread.started","thread_id":"fake-notebook-thread"}'
+printf '%s\n' '{"type":"turn.started"}'
+printf '%s\n' '{"type":"item.started","item":{"id":"call-1","type":"mcp_tool_call","server":"renart","tool":"get_notebook_outline","status":"in_progress"}}'
+sleep 0.2
+printf '%s\n' '{"type":"item.completed","item":{"id":"call-1","type":"mcp_tool_call","server":"renart","tool":"get_notebook_outline","status":"completed"}}'
+printf '%s\n' '{"type":"item.completed","item":{"id":"message-1","type":"agent_message","text":"This notebook has one SQL cell and is ready to explore."}}'
+printf '%s\n' '{"type":"turn.completed"}'

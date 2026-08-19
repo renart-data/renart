@@ -104,6 +104,8 @@ snapshots:
 1. compatible local DuckDB sources use the attach/copy path;
 2. supported database/object/file sources use the shared hardened Sling
    launcher to create typed Parquet in a mode-`0700` staging directory;
+   warehouse SQL uses a private replication document with an explicit `sql`
+   entry so Sling cannot confuse the query file with a file-data source;
 3. a small typed direct-query adapter is allowed only inside strict memory
    limits when the connection cannot use Sling;
 4. unsupported or over-budget work fails and keeps the previous good snapshot.
@@ -294,7 +296,58 @@ Preview tables stay bounded, block editors grow with short content before
 using their internal scroll area, and output panes retain user scroll position
 unless the user is already following the end.
 
-## 11. Local MCP developer preview
+## 11. Local notebook agents
+
+Renart has two local-agent entry points backed by the same semantic notebook
+contract: the native notebook chat and the external `renart mcp` developer
+integration. Neither path sends workspace data to a Renart-hosted service;
+model selection, authentication, and network use belong to the user's locally
+installed agent client.
+
+### 11.1 Native Ask/Edit chat
+
+The notebook toolbar opens a docked desktop panel or mobile sheet. Renart
+discovers Codex, Claude Code, and OpenCode on the server `PATH`; unavailable
+clients remain visible but disabled. It launches the selected client in a
+private non-repository directory, passes the prompt over stdin, and installs a
+per-process Renart MCP configuration. Provider sessions resume independently
+per notebook, provider, and capability mode.
+
+**Ask** launches a notebook-scoped MCP server with only the eight bounded read
+tools. Change-set and run tools do not exist in that process. **Edit** grants
+the complete semantic change-set and run catalog for the turn; choosing Edit
+is the UI authority to apply and verify notebook work. The panel starts in Ask
+each time it opens rather than persisting the stronger capability. Both modes reject access
+to another notebook. Claude Code and OpenCode launch without their built-in
+filesystem/shell tools; Codex uses a private working directory and read-only
+sandbox. If any normalized provider stream reports a generic shell,
+filesystem, or web tool, Renart stops the process and reports the blocked
+activity. This is a narrow local integration boundary, not a general-purpose
+OS sandbox.
+
+The service keeps a bounded in-memory transcript and normalized activity list,
+not hidden reasoning. Every update publishes a complete monotonic
+`notebook.agent` snapshot over workspace SSE. The panel uses the normal GET
+state endpoint after mount or SSE reconnect, ignores older revisions, follows
+new output only while the user is at the live edge, and retains the transcript
+across notebook navigation. **New chat** removes provider session directories
+and state. A Renart server restart also clears chats; transcripts are not
+authored or durable state.
+
+The HTTP surface is notebook-scoped:
+
+- `GET /api/notebooks/{id}/agent` returns the current snapshot and discovered
+  providers;
+- `POST /api/notebooks/{id}/agent/messages` starts one turn;
+- `POST /api/notebooks/{id}/agent/cancel` terminates the provider process tree;
+- `DELETE /api/notebooks/{id}/agent` starts a fresh chat.
+
+Only one turn may run per notebook. Turns have a 30-minute limit, cancellation
+kills the full provider/MCP process tree, stderr and transcript buffers are
+bounded, private configuration files use owner-only permissions, and local
+paths are redacted from returned provider errors.
+
+### 11.2 External MCP developer integration
 
 `renart mcp --workspace <root>` serves the official MCP stdio transport. It
 discovers the owning Renart server through `.renart/server.json` and keeps the
@@ -325,17 +378,35 @@ reads, authored writes, open-world execution, destructiveness, and idempotence
 for client approval UX; backend revision/policy checks remain authoritative.
 
 There is no arbitrary path read/write, shell, Git, secret/configuration,
-generic REST/HTTP, or free-form SQL execution tool. This constrains Renart's
-integration, not a separately configured coding agent that may have its own
-shell or filesystem authority.
+generic REST/HTTP, or free-form SQL execution tool. For an independently
+configured external client this constrains Renart's tool surface, not whatever
+other shell or filesystem authority the user grants that client. The native
+chat additionally launches the clients with the restrictions described above.
 
 ## 12. Promotion and current limits
 
-Single SQL/Python cell promotion uses the existing rename/reference engine,
-changes `class` to `pipeline`, previews dialect consequences, and preserves the
-durable asset ID. Source-block-to-pipeline promotion remains follow-up work;
-users can currently export completed relations and create the durable pipeline
-asset explicitly.
+Promotion is a reviewed two-step operation. The plan endpoint resolves every
+selected block into its target asset type, source/target connection,
+materialization, destination path, warnings, and credential-free file-change
+summary. Apply carries the reviewed notebook revision and re-plans under the
+notebook edit lock, so a concurrent authored change conflicts instead of
+silently changing the result.
+
+Local SQL and Python become ordinary executable assets; Python keeps `.py` and
+Python frontmatter. Connection-bound warehouse SQL stays on its declared
+connection and warns when that differs from the destination pipeline default.
+A full local file becomes the target warehouse's Seed type (or a local-source
+Load where that warehouse has no Seed type), an object-storage file becomes a
+Load asset, and an HTTP source becomes an API asset while retaining its request
+body, auth/pagination fields, response mapping, and declared columns. An
+explicitly sampled source is rejected until the user changes it to a full
+snapshot, so partial exploratory data never becomes a production-looking
+source implicitly.
+
+The destination assets, remaining-cell reference rewrites, removed source/cell
+files, and `notebook.yml` update commit through one workspace-wide recoverable
+journal. Startup recovery restores both notebook and pipeline files after an
+interrupted promotion, and one logical workspace update reconciles the result.
 
 Still parked or incomplete:
 
@@ -345,7 +416,7 @@ Still parked or incomplete:
 - remote scratch targets and direct remote reads from Python;
 - persistent Python kernels and Python auto-recompute;
 - cross-notebook data references;
-- native provider/chat UI (local MCP is the shipped agent surface);
+- persistent or shareable agent transcripts and background agent turns;
 - selective acceptance within one dependent change set.
 
 ## Test surface
@@ -356,12 +427,19 @@ fingerprints, Python broker,
 rename invariance, and legacy directives. `internal/web/service` covers
 workspace/artifact projection, semantic transactions and recovery, runtime
 hydration, source adapters/policy, presentation checks, promotion, and
-auto-recompute. `internal/notebookmcp` drives the real SDK protocol in memory
+auto-recompute, including source-role translation and cross-directory rollback.
+`internal/notebookmcp` drives the real SDK protocol in memory
 and verifies the exact tool catalog, annotations, redaction, payload bounds,
 revision conflict, exact apply, Python approval, asynchronous status, and
-cancellation. Playwright live tests exercise warehouse/file/HTTP source chains,
-visual editing/migration, typed parameter editing/execution, export bytes, and
-race-sensitive notebook UI paths. Presentation live tests cover dashboard
+cancellation. Native-agent service tests cover provider commands, notebook and
+Ask/Edit scoping, normalized streaming, resumption, cancellation, private
+configuration, and generic-tool rejection. A deterministic fake-provider
+Playwright test covers desktop/mobile streaming and transcript restoration; a
+real local Codex smoke test covers launch, MCP discovery, a tool call, and
+session resumption. Playwright live tests also exercise warehouse/file/HTTP source chains,
+visual editing/migration, typed parameter editing/execution, export bytes,
+reviewed source/connected-cell promotion, and race-sensitive notebook UI paths.
+Presentation live tests cover dashboard
 creation, typed visual editing, deterministic save, definition-mode
 round-tripping, URL-backed filters, dependency-aware viewer refresh, and a
 presentation error blocking/clearing its consumed pipeline deployment.

@@ -1,13 +1,52 @@
 ---
 title: Notebook agents
-description: Connect a local coding agent to Renart's reviewed notebook tools over MCP.
+description: Work with a local coding agent in a notebook or connect one over MCP.
 ---
 
 :::caution[Developer preview]
-The notebook MCP surface is intentionally small and its tool schemas may evolve
-while the preview is evaluated. Keep approval enabled for tools that write
-notebooks or execute code.
+The notebook agent surface is intentionally small and its tool schemas may
+evolve while the preview is evaluated. Review the Git diff after agent edits,
+just as you would after making the same change in the visual editor.
 :::
+
+## Chat inside a notebook
+
+Install and sign in to Codex, Claude Code, or OpenCode on the machine where
+Renart runs. Open a notebook and choose **AI** in its toolbar. Renart discovers
+available clients on `PATH`; it does not ask for or store a provider API key.
+
+Choose a client and one of two capability modes:
+
+- **Ask** can inspect only the open notebook: its blocks, dependency graph,
+  diagnostics, source provenance, and bounded result schemas/samples. It cannot
+  edit files or run cells.
+- **Edit** can prepare, validate, and apply semantic notebook changes and can
+  run the cells needed to verify them. Selecting Edit authorizes those actions
+  for the turn; the resulting files remain ordinary, reviewable Git changes.
+
+The panel starts in Ask whenever it opens, so an earlier Edit choice does not
+silently carry into the next task.
+
+The chat shows semantic progress such as reading the notebook outline,
+validating changes, or running cells. Changes appear in the notebook through
+the same server and workspace event stream as normal UI edits, so you can watch
+the document update alongside the conversation. **Stop** cancels the provider
+and its MCP process tree. **New chat** clears the current transcript and local
+provider session.
+
+Chats are bounded in-memory runtime state. They survive page navigation and a
+temporary event-stream reconnect, but a Renart restart clears them; no prompt
+or answer is written into the repository. Each provider and Ask/Edit mode has a
+separate resumable session.
+
+Renart starts native-chat agents in a private non-repository directory and
+connects them to a notebook-scoped MCP server. Ask mode does not register write
+or run tools. If a provider tries to use generic shell, filesystem, or web tools
+instead of Renart's notebook tools, Renart stops that turn and shows the blocked
+activity. This is a focused local workflow, not a sandbox for an untrusted
+binary.
+
+## Connect an external coding agent
 
 `renart mcp --workspace .` starts a local stdio MCP server for one Git-backed
 workspace. It connects to the Renart process that already owns the workspace,
@@ -27,13 +66,13 @@ agent may have those capabilities independently, depending on how you configure
 that client. This integration is a cooperative local workflow, not a sandbox
 for the whole agent process.
 
-## Before connecting
+### Before connecting
 
 Install the `renart` binary somewhere on the coding agent's `PATH`, and run the
 agent from the workspace you want it to use. Renart never writes an agent
 configuration file for you.
 
-## Codex
+### Codex
 
 Run this from the workspace:
 
@@ -57,7 +96,7 @@ tool_timeout_sec = 3600
 See the [official Codex MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
 for configuration scope and current client options.
 
-## Claude Code
+### Claude Code
 
 Add the server to the current project only:
 
@@ -71,7 +110,7 @@ The `--` is significant: everything after it is the stdio server command. See
 the [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for
 scope, trust, and permission settings.
 
-## OpenCode
+### OpenCode
 
 Add a local server to `opencode.jsonc`:
 
@@ -85,15 +124,22 @@ Add a local server to `opencode.jsonc`:
       "cwd": ".",
       "enabled": true
     }
+  },
+  "permission": {
+    "renart_*": "allow",
+    "renart_apply_notebook_change_set": "ask",
+    "renart_run_notebook_cells": "ask"
   }
 }
 ```
 
-Use `opencode mcp list` to check the connection. See the
+This keeps bounded inspection and staging fluent while requiring confirmation
+before authored files change or notebook code runs. Use `opencode mcp list` to
+check the connection. See the
 [OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/) for current
 configuration and per-agent tool controls.
 
-## Suggested agent instruction
+### Suggested agent instruction
 
 Add this instruction to the local, untracked agent configuration you use for
 the workspace:
@@ -108,9 +154,8 @@ filesystem edits for notebook files. Run cells only when requested; set
 allow_python only after the Python code has been reviewed.
 ```
 
-## Removing the integration
+### Removing the integration
 
 Use `codex mcp remove renart` or `claude mcp remove renart`, or remove the
 `renart` entry from `opencode.jsonc`. No notebook data or Renart runtime state
 is stored in the agent configuration.
-

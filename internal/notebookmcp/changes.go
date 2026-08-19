@@ -148,6 +148,9 @@ func (s *Server) prepareChangeSet(ctx context.Context, _ *mcp.CallToolRequest, i
 	if strings.TrimSpace(input.NotebookID) == "" || strings.TrimSpace(input.BaseRevision) == "" {
 		return nil, PreparedChangeOutput{}, fmt.Errorf("notebook_id and base_revision are required")
 	}
+	if _, err := s.loadNotebook(ctx, input.NotebookID); err != nil {
+		return nil, PreparedChangeOutput{}, err
+	}
 	if err := validateMCPChangeOperations(input.Operations); err != nil {
 		return nil, PreparedChangeOutput{}, err
 	}

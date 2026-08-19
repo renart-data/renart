@@ -135,8 +135,8 @@ func (executor *notebookSourceExecutor) executeFile(
 	artifact, err := executor.transfer.snapshotFromSling(ctx, mode, notebook.SnapshotProvenance{
 		SourceKind: analysis.Kind, Environment: environment, Connection: analysis.Connection,
 		DefinitionFingerprint: definitionFingerprint, CreatedAt: time.Now().UTC(), Warnings: warnings,
-	}, func(_ context.Context, _ string, _ io.Writer) ([]string, []string, error) {
-		return sourceArgs, nil, nil
+	}, func(_ context.Context, _ string, _ io.Writer) (notebookSnapshotSource, error) {
+		return notebookSnapshotSource{Args: sourceArgs}, nil
 	})
 	if err != nil {
 		return notebook.BlockOutput{}, err
@@ -171,7 +171,7 @@ func (executor *notebookSourceExecutor) executeHTTP(
 	artifact, err := executor.transfer.snapshotFromSling(ctx, mode, notebook.SnapshotProvenance{
 		SourceKind: "http", Environment: environment,
 		DefinitionFingerprint: definitionFingerprint, CreatedAt: time.Now().UTC(),
-	}, func(runCtx context.Context, stagingDir string, output io.Writer) ([]string, []string, error) {
+	}, func(runCtx context.Context, stagingDir string, output io.Writer) (notebookSnapshotSource, error) {
 		jsonlPath := filepath.Join(stagingDir, "response.jsonl")
 		limit := int64(0)
 		if mode == notebook.SnapshotModeSample {
@@ -179,7 +179,7 @@ func (executor *notebookSourceExecutor) executeHTTP(
 		}
 		count, err := writeAPIAssetJSONLLimited(runCtx, executor.renderer, spec, jsonlPath, output, limit)
 		if err != nil {
-			return nil, nil, err
+			return notebookSnapshotSource{}, err
 		}
 		if output != nil {
 			_, _ = fmt.Fprintf(output, "Fetched %d notebook source records.\n", count)
@@ -191,7 +191,7 @@ func (executor *notebookSourceExecutor) executeHTTP(
 		if mode == notebook.SnapshotModeSample {
 			args = append(args, "--limit", strconv.FormatInt(rowLimit, 10))
 		}
-		return args, nil, nil
+		return notebookSnapshotSource{Args: args}, nil
 	})
 	if err != nil {
 		return notebook.BlockOutput{}, err

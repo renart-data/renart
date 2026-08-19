@@ -384,6 +384,7 @@ CI verifies that the checked-in inventory is current.
 | @reactflow/node-resizer | 2.2.14 | MIT | [license](third_party/licenses/9f495bcaa7577b0aa3853402d6d7748987c754d3af9170a5bab1f325a90fc1ae.txt) |
 | @reactflow/node-toolbar | 1.3.14 | MIT | [license](third_party/licenses/9f495bcaa7577b0aa3853402d6d7748987c754d3af9170a5bab1f325a90fc1ae.txt) |
 | @reduxjs/toolkit | 2.12.0 | MIT | [license](third_party/licenses/49784961ec6c4941437b7a2c54d8977d0528076a9e7c73dd40f7d0942b8f106d.txt) |
+| @shadcn/react | 0.3.0 | MIT | [license](third_party/licenses/1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f.txt) |
 | @standard-schema/spec | 1.1.0 | MIT | [license](third_party/licenses/6c19f173cf807e59ad48df621b2840bd2e2d7194d948d3cb1766f17b63335030.txt) |
 | @standard-schema/utils | 0.3.0 | MIT | [license](third_party/licenses/13dc70601979b9f8bb3f3c080e7b0aa67f947c852f3fcc5f5a97e45870f52353.txt) |
 | @tanstack/history | 1.162.0 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
