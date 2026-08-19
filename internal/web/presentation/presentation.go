@@ -68,6 +68,7 @@ type VisualizationDefinition struct {
 	Version           int                   `json:"version"`
 	Type              string                `json:"type"`
 	Title             string                `json:"title,omitempty"`
+	Palette           string                `json:"palette,omitempty"`
 	Encoding          VisualizationEncoding `json:"encoding,omitempty"`
 	Columns           []FieldEncoding       `json:"columns,omitempty"`
 	Value             *FieldEncoding        `json:"value,omitempty"`
@@ -170,6 +171,13 @@ func DecodeVisualizationDefinition(raw map[string]any) (VisualizationDefinition,
 			Message: "Visualization type must be table, kpi, bar, line, area, scatter, pie, or donut.",
 		})
 	}
+	definition.Palette = strings.ToLower(strings.TrimSpace(definition.Palette))
+	if definition.Palette != "" && !supportedVisualizationPalettes[definition.Palette] {
+		findings = append(findings, Finding{
+			Code: "visualization-palette-unsupported", Severity: "error", Path: "palette",
+			Message: "Visualization palette must be default, ocean, sunset, forest, berry, or monochrome.",
+		})
+	}
 	if definition.PresentationLimit < 0 {
 		findings = append(findings, Finding{
 			Code: "visualization-limit-invalid", Severity: "error", Path: "presentation_limit",
@@ -182,6 +190,11 @@ func DecodeVisualizationDefinition(raw map[string]any) (VisualizationDefinition,
 var supportedVisualizationTypes = map[string]bool{
 	"table": true, "kpi": true, "bar": true, "line": true, "area": true,
 	"scatter": true, "pie": true, "donut": true,
+}
+
+var supportedVisualizationPalettes = map[string]bool{
+	"default": true, "ocean": true, "sunset": true,
+	"forest": true, "berry": true, "monochrome": true,
 }
 
 func (Checker) CheckVisualization(_ context.Context, definition VisualizationDefinition, schema ResolvedSchema, options CheckOptions) []Finding {

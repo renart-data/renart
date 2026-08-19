@@ -18,8 +18,9 @@ notebooks/revenue/
 ```
 
 `notebook.yml` gives the notebook a durable UUID and stores an ordered list of
-cell references, identity-bearing markdown blocks, and structured visualization
-blocks. It also stores typed parameter definitions and defaults. SQL and Python
+cell references, identity-bearing markdown blocks, parameter-backed control
+references, and structured visualization blocks. It also stores typed parameter
+definitions and defaults. SQL and Python
 cells remain ordinary Bruin assets with `class: notebook`. A `.source.yml` file
 is a small Renart-owned source definition that
 also has a durable cell ID and produces one relation.
@@ -28,13 +29,14 @@ also has a durable cell ID and produces one relation.
   adjective-noun names such as `quiet_river`, with collision checks and a
   suffix fallback.
 - Markdown and visualization blocks have their own stable IDs. Cell IDs double
-  as the block ID for executable/source cells.
+  as the block ID for executable/source cells; control identity is the
+  namespaced parameter ID.
 - Merely loading a legacy manifest does not rewrite it. An explicit upgrade
   deterministically assigns presentation IDs. Legacy `@viz` comments remain
   readable until the user runs the migration operation.
 - `SnapshotRevision` hashes the manifest and every authored block file. This
   notebook-wide revision is the compare-and-swap boundary for compound edits.
-- `model.ArtifactIndex` projects notebooks, cells, sources, and visualizations
+- `model.ArtifactIndex` projects notebooks, cells, sources, controls, and visualizations
   beside pipeline assets. It records containment, derived capabilities, and
   relation/column dependencies without putting presentation components into a
   run DAG or weakening Bruin's pipeline asset model.
@@ -48,8 +50,8 @@ artifacts live under `.renart` and are not authored state.
 durable IDs, never caller-owned paths. Supported domain operations cover
 manifest upgrade; cell create/update/rename/delete/source configuration;
 file/HTTP/object source create/update; markdown and visualization
-create/update; parameter replacement; legacy visualization migration; and block
-move/delete.
+create/update; parameter replacement; ordered control create/update/delete;
+legacy visualization migration; and block move/delete.
 
 `PrepareChangeSet` copies the current notebook into private staging, applies
 and normalizes the operations there, reloads after every step, runs structural
@@ -66,12 +68,17 @@ frontend authority.
 
 Ordinary single-cell typing keeps its faster per-file revision/save queue. The
 compound transaction is shared by multi-block UI actions and MCP rather than
-introducing a second state system.
+introducing a second state system. The notebook's shared **Add** rail exposes
+SQL, Python, Markdown, every typed control, and all visualization types from any
+scroll position. Clicking a rail item appends it; quiet insertion points between
+blocks accept the same items from a menu or drag operation. Both paths use the
+same positional semantic operations. Insertion anchors are durable raw
+cell/block IDs, while prefixed React keys remain UI-only.
 
 ## 3. Run graph and execution roles
 
-Only data-producing cells enter the notebook DAG. Markdown and visualizations
-are ordered presentation components, not executable assets.
+Only data-producing cells enter the notebook DAG. Markdown, controls, and
+visualizations are ordered presentation components, not executable assets.
 
 The runner delegates block behavior through `NotebookBlockExecutor` and moves
 external data through `NotebookTransferService`. Every transferable result is
@@ -143,6 +150,21 @@ result summaries, verifies the current definition fingerprints, and queries
 only a bounded preview from live session objects. Definitions remain Git state;
 runtime observations do not.
 
+Source blocks and connection-backed SQL cells render the same compact snapshot
+summary from that runtime record: complete/sample state, capture time,
+connection, environment, row count, and byte size. A changed source definition
+is distinguished from an older but intentionally cached snapshot. Result
+previews remain bounded and expose a cell-specific accessible table name.
+Captured cell logs and source/cell failures use the shared ANSI renderer. It
+accepts both native escape bytes and escaped control-picture sequences, so
+command output keeps terminal colors without exposing raw control glyphs.
+
+The in-process runtime tracks the cell IDs owned by every active manual run and
+the current auto-recompute wave. Both full SSE snapshots and
+`GET /api/notebooks/{id}/runtime` expose their union, so a newly opened tab can
+show and cancel work that began before it subscribed. Concurrent runs are
+reference-safe: finishing one run does not clear cells still owned by another.
+
 Completed, current-fingerprint relations can be exported through the server as
 CSV or Parquet. Export is serialized with the session, uses a private
 `.renart/notebook-exports` staging directory, and rejects stale/missing results.
@@ -170,13 +192,27 @@ session. Python processes get a token-scoped broker function, not a DuckDB path
 or warehouse credential. pandas and PyArrow ship in the embedded SDK; adding
 other packages creates/updates the notebook's Python project through uv.
 
-## 7. Typed parameters
+## 7. Authored controls and typed parameters
 
-Version-2 manifests can declare text, number, boolean, select, multi-select,
-date, and date-range parameters. Each declaration has a stable lowercase ID, a
-typed Git-tracked default, an optional label, and optional static choices. The
-shared `presentation` checker validates IDs, types, defaults, choices, and the
-filter/dataset bindings future dashboard and report hosts will reuse.
+Version-2 manifests can declare text, number, slider, boolean, select,
+multi-select, date, and date-range parameters. Sliders add checked numeric
+`min`, `max`, and `step` metadata. The UI presents these as **controls** alongside
+the equivalent dashboard/report inputs. Each declaration has a stable
+lowercase ID, a typed Git-tracked default, an optional label, and optional
+static choices. The shared `presentation` checker validates IDs, types,
+defaults, choices, and the filter/dataset bindings dashboard and report hosts
+reuse.
+
+The frontend also uses one authored-control editor, default-value contract,
+option resolver, typed value field, draggable type palette, and contextual
+inspector across notebook and presentation hosts. A notebook keeps each typed
+definition under `parameters:` and places it in document order with a
+`control: <parameter-id>` block. This avoids duplicating runtime declarations.
+Legacy/unplaced parameters render as individual control cells ahead of the
+ordered document until they are migrated; there is no separate top-level
+control strip. Presentation files retain `filters:` for their binding contract.
+This is one UI/domain primitive with host-specific storage adapters, not a
+second runtime state system.
 
 Current values are local runtime state. They are exposed in the initial runtime
 snapshot and `notebook.runtime` SSE events, but changing a value never rewrites
@@ -202,9 +238,38 @@ invalid YAML draft stays local and editable until it parses and validates.
 Changing views alone performs no write.
 
 The current grammar supports table, KPI, bar, line, area, scatter, pie, and
-donut presentations, including axes/field encodings, multiple series,
-stacking, legends, labels, formatting, and a presentation row limit. Relational
+donut presentations, including axes/field encodings, multiple series, named
+color palettes, stacking, legends, labels, formatting, and a presentation row
+limit. Relational
 work such as joins and aggregation stays in an explicit SQL/Python cell.
+
+Notebook Markdown is visual-first: a shared Tiptap editor parses the authored
+Markdown, serializes edits back to Markdown, and keeps an explicit source mode
+for exact repair. Markdown, SQL, source, and visualization blocks use a quiet
+document treatment when idle; their boundary and contextual controls become
+visible on hover, focus, or selection. The Add rail uses code-native previews
+for SQL, Python, text, controls, and visualization types instead of generic
+glyphs. Contextual visualization settings use a compact four-column chart
+picker so the Add rail remains visually distinct. Dragging targets only the
+small insertion gaps between blocks; the whole notebook never becomes a drop
+surface.
+
+Notebook authoring uses the same responsive rail primitive as presentations.
+Its **Outline**, **Data**, **Add**, and **AI** tabs replace separate header and
+agent-panel entry points: Outline navigates durable blocks, Data summarizes
+results and opens source import, Add owns block/chart creation, and AI embeds
+the notebook-scoped conversation. The rail remains visible on wide screens and
+moves into one left Sheet on narrower screens so the notebook canvas stays the
+primary surface.
+
+Visualization blocks keep the rendered chart in that primary document flow.
+Selecting a chart opens its Visual/Definition controls in a contextual right
+inspector on wide screens or a right Sheet on narrower screens; the outline and
+new-chart flow select the same durable block. Draft source/definition state
+continues to live with the mounted block, so breakpoint changes and workspace
+SSE updates do not discard unapplied edits. The canvas card reflects the draft,
+shows compact validation/draft status, and returns to quiet block chrome when
+the inspector closes.
 
 `internal/web/presentation` maps physical warehouse types into a small semantic
 lattice and checks field existence and chart compatibility. The notebook
@@ -230,8 +295,12 @@ errors, while structurally valid definitions remain visible with structured,
 path-addressed problems.
 
 The backend presentation checker resolves unique pipeline asset names or URIs,
-inherits their declared/derived columns, accepts declared schemas for query
-datasets, and strictly checks visualization fields/types plus filter options and
+inherits their declared/derived columns, and statically infers query-dataset
+outputs when their inputs are represented by the Git-authored workspace graph.
+Explicit query-dataset columns remain the durable override for queries whose
+schema cannot be inferred. Inferred columns are exposed separately from the
+authored DTO fields so visual authoring can use them without silently persisting
+derived metadata. The checker strictly validates visualization fields/types plus filter options and
 bindings. The workspace DTO exposes these authored artifacts under
 `presentations`. `ArtifactIndex` registers dashboard/report containers and their
 dataset, filter, visualization, and section components, including asset and
@@ -239,15 +308,78 @@ column-level lineage. These components do not enter a pipeline or notebook run
 graph.
 
 The `/dashboards` and `/reports` routes provide list/create flows plus a shared
-artifact editor. Its Visual mode edits asset- or query-backed datasets, declared
-query columns, typed filters and bindings, the shared visualization definition,
-responsive dashboard spans, and ordered report sections. Definition mode edits
-the complete strict YAML document in Monaco. Both modes write through the Go
-service, share one content revision, retain drafts on conflicts, and let
-workspace SSE reconcile outside changes. Typed snapshots are serialized
-deterministically by the server; malformed YAML never replaces the last valid
-file. Structural/schema findings remain visible after a save because invalid
-Git state must stay repairable rather than becoming impossible to author.
+canvas-first builder. Their rail and the notebook rail are composed from one
+document-authoring sidebar primitive, while each host supplies its own tabs and
+canvas behavior. The center pane is the live draft: dashboards use a
+12-column drag/resize grid and reports use an ordered document canvas with
+inline Markdown, insert points, and page breaks. A compact left rail contains
+the component palette, report outline, and asset- or query-backed datasets; the
+right inspector exposes only the selected dataset, filter, visualization, or
+section. Narrow layouts keep the canvas primary and move both rails into
+Sheets. Inspector forms switch to compact, shrink-safe field layouts and hide
+horizontal overflow rather than widening the page or Sheet. Dashboard
+tablet/mobile modes are deterministic previews derived from the one authored
+desktop layout rather than hidden breakpoint state.
+
+Report text sections use the shared visual-first Markdown editor and retain an
+exact source-mode escape hatch. The document canvas selects a visualization
+directly when it is clicked, and the inspector can reopen that visualization's
+full settings from its containing report section. Dashboard and report Add
+rails share the same large chart and typed-control previews with notebooks.
+Their contextual settings share the compact chart picker and checked palette
+selector.
+
+Visualization creation is schema-aware. The builder deterministically suggests
+tables, KPIs, and compatible charts from known dataset columns, generates
+stable collision-safe IDs, and renders the draft through the same component as
+the audience viewer. Dashboard filters stay visible above the grid and rerun
+only visualizations with matching bindings. Pointer layout changes commit once
+at drag/resize end; width and directional controls provide a non-pointer
+fallback and disable directions that would leave the grid. Dashboard
+visualizations and report sections are focusable canvas units, so keyboard
+focus selects the component and reveals its contextual controls. Report
+reorders announce the resulting position to assistive technology. The shared
+Add rail offers all eight chart families as large previews;
+they can be clicked or dragged onto a dashboard grid or a report insertion
+line. A drop uses the selected dataset when possible and creates the same
+schema-aware definition as the dialog path. Report blocks also support drag and
+explicit up/down controls.
+
+Query-backed datasets use an embedded Monaco editor with the selected
+connection's dialect, the canonical workspace graph, remote-catalog enrichment,
+and DuckDB file-relation support. The editor document is presentation-scoped
+and has no pipeline output relation or declared asset contract. The presentation
+checker runs the same pure output-schema inference over Git-known workspace
+relations; live remote-catalog observations remain editor-only and never become
+deploy-time type evidence. Authors declare output columns only when static
+inference is incomplete or when they want an explicit durable override.
+
+The browser keeps a bounded route-local undo/redo history, coalesces text edits,
+and never autosaves. Save and Discard remain explicit Git boundaries;
+Cmd/Ctrl+S uses the same save path and navigation with a dirty draft requires
+confirmation. Definition mode still edits the complete strict YAML document in
+Monaco. Both modes write through the Go service, share one content revision,
+retain drafts on conflicts, and let workspace SSE reconcile outside changes.
+Typed snapshots are serialized deterministically by the server; malformed YAML
+never replaces the last valid file. Structural/schema findings remain visible
+after a save because invalid Git state must stay repairable rather than becoming
+impossible to author.
+
+The builder command bar groups active checker findings into one review menu.
+Choosing a finding selects the referenced dataset, control, visualization,
+layout item, report section, or artifact, opens the contextual inspector on
+narrow screens, and focuses the closest editable field identified by the
+finding path. The same structured path therefore explains a problem in the
+definition editor and provides a direct repair path in visual mode.
+
+`POST /api/presentations/{id}/preview` accepts an unsaved artifact plus the
+saved revision, normalizes and checks it, and runs requested visualizations via
+the bounded read-only runtime without writing a file or publishing a workspace
+event. The builder debounces data-definition changes, cancels superseded
+requests, rejects stale responses, preserves the last result while marked
+stale, and tracks loading per visualization. Invalid drafts return structured
+findings without execution. Preview and Save both reject a changed base
+revision rather than rebasing a browser draft silently.
 
 `POST /api/presentations/{id}/run` executes only the requested visualizations
 and option datasets. Asset datasets resolve their physical relation and
@@ -290,7 +422,10 @@ Manual and automatic runs register before entering the shared session. Cancel
 is a barrier: it cancels DuckDB, transfers, and Python work and waits for the
 session to be released before returning. The frontend merges result deltas and
 retains drafts on revision conflicts; it does not poll or treat Jotai as
-persistent truth.
+persistent truth. A semantic mutation response remains the rendered notebook
+until SSE reaches the same revision. If a differing workspace snapshot races
+that response, the frontend resolves it once against the authoritative notebook
+endpoint instead of briefly dropping newly authored blocks.
 
 Preview tables stay bounded, block editors grow with short content before
 using their internal scroll area, and output panes retain user scroll position
@@ -306,14 +441,15 @@ installed agent client.
 
 ### 11.1 Native Ask/Edit chat
 
-The notebook toolbar opens a docked desktop panel or mobile sheet. Renart
+The shared notebook rail exposes chat under its **AI** tab; on narrow layouts
+the whole authoring rail uses the notebook-tools Sheet. Renart
 discovers Codex, Claude Code, and OpenCode on the server `PATH`; unavailable
 clients remain visible but disabled. It launches the selected client in a
 private non-repository directory, passes the prompt over stdin, and installs a
 per-process Renart MCP configuration. Provider sessions resume independently
 per notebook, provider, and capability mode.
 
-**Ask** launches a notebook-scoped MCP server with only the eight bounded read
+**Ask** launches a notebook-scoped MCP server with only the nine bounded read
 tools. Change-set and run tools do not exist in that process. **Edit** grants
 the complete semantic change-set and run catalog for the turn; choosing Edit
 is the UI authority to apply and verify notebook work. The panel starts in Ask
@@ -324,6 +460,31 @@ sandbox. If any normalized provider stream reports a generic shell,
 filesystem, or web tool, Renart stops the process and reports the blocked
 activity. This is a narrow local integration boundary, not a general-purpose
 OS sandbox.
+
+Notebook mutations stay scoped to the selected notebook, while the read catalog
+also offers bounded workspace-wide metadata search. Search projects the current
+`ArtifactIndex`: pipeline assets, notebook components, dashboards, reports,
+datasets, and visualizations can be matched by title, type, connection,
+capability, or column. Results contain no filesystem path, asset URI, source
+credential, or live warehouse query. A relation-producing pipeline asset
+includes a conservative sampled `cell.create` recipe so the agent can add it
+through the ordinary semantic change-set path instead of inventing connector
+details.
+
+Edit's prepare tool publishes the exact supported dotted operation kinds as a
+JSON Schema enum with field-specific source descriptions. Validation errors
+repeat the valid values, and the prompt tells clients to correct from that
+contract rather than probe aliases. Its visualization field projects the real
+versioned definition shape, including the chart-type enum, singular `encoding`
+object, and array-valued `y`/`tooltip` fields instead of exposing an untyped
+map. A source definition alone never transfers data. MCP-started execution
+rejects the first import, a changed definition, or an explicit refresh for
+every non-DuckDB source until the user reviews the query, sampling policy, and
+row limit and runs it in Renart. Once that approved snapshot is current, the
+agent may run downstream work without refreshing it.
+The native runner stops a turn after six consecutive failed change preparations
+(a successful preparation resets the counter), preventing an invalid client
+loop from flooding the progress feed.
 
 The service keeps a bounded in-memory transcript and normalized activity list,
 not hidden reasoning. Every update publishes a complete monotonic
@@ -355,8 +516,9 @@ discovery token inside `clientapi`; without a live owner it creates the same
 headless notebook service graph in-process. Stdout is reserved for JSON-RPC and
 logs go to stderr.
 
-`internal/notebookmcp` exposes 15 schema-versioned, high-level tools:
+`internal/notebookmcp` exposes 16 schema-versioned, high-level tools:
 
+- bounded, credential-free workspace artifact/catalog search;
 - notebook list/outline/block/graph/diagnostics;
 - result schema and a sample capped at 50 rows/64 KiB;
 - credential-redacted source definitions and snapshot provenance;
@@ -438,8 +600,10 @@ Playwright test covers desktop/mobile streaming and transcript restoration; a
 real local Codex smoke test covers launch, MCP discovery, a tool call, and
 session resumption. Playwright live tests also exercise warehouse/file/HTTP source chains,
 visual editing/migration, typed parameter editing/execution, export bytes,
-reviewed source/connected-cell promotion, and race-sensitive notebook UI paths.
+reviewed source/connected-cell promotion, header-created durable markdown, and
+race-sensitive notebook UI paths.
 Presentation live tests cover dashboard
 creation, typed visual editing, deterministic save, definition-mode
-round-tripping, URL-backed filters, dependency-aware viewer refresh, and a
+round-tripping, shrink-safe desktop/mobile inspectors, URL-backed filters,
+dependency-aware viewer refresh, and a
 presentation error blocking/clearing its consumed pipeline deployment.

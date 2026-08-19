@@ -32,16 +32,9 @@ import {
   VisualizationFieldEncoding,
   VizDirective,
 } from "@/lib/api-notebooks";
+import { visualizationPaletteColors } from "@/lib/visualization-palettes";
 
 const CHART_ROW_CAP = 200;
-const SERIES_COLORS = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
-];
-
 function asArray(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);
   if (typeof value === "string" && value) return [value];
@@ -138,6 +131,7 @@ export function NotebookVisualizationRenderer({
 }) {
   const rows = useMemo(() => rowsToObjects(result), [result]);
   const limit = resultLimit(definition);
+  const seriesColors = visualizationPaletteColors(definition.palette);
 
   if (definition.type === "table") {
     const requested = (definition.columns ?? []).map(fieldName).filter(Boolean);
@@ -233,7 +227,7 @@ export function NotebookVisualizationRenderer({
               <Bar
                 key={key}
                 dataKey={key}
-                fill={SERIES_COLORS[index % SERIES_COLORS.length]}
+                fill={seriesColors[index % seriesColors.length]}
                 stackId={definition.stacked ? "stack" : undefined}
                 radius={definition.stacked ? 0 : 4}
               />
@@ -251,8 +245,8 @@ export function NotebookVisualizationRenderer({
                 key={key}
                 dataKey={key}
                 type="monotone"
-                fill={SERIES_COLORS[index % SERIES_COLORS.length]}
-                stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
+                fill={seriesColors[index % seriesColors.length]}
+                stroke={seriesColors[index % seriesColors.length]}
                 stackId={definition.stacked ? "stack" : undefined}
                 fillOpacity={0.2}
               />
@@ -269,7 +263,7 @@ export function NotebookVisualizationRenderer({
               innerRadius={definition.type === "donut" ? 50 : 0}
             >
               {capped.map((_, index) => (
-                <Cell key={index} fill={SERIES_COLORS[index % SERIES_COLORS.length]} />
+                <Cell key={index} fill={seriesColors[index % seriesColors.length]} />
               ))}
             </Pie>
           </PieChart>
@@ -279,7 +273,7 @@ export function NotebookVisualizationRenderer({
             <XAxis dataKey={xKey} name={definition.encoding?.x?.label || xKey} />
             <YAxis dataKey={yKeys[0]} name={yFields[0]?.label || yKeys[0]} />
             <ChartTooltip cursor={{ strokeDasharray: "3 3" }} />
-            <Scatter data={capped} fill={SERIES_COLORS[0]} />
+            <Scatter data={capped} fill={seriesColors[0]} />
           </ScatterChart>
         ) : (
           <LineChart data={chartData} accessibilityLayer>
@@ -293,7 +287,7 @@ export function NotebookVisualizationRenderer({
                 key={key}
                 dataKey={key}
                 type="monotone"
-                stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
+                stroke={seriesColors[index % seriesColors.length]}
                 strokeWidth={2}
                 dot={false}
               />

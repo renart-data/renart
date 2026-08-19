@@ -3,27 +3,18 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import { AlertTriangle, ArrowLeft, Check, Eye, Loader2, Pencil, RefreshCw } from "lucide-react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
+import { AuthoredControlValueField } from "@/components/app/authored-control";
 import { NotebookVisualizationRenderer } from "@/components/app/notebook-viz";
 import { normalizeVisualizationDefinition } from "@/components/app/notebook-visualization-block";
 import { AppPage, PageHeader } from "@/components/app/app-primitives";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { NotebookCellRunResult } from "@/lib/api-notebooks";
 import {
@@ -36,6 +27,8 @@ import {
   runPresentation,
 } from "@/lib/api-presentations";
 import { workspaceAtom } from "@/lib/atoms/domains/workspace";
+import { authoredControlOptions } from "@/lib/authored-controls";
+import { markdownContentClassName } from "@/lib/markdown-content";
 import { cn } from "@/lib/utils";
 
 import type { PresentationKind } from "./presentation-page";
@@ -430,7 +423,12 @@ function ReportViewer({
           >
             {section.title ? <h2 className="mb-3 text-lg font-semibold">{section.title}</h2> : null}
             {section.markdown ? (
-              <div className="prose prose-sm max-w-none text-foreground dark:prose-invert">
+              <div
+                className={cn(
+                  "prose prose-sm max-w-none text-foreground dark:prose-invert",
+                  markdownContentClassName,
+                )}
+              >
                 <ReactMarkdown>{section.markdown}</ReactMarkdown>
               </div>
             ) : visualization ? (
@@ -447,16 +445,18 @@ function ReportViewer({
   );
 }
 
-function PresentationVisualizationCard({
+export function PresentationVisualizationCard({
   visualization,
   result,
   loading,
   minHeight = 18,
+  header,
 }: {
   visualization: PresentationVisualization;
   result?: PresentationDatasetResult;
   loading: boolean;
   minHeight?: number;
+  header?: ReactNode;
 }) {
   const definition = normalizeVisualizationDefinition(visualization.definition);
   return (
@@ -466,7 +466,11 @@ function PresentationVisualizationCard({
       data-testid={`presentation-visualization-${visualization.id}`}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-medium">{definition.title || visualization.id}</span>
+        {header ?? (
+          <span className="truncate text-sm font-medium">
+            {definition.title || visualization.id}
+          </span>
+        )}
         {result?.truncated ? <Badge variant="outline">First 1,000 rows</Badge> : null}
       </div>
       {result?.status === "error" ? (
@@ -491,7 +495,7 @@ function PresentationVisualizationCard({
   );
 }
 
-function PresentationFilterControl({
+export function PresentationFilterControl({
   filter,
   value,
   optionResult,
@@ -502,147 +506,23 @@ function PresentationFilterControl({
   optionResult?: PresentationDatasetResult;
   onChange: (value: unknown) => void;
 }) {
-  const options = useMemo(() => filterOptions(filter, optionResult), [filter, optionResult]);
-  const label = filter.label || filter.id;
-  const controlID = `presentation-filter-${filter.id}`;
-  if (filter.type === "boolean") {
-    return (
-      <label className="flex h-7 items-center gap-2 rounded-md border bg-background px-2 text-xs">
-        <Checkbox
-          checked={value === true}
-          onCheckedChange={(checked) => onChange(checked === true)}
-        />
-        {label}
-      </label>
-    );
-  }
-  if (filter.type === "select") {
-    const selected = comparableValue(value);
-    return (
-      <Field className="w-44 gap-1">
-        <FieldLabel htmlFor={controlID}>{label}</FieldLabel>
-        <Select
-          value={selected}
-          onValueChange={(next) => {
-            const option = options.find((candidate) => comparableValue(candidate.value) === next);
-            if (option) onChange(option.value);
-          }}
-        >
-          <SelectTrigger id={controlID} className="w-full">
-            <SelectValue placeholder="Choose…" />
-          </SelectTrigger>
-          <SelectContent>
-            {options.map((option) => (
-              <SelectItem key={comparableValue(option.value)} value={comparableValue(option.value)}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-    );
-  }
-  if (filter.type === "multi_select") {
-    const selected = new Set(Array.isArray(value) ? value.map(comparableValue) : []);
-    return (
-      <Field className="min-w-48 gap-1">
-        <FieldLabel>{label}</FieldLabel>
-        <div
-          role="group"
-          aria-label={label}
-          className="flex min-h-7 max-w-md flex-wrap gap-x-3 gap-y-1 rounded-md border bg-background px-2 py-1"
-        >
-          {options.map((option) => {
-            const key = comparableValue(option.value);
-            return (
-              <label key={key} className="flex items-center gap-1.5 text-xs">
-                <Checkbox
-                  checked={selected.has(key)}
-                  onCheckedChange={(checked) => {
-                    const current = Array.isArray(value) ? [...value] : [];
-                    onChange(
-                      checked === true
-                        ? [...current, option.value]
-                        : current.filter((item) => comparableValue(item) !== key),
-                    );
-                  }}
-                />
-                {option.label}
-              </label>
-            );
-          })}
-        </div>
-      </Field>
-    );
-  }
-  if (filter.type === "date_range") {
-    const range = Array.isArray(value) ? value : ["", ""];
-    return (
-      <Field className="gap-1">
-        <FieldLabel>{label}</FieldLabel>
-        <div role="group" aria-label={label} className="flex items-center gap-1">
-          <Input
-            type="date"
-            className="w-36"
-            value={String(range[0] ?? "")}
-            onChange={(event) => onChange([event.target.value, range[1]])}
-          />
-          <span className="text-xs text-muted-foreground">to</span>
-          <Input
-            type="date"
-            className="w-36"
-            value={String(range[1] ?? "")}
-            onChange={(event) => onChange([range[0], event.target.value])}
-          />
-        </div>
-      </Field>
-    );
-  }
+  const options = useMemo(
+    () => authoredControlOptions(filter, optionResult),
+    [filter, optionResult],
+  );
   return (
-    <Field className="w-44 gap-1">
-      <FieldLabel htmlFor={controlID}>{label}</FieldLabel>
-      <Input
-        id={controlID}
-        type={filter.type === "date" ? "date" : filter.type === "number" ? "number" : "text"}
-        value={typeof value === "string" || typeof value === "number" ? value : ""}
-        onChange={(event) => {
-          if (filter.type === "number") {
-            const next = Number(event.target.value);
-            if (Number.isFinite(next)) onChange(next);
-          } else {
-            onChange(event.target.value);
-          }
-        }}
-      />
-    </Field>
+    <AuthoredControlValueField
+      control={filter}
+      value={value}
+      options={options}
+      idScope="presentation-control-runtime"
+      compact
+      onChange={onChange}
+    />
   );
 }
 
-function filterOptions(filter: PresentationFilter, result?: PresentationDatasetResult) {
-  if ((filter.options?.values ?? []).length > 0) {
-    return (filter.options?.values ?? []).map((value) => ({ value, label: String(value) }));
-  }
-  if (!result || result.status !== "ok" || !filter.options?.value_field) return [];
-  const valueIndex = result.columns.findIndex(
-    (column) => column.toLowerCase() === filter.options?.value_field?.toLowerCase(),
-  );
-  const labelIndex = filter.options.label_field
-    ? result.columns.findIndex(
-        (column) => column.toLowerCase() === filter.options?.label_field?.toLowerCase(),
-      )
-    : valueIndex;
-  if (valueIndex < 0) return [];
-  const seen = new Set<string>();
-  return result.rows.flatMap((row) => {
-    const value = row[valueIndex];
-    const key = comparableValue(value);
-    if (seen.has(key)) return [];
-    seen.add(key);
-    return [{ value, label: String(row[labelIndex >= 0 ? labelIndex : valueIndex] ?? value) }];
-  });
-}
-
-function initialFilterValues(
+export function initialFilterValues(
   filters: PresentationFilter[],
   overrides?: FilterValues,
 ): FilterValues {

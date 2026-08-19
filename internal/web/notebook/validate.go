@@ -37,6 +37,10 @@ func validate(nb *Notebook) {
 	}
 
 	if nb.Version >= ManifestVersionCurrent {
+		parameters := make(map[string]bool, len(nb.Parameters))
+		for _, parameter := range nb.Parameters {
+			parameters[parameter.ID] = true
+		}
 		seenBlocks := make(map[string]int, len(nb.Blocks))
 		for index, block := range nb.Blocks {
 			id := strings.TrimSpace(block.StableID())
@@ -48,6 +52,12 @@ func validate(nb *Notebook) {
 				nb.Problems = append(nb.Problems, fmt.Sprintf("block id %q is duplicated at positions %d and %d", id, previous+1, index+1))
 			} else {
 				seenBlocks[id] = index
+			}
+			if block.Control != "" {
+				if !parameters[block.Control] {
+					nb.Problems = append(nb.Problems, fmt.Sprintf("control %q references an unknown parameter", block.Control))
+				}
+				continue
 			}
 			if block.Visualization == nil {
 				continue

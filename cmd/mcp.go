@@ -55,9 +55,10 @@ func MCP() *cli.Command {
 			// CLI and are printed to stderr, while stdout remains protocol-only.
 			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.Level(100)}))
 			server := notebookmcp.New(ctx, backend, buildVersion, logger, notebookmcp.Policy{
-				NotebookID: command.String("notebook"),
-				ReadOnly:   command.Bool("read-only"),
-				NoRuns:     command.Bool("no-runs"),
+				NotebookID:            command.String("notebook"),
+				ReadOnly:              command.Bool("read-only"),
+				NoRuns:                command.Bool("no-runs"),
+				RequireSourceApproval: true,
 			})
 			if err := server.Protocol().Run(ctx, &mcp.StdioTransport{}); err != nil && ctx.Err() == nil && !normalMCPClientClose(err) {
 				return fmt.Errorf("serve notebook MCP over stdio: %w", err)

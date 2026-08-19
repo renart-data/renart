@@ -119,8 +119,8 @@ func TestScheduleRecomputeRecordsWakeupWhilePassIsActive(t *testing.T) {
 
 func TestNotebookRuntimeCancelActiveRunsWaitsForRelease(t *testing.T) {
 	rt := newNotebookRuntime()
-	manualCtx, finishManual := rt.beginManualRun(context.Background())
-	autoCtx, finishAuto := rt.beginAutoRun(context.Background())
+	manualCtx, finishManual := rt.beginManualRun(context.Background(), []string{"manual-cell"})
+	autoCtx, finishAuto := rt.beginAutoRun(context.Background(), []string{"auto-cell"})
 
 	manualCancelled := make(chan struct{})
 	autoCancelled := make(chan struct{})
@@ -175,5 +175,36 @@ func TestNotebookRuntimeCancelActiveRunsWaitsForRelease(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("cancel did not return after both runs released the session")
+	}
+}
+
+func TestNotebookRuntimeTracksActiveCellUnion(t *testing.T) {
+	rt := newNotebookRuntime()
+	_, finishFirst := rt.beginManualRun(context.Background(), []string{"shared", "manual", "manual"})
+	_, finishSecond := rt.beginManualRun(context.Background(), []string{"second"})
+	_, finishAuto := rt.beginAutoRun(context.Background(), []string{"shared", "auto"})
+
+	rt.mu.Lock()
+	running := rt.runningCellsLocked()
+	rt.mu.Unlock()
+	if !reflect.DeepEqual(running, []string{"auto", "manual", "second", "shared"}) {
+		t.Fatalf("unexpected active cell union: %v", running)
+	}
+
+	finishFirst()
+	rt.mu.Lock()
+	running = rt.runningCellsLocked()
+	rt.mu.Unlock()
+	if !reflect.DeepEqual(running, []string{"auto", "second", "shared"}) {
+		t.Fatalf("finishing one manual run cleared another active run: %v", running)
+	}
+
+	finishSecond()
+	finishAuto()
+	rt.mu.Lock()
+	running = rt.runningCellsLocked()
+	rt.mu.Unlock()
+	if len(running) != 0 {
+		t.Fatalf("finished runs remained active: %v", running)
 	}
 }

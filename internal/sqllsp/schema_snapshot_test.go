@@ -58,6 +58,29 @@ func TestInferSchemaSnapshotUsesASTAndPropagatesThroughGraph(t *testing.T) {
 	}
 }
 
+func TestInferOutputSchemaReadsExistingInferredLayersWithoutRebuildingGraph(t *testing.T) {
+	graph := GraphFromRenartAssets("file:///workspace", []AssetNode{{
+		ID: "orders", Name: "analytics.orders", URI: "file:///workspace/orders.sql", Dialect: "duckdb",
+	}}, nil)
+	graph = InferSchemaSnapshot(context.Background(), graph, []InferenceAsset{{
+		ID: "orders", Name: "analytics.orders", URI: "file:///workspace/orders.sql", Dialect: "duckdb",
+		SQL: "select 1 as order_id, 42::bigint as total_amount",
+	}})
+	before := append([]SchemaLayer(nil), graph.Schemas...)
+
+	inferred := InferOutputSchema(context.Background(), graph, TextDocumentItem{
+		URI: "inmemory://presentation/orders.sql", LanguageID: "sql",
+		Text: "select * from analytics.orders",
+	}, "duckdb")
+
+	require.Len(t, inferred.Columns, 2)
+	assert.ElementsMatch(t, []string{"order_id", "total_amount"}, []string{
+		inferred.Columns[0].Name, inferred.Columns[1].Name,
+	})
+	assert.Equal(t, "complete", inferred.Completeness)
+	assert.Equal(t, before, graph.Schemas)
+}
+
 func TestInferSchemaSnapshotUsesCompactAnalysisForJoinedStar(t *testing.T) {
 	graph := GraphFromRenartAssets("file:///workspace", []AssetNode{
 		{ID: "left", Name: "analytics.left", URI: "file:///workspace/left.sql", Dialect: "duckdb"},

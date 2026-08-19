@@ -39,6 +39,56 @@ func (s *PresentationService) Run(
 	if apiErr != nil {
 		return model.PresentationRunResult{}, apiErr
 	}
+	return s.runPresentationArtifact(ctx, artifact, request)
+}
+
+// Preview validates and executes an unsaved typed snapshot without writing it
+// to the workspace. The saved artifact supplies the immutable identity and CAS
+// boundary; only the authored draft fields are converted into the runtime
+// representation.
+func (s *PresentationService) Preview(
+	ctx context.Context,
+	workspaceID string,
+	request model.PresentationPreviewRequest,
+) (model.PresentationPreviewResult, *APIError) {
+	artifact, apiErr := s.loadPreviewArtifact(ctx, workspaceID, request)
+	if apiErr != nil {
+		return model.PresentationPreviewResult{}, apiErr
+	}
+	findings := presentationFindingsToModel(artifact.Problems)
+	if firstPresentationError(artifact.Problems) != nil {
+		return model.PresentationPreviewResult{
+			Status:           "invalid",
+			ArtifactRevision: artifact.Revision,
+			Findings:         findings,
+			FilterValues:     map[string]any{},
+			Visualizations:   map[string]model.PresentationDatasetResult{},
+		}, nil
+	}
+	run, apiErr := s.runPresentationArtifact(ctx, artifact, model.PresentationRunRequest{
+		Environment:      request.Environment,
+		FilterValues:     request.FilterValues,
+		VisualizationIDs: request.VisualizationIDs,
+		IncludeOptions:   request.IncludeOptions,
+	})
+	if apiErr != nil {
+		return model.PresentationPreviewResult{}, apiErr
+	}
+	return model.PresentationPreviewResult{
+		Status:           run.Status,
+		ArtifactRevision: run.ArtifactRevision,
+		Findings:         findings,
+		FilterValues:     run.FilterValues,
+		Visualizations:   run.Visualizations,
+		Options:          run.Options,
+	}, nil
+}
+
+func (s *PresentationService) runPresentationArtifact(
+	ctx context.Context,
+	artifact *presentation.Artifact,
+	request model.PresentationRunRequest,
+) (model.PresentationRunResult, *APIError) {
 	if problem := firstPresentationError(artifact.Problems); problem != nil {
 		return model.PresentationRunResult{}, &APIError{
 			Status:  http.StatusUnprocessableEntity,
@@ -154,6 +204,57 @@ func (s *PresentationService) Run(
 		}
 	}
 	return result, nil
+}
+
+func (s *PresentationService) loadPreviewArtifact(
+	ctx context.Context,
+	workspaceID string,
+	request model.PresentationPreviewRequest,
+) (*presentation.Artifact, *APIError) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	path, apiErr := s.resolvePath(workspaceID)
+	if apiErr != nil {
+		return nil, apiErr
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, &APIError{Status: http.StatusNotFound, Code: "presentation_not_found", Message: "presentation not found"}
+		}
+		return nil, &APIError{Status: http.StatusInternalServerError, Code: "presentation_read_failed", Message: err.Error()}
+	}
+	current, err := presentation.DecodeArtifact(path, content)
+	if err != nil {
+		return nil, &APIError{Status: http.StatusBadRequest, Code: "presentation_invalid", Message: err.Error()}
+	}
+	if strings.TrimSpace(request.ExpectedRevision) == "" || request.ExpectedRevision != current.Revision {
+		return nil, &APIError{
+			Status: http.StatusConflict, Code: "presentation_preview_conflict",
+			Message: "This presentation changed after preview began. Reload the latest file before running the draft.",
+		}
+	}
+	draft, err := presentationFromModel(path, request.Artifact)
+	if err != nil {
+		return nil, &APIError{Status: http.StatusBadRequest, Code: "presentation_snapshot_invalid", Message: err.Error()}
+	}
+	if draft.ID != current.ID || draft.Kind != current.Kind {
+		return nil, &APIError{
+			Status: http.StatusBadRequest, Code: "presentation_identity_immutable",
+			Message: "Presentation identity and kind cannot be changed while previewing a draft.",
+		}
+	}
+	normalized, err := presentation.MarshalArtifact(*draft)
+	if err != nil {
+		return nil, &APIError{Status: http.StatusBadRequest, Code: "presentation_snapshot_invalid", Message: err.Error()}
+	}
+	draft, err = presentation.DecodeArtifact(path, normalized)
+	if err != nil {
+		return nil, &APIError{Status: http.StatusBadRequest, Code: "presentation_snapshot_invalid", Message: err.Error()}
+	}
+	s.enrichProblems(ctx, draft)
+	return draft, nil
 }
 
 func (s *PresentationService) loadRuntimeArtifact(ctx context.Context, workspaceID string) (*presentation.Artifact, *APIError) {

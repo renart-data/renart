@@ -43,10 +43,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useIsMobile } from "@/hooks/use-mobile";
 import {
   cancelNotebookAgentTurn,
   getNotebookAgent,
@@ -61,51 +59,19 @@ import { mergeNotebookAgentEvent, notebookAgentEventsAtom } from "@/lib/atoms/do
 import { workspaceReconnectSequenceAtom } from "@/lib/atoms/domains/workspace";
 import { cn } from "@/lib/utils";
 
-type NotebookAgentPanelProps = {
-  notebookId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-};
-
 type NotebookAgentTurn = {
   user: NotebookAgentMessage;
   assistant?: NotebookAgentMessage;
   activities: NotebookAgentActivity[];
 };
 
-export function NotebookAgentPanel({ notebookId, open, onOpenChange }: NotebookAgentPanelProps) {
-  const isMobile = useIsMobile();
-  const content = <NotebookAgentChat notebookId={notebookId} onClose={() => onOpenChange(false)} />;
-
-  if (isMobile) {
-    return (
-      <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="w-full p-0 sm:max-w-lg" showCloseButton={false}>
-          <SheetTitle className="sr-only">Notebook assistant</SheetTitle>
-          <SheetDescription className="sr-only">
-            Chat with a local coding agent through Renart&apos;s notebook tools.
-          </SheetDescription>
-          {content}
-        </SheetContent>
-      </Sheet>
-    );
-  }
-
-  if (!open) {
-    return null;
-  }
-
-  return (
-    <aside
-      aria-label="Notebook assistant"
-      className="flex min-h-0 w-[26rem] shrink-0 border-l bg-muted/15 xl:w-[30rem]"
-    >
-      {content}
-    </aside>
-  );
-}
-
-function NotebookAgentChat({ notebookId, onClose }: { notebookId: string; onClose: () => void }) {
+export function NotebookAgentChat({
+  notebookId,
+  onClose,
+}: {
+  notebookId: string;
+  onClose?: () => void;
+}) {
   const conversation = useAtomValue(notebookAgentEventsAtom)[notebookId];
   const workspaceReconnectSequence = useAtomValue(workspaceReconnectSequenceAtom);
   const setAgentEvents = useSetAtom(notebookAgentEventsAtom);
@@ -244,10 +210,12 @@ function NotebookAgentChat({ notebookId, onClose }: { notebookId: string; onClos
           <RotateCcw data-icon="inline-start" />
           <span className="sr-only">New chat</span>
         </Button>
-        <Button type="button" variant="ghost" size="icon-sm" title="Close" onClick={onClose}>
-          <X data-icon="inline-start" />
-          <span className="sr-only">Close notebook assistant</span>
-        </Button>
+        {onClose ? (
+          <Button type="button" variant="ghost" size="icon-sm" title="Close" onClick={onClose}>
+            <X data-icon="inline-start" />
+            <span className="sr-only">Close notebook assistant</span>
+          </Button>
+        ) : null}
       </div>
 
       <div className="flex min-w-0 flex-wrap items-center gap-2 border-b px-3 py-2">

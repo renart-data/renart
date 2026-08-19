@@ -73,6 +73,7 @@ export type PresentationDataset = {
   connection?: string;
   query?: string;
   columns?: WebColumn[];
+  resolved_columns?: WebColumn[];
 };
 
 export type PresentationFilterOptions = {
@@ -87,6 +88,9 @@ export type PresentationFilter = {
   label?: string;
   type: string;
   default: unknown;
+  min?: number;
+  max?: number;
+  step?: number;
   options?: PresentationFilterOptions;
 };
 
@@ -136,9 +140,27 @@ export type PresentationRunRequest = {
   include_options?: boolean;
 };
 
+export type PresentationPreviewRequest = {
+  expected_revision: string;
+  artifact: PresentationArtifact;
+  environment?: string;
+  filter_values?: Record<string, unknown>;
+  visualization_ids?: string[];
+  include_options?: boolean;
+};
+
 export type PresentationRunResult = {
   status: string;
   artifact_revision: string;
+  filter_values: Record<string, unknown>;
+  visualizations: Record<string, PresentationDatasetResult>;
+  options?: Record<string, PresentationDatasetResult>;
+};
+
+export type PresentationPreviewResult = {
+  status: string;
+  artifact_revision: string;
+  findings?: PresentationFinding[];
   filter_values: Record<string, unknown>;
   visualizations: Record<string, PresentationDatasetResult>;
   options?: Record<string, PresentationDatasetResult>;
@@ -419,6 +441,9 @@ export type NotebookParameter = {
   label?: string;
   type: string;
   default: unknown;
+  min?: number;
+  max?: number;
+  step?: number;
   options?: NotebookParameterOptions;
 };
 
@@ -426,6 +451,7 @@ export type WebNotebookBlock = {
   id?: string;
   cell?: string;
   markdown?: string;
+  control?: string;
   visualization?: NotebookVisualization;
 };
 
@@ -489,6 +515,7 @@ export type NotebookOperation = {
   kind: string;
   cell_id?: string;
   block_id?: string;
+  control_id?: string;
   name?: string;
   language?: string;
   connection?: string;
@@ -498,6 +525,7 @@ export type NotebookOperation = {
   content?: string;
   visualization?: NotebookVisualization;
   source?: NotebookSourceDefinition;
+  parameter?: NotebookParameter;
   parameters?: NotebookParameter[];
   position?: string;
   after_block_id?: string;

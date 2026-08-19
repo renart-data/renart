@@ -342,6 +342,38 @@ func TestNotebookServiceStructuredBlocksUseStableIdentity(t *testing.T) {
 	}
 }
 
+func TestNotebookRuntimeSnapshotIncludesActiveCells(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewNotebookService(NotebookDependencies{WorkspaceRoot: root})
+	created, apiErr := svc.Create(CreateNotebookRequest{Title: "Running state"})
+	if apiErr != nil {
+		t.Fatalf("create failed: %+v", apiErr)
+	}
+	cellID := created.Cells[0].CellID
+	rt := svc.runtimes.get(created.UUID)
+	_, finishRun := rt.beginManualRun(context.Background(), []string{cellID})
+
+	runtime, runtimeErr := svc.Runtime(created.ID)
+	if runtimeErr != nil {
+		t.Fatalf("runtime failed: %+v", runtimeErr)
+	}
+	if len(runtime.Running) != 1 || runtime.Running[0] != cellID {
+		t.Fatalf("active cell missing from runtime snapshot: %v", runtime.Running)
+	}
+
+	finishRun()
+	runtime, runtimeErr = svc.Runtime(created.ID)
+	if runtimeErr != nil {
+		t.Fatalf("runtime after finish failed: %+v", runtimeErr)
+	}
+	if len(runtime.Running) != 0 {
+		t.Fatalf("finished cell remained in runtime snapshot: %v", runtime.Running)
+	}
+}
+
 func TestNotebookServiceExplicitlyUpgradesLegacyManifest(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {

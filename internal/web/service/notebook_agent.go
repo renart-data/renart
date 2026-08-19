@@ -582,9 +582,9 @@ func notebookAgentRunKey(provider string, mode NotebookAgentMode) string {
 }
 
 func buildNotebookAgentPrompt(notebookID string, mode NotebookAgentMode, messages []NotebookAgentMessage, resumed bool) string {
-	capability := "Inspect the selected notebook and answer the user's question. Do not prepare or apply changes and do not run cells."
+	capability := "Inspect the selected notebook and answer the user's question. You may search the credential-free workspace catalog when broader metadata context is relevant. Do not prepare or apply changes and do not run cells."
 	if mode == NotebookAgentModeEdit {
-		capability = "Complete the requested notebook task end to end. Inspect first, prepare and validate semantic changes, then apply them. Run only the cells needed to verify the result, and report what changed."
+		capability = "Complete the requested notebook task end to end. Inspect first and search the workspace catalog when the task needs existing data. Prepare and validate semantic changes, then apply them. Follow the prepare tool's dotted operation-kind enum exactly (for example visualization.create or cell.update); never probe guessed operation names or batch speculative retries. For visualizations, follow the typed prepare-tool schema exactly: this is Renart's definition grammar, not Vega, and uses version 1, encoding (singular), and array-valued y encodings. A catalog match may include a suggested sample source recipe: use that recipe through cell.create, and do not widen it to a full snapshot unless the user explicitly asks. A newly added non-DuckDB source can be configured by the agent, but its first import or explicit refresh must be reviewed and run by the user in Renart. If a tool fails, use its returned valid values before one corrected retry. Run only the cells needed to verify the result, and report what changed or what awaits source approval."
 	}
 	var history strings.Builder
 	start := 0
@@ -620,6 +620,8 @@ func notebookAgentActivityTitle(event NotebookAgentStreamEvent) string {
 	name := strings.TrimPrefix(strings.TrimSpace(event.Name), "renart_")
 	name = strings.TrimPrefix(name, "mcp__renart__")
 	switch name {
+	case "search_workspace_catalog":
+		return "Searching the workspace catalog"
 	case "list_notebooks":
 		return "Finding the notebook"
 	case "get_notebook_outline":
@@ -660,6 +662,8 @@ func notebookAgentActivityTitle(event NotebookAgentStreamEvent) string {
 		return "Planning the notebook task"
 	case "agent_policy":
 		return "Blocked an unsupported agent tool"
+	case "agent_retry_limit":
+		return "Stopped repeated invalid changes"
 	case "":
 		return "Working"
 	default:

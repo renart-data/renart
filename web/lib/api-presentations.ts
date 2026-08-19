@@ -3,6 +3,8 @@ import type {
   CreatePresentationRequest,
   PresentationArtifact,
   PresentationDocument,
+  PresentationPreviewRequest,
+  PresentationPreviewResult,
   PresentationRunRequest,
   PresentationRunResult,
   ReplacePresentationRequest,
@@ -64,6 +66,19 @@ export async function runPresentation(workspaceId: string, input: PresentationRu
   );
 }
 
+export async function previewPresentation(
+  workspaceId: string,
+  input: PresentationPreviewRequest,
+  init?: RequestInit,
+) {
+  return fetchJSONWithBody<PresentationPreviewResult>(
+    `/api/presentations/${workspaceId}/preview`,
+    "POST",
+    input,
+    init,
+  );
+}
+
 export type {
   PresentationArtifact,
   PresentationDataset,
@@ -71,6 +86,8 @@ export type {
   PresentationFilter,
   PresentationFilterBinding,
   PresentationFinding,
+  PresentationPreviewRequest,
+  PresentationPreviewResult,
   PresentationRunRequest,
   PresentationRunResult,
   PresentationDatasetResult,

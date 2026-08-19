@@ -1,0 +1,59 @@
+---
+title: Dashboards and reports
+description: Build checked dashboards and narrative reports from pipeline data on a visual canvas.
+---
+
+Dashboards and reports turn pipeline results into version-controlled views for
+local analysis and review. You compose the result directly on a canvas, while
+Renart checks the fields and types used by every visualization.
+
+## Build a dashboard
+
+1. Open **Dashboards** and click **New dashboard**.
+2. Open **Data**, add a dataset, and choose a pipeline asset. A read-only query
+   on a configured connection is also available for advanced cases.
+3. Click **Add**. Choose one of the charts, KPIs, or tables suggested from the
+   dataset's known columns.
+4. Drag a tile by its handle and resize it from the lower corner. Select the
+   tile to change its data, appearance, filter bindings, or accessible layout
+   controls in the inspector.
+5. Add filters from the filter strip. Changing a filter refreshes only the
+   visualizations bound to it.
+6. Use the desktop, tablet, and mobile buttons to inspect the derived layout,
+   then click **Save**.
+
+The desktop grid is the saved layout. Tablet and mobile are predictable
+previews of that layout, so there is no second hidden arrangement to maintain.
+
+## Compose a report
+
+1. Open **Reports** and click **New report**.
+2. Add a text block, then edit its heading and Markdown directly on the report
+   page.
+3. Add a dataset and insert checked visualizations between narrative blocks.
+4. Drag blocks in the document or use **Move up** and **Move down**. Insert a
+   page break where the printed report should continue on a new page.
+5. Click **Save**, then **Preview** to see the clean audience view without
+   editing controls.
+
+## Work with drafts safely
+
+Changes stay in a browser draft until you click **Save** or press
+**Cmd/Ctrl+S**. Undo and redo work across text, layout, and component changes.
+If you try to leave with unsaved work, Renart asks before discarding it.
+
+The builder previews unsaved dataset and filter changes without writing an
+incomplete definition to your repository. The toolbar shows whether draft data
+is current, refreshing, or out of date. A changed file is never silently merged
+into your draft; reload it and reconcile the changes explicitly.
+
+:::note
+Saving a dashboard or report creates an ordinary reviewable repository change,
+like editing an asset or notebook.
+:::
+
+## Related
+
+- [Notebooks](/docs/notebooks/overview/)
+- [Deployments and schedules](/docs/scheduling/overview/)
+- [How Renart works](/docs/how-it-works/)

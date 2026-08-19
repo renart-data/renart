@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -81,6 +82,39 @@ func TestParseContextServiceUsesSelectedConnectionDialect(t *testing.T) {
 	require.Nil(t, apiError)
 	assert.Equal(t, "ok", result.Status)
 	assert.Equal(t, "databricks", result.Dialect)
+}
+
+func TestParseContextServiceSupportsConnectionScopedDocumentWithoutAsset(t *testing.T) {
+	t.Parallel()
+
+	service := NewParseContextService(ParseContextDependencies{
+		ResolveAssetByID: func(_ context.Context, _ string) (string, *pipeline.Pipeline, *pipeline.Asset, error) {
+			return "", nil, nil, errors.New("asset not found")
+		},
+		CurrentState: func() model.WorkspaceState {
+			return model.WorkspaceState{Connections: map[string]string{
+				"postgres-analytics": "postgres",
+			}}
+		},
+	})
+
+	result, apiError := service.Parse(
+		context.Background(),
+		"dashboard:sales:orders",
+		"select o.order_id from analytics.orders o",
+		[]ParseContextSchemaTable{{
+			Name: "analytics.orders",
+			Columns: []ParseContextSchemaColumn{{
+				Name: "order_id", Type: "bigint",
+			}},
+		}},
+		"postgres-analytics",
+	)
+
+	require.Nil(t, apiError)
+	assert.Equal(t, "ok", result.Status)
+	assert.Equal(t, "postgres", result.Dialect)
+	assert.Empty(t, result.Errors)
 }
 
 func TestBuildParseContextSchema_MergesSuggestedAndAssetColumns(t *testing.T) {

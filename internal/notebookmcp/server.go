@@ -7,12 +7,15 @@ import (
 	"log/slog"
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"renart/internal/web/model"
 	"renart/internal/web/notebook"
+	"renart/internal/web/presentation"
 	"renart/internal/web/service"
 )
 
@@ -38,9 +41,10 @@ type Server struct {
 // behavior. Native notebook chat uses an explicit policy so an agent cannot
 // cross the selected notebook or gain write/run tools while in Ask mode.
 type Policy struct {
-	NotebookID string
-	ReadOnly   bool
-	NoRuns     bool
+	NotebookID            string
+	ReadOnly              bool
+	NoRuns                bool
+	RequireSourceApproval bool
 }
 
 // New constructs a single-workspace notebook MCP server.
@@ -77,6 +81,10 @@ func New(ctx context.Context, backend Backend, version string, logger *slog.Logg
 func (s *Server) Protocol() *mcp.Server { return s.mcp }
 
 func (s *Server) registerTools() {
+	mcp.AddTool(s.mcp, readTool(
+		"search_workspace_catalog",
+		"Search the credential-free workspace artifact catalog. Pipeline assets that produce relations include a safe sample-source recipe for prepare_notebook_change_set; this tool never queries a warehouse or writes the notebook.",
+	), s.searchCatalog)
 	mcp.AddTool(s.mcp, readTool("list_notebooks", "List notebooks in this Renart workspace."), s.listNotebooks)
 	mcp.AddTool(s.mcp, readTool("get_notebook_outline", "Get ordered block identities and a notebook-wide revision."), s.getOutline)
 	mcp.AddTool(s.mcp, readTool("get_notebook_block", "Read one notebook block by durable ID. Source credentials are omitted."), s.getBlock)
@@ -87,7 +95,7 @@ func (s *Server) registerTools() {
 	mcp.AddTool(s.mcp, readTool("list_notebook_sources", "List credential-free source definitions, schemas, and snapshot provenance."), s.listSources)
 
 	if !s.policy.ReadOnly {
-		mcp.AddTool(s.mcp, readTool("prepare_notebook_change_set", "Normalize and stage a bounded semantic notebook change without writing files."), s.prepareChangeSet)
+		mcp.AddTool(s.mcp, prepareChangeSetTool(), s.prepareChangeSet)
 		mcp.AddTool(s.mcp, readTool("validate_notebook_change_set", "Revalidate a prepared notebook change against the current filesystem revision."), s.validateChangeSet)
 		mcp.AddTool(s.mcp, changeTool("apply_notebook_change_set", "Atomically apply the exact prepared notebook change after revision validation.", true, false), s.applyChangeSet)
 		mcp.AddTool(s.mcp, readTool("discard_notebook_change_set", "Discard a process-local prepared notebook change."), s.discardChangeSet)
@@ -98,6 +106,80 @@ func (s *Server) registerTools() {
 		mcp.AddTool(s.mcp, changeTool("cancel_notebook_run", "Cancel the selected asynchronous notebook run.", false, true), s.cancelRun)
 		mcp.AddTool(s.mcp, readTool("get_notebook_run_status", "Get bounded status and result summaries for an MCP-started notebook run."), s.getRunStatus)
 	}
+}
+
+func prepareChangeSetTool() *mcp.Tool {
+	definitionSchema, err := jsonschema.For[presentation.VisualizationDefinition](nil)
+	if err != nil {
+		panic(fmt.Sprintf("build visualization definition schema: %v", err))
+	}
+	definitionSchema.Properties["version"].Enum = []any{presentation.DefinitionVersionCurrent}
+	definitionSchema.Properties["type"].Enum = stringEnum([]string{
+		"table", "kpi", "bar", "line", "area", "scatter", "pie", "donut",
+	})
+	definitionSchema.Properties["palette"].Enum = stringEnum([]string{
+		"default", "ocean", "sunset", "forest", "berry", "monochrome",
+	})
+	operationSchema, err := jsonschema.For[notebookOperationInputSchema](&jsonschema.ForOptions{
+		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+			reflect.TypeFor[presentation.VisualizationDefinition](): definitionSchema,
+		},
+	})
+	if err != nil {
+		panic(fmt.Sprintf("build notebook operation schema: %v", err))
+	}
+	operationSchema.Description = "One semantic notebook edit. Use the exact dotted kind enum; never guess or probe operation names."
+	setSchemaDescription(operationSchema, "cell_id", "Existing durable cell/source ID for cell update, rename, source configuration, or legacy visualization migration.")
+	setSchemaDescription(operationSchema, "block_id", "Existing durable markdown/visualization block ID for updates. Omit it on creates so Renart generates a safe ID.")
+	setSchemaDescription(operationSchema, "control_id", "Existing raw parameter ID for control.update and control.delete. Use the id without the control: block prefix.")
+	setSchemaDescription(operationSchema, "name", "Optional concise logical name for a created cell/source. Omit it when Renart should generate a readable random name.")
+	setSchemaDescription(operationSchema, "language", "Required for cell.create: sql or python. Use sql for a catalog source recipe.")
+	setSchemaDescription(operationSchema, "connection", "For cell.create, a configured source connection. A non-empty connection makes the SQL cell a source-native read whose typed result is snapshotted into notebook DuckDB.")
+	setSchemaDescription(operationSchema, "asset_type", "Optional backend-derived SQL asset type returned by search_workspace_catalog. Do not invent one.")
+	setSchemaDescription(operationSchema, "snapshot_mode", "For connection-bound cell.create or source.create: sample or full. Prefer sample for a newly discovered remote source unless the user explicitly requested a full import.")
+	setSchemaDescription(operationSchema, "row_limit", "Positive row limit when snapshot_mode is sample. The catalog recipe supplies a conservative default.")
+	setSchemaDescription(operationSchema, "content", "SQL/Python/Markdown content as required by the operation. For a catalog source, use the suggested SELECT from search_workspace_catalog.")
+	setSchemaDescription(operationSchema, "source", "Required for source.create. A credential-free file, object-storage, or HTTP definition; never put secrets into an operation.")
+	setSchemaDescription(operationSchema, "visualization", "Required for visualization.create and visualization.update. Set source to a durable data-producing cell ID and definition to a versioned visualization object. The exact definition shape is {version: 1, type: \"line\", encoding: {x: {field: \"date\"}, y: [{field: \"value\"}]}}. Use encoding (singular), and always encode y and tooltip as arrays.")
+	setSchemaDescription(operationSchema, "parameter", "Required for control.create and control.update. A typed control definition with id, type, default, and optional label/options.")
+	setSchemaDescription(operationSchema, "position", "Optional create/move position: start, end, or after. Use after_block_id with after.")
+	setSchemaDescription(operationSchema, "after_block_id", "Durable block ID after which a created or moved block should be placed.")
+	if kind := operationSchema.Properties["kind"]; kind != nil {
+		kind.Description = "Required semantic operation kind. Choose one exact value from this enum."
+		kind.Enum = stringEnum(supportedMCPChangeOperationKinds)
+	}
+	if position := operationSchema.Properties["position"]; position != nil {
+		position.Enum = stringEnum([]string{"start", "end", "after"})
+	}
+	inputSchema, err := jsonschema.For[PrepareChangeSetInput](&jsonschema.ForOptions{
+		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+			reflect.TypeFor[service.NotebookOperation](): operationSchema,
+		},
+	})
+	if err != nil {
+		panic(fmt.Sprintf("build notebook change-set schema: %v", err))
+	}
+	tool := readTool(
+		"prepare_notebook_change_set",
+		"Normalize and stage bounded semantic notebook edits without writing files. Operation kinds are exact dotted enum values such as cell.update and visualization.create; do not probe guessed names. Visualization definitions use Renart's schema, not Vega: version is 1, type is table/kpi/bar/line/area/scatter/pie/donut, encoding is singular, and encoding.y is an array of {field: string} objects.",
+	)
+	tool.InputSchema = inputSchema
+	return tool
+}
+
+func setSchemaDescription(schema *jsonschema.Schema, property, description string) {
+	if schema == nil || schema.Properties[property] == nil {
+		return
+	}
+	schema.Properties[property].Description = description
+}
+
+func stringEnum(values []string) []any {
+	result := make([]any, 0, len(values))
+	for _, value := range values {
+		result = append(result, value)
+	}
+	return result
 }
 
 func readTool(name, description string) *mcp.Tool {
@@ -174,6 +256,16 @@ func (s *Server) getOutline(ctx context.Context, _ *mcp.CallToolRequest, input N
 		case block.Visualization != nil:
 			summary.Kind = "visualization"
 			summary.Source = block.Visualization.Source
+		case block.Control != "":
+			summary.ID = "control:" + block.Control
+			summary.Kind = "control"
+			summary.Name = block.Control
+			for _, parameter := range nb.Parameters {
+				if parameter.ID == block.Control && strings.TrimSpace(parameter.Label) != "" {
+					summary.Name = parameter.Label
+					break
+				}
+			}
 		default:
 			summary.Kind = "markdown"
 		}
@@ -215,6 +307,17 @@ func (s *Server) getBlock(ctx context.Context, _ *mcp.CallToolRequest, input Not
 		return nil, output, nil
 	}
 	for _, block := range nb.Blocks {
+		if block.Control != "" && "control:"+block.Control == blockID {
+			for _, parameter := range nb.Parameters {
+				if parameter.ID == block.Control {
+					parameter := parameter
+					return nil, NotebookBlockOutput{
+						SchemaVersion: SchemaVersion, NotebookID: nb.ID, Revision: nb.Revision,
+						ID: blockID, Kind: "control", Name: parameter.Label, Parameter: &parameter,
+					}, nil
+				}
+			}
+		}
 		if block.ID != blockID {
 			continue
 		}
@@ -283,9 +386,13 @@ func (s *Server) getGraph(ctx context.Context, _ *mcp.CallToolRequest, input Not
 	}
 	for _, block := range nb.Blocks {
 		switch {
+		case block.Cell != "":
+			continue
 		case block.Visualization != nil:
 			result.Nodes = append(result.Nodes, GraphNode{ID: block.ID, Kind: "visualization", Produces: false})
 			result.Edges = append(result.Edges, GraphEdge{Producer: block.Visualization.Source, Consumer: block.ID})
+		case block.Control != "":
+			result.Nodes = append(result.Nodes, GraphNode{ID: "control:" + block.Control, Name: block.Control, Kind: "control", Produces: false})
 		default:
 			result.Nodes = append(result.Nodes, GraphNode{ID: block.ID, Kind: "markdown", Produces: false})
 		}

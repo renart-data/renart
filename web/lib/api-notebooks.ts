@@ -41,6 +41,7 @@ export type NotebookVisualizationDefinition = {
   version: number;
   type: "table" | "kpi" | "bar" | "line" | "area" | "scatter" | "pie" | "donut";
   title?: string;
+  palette?: VisualizationPalette;
   encoding?: {
     x?: VisualizationFieldEncoding;
     y?: VisualizationFieldEncoding[];
@@ -55,6 +56,19 @@ export type NotebookVisualizationDefinition = {
   show_legend?: boolean;
   require_complete?: boolean;
   presentation_limit?: number;
+};
+
+export type VisualizationPalette =
+  | "default"
+  | "ocean"
+  | "sunset"
+  | "forest"
+  | "berry"
+  | "monochrome";
+
+export type NotebookBlockPosition = {
+  position?: "start" | "end" | "after";
+  after_block_id?: string;
 };
 
 export type PresentationResolvedColumn = {
@@ -143,6 +157,7 @@ export type NotebookRuntimeSnapshot = {
   parameter_values: Record<string, unknown>;
   stale: string[];
   auto_pending: string[];
+  running: string[];
   results: Record<string, NotebookCellRunResult>;
 };
 
@@ -316,6 +331,20 @@ export async function createNotebookCell(
   return payload.notebook;
 }
 
+export async function createNotebookCellAt(
+  notebookId: string,
+  input: NotebookBlockPosition & { language?: "sql" | "python" } = {},
+) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    {
+      kind: "cell.create",
+      language: input.language ?? "sql",
+      position: input.position ?? (input.after_block_id ? "after" : "end"),
+      after_block_id: input.after_block_id,
+    },
+  ]);
+}
+
 export async function updateNotebookCell(
   notebookId: string,
   cellId: string,
@@ -469,13 +498,13 @@ export async function checkNotebookVisualization(
 
 export async function createNotebookVisualization(
   notebookId: string,
-  input: { source: string; definition: Record<string, unknown>; after_block_id?: string },
+  input: NotebookBlockPosition & { source: string; definition: Record<string, unknown> },
 ) {
   return prepareAndApplyNotebookChange(notebookId, [
     {
       kind: "visualization.create",
       visualization: { id: "", source: input.source, definition: input.definition },
-      position: input.after_block_id ? "after" : "end",
+      position: input.position ?? (input.after_block_id ? "after" : "end"),
       after_block_id: input.after_block_id,
     },
   ]);
@@ -501,13 +530,13 @@ export async function deleteNotebookBlock(notebookId: string, blockId: string) {
 
 export async function createNotebookMarkdown(
   notebookId: string,
-  input: { content: string; after_block_id?: string },
+  input: NotebookBlockPosition & { content: string },
 ) {
   return prepareAndApplyNotebookChange(notebookId, [
     {
       kind: "markdown.create",
       content: input.content,
-      position: input.after_block_id ? "after" : "end",
+      position: input.position ?? (input.after_block_id ? "after" : "end"),
       after_block_id: input.after_block_id,
     },
   ]);
@@ -530,6 +559,37 @@ export async function replaceNotebookParameters(
   parameters: NotebookParameter[],
 ) {
   return prepareAndApplyNotebookChange(notebookId, [{ kind: "parameters.replace", parameters }]);
+}
+
+export async function createNotebookControl(
+  notebookId: string,
+  parameter: NotebookParameter,
+  position: NotebookBlockPosition = {},
+) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    {
+      kind: "control.create",
+      parameter,
+      position: position.position ?? (position.after_block_id ? "after" : "end"),
+      after_block_id: position.after_block_id,
+    },
+  ]);
+}
+
+export async function updateNotebookControl(
+  notebookId: string,
+  controlId: string,
+  parameter: NotebookParameter,
+) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    { kind: "control.update", control_id: controlId, parameter },
+  ]);
+}
+
+export async function deleteNotebookControl(notebookId: string, controlId: string) {
+  return prepareAndApplyNotebookChange(notebookId, [
+    { kind: "control.delete", control_id: controlId },
+  ]);
 }
 
 export async function updateNotebookDependencies(notebookId: string, dependencies: string[]) {

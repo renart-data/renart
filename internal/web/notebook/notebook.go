@@ -60,8 +60,9 @@ type VisualizationBlock struct {
 }
 
 // Block is one ordered entry of a notebook: a cell reference, markdown prose,
-// or a visualization. Cell identity lives in Cell; manifest-owned blocks use
-// ID. Presentation blocks are not assets and have no execution fingerprints.
+// a control reference, or a visualization. Cell identity lives in Cell;
+// manifest-owned blocks use ID. Presentation blocks are not assets and have no
+// execution fingerprints.
 type Block struct {
 	// ID is the durable identity of markdown and visualization blocks. It is
 	// empty for cell blocks because Cell is already the durable identity.
@@ -70,6 +71,10 @@ type Block struct {
 	Cell string
 	// Markdown is the prose content (markdown blocks only).
 	Markdown string
+	// Control is the ID of a notebook parameter rendered at this position
+	// (control blocks only). The typed definition remains in Parameters so the
+	// runtime has one canonical declaration.
+	Control string
 	// Visualization is the structured presentation definition (visualization
 	// blocks only).
 	Visualization *VisualizationBlock
@@ -79,6 +84,9 @@ type Block struct {
 func (b Block) StableID() string {
 	if b.Cell != "" {
 		return b.Cell
+	}
+	if b.Control != "" {
+		return "control:" + b.Control
 	}
 	return b.ID
 }

@@ -674,6 +674,7 @@ export function SimpleTable({
   rows,
   className,
   viewportClassName,
+  ariaLabel,
 }: {
   columns: string[];
   rows: Array<Array<ReactNode>>;
@@ -681,10 +682,11 @@ export function SimpleTable({
   // Constrain the scroll viewport (e.g. "max-h-72"): the cap must live on the
   // viewport, where Radix actually scrolls, not on the Root.
   viewportClassName?: string;
+  ariaLabel?: string;
 }) {
   return (
     <ScrollArea className={cn("h-full min-h-0", className)} viewportClassName={viewportClassName}>
-      <Table>
+      <Table aria-label={ariaLabel}>
         <TableHeader>
           <TableRow className="bg-muted/50">
             {columns.map((column) => (

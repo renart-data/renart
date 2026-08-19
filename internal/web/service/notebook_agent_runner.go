@@ -15,7 +15,10 @@ import (
 	"sync"
 )
 
-const maxNotebookAgentEventBytes = 4 << 20
+const (
+	maxNotebookAgentEventBytes      = 4 << 20
+	maxNotebookAgentPrepareFailures = 6
+)
 
 type notebookAgentStreamParser struct {
 	provider         string
@@ -76,6 +79,7 @@ func runLocalNotebookAgentProvider(
 
 	parser := &notebookAgentStreamParser{provider: request.Provider, toolNames: make(map[string]string)}
 	var policyErr error
+	prepareFailures := 0
 	scanErr := scanNotebookAgentEvents(stdout, parser, func(event NotebookAgentStreamEvent) {
 		if unsupportedNotebookAgentEvent(event) {
 			if policyErr == nil {
@@ -87,6 +91,30 @@ func runLocalNotebookAgentProvider(
 				stopProvider()
 			}
 			return
+		}
+		if isNotebookChangePreparation(event) {
+			if event.Status == "complete" {
+				prepareFailures = 0
+			} else if event.Status == "error" {
+				prepareFailures++
+			}
+			if event.Status == "error" && prepareFailures >= maxNotebookAgentPrepareFailures && policyErr == nil {
+				policyErr = fmt.Errorf(
+					"%s repeatedly submitted invalid notebook changes; start a new turn and follow the prepare tool's exact dotted operation-kind enum",
+					providerLabel(request.Provider),
+				)
+				emit(NotebookAgentStreamEvent{
+					Kind: "activity", ID: "agent-retry-limit", Name: "agent_retry_limit",
+					Title: "Stopped repeated invalid changes",
+					Detail: fmt.Sprintf(
+						"The agent made %d failed change preparations. The tool schema lists the valid operation kinds.",
+						prepareFailures,
+					),
+					Status: "error",
+				})
+				stopProvider()
+				return
+			}
 		}
 		emit(event)
 	})
@@ -109,6 +137,19 @@ func runLocalNotebookAgentProvider(
 		return NotebookAgentProviderRunResult{SessionID: parser.sessionID}, fmt.Errorf("%s agent failed: %s", providerLabel(request.Provider), detail)
 	}
 	return NotebookAgentProviderRunResult{SessionID: parser.sessionID}, nil
+}
+
+func isFailedNotebookChangePreparation(event NotebookAgentStreamEvent) bool {
+	return isNotebookChangePreparation(event) && event.Status == "error"
+}
+
+func isNotebookChangePreparation(event NotebookAgentStreamEvent) bool {
+	if event.Kind != "activity" {
+		return false
+	}
+	name := strings.TrimPrefix(strings.TrimSpace(event.Name), "renart_")
+	name = strings.TrimPrefix(name, "mcp__renart__")
+	return name == "prepare_notebook_change_set"
 }
 
 func notebookAgentCommand(ctx context.Context, binary string, request NotebookAgentProviderRunRequest) (*exec.Cmd, error) {
@@ -240,7 +281,7 @@ func openCodeNotebookAgentCommand(ctx context.Context, binary string, request No
 
 func notebookAgentMCPToolNames(mode NotebookAgentMode) []string {
 	tools := []string{
-		"list_notebooks", "get_notebook_outline", "get_notebook_block",
+		"search_workspace_catalog", "list_notebooks", "get_notebook_outline", "get_notebook_block",
 		"get_notebook_graph", "get_notebook_diagnostics", "get_notebook_result_schema",
 		"get_notebook_result_sample", "list_notebook_sources",
 	}

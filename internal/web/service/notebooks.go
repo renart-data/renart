@@ -76,6 +76,7 @@ func (s *WorkspaceService) notebookToModel(nb *notebook.Notebook) model.Notebook
 	for _, parameter := range nb.Parameters {
 		modelParameter := model.NotebookParameter{
 			ID: parameter.ID, Label: parameter.Label, Type: string(parameter.Type), Default: parameter.Default,
+			Min: parameter.Min, Max: parameter.Max, Step: parameter.Step,
 		}
 		if parameter.Options != nil {
 			modelParameter.Options = &model.NotebookParameterOptions{
@@ -87,7 +88,7 @@ func (s *WorkspaceService) notebookToModel(nb *notebook.Notebook) model.Notebook
 	}
 
 	for _, block := range nb.Blocks {
-		modelBlock := model.NotebookBlock{ID: block.ID, Cell: block.Cell, Markdown: block.Markdown}
+		modelBlock := model.NotebookBlock{ID: block.ID, Cell: block.Cell, Markdown: block.Markdown, Control: block.Control}
 		if block.Visualization != nil {
 			modelBlock.Visualization = &model.NotebookVisualization{
 				ID:         block.Visualization.ID,

@@ -17,6 +17,7 @@ type PresentationHandlers interface {
 	Update(ctx context.Context, workspaceID string, request service.UpdatePresentationRequest) (service.PresentationDocument, *service.APIError)
 	Replace(ctx context.Context, workspaceID string, request service.ReplacePresentationRequest) (service.PresentationDocument, *service.APIError)
 	Run(ctx context.Context, workspaceID string, request model.PresentationRunRequest) (model.PresentationRunResult, *service.APIError)
+	Preview(ctx context.Context, workspaceID string, request model.PresentationPreviewRequest) (model.PresentationPreviewResult, *service.APIError)
 }
 
 type PresentationAPI struct {
@@ -29,6 +30,21 @@ func RegisterPresentationRoutes(router chi.Router, handlers *PresentationAPI) {
 	router.Put("/api/presentations/{id}", handlers.HandleUpdate)
 	router.Put("/api/presentations/{id}/definition", handlers.HandleReplace)
 	router.Post("/api/presentations/{id}/run", handlers.HandleRun)
+	router.Post("/api/presentations/{id}/preview", handlers.HandlePreview)
+}
+
+func (h *PresentationAPI) HandlePreview(writer http.ResponseWriter, request *http.Request) {
+	var body model.PresentationPreviewRequest
+	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 3<<20)).Decode(&body); err != nil {
+		webapi.WriteBadRequest(writer, "invalid_request_body", err.Error())
+		return
+	}
+	result, apiErr := h.Service.Preview(request.Context(), chi.URLParam(request, "id"), body)
+	if apiErr != nil {
+		writePresentationError(writer, apiErr)
+		return
+	}
+	webapi.WriteJSON(writer, http.StatusOK, result)
 }
 
 func (h *PresentationAPI) HandleRun(writer http.ResponseWriter, request *http.Request) {

@@ -72,10 +72,20 @@ test.describe("notebook run cancellation", () => {
     const stop = page.getByRole("button", { name: "Stop", exact: true });
     await expect(stop).toBeVisible({ timeout: 10000 });
 
+    // A newly opened tab hydrates the active cell set from the runtime endpoint
+    // even though it missed the SSE event that started this run.
+    const observer = await page.context().newPage();
+    await observer.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
+    await expect(observer.getByText("Cancel").first()).toBeVisible({ timeout: 15000 });
+    const observerStop = observer.getByRole("button", { name: "Stop", exact: true });
+    await expect(observerStop).toBeVisible({ timeout: 10000 });
+
     // Stop it. The request aborts, which cancels the server context and
     // interrupts the DuckDB statement; the UI returns to idle.
-    await stop.click();
+    await observerStop.click();
+    await expect(observer.getByRole("button", { name: "Run all" })).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole("button", { name: "Run all" })).toBeVisible({ timeout: 10000 });
+    await observer.close();
 
     // Prove the interrupt reached the backend: the session lock is released, so
     // a fresh run succeeds quickly. If the heavy query were still holding the

@@ -163,6 +163,49 @@ func TestNotebookAgentServiceCancelsProcessAndResetsChat(t *testing.T) {
 	}
 }
 
+func TestNotebookAgentEditPromptForbidsOperationNameProbing(t *testing.T) {
+	prompt := buildNotebookAgentPrompt("notebook-one", NotebookAgentModeEdit, []NotebookAgentMessage{{
+		Role: "user", Content: "Add a line chart",
+	}}, false)
+	for _, required := range []string{
+		"dotted operation-kind enum",
+		"visualization.create",
+		"never probe guessed operation names",
+		"search the workspace catalog",
+		"first import or explicit refresh must be reviewed",
+		"one corrected retry",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("edit prompt is missing %q: %s", required, prompt)
+		}
+	}
+}
+
+func TestNotebookAgentDetectsFailedChangePreparation(t *testing.T) {
+	for _, event := range []NotebookAgentStreamEvent{
+		{Kind: "activity", Name: "renart_prepare_notebook_change_set", Status: "error"},
+		{Kind: "activity", Name: "mcp__renart__prepare_notebook_change_set", Status: "error"},
+	} {
+		if !isFailedNotebookChangePreparation(event) {
+			t.Fatalf("failed preparation was not detected: %+v", event)
+		}
+	}
+	for _, event := range []NotebookAgentStreamEvent{
+		{Kind: "activity", Name: "renart_prepare_notebook_change_set", Status: "complete"},
+		{Kind: "activity", Name: "renart_get_notebook_outline", Status: "error"},
+		{Kind: "text", Name: "renart_prepare_notebook_change_set", Status: "error"},
+	} {
+		if isFailedNotebookChangePreparation(event) {
+			t.Fatalf("unrelated event was treated as a failed preparation: %+v", event)
+		}
+	}
+	if !isNotebookChangePreparation(NotebookAgentStreamEvent{
+		Kind: "activity", Name: "renart_prepare_notebook_change_set", Status: "complete",
+	}) {
+		t.Fatal("successful preparation was not recognized for retry-counter reset")
+	}
+}
+
 func TestNotebookAgentProviderCommandsOnlyExposeScopedMCP(t *testing.T) {
 	t.Parallel()
 
@@ -195,7 +238,7 @@ func TestNotebookAgentProviderCommandsOnlyExposeScopedMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined = strings.Join(command.Args, " ")
-	for _, expected := range []string{"--strict-mcp-config", "--tools  --allowedTools", "mcp__renart__get_notebook_outline", "--permission-mode dontAsk"} {
+	for _, expected := range []string{"--strict-mcp-config", "--tools  --allowedTools", "mcp__renart__search_workspace_catalog", "mcp__renart__get_notebook_outline", "--permission-mode dontAsk"} {
 		if !strings.Contains(joined, expected) {
 			t.Errorf("Claude command misses %q: %s", expected, joined)
 		}

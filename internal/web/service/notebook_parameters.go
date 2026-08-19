@@ -125,7 +125,7 @@ func (s *NotebookService) updateNotebookParameterValues(
 	if autoRun != nil {
 		autoRun.cancel()
 	}
-	s.publishRuntime(notebookID, nb.UUID, nil, nil, nil)
+	s.publishRuntime(notebookID, nb.UUID, nil, nil)
 	if schedule && auto {
 		s.scheduleRecompute(notebookID, nb.UUID)
 	}
@@ -142,7 +142,7 @@ func (s *NotebookService) onNotebookParametersChanged(notebookID string, nb *not
 	if autoRun != nil {
 		autoRun.cancel()
 	}
-	s.publishRuntime(notebookID, nb.UUID, nil, nil, nil)
+	s.publishRuntime(notebookID, nb.UUID, nil, nil)
 	if auto {
 		s.scheduleRecompute(notebookID, nb.UUID)
 	}

@@ -50,6 +50,8 @@ type SQLLSPResponse struct {
 	Error       string                       `json:"error,omitempty"`
 }
 
+const sqlLSPDocumentContextPresentationQuery = "presentation_query"
+
 type SQLLSPDependencies struct {
 	WorkspaceRoot               string
 	DisableFilesystemAccess     bool
@@ -141,7 +143,7 @@ func (s *SQLLSPService) Diagnostics(ctx context.Context, req SQLLSPRequest) (SQL
 	engine := s.newEngine(graph)
 	diagnostics := engine.DiagnosticsContext(ctx, doc)
 	documentContext := strings.ToLower(strings.TrimSpace(req.DocumentContext))
-	if documentContext == "adhoc" || documentContext == "custom_check" || documentContext == "hook" {
+	if sqlLSPDocumentSkipsAssetContract(documentContext) {
 		// These documents borrow an asset id for graph, connection, and Jinja
 		// context, but their query is not the asset body. Do not compare their
 		// result columns with the borrowed asset's declared output contract.
@@ -162,6 +164,15 @@ func (s *SQLLSPService) Diagnostics(ctx context.Context, req SQLLSPRequest) (SQL
 		}
 	}
 	return SQLLSPResponse{Status: "ok", Diagnostics: diagnostics}, nil
+}
+
+func sqlLSPDocumentSkipsAssetContract(documentContext string) bool {
+	switch strings.ToLower(strings.TrimSpace(documentContext)) {
+	case "adhoc", "custom_check", "hook", sqlLSPDocumentContextPresentationQuery:
+		return true
+	default:
+		return false
+	}
 }
 
 func diagnosticsWithoutCodes(diagnostics []sqllsp.Diagnostic, codes ...string) []sqllsp.Diagnostic {
@@ -379,6 +390,11 @@ func (s *SQLLSPService) References(ctx context.Context, req SQLLSPRequest) (SQLL
 		return SQLLSPResponse{}, apiErr
 	}
 	state := s.deps.CurrentState()
+	if strings.EqualFold(strings.TrimSpace(req.DocumentContext), sqlLSPDocumentContextPresentationQuery) {
+		engine := s.newEngine(graph)
+		docs := append(s.documentsForState(state, nil, "", ""), doc)
+		return SQLLSPResponse{Status: "ok", Locations: engine.WorkspaceReferences(doc, req.Position, docs, req.IncludeDeclaration)}, nil
+	}
 	_, notebook, ok := s.selectedAsset(state, req.AssetID)
 	if !ok {
 		return SQLLSPResponse{}, &APIError{Status: 400, Code: "asset_not_found", Message: "asset not found"}
@@ -486,6 +502,9 @@ func (s *SQLLSPService) engineAndDocument(ctx context.Context, req SQLLSPRequest
 
 func (s *SQLLSPService) graphAndDocument(ctx context.Context, req SQLLSPRequest) (sqllsp.CanonicalGraph, sqllsp.TextDocumentItem, *APIError) {
 	state := s.deps.CurrentState()
+	if strings.EqualFold(strings.TrimSpace(req.DocumentContext), sqlLSPDocumentContextPresentationQuery) {
+		return s.presentationQueryGraphAndDocument(ctx, state, req)
+	}
 	asset, notebook, ok := s.selectedAsset(state, req.AssetID)
 	if !ok {
 		return sqllsp.CanonicalGraph{}, sqllsp.TextDocumentItem{}, &APIError{Status: 400, Code: "asset_not_found", Message: "asset not found"}
@@ -512,6 +531,42 @@ func (s *SQLLSPService) graphAndDocument(ctx context.Context, req SQLLSPRequest)
 	if connection := strings.TrimSpace(req.Connection); connection != "" {
 		graph = graphWithDocumentConnection(graph, doc.URI, connection, state.Connections)
 	}
+	graph = s.enrichRemoteCatalog(ctx, graph, doc, req.Environment, state.SelectedEnvironment)
+	graph = s.enrichDuckDBFileRelations(ctx, graph, doc, graphDocumentDialect(graph, doc.URI))
+	return graph, doc, nil
+}
+
+func (s *SQLLSPService) presentationQueryGraphAndDocument(
+	ctx context.Context,
+	state model.WorkspaceState,
+	req SQLLSPRequest,
+) (sqllsp.CanonicalGraph, sqllsp.TextDocumentItem, *APIError) {
+	connection := strings.TrimSpace(req.Connection)
+	connectionType := strings.TrimSpace(state.Connections[connection])
+	queryType, ok := queryAssetTypeForConnectionType(connectionType)
+	if connection == "" || !ok {
+		return sqllsp.CanonicalGraph{}, sqllsp.TextDocumentItem{}, &APIError{
+			Status:  400,
+			Code:    "query_connection_required",
+			Message: "a configured query connection is required for presentation SQL intelligence",
+		}
+	}
+
+	digest := sha256.Sum256([]byte(strings.TrimSpace(req.AssetID) + "\x00" + connection))
+	documentID := hex.EncodeToString(digest[:12])
+	doc := sqllsp.TextDocumentItem{
+		URI:        sqllsp.URI("inmemory://renart/presentation-query/" + documentID + ".sql"),
+		LanguageID: "sql",
+		Text:       req.Content,
+	}
+	graph := s.graphForState(ctx, state)
+	graph.Assets = append(append([]sqllsp.AssetNode(nil), graph.Assets...), sqllsp.AssetNode{
+		ID:         "presentation-query:" + documentID,
+		Kind:       sqlLSPDocumentContextPresentationQuery,
+		Dialect:    sqllsp.DialectFromAssetType(string(queryType)),
+		Connection: connection,
+		URI:        doc.URI,
+	})
 	graph = s.enrichRemoteCatalog(ctx, graph, doc, req.Environment, state.SelectedEnvironment)
 	graph = s.enrichDuckDBFileRelations(ctx, graph, doc, graphDocumentDialect(graph, doc.URI))
 	return graph, doc, nil

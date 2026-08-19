@@ -7,16 +7,18 @@ import (
 )
 
 func TestResolveParameterValuesChecksDefaultsOptionsAndOverrides(t *testing.T) {
+	minimum, maximum, step := 0.0, 100.0, 5.0
 	definitions := []ParameterDefinition{
 		{ID: "region", Label: "Region", Type: ParameterTypeSelect, Default: "eu", Options: &ParameterOptions{Values: []any{"eu", "us"}}},
 		{ID: "minimum", Type: ParameterTypeNumber, Default: 10},
+		{ID: "percent", Type: ParameterTypeSlider, Default: 50, Min: &minimum, Max: &maximum, Step: &step},
 		{ID: "period", Type: ParameterTypeDateRange, Default: []any{"2026-08-01", "2026-08-12"}},
 	}
-	values, findings := ResolveParameterValues(definitions, map[string]any{"region": "us", "minimum": 12.5})
+	values, findings := ResolveParameterValues(definitions, map[string]any{"region": "us", "minimum": 12.5, "percent": 75})
 	if len(findings) != 0 {
 		t.Fatalf("unexpected findings: %+v", findings)
 	}
-	if values["region"] != "us" || values["minimum"] != 12.5 {
+	if values["region"] != "us" || values["minimum"] != 12.5 || values["percent"] != 75.0 {
 		t.Fatalf("runtime values were not applied: %#v", values)
 	}
 
@@ -24,12 +26,18 @@ func TestResolveParameterValuesChecksDefaultsOptionsAndOverrides(t *testing.T) {
 	if !hasFinding(findings, "parameter-value-not-in-options") || !hasFinding(findings, "parameter-override-unknown") {
 		t.Fatalf("invalid overrides were not reported: %+v", findings)
 	}
+
+	_, findings = ResolveParameterValues(definitions, map[string]any{"percent": 125})
+	if !hasFinding(findings, "parameter-value-out-of-range") {
+		t.Fatalf("out-of-range slider override was not reported: %+v", findings)
+	}
 }
 
 func TestParameterSQLLiteralsEscapeAndPreserveTypes(t *testing.T) {
 	definitions := []ParameterDefinition{
 		{ID: "name", Type: ParameterTypeText, Default: "O'Reilly"},
 		{ID: "active", Type: ParameterTypeBoolean, Default: true},
+		{ID: "percent", Type: ParameterTypeSlider, Default: 25},
 		{ID: "regions", Type: ParameterTypeMultiSelect, Default: []any{"eu", "u's"}},
 		{ID: "period", Type: ParameterTypeDateRange, Default: []any{"2026-08-01", "2026-08-12"}},
 	}
@@ -37,11 +45,31 @@ func TestParameterSQLLiteralsEscapeAndPreserveTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if literals["name"] != "'O''Reilly'" || literals["active"] != "TRUE" || literals["regions"] != "'eu', 'u''s'" {
+	if literals["name"] != "'O''Reilly'" || literals["active"] != "TRUE" || literals["percent"] != "25" || literals["regions"] != "'eu', 'u''s'" {
 		t.Fatalf("unexpected literals: %#v", literals)
 	}
 	if !strings.Contains(literals["period"], " AS DATE) AND CAST(") {
 		t.Fatalf("date range is not BETWEEN-compatible: %q", literals["period"])
+	}
+}
+
+func TestCheckParameterDefinitionsValidatesSliderRange(t *testing.T) {
+	minimum, maximum, step := 10.0, 5.0, 0.0
+	findings := CheckParameterDefinitions([]ParameterDefinition{{
+		ID: "threshold", Type: ParameterTypeSlider, Default: 7,
+		Min: &minimum, Max: &maximum, Step: &step,
+	}})
+	if !hasFinding(findings, "parameter-slider-range-invalid") {
+		t.Fatalf("invalid slider range was not reported: %+v", findings)
+	}
+
+	minimum, maximum, step = 0, 10, 1
+	findings = CheckParameterDefinitions([]ParameterDefinition{{
+		ID: "threshold", Type: ParameterTypeSlider, Default: 11,
+		Min: &minimum, Max: &maximum, Step: &step,
+	}})
+	if !hasFinding(findings, "parameter-slider-default-out-of-range") {
+		t.Fatalf("out-of-range slider default was not reported: %+v", findings)
 	}
 }
 

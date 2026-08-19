@@ -18,6 +18,13 @@ type presentationHandlerStub struct {
 	update      service.UpdatePresentationRequest
 	replace     service.ReplacePresentationRequest
 	run         model.PresentationRunRequest
+	preview     model.PresentationPreviewRequest
+}
+
+func (stub *presentationHandlerStub) Preview(_ context.Context, workspaceID string, request model.PresentationPreviewRequest) (model.PresentationPreviewResult, *service.APIError) {
+	stub.workspaceID = workspaceID
+	stub.preview = request
+	return model.PresentationPreviewResult{Status: "ok"}, nil
 }
 
 func (stub *presentationHandlerStub) Run(_ context.Context, workspaceID string, request model.PresentationRunRequest) (model.PresentationRunResult, *service.APIError) {
@@ -75,5 +82,11 @@ func TestPresentationRoutesUseBoundedTypedRequests(t *testing.T) {
 	router.ServeHTTP(run, httptest.NewRequest(http.MethodPost, "/api/presentations/presentation-id/run", strings.NewReader(`{"environment":"dev","filter_values":{"region":"eu"},"visualization_ids":["revenue"]}`)))
 	if run.Code != http.StatusOK || stub.workspaceID != "presentation-id" || stub.run.Environment != "dev" || stub.run.FilterValues["region"] != "eu" {
 		t.Fatalf("unexpected run response=%d id=%q request=%+v", run.Code, stub.workspaceID, stub.run)
+	}
+
+	preview := httptest.NewRecorder()
+	router.ServeHTTP(preview, httptest.NewRequest(http.MethodPost, "/api/presentations/presentation-id/preview", strings.NewReader(`{"expected_revision":"v1:abc","artifact":{"id":"sales","kind":"dashboard","version":1},"environment":"dev","visualization_ids":["revenue"]}`)))
+	if preview.Code != http.StatusOK || stub.workspaceID != "presentation-id" || stub.preview.ExpectedRevision != "v1:abc" || stub.preview.Artifact.ID != "sales" || stub.preview.Environment != "dev" {
+		t.Fatalf("unexpected preview response=%d id=%q request=%+v", preview.Code, stub.workspaceID, stub.preview)
 	}
 }

@@ -49,6 +49,7 @@ type notebookRuntime struct {
 	stale         map[string]bool
 	results       map[string]notebook.CellRunResult
 	autoFailed    map[string]bool
+	autoPending   map[string]bool
 	autoRecompute bool
 	// parameterValues are local runtime overrides resolved against the
 	// Git-tracked definitions. parameterDefinitionKey detects definition edits
@@ -79,6 +80,7 @@ type notebookRuntime struct {
 type activeNotebookRun struct {
 	cancel context.CancelFunc
 	done   chan struct{}
+	cells  []string
 }
 
 func newNotebookRuntime() *notebookRuntime {
@@ -86,14 +88,15 @@ func newNotebookRuntime() *notebookRuntime {
 		stale:         map[string]bool{},
 		results:       map[string]notebook.CellRunResult{},
 		autoFailed:    map[string]bool{},
+		autoPending:   map[string]bool{},
 		autoRecompute: true,
 		manualRuns:    map[*activeNotebookRun]struct{}{},
 	}
 }
 
-func (rt *notebookRuntime) beginManualRun(parent context.Context) (context.Context, func()) {
+func (rt *notebookRuntime) beginManualRun(parent context.Context, cells []string) (context.Context, func()) {
 	ctx, cancel := context.WithCancel(parent)
-	run := &activeNotebookRun{cancel: cancel, done: make(chan struct{})}
+	run := &activeNotebookRun{cancel: cancel, done: make(chan struct{}), cells: uniqueNotebookCellIDs(cells)}
 
 	rt.mu.Lock()
 	rt.manualRuns[run] = struct{}{}
@@ -112,9 +115,9 @@ func (rt *notebookRuntime) beginManualRun(parent context.Context) (context.Conte
 	}
 }
 
-func (rt *notebookRuntime) beginAutoRun(parent context.Context) (context.Context, func()) {
+func (rt *notebookRuntime) beginAutoRun(parent context.Context, cells []string) (context.Context, func()) {
 	ctx, cancel := context.WithCancel(parent)
-	run := &activeNotebookRun{cancel: cancel, done: make(chan struct{})}
+	run := &activeNotebookRun{cancel: cancel, done: make(chan struct{}), cells: uniqueNotebookCellIDs(cells)}
 
 	rt.mu.Lock()
 	rt.autoRun = run
@@ -133,6 +136,40 @@ func (rt *notebookRuntime) beginAutoRun(parent context.Context) (context.Context
 		close(run.done)
 		rt.mu.Unlock()
 	}
+}
+
+func uniqueNotebookCellIDs(ids []string) []string {
+	seen := make(map[string]bool, len(ids))
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		result = append(result, id)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// runningCellsLocked returns the union of every active manual run and the
+// current auto-recompute wave. Callers must hold rt.mu. Tracking the cells on
+// the active run itself keeps concurrent manual runs honest without one run
+// clearing another run's state as it finishes.
+func (rt *notebookRuntime) runningCellsLocked() []string {
+	running := map[string]bool{}
+	for run := range rt.manualRuns {
+		for _, id := range run.cells {
+			running[id] = true
+		}
+	}
+	if rt.autoRun != nil {
+		for _, id := range rt.autoRun.cells {
+			running[id] = true
+		}
+	}
+	return sortedKeys(running)
 }
 
 // cancelActiveRuns cancels every run currently registered for this notebook
@@ -316,13 +353,11 @@ func computeAutoRecomputeClosure(cells []autoCellInfo) map[string]bool {
 	return closure
 }
 
-// publishRuntime emits a runtime event for a notebook. autoPending and running
-// are id lists; results is a (possibly nil) delta of changed results. The stale
-// set and toggle are read from the runtime.
-func (s *NotebookService) publishRuntime(notebookID, uuid string, autoPending, running []string, results map[string]notebook.CellRunResult) {
-	if s.deps.PublishEvent == nil {
-		return
-	}
+// publishRuntime emits a runtime event for a notebook. autoPending is an id
+// list and results is a (possibly nil) delta of changed results. The stale,
+// running, and toggle state are read from the runtime so an unrelated update
+// cannot accidentally make an active run look idle.
+func (s *NotebookService) publishRuntime(notebookID, uuid string, autoPending []string, results map[string]notebook.CellRunResult) {
 	rt := s.runtimes.get(uuid)
 	rt.mu.Lock()
 	// When auto-recompute is off, nothing is "pending" — stale cells stay
@@ -330,24 +365,42 @@ func (s *NotebookService) publishRuntime(notebookID, uuid string, autoPending, r
 	if !rt.autoRecompute {
 		autoPending = nil
 	}
+	rt.autoPending = make(map[string]bool, len(autoPending))
+	for _, id := range autoPending {
+		if id = strings.TrimSpace(id); id != "" {
+			rt.autoPending[id] = true
+		}
+	}
 	event := NotebookRuntimeEvent{
 		Type:            notebookRuntimeEventType,
 		NotebookID:      notebookID,
 		AutoRecompute:   rt.autoRecompute,
 		ParameterValues: cloneNotebookParameterValues(rt.parameterValues),
 		Stale:           sortedKeys(rt.stale),
-		AutoPending:     autoPending,
-		Running:         running,
+		AutoPending:     sortedKeys(rt.autoPending),
+		Running:         rt.runningCellsLocked(),
 		Results:         results,
 	}
 	rt.mu.Unlock()
-	if event.AutoPending == nil {
-		event.AutoPending = []string{}
-	}
-	if event.Running == nil {
-		event.Running = []string{}
+	if s.deps.PublishEvent == nil {
+		return
 	}
 	s.deps.PublishEvent(event)
+}
+
+// publishCurrentRuntime recomputes the pending closure before publishing a
+// running-only transition. It preserves the full-snapshot SSE contract while a
+// run starts or finishes instead of momentarily clearing unrelated pending
+// cells in another tab.
+func (s *NotebookService) publishCurrentRuntime(notebookID, uuid string) {
+	nb, apiErr := s.load(notebookID)
+	if apiErr != nil {
+		s.publishRuntime(notebookID, uuid, nil, nil)
+		return
+	}
+	rt := s.runtimes.get(uuid)
+	closure := computeAutoRecomputeClosure(s.buildAutoCells(nb, rt))
+	s.publishRuntime(notebookID, uuid, sortedKeys(closure), nil)
 }
 
 // NotebookRuntimeSnapshot is the recompute state embedded in the notebook GET
@@ -357,6 +410,7 @@ type NotebookRuntimeSnapshot struct {
 	ParameterValues map[string]any                    `json:"parameter_values"`
 	Stale           []string                          `json:"stale"`
 	AutoPending     []string                          `json:"auto_pending"`
+	Running         []string                          `json:"running"`
 	Results         map[string]notebook.CellRunResult `json:"results"`
 }
 
@@ -365,24 +419,45 @@ type NotebookRuntimeSnapshot struct {
 func (s *NotebookService) runtimeSnapshot(nb *notebook.Notebook) NotebookRuntimeSnapshot {
 	s.hydrateRuntime(nb)
 	rt := s.runtimes.get(nb.UUID)
+
+	// Eligibility inspection touches the notebook session. During an active run
+	// that session is deliberately serialized, so recomputing here would make a
+	// newly opened tab wait behind the query it is trying to observe or cancel.
+	// Runtime events cache the last authoritative pending closure; use it for the
+	// active fast path and keep this endpoint lock-free with respect to DuckDB.
+	rt.mu.Lock()
+	if running := rt.runningCellsLocked(); len(running) > 0 {
+		snapshot := runtimeSnapshotLocked(rt, running, sortedKeys(rt.autoPending))
+		rt.mu.Unlock()
+		return snapshot
+	}
+	rt.mu.Unlock()
+
 	cells := s.buildAutoCells(nb, rt)
 	closure := computeAutoRecomputeClosure(cells)
 
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	rt.autoPending = closure
+	autoPending := sortedKeys(rt.autoPending)
+	if !rt.autoRecompute {
+		autoPending = []string{}
+		rt.autoPending = map[string]bool{}
+	}
+	return runtimeSnapshotLocked(rt, rt.runningCellsLocked(), autoPending)
+}
+
+func runtimeSnapshotLocked(rt *notebookRuntime, running, autoPending []string) NotebookRuntimeSnapshot {
 	results := make(map[string]notebook.CellRunResult, len(rt.results))
 	for id, result := range rt.results {
 		results[id] = result
-	}
-	autoPending := sortedKeys(closure)
-	if !rt.autoRecompute {
-		autoPending = []string{}
 	}
 	return NotebookRuntimeSnapshot{
 		AutoRecompute:   rt.autoRecompute,
 		ParameterValues: cloneNotebookParameterValues(rt.parameterValues),
 		Stale:           sortedKeys(rt.stale),
 		AutoPending:     autoPending,
+		Running:         running,
 		Results:         results,
 	}
 }
@@ -420,7 +495,7 @@ func (s *NotebookService) forgetCell(notebookID, uuid, cellID string) {
 	delete(rt.results, cellID)
 	delete(rt.autoFailed, cellID)
 	rt.mu.Unlock()
-	s.publishRuntime(notebookID, uuid, nil, nil, nil)
+	s.publishRuntime(notebookID, uuid, nil, nil)
 }
 
 // Runtime returns the recompute snapshot for a notebook (by encoded id).
@@ -502,6 +577,6 @@ func (s *NotebookService) CancelRuns(ctx context.Context, notebookID string) *AP
 			Message: "notebook cancellation was interrupted before the active run stopped",
 		}
 	}
-	s.publishRuntime(notebookID, nb.UUID, nil, nil, nil)
+	s.publishRuntime(notebookID, nb.UUID, nil, nil)
 	return nil
 }

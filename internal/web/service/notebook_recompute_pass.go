@@ -44,7 +44,7 @@ func (s *NotebookService) onCellChanged(notebookID string, nb *notebook.Notebook
 		autoRun.cancel()
 	}
 
-	s.publishRuntime(notebookID, nb.UUID, optimisticPending, nil, nil)
+	s.publishRuntime(notebookID, nb.UUID, optimisticPending, nil)
 	if auto {
 		s.scheduleRecompute(notebookID, nb.UUID)
 	}
@@ -92,7 +92,7 @@ func (s *NotebookService) runRecomputePass(notebookID, uuid string) {
 			rt.passActive = false
 			rt.recomputeRequested = false
 			rt.mu.Unlock()
-			s.publishRuntime(notebookID, uuid, nil, nil, nil)
+			s.publishRuntime(notebookID, uuid, nil, nil)
 			return
 		}
 		rt.mu.Unlock()
@@ -109,8 +109,8 @@ func (s *NotebookService) runRecomputePass(notebookID, uuid string) {
 		cells := s.buildAutoCells(nb, rt)
 		closure := computeAutoRecomputeClosure(cells)
 		wave := computeAutoRecomputeWave(cells)
-		s.publishRuntime(notebookID, uuid, sortedKeys(closure), wave, nil)
 		if len(wave) == 0 {
+			s.publishRuntime(notebookID, uuid, sortedKeys(closure), nil)
 			rt.mu.Lock()
 			if rt.recomputeRequested {
 				rt.recomputeRequested = false
@@ -122,9 +122,13 @@ func (s *NotebookService) runRecomputePass(notebookID, uuid string) {
 			return
 		}
 
-		results, cancelled := s.runAutoWave(uuid, nb, wave)
+		runCtx, finishRun := rt.beginAutoRun(context.Background(), wave)
+		s.publishRuntime(notebookID, uuid, sortedKeys(closure), nil)
+		results, cancelled := s.runAutoWave(runCtx, uuid, nb, wave)
+		finishRun()
 		if cancelled {
 			// Superseded by an edit; loop with the new state.
+			s.publishCurrentRuntime(notebookID, uuid)
 			continue
 		}
 		if len(results) == 0 {
@@ -143,14 +147,14 @@ func (s *NotebookService) runRecomputePass(notebookID, uuid string) {
 		for _, result := range results {
 			delta[result.CellID] = result
 		}
-		s.publishRuntime(notebookID, uuid, sortedKeys(closure), nil, delta)
+		s.publishRuntime(notebookID, uuid, sortedKeys(closure), delta)
 	}
 }
 
 // runAutoWave executes the given cell ids in one session pass with a cancellable
 // context (stored so an edit can interrupt it). cancelled is true when the wave
 // was interrupted rather than completing.
-func (s *NotebookService) runAutoWave(uuid string, nb *notebook.Notebook, wave []string) (results []notebook.CellRunResult, cancelled bool) {
+func (s *NotebookService) runAutoWave(ctx context.Context, uuid string, nb *notebook.Notebook, wave []string) (results []notebook.CellRunResult, cancelled bool) {
 	rt := s.runtimes.get(uuid)
 	rt.mu.Lock()
 	environment := rt.environment
@@ -165,9 +169,6 @@ func (s *NotebookService) runAutoWave(uuid string, nb *notebook.Notebook, wave [
 	if renderErr != nil {
 		return nil, false
 	}
-
-	ctx, finishRun := rt.beginAutoRun(context.Background())
-	defer finishRun()
 
 	runner := s.newRunner(renderer, environment, parameterValues)
 	results, runErr := runner.RunCells(ctx, nb, cells, notebook.RunOptions{})

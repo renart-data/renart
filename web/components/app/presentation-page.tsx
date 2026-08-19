@@ -2,7 +2,7 @@
 
 import type { Monaco } from "@monaco-editor/react";
 import type * as MonacoNS from "monaco-editor";
-import { Link, Outlet, useNavigate } from "@tanstack/react-router";
+import { Link, Outlet, useBlocker, useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import {
   AlertTriangle,
@@ -39,18 +39,16 @@ import {
   getPresentation,
   PresentationArtifact,
   PresentationDocument,
-  PresentationFinding,
   replacePresentation,
   updatePresentation,
 } from "@/lib/api-presentations";
 import { workspaceAtom } from "@/lib/atoms/domains/workspace";
 import { loadMonacoEditorModule } from "@/lib/load-monaco-editor";
 import { defineBruinMonacoThemes } from "@/lib/monaco-theme";
-import { cn } from "@/lib/utils";
 import { useWorkspaceTheme } from "@/hooks/use-workspace-theme";
 
 import { AppPage, PageHeader } from "./app-primitives";
-import { PresentationVisualEditor } from "./presentation-visual-editor";
+import { PresentationBuilder } from "./presentation-builder/presentation-builder";
 
 const MonacoEditor = lazy(async () => {
   const module = await loadMonacoEditorModule();
@@ -336,7 +334,7 @@ export function AppPresentationLivePage({
     void load();
   }, [dirty, document, load, workspaceArtifact?.revision]);
 
-  const save = async () => {
+  const save = useCallback(async () => {
     if (!document || !visualDraft || saving) return;
     setSaving(true);
     setError("");
@@ -354,7 +352,25 @@ export function AppPresentationLivePage({
     } finally {
       setSaving(false);
     }
-  };
+  }, [acceptDocument, definitionDraft, document, mode, presentationId, saving, visualDraft]);
+
+  const shouldBlockNavigation = useCallback(() => dirty, [dirty]);
+  const navigationBlocker = useBlocker({
+    shouldBlockFn: shouldBlockNavigation,
+    enableBeforeUnload: dirty,
+    disabled: !dirty,
+    withResolver: true,
+  });
+
+  useEffect(() => {
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      if (dirty && !saving) void save();
+    };
+    window.addEventListener("keydown", handleSaveShortcut, { capture: true });
+    return () => window.removeEventListener("keydown", handleSaveShortcut, { capture: true });
+  }, [dirty, save, saving]);
 
   const resetActiveDraft = () => {
     if (!document) return;
@@ -493,16 +509,13 @@ export function AppPresentationLivePage({
           ) : null}
 
           <TabsContent value="visual" className="min-h-0 overflow-hidden">
-            <ScrollArea className="h-full px-3">
-              <div className="mx-auto w-full max-w-6xl py-4">
-                <PresentationVisualEditor
-                  artifact={visualDraft}
-                  workspace={workspace}
-                  onChange={setVisualDraft}
-                />
-                <PresentationProblems findings={document.artifact.problems ?? []} />
-              </div>
-            </ScrollArea>
+            <PresentationBuilder
+              presentationId={presentationId}
+              artifact={visualDraft}
+              workspace={workspace}
+              paused={saving}
+              onChange={setVisualDraft}
+            />
           </TabsContent>
           <TabsContent value="definition" className="min-h-0 overflow-hidden p-3">
             <PresentationDefinitionEditor
@@ -513,6 +526,39 @@ export function AppPresentationLivePage({
           </TabsContent>
         </Tabs>
       ) : null}
+      <Dialog
+        open={navigationBlocker.status === "blocked"}
+        onOpenChange={(open) => {
+          if (!open && navigationBlocker.status === "blocked") navigationBlocker.reset();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Leave this unsaved draft?</DialogTitle>
+            <DialogDescription>
+              Your presentation changes only exist in this browser. Leaving now discards them.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (navigationBlocker.status === "blocked") navigationBlocker.reset();
+              }}
+            >
+              Keep editing
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (navigationBlocker.status === "blocked") navigationBlocker.proceed();
+              }}
+            >
+              Discard and leave
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppPage>
   );
 }
@@ -615,33 +661,6 @@ function PresentationDefinitionEditor({
           }}
         />
       </Suspense>
-    </div>
-  );
-}
-
-function PresentationProblems({ findings }: { findings: PresentationFinding[] }) {
-  if (findings.length === 0) return null;
-  return (
-    <div className="space-y-2 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <AlertTriangle className="size-4 text-amber-600" />
-        Definition problems
-      </div>
-      {findings.map((finding, index) => (
-        <div
-          key={`${finding.code}:${finding.path ?? ""}:${index}`}
-          className={cn(
-            "rounded-md border bg-background/70 px-2.5 py-2 text-xs",
-            finding.severity === "error" ? "border-red-500/25" : "border-amber-500/25",
-          )}
-        >
-          <div className="font-medium">{finding.message}</div>
-          <div className="mt-0.5 flex min-w-0 gap-2 font-mono text-[10px] text-muted-foreground">
-            <span>{finding.code}</span>
-            {finding.path ? <span className="truncate">{finding.path}</span> : null}
-          </div>
-        </div>
-      ))}
     </div>
   );
 }

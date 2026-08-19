@@ -999,6 +999,55 @@ func TestSQLLSPServiceCompletesFromRenartWorkspaceState(t *testing.T) {
 	}
 }
 
+func TestSQLLSPServiceCompletesStandalonePresentationQueryOnSelectedConnection(t *testing.T) {
+	state := model.WorkspaceState{
+		Revision:    1,
+		Connections: map[string]string{"postgres-analytics": "postgres"},
+		Pipelines: []model.Pipeline{{
+			ID: "pipeline",
+			Assets: []model.Asset{{
+				ID:         "orders",
+				Name:       "analytics.orders",
+				Type:       "pg.sql",
+				Path:       "analytics/assets/orders.sql",
+				Connection: "postgres-analytics",
+				Columns: []model.Column{
+					{Name: "order_id", Type: "bigint"},
+					{Name: "total_amount", Type: "numeric"},
+				},
+			}},
+		}},
+	}
+	service := NewSQLLSPService(SQLLSPDependencies{
+		WorkspaceRoot: t.TempDir(),
+		CurrentState:  func() model.WorkspaceState { return state },
+	})
+	request := SQLLSPRequest{
+		AssetID:         "dashboard:sales:orders",
+		Content:         "select o.\nfrom analytics.orders o",
+		Connection:      "postgres-analytics",
+		DocumentContext: sqlLSPDocumentContextPresentationQuery,
+		Position:        sqllsp.Position{Line: 0, Character: len("select o.")},
+	}
+
+	response, apiErr := service.Completions(context.Background(), request)
+	require.Nil(t, apiErr)
+	labels := make([]string, 0, len(response.Completions))
+	for _, item := range response.Completions {
+		labels = append(labels, item.Label)
+	}
+	assert.Contains(t, labels, "order_id")
+	assert.Contains(t, labels, "total_amount")
+
+	_, apiErr = service.References(context.Background(), request)
+	require.Nil(t, apiErr, "standalone query references must not require a borrowed asset")
+
+	request.Connection = "missing"
+	_, apiErr = service.Completions(context.Background(), request)
+	require.NotNil(t, apiErr)
+	assert.Equal(t, "query_connection_required", apiErr.Code)
+}
+
 func TestSQLLSPServiceCompletesQuerySensorFromParameterSQL(t *testing.T) {
 	state := model.WorkspaceState{
 		Pipelines: []model.Pipeline{{

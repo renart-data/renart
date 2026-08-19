@@ -12,9 +12,30 @@ type PresentationEnvelope = {
       revision: string;
       kind: string;
       title: string;
-      datasets?: Array<{ id: string; asset?: string }>;
-      visualizations?: Array<{ id: string; dataset: string }>;
-      layout?: Array<{ visualization: string; width?: number }>;
+      datasets?: Array<{
+        id: string;
+        asset?: string;
+        connection?: string;
+        query?: string;
+        columns?: Array<{ name: string; type?: string }>;
+        resolved_columns?: Array<{ name: string; type?: string }>;
+      }>;
+      filters?: Array<{ id: string; type: string }>;
+      visualizations?: Array<{
+        id: string;
+        dataset: string;
+        definition?: { type?: string };
+        filter_bindings?: Array<{ filter: string; column: string; operator: string }>;
+      }>;
+      layout?: Array<{ visualization: string; x?: number; y?: number; width?: number }>;
+      sections?: Array<{
+        id: string;
+        title?: string;
+        markdown?: string;
+        visualization?: string;
+        page_break?: boolean;
+      }>;
+      problems?: Array<{ code: string; message: string }>;
     };
     content: string;
   };
@@ -42,11 +63,79 @@ test.describe("app presentations live", () => {
       new RegExp(`/dashboards/${created.document.artifact.workspace_id}$`),
     );
 
-    await page.getByRole("button", { name: "Add dataset", exact: true }).first().click();
-    await expect(page.getByLabel("Dataset ID")).toHaveValue("dataset");
-    await page.getByRole("button", { name: "Add visualization", exact: true }).first().click();
-    await expect(page.getByLabel("Visualization ID")).toHaveValue("visualization");
-    await page.getByLabel("Title").first().fill("Sales performance");
+    const narrowBuilder = (page.viewportSize()?.width ?? 1280) < 1280;
+    if (narrowBuilder) {
+      await page.getByRole("button", { name: "Open builder tools" }).click();
+      await page
+        .getByRole("dialog", { name: "Builder tools" })
+        .getByRole("button", { name: "Add dataset", exact: true })
+        .click();
+      const inspector = page.getByRole("dialog", { name: "Inspector" });
+      await expect(inspector.getByLabel("Dataset ID")).toHaveValue("dataset");
+      await expectInspectorToFit(page);
+      await inspector.getByRole("button", { name: "Close" }).click();
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+    } else {
+      await page.getByRole("button", { name: "Add dataset", exact: true }).first().click();
+      await expect(page.getByLabel("Dataset ID")).toHaveValue("dataset");
+      await expectInspectorToFit(page);
+      await page.getByRole("button", { name: "Add visualization", exact: true }).first().click();
+    }
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: /Data table/ })
+      .click();
+    const visualizationInspector = narrowBuilder
+      ? page.getByRole("dialog", { name: "Inspector" })
+      : page;
+    await expect(visualizationInspector.getByLabel("Visualization ID")).toHaveValue("data_table");
+    await expectInspectorToFit(page);
+    if (narrowBuilder) await visualizationInspector.getByRole("button", { name: "Close" }).click();
+    const dashboardVisualization = page.getByTestId("dashboard-visualization-data_table");
+    await dashboardVisualization.focus();
+    await expect(dashboardVisualization).toBeFocused();
+    if (narrowBuilder) await page.getByRole("button", { name: "Open inspector" }).click();
+    await visualizationInspector.getByRole("combobox", { name: "Visualization width" }).click();
+    await page.getByRole("option", { name: "6/12 columns" }).click();
+    await visualizationInspector.getByLabel("Height").fill("5");
+    const moveRight = visualizationInspector.getByRole("button", { name: "Move right" });
+    await moveRight.focus();
+    await moveRight.press("Enter");
+    if (narrowBuilder) await visualizationInspector.getByRole("button", { name: "Close" }).click();
+    if (narrowBuilder) {
+      await page.getByRole("button", { name: "Open builder tools" }).click();
+      const builderTools = page.getByRole("dialog", { name: "Builder tools" });
+      await builderTools.getByRole("tab", { name: "Add" }).click();
+      await builderTools.getByRole("button", { name: "Add control", exact: true }).click();
+    } else {
+      await page
+        .getByLabel("Add")
+        .getByRole("button", { name: "Add control", exact: true })
+        .click();
+    }
+    const filterDialog = page.getByRole("dialog", { name: "Add a control" });
+    await filterDialog.getByRole("button", { name: "Add control", exact: true }).click();
+    const filterInspector = narrowBuilder ? page.getByRole("dialog", { name: "Inspector" }) : page;
+    const filterID = await filterInspector.getByLabel("Control ID").inputValue();
+    expect(filterID).not.toBe("");
+    const invalidPreview = page.waitForResponse(
+      (response) => response.url().includes("/preview") && response.ok(),
+    );
+    await filterInspector.getByLabel("Control ID").fill("Invalid");
+    await invalidPreview;
+    if (narrowBuilder) await filterInspector.getByRole("button", { name: "Close" }).click();
+
+    await page.getByRole("button", { name: /Review \d+ definition findings?/ }).click();
+    await page.getByRole("menuitem").filter({ hasText: "lowercase letter" }).click();
+    const focusedFilterInspector = narrowBuilder
+      ? page.getByRole("dialog", { name: "Inspector" })
+      : page;
+    await expect(focusedFilterInspector.getByLabel("Control ID")).toBeFocused();
+    await focusedFilterInspector.getByLabel("Control ID").fill(filterID);
+    if (narrowBuilder) {
+      await focusedFilterInspector.getByRole("button", { name: "Close" }).click();
+    }
+    await page.getByLabel("Presentation title").fill("Sales performance");
 
     const saveResponse = page.waitForResponse(
       (response) =>
@@ -61,11 +150,40 @@ test.describe("app presentations live", () => {
     expect(saved.document.artifact.title).toBe("Sales performance");
     expect(saved.document.artifact.datasets).toHaveLength(1);
     expect(saved.document.artifact.visualizations).toEqual([
-      expect.objectContaining({ id: "visualization", dataset: "dataset" }),
+      expect.objectContaining({
+        id: "data_table",
+        dataset: "dataset",
+        filter_bindings: [expect.objectContaining({ filter: filterID, operator: "equals" })],
+      }),
     ]);
+    expect(saved.document.artifact.filters).toEqual([expect.objectContaining({ id: filterID })]);
     expect(saved.document.artifact.layout).toEqual([
-      expect.objectContaining({ visualization: "visualization", width: 6 }),
+      expect.objectContaining({ visualization: "data_table", x: 1, width: 6, height: 5 }),
     ]);
+
+    await page.getByLabel("Presentation title").fill("Keyboard-saved title");
+    const shortcutSaveResponse = page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .endsWith(`/api/presentations/${created.document.artifact.workspace_id}/definition`) &&
+        response.request().method() === "PUT" &&
+        response.ok(),
+    );
+    await page.keyboard.press("Control+s");
+    const shortcutSaved = (await (await shortcutSaveResponse).json()) as PresentationEnvelope;
+    expect(shortcutSaved.document.artifact.title).toBe("Keyboard-saved title");
+
+    await page.getByLabel("Presentation title").fill("Unsaved title");
+    await page.getByRole("link", { name: "Dashboards", exact: true }).first().click();
+    const leaveDialog = page.getByRole("dialog", { name: "Leave this unsaved draft?" });
+    await expect(leaveDialog).toBeVisible();
+    await leaveDialog.getByRole("button", { name: "Keep editing" }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/dashboards/${created.document.artifact.workspace_id}$`),
+    );
+    await page.getByRole("button", { name: "Discard", exact: true }).click();
+    await expect(page.getByLabel("Presentation title")).toHaveValue("Keyboard-saved title");
 
     await page.getByRole("tab", { name: "Definition" }).click();
     await expect(page.getByLabel("Presentation definition YAML")).toBeVisible();
@@ -79,7 +197,187 @@ test.describe("app presentations live", () => {
           return model?.getValue?.() ?? "";
         }),
       )
-      .toContain("title: Sales performance");
+      .toContain("title: Keyboard-saved title");
+  });
+
+  test("query datasets use connection-aware SQL intelligence", async ({ liveApp, page }) => {
+    const createResponse = await page.request.post(`${liveApp.baseURL}/api/presentations`, {
+      data: { kind: "dashboard", title: "Query intelligence" },
+    });
+    expect(createResponse.ok()).toBeTruthy();
+    const created = (await createResponse.json()) as PresentationEnvelope;
+    const presentationId = created.document.artifact.workspace_id;
+
+    await page.goto(`${liveApp.baseURL}/dashboards/${presentationId}`);
+    await expect(page.getByLabel("Presentation title")).toHaveValue("Query intelligence", {
+      timeout: 15000,
+    });
+
+    const narrowBuilder = (page.viewportSize()?.width ?? 1280) < 1280;
+    if (narrowBuilder) {
+      await page.getByRole("button", { name: "Open builder tools" }).click();
+      await page
+        .getByRole("dialog", { name: "Builder tools" })
+        .getByRole("button", { name: "Add dataset", exact: true })
+        .click();
+    } else {
+      await page.getByRole("button", { name: "Add dataset", exact: true }).first().click();
+    }
+    const inspector = narrowBuilder ? page.getByRole("dialog", { name: "Inspector" }) : page;
+    await inspector.getByRole("combobox", { name: "Dataset source" }).click();
+    await page.getByRole("option", { name: "Query" }).click();
+    await expect(inspector.getByTestId("presentation-query-editor")).toBeVisible({
+      timeout: 15000,
+    });
+
+    const intelligenceReady = page.waitForResponse(
+      (response) => {
+        if (!response.url().endsWith("/api/sql/lsp/diagnostics")) return false;
+        const request = response.request();
+        if (request.method() !== "POST") return false;
+        const payload = request.postDataJSON() as {
+          connection?: string;
+          document_context?: string;
+        };
+        return (
+          payload.connection === "duckdb-default" &&
+          payload.document_context === "presentation_query"
+        );
+      },
+      { timeout: 15000 },
+    );
+    await setPresentationQuery(page, "select o.\nfrom analytics.orders o", "select o.");
+    expect((await intelligenceReady).ok()).toBe(true);
+    const completionResponse = page.waitForResponse(
+      (response) => {
+        if (!response.url().endsWith("/api/sql/lsp/completions")) return false;
+        const payload = response.request().postDataJSON() as {
+          connection?: string;
+          document_context?: string;
+        };
+        return (
+          payload.connection === "duckdb-default" &&
+          payload.document_context === "presentation_query"
+        );
+      },
+      { timeout: 15000 },
+    );
+    await triggerPresentationQueryCompletion(page);
+    expect((await completionResponse).ok()).toBe(true);
+    await expect(
+      page.locator(".suggest-widget .monaco-list-row").filter({ hasText: "order_id" }).first(),
+    ).toBeVisible({ timeout: 15000 });
+
+    await page.keyboard.press("Escape");
+    await setPresentationQuery(page, "select *\nfrom analytics.orders", "analytics.orders");
+    const saveResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/presentations/${presentationId}/definition`) &&
+        response.request().method() === "PUT" &&
+        response.ok(),
+    );
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    const saved = (await (await saveResponse).json()) as PresentationEnvelope;
+    const queryDataset = saved.document.artifact.datasets?.[0];
+    expect(queryDataset?.columns ?? []).toEqual([]);
+    expect(queryDataset?.resolved_columns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "order_id" }),
+        expect.objectContaining({ name: "customer_id" }),
+        expect.objectContaining({ name: "total_amount" }),
+      ]),
+    );
+    expect(
+      saved.document.artifact.problems?.some(
+        (problem) => problem.code === "presentation-dataset-schema-unresolved",
+      ) ?? false,
+    ).toBe(false);
+  });
+
+  test("drags chart previews into dashboard and report canvases", async ({ liveApp, page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 1280, "Drag authoring uses the desktop rail");
+
+    const dashboardResponse = await page.request.post(`${liveApp.baseURL}/api/presentations`, {
+      data: { kind: "dashboard", title: "Dragged dashboard" },
+    });
+    expect(dashboardResponse.ok()).toBe(true);
+    const dashboard = (await dashboardResponse.json()) as PresentationEnvelope;
+    await page.goto(`${liveApp.baseURL}/dashboards/${dashboard.document.artifact.workspace_id}`);
+    await page.getByRole("button", { name: "Add dataset", exact: true }).first().click();
+    await expect(page.getByLabel("Dataset ID")).toHaveValue("dataset");
+    await page
+      .getByLabel("Add")
+      .getByRole("button", { name: "Bar", exact: true })
+      .dragTo(page.getByTestId("dashboard-canvas"), {
+        targetPosition: { x: 360, y: 180 },
+      });
+    await expect(page.getByLabel("Visualization ID")).toBeVisible();
+    await page
+      .getByLabel("Add")
+      .getByRole("button", { name: "Switch", exact: true })
+      .dragTo(page.getByTestId("presentation-control-strip"));
+    await expect(page.getByLabel("Control ID")).toHaveValue("filter");
+
+    const dashboardSave = page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .endsWith(`/api/presentations/${dashboard.document.artifact.workspace_id}/definition`) &&
+        response.request().method() === "PUT" &&
+        response.ok(),
+    );
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    const savedDashboard = (await (await dashboardSave).json()) as PresentationEnvelope;
+    expect(savedDashboard.document.artifact.visualizations).toEqual([
+      expect.objectContaining({
+        dataset: "dataset",
+        definition: expect.objectContaining({ type: "bar" }),
+      }),
+    ]);
+    expect(savedDashboard.document.artifact.layout?.[0]).toEqual(
+      expect.objectContaining({ width: 6 }),
+    );
+    expect(savedDashboard.document.artifact.filters).toEqual([
+      expect.objectContaining({ id: "filter", type: "boolean", default: false }),
+    ]);
+
+    const reportResponse = await page.request.post(`${liveApp.baseURL}/api/presentations`, {
+      data: { kind: "report", title: "Dragged report" },
+    });
+    expect(reportResponse.ok()).toBe(true);
+    const report = (await reportResponse.json()) as PresentationEnvelope;
+    await page.goto(`${liveApp.baseURL}/reports/${report.document.artifact.workspace_id}`);
+    await page.getByRole("tab", { name: "Data", exact: true }).click();
+    await page.getByRole("button", { name: "Add dataset", exact: true }).click();
+    await expect(page.getByLabel("Dataset ID")).toHaveValue("dataset");
+    await page.getByRole("tab", { name: "Add", exact: true }).click();
+    await page
+      .getByLabel("Add")
+      .getByRole("button", { name: "Area", exact: true })
+      .dragTo(page.getByTestId("report-canvas"), {
+        targetPosition: { x: 320, y: 280 },
+      });
+    await expect(page.getByLabel("Visualization ID")).toBeVisible();
+
+    const reportSave = page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .endsWith(`/api/presentations/${report.document.artifact.workspace_id}/definition`) &&
+        response.request().method() === "PUT" &&
+        response.ok(),
+    );
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    const savedReport = (await (await reportSave).json()) as PresentationEnvelope;
+    expect(savedReport.document.artifact.visualizations).toEqual([
+      expect.objectContaining({
+        dataset: "dataset",
+        definition: expect.objectContaining({ type: "area" }),
+      }),
+    ]);
+    expect(savedReport.document.artifact.sections?.[0]?.visualization).toBe(
+      savedReport.document.artifact.visualizations?.[0]?.id,
+    );
   });
 
   test("renders typed URL filters and refreshes only affected visualizations", async ({
@@ -212,6 +510,135 @@ layout:
     ]);
   });
 
+  test("authors a narrative report on the document canvas", async ({ liveApp, page }) => {
+    await page.goto(`${liveApp.baseURL}/reports`);
+    await page.getByRole("button", { name: "New report" }).first().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Title").fill("Weekly narrative");
+    const createResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/presentations") &&
+        response.request().method() === "POST" &&
+        response.ok(),
+    );
+    await dialog.getByRole("button", { name: "Create" }).click();
+    const created = (await (await createResponse).json()) as PresentationEnvelope;
+    const presentationId = created.document.artifact.workspace_id;
+    const narrowBuilder = (page.viewportSize()?.width ?? 1280) < 1280;
+
+    await page.getByRole("button", { name: "Add text", exact: true }).last().click();
+    await page.getByLabel("Section title").fill("Executive summary");
+    const markdown = page.getByLabel("Section markdown");
+    await expect(markdown).toHaveAttribute("contenteditable", "true");
+    await markdown.fill("");
+    await markdown.type("Revenue remained ");
+    await markdown.press("Control+b");
+    await markdown.type("healthy");
+    await markdown.press("Control+b");
+    await markdown.type(" while customer growth accelerated.");
+    await markdown.hover();
+    await page.getByRole("button", { name: "Edit Markdown source" }).click();
+    await page
+      .getByLabel("Markdown source")
+      .fill(
+        "Revenue remained **healthy** while customer growth accelerated.\n\n- New subscriptions\n- Renewals\n\n1. Review results\n2. Share the report",
+      );
+
+    if (narrowBuilder) {
+      await page.getByRole("button", { name: "Open builder tools" }).click();
+      const tools = page.getByRole("dialog", { name: "Report outline" });
+      await tools.getByRole("tab", { name: "Data" }).click();
+      await tools.getByRole("button", { name: "Add dataset", exact: true }).click();
+      const inspector = page.getByRole("dialog", { name: "Inspector" });
+      await expect(inspector.getByLabel("Dataset ID")).toHaveValue("dataset");
+      await inspector.getByRole("button", { name: "Close" }).click();
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+    } else {
+      await page.getByRole("tab", { name: "Data" }).click();
+      await page.getByRole("button", { name: "Add dataset", exact: true }).click();
+      await expect(page.getByLabel("Dataset ID")).toHaveValue("dataset");
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+    }
+    await page
+      .getByRole("dialog")
+      .getByRole("button", { name: /Data table/ })
+      .click();
+    if (narrowBuilder) {
+      const inspector = page.getByRole("dialog", { name: "Inspector" });
+      await expect(inspector.getByLabel("Visualization ID")).toHaveValue("data_table");
+      await inspector.getByRole("button", { name: "Close" }).click();
+    }
+    const reportSection = page.getByRole("region", {
+      name: "Report section Executive summary",
+    });
+    await reportSection.focus();
+    await expect(reportSection).toBeFocused();
+    if (narrowBuilder) {
+      await page.getByRole("button", { name: "Open inspector" }).click();
+      await expect(
+        page.getByRole("dialog", { name: "Inspector" }).getByLabel("Section ID"),
+      ).toHaveValue("text");
+    } else {
+      const moveDown = page.getByRole("button", { name: "Move section down" }).first();
+      await moveDown.focus();
+      await moveDown.press("Enter");
+      const moveUp = page.getByRole("button", { name: "Move section up" }).last();
+      await moveUp.focus();
+      await moveUp.press("Enter");
+    }
+    if (!narrowBuilder) {
+      await page.getByRole("tab", { name: "Outline" }).click();
+      await page.getByRole("button", { name: "Executive summary 1", exact: true }).click();
+    }
+    const sectionInspector = narrowBuilder ? page.getByRole("dialog", { name: "Inspector" }) : page;
+    await sectionInspector
+      .getByRole("checkbox", { name: "Start a new printed page after this block" })
+      .click();
+    if (narrowBuilder) await sectionInspector.getByRole("button", { name: "Close" }).click();
+
+    const saveResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/api/presentations/${presentationId}/definition`) &&
+        response.request().method() === "PUT" &&
+        response.ok(),
+    );
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    const saved = (await (await saveResponse).json()) as PresentationEnvelope;
+    expect(saved.document.artifact.sections).toEqual([
+      expect.objectContaining({
+        id: "text",
+        title: "Executive summary",
+        markdown:
+          "Revenue remained **healthy** while customer growth accelerated.\n\n- New subscriptions\n- Renewals\n\n1. Review results\n2. Share the report",
+        page_break: true,
+      }),
+      expect.objectContaining({ id: "data_table", visualization: "data_table" }),
+    ]);
+    expect(saved.document.artifact.visualizations).toEqual([
+      expect.objectContaining({ id: "data_table", dataset: "dataset" }),
+    ]);
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Executive summary" })).toBeVisible();
+    await expect(page.getByText("Revenue remained healthy")).toBeVisible();
+
+    await page.goto(`${liveApp.baseURL}/reports/${presentationId}/view`);
+    const report = page.getByRole("article");
+    await expect(report.getByText("New subscriptions")).toBeVisible({ timeout: 15000 });
+    await expect(report.locator("ul > li")).toHaveCount(2);
+    await expect(report.locator("ol > li")).toHaveCount(2);
+    await expect
+      .poll(() =>
+        report.locator("ul").evaluate((element) => getComputedStyle(element).listStyleType),
+      )
+      .toBe("disc");
+    await expect
+      .poll(() =>
+        report.locator("ol").evaluate((element) => getComputedStyle(element).listStyleType),
+      )
+      .toBe("decimal");
+  });
+
   test("blocks only the consumed pipeline until presentation errors are repaired", async ({
     liveApp,
     page,
@@ -320,3 +747,100 @@ layout:
       .toBe("ready");
   });
 });
+
+async function expectInspectorToFit(page: import("@playwright/test").Page) {
+  const inspector = page.getByTestId("presentation-inspector");
+  await expect(inspector).toBeVisible();
+  await expect
+    .poll(() =>
+      inspector.evaluate((element) => ({
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      })),
+    )
+    .toMatchObject({
+      clientWidth: expect.any(Number),
+      scrollWidth: expect.any(Number),
+    });
+  const dimensions = await inspector.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+}
+
+async function setPresentationQuery(
+  page: import("@playwright/test").Page,
+  content: string,
+  cursorAfter: string,
+) {
+  await page.waitForFunction(
+    () => {
+      const monaco = (window as typeof window & { monaco?: any }).monaco;
+      return monaco?.editor
+        .getEditors?.()
+        .some(
+          (editor: any) =>
+            editor.getOption?.(monaco.editor.EditorOption.ariaLabel) === "Dataset SQL query" &&
+            editor.getDomNode?.()?.offsetParent !== null,
+        );
+    },
+    undefined,
+    { timeout: 15000 },
+  );
+  const editorElement = page.getByTestId("presentation-query-editor").locator(".monaco-editor");
+  await editorElement.click();
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.insertText(content);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const monaco = (window as typeof window & { monaco?: any }).monaco;
+        const editor = monaco?.editor
+          .getEditors?.()
+          .find(
+            (candidate: any) =>
+              candidate.getOption?.(monaco.editor.EditorOption.ariaLabel) === "Dataset SQL query" &&
+              candidate.getDomNode?.()?.offsetParent !== null,
+          );
+        return editor?.getValue?.() ?? "";
+      }),
+    )
+    .toBe(content);
+  await page.evaluate(
+    ({ cursorAfter }) => {
+      const monaco = (window as typeof window & { monaco?: any }).monaco;
+      const editor = monaco?.editor
+        .getEditors?.()
+        .find(
+          (candidate: any) =>
+            candidate.getOption?.(monaco.editor.EditorOption.ariaLabel) === "Dataset SQL query" &&
+            candidate.getDomNode?.()?.offsetParent !== null,
+        );
+      const model = editor?.getModel?.();
+      if (!model || !editor) throw new Error("Presentation query editor is not ready");
+      const content = model.getValue();
+      const offset = content.indexOf(cursorAfter);
+      if (offset < 0) throw new Error(`cursor text ${cursorAfter} was not found`);
+      editor.focus();
+      editor.setPosition(model.getPositionAt(offset + cursorAfter.length));
+    },
+    { cursorAfter },
+  );
+}
+
+async function triggerPresentationQueryCompletion(page: import("@playwright/test").Page) {
+  await page.evaluate(() => {
+    const monaco = (window as typeof window & { monaco?: any }).monaco;
+    const editor = monaco?.editor
+      .getEditors?.()
+      .find(
+        (candidate: any) =>
+          candidate.getOption?.(monaco.editor.EditorOption.ariaLabel) === "Dataset SQL query" &&
+          candidate.getDomNode?.()?.offsetParent !== null,
+      );
+    if (!editor) throw new Error("Presentation query editor is not ready");
+    editor.focus();
+    editor.trigger("playwright", "editor.action.triggerSuggest", {});
+  });
+}

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { AuthoredControlEditor } from "@/components/app/authored-control";
 import {
   normalizeVisualizationDefinition,
   VisualizationBuilder,
@@ -45,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { defaultAuthoredControlValue } from "@/lib/authored-controls";
 import type { PresentationResolvedColumn } from "@/lib/api-notebooks";
 import type {
   PresentationArtifact,
@@ -54,25 +56,18 @@ import type {
   PresentationSection,
   PresentationVisualization,
 } from "@/lib/api-presentations";
-import type { WebAsset, WebColumn, WorkspaceState } from "@/lib/types";
+import type { WebAsset, WebColumn, WorkspaceQueryConnection, WorkspaceState } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type AssetChoice = {
+import { semanticTypeForPhysicalType } from "./presentation-builder/presentation-builder-model";
+import { PresentationQueryEditor } from "./presentation-query-editor";
+
+export type AssetChoice = {
   value: string;
   label: string;
   detail: string;
   asset: WebAsset;
 };
-
-const FILTER_TYPES = [
-  "select",
-  "multi_select",
-  "date",
-  "date_range",
-  "number",
-  "text",
-  "boolean",
-] as const;
 
 export function PresentationVisualEditor({
   artifact,
@@ -197,9 +192,9 @@ export function PresentationVisualEditor({
                 key={`${dataset.id}:${index}`}
                 dataset={dataset}
                 assetChoices={assetChoices}
-                connections={
-                  workspace?.query_connections?.map((connection) => connection.name) ?? []
-                }
+                connections={workspace?.query_connections ?? []}
+                workspace={workspace}
+                presentationId={artifact.id}
                 referenced={visualizations.some(
                   (visualization) => visualization.dataset === dataset.id,
                 )}
@@ -219,7 +214,7 @@ export function PresentationVisualEditor({
       <DelimitedCard>
         <DelimitedCardHeader>
           <Filter className="size-4 text-primary" />
-          <DelimitedCardTitle>Filters</DelimitedCardTitle>
+          <DelimitedCardTitle>Controls</DelimitedCardTitle>
           <Badge variant="outline" className="font-normal">
             {filters.length}
           </Badge>
@@ -232,16 +227,16 @@ export function PresentationVisualEditor({
                 "filter",
                 filters.map((filter) => filter.id),
               );
-              patch({ filters: [...filters, { id, label: "Filter", type: "text", default: "" }] });
+              patch({ filters: [...filters, { id, label: "Control", type: "text", default: "" }] });
             }}
           >
-            <Plus /> Add filter
+            <Plus /> Add control
           </Button>
         </DelimitedCardHeader>
         <DelimitedCardContent className="space-y-3">
           {filters.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              Filters are optional. Add one when viewers should be able to constrain a dataset.
+              Controls are optional. Add one when viewers should be able to constrain a dataset.
             </p>
           ) : (
             filters.map((filter, index) => (
@@ -369,29 +364,55 @@ export function PresentationVisualEditor({
   );
 }
 
-function DatasetEditor({
+export function DatasetEditor({
   dataset,
   assetChoices,
   connections,
+  workspace,
+  presentationId,
   referenced,
+  compact = false,
+  pathPrefix,
   onChange,
   onRename,
   onDelete,
 }: {
   dataset: PresentationDataset;
   assetChoices: AssetChoice[];
-  connections: string[];
+  connections: WorkspaceQueryConnection[];
+  workspace: WorkspaceState | null;
+  presentationId: string;
   referenced: boolean;
+  compact?: boolean;
+  pathPrefix?: string;
   onChange: (dataset: PresentationDataset) => void;
   onRename: (id: string) => void;
   onDelete: () => void;
 }) {
   const sourceKind = dataset.query !== undefined ? "query" : "asset";
+  const queryConnection =
+    connections.find((connection) => connection.name === dataset.connection) ?? null;
   const datasetIDInput = `presentation-dataset-${dataset.id || "new"}-id`;
   return (
-    <div className="space-y-3 rounded-lg border bg-background/60 p-3">
-      <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(8rem,0.7fr)_8rem_minmax(12rem,1.3fr)_auto]">
-        <Field>
+    <div
+      data-presentation-path={pathPrefix}
+      className={cn(
+        "flex min-w-0 flex-col gap-3 rounded-lg border bg-background/60",
+        compact ? "p-2.5" : "p-3",
+      )}
+    >
+      <div
+        className={cn(
+          "grid min-w-0 gap-3",
+          compact
+            ? "grid-cols-[minmax(0,1fr)_7rem]"
+            : "sm:grid-cols-[minmax(8rem,0.7fr)_8rem_minmax(12rem,1.3fr)_auto]",
+        )}
+      >
+        <Field
+          data-presentation-path={pathPrefix ? `${pathPrefix}.id` : undefined}
+          className="min-w-0"
+        >
           <FieldLabel htmlFor={datasetIDInput}>Dataset ID</FieldLabel>
           <Input
             id={datasetIDInput}
@@ -400,19 +421,23 @@ function DatasetEditor({
             onChange={(event) => onRename(event.target.value)}
           />
         </Field>
-        <Field>
+        <Field data-presentation-path={pathPrefix} className="min-w-0">
           <FieldLabel>Source</FieldLabel>
           <Select
             value={sourceKind}
             onValueChange={(value) =>
               onChange(
                 value === "query"
-                  ? { id: dataset.id, connection: connections[0] ?? "", query: "select *\nfrom " }
+                  ? {
+                      id: dataset.id,
+                      connection: connections[0]?.name ?? "",
+                      query: "select *\nfrom ",
+                    }
                   : { id: dataset.id, asset: assetChoices[0]?.value ?? "" },
               )
             }
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full" aria-label="Dataset source">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -422,7 +447,10 @@ function DatasetEditor({
           </Select>
         </Field>
         {sourceKind === "asset" ? (
-          <Field>
+          <Field
+            data-presentation-path={pathPrefix ? `${pathPrefix}.asset` : undefined}
+            className="min-w-0"
+          >
             <FieldLabel>Pipeline asset</FieldLabel>
             <AssetCombobox
               value={dataset.asset ?? ""}
@@ -433,19 +461,24 @@ function DatasetEditor({
             />
           </Field>
         ) : (
-          <Field>
+          <Field
+            data-presentation-path={pathPrefix ? `${pathPrefix}.connection` : undefined}
+            className="min-w-0"
+          >
             <FieldLabel>Connection</FieldLabel>
             <Select
               value={dataset.connection ?? ""}
-              onValueChange={(connection) => onChange({ ...dataset, connection })}
+              onValueChange={(connection) =>
+                onChange({ ...dataset, connection, resolved_columns: undefined })
+              }
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full" aria-label="Dataset query connection">
                 <SelectValue placeholder="Choose a connection" />
               </SelectTrigger>
               <SelectContent>
                 {connections.map((connection) => (
-                  <SelectItem key={connection} value={connection}>
-                    {connection}
+                  <SelectItem key={connection.name} value={connection.name}>
+                    {connection.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -469,17 +502,22 @@ function DatasetEditor({
       </div>
       {sourceKind === "query" ? (
         <>
-          <Field>
+          <Field data-presentation-path={pathPrefix ? `${pathPrefix}.query` : undefined}>
             <FieldLabel>Read-only query</FieldLabel>
-            <Textarea
+            <PresentationQueryEditor
+              presentationId={presentationId}
+              datasetId={dataset.id}
               value={dataset.query ?? ""}
-              className="min-h-28 resize-y font-mono text-xs"
-              onChange={(event) => onChange({ ...dataset, query: event.target.value })}
+              connection={queryConnection}
+              workspace={workspace}
+              compact={compact}
+              onChange={(query) => onChange({ ...dataset, query, resolved_columns: undefined })}
             />
           </Field>
           <DeclaredColumnsEditor
             columns={dataset.columns ?? []}
-            onChange={(columns) => onChange({ ...dataset, columns })}
+            pathPrefix={pathPrefix ? `${pathPrefix}.columns` : undefined}
+            onChange={(columns) => onChange({ ...dataset, columns, resolved_columns: undefined })}
           />
         </>
       ) : null}
@@ -489,13 +527,15 @@ function DatasetEditor({
 
 function DeclaredColumnsEditor({
   columns,
+  pathPrefix,
   onChange,
 }: {
   columns: WebColumn[];
+  pathPrefix?: string;
   onChange: (columns: WebColumn[]) => void;
 }) {
   return (
-    <Field>
+    <Field data-presentation-path={pathPrefix}>
       <div className="flex items-center justify-between">
         <FieldLabel>Declared columns</FieldLabel>
         <Button
@@ -507,15 +547,17 @@ function DeclaredColumnsEditor({
         </Button>
       </div>
       <FieldDescription>
-        Query datasets need declared columns until connection-aware inference is available here.
+        Declare the result columns so visualization type checks do not depend on a live query.
       </FieldDescription>
-      <div className="space-y-1.5">
+      <div className="flex flex-col gap-1.5">
         {columns.map((column, index) => (
           <div
             key={index}
+            data-presentation-path={pathPrefix ? `${pathPrefix}[${index}]` : undefined}
             className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,0.7fr)_auto] gap-1.5"
           >
             <Input
+              data-presentation-path={pathPrefix ? `${pathPrefix}[${index}].name` : undefined}
               aria-label={`Column ${index + 1} name`}
               value={column.name}
               placeholder="name"
@@ -527,6 +569,7 @@ function DeclaredColumnsEditor({
               }}
             />
             <Input
+              data-presentation-path={pathPrefix ? `${pathPrefix}[${index}].type` : undefined}
               aria-label={`Column ${index + 1} type`}
               value={column.type ?? ""}
               placeholder="type"
@@ -552,10 +595,11 @@ function DeclaredColumnsEditor({
   );
 }
 
-function FilterEditor({
+export function FilterEditor({
   filter,
   datasets,
   columnsForDataset,
+  pathPrefix,
   onChange,
   onRename,
   onDelete,
@@ -563,269 +607,37 @@ function FilterEditor({
   filter: PresentationFilter;
   datasets: PresentationDataset[];
   columnsForDataset: (dataset: string) => PresentationResolvedColumn[];
+  pathPrefix?: string;
   onChange: (filter: PresentationFilter) => void;
   onRename: (id: string) => void;
   onDelete: () => void;
 }) {
-  const supportsOptions = filter.type === "select" || filter.type === "multi_select";
-  const optionMode = filter.options?.dataset
-    ? "dataset"
-    : filter.options?.values?.length
-      ? "static"
-      : "none";
-  const optionDataset = filter.options?.dataset ?? datasets[0]?.id ?? "";
-  const optionColumns = columnsForDataset(optionDataset);
-  const filterIDInput = `presentation-filter-${filter.id || "new"}-id`;
-  const filterLabelInput = `presentation-filter-${filter.id || "new"}-label`;
   return (
-    <div className="space-y-3 rounded-lg border bg-background/60 p-3">
-      <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(8rem,0.7fr)_minmax(8rem,1fr)_9rem_auto]">
-        <Field>
-          <FieldLabel htmlFor={filterIDInput}>Filter ID</FieldLabel>
-          <Input
-            id={filterIDInput}
-            value={filter.id}
-            className="font-mono text-xs"
-            onChange={(event) => onRename(event.target.value)}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor={filterLabelInput}>Label</FieldLabel>
-          <Input
-            id={filterLabelInput}
-            value={filter.label ?? ""}
-            onChange={(event) => onChange({ ...filter, label: event.target.value })}
-          />
-        </Field>
-        <Field>
-          <FieldLabel>Type</FieldLabel>
-          <Select
-            value={filter.type}
-            onValueChange={(type) =>
-              onChange({ ...filter, type, default: defaultFilterValue(type), options: undefined })
-            }
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FILTER_TYPES.map((type) => (
-                <SelectItem key={type} value={type}>
-                  {type.replace("_", " ")}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <div className="flex items-end justify-end">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label={`Delete filter ${filter.id}`}
-            onClick={onDelete}
-          >
-            <Trash2 />
-          </Button>
-        </div>
-      </div>
-      <Field>
-        <FieldLabel>Default value</FieldLabel>
-        <FilterDefaultEditor
-          filter={filter}
-          onChange={(value) => onChange({ ...filter, default: value })}
-        />
-      </Field>
-      {supportsOptions ? (
-        <div className="grid gap-3 sm:grid-cols-[9rem_minmax(0,1fr)]">
-          <Field>
-            <FieldLabel>Options</FieldLabel>
-            <Select
-              value={optionMode}
-              onValueChange={(mode) => {
-                if (mode === "none") onChange({ ...filter, options: undefined });
-                if (mode === "static") onChange({ ...filter, options: { values: [] } });
-                if (mode === "dataset")
-                  onChange({
-                    ...filter,
-                    options: { dataset: datasets[0]?.id ?? "", value_field: "" },
-                  });
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Unconstrained</SelectItem>
-                <SelectItem value="static">Static values</SelectItem>
-                <SelectItem value="dataset">From dataset</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          {optionMode === "static" ? (
-            <Field>
-              <FieldLabel>Comma-separated values</FieldLabel>
-              <Input
-                value={(filter.options?.values ?? []).join(", ")}
-                onChange={(event) =>
-                  onChange({
-                    ...filter,
-                    options: {
-                      values: event.target.value
-                        .split(",")
-                        .map((value) => value.trim())
-                        .filter(Boolean),
-                    },
-                  })
-                }
-              />
-            </Field>
-          ) : optionMode === "dataset" ? (
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Field>
-                <FieldLabel>Dataset</FieldLabel>
-                <Select
-                  value={optionDataset}
-                  onValueChange={(dataset) =>
-                    onChange({
-                      ...filter,
-                      options: { ...filter.options, dataset, value_field: "", label_field: "" },
-                    })
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {datasets.map((dataset) => (
-                      <SelectItem key={dataset.id} value={dataset.id}>
-                        {dataset.id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field>
-                <FieldLabel>Value field</FieldLabel>
-                <ColumnSelect
-                  value={filter.options?.value_field ?? ""}
-                  columns={optionColumns}
-                  onChange={(value_field) =>
-                    onChange({
-                      ...filter,
-                      options: { ...filter.options, dataset: optionDataset, value_field },
-                    })
-                  }
-                />
-              </Field>
-              <Field>
-                <FieldLabel>Label field</FieldLabel>
-                <ColumnSelect
-                  value={filter.options?.label_field ?? ""}
-                  columns={optionColumns}
-                  optional
-                  onChange={(label_field) =>
-                    onChange({
-                      ...filter,
-                      options: {
-                        ...filter.options,
-                        dataset: optionDataset,
-                        value_field: filter.options?.value_field ?? "",
-                        label_field,
-                      },
-                    })
-                  }
-                />
-              </Field>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function FilterDefaultEditor({
-  filter,
-  onChange,
-}: {
-  filter: PresentationFilter;
-  onChange: (value: unknown) => void;
-}) {
-  if (filter.type === "boolean") {
-    return (
-      <label className="flex h-9 items-center gap-2 text-xs">
-        <Checkbox
-          checked={filter.default === true}
-          onCheckedChange={(value) => onChange(value === true)}
-        />
-        Enabled by default
-      </label>
-    );
-  }
-  if (filter.type === "number") {
-    return (
-      <Input
-        type="number"
-        value={typeof filter.default === "number" ? filter.default : 0}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-    );
-  }
-  if (filter.type === "date") {
-    return (
-      <Input
-        type="date"
-        value={typeof filter.default === "string" ? filter.default : ""}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    );
-  }
-  if (filter.type === "date_range") {
-    const values = Array.isArray(filter.default) ? filter.default : ["", ""];
-    return (
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Input
-          type="date"
-          value={String(values[0] ?? "")}
-          onChange={(event) => onChange([event.target.value, values[1] ?? ""])}
-        />
-        <Input
-          type="date"
-          value={String(values[1] ?? "")}
-          onChange={(event) => onChange([values[0] ?? "", event.target.value])}
-        />
-      </div>
-    );
-  }
-  if (filter.type === "multi_select") {
-    return (
-      <Input
-        value={Array.isArray(filter.default) ? filter.default.join(", ") : ""}
-        placeholder="eu, us"
-        onChange={(event) =>
-          onChange(
-            event.target.value
-              .split(",")
-              .map((value) => value.trim())
-              .filter(Boolean),
-          )
-        }
-      />
-    );
-  }
-  return (
-    <Input
-      value={typeof filter.default === "string" ? filter.default : ""}
-      onChange={(event) => onChange(event.target.value)}
+    <AuthoredControlEditor
+      control={filter}
+      datasets={datasets.map((dataset) => ({
+        id: dataset.id,
+        columns: columnsForDataset(dataset.id).map((column) => ({
+          name: column.name,
+          detail: column.physical_type || column.semantic_type,
+        })),
+      }))}
+      idPrefix="presentation-control"
+      pathPrefix={pathPrefix}
+      onChange={onChange}
+      onRename={onRename}
+      onDelete={onDelete}
     />
   );
 }
 
-function VisualizationEditor({
+export function VisualizationEditor({
   visualization,
   datasets,
   filters,
   columns,
+  compact = false,
+  pathPrefix,
   onChange,
   onRename,
   onDelete,
@@ -834,65 +646,92 @@ function VisualizationEditor({
   datasets: PresentationDataset[];
   filters: PresentationFilter[];
   columns: PresentationResolvedColumn[];
+  compact?: boolean;
+  pathPrefix?: string;
   onChange: (visualization: PresentationVisualization) => void;
   onRename: (id: string) => void;
   onDelete: () => void;
 }) {
   const bindings = visualization.filter_bindings ?? [];
   const visualizationIDInput = `presentation-visualization-${visualization.id || "new"}-id`;
-  return (
-    <div className="min-w-0 space-y-4 rounded-lg border bg-background/60 p-3">
-      <div className="grid gap-3 sm:grid-cols-[minmax(8rem,0.7fr)_minmax(9rem,1fr)_auto]">
-        <Field>
-          <FieldLabel htmlFor={visualizationIDInput}>Visualization ID</FieldLabel>
-          <Input
-            id={visualizationIDInput}
-            value={visualization.id}
-            className="font-mono text-xs"
-            onChange={(event) => onRename(event.target.value)}
-          />
-        </Field>
-        <Field>
-          <FieldLabel>Dataset</FieldLabel>
-          <Select
-            value={visualization.dataset}
-            onValueChange={(dataset) =>
-              onChange({ ...visualization, dataset, filter_bindings: [] })
-            }
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {datasets.map((dataset) => (
-                <SelectItem key={dataset.id} value={dataset.id}>
-                  {dataset.id}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-        <div className="flex items-end justify-end">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label={`Delete visualization ${visualization.id}`}
-            onClick={onDelete}
-          >
-            <Trash2 />
-          </Button>
-        </div>
-      </div>
-      <VisualizationBuilder
-        definition={normalizeVisualizationDefinition(visualization.definition)}
-        columns={columns}
-        onChange={(definition) =>
-          onChange({ ...visualization, definition: visualizationDefinitionRecord(definition) })
-        }
+  const identityField = (
+    <Field data-presentation-path={pathPrefix ? `${pathPrefix}.id` : undefined} className="min-w-0">
+      <FieldLabel htmlFor={visualizationIDInput}>Visualization ID</FieldLabel>
+      <Input
+        id={visualizationIDInput}
+        value={visualization.id}
+        className="font-mono text-xs"
+        onChange={(event) => onRename(event.target.value)}
       />
-      <Field>
+    </Field>
+  );
+  const datasetField = (
+    <Field
+      data-presentation-path={pathPrefix ? `${pathPrefix}.dataset` : undefined}
+      className="min-w-0"
+    >
+      <FieldLabel>Dataset</FieldLabel>
+      <Select
+        value={visualization.dataset}
+        onValueChange={(dataset) => onChange({ ...visualization, dataset, filter_bindings: [] })}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {datasets.map((dataset) => (
+            <SelectItem key={dataset.id} value={dataset.id}>
+              {dataset.id}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
+  );
+  const deleteButton = (
+    <Button
+      size="icon-sm"
+      variant="ghost"
+      aria-label={`Delete visualization ${visualization.id}`}
+      onClick={onDelete}
+    >
+      <Trash2 />
+    </Button>
+  );
+  return (
+    <div
+      data-presentation-path={pathPrefix}
+      className="flex min-w-0 flex-col gap-4 rounded-lg border bg-background/60 p-3"
+    >
+      {compact ? (
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="flex min-w-0 items-end gap-2">
+            <div className="min-w-0 flex-1">{identityField}</div>
+            {deleteButton}
+          </div>
+          {datasetField}
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-[minmax(8rem,0.7fr)_minmax(9rem,1fr)_auto]">
+          {identityField}
+          {datasetField}
+          <div className="flex items-end justify-end">{deleteButton}</div>
+        </div>
+      )}
+      <div data-presentation-path={pathPrefix ? `${pathPrefix}.definition` : undefined}>
+        <VisualizationBuilder
+          definition={normalizeVisualizationDefinition(visualization.definition)}
+          columns={columns}
+          compact={compact}
+          pathPrefix={pathPrefix ? `${pathPrefix}.definition` : undefined}
+          onChange={(definition) =>
+            onChange({ ...visualization, definition: visualizationDefinitionRecord(definition) })
+          }
+        />
+      </div>
+      <Field data-presentation-path={pathPrefix ? `${pathPrefix}.filter_bindings` : undefined}>
         <div className="flex items-center justify-between">
-          <FieldLabel>Filter bindings</FieldLabel>
+          <FieldLabel>Control bindings</FieldLabel>
           <Button
             size="xs"
             variant="ghost"
@@ -918,16 +757,18 @@ function VisualizationEditor({
         </div>
         {bindings.length === 0 ? (
           <FieldDescription>
-            Bind a filter to a column in this visualization's dataset.
+            Bind a control to a column in this visualization's dataset.
           </FieldDescription>
         ) : (
-          <div className="space-y-1.5">
+          <div className="flex flex-col gap-1.5">
             {bindings.map((binding, index) => (
               <FilterBindingEditor
                 key={index}
                 binding={binding}
                 filters={filters}
                 columns={columns}
+                compact={compact}
+                pathPrefix={pathPrefix ? `${pathPrefix}.filter_bindings[${index}]` : undefined}
                 onChange={(next) => {
                   const updated = [...bindings];
                   updated[index] = next;
@@ -952,18 +793,30 @@ function FilterBindingEditor({
   binding,
   filters,
   columns,
+  compact = false,
+  pathPrefix,
   onChange,
   onDelete,
 }: {
   binding: PresentationFilterBinding;
   filters: PresentationFilter[];
   columns: PresentationResolvedColumn[];
+  compact?: boolean;
+  pathPrefix?: string;
   onChange: (binding: PresentationFilterBinding) => void;
   onDelete: () => void;
 }) {
   const selectedFilter = filters.find((filter) => filter.id === binding.filter);
   return (
-    <div className="grid gap-1.5 sm:grid-cols-[minmax(7rem,0.7fr)_minmax(7rem,1fr)_9rem_auto]">
+    <div
+      data-presentation-path={pathPrefix}
+      className={cn(
+        "grid gap-1.5",
+        compact
+          ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
+          : "sm:grid-cols-[minmax(7rem,0.7fr)_minmax(7rem,1fr)_9rem_auto]",
+      )}
+    >
       <Select
         value={binding.filter}
         onValueChange={(filterID) => {
@@ -975,8 +828,11 @@ function FilterBindingEditor({
           });
         }}
       >
-        <SelectTrigger className="w-full">
-          <SelectValue placeholder="Filter" />
+        <SelectTrigger
+          data-presentation-path={pathPrefix ? `${pathPrefix}.filter` : undefined}
+          className="w-full"
+        >
+          <SelectValue placeholder="Control" />
         </SelectTrigger>
         <SelectContent>
           {filters.map((filter) => (
@@ -989,13 +845,17 @@ function FilterBindingEditor({
       <ColumnSelect
         value={binding.column}
         columns={columns}
+        path={pathPrefix ? `${pathPrefix}.column` : undefined}
         onChange={(column) => onChange({ ...binding, column })}
       />
       <Select
         value={binding.operator}
         onValueChange={(operator) => onChange({ ...binding, operator })}
       >
-        <SelectTrigger className="w-full">
+        <SelectTrigger
+          data-presentation-path={pathPrefix ? `${pathPrefix}.operator` : undefined}
+          className="w-full"
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -1006,7 +866,13 @@ function FilterBindingEditor({
           ))}
         </SelectContent>
       </Select>
-      <Button size="icon-sm" variant="ghost" aria-label="Delete filter binding" onClick={onDelete}>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className={cn(compact && "justify-self-end")}
+        aria-label="Delete control binding"
+        onClick={onDelete}
+      >
         <Trash2 />
       </Button>
     </div>
@@ -1303,11 +1169,13 @@ function ColumnSelect({
   value,
   columns,
   optional = false,
+  path,
   onChange,
 }: {
   value: string;
   columns: PresentationResolvedColumn[];
   optional?: boolean;
+  path?: string;
   onChange: (value: string) => void;
 }) {
   return (
@@ -1315,7 +1183,7 @@ function ColumnSelect({
       value={value || (optional ? "__none__" : "")}
       onValueChange={(next) => onChange(next === "__none__" ? "" : next)}
     >
-      <SelectTrigger className="w-full">
+      <SelectTrigger data-presentation-path={path} className="w-full">
         <SelectValue placeholder="Choose a column" />
       </SelectTrigger>
       <SelectContent>
@@ -1393,7 +1261,7 @@ function EmptyBuilderState({
   );
 }
 
-function workspaceAssetChoices(workspace: WorkspaceState | null): AssetChoice[] {
+export function workspaceAssetChoices(workspace: WorkspaceState | null): AssetChoice[] {
   const nameCounts = new Map<string, number>();
   for (const pipeline of workspace?.pipelines ?? []) {
     for (const asset of pipeline.assets)
@@ -1417,39 +1285,30 @@ function workspaceAssetChoices(workspace: WorkspaceState | null): AssetChoice[] 
   );
 }
 
-function datasetColumns(
+export function datasetColumns(
   datasetID: string,
   datasets: PresentationDataset[],
   choices: AssetChoice[],
 ): PresentationResolvedColumn[] {
   const dataset = datasets.find((candidate) => candidate.id === datasetID);
   if (!dataset) return [];
+  const authoredColumns = dataset.columns ?? [];
   const columns = dataset.asset
     ? (choices.find((choice) => choice.value === dataset.asset)?.asset.columns ??
-      dataset.columns ??
-      [])
-    : (dataset.columns ?? []);
+      dataset.resolved_columns ??
+      authoredColumns)
+    : authoredColumns.length > 0
+      ? authoredColumns
+      : (dataset.resolved_columns ?? []);
   return columns.map((column) => ({
     name: column.name,
     physical_type: column.type ?? "",
-    semantic_type: semanticType(column.type ?? ""),
+    semantic_type: semanticTypeForPhysicalType(column.type ?? ""),
     nullable: column.nullable,
   }));
 }
 
-function semanticType(physicalType: string): PresentationResolvedColumn["semantic_type"] {
-  const value = physicalType.toLowerCase();
-  if (/int|decimal|numeric|real|double|float|number/.test(value)) return "numeric";
-  if (/date|time|interval/.test(value)) return "temporal";
-  if (/bool/.test(value)) return "boolean";
-  if (/blob|binary|bytea/.test(value)) return "binary";
-  if (/json|array|struct|map|variant/.test(value)) return "semi_structured";
-  if (/geo/.test(value)) return "geospatial";
-  if (/char|string|text|uuid|enum/.test(value)) return "categorical";
-  return "unknown";
-}
-
-function renameDataset(
+export function renameDataset(
   artifact: PresentationArtifact,
   previous: string,
   next: string,
@@ -1474,7 +1333,7 @@ function renameDataset(
   };
 }
 
-function renameFilter(
+export function renameFilter(
   artifact: PresentationArtifact,
   previous: string,
   next: string,
@@ -1493,7 +1352,7 @@ function renameFilter(
   };
 }
 
-function renameVisualization(
+export function renameVisualization(
   artifact: PresentationArtifact,
   previous: string,
   next: string,
@@ -1512,14 +1371,11 @@ function renameVisualization(
   };
 }
 
-function defaultFilterValue(type: string): unknown {
-  if (type === "boolean") return false;
-  if (type === "number") return 0;
-  if (type === "multi_select" || type === "date_range") return [];
-  return "";
+export function defaultFilterValue(type: string): unknown {
+  return defaultAuthoredControlValue(type);
 }
 
-function defaultFilterOperator(type: string) {
+export function defaultFilterOperator(type: string) {
   if (type === "multi_select") return "in";
   if (type === "date_range") return "between";
   return "equals";
@@ -1528,7 +1384,7 @@ function defaultFilterOperator(type: string) {
 function filterOperators(type: string) {
   if (type === "multi_select") return ["in", "not_in"];
   if (type === "date_range") return ["between"];
-  if (type === "number" || type === "date")
+  if (type === "number" || type === "slider" || type === "date")
     return [
       "equals",
       "not_equals",
@@ -1541,7 +1397,7 @@ function filterOperators(type: string) {
   return ["equals", "not_equals"];
 }
 
-function nextID(prefix: string, existing: string[]) {
+export function nextID(prefix: string, existing: string[]) {
   const used = new Set(existing);
   if (!used.has(prefix)) return prefix;
   for (let index = 2; ; index += 1) {
@@ -1550,7 +1406,7 @@ function nextID(prefix: string, existing: string[]) {
   }
 }
 
-function moveItem<T>(items: T[], index: number, direction: -1 | 1) {
+export function moveItem<T>(items: T[], index: number, direction: -1 | 1) {
   const target = index + direction;
   if (target < 0 || target >= items.length) return items;
   const next = [...items];

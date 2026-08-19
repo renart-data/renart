@@ -73,9 +73,9 @@ func (s *PresentationService) Get(ctx context.Context, workspaceID string) (Pres
 	if err != nil {
 		return PresentationDocument{}, &APIError{Status: http.StatusBadRequest, Code: "presentation_invalid", Message: err.Error()}
 	}
-	s.enrichProblems(ctx, artifact)
+	datasetSchemas := s.enrichProblems(ctx, artifact)
 	return PresentationDocument{
-		Artifact: presentationToModel(s.deps.WorkspaceRoot, artifact),
+		Artifact: presentationToModel(s.deps.WorkspaceRoot, artifact, datasetSchemas),
 		Content:  string(content),
 	}, nil
 }
@@ -180,8 +180,8 @@ func (s *PresentationService) Update(
 		}
 	}
 	if string(currentContent) == request.Content {
-		s.enrichProblems(ctx, current)
-		return PresentationDocument{Artifact: presentationToModel(s.deps.WorkspaceRoot, current), Content: request.Content}, nil
+		datasetSchemas := s.enrichProblems(ctx, current)
+		return PresentationDocument{Artifact: presentationToModel(s.deps.WorkspaceRoot, current, datasetSchemas), Content: request.Content}, nil
 	}
 	if err := writeFileAtomically(path, nextContent, 0o644); err != nil {
 		return PresentationDocument{}, &APIError{Status: http.StatusInternalServerError, Code: "presentation_update_failed", Message: err.Error()}
@@ -236,8 +236,8 @@ func (s *PresentationService) Replace(
 		return PresentationDocument{}, &APIError{Status: http.StatusBadRequest, Code: "presentation_snapshot_invalid", Message: err.Error()}
 	}
 	if string(content) == string(currentContent) {
-		s.enrichProblems(ctx, current)
-		return PresentationDocument{Artifact: presentationToModel(s.deps.WorkspaceRoot, current), Content: string(currentContent)}, nil
+		datasetSchemas := s.enrichProblems(ctx, current)
+		return PresentationDocument{Artifact: presentationToModel(s.deps.WorkspaceRoot, current, datasetSchemas), Content: string(currentContent)}, nil
 	}
 	if err := writeFileAtomically(path, content, 0o644); err != nil {
 		return PresentationDocument{}, &APIError{Status: http.StatusInternalServerError, Code: "presentation_update_failed", Message: err.Error()}
@@ -251,21 +251,22 @@ func (s *PresentationService) documentFromBytes(ctx context.Context, path string
 	if err != nil {
 		return PresentationDocument{}, &APIError{Status: http.StatusBadRequest, Code: "presentation_invalid", Message: err.Error()}
 	}
-	s.enrichProblems(ctx, artifact)
-	return PresentationDocument{Artifact: presentationToModel(s.deps.WorkspaceRoot, artifact), Content: string(content)}, nil
+	datasetSchemas := s.enrichProblems(ctx, artifact)
+	return PresentationDocument{Artifact: presentationToModel(s.deps.WorkspaceRoot, artifact, datasetSchemas), Content: string(content)}, nil
 }
 
-func (s *PresentationService) enrichProblems(ctx context.Context, artifact *presentation.Artifact) {
+func (s *PresentationService) enrichProblems(ctx context.Context, artifact *presentation.Artifact) map[string]presentation.ResolvedSchema {
 	state := model.WorkspaceState{}
 	if s.deps.CurrentState != nil {
 		state = s.deps.CurrentState()
 	}
-	datasetSchemas, resolutionFindings := resolvePresentationDatasetSchemas(state, artifact)
+	datasetSchemas, resolutionFindings := resolvePresentationDatasetSchemas(ctx, s.deps.WorkspaceRoot, state, artifact)
 	artifact.Problems = append(
 		(presentation.Checker{}).CheckArtifact(ctx, *artifact, datasetSchemas, presentation.CheckOptions{Strict: true}),
 		resolutionFindings...,
 	)
 	artifact.Problems = uniquePresentationFindings(artifact.Problems)
+	return datasetSchemas
 }
 
 func (s *PresentationService) resolvePath(workspaceID string) (string, *APIError) {

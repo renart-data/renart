@@ -18,6 +18,17 @@ type InferenceAsset struct {
 	Upstreams []string
 }
 
+// OutputSchemaInference is the pure projection result for one SQL document
+// against an already-resolved canonical graph. It lets non-asset SQL surfaces
+// share the same AST, compact-analysis, and tolerant fallbacks without adding
+// a synthetic materialized relation to the graph.
+type OutputSchemaInference struct {
+	Columns      []ColumnInfo
+	SourceKind   string
+	Completeness string
+	Confidence   string
+}
+
 const maxSchemaInferenceRounds = 5
 
 // InferSchemaSnapshot fills unknown SQL relation schemas with one shared,
@@ -60,13 +71,7 @@ func InferSchemaSnapshot(ctx context.Context, graph CanonicalGraph, assets []Inf
 			baseSchemas = append(baseSchemas, layer)
 		}
 	}
-	type inferredLayer struct {
-		columns      []ColumnInfo
-		sourceKind   string
-		completeness string
-		confidence   string
-	}
-	inferred := map[string]inferredLayer{}
+	inferred := map[string]OutputSchemaInference{}
 
 	for round := 0; round < maxSchemaInferenceRounds; round++ {
 		if err := ctx.Err(); err != nil {
@@ -76,31 +81,17 @@ func InferSchemaSnapshot(ctx context.Context, graph CanonicalGraph, assets []Inf
 		validationSchema, relationConfidence := ValidationSchema(graph)
 		changed := false
 		for _, asset := range targets {
-			projection := engine.renderDocument(TextDocumentItem{URI: asset.URI, LanguageID: "sql", Text: asset.SQL})
-			annotated, annotateErr := sqlintelligence.InferOutputSchema(ctx, projection.doc.Text, asset.Dialect, validationSchema)
-			next := columnInfosFromSchemaColumns(annotated.Columns)
-			layer := inferredLayer{columns: next, sourceKind: "inferred-ast", completeness: "complete", confidence: "high"}
-			if annotateErr != nil || !annotated.NamesComplete || len(next) == 0 {
-				analysis, analysisErr := sqlintelligence.AnalyzeQuery(ctx, projection.doc.Text, asset.Dialect, validationSchema)
-				if analysisErr == nil && analysis.OutputNamesComplete && len(analysis.OutputColumns) > 0 {
-					next = columnInfosFromSchemaColumns(analysis.OutputColumns)
-					complete := analysisStarSourcesKnown(analysis, relationConfidence)
-					layer = inferredLayer{columns: next, sourceKind: "inferred-analysis", completeness: "partial", confidence: "medium"}
-					if complete {
-						layer.completeness = "complete"
-						layer.confidence = "high"
-					}
-				} else if len(next) > 0 {
-					layer.completeness = "partial"
-					layer.confidence = "medium"
-				}
-			}
-			if len(next) == 0 {
-				next = engine.InferOutputColumns(projection.doc.Text)
-				layer = inferredLayer{columns: next, sourceKind: "inferred-tolerant", completeness: "partial", confidence: "medium"}
-			}
+			layer := inferOutputSchema(
+				ctx,
+				engine,
+				TextDocumentItem{URI: asset.URI, LanguageID: "sql", Text: asset.SQL},
+				asset.Dialect,
+				validationSchema,
+				relationConfidence,
+			)
+			next := layer.Columns
 			previous := inferred[asset.ID]
-			if slices.Equal(previous.columns, layer.columns) && previous.sourceKind == layer.sourceKind {
+			if slices.Equal(previous.Columns, layer.Columns) && previous.SourceKind == layer.SourceKind {
 				continue
 			}
 			inferred[asset.ID] = layer
@@ -112,7 +103,7 @@ func InferSchemaSnapshot(ctx context.Context, graph CanonicalGraph, assets []Inf
 			}
 			validationSchema[relation.Name] = columns
 			relationConfidence[relation.Name] = sqlintelligence.RelationUnknown
-			if layer.completeness == "complete" && len(columns) > 0 {
+			if layer.Completeness == "complete" && len(columns) > 0 {
 				relationConfidence[relation.Name] = sqlintelligence.RelationKnown
 			}
 			changed = true
@@ -124,22 +115,75 @@ func InferSchemaSnapshot(ctx context.Context, graph CanonicalGraph, assets []Inf
 		schemas := append(make([]SchemaLayer, 0, len(baseSchemas)+len(targets)), baseSchemas...)
 		for _, asset := range targets {
 			layer, ok := inferred[asset.ID]
-			if !ok || len(layer.columns) == 0 {
+			if !ok || len(layer.Columns) == 0 {
 				continue
 			}
 			relation := relationByAssetID[asset.ID]
 			schemas = append(schemas, SchemaLayer{
 				RelationID:   relation.ID,
-				SourceKind:   layer.sourceKind,
-				Completeness: layer.completeness,
-				Confidence:   layer.confidence,
-				Columns:      layer.columns,
+				SourceKind:   layer.SourceKind,
+				Completeness: layer.Completeness,
+				Confidence:   layer.Confidence,
+				Columns:      layer.Columns,
 				Provenance:   relation.Provenance,
 			})
 		}
 		graph.Schemas = schemas
 	}
 	return graph
+}
+
+// InferOutputSchema derives one SQL document's output against an already
+// resolved graph without mutating that graph or treating the document as a
+// materialized asset.
+func InferOutputSchema(
+	ctx context.Context,
+	graph CanonicalGraph,
+	doc TextDocumentItem,
+	dialect string,
+) OutputSchemaInference {
+	engine := NewEngine(graph)
+	validationSchema, relationConfidence := ValidationSchema(graph)
+	return inferOutputSchema(ctx, engine, doc, dialect, validationSchema, relationConfidence)
+}
+
+func inferOutputSchema(
+	ctx context.Context,
+	engine *Engine,
+	doc TextDocumentItem,
+	dialect string,
+	validationSchema sqlintelligence.Schema,
+	relationConfidence map[string]sqlintelligence.RelationConfidence,
+) OutputSchemaInference {
+	projection := engine.renderDocument(doc)
+	annotated, annotateErr := sqlintelligence.InferOutputSchema(ctx, projection.doc.Text, dialect, validationSchema)
+	next := columnInfosFromSchemaColumns(annotated.Columns)
+	result := OutputSchemaInference{
+		Columns: next, SourceKind: "inferred-ast", Completeness: "complete", Confidence: "high",
+	}
+	if annotateErr != nil || !annotated.NamesComplete || len(next) == 0 {
+		analysis, analysisErr := sqlintelligence.AnalyzeQuery(ctx, projection.doc.Text, dialect, validationSchema)
+		if analysisErr == nil && analysis.OutputNamesComplete && len(analysis.OutputColumns) > 0 {
+			next = columnInfosFromSchemaColumns(analysis.OutputColumns)
+			result = OutputSchemaInference{
+				Columns: next, SourceKind: "inferred-analysis", Completeness: "partial", Confidence: "medium",
+			}
+			if analysisStarSourcesKnown(analysis, relationConfidence) {
+				result.Completeness = "complete"
+				result.Confidence = "high"
+			}
+		} else if len(next) > 0 {
+			result.Completeness = "partial"
+			result.Confidence = "medium"
+		}
+	}
+	if len(next) == 0 {
+		next = engine.InferOutputColumns(projection.doc.Text)
+		result = OutputSchemaInference{
+			Columns: next, SourceKind: "inferred-tolerant", Completeness: "partial", Confidence: "medium",
+		}
+	}
+	return result
 }
 
 func columnInfosFromSchemaColumns(columns []sqlintelligence.SchemaColumn) []ColumnInfo {

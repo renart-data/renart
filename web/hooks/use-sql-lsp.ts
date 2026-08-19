@@ -60,7 +60,7 @@ export function useSQLLSP(
   onGoToCell?: (cellId: string) => void,
   options?: {
     includeNotebookRuntimeColumns?: boolean;
-    documentContext?: "asset" | "adhoc" | "custom_check" | "hook";
+    documentContext?: "asset" | "adhoc" | "custom_check" | "hook" | "presentation_query";
     allowNonSQLDocument?: boolean;
     onImportExternalRelation?: (relationId: string) => void;
     onActionError?: (message: string | null) => void;

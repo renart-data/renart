@@ -141,15 +141,25 @@ func appendNotebookArtifact(index *model.ArtifactIndex, notebook model.Notebook,
 	cellsByID := make(map[string]model.Asset, len(notebook.Cells))
 	cellsByName := make(map[string]model.Asset, len(notebook.Cells))
 	componentRefs := make(map[string]model.ArtifactRef, len(notebook.Parameters)+len(notebook.Blocks))
+	parametersByID := make(map[string]model.NotebookParameter, len(notebook.Parameters))
+	placedParameters := make(map[string]bool, len(notebook.Parameters))
 	for _, cell := range notebook.Cells {
 		cellsByID[cell.CellID] = cell
 		cellsByName[strings.ToLower(strings.TrimSpace(cell.Name))] = cell
 	}
+	for _, parameter := range notebook.Parameters {
+		parametersByID[strings.TrimSpace(parameter.ID)] = parameter
+	}
+	for _, block := range notebook.Blocks {
+		if strings.TrimSpace(block.Control) != "" {
+			placedParameters[strings.TrimSpace(block.Control)] = true
+		}
+	}
 
-	for position, parameter := range notebook.Parameters {
+	appendParameter := func(parameter model.NotebookParameter) {
 		componentID := "parameter:" + strings.TrimSpace(parameter.ID)
 		if componentID == "parameter:" {
-			continue
+			return
 		}
 		name := strings.TrimSpace(parameter.Label)
 		if name == "" {
@@ -165,12 +175,21 @@ func appendNotebookArtifact(index *model.ArtifactIndex, notebook model.Notebook,
 		}
 		componentRefs[componentID] = childRef
 		index.Containment = append(index.Containment, model.ArtifactContainment{
-			Parent: artifactRef, Child: childRef, Position: position,
+			Parent: artifactRef, Child: childRef, Position: len(components) - 1,
 		})
 	}
 
-	for blockPosition, block := range notebook.Blocks {
-		position := len(notebook.Parameters) + blockPosition
+	for _, parameter := range notebook.Parameters {
+		if !placedParameters[strings.TrimSpace(parameter.ID)] {
+			appendParameter(parameter)
+		}
+	}
+
+	for _, block := range notebook.Blocks {
+		if parameter, ok := parametersByID[strings.TrimSpace(block.Control)]; ok && block.Control != "" {
+			appendParameter(parameter)
+			continue
+		}
 		component, ok := notebookArtifactComponent(block, cellsByID)
 		if !ok {
 			continue
@@ -181,7 +200,7 @@ func appendNotebookArtifact(index *model.ArtifactIndex, notebook model.Notebook,
 		}
 		componentRefs[component.ID] = childRef
 		index.Containment = append(index.Containment, model.ArtifactContainment{
-			Parent: artifactRef, Child: childRef, Position: position,
+			Parent: artifactRef, Child: childRef, Position: len(components) - 1,
 		})
 	}
 
@@ -442,6 +461,9 @@ func notebookArtifactComponent(block model.NotebookBlock, cellsByID map[string]m
 			ID: id, Kind: componentKindVisualization,
 			Capabilities: []string{artifactCapabilityPresentation, artifactCapabilityVersioned},
 		}, true
+	}
+	if block.Control != "" {
+		return model.ArtifactComponent{}, false
 	}
 	if strings.TrimSpace(block.ID) == "" {
 		return model.ArtifactComponent{}, false

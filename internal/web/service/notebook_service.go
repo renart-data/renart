@@ -731,7 +731,7 @@ func (s *NotebookService) UpdateBlocks(notebookID string, blocks []model.Noteboo
 	next := make([]notebook.Block, 0, len(blocks))
 	for _, block := range blocks {
 		if block.Cell != "" {
-			if block.Visualization != nil || block.Markdown != "" || block.ID != "" {
+			if block.Visualization != nil || block.Markdown != "" || block.Control != "" || block.ID != "" {
 				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_notebook_block", Message: "a cell block cannot also contain presentation content"}
 			}
 			if nb.CellByID(block.Cell) == nil {
@@ -742,6 +742,33 @@ func (s *NotebookService) UpdateBlocks(notebookID string, blocks []model.Noteboo
 			}
 			seen[block.Cell] = true
 			next = append(next, notebook.Block{Cell: block.Cell})
+			continue
+		}
+
+		if block.Control != "" {
+			if nb.Version < notebook.ManifestVersionCurrent {
+				return model.Notebook{}, &APIError{Status: http.StatusConflict, Code: "notebook_upgrade_required", Message: "upgrade this notebook before placing controls"}
+			}
+			if block.Visualization != nil || block.Markdown != "" || block.ID != "" {
+				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_notebook_block", Message: "a control block cannot also contain other presentation content"}
+			}
+			parameterID := strings.TrimSpace(block.Control)
+			known := false
+			for _, parameter := range nb.Parameters {
+				if parameter.ID == parameterID {
+					known = true
+					break
+				}
+			}
+			if !known {
+				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "unknown_notebook_control", Message: fmt.Sprintf("control references unknown parameter %q", parameterID)}
+			}
+			stableID := "control:" + parameterID
+			if seenBlockIDs[stableID] {
+				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "duplicate_notebook_block", Message: fmt.Sprintf("control %q appears more than once", parameterID)}
+			}
+			seenBlockIDs[stableID] = true
+			next = append(next, notebook.Block{Control: parameterID})
 			continue
 		}
 
@@ -887,9 +914,6 @@ func (s *NotebookService) Run(ctx context.Context, notebookID string, req RunNot
 		}
 	}
 	rt := s.runtimes.get(nb.UUID)
-	runCtx, finishRun := rt.beginManualRun(ctx)
-	defer finishRun()
-
 	cells, selectErr := s.selectRunCells(nb, req)
 	if selectErr != nil {
 		return RunNotebookResult{}, selectErr
@@ -902,6 +926,16 @@ func (s *NotebookService) Run(ctx context.Context, notebookID string, req RunNot
 	if renderErr != nil {
 		return RunNotebookResult{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_notebook_render_context", Message: renderErr.Error()}
 	}
+	cellIDs := make([]string, 0, len(cells))
+	for _, cell := range cells {
+		cellIDs = append(cellIDs, cell.ID)
+	}
+	runCtx, finishRun := rt.beginManualRun(ctx, cellIDs)
+	s.publishCurrentRuntime(notebookID, nb.UUID)
+	defer func() {
+		finishRun()
+		s.publishCurrentRuntime(notebookID, nb.UUID)
+	}()
 
 	runner := s.newRunner(renderer, req.Environment, parameterValues)
 
@@ -951,7 +985,7 @@ func (s *NotebookService) publishRuntimeResultsDelta(notebookID, uuid string, re
 	for _, result := range results {
 		delta[result.CellID] = result
 	}
-	s.publishRuntime(notebookID, uuid, sortedKeys(closure), nil, delta)
+	s.publishRuntime(notebookID, uuid, sortedKeys(closure), delta)
 }
 
 // selectRunCells turns the request into an ordered execution list.

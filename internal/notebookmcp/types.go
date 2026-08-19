@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"renart/internal/web/model"
+	"renart/internal/web/presentation"
 	"renart/internal/web/service"
 )
 
@@ -28,13 +29,61 @@ type Backend interface {
 
 type EmptyInput struct{}
 
+type CatalogSearchInput struct {
+	Query string   `json:"query,omitempty" jsonschema:"Case-insensitive text matched against artifact titles, relation names, component names, types, connections, capabilities, and column names. Empty lists the highest-priority items."`
+	Kinds []string `json:"kinds,omitempty" jsonschema:"Optional artifact or component kinds to include, for example pipeline_asset, notebook, dashboard, report, cell, source, dataset, or visualization."`
+	Limit int      `json:"limit,omitempty" jsonschema:"Maximum matches to return. Defaults to 20 and values above 50 are reduced to 50."`
+}
+
+// CatalogSourceSuggestion is a credential-free recipe for the ordinary
+// prepare_notebook_change_set path. It is advice, not a write or a runnable
+// query endpoint.
+type CatalogSourceSuggestion struct {
+	OperationKind    string `json:"operation_kind"`
+	Language         string `json:"language"`
+	Connection       string `json:"connection,omitempty"`
+	AssetType        string `json:"asset_type,omitempty"`
+	Content          string `json:"content"`
+	SnapshotMode     string `json:"snapshot_mode"`
+	RowLimit         int64  `json:"row_limit"`
+	ApprovalRequired bool   `json:"approval_required"`
+}
+
+type CatalogMatch struct {
+	ID                 string                   `json:"id"`
+	Kind               string                   `json:"kind"`
+	ArtifactKind       string                   `json:"artifact_kind"`
+	ArtifactID         string                   `json:"artifact_id"`
+	ComponentID        string                   `json:"component_id,omitempty"`
+	WorkspaceID        string                   `json:"workspace_id,omitempty"`
+	Title              string                   `json:"title"`
+	ParentTitle        string                   `json:"parent_title,omitempty"`
+	Connection         string                   `json:"connection,omitempty"`
+	ConnectionType     string                   `json:"connection_type,omitempty"`
+	AssetType          string                   `json:"asset_type,omitempty"`
+	Relation           string                   `json:"relation,omitempty"`
+	Capabilities       []string                 `json:"capabilities,omitempty"`
+	Columns            []ResultColumn           `json:"columns,omitempty"`
+	ColumnCount        int                      `json:"column_count"`
+	DataSourceEligible bool                     `json:"data_source_eligible"`
+	SuggestedSource    *CatalogSourceSuggestion `json:"suggested_source,omitempty"`
+}
+
+type CatalogSearchOutput struct {
+	SchemaVersion int            `json:"schema_version"`
+	Revision      string         `json:"revision"`
+	Query         string         `json:"query,omitempty"`
+	Matches       []CatalogMatch `json:"matches"`
+	Truncated     bool           `json:"truncated"`
+}
+
 type NotebookInput struct {
 	NotebookID string `json:"notebook_id" jsonschema:"The opaque notebook ID returned by list_notebooks."`
 }
 
 type NotebookBlockInput struct {
 	NotebookID string `json:"notebook_id" jsonschema:"The opaque notebook ID returned by list_notebooks."`
-	BlockID    string `json:"block_id" jsonschema:"The durable cell, markdown, or visualization block ID."`
+	BlockID    string `json:"block_id" jsonschema:"The durable cell, markdown, control, or visualization block ID."`
 }
 
 type NotebookCellInput struct {
@@ -105,6 +154,7 @@ type NotebookBlockOutput struct {
 	ExternalRefs  []string                     `json:"external_refs,omitempty"`
 	Source        *SafeSourceDefinition        `json:"source,omitempty"`
 	Visualization *model.NotebookVisualization `json:"visualization,omitempty"`
+	Parameter     *model.NotebookParameter     `json:"parameter,omitempty"`
 }
 
 type GraphNode struct {
@@ -210,15 +260,52 @@ type ListNotebookSourcesOutput struct {
 }
 
 type PrepareChangeSetInput struct {
-	NotebookID   string                      `json:"notebook_id"`
-	BaseRevision string                      `json:"base_revision"`
-	Operations   []service.NotebookOperation `json:"operations"`
+	NotebookID   string                      `json:"notebook_id" jsonschema:"The opaque notebook ID returned by list_notebooks."`
+	BaseRevision string                      `json:"base_revision" jsonschema:"The exact notebook revision returned by get_notebook_outline."`
+	Operations   []service.NotebookOperation `json:"operations" jsonschema:"One or more semantic edits. Follow each operation kind's exact enum and field descriptions."`
+}
+
+// notebookVisualizationInputSchema exists only to teach MCP clients the
+// concrete, versioned visualization grammar. Notebook manifests intentionally
+// keep Definition as a map so future definition versions can still be decoded
+// and migrated by the presentation package.
+type notebookVisualizationInputSchema struct {
+	ID string `json:"id,omitempty" jsonschema:"Optional on input. Omit it for visualization.create; Renart assigns the durable block ID."`
+	// Source is a cell ID, not the cell's display name or output relation.
+	Source string `json:"source" jsonschema:"Durable data-producing cell ID returned by get_notebook_outline."`
+	// Definition uses encoding (singular). Y and tooltip are arrays of field
+	// objects; x, series, and color are single field objects.
+	Definition presentation.VisualizationDefinition `json:"definition" jsonschema:"Exact Renart visualization definition. version must be 1. type must be table, kpi, bar, line, area, scatter, pie, or donut. Use encoding (singular); encoding.y and encoding.tooltip are arrays."`
+}
+
+// notebookOperationInputSchema mirrors service.NotebookOperation but gives the
+// MCP protocol a typed visualization definition instead of map[string]any.
+// The server still decodes calls into service.NotebookOperation.
+type notebookOperationInputSchema struct {
+	Kind          string                            `json:"kind"`
+	CellID        string                            `json:"cell_id,omitempty"`
+	BlockID       string                            `json:"block_id,omitempty"`
+	ControlID     string                            `json:"control_id,omitempty"`
+	Name          string                            `json:"name,omitempty"`
+	Language      string                            `json:"language,omitempty"`
+	Connection    string                            `json:"connection,omitempty"`
+	AssetType     string                            `json:"asset_type,omitempty"`
+	SnapshotMode  string                            `json:"snapshot_mode,omitempty"`
+	RowLimit      int64                             `json:"row_limit,omitempty"`
+	Content       string                            `json:"content,omitempty"`
+	Visualization *notebookVisualizationInputSchema `json:"visualization,omitempty"`
+	Source        *model.NotebookSourceDefinition   `json:"source,omitempty"`
+	Parameter     *model.NotebookParameter          `json:"parameter,omitempty"`
+	Parameters    []model.NotebookParameter         `json:"parameters,omitempty"`
+	Position      string                            `json:"position,omitempty"`
+	AfterBlockID  string                            `json:"after_block_id,omitempty"`
 }
 
 type PreparedOperation struct {
 	Kind          string                       `json:"kind"`
 	CellID        string                       `json:"cell_id,omitempty"`
 	BlockID       string                       `json:"block_id,omitempty"`
+	ControlID     string                       `json:"control_id,omitempty"`
 	Name          string                       `json:"name,omitempty"`
 	Language      string                       `json:"language,omitempty"`
 	Connection    string                       `json:"connection,omitempty"`
@@ -227,6 +314,7 @@ type PreparedOperation struct {
 	RowLimit      int64                        `json:"row_limit,omitempty"`
 	Content       string                       `json:"content,omitempty"`
 	Visualization *model.NotebookVisualization `json:"visualization,omitempty"`
+	Parameter     *model.NotebookParameter     `json:"parameter,omitempty"`
 	Source        *SafeSourceDefinition        `json:"source,omitempty"`
 	Parameters    []model.NotebookParameter    `json:"parameters,omitempty"`
 	Position      string                       `json:"position,omitempty"`

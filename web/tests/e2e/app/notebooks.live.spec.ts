@@ -23,11 +23,19 @@ type NotebookEnvelope = {
     blocks?: Array<{
       id?: string;
       cell?: string;
+      markdown?: string;
+      control?: string;
       visualization?: {
         id: string;
         source: string;
         definition: Record<string, unknown>;
       };
+    }>;
+    parameters?: Array<{
+      id: string;
+      label?: string;
+      type: string;
+      default: unknown;
     }>;
   };
 };
@@ -66,6 +74,13 @@ async function createNotebook(request: APIRequestContext, baseURL: string, title
   const response = await request.post(`${baseURL}/api/notebooks`, { data: { title } });
   expect(response.ok()).toBe(true);
   return ((await response.json()) as NotebookEnvelope).notebook;
+}
+
+async function openNotebookToolsTab(page: Page, name: "Outline" | "Data" | "Add" | "AI") {
+  if ((page.viewportSize()?.width ?? 0) < 1280) {
+    await page.getByRole("button", { name: "Notebook tools" }).click();
+  }
+  await page.getByRole("tab", { name, exact: true }).click();
 }
 
 async function addCell(
@@ -341,27 +356,37 @@ test.describe("app notebooks live", () => {
     );
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
-    await page.getByRole("button", { name: "Notebook parameters" }).click();
-    const dialog = page.getByRole("dialog", { name: "Notebook parameters" });
-    await dialog.getByRole("button", { name: "Add parameter" }).click();
-    await dialog.getByLabel("ID").fill("region");
+    const narrowNotebook = (page.viewportSize()?.width ?? 1280) < 1280;
+    if (narrowNotebook) {
+      await page.getByRole("button", { name: "Notebook tools" }).click();
+    }
+    const tools = narrowNotebook
+      ? page.getByRole("dialog", { name: "Notebook tools" }).getByLabel("Notebook authoring tools")
+      : page.getByLabel("Notebook authoring tools");
+    await tools.getByRole("tab", { name: "Add" }).click();
+    await tools.getByRole("button", { name: "Manage controls" }).click();
+    const dialog = page.getByRole("dialog", { name: "Notebook controls" });
+    await dialog.getByRole("button", { name: "Add control" }).click();
+    await dialog.getByLabel("Control ID").fill("region");
     await dialog.getByLabel("Label").fill("Region");
-    await dialog.getByLabel("Default").fill("eu");
+    await dialog.getByLabel("Default value").fill("eu");
     const definitionResponse = page.waitForResponse(
       (response) =>
         response.url().includes(`/api/notebooks/${notebook.id}/changes/apply`) && response.ok(),
     );
-    await dialog.getByRole("button", { name: "Save definitions" }).click();
+    await dialog.getByRole("button", { name: "Save controls" }).click();
     await definitionResponse;
 
-    await dialog.getByLabel("Region").fill("us");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+    const controls = page.getByLabel("Notebook controls");
+    await expect(controls.getByLabel("Region")).toHaveValue("eu");
     const settingsResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/notebooks/${notebook.id}/settings`) && response.ok(),
     );
-    await dialog.getByRole("button", { name: "Apply values" }).click();
+    await controls.getByLabel("Region").fill("us");
     await settingsResponse;
-    await expect(dialog).toBeHidden();
 
     const runResponse = page.waitForResponse(
       (response) => response.url().endsWith(`/api/notebooks/${notebook.id}/run`) && response.ok(),
@@ -464,6 +489,7 @@ test.describe("app notebooks live", () => {
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     await expect(page.getByText("File Sources").first()).toBeVisible({ timeout: 15000 });
 
+    await openNotebookToolsTab(page, "Data");
     await page.getByRole("button", { name: "Add data" }).click();
     const dialog = page.getByRole("dialog", { name: "Add data" });
     await dialog.getByRole("tab", { name: "File" }).click();
@@ -489,6 +515,13 @@ test.describe("app notebooks live", () => {
         status: string;
         column_types?: string[];
         total_rows: number;
+        snapshot?: {
+          imported_at: string;
+          row_count: number;
+          byte_count: number;
+          complete: boolean;
+          sampled: boolean;
+        };
       }>;
     };
     expect(sourcePayload.results[0]).toMatchObject({
@@ -497,6 +530,22 @@ test.describe("app notebooks live", () => {
       total_rows: 2,
     });
     expect(sourcePayload.results[0].column_types?.length).toBe(2);
+    expect(sourcePayload.results[0].snapshot).toMatchObject({
+      row_count: 2,
+      complete: true,
+      sampled: false,
+    });
+    expect(sourcePayload.results[0].snapshot?.byte_count).toBeGreaterThan(0);
+    const snapshotDetails = sourceCard.getByLabel(`${source!.name} snapshot details`);
+    await expect(snapshotDetails).toContainText("Complete");
+    await expect(snapshotDetails).toContainText("default");
+    await expect(snapshotDetails.locator("time")).toHaveAttribute(
+      "datetime",
+      sourcePayload.results[0].snapshot!.imported_at,
+    );
+    await expect(
+      sourceCard.getByRole("table", { name: `${source!.name} result preview` }),
+    ).toBeVisible();
 
     const totalCell = await addCell(page.request, liveApp.baseURL, notebook.id, "file_total");
     await setCell(
@@ -1029,7 +1078,10 @@ test.describe("app notebooks live", () => {
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     await expect(page.getByText("Cell Creation").first()).toBeVisible({ timeout: 15000 });
 
-    const viewport = page.locator('[data-slot="scroll-area-viewport"]');
+    const viewport = page
+      .getByTestId("notebook-scroll-area")
+      .locator('[data-slot="scroll-area-viewport"]');
+    await openNotebookToolsTab(page, "Add");
     const addSQLCell = page.getByRole("button", { name: "SQL cell" });
     await addSQLCell.scrollIntoViewIfNeeded();
 
@@ -1103,6 +1155,85 @@ test.describe("app notebooks live", () => {
       }
       await page.unroute(createRoute);
     }
+  });
+
+  test("markdown cells can be added and visually edited", async ({ liveApp, page }) => {
+    const notebook = await createNotebook(page.request, liveApp.baseURL, "Markdown Creation");
+
+    await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
+    await expect(page.getByText("Markdown Creation").first()).toBeVisible({ timeout: 15000 });
+
+    await openNotebookToolsTab(page, "Add");
+    const applyResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/notebooks/${notebook.id}/changes/apply`) &&
+        response.request().method() === "POST",
+      { timeout: 15000 },
+    );
+    await page.getByRole("button", { name: "Text", exact: true }).click();
+    expect((await applyResponse).ok()).toBe(true);
+
+    const editor = page.getByLabel("Markdown cell");
+    await expect(editor).toHaveAttribute("contenteditable", "true");
+    await editor.fill("A ");
+    await page.getByRole("button", { name: "Bold", exact: true }).click();
+    await editor.pressSequentially("visual");
+    await page.getByRole("button", { name: "Bold", exact: true }).click();
+    await editor.pressSequentially(" note");
+
+    const saveResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/notebooks/${notebook.id}/changes/apply`) &&
+        response.request().method() === "POST",
+      { timeout: 15000 },
+    );
+    await page.getByRole("heading", { name: "Markdown Creation" }).first().click();
+    expect((await saveResponse).ok()).toBe(true);
+
+    const response = await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`);
+    expect(response.ok()).toBe(true);
+    const updated = ((await response.json()) as NotebookEnvelope).notebook;
+    expect(
+      updated.blocks?.some(
+        (block) => block.id && block.markdown?.trim() === "## A **visual** note",
+      ),
+    ).toBe(true);
+
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Markdown Creation" }).first()).toBeVisible({
+      timeout: 15000,
+    });
+    await expect(page.getByLabel("Markdown cell")).toContainText("A visual note");
+    await expect(page.getByText("Write a note…", { exact: true })).toBeHidden();
+
+    await page.getByLabel("Markdown cell").hover();
+    await page.getByRole("button", { name: "Edit Markdown source" }).click();
+    const source = page.getByLabel("Markdown source");
+    await source.fill(
+      "## A **visual** note\n\n- First bullet\n- Second bullet\n\n1. First step\n2. Second step",
+    );
+    const listSaveResponse = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/notebooks/${notebook.id}/changes/apply`) &&
+        response.request().method() === "POST",
+      { timeout: 15000 },
+    );
+    await page.getByRole("button", { name: "Use visual Markdown editor" }).click();
+    expect((await listSaveResponse).ok()).toBe(true);
+
+    const visualEditor = page.getByLabel("Markdown cell");
+    await expect(visualEditor.locator("ul > li")).toHaveCount(2);
+    await expect(visualEditor.locator("ol > li")).toHaveCount(2);
+    await expect
+      .poll(() =>
+        visualEditor.locator("ul").evaluate((element) => getComputedStyle(element).listStyleType),
+      )
+      .toBe("disc");
+    await expect
+      .poll(() =>
+        visualEditor.locator("ol").evaluate((element) => getComputedStyle(element).listStyleType),
+      )
+      .toBe("decimal");
   });
 
   test("cell deletion uses an in-app confirmation dialog", async ({ liveApp, page }) => {
@@ -1398,6 +1529,9 @@ test.describe("app notebooks live", () => {
     liveApp,
     page,
   }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("renart-notebook-autorecompute", "off");
+    });
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Viz And Rename");
     const baseCell = await addCell(page.request, liveApp.baseURL, notebook.id, "base");
     await setCell(
@@ -1441,7 +1575,15 @@ test.describe("app notebooks live", () => {
         response.ok(),
       { timeout: 15000 },
     );
-    await page.getByRole("button", { name: "Visualization", exact: true }).click();
+    await openNotebookToolsTab(page, "Add");
+    const linePreview = page.getByRole("button", { name: "Line", exact: true });
+    if ((page.viewportSize()?.width ?? 0) >= 1280) {
+      await linePreview.dragTo(
+        page.locator(`[data-notebook-insertion-point="after:${chartCell}"]`),
+      );
+    } else {
+      await linePreview.click();
+    }
     await createSeen;
     const afterCreate = (await (
       await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`)
@@ -1451,6 +1593,7 @@ test.describe("app notebooks live", () => {
       throw new Error("Visualization block was not persisted");
     }
     expect(visualization.visualization.source).toBe(chartCell);
+    expect(visualization.visualization.definition.type).toBe("line");
     expect(
       afterCreate.notebook.cells.find((cell) => cell.cell_id === chartCell)?.content,
     ).not.toContain("@viz");
@@ -1459,12 +1602,19 @@ test.describe("app notebooks live", () => {
       `[data-notebook-visualization-id="${visualization.id}"]`,
     );
     await expect(visualizationCard).toBeVisible({ timeout: 15000 });
-    const definitionTab = visualizationCard.getByRole("tab", { name: "Definition" });
+    const visualizationInspector = page.getByTestId("notebook-visualization-inspector");
+    await expect(visualizationInspector).toBeVisible({ timeout: 15000 });
+    const inspectorWidth = await visualizationInspector.evaluate((element) => ({
+      client: element.clientWidth,
+      scroll: element.scrollWidth,
+    }));
+    expect(inspectorWidth.scroll).toBeLessThanOrEqual(inspectorWidth.client + 1);
+    const definitionTab = visualizationInspector.getByRole("tab", { name: "Definition" });
     await expect(definitionTab).toBeEnabled({ timeout: 15000 });
     await definitionTab.click();
-    await expect(visualizationCard.getByRole("textbox", { name: "Editor content" })).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(
+      visualizationInspector.getByRole("textbox", { name: "Editor content" }),
+    ).toBeVisible({ timeout: 15000 });
     const checked = page.waitForResponse(
       (response) =>
         response.url().includes(`/api/notebooks/${notebook.id}/visualizations/check`) &&
@@ -1478,6 +1628,7 @@ test.describe("app notebooks live", () => {
       [
         "version: 1",
         "type: bar",
+        "palette: ocean",
         "title: Monthly revenue",
         "encoding:",
         "  x:",
@@ -1494,11 +1645,19 @@ test.describe("app notebooks live", () => {
         response.ok(),
       { timeout: 15000 },
     );
-    const applyButton = visualizationCard.getByRole("button", { name: "Apply visualization" });
+    const applyButton = visualizationInspector.getByRole("button", {
+      name: "Apply visualization",
+    });
     await expect(applyButton).toBeEnabled({ timeout: 15000 });
     await applyButton.click();
     await applySeen;
+    await visualizationInspector.getByRole("button", { name: "Close inspector" }).click();
     await expect(visualizationCard.getByText("Monthly revenue", { exact: true })).toBeVisible();
+    await visualizationCard
+      .getByRole("button", { name: "Edit visualization Monthly revenue" })
+      .click();
+    await expect(visualizationInspector).toBeVisible();
+    await visualizationInspector.getByRole("button", { name: "Close inspector" }).click();
 
     const afterViz = (await (
       await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`)
@@ -1507,6 +1666,7 @@ test.describe("app notebooks live", () => {
       (block) => block.id === visualization.id,
     );
     expect(savedVisualization?.visualization?.definition.type).toBe("bar");
+    expect(savedVisualization?.visualization?.definition.palette).toBe("ocean");
 
     // Rename base → revenue and confirm the chart cell's reference updated.
     const renamed = await page.request.post(
@@ -1524,6 +1684,73 @@ test.describe("app notebooks live", () => {
     expect(chartFinal.content).toContain("from revenue");
     expect(chartFinal.content).not.toContain("@viz");
     expect(final.notebook.cells.find((cell) => cell.cell_id === baseCell)!.name).toBe("revenue");
+  });
+
+  test("drags a typed control between notebook blocks and inserts text at the same gap", async ({
+    liveApp,
+    page,
+  }) => {
+    test.skip(
+      test.info().project.name.includes("mobile"),
+      "Desktop drag and drop keeps the Add rail and notebook insertion target visible together.",
+    );
+    const notebook = await createNotebook(page.request, liveApp.baseURL, "Ordered Controls");
+    const firstCell = notebook.cells[0].cell_id;
+    const secondCell = await addCell(page.request, liveApp.baseURL, notebook.id, "second");
+
+    await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
+    await openNotebookToolsTab(page, "Add");
+    const insertion = page.locator(`[data-notebook-insertion-point="after:${firstCell}"]`);
+    await expect(insertion).toBeVisible();
+    const controlApply = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/notebooks/${notebook.id}/changes/apply`) && response.ok(),
+    );
+    await page.getByRole("button", { name: "Slider", exact: true }).dragTo(insertion);
+    await controlApply;
+
+    const afterControl = (await (
+      await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`)
+    ).json()) as NotebookEnvelope;
+    const control = afterControl.notebook.blocks?.find((block) => block.control);
+    expect(control?.control).toBeTruthy();
+    expect(
+      afterControl.notebook.parameters?.find((parameter) => parameter.id === control?.control),
+    ).toMatchObject({ type: "slider", default: 50, min: 0, max: 100, step: 1 });
+    expect(afterControl.notebook.blocks?.map((block) => block.cell || block.control)).toEqual([
+      firstCell,
+      control?.control,
+      secondCell,
+    ]);
+    await expect(page.getByTestId("notebook-control-inspector")).toBeVisible();
+
+    const afterControlInsertion = page.locator(
+      `[data-notebook-insertion-point="after:control:${control?.control}"]`,
+    );
+    await afterControlInsertion.getByRole("button", { name: "Insert notebook block here" }).click();
+    const textApply = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/notebooks/${notebook.id}/changes/apply`) && response.ok(),
+    );
+    await page.getByRole("menuitem", { name: "Text", exact: true }).click();
+    await textApply;
+
+    const afterText = (await (
+      await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`)
+    ).json()) as NotebookEnvelope;
+    expect(
+      afterText.notebook.blocks?.map((block) => block.cell || block.control || block.markdown),
+    ).toEqual([firstCell, control?.control, "## Notes", secondCell]);
+
+    const deleteControl = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/notebooks/${notebook.id}/changes/apply`) && response.ok(),
+    );
+    const controlCell = page.locator(`[data-notebook-control-id="${control?.control}"]`);
+    await controlCell.hover();
+    await controlCell.getByRole("button", { name: /Delete control/ }).click();
+    await deleteControl;
+    await expect(controlCell).toHaveCount(0);
   });
 
   test("promote a cell into a pipeline asset and rewrite remaining references", async ({

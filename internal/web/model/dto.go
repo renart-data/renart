@@ -327,15 +327,20 @@ type NotebookParameter struct {
 	Label   string                    `json:"label,omitempty"`
 	Type    string                    `json:"type"`
 	Default any                       `json:"default"`
+	Min     *float64                  `json:"min,omitempty"`
+	Max     *float64                  `json:"max,omitempty"`
+	Step    *float64                  `json:"step,omitempty"`
 	Options *NotebookParameterOptions `json:"options,omitempty"`
 }
 
 // NotebookBlock is one ordered entry of a notebook: a cell reference,
-// identity-bearing markdown prose, or a structured visualization.
+// identity-bearing markdown prose, a parameter-backed control, or a structured
+// visualization.
 type NotebookBlock struct {
 	ID            string                 `json:"id,omitempty"`
 	Cell          string                 `json:"cell,omitempty"`
 	Markdown      string                 `json:"markdown,omitempty"`
+	Control       string                 `json:"control,omitempty"`
 	Visualization *NotebookVisualization `json:"visualization,omitempty"`
 }
 

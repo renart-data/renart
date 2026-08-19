@@ -23,6 +23,7 @@ const (
 	ParameterTypeDate        ParameterType = "date"
 	ParameterTypeDateRange   ParameterType = "date_range"
 	ParameterTypeNumber      ParameterType = "number"
+	ParameterTypeSlider      ParameterType = "slider"
 	ParameterTypeText        ParameterType = "text"
 	ParameterTypeBoolean     ParameterType = "boolean"
 )
@@ -45,6 +46,9 @@ type ParameterDefinition struct {
 	Label   string            `yaml:"label,omitempty" json:"label,omitempty"`
 	Type    ParameterType     `yaml:"type" json:"type"`
 	Default any               `yaml:"default" json:"default"`
+	Min     *float64          `yaml:"min,omitempty" json:"min,omitempty"`
+	Max     *float64          `yaml:"max,omitempty" json:"max,omitempty"`
+	Step    *float64          `yaml:"step,omitempty" json:"step,omitempty"`
 	Options *ParameterOptions `yaml:"options,omitempty" json:"options,omitempty"`
 }
 
@@ -65,7 +69,8 @@ var parameterIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 var supportedParameterTypes = map[ParameterType]bool{
 	ParameterTypeSelect: true, ParameterTypeMultiSelect: true,
 	ParameterTypeDate: true, ParameterTypeDateRange: true,
-	ParameterTypeNumber: true, ParameterTypeText: true, ParameterTypeBoolean: true,
+	ParameterTypeNumber: true, ParameterTypeSlider: true,
+	ParameterTypeText: true, ParameterTypeBoolean: true,
 }
 
 // CheckParameterDefinitions validates authored identity, type/defaults, and
@@ -94,7 +99,7 @@ func CheckParameterDefinitions(definitions []ParameterDefinition) []Finding {
 		if !supportedParameterTypes[parameterType] {
 			findings = append(findings, Finding{
 				Code: "parameter-type-unsupported", Severity: "error", Path: path + ".type",
-				Message: "Parameter type must be select, multi_select, date, date_range, number, text, or boolean.",
+				Message: "Parameter type must be select, multi_select, date, date_range, number, slider, text, or boolean.",
 			})
 			continue
 		}
@@ -103,10 +108,56 @@ func CheckParameterDefinitions(definitions []ParameterDefinition) []Finding {
 				Code: "parameter-default-invalid", Severity: "error", Path: path + ".default", Message: message,
 			})
 		}
+		findings = append(findings, checkParameterRange(definition, parameterType, path)...)
 		findings = append(findings, checkParameterOptions(definition, parameterType, path)...)
 	}
 	sortFindings(findings)
 	return findings
+}
+
+func checkParameterRange(definition ParameterDefinition, parameterType ParameterType, path string) []Finding {
+	if parameterType != ParameterTypeSlider {
+		return nil
+	}
+	findings := make([]Finding, 0)
+	min, max, _, problem := sliderBounds(definition)
+	if problem != "" {
+		findings = append(findings, Finding{
+			Code: "parameter-slider-range-invalid", Severity: "error", Path: path,
+			Message: problem,
+		})
+		return findings
+	}
+	if value, ok := finiteNumberValue(definition.Default); ok && (value < min || value > max) {
+		findings = append(findings, Finding{
+			Code: "parameter-slider-default-out-of-range", Severity: "error", Path: path + ".default",
+			Message: fmt.Sprintf("The slider default must be between %v and %v.", min, max),
+		})
+	}
+	return findings
+}
+
+func sliderBounds(definition ParameterDefinition) (float64, float64, float64, string) {
+	min, max, step := 0.0, 100.0, 1.0
+	if definition.Min != nil {
+		min = *definition.Min
+	}
+	if definition.Max != nil {
+		max = *definition.Max
+	}
+	if definition.Step != nil {
+		step = *definition.Step
+	}
+	if math.IsNaN(min) || math.IsInf(min, 0) || math.IsNaN(max) || math.IsInf(max, 0) {
+		return 0, 0, 0, "Slider minimum and maximum must be finite numbers."
+	}
+	if max <= min {
+		return 0, 0, 0, "Slider maximum must be greater than its minimum."
+	}
+	if math.IsNaN(step) || math.IsInf(step, 0) || step <= 0 {
+		return 0, 0, 0, "Slider step must be a positive finite number."
+	}
+	return min, max, step, ""
 }
 
 func checkParameterOptions(definition ParameterDefinition, parameterType ParameterType, path string) []Finding {
@@ -199,6 +250,17 @@ func ResolveParameterValues(definitions []ParameterDefinition, overrides map[str
 				Code: "parameter-value-invalid", Severity: "error", Path: "parameter_values." + id, Message: message,
 			})
 			continue
+		}
+		if parameterType == ParameterTypeSlider {
+			min, max, _, problem := sliderBounds(definition)
+			numeric, _ := finiteNumberValue(value)
+			if problem == "" && (numeric < min || numeric > max) {
+				findings = append(findings, Finding{
+					Code: "parameter-value-out-of-range", Severity: "error", Path: "parameter_values." + id,
+					Message: fmt.Sprintf("Runtime value for %q must be between %v and %v.", id, min, max),
+				})
+				continue
+			}
 		}
 		if definition.Options != nil && len(definition.Options.Values) > 0 && !valueAllowed(parameterType, value, definition.Options.Values) {
 			findings = append(findings, Finding{
@@ -321,6 +383,7 @@ func filterOperatorAllowed(parameterType ParameterType, operator string) bool {
 		ParameterTypeDate:        {"equals": true, "before": true, "after": true, "on_or_before": true, "on_or_after": true},
 		ParameterTypeDateRange:   {"between": true},
 		ParameterTypeNumber:      {"equals": true, "not_equals": true, "lt": true, "lte": true, "gt": true, "gte": true},
+		ParameterTypeSlider:      {"equals": true, "not_equals": true, "lt": true, "lte": true, "gt": true, "gte": true},
 		ParameterTypeText:        {"equals": true, "not_equals": true, "contains": true, "starts_with": true},
 		ParameterTypeBoolean:     {"equals": true},
 	}
@@ -334,7 +397,7 @@ func filterColumnCompatible(parameterType ParameterType, semantic SemanticType) 
 	switch parameterType {
 	case ParameterTypeDate, ParameterTypeDateRange:
 		return semantic == SemanticTemporal
-	case ParameterTypeNumber:
+	case ParameterTypeNumber, ParameterTypeSlider:
 		return semantic == SemanticNumeric
 	case ParameterTypeBoolean:
 		return semantic == SemanticBoolean
@@ -382,7 +445,7 @@ func parameterValueProblem(parameterType ParameterType, value any) string {
 		if start > end {
 			return "A date_range start cannot be after its end."
 		}
-	case ParameterTypeNumber:
+	case ParameterTypeNumber, ParameterTypeSlider:
 		if !isFiniteNumber(value) {
 			return "A number value must be a finite JSON number."
 		}
@@ -432,18 +495,41 @@ func valueSlice(value any) ([]any, bool) {
 }
 
 func isFiniteNumber(value any) bool {
+	_, ok := finiteNumberValue(value)
+	return ok
+}
+
+func finiteNumberValue(value any) (float64, bool) {
 	switch typed := value.(type) {
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return true
+	case int:
+		return float64(typed), true
+	case int8:
+		return float64(typed), true
+	case int16:
+		return float64(typed), true
+	case int32:
+		return float64(typed), true
+	case int64:
+		return float64(typed), true
+	case uint:
+		return float64(typed), true
+	case uint8:
+		return float64(typed), true
+	case uint16:
+		return float64(typed), true
+	case uint32:
+		return float64(typed), true
+	case uint64:
+		return float64(typed), true
 	case json.Number:
 		parsed, err := typed.Float64()
-		return err == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0)
+		return parsed, err == nil && !math.IsNaN(parsed) && !math.IsInf(parsed, 0)
 	case float32:
-		return !float32IsInvalid(typed)
+		return float64(typed), !float32IsInvalid(typed)
 	case float64:
-		return !math.IsNaN(typed) && !math.IsInf(typed, 0)
+		return typed, !math.IsNaN(typed) && !math.IsInf(typed, 0)
 	default:
-		return false
+		return 0, false
 	}
 }
 
@@ -527,7 +613,7 @@ func parameterSQLLiteral(parameterType ParameterType, value any) (string, error)
 	case ParameterTypeDateRange:
 		values, _ := valueSlice(value)
 		return "CAST(" + quoteSQLString(values[0].(string)) + " AS DATE) AND CAST(" + quoteSQLString(values[1].(string)) + " AS DATE)", nil
-	case ParameterTypeNumber:
+	case ParameterTypeNumber, ParameterTypeSlider:
 		return fmt.Sprint(value), nil
 	case ParameterTypeBoolean:
 		if value.(bool) {

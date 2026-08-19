@@ -40,7 +40,7 @@ func AppendPresentationTypeChecks(
 		if loadErr != nil || !presentationConsumesPipeline(*artifact, target) {
 			continue
 		}
-		datasetSchemas, resolutionFindings := resolvePresentationDatasetSchemas(state, artifact)
+		datasetSchemas, resolutionFindings := resolvePresentationDatasetSchemas(ctx, workspaceRoot, state, artifact)
 		findings := append(
 			(presentation.Checker{}).CheckArtifact(
 				ctx,

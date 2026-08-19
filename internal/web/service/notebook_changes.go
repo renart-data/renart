@@ -31,6 +31,9 @@ const (
 	NotebookOperationVisualizationUpdate  = "visualization.update"
 	NotebookOperationVisualizationMigrate = "visualization.migrate_legacy"
 	NotebookOperationParametersReplace    = "parameters.replace"
+	NotebookOperationControlCreate        = "control.create"
+	NotebookOperationControlUpdate        = "control.update"
+	NotebookOperationControlDelete        = "control.delete"
 	NotebookOperationBlockMove            = "block.move"
 	NotebookOperationBlockDelete          = "block.delete"
 )
@@ -51,6 +54,7 @@ type NotebookOperation struct {
 	Kind          string                          `json:"kind"`
 	CellID        string                          `json:"cell_id,omitempty"`
 	BlockID       string                          `json:"block_id,omitempty"`
+	ControlID     string                          `json:"control_id,omitempty"`
 	Name          string                          `json:"name,omitempty"`
 	Language      string                          `json:"language,omitempty"`
 	Connection    string                          `json:"connection,omitempty"`
@@ -60,6 +64,7 @@ type NotebookOperation struct {
 	Content       string                          `json:"content,omitempty"`
 	Visualization *model.NotebookVisualization    `json:"visualization,omitempty"`
 	Source        *model.NotebookSourceDefinition `json:"source,omitempty"`
+	Parameter     *model.NotebookParameter        `json:"parameter,omitempty"`
 	Parameters    []model.NotebookParameter       `json:"parameters,omitempty"`
 	Position      string                          `json:"position,omitempty"`
 	AfterBlockID  string                          `json:"after_block_id,omitempty"`
@@ -192,7 +197,8 @@ func (s *NotebookService) ApplyChangeSet(notebookID string, changeSet NotebookCh
 		case NotebookOperationCellCreate, NotebookOperationCellUpdate, NotebookOperationCellSourceConfigure,
 			NotebookOperationSourceCreate, NotebookOperationSourceUpdate:
 			s.onCellChanged(notebookID, updatedNotebook, operation.CellID)
-		case NotebookOperationParametersReplace:
+		case NotebookOperationParametersReplace, NotebookOperationControlCreate,
+			NotebookOperationControlUpdate, NotebookOperationControlDelete:
 			s.onNotebookParametersChanged(notebookID, updatedNotebook)
 		case NotebookOperationCellDelete:
 			_ = s.store.DropCellObjects(updatedNotebook.UUID, operation.CellID)
@@ -328,6 +334,10 @@ func cloneNotebookOperations(operations []NotebookOperation) []NotebookOperation
 			visualization := *result[index].Visualization
 			visualization.Definition = cloneStringAnyMap(visualization.Definition)
 			result[index].Visualization = &visualization
+		}
+		if result[index].Parameter != nil {
+			parameter := cloneNotebookParameters([]model.NotebookParameter{*result[index].Parameter})[0]
+			result[index].Parameter = &parameter
 		}
 		result[index].Parameters = cloneNotebookParameters(result[index].Parameters)
 	}
@@ -593,26 +603,116 @@ func (s *NotebookService) applyDraftOperation(nb *notebook.Notebook, operation *
 		}
 		definitions := make([]presentation.ParameterDefinition, 0, len(operation.Parameters))
 		for _, parameter := range operation.Parameters {
-			definition := presentation.ParameterDefinition{
-				ID: strings.TrimSpace(parameter.ID), Label: strings.TrimSpace(parameter.Label),
-				Type:    presentation.ParameterType(strings.ToLower(strings.TrimSpace(parameter.Type))),
-				Default: cloneJSONValue(parameter.Default),
-			}
-			if parameter.Options != nil {
-				definition.Options = &presentation.ParameterOptions{
-					Values:     cloneJSONValues(parameter.Options.Values),
-					Dataset:    strings.TrimSpace(parameter.Options.Dataset),
-					ValueField: strings.TrimSpace(parameter.Options.ValueField),
-					LabelField: strings.TrimSpace(parameter.Options.LabelField),
-				}
-			}
-			definitions = append(definitions, definition)
+			definitions = append(definitions, notebookParameterDefinition(parameter))
 		}
 		if findings := presentation.CheckParameterDefinitions(definitions); len(findings) > 0 {
 			return badRequestError("invalid_notebook_parameters", findings[0].Message)
 		}
 		nb.Parameters = definitions
+		knownParameters := make(map[string]bool, len(definitions))
+		for _, definition := range definitions {
+			knownParameters[definition.ID] = true
+		}
+		blocks := make([]notebook.Block, 0, len(nb.Blocks))
+		for _, block := range nb.Blocks {
+			if block.Control == "" || knownParameters[block.Control] {
+				blocks = append(blocks, block)
+			}
+		}
+		nb.Blocks = blocks
 		operation.Parameters = notebookParametersToModel(definitions)
+		if err := notebook.SaveManifest(afero.NewOsFs(), nb); err != nil {
+			return internalError("notebook_change_stage_failed", err.Error())
+		}
+		return nil
+
+	case NotebookOperationControlCreate:
+		if nb.Version < notebook.ManifestVersionCurrent {
+			return notebookUpgradeRequiredError()
+		}
+		if operation.Parameter == nil {
+			return badRequestError("invalid_notebook_control", "a control parameter definition is required")
+		}
+		if len(nb.Parameters) >= 64 {
+			return badRequestError("too_many_notebook_parameters", "a notebook may declare at most 64 parameters")
+		}
+		definition := notebookParameterDefinition(*operation.Parameter)
+		definitions := append(append([]presentation.ParameterDefinition(nil), nb.Parameters...), definition)
+		if findings := presentation.CheckParameterDefinitions(definitions); len(findings) > 0 {
+			return badRequestError("invalid_notebook_control", findings[0].Message)
+		}
+		nb.Parameters = definitions
+		parameter := notebookParametersToModel([]presentation.ParameterDefinition{definition})[0]
+		operation.Parameter = &parameter
+		operation.ControlID = definition.ID
+		var err error
+		nb.Blocks, err = insertNotebookBlock(nb.Blocks, notebook.Block{Control: definition.ID}, operation.Position, operation.AfterBlockID)
+		if err != nil {
+			return badRequestError("invalid_block_position", err.Error())
+		}
+		if err := notebook.SaveManifest(afero.NewOsFs(), nb); err != nil {
+			return internalError("notebook_change_stage_failed", err.Error())
+		}
+		return nil
+
+	case NotebookOperationControlUpdate:
+		controlID := strings.TrimSpace(operation.ControlID)
+		if operation.Parameter == nil {
+			return badRequestError("invalid_notebook_control", "a control parameter definition is required")
+		}
+		parameterIndex := -1
+		for index, parameter := range nb.Parameters {
+			if parameter.ID == controlID {
+				parameterIndex = index
+				break
+			}
+		}
+		if parameterIndex < 0 {
+			return badRequestError("notebook_control_not_found", fmt.Sprintf("control %q was not found", operation.ControlID))
+		}
+		definition := notebookParameterDefinition(*operation.Parameter)
+		definitions := append([]presentation.ParameterDefinition(nil), nb.Parameters...)
+		definitions[parameterIndex] = definition
+		if findings := presentation.CheckParameterDefinitions(definitions); len(findings) > 0 {
+			return badRequestError("invalid_notebook_control", findings[0].Message)
+		}
+		nb.Parameters = definitions
+		for index := range nb.Blocks {
+			if nb.Blocks[index].Control == controlID {
+				nb.Blocks[index].Control = definition.ID
+			}
+		}
+		operation.ControlID = controlID
+		parameter := notebookParametersToModel([]presentation.ParameterDefinition{definition})[0]
+		operation.Parameter = &parameter
+		if err := notebook.SaveManifest(afero.NewOsFs(), nb); err != nil {
+			return internalError("notebook_change_stage_failed", err.Error())
+		}
+		return nil
+
+	case NotebookOperationControlDelete:
+		controlID := strings.TrimSpace(operation.ControlID)
+		found := false
+		parameters := make([]presentation.ParameterDefinition, 0, len(nb.Parameters))
+		for _, parameter := range nb.Parameters {
+			if parameter.ID == controlID {
+				found = true
+				continue
+			}
+			parameters = append(parameters, parameter)
+		}
+		if !found {
+			return badRequestError("notebook_control_not_found", fmt.Sprintf("control %q was not found", operation.ControlID))
+		}
+		nb.Parameters = parameters
+		blocks := make([]notebook.Block, 0, len(nb.Blocks)-1)
+		for _, block := range nb.Blocks {
+			if block.Control != controlID {
+				blocks = append(blocks, block)
+			}
+		}
+		nb.Blocks = blocks
+		operation.ControlID = controlID
 		if err := notebook.SaveManifest(afero.NewOsFs(), nb); err != nil {
 			return internalError("notebook_change_stage_failed", err.Error())
 		}
@@ -648,6 +748,9 @@ func (s *NotebookService) applyDraftOperation(nb *notebook.Notebook, operation *
 		if block.Cell != "" {
 			return badRequestError("cell_delete_required", "delete a cell with cell.delete so its file and runtime object are removed too")
 		}
+		if block.Control != "" {
+			return badRequestError("control_delete_required", "delete a control with control.delete so its parameter definition is removed too")
+		}
 		operation.BlockID = block.StableID()
 		next := make([]notebook.Block, 0, len(nb.Blocks)-1)
 		for _, candidate := range nb.Blocks {
@@ -670,7 +773,7 @@ func notebookParametersToModel(definitions []presentation.ParameterDefinition) [
 	for _, definition := range definitions {
 		parameter := model.NotebookParameter{
 			ID: definition.ID, Label: definition.Label, Type: string(definition.Type),
-			Default: cloneJSONValue(definition.Default),
+			Default: cloneJSONValue(definition.Default), Min: definition.Min, Max: definition.Max, Step: definition.Step,
 		}
 		if definition.Options != nil {
 			parameter.Options = &model.NotebookParameterOptions{
@@ -681,6 +784,24 @@ func notebookParametersToModel(definitions []presentation.ParameterDefinition) [
 		result = append(result, parameter)
 	}
 	return result
+}
+
+func notebookParameterDefinition(parameter model.NotebookParameter) presentation.ParameterDefinition {
+	definition := presentation.ParameterDefinition{
+		ID: strings.TrimSpace(parameter.ID), Label: strings.TrimSpace(parameter.Label),
+		Type:    presentation.ParameterType(strings.ToLower(strings.TrimSpace(parameter.Type))),
+		Default: cloneJSONValue(parameter.Default),
+		Min:     parameter.Min, Max: parameter.Max, Step: parameter.Step,
+	}
+	if parameter.Options != nil {
+		definition.Options = &presentation.ParameterOptions{
+			Values:     cloneJSONValues(parameter.Options.Values),
+			Dataset:    strings.TrimSpace(parameter.Options.Dataset),
+			ValueField: strings.TrimSpace(parameter.Options.ValueField),
+			LabelField: strings.TrimSpace(parameter.Options.LabelField),
+		}
+	}
+	return definition
 }
 
 func cloneNotebookParameters(parameters []model.NotebookParameter) []model.NotebookParameter {

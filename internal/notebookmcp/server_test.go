@@ -130,9 +130,14 @@ func fixtureBackend() *fakeBackend {
 	}
 	nb := model.Notebook{
 		ID: "notebook_opaque", UUID: "nb_uuid", Title: "Revenue", ManifestVersion: 2, Revision: "rev1",
+		Parameters: []model.NotebookParameter{{
+			ID: "region", Label: "Region", Type: "select", Default: "eu",
+			Options: &model.NotebookParameterOptions{Values: []any{"eu", "us"}},
+		}},
 		Blocks: []model.NotebookBlock{
 			{Cell: "cell_source"}, {Cell: "cell_sql"}, {Cell: "cell_python"},
 			{ID: "viz_sales", Visualization: &model.NotebookVisualization{ID: "viz_sales", Source: "cell_sql", Definition: map[string]any{"version": 1, "type": "line"}}},
+			{Control: "region"},
 			{ID: "block_notes", Markdown: "## Notes"},
 		},
 		Cells: []model.Asset{source, sql, python},
@@ -213,7 +218,7 @@ func TestNativeAgentPolicyScopesNotebookAndCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(listed.Tools), 8; got != want {
+	if got, want := len(listed.Tools), 9; got != want {
 		t.Fatalf("read-only tool count = %d, want %d", got, want)
 	}
 	for _, tool := range listed.Tools {
@@ -285,7 +290,7 @@ func TestProtocolSurfaceIsBoundedAndAnnotated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := len(listed.Tools), 15; got != want {
+	if got, want := len(listed.Tools), 16; got != want {
 		t.Fatalf("tool count = %d, want %d", got, want)
 	}
 	for _, tool := range listed.Tools {
@@ -306,6 +311,36 @@ func TestProtocolSurfaceIsBoundedAndAnnotated(t *testing.T) {
 	run := findTool(t, listed.Tools, "run_notebook_cells")
 	if run.Annotations.OpenWorldHint == nil || !*run.Annotations.OpenWorldHint {
 		t.Fatalf("run annotations do not identify external/code execution: %+v", run.Annotations)
+	}
+	prepare := findTool(t, listed.Tools, "prepare_notebook_change_set")
+	encodedSchema, err := json.Marshal(prepare.InputSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`"enum"`, service.NotebookOperationCellUpdate,
+		service.NotebookOperationVisualizationCreate,
+		service.NotebookOperationControlCreate,
+		`never guess or probe operation names`,
+		`versioned visualization object`,
+		`"encoding"`,
+		`"y"`,
+		`encoding.y and encoding.tooltip are arrays`,
+		`"table","kpi","bar","line","area","scatter","pie","donut"`,
+		`typed control definition`,
+	} {
+		if !strings.Contains(string(encodedSchema), required) {
+			t.Fatalf("prepare schema does not teach agents %q: %s", required, encodedSchema)
+		}
+	}
+	for _, required := range []string{
+		`not Vega`,
+		`encoding is singular`,
+		`encoding.y is an array`,
+	} {
+		if !strings.Contains(prepare.Description, required) {
+			t.Fatalf("prepare description does not teach agents %q: %s", required, prepare.Description)
+		}
 	}
 }
 
@@ -340,6 +375,34 @@ func TestReadToolsRedactSourcesAndBoundSamples(t *testing.T) {
 	if block.Source == nil || block.Source.RequestURL != "https://example.test/data" {
 		t.Fatalf("unexpected safe source definition: %+v", block.Source)
 	}
+	outline := callTool[NotebookOutlineOutput](t, fixture.client, "get_notebook_outline", map[string]any{
+		"notebook_id": "notebook_opaque",
+	})
+	if outline.Notebook.ParameterCount != 1 || len(outline.Blocks) != 6 ||
+		outline.Blocks[4].ID != "control:region" || outline.Blocks[4].Kind != "control" || outline.Blocks[4].Name != "Region" {
+		t.Fatalf("outline did not preserve the ordered control: %+v", outline)
+	}
+	control := callTool[NotebookBlockOutput](t, fixture.client, "get_notebook_block", map[string]any{
+		"notebook_id": "notebook_opaque", "block_id": "control:region",
+	})
+	if control.Kind != "control" || control.Parameter == nil || control.Parameter.ID != "region" {
+		t.Fatalf("unexpected control block: %+v", control)
+	}
+	graph := callTool[NotebookGraphOutput](t, fixture.client, "get_notebook_graph", map[string]any{
+		"notebook_id": "notebook_opaque",
+	})
+	if len(graph.Nodes) != 6 {
+		t.Fatalf("graph duplicated ordered cell references: %+v", graph.Nodes)
+	}
+	foundControl := false
+	for _, node := range graph.Nodes {
+		if node.ID == "control:region" && node.Kind == "control" {
+			foundControl = true
+		}
+	}
+	if !foundControl {
+		t.Fatalf("graph omitted the ordered control: %+v", graph.Nodes)
+	}
 	sample := callTool[NotebookResultSampleOutput](t, fixture.client, "get_notebook_result_sample", map[string]any{
 		"notebook_id": "notebook_opaque", "cell_id": "cell_sql", "limit": 500,
 	})
@@ -353,6 +416,51 @@ func TestReadToolsRedactSourcesAndBoundSamples(t *testing.T) {
 	sources := callTool[ListNotebookSourcesOutput](t, fixture.client, "list_notebook_sources", map[string]any{"notebook_id": "notebook_opaque"})
 	if len(sources.Sources) != 1 || sources.Sources[0].Snapshot == nil || !sources.Sources[0].Snapshot.Sampled {
 		t.Fatalf("unexpected sources: %+v", sources.Sources)
+	}
+}
+
+func TestCatalogSearchFindsTypedPipelineSourcesWithoutLeakingPaths(t *testing.T) {
+	backend := fixtureBackend()
+	columns := []model.Column{{Name: "order_id", Type: "BIGINT"}, {Name: "customer_name", Type: "VARCHAR"}}
+	for index := 0; index < maxCatalogColumns+8; index++ {
+		columns = append(columns, model.Column{Name: fmt.Sprintf("extra_%02d", index), Type: "INTEGER"})
+	}
+	asset := model.Asset{
+		ID: "asset_orders", Name: "analytics.orders", URI: "renart://secret/catalog/orders",
+		Type: "pg.sql", Path: "/secret/workspace/orders.sql", Connection: "postgres-other",
+		Columns: columns,
+	}
+	backend.workspace.Pipelines = []model.Pipeline{{
+		ID: "pipeline_opaque", UUID: "pipeline_uuid", Name: "Warehouse", Assets: []model.Asset{asset},
+	}}
+	backend.workspace.QueryConnections = []model.WorkspaceQueryConnection{{
+		Name: "postgres-other", ConnectionType: "postgres", AssetType: "pg.sql", Dialect: "postgres",
+	}}
+	backend.workspace.ArtifactIndex = service.BuildArtifactIndex(backend.workspace)
+
+	fixture := connectTestServer(t, backend)
+	defer fixture.close()
+	output := callTool[CatalogSearchOutput](t, fixture.client, "search_workspace_catalog", map[string]any{
+		"query": "customer_name", "kinds": []string{"pipeline_asset"}, "limit": 50,
+	})
+	if len(output.Matches) != 1 {
+		t.Fatalf("catalog matches = %+v", output.Matches)
+	}
+	match := output.Matches[0]
+	if !match.DataSourceEligible || match.Relation != "analytics.orders" || match.ConnectionType != "postgres" {
+		t.Fatalf("unexpected catalog match: %+v", match)
+	}
+	if match.SuggestedSource == nil || !match.SuggestedSource.ApprovalRequired || match.SuggestedSource.SnapshotMode != "sample" {
+		t.Fatalf("unexpected source recipe: %+v", match.SuggestedSource)
+	}
+	if match.ColumnCount != len(columns) || len(match.Columns) != maxCatalogColumns {
+		t.Fatalf("catalog columns were not bounded: count=%d returned=%d", match.ColumnCount, len(match.Columns))
+	}
+	encoded, _ := json.Marshal(output)
+	for _, hidden := range []string{"/secret/workspace", "renart://secret"} {
+		if strings.Contains(string(encoded), hidden) {
+			t.Fatalf("catalog output leaked %q: %s", hidden, encoded)
+		}
 	}
 }
 
@@ -394,9 +502,58 @@ func TestMCPRejectsDeleteAndSourceUpdateOperations(t *testing.T) {
 			"notebook_id": "notebook_opaque", "base_revision": "rev1",
 			"operations": []map[string]any{{"kind": kind, "cell_id": "cell_sql"}},
 		})
-		if !strings.Contains(message, "not available through MCP") {
+		if !strings.Contains(message, "does not equal any of") {
 			t.Fatalf("unexpected rejection for %s: %s", kind, message)
 		}
+		if !strings.Contains(message, service.NotebookOperationVisualizationCreate) {
+			t.Fatalf("rejection does not return the valid operation kinds: %s", message)
+		}
+	}
+}
+
+func TestMCPVisualizationSchemaRejectsVegaShapedEncoding(t *testing.T) {
+	fixture := connectTestServer(t, fixtureBackend())
+	defer fixture.close()
+	message := callToolError(t, fixture.client, "prepare_notebook_change_set", map[string]any{
+		"notebook_id": "notebook_opaque", "base_revision": "rev1",
+		"operations": []map[string]any{{
+			"kind": service.NotebookOperationVisualizationCreate,
+			"visualization": map[string]any{
+				"source": "cell_sql",
+				"definition": map[string]any{
+					"version": 1,
+					"type":    "line",
+					"encoding": map[string]any{
+						"x": map[string]any{"field": "created_at"},
+						"y": map[string]any{"field": "revenue"},
+					},
+				},
+			},
+		}},
+	})
+	if !strings.Contains(strings.ToLower(message), "array") {
+		t.Fatalf("unexpected visualization schema error: %s", message)
+	}
+}
+
+func TestMCPVisualizationSchemaRejectsUnknownChartType(t *testing.T) {
+	fixture := connectTestServer(t, fixtureBackend())
+	defer fixture.close()
+	message := callToolError(t, fixture.client, "prepare_notebook_change_set", map[string]any{
+		"notebook_id": "notebook_opaque", "base_revision": "rev1",
+		"operations": []map[string]any{{
+			"kind": service.NotebookOperationVisualizationCreate,
+			"visualization": map[string]any{
+				"source": "cell_sql",
+				"definition": map[string]any{
+					"version": 1,
+					"type":    "point",
+				},
+			},
+		}},
+	})
+	if !strings.Contains(message, `does not equal any of`) || !strings.Contains(message, `scatter`) {
+		t.Fatalf("unexpected visualization type error: %s", message)
 	}
 }
 
@@ -426,6 +583,48 @@ func TestRunRequiresPythonApprovalAndReturnsAsyncStatus(t *testing.T) {
 			t.Fatalf("run did not finish: %+v", status)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestNativeAgentRunRequiresUserApprovalForNewRemoteSources(t *testing.T) {
+	backend := fixtureBackend()
+	remote := model.Asset{
+		CellID: "cell_remote", Name: "warehouse_orders", Type: "pg.sql",
+		Connection: "postgres-other", Content: "select * from analytics.orders",
+	}
+	backend.notebook.Cells = append(backend.notebook.Cells, remote)
+	backend.notebook.Blocks = append(backend.notebook.Blocks, model.NotebookBlock{Cell: remote.CellID})
+	backend.workspace.Notebooks = []model.Notebook{backend.notebook}
+	fixture := connectTestServerWithPolicy(t, backend, Policy{
+		NotebookID: "notebook_opaque", RequireSourceApproval: true,
+	})
+	defer fixture.close()
+
+	message := callToolError(t, fixture.client, "run_notebook_cells", map[string]any{
+		"notebook_id": "notebook_opaque", "cells": []string{remote.CellID},
+	})
+	if !strings.Contains(message, "requires user approval") || !strings.Contains(message, "postgres-other") {
+		t.Fatalf("unexpected source approval error: %s", message)
+	}
+
+	backend.mu.Lock()
+	backend.runtime.Results[remote.CellID] = notebook.CellRunResult{
+		CellID: remote.CellID, Name: remote.Name, Status: notebook.CellRunOK,
+		Snapshot: &notebook.SnapshotRecord{BlockID: remote.CellID, Connection: remote.Connection, Complete: true},
+	}
+	backend.mu.Unlock()
+	accepted := callTool[RunAcceptedOutput](t, fixture.client, "run_notebook_cells", map[string]any{
+		"notebook_id": "notebook_opaque", "cells": []string{remote.CellID},
+	})
+	if accepted.RunID == "" {
+		t.Fatal("approved cached source did not start")
+	}
+
+	message = callToolError(t, fixture.client, "run_notebook_cells", map[string]any{
+		"notebook_id": "notebook_opaque", "cells": []string{remote.CellID}, "refresh_sources": true,
+	})
+	if !strings.Contains(message, "explicit refresh") {
+		t.Fatalf("unexpected refresh approval error: %s", message)
 	}
 }
 

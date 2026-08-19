@@ -187,3 +187,100 @@ sections:
 		t.Fatalf("unsafe query was not rejected safely: executed=%v result=%+v", executed, result)
 	}
 }
+
+func TestPresentationPreviewRunsUnsavedDraftWithoutWritingOrPublishing(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "dashboards", "preview.dashboard.yml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	saved := `version: 1
+id: preview
+title: Preview
+datasets:
+  data:
+    connection: warehouse
+    query: SELECT 1 AS saved_value
+    columns:
+      - name: draft_value
+        type: bigint
+visualizations:
+  - id: metric
+    dataset: data
+    definition:
+      version: 1
+      type: kpi
+      value: {field: draft_value}
+layout:
+  - visualization: metric
+    width: 6
+    height: 4
+`
+	if err := os.WriteFile(path, []byte(saved), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	executed := make([]string, 0, 1)
+	published := 0
+	service := NewPresentationService(PresentationDependencies{
+		WorkspaceRoot: root,
+		CurrentState:  func() model.WorkspaceState { return model.WorkspaceState{} },
+		NewConnectionManager: func(context.Context, string) (config.ConnectionAndDetailsGetter, error) {
+			return &stubConnectionManager{connectionType: "duckdb"}, nil
+		},
+		RunConnectionQuery: func(_ context.Context, _, _ string, query string) ([]string, []map[string]any, error) {
+			executed = append(executed, query)
+			return []string{"draft_value"}, []map[string]any{{"draft_value": int64(2)}}, nil
+		},
+		PushWorkspaceUpdate: func(context.Context, string, string) { published++ },
+	})
+	document, apiErr := service.Get(context.Background(), EncodeID("dashboards/preview.dashboard.yml"))
+	if apiErr != nil {
+		t.Fatalf("get: %+v", apiErr)
+	}
+	draft := document.Artifact
+	draft.Title = "Unsaved preview"
+	draft.Datasets[0].Query = "SELECT 2 AS draft_value"
+	result, apiErr := service.Preview(context.Background(), document.Artifact.WorkspaceID, model.PresentationPreviewRequest{
+		ExpectedRevision: document.Artifact.Revision,
+		Artifact:         draft,
+		Environment:      "dev",
+		VisualizationIDs: []string{"metric"},
+	})
+	if apiErr != nil {
+		t.Fatalf("preview: %+v", apiErr)
+	}
+	if result.Status != "ok" || len(result.Findings) != 0 || result.Visualizations["metric"].Rows[0][0] != int64(2) {
+		t.Fatalf("unexpected preview result: %+v", result)
+	}
+	if len(executed) != 1 || !strings.Contains(executed[0], "SELECT 2 AS draft_value") || strings.Contains(executed[0], "saved_value") {
+		t.Fatalf("preview did not execute the draft query: %#v", executed)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != saved || published != 0 {
+		t.Fatalf("preview mutated authored state: published=%d\n%s", published, after)
+	}
+
+	invalid := draft
+	invalid.Visualizations = append([]model.PresentationVisualization(nil), draft.Visualizations...)
+	invalid.Visualizations[0].Definition = map[string]any{"version": 1, "type": "kpi", "value": map[string]any{"field": "missing"}}
+	invalidResult, apiErr := service.Preview(context.Background(), document.Artifact.WorkspaceID, model.PresentationPreviewRequest{
+		ExpectedRevision: document.Artifact.Revision,
+		Artifact:         invalid,
+	})
+	if apiErr != nil {
+		t.Fatalf("invalid preview: %+v", apiErr)
+	}
+	if invalidResult.Status != "invalid" || len(invalidResult.Findings) == 0 || len(executed) != 1 {
+		t.Fatalf("invalid preview should report findings without executing: %+v queries=%d", invalidResult, len(executed))
+	}
+
+	if _, apiErr := service.Preview(context.Background(), document.Artifact.WorkspaceID, model.PresentationPreviewRequest{
+		ExpectedRevision: "v1:stale",
+		Artifact:         draft,
+	}); apiErr == nil || apiErr.Code != "presentation_preview_conflict" {
+		t.Fatalf("expected preview revision conflict, got %+v", apiErr)
+	}
+}

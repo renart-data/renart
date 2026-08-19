@@ -20,11 +20,12 @@ type PresentationArtifact struct {
 }
 
 type PresentationDataset struct {
-	ID         string   `json:"id"`
-	Asset      string   `json:"asset,omitempty"`
-	Connection string   `json:"connection,omitempty"`
-	Query      string   `json:"query,omitempty"`
-	Columns    []Column `json:"columns,omitempty"`
+	ID              string   `json:"id"`
+	Asset           string   `json:"asset,omitempty"`
+	Connection      string   `json:"connection,omitempty"`
+	Query           string   `json:"query,omitempty"`
+	Columns         []Column `json:"columns,omitempty"`
+	ResolvedColumns []Column `json:"resolved_columns,omitempty"`
 }
 
 type PresentationFilterOptions struct {
@@ -39,6 +40,9 @@ type PresentationFilter struct {
 	Label   string                     `json:"label,omitempty"`
 	Type    string                     `json:"type"`
 	Default any                        `json:"default"`
+	Min     *float64                   `json:"min,omitempty"`
+	Max     *float64                   `json:"max,omitempty"`
+	Step    *float64                   `json:"step,omitempty"`
 	Options *PresentationFilterOptions `json:"options,omitempty"`
 }
 
@@ -91,12 +95,37 @@ type PresentationRunRequest struct {
 	IncludeOptions   bool           `json:"include_options,omitempty"`
 }
 
+// PresentationPreviewRequest carries an unsaved authored snapshot across the
+// same content-revision boundary as the visual editor. Runtime-only fields are
+// kept outside the artifact so preview can never accidentally persist them.
+type PresentationPreviewRequest struct {
+	ExpectedRevision string               `json:"expected_revision"`
+	Artifact         PresentationArtifact `json:"artifact"`
+	Environment      string               `json:"environment,omitempty"`
+	FilterValues     map[string]any       `json:"filter_values,omitempty"`
+	VisualizationIDs []string             `json:"visualization_ids,omitempty"`
+	IncludeOptions   bool                 `json:"include_options,omitempty"`
+}
+
 // PresentationRunResult is a bounded runtime projection. Results are keyed by
 // visualization rather than only by dataset because two visualizations may
 // bind different filters to the same underlying dataset.
 type PresentationRunResult struct {
 	Status           string                               `json:"status"`
 	ArtifactRevision string                               `json:"artifact_revision"`
+	FilterValues     map[string]any                       `json:"filter_values"`
+	Visualizations   map[string]PresentationDatasetResult `json:"visualizations"`
+	Options          map[string]PresentationDatasetResult `json:"options,omitempty"`
+}
+
+// PresentationPreviewResult reports strict draft findings even when they
+// prevent execution. A preview is therefore useful while an artifact is being
+// repaired, without weakening the saved run contract or writing intermediate
+// YAML to the workspace.
+type PresentationPreviewResult struct {
+	Status           string                               `json:"status"`
+	ArtifactRevision string                               `json:"artifact_revision"`
+	Findings         []PresentationFinding                `json:"findings,omitempty"`
 	FilterValues     map[string]any                       `json:"filter_values"`
 	Visualizations   map[string]PresentationDatasetResult `json:"visualizations"`
 	Options          map[string]PresentationDatasetResult `json:"options,omitempty"`

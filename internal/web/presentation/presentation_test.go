@@ -100,6 +100,19 @@ func TestVisualizationCheckerRejectsIncompleteRequiredSource(t *testing.T) {
 	assertFinding(t, findings, "visualization-requires-complete-data", "", "error")
 }
 
+func TestVisualizationDefinitionValidatesNamedPalette(t *testing.T) {
+	definition, findings := DecodeVisualizationDefinition(map[string]any{
+		"version": 1, "type": "bar", "palette": "ocean",
+	})
+	if len(findings) != 0 || definition.Palette != "ocean" {
+		t.Fatalf("valid palette: definition=%+v findings=%+v", definition, findings)
+	}
+	_, findings = DecodeVisualizationDefinition(map[string]any{
+		"version": 1, "type": "bar", "palette": "neon",
+	})
+	assertFinding(t, findings, "visualization-palette-unsupported", "palette", "error")
+}
+
 func assertFinding(t *testing.T, findings []Finding, code, path, severity string) {
 	t.Helper()
 	for _, finding := range findings {

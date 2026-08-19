@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -22,6 +23,25 @@ const (
 	maxMCPChangeOperations   = 50
 	maxMCPChangePayloadBytes = 1 << 20
 )
+
+var supportedMCPChangeOperationKinds = []string{
+	service.NotebookOperationManifestUpgrade,
+	service.NotebookOperationCellCreate,
+	service.NotebookOperationCellUpdate,
+	service.NotebookOperationCellRename,
+	service.NotebookOperationCellSourceConfigure,
+	service.NotebookOperationSourceCreate,
+	service.NotebookOperationMarkdownCreate,
+	service.NotebookOperationMarkdownUpdate,
+	service.NotebookOperationVisualizationCreate,
+	service.NotebookOperationVisualizationUpdate,
+	service.NotebookOperationVisualizationMigrate,
+	service.NotebookOperationParametersReplace,
+	service.NotebookOperationControlCreate,
+	service.NotebookOperationControlUpdate,
+	service.NotebookOperationControlDelete,
+	service.NotebookOperationBlockMove,
+}
 
 type storedChange struct {
 	id         string
@@ -221,24 +241,13 @@ func validateMCPChangeOperations(operations []service.NotebookOperation) error {
 	if len(operations) > maxMCPChangeOperations {
 		return fmt.Errorf("an MCP notebook change may contain at most %d operations", maxMCPChangeOperations)
 	}
-	allowed := map[string]bool{
-		service.NotebookOperationManifestUpgrade:      true,
-		service.NotebookOperationCellCreate:           true,
-		service.NotebookOperationCellUpdate:           true,
-		service.NotebookOperationCellRename:           true,
-		service.NotebookOperationCellSourceConfigure:  true,
-		service.NotebookOperationSourceCreate:         true,
-		service.NotebookOperationMarkdownCreate:       true,
-		service.NotebookOperationMarkdownUpdate:       true,
-		service.NotebookOperationVisualizationCreate:  true,
-		service.NotebookOperationVisualizationUpdate:  true,
-		service.NotebookOperationVisualizationMigrate: true,
-		service.NotebookOperationParametersReplace:    true,
-		service.NotebookOperationBlockMove:            true,
-	}
 	for _, operation := range operations {
-		if !allowed[operation.Kind] {
-			return fmt.Errorf("operation kind %q is not available through MCP", operation.Kind)
+		if !slices.Contains(supportedMCPChangeOperationKinds, operation.Kind) {
+			return fmt.Errorf(
+				"operation kind %q is not available through MCP; use one of: %s",
+				operation.Kind,
+				strings.Join(supportedMCPChangeOperationKinds, ", "),
+			)
 		}
 		if len(operation.Content) > maxBlockContentBytes {
 			return fmt.Errorf("operation %q content exceeds the MCP limit of %d bytes", operation.Kind, maxBlockContentBytes)
@@ -282,10 +291,12 @@ func preparedOutput(stored *storedChange) PreparedChangeOutput {
 func safePreparedOperation(operation service.NotebookOperation) PreparedOperation {
 	result := PreparedOperation{
 		Kind: operation.Kind, CellID: operation.CellID, BlockID: operation.BlockID,
-		Name: operation.Name, Language: operation.Language, Connection: operation.Connection,
+		ControlID: operation.ControlID,
+		Name:      operation.Name, Language: operation.Language, Connection: operation.Connection,
 		AssetType: operation.AssetType, SnapshotMode: operation.SnapshotMode,
 		RowLimit: operation.RowLimit, Content: operation.Content,
 		Visualization: cloneVisualization(operation.Visualization),
+		Parameter:     cloneNotebookParameter(operation.Parameter),
 		Parameters:    cloneNotebookParameterDTOs(operation.Parameters),
 		Position:      operation.Position, AfterBlockID: operation.AfterBlockID,
 	}
@@ -294,6 +305,14 @@ func safePreparedOperation(operation service.NotebookOperation) PreparedOperatio
 		result.Source = &safe
 	}
 	return result
+}
+
+func cloneNotebookParameter(value *model.NotebookParameter) *model.NotebookParameter {
+	if value == nil {
+		return nil
+	}
+	cloned := cloneNotebookParameterDTOs([]model.NotebookParameter{*value})
+	return &cloned[0]
 }
 
 func cloneVisualization(value *model.NotebookVisualization) *model.NotebookVisualization {

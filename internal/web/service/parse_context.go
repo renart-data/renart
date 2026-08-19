@@ -139,7 +139,20 @@ func (s *ParseContextService) Parse(
 ) (ParseContextResult, *APIError) {
 	_, parsedPipeline, asset, err := s.deps.ResolveAssetByID(ctx, assetID)
 	if err != nil {
-		return ParseContextResult{}, &APIError{Status: 400, Code: "asset_not_found", Message: err.Error()}
+		connectionName := strings.TrimSpace(connection)
+		connectionType := ""
+		if s.deps.CurrentState != nil {
+			connectionType = s.deps.CurrentState().Connections[connectionName]
+		}
+		queryType, standalone := queryAssetTypeForConnectionType(connectionType)
+		if connectionName == "" || !standalone {
+			return ParseContextResult{}, &APIError{Status: 400, Code: "asset_not_found", Message: err.Error()}
+		}
+		// Presentation and other connection-scoped scratch documents do not
+		// belong to a pipeline asset. They still get the selected connection's
+		// dialect and the caller-supplied, credential-free schema snapshot.
+		asset = &pipeline.Asset{Type: queryType}
+		parsedPipeline = nil
 	}
 
 	assetType := asset.Type

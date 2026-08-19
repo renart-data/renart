@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"renart/internal/web/model"
+	"renart/internal/web/notebook"
 	"renart/internal/web/service"
 )
 
@@ -171,6 +172,15 @@ func (s *Server) runNotebook(ctx context.Context, _ *mcp.CallToolRequest, input 
 	if err != nil {
 		return nil, RunAcceptedOutput{}, err
 	}
+	if s.policy.RequireSourceApproval {
+		runtime, runtimeErr := s.backend.Runtime(ctx, input.NotebookID)
+		if runtimeErr != nil {
+			return nil, RunAcceptedOutput{}, fmt.Errorf("load notebook source approvals: %w", runtimeErr)
+		}
+		if message := externalSourceApprovalMessage(selected, runtime, input.RefreshSources); message != "" {
+			return nil, RunAcceptedOutput{}, fmt.Errorf("%s", message)
+		}
+	}
 	if !input.AllowPython {
 		for _, cell := range selected {
 			if cellLanguage(cell) == "python" {
@@ -189,6 +199,70 @@ func (s *Server) runNotebook(ctx context.Context, _ *mcp.CallToolRequest, input 
 	return nil, RunAcceptedOutput{
 		SchemaVersion: SchemaVersion, RunID: run.id, NotebookID: run.notebookID, Status: run.status,
 	}, nil
+}
+
+func externalSourceApprovalMessage(
+	selected []model.Asset,
+	runtime service.NotebookRuntimeSnapshot,
+	refreshSources bool,
+) string {
+	stale := make(map[string]bool, len(runtime.Stale))
+	for _, cellID := range runtime.Stale {
+		stale[cellID] = true
+	}
+	for _, cell := range selected {
+		if !isExternalNotebookSource(cell) {
+			continue
+		}
+		observed, hasSnapshot := runtime.Results[cell.CellID]
+		hasSnapshot = hasSnapshot && observed.Status == notebook.CellRunOK && observed.Snapshot != nil
+		if hasSnapshot && !stale[cell.CellID] && !refreshSources {
+			continue
+		}
+		reason := "first import"
+		if hasSnapshot && refreshSources {
+			reason = "explicit refresh"
+		} else if hasSnapshot && stale[cell.CellID] {
+			reason = "changed source definition"
+		}
+		connection := strings.TrimSpace(cell.Connection)
+		if cell.NotebookSource != nil && connection == "" {
+			connection = strings.TrimSpace(cell.NotebookSource.Connection)
+		}
+		contextLabel := "external source"
+		if connection != "" {
+			contextLabel = fmt.Sprintf("connection %q", connection)
+		}
+		return fmt.Sprintf(
+			"source %q uses %s; its %s requires user approval. Review the source query, snapshot mode, and row limit in Renart, then run the source there. The agent can reuse the approved snapshot without refresh_sources",
+			cell.Name,
+			contextLabel,
+			reason,
+		)
+	}
+	return ""
+}
+
+func isExternalNotebookSource(cell model.Asset) bool {
+	if cell.NotebookSource != nil {
+		source := cell.NotebookSource
+		if strings.TrimSpace(source.Connection) != "" {
+			return true
+		}
+		kind := strings.ToLower(strings.TrimSpace(source.Kind))
+		if kind == "http" || kind == "object" || kind == "object_storage" {
+			return true
+		}
+		uri := strings.ToLower(strings.TrimSpace(source.URI))
+		if strings.Contains(uri, "://") && !strings.HasPrefix(uri, "file://") {
+			return true
+		}
+		return false
+	}
+	if strings.TrimSpace(cell.Connection) == "" {
+		return false
+	}
+	return !strings.HasPrefix(strings.ToLower(strings.TrimSpace(cell.Type)), "duckdb.")
 }
 
 func (s *Server) cancelRun(ctx context.Context, _ *mcp.CallToolRequest, input RunInput) (*mcp.CallToolResult, RunStatusOutput, error) {

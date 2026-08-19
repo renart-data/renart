@@ -3,21 +3,18 @@
 import type { Monaco } from "@monaco-editor/react";
 import type * as MonacoNS from "monaco-editor";
 import {
-  AreaChart,
-  BarChart3,
   Check,
   CircleDot,
-  Hash,
-  LineChart,
   Loader2,
-  PieChart,
   Plus,
   Save,
-  Table2,
+  SlidersHorizontal,
   Trash2,
   TriangleAlert,
+  X,
 } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { NotebookVisualizationRenderer } from "@/components/app/notebook-viz";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +35,7 @@ import {
 } from "@/components/ui/delimited-card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -60,33 +58,22 @@ import { loadMonacoEditorModule } from "@/lib/load-monaco-editor";
 import { defineBruinMonacoThemes } from "@/lib/monaco-theme";
 import type { WebAsset } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { VISUALIZATION_PALETTE_OPTIONS } from "@/lib/visualization-palettes";
 
 import { AppPanel } from "./app-primitives";
+import { CHART_TYPE_OPTIONS, ChartTypePicker, type ChartType } from "./chart-type-picker";
 
 const MonacoEditor = lazy(async () => {
   const module = await loadMonacoEditorModule();
   return { default: module.default };
 });
 
-const VISUALIZATION_TYPES = [
-  { value: "table", label: "Table", icon: Table2 },
-  { value: "kpi", label: "KPI", icon: Hash },
-  { value: "bar", label: "Bar", icon: BarChart3 },
-  { value: "line", label: "Line", icon: LineChart },
-  { value: "area", label: "Area", icon: AreaChart },
-  { value: "scatter", label: "Scatter", icon: CircleDot },
-  { value: "pie", label: "Pie", icon: PieChart },
-  { value: "donut", label: "Donut", icon: PieChart },
-] as const;
-
-type VisualizationType = (typeof VISUALIZATION_TYPES)[number]["value"];
-
 export function normalizeVisualizationDefinition(
   raw: Record<string, unknown>,
 ): NotebookVisualizationDefinition {
   const authoredType = typeof raw.type === "string" ? raw.type : "table";
-  const type = VISUALIZATION_TYPES.some((option) => option.value === authoredType)
-    ? (authoredType as VisualizationType)
+  const type = CHART_TYPE_OPTIONS.some((option) => option.value === authoredType)
+    ? (authoredType as ChartType)
     : "table";
   const encoding =
     raw.encoding && typeof raw.encoding === "object" && !Array.isArray(raw.encoding)
@@ -120,6 +107,10 @@ export function NotebookVisualizationBlockCard({
   cells,
   results,
   busy,
+  selected,
+  inspectorTarget,
+  onSelect,
+  onCloseInspector,
   onSave,
   onDelete,
 }: {
@@ -129,12 +120,23 @@ export function NotebookVisualizationBlockCard({
   cells: WebAsset[];
   results: Record<string, NotebookCellRunResult>;
   busy: boolean;
+  selected: boolean;
+  inspectorTarget: HTMLElement | null;
+  onSelect: () => void;
+  onCloseInspector: () => void;
   onSave: (source: string, definition: Record<string, unknown>) => Promise<boolean>;
   onDelete: () => Promise<void>;
 }) {
+  const visualizationDefinitionSignature = JSON.stringify(visualization.definition);
   const initialDefinition = useMemo(
-    () => normalizeVisualizationDefinition(visualization.definition),
-    [visualization.definition],
+    () =>
+      normalizeVisualizationDefinition(
+        JSON.parse(visualizationDefinitionSignature) as Record<string, unknown>,
+      ),
+    // Notebook SSE snapshots recreate the raw object even when the authored
+    // definition is unchanged. Keep in-progress visual/YAML drafts intact
+    // across those identity-only updates.
+    [visualizationDefinitionSignature],
   );
   const [mode, setMode] = useState<"visual" | "definition">("visual");
   const [source, setSource] = useState(visualization.source);
@@ -236,154 +238,232 @@ export function NotebookVisualizationBlockCard({
     setSaving(false);
   };
 
-  return (
-    <AppPanel className="border-violet-500/25 bg-violet-500/[0.025]">
-      <DelimitedCardHeader>
-        <CircleDot className="size-3.5 text-violet-500" />
-        <DelimitedCardTitle className="truncate">
-          {definition.title?.trim() || "Visualization"}
-        </DelimitedCardTitle>
-        <Badge variant="outline" className="font-normal">
-          {definition.type}
-        </Badge>
-        <span className="ml-auto truncate text-[11px] text-muted-foreground">
-          from <span className="font-mono">{cellName(cells, source)}</span>
+  const title = previewDefinition.title?.trim() || "Visualization";
+  const inspector = (
+    <div
+      data-testid="notebook-visualization-inspector"
+      className="flex min-w-0 flex-col gap-4 overflow-x-hidden p-3"
+    >
+      <div className="flex min-w-0 items-start gap-2">
+        <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-violet-500/10 text-violet-600 dark:text-violet-300">
+          <SlidersHorizontal className="size-3.5" />
         </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate text-sm font-medium">{title}</p>
+            {dirty ? (
+              <Badge variant="outline" className="shrink-0 font-normal">
+                Draft
+              </Badge>
+            ) : null}
+          </div>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+            Configure this chart while its preview stays in the notebook.
+          </p>
+        </div>
         <Button
           variant="ghost"
           size="icon-sm"
-          disabled={busy || deleting}
-          aria-label="Delete visualization"
-          onClick={() => {
-            setDeleting(true);
-            void onDelete().finally(() => setDeleting(false));
-          }}
+          aria-label="Close inspector"
+          onClick={onCloseInspector}
         >
-          {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+          <X />
         </Button>
-      </DelimitedCardHeader>
-      <DelimitedCardContent className="space-y-4">
-        <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(18rem,0.85fr)_minmax(0,1.15fr)]">
-          <div className="min-w-0 rounded-lg border bg-background/70 p-3">
-            <Field className="mb-3">
-              <FieldLabel>Data source</FieldLabel>
-              <FieldCombobox
-                value={source}
-                items={cells.map((cell) => ({ value: cell.cell_id ?? "", label: cell.name }))}
-                placeholder="Choose a notebook result"
-                onChange={setSource}
+      </div>
+      <Separator />
+      <Field>
+        <FieldLabel>Data source</FieldLabel>
+        <FieldCombobox
+          value={source}
+          items={cells.map((cell) => ({ value: cell.cell_id ?? "", label: cell.name }))}
+          placeholder="Choose a notebook result"
+          onChange={setSource}
+        />
+      </Field>
+      <Tabs
+        value={mode}
+        className="min-w-0"
+        onValueChange={(value) => {
+          const next = value as "visual" | "definition";
+          if (next === "definition") setDefinitionYAML(canonicalYAML);
+          if (next === "visual" && check?.definition && check.can_apply) {
+            setDefinition(normalizeVisualizationDefinition(check.definition));
+          }
+          setMode(next);
+        }}
+      >
+        <TabsList className="w-full">
+          <TabsTrigger value="visual" className="flex-1">
+            Visual
+          </TabsTrigger>
+          <TabsTrigger value="definition" className="flex-1" disabled={!canonicalYAML}>
+            Definition
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="visual" className="pt-3">
+          <VisualizationBuilder
+            definition={definition}
+            columns={check?.schema.columns ?? []}
+            compact
+            onChange={setDefinition}
+          />
+        </TabsContent>
+        <TabsContent value="definition" className="pt-3">
+          <VisualizationDefinitionEditor
+            blockId={blockId}
+            value={definitionYAML}
+            onChange={setDefinitionYAML}
+          />
+        </TabsContent>
+      </Tabs>
+
+      {check?.findings.length ? (
+        <div className="space-y-1" aria-live="polite">
+          {check.findings.map((finding, index) => (
+            <div
+              key={`${finding.code}:${finding.path ?? ""}:${index}`}
+              className={cn(
+                "flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs",
+                finding.severity === "error"
+                  ? "border-red-500/25 bg-red-500/5 text-red-700 dark:text-red-300"
+                  : "border-amber-500/25 bg-amber-500/5 text-amber-700 dark:text-amber-300",
+              )}
+            >
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
+              <span className="min-w-0">
+                {finding.message}
+                {finding.path ? (
+                  <span className="ml-1 font-mono text-[10px] opacity-70">{finding.path}</span>
+                ) : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="flex min-w-0 items-center justify-end gap-2 border-t pt-3">
+        {dirty && !check?.can_apply ? (
+          <span className="mr-auto min-w-0 text-[11px] text-muted-foreground">
+            Resolve the definition errors before applying.
+          </span>
+        ) : dirty ? (
+          <span className="mr-auto min-w-0 text-[11px] text-muted-foreground">
+            Changes stay local until applied.
+          </span>
+        ) : null}
+        <Button size="sm" disabled={!canSave} onClick={() => void save()}>
+          {saving ? <Loader2 className="animate-spin" /> : dirty ? <Save /> : <Check />}
+          {dirty ? "Apply visualization" : "Saved"}
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <section
+        aria-label={`Visualization: ${title}`}
+        tabIndex={0}
+        className="min-w-0 rounded-xl outline-none"
+        onClick={onSelect}
+        onKeyDown={(event) => {
+          if (
+            event.target !== event.currentTarget ||
+            (event.key !== "Enter" && event.key !== " ")
+          ) {
+            return;
+          }
+          event.preventDefault();
+          onSelect();
+        }}
+      >
+        <AppPanel
+          className={cn(
+            "group/notebook-block border-transparent bg-transparent shadow-none transition-colors hover:border-violet-500/25 hover:bg-violet-500/[0.025] hover:shadow-sm focus-within:border-violet-500/25 focus-within:bg-card focus-within:shadow-sm",
+            selected &&
+              "border-violet-500/35 bg-violet-500/[0.035] shadow-sm ring-1 ring-violet-500/15",
+          )}
+        >
+          <DelimitedCardHeader className="border-transparent bg-transparent transition-colors group-hover/notebook-block:border-border group-hover/notebook-block:bg-muted/20 group-focus-within/notebook-block:border-border group-focus-within/notebook-block:bg-muted/20">
+            <CircleDot className="size-3.5 text-violet-500" />
+            <DelimitedCardTitle className="truncate">{title}</DelimitedCardTitle>
+            <Badge variant="outline" className="font-normal">
+              {previewDefinition.type}
+            </Badge>
+            {dirty ? (
+              <span
+                className="size-1.5 shrink-0 rounded-full bg-amber-500"
+                aria-label="Unsaved draft"
               />
-            </Field>
-            <Tabs
-              value={mode}
-              onValueChange={(value) => {
-                const next = value as "visual" | "definition";
-                if (next === "definition") setDefinitionYAML(canonicalYAML);
-                if (next === "visual" && check?.definition && check.can_apply) {
-                  setDefinition(normalizeVisualizationDefinition(check.definition));
-                }
-                setMode(next);
+            ) : null}
+            <span className="ml-auto truncate text-[11px] text-muted-foreground">
+              from <span className="font-mono">{cellName(cells, source)}</span>
+            </span>
+            {checking ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : null}
+            {check?.findings.length ? (
+              <Badge
+                variant="outline"
+                className="border-amber-500/30 font-normal text-amber-700 dark:text-amber-300"
+              >
+                <TriangleAlert /> {check.findings.length}
+              </Badge>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Edit visualization ${title}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelect();
               }}
             >
-              <TabsList>
-                <TabsTrigger value="visual">Visual</TabsTrigger>
-                <TabsTrigger value="definition" disabled={!canonicalYAML}>
-                  Definition
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent value="visual" className="pt-3">
-                <VisualizationBuilder
-                  definition={definition}
-                  columns={check?.schema.columns ?? []}
-                  onChange={setDefinition}
-                />
-              </TabsContent>
-              <TabsContent value="definition" className="pt-3">
-                <VisualizationDefinitionEditor
-                  blockId={blockId}
-                  value={definitionYAML}
-                  onChange={setDefinitionYAML}
-                />
-              </TabsContent>
-            </Tabs>
-          </div>
-          <div className="min-w-0 rounded-lg border bg-background/70 p-3">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="text-xs font-medium">Preview</span>
-              {check?.schema.sampled ? (
-                <Badge variant="outline" className="border-amber-500/30 text-amber-700">
-                  sampled data
-                </Badge>
-              ) : null}
-              {checking ? (
-                <Loader2 className="ml-auto size-3.5 animate-spin text-muted-foreground" />
-              ) : null}
-            </div>
+              <SlidersHorizontal />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={busy || deleting}
+              aria-label="Delete visualization"
+              onClick={(event) => {
+                event.stopPropagation();
+                setDeleting(true);
+                void onDelete().finally(() => setDeleting(false));
+              }}
+            >
+              {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+            </Button>
+          </DelimitedCardHeader>
+          <DelimitedCardContent>
             {sourceResult?.status === "ok" &&
             sourceResult.columns.length > 0 &&
             check?.can_apply ? (
               <NotebookVisualizationRenderer definition={previewDefinition} result={sourceResult} />
             ) : (
-              <div className="flex min-h-56 items-center justify-center rounded-lg border border-dashed bg-muted/20 px-6 text-center text-xs text-muted-foreground">
+              <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed bg-muted/15 px-6 text-center text-xs text-muted-foreground">
                 {sourceResult?.status === "error"
                   ? "The source cell failed. Fix and run it to preview this visualization."
                   : "Run the source cell to preview this visualization. Its fields can still be checked statically."}
               </div>
             )}
-          </div>
-        </div>
-
-        {check?.findings.length ? (
-          <div className="space-y-1" aria-live="polite">
-            {check.findings.map((finding, index) => (
-              <div
-                key={`${finding.code}:${finding.path ?? ""}:${index}`}
-                className={cn(
-                  "flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs",
-                  finding.severity === "error"
-                    ? "border-red-500/25 bg-red-500/5 text-red-700 dark:text-red-300"
-                    : "border-amber-500/25 bg-amber-500/5 text-amber-700 dark:text-amber-300",
-                )}
-              >
-                {finding.severity === "error" ? <TriangleAlert /> : <TriangleAlert />}
-                <span className="min-w-0">
-                  {finding.message}
-                  {finding.path ? (
-                    <span className="ml-1 font-mono text-[10px] opacity-70">{finding.path}</span>
-                  ) : null}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="flex items-center justify-end gap-2 border-t pt-3">
-          {dirty && !check?.can_apply ? (
-            <span className="mr-auto text-[11px] text-muted-foreground">
-              Resolve the definition errors before applying.
-            </span>
-          ) : dirty ? (
-            <span className="mr-auto text-[11px] text-muted-foreground">
-              Changes stay local to this block until applied.
-            </span>
-          ) : null}
-          <Button size="sm" disabled={!canSave} onClick={() => void save()}>
-            {saving ? <Loader2 className="animate-spin" /> : dirty ? <Save /> : <Check />}
-            {dirty ? "Apply visualization" : "Saved"}
-          </Button>
-        </div>
-      </DelimitedCardContent>
-    </AppPanel>
+          </DelimitedCardContent>
+        </AppPanel>
+      </section>
+      {selected && inspectorTarget ? createPortal(inspector, inspectorTarget) : null}
+    </>
   );
 }
 
 export function VisualizationBuilder({
   definition,
   columns,
+  compact = false,
+  pathPrefix,
   onChange,
 }: {
   definition: NotebookVisualizationDefinition;
   columns: PresentationResolvedColumn[];
+  compact?: boolean;
+  pathPrefix?: string;
   onChange: (definition: NotebookVisualizationDefinition) => void;
 }) {
   const patch = (next: Partial<NotebookVisualizationDefinition>) =>
@@ -407,29 +487,50 @@ export function VisualizationBuilder({
     .map((column) => ({ value: column.name, label: column.name }));
 
   return (
-    <FieldGroup className="gap-4">
-      <Field>
+    <FieldGroup data-presentation-path={pathPrefix} className="gap-4">
+      <Field data-presentation-path={pathPrefix ? `${pathPrefix}.type` : undefined}>
         <FieldLabel>Chart type</FieldLabel>
-        <div className="grid grid-cols-4 gap-1.5">
-          {VISUALIZATION_TYPES.map((option) => {
-            const Icon = option.icon;
-            return (
-              <Button
-                key={option.value}
-                type="button"
-                size="sm"
-                variant={definition.type === option.value ? "secondary" : "outline"}
-                className="min-w-0 justify-start px-2"
-                onClick={() => patch({ type: option.value })}
-              >
-                <Icon />
-                <span className="truncate">{option.label}</span>
-              </Button>
-            );
-          })}
-        </div>
+        <ChartTypePicker
+          value={definition.type}
+          compact={compact}
+          density="compact"
+          onValueChange={(type) => patch({ type })}
+        />
       </Field>
-      <Field>
+      {!["table", "kpi"].includes(definition.type) ? (
+        <Field data-presentation-path={pathPrefix ? `${pathPrefix}.palette` : undefined}>
+          <FieldLabel>Color palette</FieldLabel>
+          <Select
+            value={definition.palette ?? "default"}
+            onValueChange={(palette) =>
+              patch({ palette: palette as NotebookVisualizationDefinition["palette"] })
+            }
+          >
+            <SelectTrigger className="w-full" aria-label="Color palette">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {VISUALIZATION_PALETTE_OPTIONS.map((palette) => (
+                <SelectItem key={palette.value} value={palette.value}>
+                  <span className="flex items-center gap-2">
+                    <span className="flex gap-0.5" aria-hidden="true">
+                      {palette.colors.map((color, index) => (
+                        <span
+                          key={`${palette.value}:${index}`}
+                          className="size-2 rounded-full ring-1 ring-foreground/10"
+                          style={{ backgroundColor: color }}
+                        />
+                      ))}
+                    </span>
+                    {palette.label}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      ) : null}
+      <Field data-presentation-path={pathPrefix ? `${pathPrefix}.title` : undefined}>
         <FieldLabel htmlFor="visualization-title">Title</FieldLabel>
         <Input
           id="visualization-title"
@@ -443,15 +544,19 @@ export function VisualizationBuilder({
         <>
           <EncodingField
             label="Value"
+            path={pathPrefix ? `${pathPrefix}.value` : undefined}
             value={definition.value}
             items={measureFields}
+            compact={compact}
             onChange={(value) => patch({ value })}
           />
           <EncodingField
             label="Comparison"
+            path={pathPrefix ? `${pathPrefix}.compare` : undefined}
             value={definition.compare}
             items={measureFields}
             optional
+            compact={compact}
             onChange={(value) => patch({ compare: value })}
           />
         </>
@@ -459,6 +564,7 @@ export function VisualizationBuilder({
         <>
           <EncodingField
             label={definition.type === "pie" || definition.type === "donut" ? "Category" : "X axis"}
+            path={pathPrefix ? `${pathPrefix}.encoding.x` : undefined}
             value={encoding.x}
             items={
               definition.type === "scatter"
@@ -469,9 +575,10 @@ export function VisualizationBuilder({
                     .map((column) => ({ value: column.name, label: column.name }))
                 : allFields
             }
+            compact={compact}
             onChange={(value) => patchEncoding({ x: value })}
           />
-          <Field>
+          <Field data-presentation-path={pathPrefix ? `${pathPrefix}.encoding.y` : undefined}>
             <div className="flex items-center justify-between">
               <FieldLabel>{definition.type === "scatter" ? "Y axis" : "Measures"}</FieldLabel>
               {definition.type !== "scatter" ? (
@@ -492,6 +599,8 @@ export function VisualizationBuilder({
                     value={measure}
                     items={measureFields}
                     placeholder="Choose a numeric field"
+                    compact={compact}
+                    path={pathPrefix ? `${pathPrefix}.encoding.y[${index}]` : undefined}
                     onChange={(nextMeasure) => {
                       const next = y.length > 0 ? [...y] : [{ field: "" }];
                       next[index] = nextMeasure;
@@ -518,9 +627,11 @@ export function VisualizationBuilder({
           {!["pie", "donut", "scatter"].includes(definition.type) ? (
             <EncodingField
               label="Series"
+              path={pathPrefix ? `${pathPrefix}.encoding.series` : undefined}
               value={encoding.series}
               items={categoryFields.length > 0 ? categoryFields : allFields}
               optional
+              compact={compact}
               onChange={(value) => patchEncoding({ series: value })}
             />
           ) : null}
@@ -532,8 +643,8 @@ export function VisualizationBuilder({
         </FieldDescription>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field>
+      <div className={cn("grid gap-3", !compact && "sm:grid-cols-2")}>
+        <Field data-presentation-path={pathPrefix ? `${pathPrefix}.presentation_limit` : undefined}>
           <FieldLabel htmlFor="visualization-limit">Preview row limit</FieldLabel>
           <Input
             id="visualization-limit"
@@ -549,12 +660,14 @@ export function VisualizationBuilder({
         <div className="space-y-2 pt-1">
           <CheckField
             label="Require complete data"
+            path={pathPrefix ? `${pathPrefix}.require_complete` : undefined}
             checked={definition.require_complete ?? false}
             onChange={(checked) => patch({ require_complete: checked })}
           />
           {!["table", "kpi", "pie", "donut", "scatter"].includes(definition.type) ? (
             <CheckField
               label="Stack series"
+              path={pathPrefix ? `${pathPrefix}.stacked` : undefined}
               checked={definition.stacked ?? false}
               onChange={(checked) => patch({ stacked: checked })}
             />
@@ -567,25 +680,31 @@ export function VisualizationBuilder({
 
 function EncodingField({
   label,
+  path,
   value,
   items,
   optional,
+  compact = false,
   onChange,
 }: {
   label: string;
+  path?: string;
   value?: VisualizationFieldEncoding;
   items: Array<{ value: string; label: string }>;
   optional?: boolean;
+  compact?: boolean;
   onChange: (value: VisualizationFieldEncoding | undefined) => void;
 }) {
   return (
-    <Field>
+    <Field data-presentation-path={path}>
       <FieldLabel>{label}</FieldLabel>
       <EncodingControls
         value={value ?? { field: "" }}
         items={items}
         placeholder={optional ? "None" : "Choose a field"}
         allowClear={optional}
+        compact={compact}
+        path={path}
         onChange={(next) => onChange(next.field ? next : undefined)}
       />
     </Field>
@@ -597,24 +716,38 @@ function EncodingControls({
   items,
   placeholder,
   allowClear = false,
+  compact = false,
+  path,
   onChange,
 }: {
   value: VisualizationFieldEncoding;
   items: Array<{ value: string; label: string }>;
   placeholder: string;
   allowClear?: boolean;
+  compact?: boolean;
+  path?: string;
   onChange: (value: VisualizationFieldEncoding) => void;
 }) {
   return (
-    <div className="grid min-w-0 flex-1 gap-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)_7rem]">
+    <div
+      data-presentation-path={path}
+      className={cn(
+        "grid min-w-0 flex-1 gap-1.5",
+        compact
+          ? "grid-cols-[minmax(0,1fr)_5rem]"
+          : "sm:grid-cols-[minmax(0,1fr)_minmax(6rem,0.55fr)_7rem]",
+      )}
+    >
       <FieldCombobox
         value={value.field}
         items={items}
         placeholder={placeholder}
         allowClear={allowClear}
+        path={path ? `${path}.field` : undefined}
         onChange={(field) => onChange({ ...value, field })}
       />
       <Input
+        data-presentation-path={path ? `${path}.label` : undefined}
         aria-label="Field label"
         value={value.label ?? ""}
         placeholder="Label"
@@ -627,7 +760,12 @@ function EncodingControls({
           onChange({ ...value, format: format === "__auto__" ? undefined : format })
         }
       >
-        <SelectTrigger size="sm" aria-label="Field format" className="w-full">
+        <SelectTrigger
+          data-presentation-path={path ? `${path}.format` : undefined}
+          size="sm"
+          aria-label="Field format"
+          className={cn("w-full", compact && "col-span-2")}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent align="end">
@@ -646,14 +784,16 @@ function EncodingControls({
 function CheckField({
   label,
   checked,
+  path,
   onChange,
 }: {
   label: string;
   checked: boolean;
+  path?: string;
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-2 text-xs">
+    <label data-presentation-path={path} className="flex cursor-pointer items-center gap-2 text-xs">
       <Checkbox checked={checked} onCheckedChange={(value) => onChange(value === true)} />
       {label}
     </label>
@@ -665,12 +805,14 @@ function FieldCombobox({
   items,
   placeholder,
   allowClear = false,
+  path,
   onChange,
 }: {
   value: string;
   items: Array<{ value: string; label: string }>;
   placeholder: string;
   allowClear?: boolean;
+  path?: string;
   onChange: (value: string) => void;
 }) {
   const selected = items.find((item) => item.value === value) ?? null;
@@ -694,6 +836,7 @@ function FieldCombobox({
       }}
     >
       <ComboboxInput
+        data-presentation-path={path}
         aria-label={placeholder}
         placeholder={placeholder}
         className="h-8 w-full text-xs"
@@ -747,6 +890,7 @@ function VisualizationDefinitionEditor({
               "version",
               "type",
               "title",
+              "palette",
               "encoding",
               "columns",
               "value",

@@ -155,6 +155,78 @@ func TestNotebookChangeSetReplacesTypedParametersAtomically(t *testing.T) {
 	}
 }
 
+func TestNotebookChangeSetCreatesUpdatesAndDeletesOrderedControl(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewNotebookService(NotebookDependencies{WorkspaceRoot: root})
+	created, apiErr := svc.Create(CreateNotebookRequest{Title: "Ordered controls"})
+	if apiErr != nil {
+		t.Fatalf("create notebook: %+v", apiErr)
+	}
+
+	createPlan, apiErr := svc.PrepareChangeSet(created.ID, NotebookChangeSet{
+		BaseRevision: created.Revision,
+		Operations: []NotebookOperation{{
+			Kind: NotebookOperationControlCreate,
+			Parameter: &model.NotebookParameter{
+				ID: "region", Label: "Region", Type: "select", Default: "eu",
+				Options: &model.NotebookParameterOptions{Values: []any{"eu", "us"}},
+			},
+			Position: notebookChangePositionStart,
+		}},
+	})
+	if apiErr != nil || !createPlan.CanApply {
+		t.Fatalf("prepare control create: plan=%+v error=%+v", createPlan, apiErr)
+	}
+	if len(createPlan.Diff) != 1 || !strings.Contains(createPlan.Diff[0].After, "- control: region") {
+		t.Fatalf("control placement is not visible in the manifest diff: %+v", createPlan.Diff)
+	}
+	createdControl, apiErr := svc.ApplyChangeSet(created.ID, createPlan.ChangeSet)
+	if apiErr != nil {
+		t.Fatalf("apply control create: %+v", apiErr)
+	}
+	if len(createdControl.Notebook.Parameters) != 1 ||
+		len(createdControl.Notebook.Blocks) < 1 ||
+		createdControl.Notebook.Blocks[0].Control != "region" {
+		t.Fatalf("control was not placed at the start: %+v", createdControl.Notebook)
+	}
+
+	updatePlan, apiErr := svc.PrepareChangeSet(created.ID, NotebookChangeSet{
+		BaseRevision: createdControl.Notebook.Revision,
+		Operations: []NotebookOperation{{
+			Kind: NotebookOperationControlUpdate, ControlID: "region",
+			Parameter: &model.NotebookParameter{ID: "market", Label: "Market", Type: "text", Default: "eu"},
+		}},
+	})
+	if apiErr != nil || !updatePlan.CanApply {
+		t.Fatalf("prepare control update: plan=%+v error=%+v", updatePlan, apiErr)
+	}
+	updatedControl, apiErr := svc.ApplyChangeSet(created.ID, updatePlan.ChangeSet)
+	if apiErr != nil {
+		t.Fatalf("apply control update: %+v", apiErr)
+	}
+	if updatedControl.Notebook.Parameters[0].ID != "market" || updatedControl.Notebook.Blocks[0].Control != "market" {
+		t.Fatalf("renaming the definition did not rename its block reference: %+v", updatedControl.Notebook)
+	}
+
+	deletePlan, apiErr := svc.PrepareChangeSet(created.ID, NotebookChangeSet{
+		BaseRevision: updatedControl.Notebook.Revision,
+		Operations:   []NotebookOperation{{Kind: NotebookOperationControlDelete, ControlID: "market"}},
+	})
+	if apiErr != nil || !deletePlan.CanApply {
+		t.Fatalf("prepare control delete: plan=%+v error=%+v", deletePlan, apiErr)
+	}
+	deletedControl, apiErr := svc.ApplyChangeSet(created.ID, deletePlan.ChangeSet)
+	if apiErr != nil {
+		t.Fatalf("apply control delete: %+v", apiErr)
+	}
+	if len(deletedControl.Notebook.Parameters) != 0 || deletedControl.Notebook.Blocks[0].Control != "" {
+		t.Fatalf("control definition or block survived deletion: %+v", deletedControl.Notebook)
+	}
+}
+
 func TestNotebookChangeSetRejectsUnpreparedAndStaleApply(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {

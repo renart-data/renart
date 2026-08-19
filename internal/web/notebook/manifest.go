@@ -48,6 +48,7 @@ type visualizationBlockYAML struct {
 // output structs so the selected version is always rendered unambiguously.
 type blockYAML struct {
 	Cell             string
+	Control          string
 	Markdown         *markdownBlockYAML
 	Visualization    *visualizationBlockYAML
 	legacyMarkdown   bool
@@ -66,6 +67,11 @@ func (b *blockYAML) UnmarshalYAML(node *yaml.Node) error {
 		case "cell":
 			if err := value.Decode(&b.Cell); err != nil {
 				return fmt.Errorf("invalid cell block: %w", err)
+			}
+			b.manifestKeyCount++
+		case "control":
+			if err := value.Decode(&b.Control); err != nil {
+				return fmt.Errorf("invalid control block: %w", err)
 			}
 			b.manifestKeyCount++
 		case "markdown":
@@ -92,7 +98,7 @@ func (b *blockYAML) UnmarshalYAML(node *yaml.Node) error {
 		}
 	}
 	if b.manifestKeyCount != 1 {
-		return fmt.Errorf("notebook block must contain exactly one of cell, markdown, or visualization")
+		return fmt.Errorf("notebook block must contain exactly one of cell, markdown, control, or visualization")
 	}
 	return nil
 }
@@ -130,6 +136,11 @@ func readManifest(filesystem afero.Fs, path string) (*manifest, error) {
 		switch {
 		case block.Cell != "":
 			result.Blocks = append(result.Blocks, Block{Cell: block.Cell})
+		case block.Control != "":
+			if version != ManifestVersionCurrent {
+				return nil, fmt.Errorf("block %d uses control syntax without version: 2", index+1)
+			}
+			result.Blocks = append(result.Blocks, Block{Control: block.Control})
 		case block.Markdown != nil:
 			if version == ManifestVersionLegacy && !block.legacyMarkdown {
 				return nil, fmt.Errorf("block %d uses version 2 markdown syntax without version: 2", index+1)
@@ -183,6 +194,7 @@ type manifestV2YAML struct {
 
 type v2BlockYAML struct {
 	Cell          string                  `yaml:"cell,omitempty"`
+	Control       string                  `yaml:"control,omitempty"`
 	Markdown      *markdownBlockYAML      `yaml:"markdown,omitempty"`
 	Visualization *visualizationBlockYAML `yaml:"visualization,omitempty"`
 }
@@ -210,8 +222,8 @@ func MarshalManifest(nb *Notebook) ([]byte, error) {
 			Blocks: make([]legacyBlockYAML, 0, len(nb.Blocks)),
 		}
 		for _, block := range nb.Blocks {
-			if block.Visualization != nil {
-				return nil, fmt.Errorf("visualization block %q requires notebook manifest version 2", block.StableID())
+			if block.Visualization != nil || block.Control != "" {
+				return nil, fmt.Errorf("presentation block %q requires notebook manifest version 2", block.StableID())
 			}
 			legacy.Blocks = append(legacy.Blocks, legacyBlockYAML{Cell: block.Cell, Markdown: block.Markdown})
 		}
@@ -229,6 +241,8 @@ func MarshalManifest(nb *Notebook) ([]byte, error) {
 			switch {
 			case block.Cell != "":
 				current.Blocks = append(current.Blocks, v2BlockYAML{Cell: block.Cell})
+			case block.Control != "":
+				current.Blocks = append(current.Blocks, v2BlockYAML{Control: block.Control})
 			case block.Visualization != nil:
 				id := block.ID
 				if id == "" {
@@ -293,7 +307,7 @@ func UpgradeManifestV2(filesystem afero.Fs, nb *Notebook) (bool, error) {
 	next.Blocks = make([]Block, len(nb.Blocks))
 	for index, block := range nb.Blocks {
 		next.Blocks[index] = block
-		if block.Cell == "" && block.Visualization == nil {
+		if block.Cell == "" && block.Control == "" && block.Visualization == nil {
 			next.Blocks[index].ID = migratedBlockID(nb.UUID, "md", index)
 		}
 	}

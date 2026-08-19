@@ -19,7 +19,33 @@
 > release evidence is primarily the credentialed warehouse transfer matrix,
 > model-driven Claude Code/OpenCode native-chat corpus, persistent/shareable
 > agent history, and broader accessibility/performance
-> calibration.
+> calibration. The native prepare tool now exposes exact semantic-operation
+> enums and has a bounded consecutive-failure circuit breaker; presentation
+> dataset/visualization inspectors are shrink-safe on desktop and mobile, and
+> notebook Markdown creation is available from the shared Add rail.
+> Advanced presentation query datasets now use connection-aware Monaco/LSP
+> intelligence without borrowing a pipeline asset contract. Bounded workspace
+> catalog search, agent-proposed sources with explicit remote-import approval,
+> visual-first Markdown, quiet inactive blocks, shared chart previews, report
+> visualization reselection, draggable charts, the responsive shared
+> Outline/Data/Add/AI authoring rail, and notebook visualization editing in a
+> responsive contextual inspector are now implemented across notebooks and
+> presentations. Notebook parameters and presentation filters now share one
+> frontend authored-control editor, typed value renderer, option resolver, and
+> user-facing **Controls** language. Notebook controls now use ordered
+> parameter-reference blocks, can be inserted or dragged between cells, and
+> open in the shared contextual inspector while their existing `parameters:`
+> storage and execution contract remain intact. Named checked chart palettes
+> and distinct large-Add/compact-settings chart previews are also implemented.
+> The shared control grammar now includes checked numeric sliders; notebook
+> controls render only as document cells, use code-native Add previews, and
+> expose direct in-cell removal. Notebook drops target explicit insertion gaps,
+> and schema-aware visualization defaults leave incompatible fields unassigned.
+> The agent prepare tool now projects the concrete visualization grammar (with
+> version/chart enums and typed encodings), and notebook command failures/logs
+> render ANSI terminal styling instead of raw escape glyphs.
+> Dataset-backed notebook choices remain deferred because their refresh
+> semantics need a dedicated decision.
 > This plan replaces the narrower agent-only proposal and deliberately
 > treats data access, execution, presentation, reproducibility, and agent tooling
 > as one notebook product.
@@ -67,6 +93,10 @@ The recommended notebook architecture is:
    notebook Ask/Edit panel launches an installed Codex, Claude Code, or OpenCode
    client in a private directory with a notebook-scoped MCP server. Ask exposes
    only bounded reads; Edit grants reviewed semantic changes and explicit runs.
+   Both modes can search the credential-free workspace artifact catalog. Edit
+   can add a source through the same semantic change-set path as the UI, but a
+   native agent cannot perform the first import or an explicit refresh from a
+   non-DuckDB connection; that transfer waits for a user action in Renart.
    Neither surface exposes paths, Git, credentials, or generic REST forwarding.
 9. **Use one notebook-wide revision and transaction model.** The visual builder,
    ordinary UI edits, and MCP change sets must share the same semantic mutation,
@@ -1074,6 +1104,77 @@ count; apply uses the reviewed notebook revision and a cross-directory recovery
 journal. Sampled sources are a hard blocker. Visualization/markdown promotion
 remains intentionally deferred as described above.
 
+### 8.5 Shared document authoring shell and controls
+
+Notebooks, dashboards, and reports are three hosts for the same small set of
+authoring jobs: find data, add an executable or narrative block, configure a
+visualization or control, inspect the outline, and ask an agent for help. They
+should share primitives and interaction contracts without pretending that their
+execution and layout models are identical.
+
+Build one `DocumentAuthoringShell` with host adapters:
+
+- a left rail with **Outline**, **Data**, **Add**, and, where enabled, **AI**;
+- one contextual right inspector for the selected visualization, control,
+  dataset/source, or section;
+- a single compact command bar for document-level actions such as run/refresh,
+  save state, history, and visual/definition mode;
+- a host canvas adapter: ordered flowing blocks for notebooks, a responsive
+  grid for dashboards, and document sections for reports;
+- shared drag payloads for visualizations, controls, data sources, and text.
+
+The shell must remove duplicated titles, paths, and status strips. File paths
+belong in secondary metadata, screen-size simulation belongs next to the canvas
+preview if retained, and an unavailable action should not consume permanent
+header space. Notebook execution controls remain notebook-specific; dashboard
+refresh and report preview remain presentation-specific.
+
+Use one chart-kind picker everywhere. Each option is a large, accessible,
+code-native mini chart preview rather than a generic glyph. The picker,
+visualization definition editor, and visualization inspector are shared; the
+host only owns placement and selection.
+
+Markdown is visual-first. Unselected narrative blocks render like normal page
+content with no card background or persistent border. Hover and selection add a
+light boundary and contextual controls. Source Markdown remains available as an
+explicit mode and the saved value remains Markdown, so visual edits produce a
+plain reviewable diff. Notebook markdown blocks and report text sections use
+the same editor surface.
+
+Replace the notebook-only `parameters` and presentation-only `filters` language
+in the UI with **controls**. The shared authored control grammar supports:
+
+- `select` and `multi_select`;
+- `slider` with numeric minimum, maximum, and step;
+- `switch` for booleans;
+- `text` for plain text input.
+
+A control has a durable ID, label, type, typed default, and an optional value
+source. Value sources are either static values or a dataset/asset query with
+explicit value and optional label fields. The right inspector configures these
+properties and bindings. Controls are draggable from the Add rail into any host
+that supports them. Their YAML representation is shared, while each host adapts
+runtime binding: notebook controls feed cell parameters; dashboard/report
+controls filter bound datasets. Rename the existing file keys only when doing
+so materially simplifies the loader and migration; this unreleased presentation
+format may take a clean break, but ordinary notebook and pipeline files still
+require an explicit migration.
+
+The first implementation slices are deliberately vertical:
+
+1. bounded MCP workspace-catalog search, source-aware prompt guidance, and a
+   native-agent run gate for unapproved remote imports;
+2. shared chart previews and visualization inspector behavior across all three
+   hosts (**implemented**);
+3. one shared visual-first Markdown surface and quiet inactive block chrome;
+4. the shared rail/shell and drag contract, migrated one host at a time
+   (**implemented for notebooks, dashboards, and reports**);
+5. the unified control definition, checker, inspector, runtime adapters, and
+   migrations (**partially implemented**: the backend grammar/checker,
+   frontend editor/value runtime, draggable typed palettes, ordered notebook
+   placement, and contextual inspectors are shared; dataset-backed notebook
+   values and any storage migration remain).
+
 ## 9. Delivery plan
 
 ### Phase 0 — contracts and correctness
@@ -1186,8 +1287,19 @@ transfer service. None of the tracks should invent its own mutation model.
   source requests, and visualization filters.
 - Add the shared filter definition, default/option/binding checker, and safe
   typed value rendering needed by later dashboards.
-- Complete result virtualization/accessibility, run-state recovery, source
-  refresh UX, error messages, and responsive/mobile behavior.
+- Complete result virtualization, error messages, and responsive/mobile
+  behavior. Active manual and auto-run cell state now survives a tab reload
+  through the runtime snapshot contract; source and connection-backed cells
+  expose one accessible snapshot summary with capture context, size, and
+  completeness.
+- Finish presentation-builder release hardening: checker findings now select
+  their component and focus the closest exact inspector control; dashboard
+  layout and report reorder paths now have focusable canvas units, bounded
+  directional controls, announcements, and live keyboard coverage. Tighten
+  print-pagination fidelity and performance budgets.
+  Advanced query datasets now use the selected connection's Monaco/LSP context;
+  the dataset and visualization inspector layouts are shrink-safe and covered
+  at desktop and mobile viewport sizes.
 - Harden Python fingerprints and decide whether safe Python auto-recompute is
   worth adding; do not enable it implicitly.
 - Add performance budgets and telemetry visible only locally: query duration,
@@ -1204,11 +1316,12 @@ connection/source combinations are stated precisely.
 ### Phase 5 — Git-native dashboards and reports
 
 The artifact schema, discovery/index projection, strict checker, revisioned Go
-CRUD, dashboard/report routes, visual builder, whole-file Definition editor,
-responsive dashboard span ordering, report section composition, local runtime,
-rendered viewers, typed URL filters, pipeline type-check output, and
-producer-scoped deployment gates are now implemented. Hosted publication stays
-outside this local-first phase.
+CRUD, dashboard/report routes, canvas-first visual builder, whole-file
+Definition editor, direct dashboard grid composition, schema-aware quick add,
+visible filters with inferred safe bindings, document-first report composition,
+no-write draft previews, local runtime, rendered viewers, typed URL filters,
+pipeline type-check output, and producer-scoped deployment gates are now
+implemented. Hosted publication stays outside this local-first phase.
 
 - Add original, versioned dashboard/report artifact schemas that reference
   pipeline assets or statically analyzed named datasets.
@@ -1224,7 +1337,8 @@ outside this local-first phase.
 - Add reverse references from assets/columns to presentation consumers and make
   presentation errors part of deployment review and CLI type-check output.
 - Require every production visualization field/type to resolve from the
-  pipeline definition or declared dataset schema before deployment.
+  pipeline definition, pure query-output inference over Git-known relations, or
+  an explicitly declared dataset schema before deployment.
 - Keep publishing, access control, and scheduled refresh out until local
   artifacts and validation are solid; do not make unshipped surfaces part of
   user-facing positioning.

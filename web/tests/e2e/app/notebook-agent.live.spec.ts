@@ -1,9 +1,16 @@
-import { expect } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { resolve } from "node:path";
 
 import { liveTest as test } from "../live-app-fixture";
 
 const fakeCodex = resolve(__dirname, "..", "..", "fixtures", "fake-codex-notebook-agent");
+
+async function openNotebookAssistant(page: Page) {
+  if ((page.viewportSize()?.width ?? 0) < 1280) {
+    await page.getByRole("button", { name: "Notebook tools" }).click();
+  }
+  await page.getByRole("tab", { name: "AI", exact: true }).click();
+}
 
 test.use({
   fixtureName: "basic-workspace",
@@ -22,7 +29,7 @@ test.describe("notebook agent chat live", () => {
     const payload = (await created.json()) as { notebook: { id: string } };
 
     await page.goto(`${liveApp.baseURL}/notebooks/${payload.notebook.id}`);
-    await page.getByRole("button", { name: "Notebook assistant" }).click();
+    await openNotebookAssistant(page);
 
     await expect(page.getByText("Work on this notebook together")).toBeVisible();
     const composer = page.getByPlaceholder("Ask about this notebook…");
@@ -37,7 +44,7 @@ test.describe("notebook agent chat live", () => {
 
     await page.goto(`${liveApp.baseURL}/notebooks`);
     await page.getByText("Agent workspace", { exact: true }).click();
-    await page.getByRole("button", { name: "Notebook assistant" }).click();
+    await openNotebookAssistant(page);
 
     await expect(page.getByText("Summarize this notebook.")).toBeVisible();
     await expect(

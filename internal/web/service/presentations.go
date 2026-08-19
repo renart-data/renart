@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
+	"renart/internal/sqllsp"
 	"renart/internal/web/model"
 	"renart/internal/web/presentation"
 )
@@ -28,7 +29,7 @@ func (s *WorkspaceService) appendPresentations(ctx context.Context, state *model
 			state.Errors = append(state.Errors, path+": "+loadErr.Error())
 			continue
 		}
-		datasetSchemas, resolutionFindings := resolvePresentationDatasetSchemas(*state, artifact)
+		datasetSchemas, resolutionFindings := resolvePresentationDatasetSchemas(ctx, s.workspaceRoot, *state, artifact)
 		artifact.Problems = append(
 			(presentation.Checker{}).CheckArtifact(
 				ctx, *artifact, datasetSchemas, presentation.CheckOptions{Strict: true},
@@ -36,7 +37,7 @@ func (s *WorkspaceService) appendPresentations(ctx context.Context, state *model
 			resolutionFindings...,
 		)
 		artifact.Problems = uniquePresentationFindings(artifact.Problems)
-		state.Presentations = append(state.Presentations, presentationToModel(s.workspaceRoot, artifact))
+		state.Presentations = append(state.Presentations, presentationToModel(s.workspaceRoot, artifact, datasetSchemas))
 	}
 	sort.Slice(state.Presentations, func(i, j int) bool {
 		return state.Presentations[i].Path < state.Presentations[j].Path
@@ -44,11 +45,15 @@ func (s *WorkspaceService) appendPresentations(ctx context.Context, state *model
 }
 
 func resolvePresentationDatasetSchemas(
+	ctx context.Context,
+	workspaceRoot string,
 	state model.WorkspaceState,
 	artifact *presentation.Artifact,
 ) (map[string]presentation.ResolvedSchema, []presentation.Finding) {
 	schemas := make(map[string]presentation.ResolvedSchema, len(artifact.Datasets))
 	findings := make([]presentation.Finding, 0)
+	var authoringGraph sqllsp.CanonicalGraph
+	authoringGraphReady := false
 	for _, id := range sortedPresentationDatasetIDs(artifact.Datasets) {
 		definition := artifact.Datasets[id]
 		columns := make([]presentation.ResolvedColumn, 0, len(definition.Columns))
@@ -78,7 +83,20 @@ func resolvePresentationDatasetSchemas(
 				})
 			}
 		}
+		if len(columns) == 0 && strings.TrimSpace(definition.Query) != "" {
+			if !authoringGraphReady {
+				authoringGraph = buildWorkspaceCanonicalGraph(ctx, workspaceRoot, state)
+				authoringGraphReady = true
+			}
+			if inferred, ok := inferPresentationQuerySchema(ctx, state, authoringGraph, artifact.ID, id, definition); ok {
+				columns = inferred.Columns
+				schemas[id] = inferred
+			}
+		}
 		if len(columns) > 0 {
+			if _, inferred := schemas[id]; inferred {
+				continue
+			}
 			schemas[id] = presentation.ResolvedSchema{
 				Source:  presentation.DataSourceRef{Kind: "dataset", ArtifactID: artifact.ID, ComponentID: id},
 				Columns: columns, Complete: true,
@@ -86,6 +104,51 @@ func resolvePresentationDatasetSchemas(
 		}
 	}
 	return schemas, findings
+}
+
+// inferPresentationQuerySchema derives a query dataset's output only from the
+// Git-authored workspace graph. Live catalog observations deliberately stay
+// outside this path: they improve Monaco input intelligence, but cannot become
+// a dashboard or report's deploy-time schema contract.
+func inferPresentationQuerySchema(
+	ctx context.Context,
+	state model.WorkspaceState,
+	base sqllsp.CanonicalGraph,
+	artifactID string,
+	datasetID string,
+	definition presentation.DatasetDefinition,
+) (presentation.ResolvedSchema, bool) {
+	connection := strings.TrimSpace(definition.Connection)
+	queryType, ok := queryAssetTypeForConnectionType(state.Connections[connection])
+	if connection == "" || !ok {
+		return presentation.ResolvedSchema{}, false
+	}
+
+	uri := sqllsp.URI(
+		"inmemory://renart/presentation-query-schema/" + strings.TrimSpace(artifactID) + "/" + strings.TrimSpace(datasetID) + ".sql",
+	)
+	dialect := sqllsp.DialectFromAssetType(string(queryType))
+	inferred := sqllsp.InferOutputSchema(ctx, base, sqllsp.TextDocumentItem{
+		URI: uri, LanguageID: "sql", Text: definition.Query,
+	}, dialect)
+	columns := make([]presentation.ResolvedColumn, 0, len(inferred.Columns))
+	for _, column := range inferred.Columns {
+		name := strings.TrimSpace(column.Name)
+		if name == "" {
+			continue
+		}
+		columns = append(columns, presentation.ResolvedColumn{
+			Name: name, PhysicalType: column.Type,
+			SemanticType: presentation.SemanticTypeForPhysicalType(column.Type), Nullable: column.Nullable,
+		})
+	}
+	if len(columns) == 0 {
+		return presentation.ResolvedSchema{}, false
+	}
+	return presentation.ResolvedSchema{
+		Source:  presentation.DataSourceRef{Kind: "dataset", ArtifactID: artifactID, ComponentID: datasetID},
+		Columns: columns, Complete: strings.EqualFold(strings.TrimSpace(inferred.Completeness), "complete"),
+	}, true
 }
 
 func presentationAssetMatches(state model.WorkspaceState, reference string) []model.Asset {
@@ -128,7 +191,11 @@ func uniquePresentationFindings(findings []presentation.Finding) []presentation.
 	return result
 }
 
-func presentationToModel(workspaceRoot string, artifact *presentation.Artifact) model.PresentationArtifact {
+func presentationToModel(
+	workspaceRoot string,
+	artifact *presentation.Artifact,
+	datasetSchemas map[string]presentation.ResolvedSchema,
+) model.PresentationArtifact {
 	if artifact == nil {
 		return model.PresentationArtifact{}
 	}
@@ -143,7 +210,7 @@ func presentationToModel(workspaceRoot string, artifact *presentation.Artifact) 
 		Visualizations: make([]model.PresentationVisualization, 0, len(artifact.Visualizations)),
 		Layout:         make([]model.PresentationLayoutItem, 0, len(artifact.Layout)),
 		Sections:       make([]model.PresentationSection, 0, len(artifact.Sections)),
-		Problems:       make([]model.PresentationFinding, 0, len(artifact.Problems)),
+		Problems:       presentationFindingsToModel(artifact.Problems),
 	}
 	for _, id := range sortedPresentationDatasetIDs(artifact.Datasets) {
 		dataset := artifact.Datasets[id]
@@ -156,11 +223,20 @@ func presentationToModel(workspaceRoot string, artifact *presentation.Artifact) 
 				Name: column.Name, Type: column.Type, Nullable: column.Nullable,
 			})
 		}
+		if schema, ok := datasetSchemas[id]; ok {
+			modelDataset.ResolvedColumns = make([]model.Column, 0, len(schema.Columns))
+			for _, column := range schema.Columns {
+				modelDataset.ResolvedColumns = append(modelDataset.ResolvedColumns, model.Column{
+					Name: column.Name, Type: column.PhysicalType, Nullable: column.Nullable,
+				})
+			}
+		}
 		result.Datasets = append(result.Datasets, modelDataset)
 	}
 	for _, filter := range artifact.Filters {
 		modelFilter := model.PresentationFilter{
 			ID: filter.ID, Label: filter.Label, Type: string(filter.Type), Default: cloneJSONValue(filter.Default),
+			Min: filter.Min, Max: filter.Max, Step: filter.Step,
 		}
 		if filter.Options != nil {
 			modelFilter.Options = &model.PresentationFilterOptions{
@@ -194,8 +270,13 @@ func presentationToModel(workspaceRoot string, artifact *presentation.Artifact) 
 			Visualization: section.Visualization, PageBreak: section.PageBreak,
 		})
 	}
-	for _, finding := range artifact.Problems {
-		result.Problems = append(result.Problems, model.PresentationFinding{
+	return result
+}
+
+func presentationFindingsToModel(findings []presentation.Finding) []model.PresentationFinding {
+	result := make([]model.PresentationFinding, 0, len(findings))
+	for _, finding := range findings {
+		result = append(result, model.PresentationFinding{
 			Code: finding.Code, Severity: finding.Severity, Message: finding.Message,
 			Path: finding.Path, Field: finding.Field, PhysicalType: finding.PhysicalType,
 		})
@@ -233,6 +314,7 @@ func presentationFromModel(path string, input model.PresentationArtifact) (*pres
 		definition := presentation.FilterDefinition{
 			ID: filter.ID, Label: filter.Label,
 			Type: presentation.ParameterType(filter.Type), Default: cloneJSONValue(filter.Default),
+			Min: filter.Min, Max: filter.Max, Step: filter.Step,
 		}
 		if filter.Options != nil {
 			definition.Options = &presentation.ParameterOptions{

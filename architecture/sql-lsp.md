@@ -97,6 +97,14 @@ coordinator's `WorkspaceState` rather than the filesystem:
   materialized relation is valid, so circular-self-reference and saved
   asset-body diagnostics are suppressed only for these metadata-query
   contexts.
+- Dashboard and report query datasets use the asset-free `presentation_query`
+  document context. The selected configured connection supplies the SQL
+  dialect and remote-catalog scope, while the revision-cached canonical graph
+  supplies workspace relations and columns. A synthetic in-memory document
+  node deliberately has no output relation or asset contract, so editing a
+  presentation query never borrows an arbitrary pipeline asset or reports its
+  declared-output diagnostics. The legacy parse-context endpoint follows the
+  same connection-scoped fallback for shared editor helpers.
 - The graph is **cached by `WorkspaceState.Revision`** (monotonic, bumped on
   every mutation). Editing issues LSP requests per keystroke against the same
   saved state, so rebuilding per request was wasted work. `Revision == 0`
@@ -397,12 +405,14 @@ open local files and replaces unknown-table noise with the stable
 ## 6. Completion & diagnostic surface (web editor)
 
 The app's Monaco asset editors (`web/components/app/asset-editor.tsx`), the
-query-sensor editor, custom-check dialog, and pre/post-hook dialogs drive SQL
-intellisense **entirely through the LSP**
+query-sensor editor, dashboard/report query-dataset editor, custom-check dialog,
+and pre/post-hook dialogs drive SQL intellisense **entirely through the LSP**
 (`web/hooks/use-sql-lsp.ts`); the older client-side parse-context providers are
 deliberately disabled, so the LSP is the single source of truth. Query sensors
 use an in-memory `.sql` Monaco model while persisting edits and formatting back
-to `parameters.query`, never to the raw YAML content.
+to `parameters.query`, never to the raw YAML content. Presentation queries also
+use stable in-memory models, but persist into the route-local presentation
+draft and require the dataset's selected query connection.
 
 - **Completions** by context: column fields (after an alias `.`), relations —
   workspace assets and, in a `from schema.` position,

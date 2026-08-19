@@ -107,7 +107,7 @@ export type SQLLSPRequest = {
   content: string;
   connection?: string;
   environment?: string;
-  document_context?: "asset" | "adhoc" | "custom_check" | "hook";
+  document_context?: "asset" | "adhoc" | "custom_check" | "hook" | "presentation_query";
   position?: SQLLSPPosition;
   include_declaration?: boolean;
   new_name?: string;

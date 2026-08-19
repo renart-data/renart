@@ -6,16 +6,17 @@ import {
   AlertTriangle,
   ArrowUpFromLine,
   BookOpen,
-  Bot,
   Check,
   ChevronRight,
   Database,
   Download,
   FileInput,
   Globe2,
+  ListTree,
   Loader2,
   MoreHorizontal,
   Package,
+  PanelLeft,
   Pencil,
   Play,
   Plus,
@@ -24,8 +25,9 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { AnsiOutput } from "@/components/ansi-output";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,12 +60,22 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -80,12 +92,14 @@ import {
   cancelNotebookRun,
   closeNotebookSession,
   configureNotebookCellSource,
+  createNotebookControl,
+  createNotebookCellAt,
   createNotebookMarkdown,
   createNotebookVisualization,
-  createNotebookCell,
   createNotebookSource,
   createNotebookWarehouseSource,
   deleteNotebookBlock,
+  deleteNotebookControl,
   deleteNotebook,
   deleteNotebookCell,
   getNotebook,
@@ -103,12 +117,14 @@ import {
   setNotebookSettings,
   splitCellContent,
   updateNotebookCell,
+  updateNotebookControl,
   updateNotebookBlocks,
   updateNotebookDependencies,
   updateNotebookMarkdown,
   updateNotebookVisualization,
   upgradeNotebookManifest,
 } from "@/lib/api-notebooks";
+import type { NotebookBlockPosition } from "@/lib/api-notebooks";
 import { notebookAgentEventsAtom, notebookRuntimeEventsAtom } from "@/lib/atoms/domains/results";
 import {
   selectedEnvironmentAtom,
@@ -118,11 +134,26 @@ import {
 import { sqlDiscoveryTablesAtom } from "@/lib/atoms/sql-discovery";
 import { usesPythonSource } from "@/lib/asset-types";
 import { addDependency, missingPythonImports } from "@/lib/notebook-python-deps";
+import {
+  AUTHORED_CONTROL_TYPE_LABELS,
+  AUTHORED_CONTROL_TYPES,
+  defaultAuthoredControlRange,
+  defaultAuthoredControlValue,
+  type AuthoredControlType,
+} from "@/lib/authored-controls";
+import type { NotebookParameter } from "@/lib/generated/api-types";
 import { WebAsset, WebNotebook, WebNotebookBlock, WorkspaceQueryConnection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+import { hasAuthoringDragItem, readAuthoringDragItem } from "./authoring-drag";
+import { CHART_TYPE_OPTIONS, ChartTypePicker, type ChartType } from "./chart-type-picker";
+import { ControlTypePicker } from "./control-type-picker";
+import { DocumentAuthoringSidebar, type DocumentAuthoringTab } from "./document-authoring-sidebar";
 import { MissingPythonDepsBanner } from "./missing-python-deps";
-import { NotebookAgentPanel } from "./notebook-agent-panel";
+import { NotebookAgentChat } from "./notebook-agent-panel";
+import { NotebookBlockTypePicker } from "./notebook-block-type-picker";
+import { NotebookControlBlock } from "./notebook-control-block";
+import { MarkdownEditor } from "./markdown-editor";
 import { NewNotebookDialog } from "./new-notebook-dialog";
 import { buildNotebookSchemaTables, NotebookCellMonaco } from "./notebook-cell-editor";
 import { NotebookVizRenderer } from "./notebook-viz";
@@ -130,8 +161,10 @@ import { NotebookVisualizationBlockCard } from "./notebook-visualization-block";
 import { NotebookParametersDialog } from "./notebook-parameters-dialog";
 import { LoadStreamPicker } from "./load-stream-picker";
 import { PageHeader, AppPage, AppPanel, SimpleTable } from "./app-primitives";
-
-const ReactMarkdown = lazy(() => import("react-markdown"));
+import {
+  semanticTypeForPhysicalType,
+  visualizationSuggestionForType,
+} from "./presentation-builder/presentation-builder-model";
 
 const RESULT_DISPLAY_CAP = 50;
 // How long to wait after the last keystroke before auto-committing a cell's
@@ -140,18 +173,43 @@ const AUTO_COMMIT_DEBOUNCE_MS = 350;
 const NOTEBOOK_CELL_JUMP_HIGHLIGHT_MS = 1600;
 const NOTEBOOK_BLOCK_ENTER_ANIMATION =
   "animate-in fade-in-0 slide-in-from-bottom-2 duration-300 motion-reduce:animate-none";
+const NOTEBOOK_BLOCK_CARD_CLASS =
+  "group/notebook-block border-transparent bg-transparent shadow-none transition-colors hover:border-border hover:bg-card hover:shadow-sm focus-within:border-border focus-within:bg-card focus-within:shadow-sm";
+const NOTEBOOK_BLOCK_HEADER_CLASS =
+  "border-transparent bg-transparent transition-colors group-hover/notebook-block:border-border group-hover/notebook-block:bg-muted/20 group-focus-within/notebook-block:border-border group-focus-within/notebook-block:bg-muted/20";
 
-type PendingNotebookBlockKind = "sql" | "python" | "markdown" | "visualization";
+type PendingNotebookBlockKind = "sql" | "python" | "markdown" | "visualization" | "control";
+type NotebookBlockPlacement = Required<Pick<NotebookBlockPosition, "position">> & {
+  after_block_id?: string;
+};
+type NotebookBlockCreateOptions = {
+  placement?: NotebookBlockPlacement;
+  visualizationType?: ChartType;
+  controlType?: AuthoredControlType;
+};
 type NotebookCellDeleteTarget = { id: string; name: string };
 
 function notebookBlockKey(block: WebNotebookBlock, index: number) {
   if (block.cell) {
     return `cell:${block.cell}`;
   }
+  if (block.control) {
+    return `control:${block.control}`;
+  }
   if (block.id) {
     return `block:${block.id}`;
   }
   return `legacy-markdown:${index}`;
+}
+
+function notebookBlockStableID(block: WebNotebookBlock): string | undefined {
+  if (block.cell) return block.cell;
+  if (block.control) return `control:${block.control}`;
+  return block.id;
+}
+
+function notebookPlacementKey(placement: NotebookBlockPlacement): string {
+  return placement.position === "start" ? "start" : `after:${placement.after_block_id ?? "end"}`;
 }
 
 export function AppNotebooksIndexPage() {
@@ -263,8 +321,29 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const notebook = mutated ?? stateNotebook;
 
   useEffect(() => {
-    setMutated(null);
-  }, [stateNotebook]);
+    if (!mutated || !stateNotebook) {
+      return;
+    }
+    if (mutated.revision === stateNotebook.revision) {
+      setMutated(null);
+      return;
+    }
+
+    // Workspace SSE can overtake a just-completed mutation with a snapshot
+    // that was assembled before the filesystem watcher observed that write.
+    // Resolve differing revisions against the authoritative notebook endpoint
+    // instead of briefly replacing the mutation response with stale blocks.
+    let cancelled = false;
+    getNotebook(notebookId)
+      .then((loaded) => {
+        if (cancelled) return;
+        setMutated(loaded.revision === stateNotebook.revision ? null : loaded);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [mutated?.revision, notebookId, stateNotebook]);
 
   useEffect(() => {
     if (stateNotebook || mutated) {
@@ -303,6 +382,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const [pendingBlock, setPendingBlock] = useState<{
     id: number;
     kind: PendingNotebookBlockKind;
+    placement: NotebookBlockPlacement;
   } | null>(null);
   const [enteringBlockKey, setEnteringBlockKey] = useState<string | null>(null);
   const [jumpHighlightedCellId, setJumpHighlightedCellId] = useState<string | null>(null);
@@ -313,17 +393,26 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const [parametersOpen, setParametersOpen] = useState(false);
   const [addDataOpen, setAddDataOpen] = useState(false);
   const [promoting, setPromoting] = useState<WebAsset | null>(null);
-  const [agentOpen, setAgentOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [toolsTab, setToolsTab] = useState("outline");
+  const [selectedVisualizationID, setSelectedVisualizationID] = useState<string | null>(null);
+  const [selectedControlID, setSelectedControlID] = useState<string | null>(null);
+  const [visualizationInspectorOpen, setVisualizationInspectorOpen] = useState(false);
+  const [visualizationInspectorTarget, setVisualizationInspectorTarget] =
+    useState<HTMLDivElement | null>(null);
   const notebookViewportRef = useRef<HTMLDivElement>(null);
   const pendingBlockSequenceRef = useRef(0);
   const jumpHighlightFrameRef = useRef<number | null>(null);
   const jumpHighlightTimerRef = useRef<number | null>(null);
+  const parameterSaveTimerRef = useRef<number | null>(null);
+  const parameterValuesRef = useRef<Record<string, unknown>>({});
   const [autoRecompute, setAutoRecompute] = useState(
     () =>
       typeof window === "undefined" ||
       window.localStorage.getItem("renart-notebook-autorecompute") !== "off",
   );
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({});
+  const wideNotebookTools = useWideNotebookTools();
   useEffect(() => {
     window.localStorage.setItem("renart-notebook-autorecompute", autoRecompute ? "on" : "off");
   }, [autoRecompute]);
@@ -346,8 +435,18 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     setDeletingCell(false);
     setAddDataOpen(false);
     setParametersOpen(false);
-    setAgentOpen(false);
+    setToolsOpen(false);
+    setToolsTab("outline");
+    setSelectedVisualizationID(null);
+    setSelectedControlID(null);
+    setVisualizationInspectorOpen(false);
+    setVisualizationInspectorTarget(null);
     setParameterValues({});
+    parameterValuesRef.current = {};
+    if (parameterSaveTimerRef.current !== null) {
+      window.clearTimeout(parameterSaveTimerRef.current);
+      parameterSaveTimerRef.current = null;
+    }
     if (jumpHighlightFrameRef.current !== null) {
       window.cancelAnimationFrame(jumpHighlightFrameRef.current);
       jumpHighlightFrameRef.current = null;
@@ -358,6 +457,32 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     }
   }, [notebookId]);
 
+  useEffect(() => {
+    if (!selectedVisualizationID || !notebook) return;
+    if (
+      notebook.blocks.some(
+        (block) => block.id === selectedVisualizationID && Boolean(block.visualization),
+      )
+    ) {
+      return;
+    }
+    setSelectedVisualizationID(null);
+    setVisualizationInspectorOpen(false);
+  }, [notebook, selectedVisualizationID]);
+
+  useEffect(() => {
+    if (!selectedControlID || !notebook) return;
+    if (notebook.parameters?.some((parameter) => parameter.id === selectedControlID)) {
+      return;
+    }
+    setSelectedControlID(null);
+    setVisualizationInspectorOpen(false);
+  }, [notebook, selectedControlID]);
+
+  useEffect(() => {
+    if (wideNotebookTools) setVisualizationInspectorOpen(false);
+  }, [wideNotebookTools]);
+
   useEffect(
     () => () => {
       if (jumpHighlightFrameRef.current !== null) {
@@ -366,9 +491,16 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       if (jumpHighlightTimerRef.current !== null) {
         window.clearTimeout(jumpHighlightTimerRef.current);
       }
+      if (parameterSaveTimerRef.current !== null) {
+        window.clearTimeout(parameterSaveTimerRef.current);
+      }
     },
     [],
   );
+
+  useEffect(() => {
+    parameterValuesRef.current = parameterValues;
+  }, [parameterValues]);
 
   // Adding a block changes the scroll height twice: once for the immediate
   // pending card, then again when the real editor replaces it. Scroll after
@@ -657,6 +789,24 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     [mutateWithResult],
   );
 
+  const selectVisualization = useCallback(
+    (visualizationID: string) => {
+      setSelectedVisualizationID(visualizationID);
+      setSelectedControlID(null);
+      if (!wideNotebookTools) setVisualizationInspectorOpen(true);
+    },
+    [wideNotebookTools],
+  );
+
+  const selectControl = useCallback(
+    (controlID: string) => {
+      setSelectedControlID(controlID);
+      setSelectedVisualizationID(null);
+      if (!wideNotebookTools) setVisualizationInspectorOpen(true);
+    },
+    [wideNotebookTools],
+  );
+
   const confirmDeleteCell = useCallback(async () => {
     if (!cellToDelete || deletingCell) {
       return;
@@ -667,57 +817,131 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     setCellToDelete(null);
   }, [cellToDelete, deletingCell, mutateWithResult, notebookId]);
 
-  const createBlockAtBottom = useCallback(
-    async (kind: PendingNotebookBlockKind) => {
+  const createNotebookBlock = useCallback(
+    async (kind: PendingNotebookBlockKind, options: NotebookBlockCreateOptions = {}) => {
       if (!notebook || pendingBlock) {
         return;
       }
 
+      const placement = options.placement ?? { position: "end" };
+      const visualizationType = options.visualizationType ?? "table";
+      const controlType = options.controlType ?? "text";
       const id = ++pendingBlockSequenceRef.current;
       const existingCellIDs = new Set(
         notebook.cells.map((cell) => cell.cell_id).filter((cellID): cellID is string => !!cellID),
       );
       const existingBlockIDs = new Set(notebook.blocks.map((block) => block.id).filter(Boolean));
-      setPendingBlock({ id, kind });
+      const existingControlIDs = new Set(
+        notebook.blocks.map((block) => block.control).filter(Boolean),
+      );
+      setPendingBlock({ id, kind, placement });
       setEnteringBlockKey(null);
-      setScrollRevision((current) => current + 1);
+      if (placement.position === "end") setScrollRevision((current) => current + 1);
 
       const updated = await mutateWithResult(() => {
         if (kind === "markdown") {
           if (notebook.manifest_version < 2) {
-            return updateNotebookBlocks(notebookId, [...notebook.blocks, { markdown: "## Notes" }]);
+            const next = [...notebook.blocks];
+            const afterIndex = placement.after_block_id
+              ? next.findIndex(
+                  (candidate) => notebookBlockStableID(candidate) === placement.after_block_id,
+                )
+              : -1;
+            const insertionIndex =
+              placement.position === "start"
+                ? 0
+                : placement.position === "after" && afterIndex >= 0
+                  ? afterIndex + 1
+                  : next.length;
+            next.splice(insertionIndex, 0, { markdown: "## Notes" });
+            return updateNotebookBlocks(notebookId, next);
           }
-          const lastBlock = notebook.blocks.at(-1);
           return createNotebookMarkdown(notebookId, {
             content: "## Notes",
-            after_block_id: lastBlock
-              ? notebookBlockKey(lastBlock, notebook.blocks.length - 1)
-              : undefined,
+            ...placement,
           });
         }
         if (kind === "visualization") {
-          const sourceBlock = [...notebook.blocks].reverse().find((block) => block.cell);
+          const insertionIndex =
+            placement.position === "start"
+              ? -1
+              : placement.position === "end"
+                ? notebook.blocks.length - 1
+                : notebook.blocks.findIndex(
+                    (candidate) => notebookBlockStableID(candidate) === placement.after_block_id,
+                  );
+          const sourceBlock =
+            notebook.blocks
+              .slice(0, insertionIndex + 1)
+              .reverse()
+              .find((block) => block.cell) ?? notebook.blocks.find((block) => block.cell);
           if (!sourceBlock?.cell) {
             throw new Error("Add a data-producing cell before creating a visualization.");
           }
+          const sourceResult = results[sourceBlock.cell];
+          const columns = (sourceResult?.columns ?? []).map((name, index) => ({
+            name,
+            physical_type: sourceResult?.column_types?.[index] ?? "",
+            semantic_type: semanticTypeForPhysicalType(sourceResult?.column_types?.[index] ?? ""),
+          }));
+          const suggestion = visualizationSuggestionForType(columns, visualizationType);
           return createNotebookVisualization(notebookId, {
             source: sourceBlock.cell,
-            definition: { version: 1, type: "table", presentation_limit: 200 },
-            after_block_id: sourceBlock.cell,
+            definition: suggestion.definition,
+            ...placement,
           });
         }
-        return createNotebookCell(notebookId, kind === "python" ? { language: "python" } : {});
+        if (kind === "control") {
+          const existing = new Set((notebook.parameters ?? []).map((parameter) => parameter.id));
+          let controlID = "control";
+          let suffix = 2;
+          while (existing.has(controlID)) {
+            controlID = `control_${suffix}`;
+            suffix += 1;
+          }
+          const parameter: NotebookParameter = {
+            id: controlID,
+            label: AUTHORED_CONTROL_TYPE_LABELS[controlType],
+            type: controlType,
+            default: defaultAuthoredControlValue(controlType),
+            ...defaultAuthoredControlRange(controlType),
+            options:
+              controlType === "select" || controlType === "multi_select"
+                ? { values: [] }
+                : undefined,
+          };
+          return createNotebookControl(notebookId, parameter, placement);
+        }
+        return createNotebookCellAt(notebookId, {
+          language: kind === "python" ? "python" : "sql",
+          ...placement,
+        });
       });
 
       if (updated) {
         if (kind === "markdown") {
-          const blockIndex = updated.blocks.length - 1;
-          setEnteringBlockKey(notebookBlockKey(updated.blocks[blockIndex], blockIndex));
+          const createdIndex = updated.blocks.findIndex(
+            (block) => block.id && !existingBlockIDs.has(block.id),
+          );
+          if (createdIndex >= 0) {
+            setEnteringBlockKey(notebookBlockKey(updated.blocks[createdIndex], createdIndex));
+          }
         } else if (kind === "visualization") {
           const createdBlock = updated.blocks.find(
             (block) => block.visualization && block.id && !existingBlockIDs.has(block.id),
           );
-          if (createdBlock?.id) setEnteringBlockKey(`block:${createdBlock.id}`);
+          if (createdBlock?.id) {
+            setEnteringBlockKey(`block:${createdBlock.id}`);
+            selectVisualization(createdBlock.id);
+          }
+        } else if (kind === "control") {
+          const createdBlock = updated.blocks.find(
+            (block) => block.control && !existingControlIDs.has(block.control),
+          );
+          if (createdBlock?.control) {
+            setEnteringBlockKey(`control:${createdBlock.control}`);
+            selectControl(createdBlock.control);
+          }
         } else {
           const createdBlock = updated.blocks.find(
             (block) => block.cell && !existingCellIDs.has(block.cell),
@@ -728,9 +952,17 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         }
       }
       setPendingBlock((current) => (current?.id === id ? null : current));
-      setScrollRevision((current) => current + 1);
+      if (placement.position === "end") setScrollRevision((current) => current + 1);
     },
-    [mutateWithResult, notebook, notebookId, pendingBlock],
+    [
+      mutateWithResult,
+      notebook,
+      notebookId,
+      pendingBlock,
+      results,
+      selectControl,
+      selectVisualization,
+    ],
   );
 
   const configureCellSource = useCallback(
@@ -892,6 +1124,21 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     },
     [autoRecompute, notebookId, selectedEnvironment],
   );
+  const queueParameterValue = useCallback(
+    (id: string, value: unknown) => {
+      const next = { ...parameterValuesRef.current, [id]: value };
+      parameterValuesRef.current = next;
+      setParameterValues(next);
+      if (parameterSaveTimerRef.current !== null) {
+        window.clearTimeout(parameterSaveTimerRef.current);
+      }
+      parameterSaveTimerRef.current = window.setTimeout(() => {
+        parameterSaveTimerRef.current = null;
+        void saveParameterValues(next);
+      }, 350);
+    },
+    [saveParameterValues],
+  );
 
   // Ctrl+Click / F12 targets: pipeline assets open in the build page, sibling
   // cells scroll into view within this notebook.
@@ -931,6 +1178,34 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       }, NOTEBOOK_CELL_JUMP_HIGHLIGHT_MS);
     });
   }, []);
+  const goToBlock = useCallback(
+    (block: WebNotebookBlock) => {
+      if (block.visualization && block.id) {
+        selectVisualization(block.id);
+      } else if (block.control) {
+        selectControl(block.control);
+      } else {
+        setSelectedVisualizationID(null);
+        setSelectedControlID(null);
+        setVisualizationInspectorOpen(false);
+      }
+      if (block.cell) {
+        goToCell(block.cell);
+      } else if (block.id || block.control) {
+        const selector = block.control
+          ? `[data-notebook-control-id="${CSS.escape(block.control)}"]`
+          : `[data-notebook-block-id="${CSS.escape(block.id ?? "")}"]`;
+        document.querySelector<HTMLElement>(selector)?.scrollIntoView({
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+            ? "auto"
+            : "smooth",
+          block: "center",
+        });
+      }
+      if (!wideNotebookTools) setToolsOpen(false);
+    },
+    [goToCell, selectControl, selectVisualization, wideNotebookTools],
+  );
 
   const pipelines = workspace?.pipelines ?? [];
   const promoteCell = useCallback(
@@ -988,6 +1263,83 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   // so this is every stale cell.
   const manualStaleCells = [...staleCells].filter((id) => !autoPending.has(id));
   const staleCount = manualStaleCells.length;
+  const placedControlIDs = new Set(
+    notebook.blocks.map((block) => block.control).filter((id): id is string => Boolean(id)),
+  );
+  const unplacedControls = (notebook.parameters ?? []).filter(
+    (parameter) => !placedControlIDs.has(parameter.id),
+  );
+  const renderNotebookControl = (control: NotebookParameter, entering = false) => (
+    <div
+      key={`control:${control.id}`}
+      data-notebook-control-id={control.id}
+      data-notebook-block-entering={entering || undefined}
+      className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+    >
+      <NotebookControlBlock
+        control={control}
+        value={parameterValues[control.id] ?? control.default}
+        busy={busy}
+        selected={selectedControlID === control.id}
+        inspectorTarget={visualizationInspectorTarget}
+        onSelect={() => selectControl(control.id)}
+        onCloseInspector={() => {
+          setSelectedControlID(null);
+          setVisualizationInspectorOpen(false);
+        }}
+        onValueChange={(value) => queueParameterValue(control.id, value)}
+        onSave={async (nextControl) => {
+          const updated = await mutateWithResult(() =>
+            updateNotebookControl(notebookId, control.id, nextControl),
+          );
+          if (!updated) return false;
+          if (nextControl.id !== control.id) {
+            setParameterValues((current) => {
+              const next = { ...current };
+              delete next[control.id];
+              next[nextControl.id] = nextControl.default;
+              parameterValuesRef.current = next;
+              return next;
+            });
+            setSelectedControlID(nextControl.id);
+          }
+          return true;
+        }}
+        onDelete={async () => {
+          await mutateWithResult(() => deleteNotebookControl(notebookId, control.id));
+          setSelectedControlID(null);
+          setVisualizationInspectorOpen(false);
+        }}
+      />
+    </div>
+  );
+  const agentRunning =
+    notebookAgentEvent?.status === "running" || notebookAgentEvent?.status === "cancelling";
+  const renderNotebookTools = (onClose?: () => void) => (
+    <NotebookAuthoringSidebar
+      notebook={notebook}
+      notebookId={notebookId}
+      results={results}
+      activeTab={toolsTab}
+      agentRunning={agentRunning}
+      addingBlock={pendingBlock !== null}
+      onTabChange={setToolsTab}
+      onSelectBlock={goToBlock}
+      onAddData={() => {
+        setAddDataOpen(true);
+        onClose?.();
+      }}
+      onManageControls={() => {
+        setParametersOpen(true);
+        onClose?.();
+      }}
+      onAddBlock={(kind, options) => {
+        void createNotebookBlock(kind, options);
+        onClose?.();
+      }}
+      onClose={onClose}
+    />
+  );
 
   return (
     <AppPage>
@@ -1020,35 +1372,16 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                   </Button>
                 </div>
               ) : null}
-              <Button variant="outline" size="sm" onClick={() => setAddDataOpen(true)}>
-                <Database className="size-3.5" />
-                <span className="hidden sm:inline">Add data</span>
-              </Button>
               <Button
                 variant="outline"
                 size="sm"
-                aria-label="Notebook parameters"
-                onClick={() => setParametersOpen(true)}
+                className="xl:hidden"
+                aria-label="Notebook tools"
+                onClick={() => setToolsOpen(true)}
               >
-                <SlidersHorizontal className="size-3.5" />
-                <span className="hidden sm:inline">Parameters</span>
-                {(notebook.parameters?.length ?? 0) > 0 ? (
-                  <span className="text-[10px] text-muted-foreground">
-                    {notebook.parameters?.length}
-                  </span>
-                ) : null}
-              </Button>
-              <Button
-                variant={agentOpen ? "secondary" : "outline"}
-                size="sm"
-                aria-label="Notebook assistant"
-                aria-pressed={agentOpen}
-                onClick={() => setAgentOpen((current) => !current)}
-              >
-                <Bot data-icon="inline-start" />
-                <span className="hidden sm:inline">AI</span>
-                {notebookAgentEvent?.status === "running" ||
-                notebookAgentEvent?.status === "cancelling" ? (
+                <PanelLeft data-icon="inline-start" />
+                <span className="hidden sm:inline">Tools</span>
+                {agentRunning ? (
                   <span
                     aria-label="Agent is working"
                     className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse"
@@ -1223,7 +1556,13 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         </div>
       ) : null}
       <div className="flex min-h-0 min-w-0 flex-1">
+        {wideNotebookTools ? (
+          <aside className="w-[clamp(18rem,23vw,27rem)] min-w-0 shrink-0 border-r bg-background">
+            {renderNotebookTools()}
+          </aside>
+        ) : null}
         <ScrollArea
+          data-testid="notebook-scroll-area"
           className="min-h-0 min-w-0 flex-1"
           viewportClassName="px-3 pb-24"
           viewportRef={notebookViewportRef}
@@ -1232,11 +1571,32 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
             setNotebookScrolled((current) => (current === nextScrolled ? current : nextScrolled));
           }}
         >
-          <div className="mx-auto flex max-w-5xl flex-col gap-3">
+          <div
+            data-testid="notebook-canvas"
+            className="mx-auto flex min-h-full max-w-5xl flex-col rounded-xl"
+          >
+            {unplacedControls.map((control) => renderNotebookControl(control))}
+            <NotebookInsertionPoint
+              placement={{ position: "start" }}
+              disabled={pendingBlock !== null}
+              pendingKind={
+                pendingBlock &&
+                notebookPlacementKey(pendingBlock.placement) ===
+                  notebookPlacementKey({ position: "start" })
+                  ? pendingBlock.kind
+                  : undefined
+              }
+              onInsert={(kind, options) =>
+                void createNotebookBlock(kind, {
+                  ...options,
+                  placement: { position: "start" },
+                })
+              }
+            />
             {notebook.blocks.map((block, index) => {
               const blockKey = notebookBlockKey(block, index);
               const entering = blockKey === enteringBlockKey;
-              return block.cell ? (
+              const renderedBlock = block.cell ? (
                 (() => {
                   const cell = cellsById.get(block.cell);
                   if (!cell) {
@@ -1256,6 +1616,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                         <NotebookSourceCard
                           notebookId={notebookId}
                           cell={cell}
+                          queryConnections={workspace?.query_connections ?? []}
                           result={results[block.cell]}
                           stale={staleCells.has(block.cell)}
                           running={runningCells.has(block.cell)}
@@ -1328,7 +1689,10 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                                 candidate.id &&
                                 !existingBlockIDs.has(candidate.id),
                             );
-                            if (migrated?.id) setEnteringBlockKey(`block:${migrated.id}`);
+                            if (migrated?.id) {
+                              setEnteringBlockKey(`block:${migrated.id}`);
+                              selectVisualization(migrated.id);
+                            }
                           }}
                           onGoToAsset={goToAsset}
                           onGoToCell={goToCell}
@@ -1336,6 +1700,14 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                       )}
                     </div>
                   );
+                })()
+              ) : block.control ? (
+                (() => {
+                  const control = notebook.parameters?.find(
+                    (parameter) => parameter.id === block.control,
+                  );
+                  if (!control) return null;
+                  return renderNotebookControl(control, entering);
                 })()
               ) : block.visualization && block.id ? (
                 <div
@@ -1352,6 +1724,13 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                     cells={notebook.cells}
                     results={results}
                     busy={busy}
+                    selected={selectedVisualizationID === block.id}
+                    inspectorTarget={visualizationInspectorTarget}
+                    onSelect={() => selectVisualization(block.id ?? "")}
+                    onCloseInspector={() => {
+                      setSelectedVisualizationID(null);
+                      setVisualizationInspectorOpen(false);
+                    }}
                     onSave={async (source, definition) => {
                       await flushPendingSaves();
                       const updated = await mutateWithResult(() =>
@@ -1365,6 +1744,10 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                     onDelete={async () => {
                       await flushPendingSaves();
                       await mutateWithResult(() => deleteNotebookBlock(notebookId, block.id ?? ""));
+                      if (selectedVisualizationID === block.id) {
+                        setSelectedVisualizationID(null);
+                        setVisualizationInspectorOpen(false);
+                      }
                     }}
                   />
                 </div>
@@ -1378,16 +1761,21 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                 >
                   <MarkdownBlockCard
                     markdown={block.markdown ?? ""}
-                    onSave={(markdown) => {
+                    onSave={async (markdown) => {
                       if (!block.id) {
                         const blocks: WebNotebookBlock[] = notebook.blocks.map(
                           (candidate, candidateIndex) =>
                             candidateIndex === index ? { ...candidate, markdown } : candidate,
                         );
-                        void mutate(() => updateNotebookBlocks(notebookId, blocks));
-                        return;
+                        return Boolean(
+                          await mutateWithResult(() => updateNotebookBlocks(notebookId, blocks)),
+                        );
                       }
-                      void mutate(() => updateNotebookMarkdown(notebookId, block.id!, markdown));
+                      return Boolean(
+                        await mutateWithResult(() =>
+                          updateNotebookMarkdown(notebookId, block.id!, markdown),
+                        ),
+                      );
                     }}
                     onDelete={() => {
                       if (!block.id) {
@@ -1402,58 +1790,492 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                   />
                 </div>
               );
+              const stableID = notebookBlockStableID(block);
+              const placement: NotebookBlockPlacement = stableID
+                ? { position: "after", after_block_id: stableID }
+                : { position: "end" };
+              return (
+                <Fragment key={blockKey}>
+                  {renderedBlock}
+                  {stableID ? (
+                    <NotebookInsertionPoint
+                      placement={placement}
+                      disabled={pendingBlock !== null}
+                      pendingKind={
+                        pendingBlock &&
+                        notebookPlacementKey(pendingBlock.placement) ===
+                          notebookPlacementKey(placement)
+                          ? pendingBlock.kind
+                          : undefined
+                      }
+                      onInsert={(kind, options) =>
+                        void createNotebookBlock(kind, { ...options, placement })
+                      }
+                    />
+                  ) : null}
+                </Fragment>
+              );
             })}
-
-            {pendingBlock ? <PendingNotebookBlock kind={pendingBlock.kind} /> : null}
-
-            <div className="flex gap-2" aria-busy={pendingBlock !== null}>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={pendingBlock !== null}
-                onClick={() => void createBlockAtBottom("sql")}
-              >
-                <Plus className="size-3.5" />
-                SQL cell
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={pendingBlock !== null}
-                onClick={() => void createBlockAtBottom("python")}
-              >
-                <Plus className="size-3.5" />
-                Python cell
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={pendingBlock !== null}
-                onClick={() => void createBlockAtBottom("markdown")}
-              >
-                <Plus className="size-3.5" />
-                Markdown
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={
-                  pendingBlock !== null ||
-                  notebook.cells.length === 0 ||
-                  notebook.manifest_version < 2
-                }
-                onClick={() => void createBlockAtBottom("visualization")}
-              >
-                <Plus className="size-3.5" />
-                Visualization
-              </Button>
-            </div>
+            {pendingBlock?.placement.position === "end" ? (
+              <div className="py-1.5">
+                <PendingNotebookBlock kind={pendingBlock.kind} />
+              </div>
+            ) : null}
           </div>
         </ScrollArea>
-        <NotebookAgentPanel notebookId={notebookId} open={agentOpen} onOpenChange={setAgentOpen} />
+        {wideNotebookTools && (selectedVisualizationID || selectedControlID) ? (
+          <aside className="w-[clamp(20rem,24vw,26rem)] min-w-0 shrink-0 overflow-hidden border-l bg-background">
+            <ScrollArea className="h-full">
+              <div ref={setVisualizationInspectorTarget} />
+            </ScrollArea>
+          </aside>
+        ) : null}
       </div>
+      {!wideNotebookTools ? (
+        <>
+          <Sheet open={toolsOpen} onOpenChange={setToolsOpen}>
+            <SheetContent side="left" className="w-[min(28rem,94vw)] max-w-full p-0">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Notebook tools</SheetTitle>
+                <SheetDescription>Outline, data, blocks, and notebook assistant.</SheetDescription>
+              </SheetHeader>
+              <div className="min-h-0 flex-1">
+                {toolsOpen ? renderNotebookTools(() => setToolsOpen(false)) : null}
+              </div>
+            </SheetContent>
+          </Sheet>
+          <Sheet
+            open={
+              Boolean(selectedVisualizationID || selectedControlID) && visualizationInspectorOpen
+            }
+            onOpenChange={setVisualizationInspectorOpen}
+          >
+            <SheetContent
+              side="right"
+              showCloseButton={false}
+              className="w-[min(26rem,94vw)] max-w-full overflow-hidden p-0"
+            >
+              <SheetHeader className="sr-only">
+                <SheetTitle>Block inspector</SheetTitle>
+                <SheetDescription>Configure the selected notebook block.</SheetDescription>
+              </SheetHeader>
+              <ScrollArea className="min-h-0 flex-1">
+                <div ref={setVisualizationInspectorTarget} />
+              </ScrollArea>
+            </SheetContent>
+          </Sheet>
+        </>
+      ) : null}
     </AppPage>
   );
+}
+
+function NotebookAuthoringSidebar({
+  notebook,
+  notebookId,
+  results,
+  activeTab,
+  agentRunning,
+  addingBlock,
+  onTabChange,
+  onSelectBlock,
+  onAddData,
+  onManageControls,
+  onAddBlock,
+  onClose,
+}: {
+  notebook: WebNotebook;
+  notebookId: string;
+  results: Record<string, NotebookCellRunResult>;
+  activeTab: string;
+  agentRunning: boolean;
+  addingBlock: boolean;
+  onTabChange: (tab: string) => void;
+  onSelectBlock: (block: WebNotebookBlock) => void;
+  onAddData: () => void;
+  onManageControls: () => void;
+  onAddBlock: (kind: PendingNotebookBlockKind, options?: NotebookBlockCreateOptions) => void;
+  onClose?: () => void;
+}) {
+  const cells = new Map(
+    notebook.cells
+      .filter((cell): cell is WebAsset & { cell_id: string } => Boolean(cell.cell_id))
+      .map((cell) => [cell.cell_id, cell]),
+  );
+  const tabs: DocumentAuthoringTab[] = [
+    {
+      value: "outline",
+      label: "Outline",
+      content: (
+        <NotebookOutline
+          blocks={notebook.blocks}
+          cells={cells}
+          parameters={notebook.parameters ?? []}
+          onSelect={onSelectBlock}
+        />
+      ),
+    },
+    {
+      value: "data",
+      label: "Data",
+      content: (
+        <NotebookDataList
+          cells={notebook.cells}
+          results={results}
+          onAddData={onAddData}
+          onSelect={(cell) => {
+            const block = notebook.blocks.find((candidate) => candidate.cell === cell.cell_id);
+            if (block) onSelectBlock(block);
+          }}
+        />
+      ),
+    },
+    {
+      value: "add",
+      label: "Add",
+      content: (
+        <NotebookAddPalette
+          canVisualize={notebook.manifest_version >= 2 && notebook.cells.length > 0}
+          canAddControls={notebook.manifest_version >= 2}
+          disabled={addingBlock}
+          onManageControls={onManageControls}
+          onAdd={onAddBlock}
+        />
+      ),
+    },
+    {
+      value: "ai",
+      label: (
+        <span className="flex min-w-0 items-center gap-1.5">
+          AI
+          {agentRunning ? (
+            <span
+              aria-label="Agent is working"
+              className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse"
+            />
+          ) : null}
+        </span>
+      ),
+      content: <NotebookAgentChat notebookId={notebookId} onClose={onClose} />,
+      scroll: false,
+    },
+  ];
+
+  return (
+    <DocumentAuthoringSidebar
+      label="Notebook authoring tools"
+      tabs={tabs}
+      value={activeTab}
+      defaultValue="outline"
+      onValueChange={onTabChange}
+    />
+  );
+}
+
+function NotebookOutline({
+  blocks,
+  cells,
+  parameters,
+  onSelect,
+}: {
+  blocks: WebNotebookBlock[];
+  cells: Map<string, WebAsset>;
+  parameters: NotebookParameter[];
+  onSelect: (block: WebNotebookBlock) => void;
+}) {
+  const placedControlIDs = new Set(
+    blocks.map((block) => block.control).filter((id): id is string => Boolean(id)),
+  );
+  const outlineBlocks: WebNotebookBlock[] = [
+    ...parameters
+      .filter((parameter) => !placedControlIDs.has(parameter.id))
+      .map((parameter) => ({ control: parameter.id })),
+    ...blocks,
+  ];
+  return (
+    <div className="flex flex-col gap-1 p-2">
+      {outlineBlocks.map((block, index) => {
+        const cell = block.cell ? cells.get(block.cell) : undefined;
+        const type = cell
+          ? cell.notebook_source
+            ? "Source"
+            : usesPythonSource(cell)
+              ? "Python"
+              : "SQL"
+          : block.visualization
+            ? "Chart"
+            : block.control
+              ? "Control"
+              : "Text";
+        const title = block.control
+          ? (parameters.find((parameter) => parameter.id === block.control)?.label ?? block.control)
+          : notebookBlockTitle(block, cell, index);
+        return (
+          <button
+            key={block.id || block.cell || `block-${index}`}
+            type="button"
+            className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent"
+            onClick={() => onSelect(block)}
+          >
+            <ListTree className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">{title}</span>
+            <span className="shrink-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+              {type}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function NotebookDataList({
+  cells,
+  results,
+  onAddData,
+  onSelect,
+}: {
+  cells: WebAsset[];
+  results: Record<string, NotebookCellRunResult>;
+  onAddData: () => void;
+  onSelect: (cell: WebAsset) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 p-2">
+      <Button size="sm" variant="outline" className="w-full" onClick={onAddData}>
+        <Plus /> Add data
+      </Button>
+      {cells.map((cell) => {
+        const result = cell.cell_id ? results[cell.cell_id] : undefined;
+        const source = cell.notebook_source;
+        return (
+          <button
+            key={cell.cell_id || cell.name}
+            type="button"
+            className="flex min-w-0 flex-col gap-1.5 rounded-lg border bg-card p-2.5 text-left transition-colors hover:bg-accent"
+            onClick={() => onSelect(cell)}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <Database className="size-3.5 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1 truncate text-xs font-medium">{cell.name}</span>
+              {result?.status === "ok" ? (
+                <Badge variant="outline" className="shrink-0 font-normal">
+                  {result.total_rows} rows
+                </Badge>
+              ) : null}
+            </span>
+            <span className="truncate text-[10px] text-muted-foreground">
+              {source?.connection || (usesPythonSource(cell) ? "Python output" : "Notebook DuckDB")}
+            </span>
+            {result?.columns.length ? (
+              <span className="flex min-w-0 flex-wrap gap-1">
+                {result.columns.slice(0, 5).map((column) => (
+                  <span
+                    key={column}
+                    className="max-w-full truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground"
+                  >
+                    {column}
+                  </span>
+                ))}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function NotebookAddPalette({
+  canVisualize,
+  canAddControls,
+  disabled,
+  onManageControls,
+  onAdd,
+}: {
+  canVisualize: boolean;
+  canAddControls: boolean;
+  disabled: boolean;
+  onManageControls: () => void;
+  onAdd: (kind: PendingNotebookBlockKind, options?: NotebookBlockCreateOptions) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-3 p-2">
+      <NotebookBlockTypePicker
+        draggable
+        disabled={disabled}
+        onValueChange={(type) => onAdd(type)}
+      />
+      <div className="flex flex-col gap-2">
+        <p className="px-1 text-[11px] font-medium text-muted-foreground">Visualizations</p>
+        <ChartTypePicker
+          compact
+          draggable
+          disabled={disabled || !canVisualize}
+          onValueChange={(type) => onAdd("visualization", { visualizationType: type })}
+        />
+        <p className="px-1 text-[10px] leading-relaxed text-muted-foreground">
+          Drag a preview onto the notebook, or click it to add after the latest data result.
+        </p>
+      </div>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between px-1">
+          <p className="text-[11px] font-medium text-muted-foreground">Controls</p>
+          <Button size="xs" variant="ghost" aria-label="Manage controls" onClick={onManageControls}>
+            Manage
+          </Button>
+        </div>
+        <ControlTypePicker
+          draggable
+          disabled={disabled || !canAddControls}
+          onValueChange={(controlType) => onAdd("control", { controlType })}
+        />
+        <p className="px-1 text-[10px] leading-relaxed text-muted-foreground">
+          Drag a typed input between notebook blocks, or click to append it.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function NotebookInsertionPoint({
+  placement,
+  disabled,
+  pendingKind,
+  onInsert,
+}: {
+  placement: NotebookBlockPlacement;
+  disabled: boolean;
+  pendingKind?: PendingNotebookBlockKind;
+  onInsert: (kind: PendingNotebookBlockKind, options?: NotebookBlockCreateOptions) => void;
+}) {
+  const [dropActive, setDropActive] = useState(false);
+  if (pendingKind) {
+    return (
+      <div className="py-1.5">
+        <PendingNotebookBlock kind={pendingKind} />
+      </div>
+    );
+  }
+  return (
+    <div
+      data-notebook-insertion-point={notebookPlacementKey(placement)}
+      className={cn(
+        "group/notebook-insert relative flex h-8 items-center justify-center transition-colors",
+        dropActive && "h-12 rounded-lg bg-primary/5 ring-1 ring-primary/25",
+      )}
+      onDragEnter={(event) => {
+        if (disabled || !hasAuthoringDragItem(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setDropActive(true);
+      }}
+      onDragOver={(event) => {
+        if (disabled || !hasAuthoringDragItem(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = "copy";
+      }}
+      onDragLeave={(event) => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+        setDropActive(false);
+      }}
+      onDrop={(event) => {
+        const item = readAuthoringDragItem(event);
+        if (disabled || !item) return;
+        event.preventDefault();
+        event.stopPropagation();
+        setDropActive(false);
+        if (item.kind === "visualization") {
+          onInsert("visualization", { visualizationType: item.chartType });
+        } else if (item.kind === "control") {
+          onInsert("control", { controlType: item.controlType });
+        } else {
+          onInsert(item.blockType);
+        }
+      }}
+    >
+      <div
+        className={cn(
+          "absolute inset-x-2 top-1/2 h-px bg-border opacity-0 transition-opacity group-hover/notebook-insert:opacity-100 group-focus-within/notebook-insert:opacity-100",
+          dropActive && "opacity-100",
+        )}
+      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            size="icon-xs"
+            variant="outline"
+            disabled={disabled}
+            aria-label="Insert notebook block here"
+            className={cn(
+              "relative z-10 rounded-full bg-background opacity-0 shadow-xs transition-opacity group-hover/notebook-insert:opacity-100 group-focus-within/notebook-insert:opacity-100",
+              dropActive && "opacity-100",
+            )}
+          >
+            <Plus />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="center" className="w-44">
+          <DropdownMenuItem onSelect={() => onInsert("sql")}>
+            <Database /> SQL cell
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onInsert("python")}>
+            <FileInput /> Python cell
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => onInsert("markdown")}>
+            <BookOpen /> Text
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <SlidersHorizontal /> Control
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-40">
+              {AUTHORED_CONTROL_TYPES.map((type) => (
+                <DropdownMenuItem
+                  key={type}
+                  onSelect={() => onInsert("control", { controlType: type })}
+                >
+                  {AUTHORED_CONTROL_TYPE_LABELS[type]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <SlidersHorizontal /> Visualization
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-40">
+              {CHART_TYPE_OPTIONS.map((option) => (
+                <DropdownMenuItem
+                  key={option.value}
+                  onSelect={() => onInsert("visualization", { visualizationType: option.value })}
+                >
+                  {option.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function notebookBlockTitle(block: WebNotebookBlock, cell: WebAsset | undefined, index: number) {
+  if (cell) return cell.name;
+  if (block.control) return block.control;
+  if (block.visualization) {
+    const title = block.visualization.definition?.title;
+    return typeof title === "string" && title.trim() ? title : "Visualization";
+  }
+  const firstLine = block.markdown
+    ?.split("\n", 1)[0]
+    ?.replace(/^#+\s*/, "")
+    .trim();
+  return firstLine || `Text ${index + 1}`;
 }
 
 function PendingNotebookBlock({ kind }: { kind: PendingNotebookBlockKind }) {
@@ -1462,7 +2284,9 @@ function PendingNotebookBlock({ kind }: { kind: PendingNotebookBlockKind }) {
       ? "Markdown block"
       : kind === "visualization"
         ? "visualization"
-        : `${kind.toUpperCase()} cell`;
+        : kind === "control"
+          ? "control"
+          : `${kind.toUpperCase()} cell`;
 
   return (
     <div
@@ -1998,6 +2822,113 @@ function formatNotebookBytes(bytes: number) {
   return `${value >= 10 || exponent === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exponent]}`;
 }
 
+function formatNotebookTimestamp(value: string) {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return value || "Unknown";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(timestamp);
+}
+
+function NotebookSnapshotSummary({
+  snapshot,
+  stale,
+  fallbackConnection,
+  label,
+}: {
+  snapshot: NonNullable<NotebookCellRunResult["snapshot"]>;
+  stale: boolean;
+  fallbackConnection?: string;
+  label: string;
+}) {
+  const state = stale ? "Definition changed" : snapshot.sampled ? "Sampled" : "Complete";
+  const connection = snapshot.connection?.trim() || fallbackConnection?.trim() || "Workspace";
+  const captured = formatNotebookTimestamp(snapshot.imported_at);
+
+  return (
+    <dl
+      aria-label={label}
+      className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-2 rounded-lg bg-muted/25 px-3 py-2 text-xs sm:grid-cols-3 lg:grid-cols-6"
+    >
+      <div className="min-w-0">
+        <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Snapshot</dt>
+        <dd className="mt-0.5 flex items-center gap-1.5 font-medium">
+          <span
+            className={cn(
+              "size-1.5 shrink-0 rounded-full",
+              stale ? "bg-amber-500" : snapshot.sampled ? "bg-sky-500" : "bg-emerald-500",
+            )}
+          />
+          {state}
+        </dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Captured</dt>
+        <dd className="mt-0.5 truncate" title={snapshot.imported_at}>
+          <time dateTime={snapshot.imported_at}>{captured}</time>
+        </dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Connection</dt>
+        <dd className="mt-0.5 truncate font-mono" title={connection}>
+          {connection}
+        </dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Environment</dt>
+        <dd className="mt-0.5 truncate font-mono">{snapshot.environment || "default"}</dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Rows</dt>
+        <dd className="mt-0.5 tabular-nums">{snapshot.row_count.toLocaleString()}</dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Size</dt>
+        <dd className="mt-0.5 tabular-nums">{formatNotebookBytes(snapshot.byte_count)}</dd>
+      </div>
+    </dl>
+  );
+}
+
+function isDuckDBNotebookConnection(
+  connection: string,
+  assetType: string | undefined,
+  queryConnections: WorkspaceQueryConnection[],
+) {
+  const normalized = connection.trim().toLowerCase();
+  const configured = queryConnections.find(
+    (candidate) => candidate.name.trim().toLowerCase() === normalized,
+  );
+  return (
+    configured?.connection_type.trim().toLowerCase() === "duckdb" ||
+    configured?.asset_type.trim().toLowerCase().startsWith("duckdb.") === true ||
+    assetType?.trim().toLowerCase().startsWith("duckdb.") === true
+  );
+}
+
+function notebookSourceRequiresImportReview(
+  cell: WebAsset,
+  queryConnections: WorkspaceQueryConnection[],
+) {
+  const source = cell.notebook_source;
+  if (!source) {
+    const connection = cell.connection?.trim() ?? "";
+    return (
+      Boolean(connection) && !isDuckDBNotebookConnection(connection, cell.type, queryConnections)
+    );
+  }
+  const connection = source.connection?.trim() ?? "";
+  if (connection) {
+    return !isDuckDBNotebookConnection(connection, cell.type, queryConnections);
+  }
+  if (source.kind === "http" || source.kind === "object" || source.kind === "object_storage") {
+    return true;
+  }
+  const uri = source.uri?.trim().toLowerCase() ?? "";
+  return uri.includes("://") && !uri.startsWith("file://");
+}
+
 function downloadNotebookCell(notebookId: string, cellId: string, format: "csv" | "parquet") {
   const anchor = document.createElement("a");
   anchor.href = notebookCellExportURL(notebookId, cellId, format);
@@ -2007,6 +2938,7 @@ function downloadNotebookCell(notebookId: string, cellId: string, format: "csv" 
 function NotebookSourceCard({
   notebookId,
   cell,
+  queryConnections,
   result,
   stale,
   running,
@@ -2020,6 +2952,7 @@ function NotebookSourceCard({
 }: {
   notebookId: string;
   cell: WebAsset;
+  queryConnections: WorkspaceQueryConnection[];
   result?: NotebookCellRunResult;
   stale: boolean;
   running: boolean;
@@ -2048,10 +2981,19 @@ function NotebookSourceCard({
       ? `${source.request?.method || "GET"} ${source.request?.url || ""}`
       : source.uri || "";
   const rowsShown = Math.min(result?.rows?.length ?? 0, RESULT_DISPLAY_CAP);
+  const requiresImportReview =
+    notebookSourceRequiresImportReview(cell, queryConnections) && (!result?.snapshot || stale);
 
   return (
-    <AppPanel className="border-cyan-500/25 border-l-2 border-l-cyan-500/70 bg-cyan-500/[0.025]">
-      <DelimitedCardHeader className={cn(stale && "notebook-stale-hatch")}>
+    <AppPanel
+      className={cn(
+        NOTEBOOK_BLOCK_CARD_CLASS,
+        "border-l-2 border-l-cyan-500/55 hover:bg-cyan-500/[0.025]",
+      )}
+    >
+      <DelimitedCardHeader
+        className={cn(NOTEBOOK_BLOCK_HEADER_CLASS, stale && "notebook-stale-hatch")}
+      >
         <span className={cn("size-2 rounded-full", statusDotClass(result, stale))} />
         {renaming ? (
           <input
@@ -2087,14 +3029,13 @@ function NotebookSourceCard({
             ? `sample ${source.snapshot.row_limit?.toLocaleString() ?? ""}`
             : "complete snapshot"}
         </Badge>
-        {result?.snapshot ? (
+        {requiresImportReview ? (
           <Badge
             variant="outline"
-            className="text-[10px] text-cyan-700 dark:text-cyan-300"
-            title={result.snapshot.imported_at}
+            className="border-amber-500/35 bg-amber-500/10 text-[10px] text-amber-800 dark:text-amber-200"
           >
-            {result.snapshot.row_count.toLocaleString()} rows ·{" "}
-            {formatNotebookBytes(result.snapshot.byte_count)}
+            <AlertTriangle />
+            Review required
           </Badge>
         ) : null}
         <span className="ml-auto text-[11px] text-muted-foreground">
@@ -2103,6 +3044,11 @@ function NotebookSourceCard({
         {running ? (
           <Button variant="ghost" size="icon-sm" onClick={onCancel} title="Stop refresh">
             <Square className="size-3.5 fill-current" />
+          </Button>
+        ) : requiresImportReview ? (
+          <Button variant="outline" size="sm" disabled={busy} onClick={onRun}>
+            <Play />
+            Review &amp; import
           </Button>
         ) : (
           <Button
@@ -2179,6 +3125,16 @@ function NotebookSourceCard({
             </div>
           ) : null}
         </div>
+        {result?.snapshot ? (
+          <NotebookSnapshotSummary
+            snapshot={result.snapshot}
+            stale={stale}
+            fallbackConnection={
+              source.connection || source.format || (source.kind === "http" ? "HTTP" : "Workspace")
+            }
+            label={`${cell.name} snapshot details`}
+          />
+        ) : null}
         {result?.snapshot?.warnings?.map((warning) => (
           <p
             key={warning}
@@ -2188,13 +3144,17 @@ function NotebookSourceCard({
           </p>
         ))}
         {result?.status === "error" || result?.status === "blocked" ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-mono text-xs text-red-800 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-200">
-            {result.error}
+          <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 text-red-800 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-200">
+            <AnsiOutput
+              output={result.error}
+              className="max-h-72 overflow-auto px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words"
+            />
           </div>
         ) : null}
         {result?.status === "ok" && result.columns.length > 0 ? (
           <div className="overflow-hidden rounded-lg border">
             <SimpleTable
+              ariaLabel={`${cell.name} result preview`}
               viewportClassName="max-h-72"
               columns={result.columns}
               rows={result.rows
@@ -2374,14 +3334,21 @@ function NotebookCellCard({
   // Only surface staleness for cells the user must act on. A cell auto-recompute
   // is about to refresh is left unmarked — flagging it would just flicker.
   const showStale = stale && !pendingAuto;
+  const requiresImportReview =
+    Boolean(sourceConnection) &&
+    !isDuckDBNotebookConnection(sourceConnection, cell.type, queryConnections) &&
+    (!result?.snapshot || stale);
 
   return (
     <AppPanel
       className={cn(
-        sourceConnection && "border-primary/25 border-l-2 border-l-primary/60 bg-primary/[0.02]",
+        NOTEBOOK_BLOCK_CARD_CLASS,
+        sourceConnection && "border-l-2 border-l-primary/50 hover:bg-primary/[0.02]",
       )}
     >
-      <DelimitedCardHeader className={cn(showStale && "notebook-stale-hatch")}>
+      <DelimitedCardHeader
+        className={cn(NOTEBOOK_BLOCK_HEADER_CLASS, showStale && "notebook-stale-hatch")}
+      >
         <span className={cn("size-2 rounded-full", statusDotClass(result, showStale))} />
         {renaming ? (
           <input
@@ -2489,18 +3456,19 @@ function NotebookCellCard({
             {imported.complete ? "" : " ⚠"}
           </span>
         ))}
-        {result?.snapshot ? (
-          <span
-            title={`${result.snapshot.environment ?? "default"} · ${result.snapshot.row_count.toLocaleString()} rows · ${formatNotebookBytes(result.snapshot.byte_count)} · ${result.snapshot.imported_at}`}
-            className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
-          >
-            {result.snapshot.sampled ? "sampled" : "snapshotted"} ·{" "}
-            {formatNotebookBytes(result.snapshot.byte_count)}
-          </span>
-        ) : result?.sampled ? (
+        {!result?.snapshot && result?.sampled ? (
           <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-200">
             derived from sample
           </span>
+        ) : null}
+        {requiresImportReview ? (
+          <Badge
+            variant="outline"
+            className="border-amber-500/35 bg-amber-500/10 text-[10px] text-amber-800 dark:text-amber-200"
+          >
+            <AlertTriangle />
+            Review required
+          </Badge>
         ) : null}
         <span className="ml-auto text-[11px] text-muted-foreground">
           {running
@@ -2519,6 +3487,11 @@ function NotebookCellCard({
           >
             <Loader2 className="size-3.5 animate-spin group-hover:hidden" />
             <Square className="hidden size-3.5 fill-current group-hover:block" />
+          </Button>
+        ) : requiresImportReview ? (
+          <Button variant="outline" size="sm" disabled={busy} onClick={onRun}>
+            <Play />
+            Review &amp; import
           </Button>
         ) : (
           <Button variant="ghost" size="icon-sm" disabled={busy} onClick={onRun} title="Run cell">
@@ -2567,6 +3540,14 @@ function NotebookCellCard({
         </DropdownMenu>
       </DelimitedCardHeader>
       <DelimitedCardContent className="space-y-3">
+        {result?.snapshot ? (
+          <NotebookSnapshotSummary
+            snapshot={result.snapshot}
+            stale={showStale}
+            fallbackConnection={sourceConnection}
+            label={`${cell.name} snapshot details`}
+          />
+        ) : null}
         <NotebookCellMonaco
           cell={cell}
           value={draft}
@@ -2581,8 +3562,11 @@ function NotebookCellCard({
         />
         <MissingPythonDepsBanner missingImports={missingDeps} onAddDependency={onAddDependency} />
         {result?.status === "error" ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-mono text-xs text-red-800 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-200">
-            {result.error}
+          <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 text-red-800 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-200">
+            <AnsiOutput
+              output={result.error}
+              className="max-h-72 overflow-auto px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words"
+            />
           </div>
         ) : null}
         {result?.status === "blocked" ? (
@@ -2636,6 +3620,7 @@ function NotebookCellCard({
           ) : (
             <div className="overflow-hidden rounded-lg border">
               <SimpleTable
+                ariaLabel={`${cell.name} result preview`}
                 viewportClassName="max-h-72"
                 columns={result.columns}
                 rows={result.rows
@@ -2681,12 +3666,12 @@ function NotebookCellLogs({ logs, isError }: { logs: string; isError: boolean })
       </button>
       {open ? (
         <ScrollArea viewportClassName="max-h-72" className="border-t">
-          <pre
-            data-testid="cell-logs"
-            className="px-3 py-2 font-mono text-[11px] leading-5 whitespace-pre-wrap break-words"
-          >
-            {logs}
-          </pre>
+          <div data-testid="cell-logs">
+            <AnsiOutput
+              output={logs}
+              className="px-3 py-2 font-mono text-[11px] leading-5 whitespace-pre-wrap break-words"
+            />
+          </div>
         </ScrollArea>
       ) : null}
     </div>
@@ -3080,58 +4065,82 @@ function MarkdownBlockCard({
   onDelete,
 }: {
   markdown: string;
-  onSave: (markdown: string) => void;
+  onSave: (markdown: string) => Promise<boolean>;
   onDelete: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(markdown);
+  const [saving, setSaving] = useState(false);
+  const lastSavedRef = useRef(markdown);
   useEffect(() => {
-    setDraft(markdown);
+    setDraft((current) => {
+      if (current !== lastSavedRef.current && current !== markdown) return current;
+      lastSavedRef.current = markdown;
+      return markdown;
+    });
   }, [markdown]);
 
+  const commit = async () => {
+    if (saving || draft === lastSavedRef.current) return;
+    const submitted = draft;
+    setSaving(true);
+    const saved = await onSave(submitted);
+    if (saved) lastSavedRef.current = submitted;
+    setSaving(false);
+  };
+
   return (
-    <AppPanel>
-      <DelimitedCardHeader>
-        <BookOpen className="size-4 text-primary" />
-        <DelimitedCardTitle>Markdown</DelimitedCardTitle>
-        <span className="ml-auto" />
-        {editing ? (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title="Save"
-            onClick={() => {
-              setEditing(false);
-              if (draft !== markdown) onSave(draft);
-            }}
-          >
-            <Check className="size-3.5" />
-          </Button>
-        ) : (
-          <Button variant="ghost" size="icon-sm" title="Edit" onClick={() => setEditing(true)}>
-            <Pencil className="size-3.5" />
-          </Button>
-        )}
-        <Button variant="ghost" size="icon-sm" title="Delete block" onClick={onDelete}>
-          <Trash2 className="size-3.5" />
-        </Button>
-      </DelimitedCardHeader>
-      <DelimitedCardContent>
-        {editing ? (
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            rows={Math.min(Math.max(draft.split("\n").length, 3), 16)}
-            className="w-full resize-y rounded-lg border bg-background p-3 font-mono text-xs leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        ) : (
-          <article className="prose prose-sm max-w-none text-sm leading-6 text-foreground [&_h1]:mb-2 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold [&_p]:mb-2 [&_ul]:list-disc [&_ul]:pl-5">
-            <Suspense fallback={<span className="text-muted-foreground">…</span>}>
-              <ReactMarkdown>{markdown || "*empty*"}</ReactMarkdown>
-            </Suspense>
-          </article>
-        )}
-      </DelimitedCardContent>
-    </AppPanel>
+    <section className="group/markdown-block relative rounded-xl border border-transparent transition-colors hover:border-border focus-within:border-primary/30">
+      <MarkdownEditor
+        value={draft}
+        ariaLabel="Markdown cell"
+        placeholder="Write a note…"
+        className="border-0 hover:border-transparent focus-within:border-transparent"
+        actions={
+          <>
+            {draft !== lastSavedRef.current ? (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Save text block"
+                title="Save text"
+                disabled={saving}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void commit()}
+              >
+                {saving ? <Spinner aria-label="Saving text block" /> : <Check />}
+              </Button>
+            ) : null}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Delete text block"
+              title="Delete block"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={onDelete}
+            >
+              <Trash2 />
+            </Button>
+          </>
+        }
+        onChange={setDraft}
+        onBlur={() => void commit()}
+      />
+    </section>
   );
+}
+
+function useWideNotebookTools() {
+  const [wide, setWide] = useState(() =>
+    typeof window === "undefined" ? false : window.matchMedia("(min-width: 1280px)").matches,
+  );
+
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1280px)");
+    const update = () => setWide(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  return wide;
 }
