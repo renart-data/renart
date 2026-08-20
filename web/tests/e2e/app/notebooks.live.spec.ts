@@ -419,13 +419,14 @@ test.describe("app notebooks live", () => {
 
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await expect(dialog).toBeHidden();
-    const controls = page.getByLabel("Notebook controls");
-    await expect(controls.getByLabel("Region")).toHaveValue("eu");
+    const controlBlock = page.getByRole("region", { name: "Control: Region" });
+    const regionInput = controlBlock.getByRole("textbox", { name: "Region", exact: true });
+    await expect(regionInput).toHaveValue("eu");
     const settingsResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/notebooks/${notebook.id}/settings`) && response.ok(),
     );
-    await controls.getByLabel("Region").fill("us");
+    await regionInput.fill("us");
     await settingsResponse;
 
     const runResponse = page.waitForResponse(
@@ -493,7 +494,8 @@ test.describe("app notebooks live", () => {
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     const control = page.getByRole("combobox", { name: "Region", exact: true });
     await expect(control).toBeDisabled();
-    await expect(page.getByText("Run source", { exact: true })).toBeVisible();
+    const controlBlock = page.getByRole("region", { name: "Control: Region" });
+    await expect(controlBlock.getByRole("button", { name: "Load options" })).toBeEnabled();
 
     const optionsResponse = page.waitForResponse(
       (response) =>
@@ -501,7 +503,7 @@ test.describe("app notebooks live", () => {
         response.ok(),
       { timeout: 15000 },
     );
-    await page.getByRole("button", { name: "Run all" }).click();
+    await controlBlock.getByRole("button", { name: "Load options" }).click();
     const response = await optionsResponse;
     const payload = (await response.json()) as {
       result: { columns: string[]; rows: unknown[][]; total_rows: number; truncated?: boolean };
@@ -515,7 +517,7 @@ test.describe("app notebooks live", () => {
     expect(payload.result.truncated).toBeFalsy();
 
     await expect(control).toBeEnabled();
-    await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
+    await expect(controlBlock.getByRole("button", { name: "Refresh" })).toBeVisible();
     await control.click();
     await expect(page.getByRole("option", { name: "Germany" })).toBeVisible();
     await expect(page.getByRole("option", { name: "United States" })).toBeVisible();
@@ -1262,9 +1264,9 @@ test.describe("app notebooks live", () => {
 
     const viewport = page
       .getByTestId("notebook-scroll-area")
-      .locator('[data-slot="scroll-area-viewport"]');
+      .locator(':scope > [data-slot="scroll-area-viewport"]');
     await openNotebookToolsTab(page, "Add");
-    const addSQLCell = page.getByRole("button", { name: "SQL cell" });
+    const addSQLCell = page.getByTitle("Drag SQL between notebook blocks, or click to add");
     await addSQLCell.scrollIntoViewIfNeeded();
 
     let releaseRequest = () => {};
@@ -1275,20 +1277,24 @@ test.describe("app notebooks live", () => {
     const requestStarted = new Promise<void>((resolve) => {
       markRequestStarted = resolve;
     });
-    const createRoute = `**/notebooks/${notebook.id}/cells`;
+    let routeContinuation = Promise.resolve();
+    const createRoute = `**/notebooks/${notebook.id}/changes/apply`;
     await page.route(createRoute, async (route) => {
       if (route.request().method() !== "POST") {
         await route.continue();
         return;
       }
-      markRequestStarted();
-      await requestGate;
-      await route.continue();
+      routeContinuation = (async () => {
+        markRequestStarted();
+        await requestGate;
+        await route.continue();
+      })();
+      await routeContinuation;
     });
 
     const createResponse = page.waitForResponse(
       (response) =>
-        response.url().endsWith(`/notebooks/${notebook.id}/cells`) &&
+        response.url().endsWith(`/notebooks/${notebook.id}/changes/apply`) &&
         response.request().method() === "POST",
       { timeout: 15000 },
     );
@@ -1301,7 +1307,9 @@ test.describe("app notebooks live", () => {
       await expect(pending).toBeVisible();
       await expect(pending).toHaveAttribute("data-notebook-block-pending", "sql");
       await expect(pending).toHaveClass(/animate-in/);
-      await expect(addSQLCell).toBeDisabled();
+      await expect(
+        page.getByRole("button", { name: "Insert notebook block here" }).first(),
+      ).toBeDisabled();
       await expect
         .poll(() =>
           viewport.evaluate(
@@ -1335,6 +1343,7 @@ test.describe("app notebooks live", () => {
       if (!released) {
         releaseRequest();
       }
+      await routeContinuation;
       await page.unroute(createRoute);
     }
   });
@@ -1352,7 +1361,7 @@ test.describe("app notebooks live", () => {
         response.request().method() === "POST",
       { timeout: 15000 },
     );
-    await page.getByRole("button", { name: "Text", exact: true }).click();
+    await page.getByTitle("Drag Text between notebook blocks, or click to add").click();
     expect((await applyResponse).ok()).toBe(true);
 
     const editor = page.getByLabel("Markdown cell");
@@ -2173,15 +2182,21 @@ test.describe("app notebooks live", () => {
     const downstreamCheckbox = dialog.getByRole("checkbox", { name: /Downstream assets/ });
     await downstreamCheckbox.check();
     await expect(downstreamCheckbox).toBeChecked();
-    // Radix reports the controlled checked state before Playwright's next
-    // action, but give React a paint boundary so the Promote handler comes
-    // from the same committed render.
-    await page.evaluate(
-      () =>
-        new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-        }),
+    // A notebook/workspace refresh re-renders the parent and rebuilds its
+    // pipeline options. Keep the user's dialog choice through that refresh.
+    const refreshedChildSQL = "select sum(amount) as total from base where amount >= 0";
+    await setCell(request, liveApp.baseURL, notebook.id, childCell, refreshedChildSQL);
+    await page.waitForFunction(
+      (expectedSQL) => {
+        const monaco = (window as typeof window & { monaco?: any }).monaco;
+        return monaco?.editor
+          .getEditors?.()
+          .some((editor: any) => editor.getModel?.()?.getValue().trim() === expectedSQL);
+      },
+      refreshedChildSQL,
+      { timeout: 15000 },
     );
+    await expect(downstreamCheckbox).toBeChecked();
     await expect(dialog.getByText("marts.child", { exact: true })).toBeVisible({ timeout: 15000 });
     const promoteRequest = page.waitForRequest(
       (request) =>

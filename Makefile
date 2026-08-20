@@ -89,8 +89,8 @@ web-sync-polyglot-wasm:
 web-typecheck:
 	$(PNPM) --dir web typecheck
 
-web-test-live:
-	$(PNPM) --dir web test:e2e:live
+web-test-live: go-build
+	PWTEST_CACHE_DIR=/dev/shm/bruin-playwright/cache $(PNPM) --dir web exec playwright test --config=playwright.live.config.ts
 
 docs-install:
 	$(PNPM) --dir docs install --frozen-lockfile

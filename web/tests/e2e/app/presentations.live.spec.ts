@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 import { liveTest as test } from "../live-app-fixture";
 
@@ -40,6 +40,19 @@ type PresentationEnvelope = {
     content: string;
   };
 };
+
+async function dragWithDataTransfer(page: Page, source: Locator, target: Locator) {
+  const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+  try {
+    await source.dispatchEvent("dragstart", { dataTransfer });
+    await target.dispatchEvent("dragenter", { dataTransfer });
+    await target.dispatchEvent("dragover", { dataTransfer });
+    await target.dispatchEvent("drop", { dataTransfer });
+    await source.dispatchEvent("dragend", { dataTransfer });
+  } finally {
+    await dataTransfer.dispose();
+  }
+}
 
 test.describe("app presentations live", () => {
   test.use({ fixtureName: "basic-workspace" });
@@ -271,8 +284,12 @@ test.describe("app presentations live", () => {
       page.locator(".suggest-widget .monaco-list-row").filter({ hasText: "order_id" }).first(),
     ).toBeVisible({ timeout: 15000 });
 
-    await page.keyboard.press("Escape");
+    await dismissPresentationQueryCompletion(page);
     await setPresentationQuery(page, "select *\nfrom analytics.orders", "analytics.orders");
+    if (narrowBuilder) {
+      await inspector.getByRole("button", { name: "Close" }).click();
+      await expect(page.getByRole("dialog", { name: "Inspector" })).toBeHidden();
+    }
     const saveResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/presentations/${presentationId}/definition`) &&
@@ -308,6 +325,15 @@ test.describe("app presentations live", () => {
     await page.goto(`${liveApp.baseURL}/dashboards/${dashboard.document.artifact.workspace_id}`);
     await page.getByRole("button", { name: "Add dataset", exact: true }).first().click();
     await expect(page.getByLabel("Dataset ID")).toHaveValue("dataset");
+    const chartPreview = page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .endsWith(`/api/presentations/${dashboard.document.artifact.workspace_id}/preview`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+      { timeout: 15000 },
+    );
     await page
       .getByLabel("Add")
       .getByRole("button", { name: "Bar", exact: true })
@@ -315,11 +341,23 @@ test.describe("app presentations live", () => {
         targetPosition: { x: 360, y: 180 },
       });
     await expect(page.getByLabel("Visualization ID")).toBeVisible();
-    await page
-      .getByLabel("Add")
-      .getByRole("button", { name: "Switch", exact: true })
-      .dragTo(page.getByTestId("presentation-control-strip"));
+    await chartPreview;
+    const controlPreview = page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .endsWith(`/api/presentations/${dashboard.document.artifact.workspace_id}/preview`) &&
+        response.request().method() === "POST" &&
+        response.ok(),
+      { timeout: 15000 },
+    );
+    await dragWithDataTransfer(
+      page,
+      page.getByLabel("Add").getByRole("button", { name: "Switch", exact: true }),
+      page.getByTestId("presentation-control-strip"),
+    );
     await expect(page.getByLabel("Control ID")).toHaveValue("filter");
+    await controlPreview;
 
     const dashboardSave = page.waitForResponse(
       (response) =>
@@ -850,4 +888,20 @@ async function triggerPresentationQueryCompletion(page: import("@playwright/test
     editor.focus();
     editor.trigger("playwright", "editor.action.triggerSuggest", {});
   });
+}
+
+async function dismissPresentationQueryCompletion(page: import("@playwright/test").Page) {
+  await page.evaluate(() => {
+    const monaco = (window as typeof window & { monaco?: any }).monaco;
+    const editor = monaco?.editor
+      .getEditors?.()
+      .find(
+        (candidate: any) =>
+          candidate.getOption?.(monaco.editor.EditorOption.ariaLabel) === "Dataset SQL query" &&
+          candidate.getDomNode?.()?.offsetParent !== null,
+      );
+    if (!editor) throw new Error("Presentation query editor is not ready");
+    editor.trigger("playwright", "hideSuggestWidget", {});
+  });
+  await expect(page.locator(".suggest-widget")).toBeHidden();
 }

@@ -108,6 +108,18 @@ async function openAssetProperties(page: Page): Promise<Locator> {
   return inspector;
 }
 
+async function openColumnEditor(properties: Locator, columnName: string): Promise<Locator> {
+  const trigger = properties.getByRole("button", { name: `Edit column ${columnName}` });
+  const editor = trigger.locator('xpath=ancestor::*[@data-slot="collapsible"]');
+  const content = editor.locator('[data-slot="collapsible-content"]');
+
+  if (!(await content.isVisible().catch(() => false))) {
+    await trigger.click();
+  }
+  await expect(content).toBeVisible();
+  return editor;
+}
+
 async function expectCompactAssetDescription(page: Page, description: string) {
   const describedNode = page.getByTestId(`rf__node-${customersAssetId}`);
   const baselineNode = page.getByTestId(`rf__node-${ordersAssetId}`);
@@ -575,6 +587,7 @@ select customer_id from analytics.customers
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
     const properties = await openAssetProperties(page);
+    const identity = properties.getByRole("heading", { name: "Identity" }).locator("../..");
     const materialization = properties
       .getByRole("heading", { name: "Materialization" })
       .locator("../..");
@@ -606,6 +619,10 @@ select customer_id from analytics.customers
         ?.findings.some((finding) => finding.message.includes("primary-key")),
     ).toBe(true);
 
+    const customerIDEditor = await openColumnEditor(properties, "customer_id");
+    const customerIDPrimaryKey = customerIDEditor.getByRole("checkbox", {
+      name: "Primary key",
+    });
     const primaryKeyResponse = page.waitForResponse(
       (response) =>
         response.url().includes(`/api/assets/${customersAssetId}/columns`) &&
@@ -613,9 +630,11 @@ select customer_id from analytics.customers
         response.ok(),
       { timeout: 15000 },
     );
-    await properties.getByRole("button", { name: "Set customer_id as primary key" }).click();
+    await customerIDPrimaryKey.click();
     await primaryKeyResponse;
+    await expect(customerIDPrimaryKey).toBeChecked({ timeout: 15000 });
 
+    const customerNameEditor = await openColumnEditor(properties, "customer_name");
     const updateOnMergeResponse = page.waitForResponse(
       (response) =>
         response.url().includes(`/api/assets/${customersAssetId}/columns`) &&
@@ -623,8 +642,10 @@ select customer_id from analytics.customers
         response.ok(),
       { timeout: 15000 },
     );
-    await properties.getByRole("button", { name: "Update customer_name on merge" }).click();
+    const updateOnMerge = customerNameEditor.getByRole("checkbox", { name: "Update on merge" });
+    await updateOnMerge.click();
     await updateOnMergeResponse;
+    await expect(updateOnMerge).toBeChecked({ timeout: 15000 });
 
     const mergeSQLResponse = page.waitForResponse(
       (response) =>
@@ -633,7 +654,7 @@ select customer_id from analytics.customers
         response.ok(),
       { timeout: 15000 },
     );
-    const mergeSQL = properties.getByPlaceholder("merge SQL (optional)").nth(1);
+    const mergeSQL = customerNameEditor.getByRole("textbox", { name: "Merge expression" });
     await mergeSQL.fill("COALESCE(source.customer_name, target.customer_name)");
     await mergeSQL.press("Enter");
     await mergeSQLResponse;
@@ -653,20 +674,20 @@ select customer_id from analytics.customers
     await expect(properties.getByRole("button", { name: "YAML", exact: true })).toHaveCount(0);
     await expect(properties.getByRole("button", { name: "Form", exact: true })).toHaveCount(0);
     await expect(
-      properties
+      identity
         .getByRole("textbox", { name: "Name" })
         .locator('xpath=ancestor::*[@data-slot="field"]'),
     ).toHaveAttribute("data-orientation", "vertical");
     await expect(
-      properties
+      identity
         .getByRole("textbox", { name: "Type", exact: true })
         .locator('xpath=ancestor::*[@data-slot="field"]'),
     ).toHaveAttribute("data-orientation", "vertical");
-    await expect(properties.getByRole("textbox", { name: "Type", exact: true })).toHaveAttribute(
+    await expect(identity.getByRole("textbox", { name: "Type", exact: true })).toHaveAttribute(
       "readonly",
       "",
     );
-    await expect(properties.getByRole("combobox", { name: "Type" })).toHaveCount(0);
+    await expect(identity.getByRole("combobox", { name: "Type" })).toHaveCount(0);
 
     const unsetResponse = page.waitForResponse(
       (response) =>
@@ -675,11 +696,9 @@ select customer_id from analytics.customers
         response.ok(),
       { timeout: 15000 },
     );
-    await properties.getByRole("button", { name: "Unset customer_id as primary key" }).click();
+    await customerIDPrimaryKey.click();
     await unsetResponse;
-    await expect(
-      properties.getByRole("button", { name: "Set customer_id as primary key" }),
-    ).toBeVisible({ timeout: 15000 });
+    await expect(customerIDPrimaryKey).not.toBeChecked({ timeout: 15000 });
 
     const replacementKeyResponse = page.waitForResponse(
       (response) =>
@@ -688,8 +707,12 @@ select customer_id from analytics.customers
         response.ok(),
       { timeout: 15000 },
     );
-    await properties.getByRole("button", { name: "Set customer_name as primary key" }).click();
+    const customerNamePrimaryKey = customerNameEditor.getByRole("checkbox", {
+      name: "Primary key",
+    });
+    await customerNamePrimaryKey.click();
     await replacementKeyResponse;
+    await expect(customerNamePrimaryKey).toBeChecked({ timeout: 15000 });
 
     const replacementConfigured = await pollAsset(
       liveApp,
@@ -845,7 +868,8 @@ materialization:
       "analytics.orders_load",
       (asset) => (asset.columns ?? []).length === 2,
     );
-    await expect(properties.getByRole("button", { name: "Set id as primary key" })).toBeVisible({
+    const idColumnEditor = await openColumnEditor(properties, "id");
+    await expect(idColumnEditor.getByRole("checkbox", { name: "Primary key" })).toBeVisible({
       timeout: 15000,
     });
 

@@ -545,25 +545,45 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     parameterValuesRef.current = parameterValues;
   }, [parameterValues]);
 
-  // Adding a block changes the scroll height twice: once for the immediate
-  // pending card, then again when the real editor replaces it. Scroll after
-  // both commits so the newly appended block and add controls stay in view.
+  // Adding a block changes the scroll height more than once: first for the
+  // pending card, then for the real block, and sometimes once more while an
+  // editor measures itself. Keep the viewport pinned during that short layout
+  // window so a late Monaco resize cannot leave the new block below the fold.
   useEffect(() => {
     if (scrollRevision === 0) {
       return;
     }
+    const viewport = notebookViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    let resizeFrame: number | null = null;
+    const pinToBottom = () => {
+      resizeFrame = null;
+      viewport.scrollTop = viewport.scrollHeight;
+    };
     const frame = window.requestAnimationFrame(() => {
-      const viewport = notebookViewportRef.current;
-      if (!viewport) {
-        return;
-      }
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       viewport.scrollTo({
         top: viewport.scrollHeight,
         behavior: reducedMotion ? "auto" : "smooth",
       });
     });
-    return () => window.cancelAnimationFrame(frame);
+    const canvas = viewport.querySelector<HTMLElement>('[data-testid="notebook-canvas"]');
+    const observer = canvas
+      ? new ResizeObserver(() => {
+          if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+          resizeFrame = window.requestAnimationFrame(pinToBottom);
+        })
+      : null;
+    if (canvas && observer) observer.observe(canvas);
+    const settleTimer = window.setTimeout(() => observer?.disconnect(), 1000);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (resizeFrame !== null) window.cancelAnimationFrame(resizeFrame);
+      window.clearTimeout(settleTimer);
+      observer?.disconnect();
+    };
   }, [scrollRevision]);
 
   const cellsById = useMemo(() => {
@@ -2529,6 +2549,8 @@ function NotebookAddDataDialog({
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const wasOpen = useRef(false);
+  const defaultQueryConnection = queryConnections[0]?.name ?? "";
   const storageConnections = useMemo(
     () =>
       Object.entries(connections)
@@ -2538,12 +2560,10 @@ function NotebookAddDataDialog({
   );
 
   useEffect(() => {
-    if (!open) return;
-    setConnection((current) =>
-      queryConnections.some((candidate) => candidate.name === current)
-        ? current
-        : (queryConnections[0]?.name ?? ""),
-    );
+    const justOpened = open && !wasOpen.current;
+    wasOpen.current = open;
+    if (!justOpened) return;
+    setConnection(defaultQueryConnection);
     setKind("warehouse");
     setRelation("");
     setFilter("");
@@ -2557,7 +2577,13 @@ function NotebookAddDataDialog({
     setSnapshotMode("full");
     setRowLimit(10000);
     setError("");
-  }, [open, queryConnections]);
+  }, [defaultQueryConnection, open]);
+
+  useEffect(() => {
+    if (open && !connection && defaultQueryConnection) {
+      setConnection(defaultQueryConnection);
+    }
+  }, [connection, defaultQueryConnection, open]);
 
   useEffect(() => {
     if (!open || kind !== "warehouse" || !connection) {
@@ -4064,6 +4090,7 @@ function PromoteCellDialog({
   const [planError, setPlanError] = useState("");
   const [planning, setPlanning] = useState(false);
   const [applying, setApplying] = useState(false);
+  const defaultPipelineId = pipelines[0]?.id ?? "";
 
   // Whether the cell has upstream/downstream sibling cells, so the options are
   // only offered when they would actually pull anything in.
@@ -4083,19 +4110,22 @@ function PromoteCellDialog({
     return { hasUpstream: up, hasDownstream: down };
   }, [cell, cells]);
 
-  // Re-seed the form each time a new cell opens the dialog.
+  // Re-seed the form each time a new cell opens the dialog. Depend on the
+  // default pipeline's stable id rather than the pipelines array: the parent
+  // maps that array during render, and unrelated workspace updates must not
+  // wipe choices the user already made in this open dialog.
   useEffect(() => {
     if (!cell) {
       return;
     }
-    setPipelineId(pipelines[0]?.id ?? "");
+    setPipelineId(defaultPipelineId);
     setTargetName(`marts.${cell.name}`);
     setIncludeUpstream(false);
     setIncludeDownstream(false);
     setPlan(null);
     setPlanError("");
     setApplying(false);
-  }, [cell, pipelines]);
+  }, [cell, defaultPipelineId]);
 
   useEffect(() => {
     const cellId = cell?.cell_id;
