@@ -11,18 +11,37 @@ just as you would after making the same change in the visual editor.
 
 ## Chat inside a notebook
 
+<img
+  src="/docs-media/notebook-agent.webp"
+  alt="A Renart notebook with its local agent chat open beside the document, showing the agent picker, Ask and Edit modes, and a prompt composer"
+  width="3000"
+  height="1920"
+/>
+
 Install and sign in to Codex, Claude Code, or OpenCode on the machine where
 Renart runs. Open a notebook and choose **AI** in its toolbar. Renart discovers
 available clients on `PATH`; it does not ask for or store a provider API key.
 
 Choose a client and one of two capability modes:
 
-- **Ask** can inspect only the open notebook: its blocks, dependency graph,
-  diagnostics, source provenance, and bounded result schemas/samples. It cannot
-  edit files or run cells.
+- **Ask** can inspect the open notebook and search the current workspace
+  catalog: blocks, dependency graph, diagnostics, source provenance, asset
+  descriptions, lineage, materialization policy, and bounded result
+  schemas/samples. It cannot edit files or run cells.
 - **Edit** can prepare, validate, and apply semantic notebook changes and can
-  run the cells needed to verify them. Selecting Edit authorizes those actions
-  for the turn; the resulting files remain ordinary, reviewable Git changes.
+  add notebook data sources, and run the cells needed to verify them. Selecting
+  Edit authorizes those actions for the turn; the resulting files remain
+  ordinary, reviewable Git changes.
+
+Use the **@** control in the composer to attach notebook cells or workspace
+assets to a message. References are sent as stable semantic identities rather
+than pasted file paths, so the agent can inspect the exact object you mean.
+
+When an agent adds a source from DuckDB, Renart can run it through the same
+local read-only path as a manually added source. A newly added source on another
+warehouse remains pending until you review and run its first import in the UI;
+the agent cannot silently transfer an unknown amount of remote data into the
+notebook.
 
 The panel starts in Ask whenever it opens, so an earlier Edit choice does not
 silently carry into the next task.
@@ -55,8 +74,9 @@ not open another network listener.
 
 The server exposes semantic notebook operations rather than arbitrary paths or
 REST endpoints. An agent can inspect notebook outlines, blocks, dependencies,
-diagnostics, source provenance, and bounded result samples. It can prepare and
-validate a revision-bound change, but writing files requires the separate
+diagnostics, source provenance, bounded result samples, and searched catalog
+entries with lineage and materialization context. It can prepare and validate a
+revision-bound change, but writing files requires the separate
 `apply_notebook_change_set` tool. Runs are explicit and asynchronous; executing
 Python additionally requires `allow_python: true`.
 

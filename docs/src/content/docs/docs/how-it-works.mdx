@@ -39,7 +39,11 @@ The rest of what you see in the UI maps to files the same way:
   the pipeline's name and defaults.
 - **Connections and environments** from Project settings live in the
   project config file at the workspace root.
-- **Notebooks** are folders of cell files.
+- **Notebooks** are folders of cell and source files plus an ordered manifest
+  for text, controls, and visualizations.
+- **Dashboards and reports** are compact YAML definitions under `dashboards/`
+  and `reports/`; both the visual builder and Definition editor update the same
+  file.
 - Tracked Renart project settings and desired environment schedules live in
   `.renart/project.yml` and `.renart/schedules.yml`.
 - Machine-local state that shouldn't be shared — the scheduler database,

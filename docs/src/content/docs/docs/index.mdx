@@ -3,9 +3,9 @@ title: Overview
 description: Renart is the all-in-one data pipeline IDE — open source, running entirely inside your git repository.
 ---
 
-Renart is the all-in-one data pipeline IDE. It combines the editor, the
-scheduler, and the freshness monitor in one open-source tool that runs
-entirely inside your git repository — your pipeline is plain files, running
+Renart is the all-in-one data pipeline IDE. It combines the editor, notebooks,
+presentations, scheduler, and freshness monitor in one open-source tool that
+runs entirely inside your git repository — your work is plain files, running
 on the warehouse you already use.
 
 <img
@@ -23,12 +23,18 @@ on the warehouse you already use.
   upstream assets and validation flags unresolved references while you type.
 - **Preview, then materialize.** Inspect any asset with no side effects, and
   materialize it explicitly when you're sure.
-- **Schedules without an orchestrator.** Put a pipeline on a per-environment
-  cron and Renart runs it — nothing separate to deploy.
-- **Notebooks** for ad-hoc analysis, with inline tables and charts, that can
-  promote a cell into a real pipeline asset.
+- **Catalog-aware SQL.** Complete against authored assets and observed remote
+  tables, then review an import when an external relation should become part of
+  the project.
+- **Notebooks** that combine warehouses, files, object storage, and HTTP data
+  in local DuckDB, with SQL, Python, text, controls, and checked charts.
+- **Dashboards and reports** composed visually from typed datasets and stored
+  as version-controlled definitions.
+- **Reviewed deployments and schedules.** Pin a pipeline snapshot to each
+  environment, run it on a cron, and inspect its timeline and logs.
 - **Freshness you can see.** Renart fingerprints every asset and shows what's
-  fresh, edited, stale, or never built, right on the canvas.
+  fresh, edited, stale, or never built, while external source assets remain
+  explicitly neutral.
 
 Everything Renart does ends up as an ordinary file change in your repository
 — diffable, reviewable, revertible.

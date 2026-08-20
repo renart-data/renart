@@ -111,7 +111,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/go-faster/yaml | v0.4.6 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt), [license](third_party/licenses/c68096e19e91a47dacc81ff5fb1c64732b3cec55fdf70865da69f9b01cf1945c.txt), [license](third_party/licenses/d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b.txt) |
 | github.com/go-git/gcfg | v1.5.1-0.20230307220236-3a3c6141e376 | [license](third_party/licenses/050855d9ceedf916a9e9f30d20c6f61a484448d2c2ed5810934bc8aef43861b4.txt) |
 | github.com/go-git/go-billy/v5 | v5.9.0 | [license](third_party/licenses/4d324e3ccdba05b20e3ed1b9547f70f10da14e095ea2af32a895e8858b28a396.txt) |
-| github.com/go-git/go-git/v5 | v5.19.1 | [license](third_party/licenses/fecc274e9b67f7e128c7d2ba1ad68fcf23b18fe0448d3c3671e943763502d504.txt) |
+| github.com/go-git/go-git/v5 | v5.19.2 | [license](third_party/licenses/fecc274e9b67f7e128c7d2ba1ad68fcf23b18fe0448d3c3671e943763502d504.txt) |
 | github.com/go-jose/go-jose/v3 | v3.0.5 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/go-jose/go-jose/v4 | v4.1.4 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/go-logr/logr | v1.4.3 | [license](third_party/licenses/b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1.txt) |

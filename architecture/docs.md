@@ -173,7 +173,8 @@ every shipped image is the verbatim output of a script.
   acme workspace (`web/scripts/landing-media-workspace.mjs` +
   `web/scripts/demo-media-lib.mjs`): a coherent e-commerce project with real
   materialized data, run history including one failed run, schedules, a
-  notebook, and staleness states — so no shot is ever empty or half-loaded.
+  notebook, dashboard, report, and staleness states — so no shot is ever empty
+  or half-loaded.
 - **Adding a shot** means adding a capture block to
   `web/scripts/capture-docs-media.mjs` (viewport, navigation, interactions,
   `shot(page, "name")`), not opening a browser by hand. If the shot needs

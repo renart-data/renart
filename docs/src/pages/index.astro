@@ -9,7 +9,7 @@ const discordUrl = 'https://discord.gg/jTH758KNP8';
 const installCommand = 'curl -LsSf getrenart.com/install.sh | sh';
 const siteUrl = 'https://getrenart.com';
 const pageTitle = 'Renart public alpha - The whole data platform, in the box';
-const pageDescription = 'Renart is the whole data platform in one open-source package: editor, notebooks, scheduler, catalog, and staleness tracking, working on plain SQL and Python files in your git repo and running on the warehouse you already use.';
+const pageDescription = 'Renart is the whole data platform in one open-source package: editor, notebooks, dashboards, reports, scheduler, catalog, and freshness tracking, stored as version-controlled files and running on the warehouse you already use.';
 const socialImage = `${siteUrl}/landing/og-image.png`;
 
 function readGitValue(command: string, fallback: string) {
@@ -104,7 +104,7 @@ const landingStructuredData = JSON.stringify({
   ],
 });
 
-const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Redshift', 'S3', 'HTTP APIs', 'Git'];
+const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Databricks', 'S3', 'HTTP APIs', 'Git'];
 ---
 
 <!doctype html>
@@ -191,7 +191,7 @@ const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Redshift', '
         </h1>
 
         <p class="hero-sub">
-          Editor, notebooks, scheduler, catalog, freshness tracking — Renart ships the parts that usually live behind a hosted login in one open-source package, and knows exactly what to rebuild when you change a file. Runs on the warehouse you already use; starts on your laptop with one command.
+          Editor, notebooks, dashboards, reports, scheduler, catalog, freshness tracking — Renart ships the parts that usually live behind a hosted login in one open-source package, and knows exactly what to rebuild when you change a file. Runs on the warehouse you already use; starts on your laptop with one command.
         </p>
 
         <p class="alpha-note">
@@ -309,7 +309,7 @@ const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Redshift', '
             <div class="life-copy">
               <div class="card-tag">02 · Explore</div>
               <h3>Prototype in a notebook, promote what works</h3>
-              <p>Every project has SQL notebooks for ad-hoc analysis: query your data and see tables and charts inline. When a query earns a permanent place, promote the cell into a real pipeline asset — same repo, same review flow as everything else.</p>
+              <p>Combine warehouses, files, object storage, and HTTP data in typed notebooks with SQL, Python, text, controls, and checked charts. When a result earns a permanent place, promote it into a real pipeline asset — same repo, same review flow as everything else.</p>
             </div>
             <div class="life-media">
               <img
@@ -427,7 +427,7 @@ const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Redshift', '
 
         <div class="plist">
           <div class="prow"><span class="check">✓</span><span><b>One install.</b> Start <code>renart</code> inside your repository — no services to stand up, nothing to configure first.</span></div>
-          <div class="prow"><span class="check">✓</span><span><b>Your data stays in your warehouse.</b> Renart connects to the databases you already run — it is not a platform you load your data into.</span></div>
+          <div class="prow"><span class="check">✓</span><span><b>Your data stays under your control.</b> Pipelines run against your own platforms; notebook transfers are explicit, bounded snapshots in your local project state.</span></div>
           <div class="prow"><span class="check">✓</span><span><b>Your platform, your choice.</b> Run pipelines on DuckDB, Postgres, Snowflake, BigQuery, Redshift, and more.</span></div>
           <div class="prow"><span class="check">✓</span><span><b>Everything is readable text.</b> The entire pipeline definition is human-readable, diffable files — nothing hides in a database.</span></div>
           <div class="prow"><span class="check">✓</span><span><b>No lock-in.</b> Assets are ordinary <code>.sql</code>, <code>.py</code>, and <code>.yml</code> files — if you stop using Renart, your pipelines are still right there.</span></div>

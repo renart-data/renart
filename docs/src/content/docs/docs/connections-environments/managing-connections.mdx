@@ -4,9 +4,10 @@ description: Point Renart at your warehouses and organize them into environments
 ---
 
 A **connection** tells Renart how to reach a data platform — a local DuckDB
-file, a Postgres database, a Snowflake account. An **environment** is a
-named set of connections (for example `default` and `production`) so the
-same pipeline can run against different targets.
+file, a Postgres database, a Snowflake or Databricks warehouse, or S3-compatible
+or Google Cloud Storage. An **environment** is a named set of connections (for
+example `default` and `production`) so the same pipeline can run against
+different targets.
 
 Both live in the project config file in your repository, and both are
 editable in the UI: open the project switcher and choose **Project
@@ -38,10 +39,13 @@ weekday mornings against `production`.
 
 ## Supported platforms
 
-Renart executes against the warehouses supported by its execution engine,
-including DuckDB, Postgres, Snowflake, BigQuery, Redshift, and more. The
-demo projects use DuckDB, which needs no credentials at all — a good way to
-try the workflow before pointing at shared infrastructure.
+Renart executes against supported warehouses including DuckDB, Postgres,
+Snowflake, BigQuery, Redshift, and Databricks. Configured S3-compatible and GCS
+connections are available to Load assets even when no connector-specific asset
+integration is enabled; their object browser is explicit, bounded, and keeps
+credential values on the server. The demo projects use DuckDB, which needs no
+credentials at all — a good way to try the workflow before pointing at shared
+infrastructure.
 
 :::caution[Keep legacy inline credentials private]
 Newly replaced sensitive values use a write-only credential source. Existing

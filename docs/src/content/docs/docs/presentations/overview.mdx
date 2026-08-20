@@ -7,7 +7,21 @@ Dashboards and reports turn pipeline results into version-controlled views for
 local analysis and review. You compose the result directly on a canvas, while
 Renart checks the fields and types used by every visualization.
 
+Both builders share the same **Data**, **Add**, and **Outline** tools, visual
+settings inspector, chart-type previews, color palettes, and Definition editor.
+An asset dataset gets its schema from the pipeline. A read-only SQL dataset uses
+its selected connection's dialect, catalog completion, and inferred output
+schema, so a renamed field or incompatible chart axis is caught before the
+definition is saved.
+
 ## Build a dashboard
+
+<img
+  src="/docs-media/dashboard-builder.webp"
+  alt="The Renart dashboard builder showing a revenue trend, KPI, category chart, filter controls, the Add rail, and visualization settings"
+  width="3000"
+  height="1920"
+/>
 
 1. Open **Dashboards** and click **New dashboard**.
 2. Open **Data**, add a dataset, and choose a pipeline asset. A read-only query
@@ -17,8 +31,9 @@ Renart checks the fields and types used by every visualization.
 4. Drag a tile by its handle and resize it from the lower corner. Select the
    tile to change its data, appearance, filter bindings, or accessible layout
    controls in the inspector.
-5. Add filters from the filter strip. Changing a filter refreshes only the
-   visualizations bound to it.
+5. Add controls from the filter strip. Text, select, multi-select, slider,
+   range, and switch controls can use fixed values or options from a dataset.
+   Changing a control refreshes only the visualizations bound to it.
 6. Use the desktop, tablet, and mobile buttons to inspect the derived layout,
    then click **Save**.
 
@@ -26,6 +41,13 @@ The desktop grid is the saved layout. Tablet and mobile are predictable
 previews of that layout, so there is no second hidden arrangement to maintain.
 
 ## Compose a report
+
+<img
+  src="/docs-media/report-builder.webp"
+  alt="The Renart report builder combining narrative Markdown, a checked line chart, and a table in an ordered document"
+  width="3000"
+  height="1920"
+/>
 
 1. Open **Reports** and click **New report**.
 2. Add a text block, then edit its heading and Markdown directly on the report

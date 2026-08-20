@@ -70,26 +70,14 @@ try {
     await shot(page, "hero-workspace");
   });
 
-  // notebook: the end of the table result plus the complete chart in view,
-  // with the cell-actions menu open so "Promote to pipeline" is visible
+  // notebook: a typed chart block with the authored notebook around it.
   await withPage({ width: 1400, height: 900 }, async (page) => {
     await goto(page, `/notebooks/${demo.notebookId}`, 5000);
-    await page.evaluate(() => {
-      const scroller = Array.from(
-        document.querySelectorAll('[data-slot="scroll-area-viewport"]'),
-      ).find((element) => element.querySelector("[data-notebook-cell-id]"));
-      if (!scroller) {
-        throw new Error("notebook viewport was not found");
-      }
-      scroller.scrollTop = 350;
-      scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+    const chart = page.locator("[data-notebook-visualization-id]", {
+      hasText: "Revenue trend",
     });
+    await chart.scrollIntoViewIfNeeded();
     await page.waitForTimeout(1200);
-    const menuButtons = page.getByRole("button", { name: "Cell actions" });
-    if ((await menuButtons.count()) >= 2) {
-      await menuButtons.nth(1).click();
-      await page.waitForTimeout(900);
-    }
     await shot(page, "lifecycle-notebook", {
       clip: { x: 190, y: 160, width: 1008, height: 648 },
     });

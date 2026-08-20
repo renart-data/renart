@@ -12,9 +12,9 @@ remote warehouses.
 
 <img
   src="/docs-media/notebook.webp"
-  alt="A Renart notebook with SQL cells and inline results"
-  width="2800"
-  height="1800"
+  alt="A Renart notebook with a checked revenue visualization, SQL cells, inline results, and the shared settings inspector"
+  width="3000"
+  height="1920"
 />
 
 ## Add data from several systems
@@ -73,6 +73,18 @@ Run one cell, run from a cell downward, or **Run all**. Renart keeps successful
 result schemas, row counts, source provenance, and definition staleness in the
 notebook session so they survive a server restart. Completed relations can be
 downloaded as CSV or Parquet.
+
+## Text and controls
+
+Text blocks use a WYSIWYG Markdown editor and sit naturally between executable
+cells and visualizations. Hover or select a block to reveal its editing and
+move controls; otherwise it reads like part of the document rather than a form.
+
+Open **Add** to drag SQL, Python, Text, controls, or visualizations into an exact
+gap between existing blocks. Controls are first-class notebook blocks with a
+settings inspector on the right. Text, select, multi-select, slider, range, and
+switch controls can use custom values or options loaded from a successful cell
+result.
 
 ## Parameters
 
@@ -149,8 +161,8 @@ notebook and pipeline untouched and asks you to review again.
 ## Files like everything else
 
 `notebook.yml` owns block order and durable block IDs. SQL and Python remain
-ordinary Bruin asset files, while non-SQL source definitions use small YAML
-files beside them. The complete authored state is versioned, diffable, and
-protected by a notebook-wide revision when Renart applies a compound change.
+ordinary source files, while non-SQL source definitions use small YAML files
+beside them. The complete authored state is versioned, diffable, and protected
+by a notebook-wide revision when Renart applies a compound change.
 
 For a local coding-agent workflow, see [Notebook agents](/docs/notebooks/agents/).

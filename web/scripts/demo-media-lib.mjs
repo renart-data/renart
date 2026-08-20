@@ -238,6 +238,9 @@ export async function launchStagedDemo({ port }) {
   console.log("staging: building notebook…");
   const notebookId = await buildNotebook(api);
 
+  console.log("staging: building presentations…");
+  const { dashboardId, reportId } = await buildPresentations(api);
+
   console.log("staging: adding marketing pipeline…");
   await addMarketingPipeline(workspaceDir);
   await waitForPipeline("marketing");
@@ -269,6 +272,8 @@ export async function launchStagedDemo({ port }) {
     workspaceDir,
     api,
     notebookId,
+    dashboardId,
+    reportId,
     failedRunId: failedRun.id,
     stop() {
       if (!server.pid) {
@@ -336,9 +341,9 @@ LIMIT 10`,
   await api(`/api/notebooks/${notebookId}/cells/${await cellId("revenue_trend")}`, {
     method: "PUT",
     body: {
-      content: `-- @viz(line, x: order_date, y: revenue)
-SELECT order_date, ROUND(revenue, 2) AS revenue
+      content: `SELECT order_date, ROUND(revenue, 2) AS revenue
 FROM mart.daily_revenue
+WHERE revenue >= {{ parameter.minimum_revenue }}
 ORDER BY order_date`,
     },
   });
@@ -350,13 +355,42 @@ ORDER BY order_date`,
   await api(`/api/notebooks/${notebookId}/cells/${await cellId("category_mix")}`, {
     method: "PUT",
     body: {
-      content: `-- @viz(bar, x: category, y: revenue)
-SELECT category, ROUND(SUM(line_total), 2) AS revenue
+      content: `SELECT category, ROUND(SUM(line_total), 2) AS revenue
 FROM staging.order_items
 GROUP BY category
 ORDER BY revenue DESC`,
     },
   });
+
+  let notebook = await applyNotebookOperations(api, notebookId, [
+    {
+      kind: "markdown.create",
+      content:
+        "# Revenue deep-dive\n\nExplore recent performance, adjust the revenue threshold, and keep the analysis beside the pipeline.",
+      position: "start",
+    },
+  ]);
+  const introBlock = notebook.blocks?.find((block) => block.markdown?.startsWith("# Revenue"));
+  if (!introBlock?.id) {
+    throw new Error("notebook intro block was not created");
+  }
+
+  await applyNotebookOperations(api, notebookId, [
+    {
+      kind: "control.create",
+      parameter: {
+        id: "minimum_revenue",
+        label: "Minimum daily revenue",
+        type: "slider",
+        default: 0,
+        min: 0,
+        max: 1000,
+        step: 50,
+      },
+      position: "after",
+      after_block_id: introBlock.id,
+    },
+  ]);
 
   const result = await api(`/api/notebooks/${notebookId}/run`, {
     method: "POST",
@@ -366,7 +400,282 @@ ORDER BY revenue DESC`,
   if (failed.length > 0) {
     throw new Error(`notebook cells failed: ${JSON.stringify(failed).slice(0, 400)}`);
   }
+
+  const recentRevenue = await cellId("recent_revenue");
+  const revenueTrend = await cellId("revenue_trend");
+  const categoryMix = await cellId("category_mix");
+  await applyNotebookOperations(api, notebookId, [
+    {
+      kind: "visualization.create",
+      visualization: {
+        source: recentRevenue,
+        definition: {
+          version: 1,
+          type: "table",
+          title: "Recent daily revenue",
+          presentation_limit: 10,
+          columns: [
+            { field: "order_date", label: "Date" },
+            { field: "order_count", label: "Orders" },
+            { field: "revenue", label: "Revenue" },
+            { field: "avg_order_value", label: "Average order" },
+          ],
+        },
+      },
+      position: "after",
+      after_block_id: recentRevenue,
+    },
+    {
+      kind: "visualization.create",
+      visualization: {
+        source: revenueTrend,
+        definition: {
+          version: 1,
+          type: "line",
+          title: "Revenue trend",
+          palette: "forest",
+          presentation_limit: 200,
+          encoding: {
+            x: { field: "order_date" },
+            y: [{ field: "revenue", label: "Revenue" }],
+          },
+        },
+      },
+      position: "after",
+      after_block_id: revenueTrend,
+    },
+    {
+      kind: "visualization.create",
+      visualization: {
+        source: categoryMix,
+        definition: {
+          version: 1,
+          type: "bar",
+          title: "Revenue by category",
+          palette: "ocean",
+          presentation_limit: 50,
+          encoding: {
+            x: { field: "category" },
+            y: [{ field: "revenue", label: "Revenue" }],
+          },
+        },
+      },
+      position: "after",
+      after_block_id: categoryMix,
+    },
+  ]);
+
   return notebookId;
+}
+
+async function applyNotebookOperations(api, notebookId, operations) {
+  const current = await api(`/api/notebooks/${notebookId}`);
+  const plan = await api(`/api/notebooks/${notebookId}/changes/prepare`, {
+    method: "POST",
+    body: {
+      base_revision: current.notebook.revision,
+      operations,
+    },
+  });
+  if (!plan.can_apply) {
+    throw new Error(
+      `notebook change could not be applied: ${JSON.stringify(plan.blocking_problems ?? [])}`,
+    );
+  }
+  const applied = await api(`/api/notebooks/${notebookId}/changes/apply`, {
+    method: "POST",
+    body: plan.change_set,
+  });
+  return applied.notebook;
+}
+
+async function buildPresentations(api) {
+  const dashboardCreated = await api("/api/presentations", {
+    method: "POST",
+    body: { kind: "dashboard", title: "Revenue overview" },
+  });
+  const dashboard = dashboardCreated.document.artifact;
+  const dashboardContent = `version: 1
+id: ${dashboard.id}
+title: Revenue overview
+datasets:
+  daily_revenue:
+    asset: mart.daily_revenue
+  top_products:
+    asset: mart.top_products
+filters:
+  - id: category
+    label: Category
+    type: select
+    default: outdoors
+    options:
+      dataset: top_products
+      value_field: category
+visualizations:
+  - id: revenue_trend
+    dataset: daily_revenue
+    definition:
+      version: 1
+      type: line
+      title: Daily revenue
+      palette: forest
+      presentation_limit: 200
+      encoding:
+        x:
+          field: order_date
+        y:
+          - field: revenue
+            label: Revenue
+  - id: latest_revenue
+    dataset: daily_revenue
+    definition:
+      version: 1
+      type: kpi
+      title: Latest daily revenue
+      palette: forest
+      presentation_limit: 1
+      value:
+        field: revenue
+  - id: product_revenue
+    dataset: top_products
+    definition:
+      version: 1
+      type: bar
+      title: Product revenue
+      palette: ocean
+      presentation_limit: 20
+      encoding:
+        x:
+          field: product_name
+        y:
+          - field: revenue
+    filter_bindings:
+      - filter: category
+        column: category
+        operator: equals
+  - id: products
+    dataset: top_products
+    definition:
+      version: 1
+      type: table
+      title: Top products
+      presentation_limit: 10
+      columns:
+        - field: product_name
+          label: Product
+        - field: category
+          label: Category
+        - field: units_sold
+          label: Units
+        - field: revenue
+          label: Revenue
+layout:
+  - visualization: revenue_trend
+    width: 8
+    height: 5
+  - visualization: latest_revenue
+    x: 8
+    width: 4
+    height: 2
+  - visualization: product_revenue
+    x: 8
+    y: 2
+    width: 4
+    height: 3
+  - visualization: products
+    y: 5
+    width: 12
+    height: 4
+`;
+  const dashboardUpdated = await api(`/api/presentations/${dashboard.workspace_id}`, {
+    method: "PUT",
+    body: {
+      expected_revision: dashboard.revision,
+      content: dashboardContent,
+    },
+  });
+
+  const reportCreated = await api("/api/presentations", {
+    method: "POST",
+    body: { kind: "report", title: "Weekly commerce brief" },
+  });
+  const report = reportCreated.document.artifact;
+  const reportContent = `version: 1
+id: ${report.id}
+title: Weekly commerce brief
+datasets:
+  daily_revenue:
+    asset: mart.daily_revenue
+  top_products:
+    asset: mart.top_products
+visualizations:
+  - id: revenue_trend
+    dataset: daily_revenue
+    definition:
+      version: 1
+      type: area
+      title: Revenue over time
+      palette: forest
+      presentation_limit: 200
+      encoding:
+        x:
+          field: order_date
+        y:
+          - field: revenue
+  - id: products
+    dataset: top_products
+    definition:
+      version: 1
+      type: table
+      title: Leading products
+      presentation_limit: 8
+      columns:
+        - field: product_name
+          label: Product
+        - field: category
+          label: Category
+        - field: units_sold
+          label: Units sold
+        - field: revenue
+          label: Revenue
+sections:
+  - id: introduction
+    title: Commerce pulse
+    markdown: |
+      Revenue remained active across the period. This report keeps the trend and
+      product mix beside the pipeline definition that produced them.
+  - id: trend
+    visualization: revenue_trend
+  - id: products_note
+    title: Product mix
+    markdown: The leading products below are calculated from fulfilled order items.
+  - id: products
+    visualization: products
+`;
+  const reportUpdated = await api(`/api/presentations/${report.workspace_id}`, {
+    method: "PUT",
+    body: {
+      expected_revision: report.revision,
+      content: reportContent,
+    },
+  });
+
+  for (const document of [dashboardUpdated.document, reportUpdated.document]) {
+    const result = await api(`/api/presentations/${document.artifact.workspace_id}/run`, {
+      method: "POST",
+      body: { environment: "default", include_options: true },
+    });
+    if (result.status !== "ok") {
+      throw new Error(
+        `presentation ${document.artifact.title} failed: ${JSON.stringify(result).slice(0, 600)}`,
+      );
+    }
+  }
+
+  return {
+    dashboardId: dashboardUpdated.document.artifact.workspace_id,
+    reportId: reportUpdated.document.artifact.workspace_id,
+  };
 }
 
 // The staleness watcher and the workspace content model update on separate

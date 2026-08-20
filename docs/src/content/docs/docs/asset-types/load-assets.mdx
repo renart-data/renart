@@ -20,12 +20,14 @@ and a target.
 On the canvas, add an asset and choose **Load**. Instead of a code editor,
 the main pane is a form:
 
-- **Source connection** and **source table** — where the data comes from.
-  The connection picker is grouped into databases, storage, and files;
-  once a source connection is chosen, Renart lists its available tables so
-  you pick rather than type.
-- **Destination connection** and **destination table** — where it lands,
-  usually your warehouse connection and a `schema.table` name.
+- **Source connection** and **source table or object** — where the data comes
+  from. The connection picker is grouped into databases, storage, and files;
+  once a connection is chosen, Renart browses available tables or bounded
+  S3-compatible/GCS objects while still allowing an explicit path.
+- **Destination connection** and **destination table or object** — where it
+  lands. Database targets use a `schema.table` name; storage and file targets
+  use an explicit destination path and distinguish existing objects from a new
+  path you type.
 - **Mode** — how each run writes.
 
 Local files are a first-class source: choose the **local** entry and point
@@ -49,11 +51,11 @@ using **Table (replace)** again.
 
 ## Columns and lineage
 
-The upstream dependency is inferred from the source when you save, so the
-Load asset takes its place on the canvas automatically. Use **Infer
-columns** to read the source's schema into the asset's column list — after
-that, downstream SQL assets get completions and type checking against the
-loaded table like any other upstream.
+The upstream dependency is inferred from the source when you save, so the Load
+asset takes its place on the canvas automatically. Use **Sync schema** to read
+the source's schema into the asset's column list — after that, downstream SQL
+assets get completions and type checking against the loaded table like any
+other upstream.
 
 ## Related
 

@@ -24,7 +24,8 @@ Each node summarizes one asset:
 - **Name** and a type icon in the header.
 - A **freshness badge** — **Fresh**, **Edited** (the asset's code changed since
   it was last built), **Upstream changed** (something it reads from changed), or
-  **Never built** — plus the last materialized time.
+  **Never built** — plus the last materialized time. Existing source tables use
+  **External source** because Renart does not build or assign freshness to them.
 - The **connection** it runs against (for example `duckdb-default`).
 
 A node with a coloured border is the one you currently have selected; its details
@@ -42,7 +43,13 @@ folder holds. An asset in `assets/staging/` is named `staging.<name>`.
 Arrows point from an **upstream** asset to the **downstream** asset that depends on
 it. Read left-to-right to see how raw inputs become finished tables. Renart infers
 most of these links from the asset's SQL; you can also add dependencies by hand in
-the workbench.
+the workbench. Dependencies from sibling pipelines appear as read-only producer
+nodes that link back to their owning pipeline.
+
+When an interactive type check positively observes a warehouse table that is
+not represented by an asset, the canvas can show it as a dashed external node.
+Its action opens a reviewed source-asset import, including the observed
+connection and columns, before anything is written.
 
 ## Navigate the canvas
 

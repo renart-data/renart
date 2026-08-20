@@ -89,6 +89,21 @@ pipeline/environment key can restore it.
 Scheduled runs land in [Runs & history](/docs/workspace/runs-and-history/)
 like any other run.
 
+## Review deployments and the run timeline
+
+Use the sub-navigation above Schedules to move between three views:
+
+- **Schedules** owns cadence, environment, lifecycle, and the exact pinned
+  deployment.
+- **Deployments** lists retained immutable snapshots, their source identity,
+  creation time, and which schedules currently use them. Open one to compare it
+  with the saved working tree or review a newer deployment.
+- **Run timeline** lays recent executions out chronologically across pipelines
+  and environments. Open a run for its per-asset timeline and output.
+
+These are separate routes, so browser back/forward navigation and direct links
+preserve the selected operational view.
+
 The scheduler runs inside `renart web`. For an always-on machine, the same
 scheduler is available headless — see the
 [CLI reference](/docs/reference/cli/).

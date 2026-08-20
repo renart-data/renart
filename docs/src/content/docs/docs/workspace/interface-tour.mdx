@@ -1,9 +1,9 @@
 ---
 title: Tour of the interface
-description: The five main views of the Renart workspace and how they fit together.
+description: The six main views of the Renart workspace and how they fit together.
 ---
 
-The top bar holds the project switcher, the five main views, the environment
+The top bar holds the project switcher, the six main views, the environment
 picker, and the current git branch. Everything you do in any of them ends up
 as a file change in the repository.
 
@@ -36,8 +36,16 @@ lineage. Select an asset to trace exactly what feeds it.
 
 ## Notebooks
 
-SQL scratchpads with inline tables and charts, each running in its own local
-DuckDB session. See [Notebooks](/docs/notebooks/overview/).
+Version-controlled analysis documents with SQL, Python, source imports, text,
+controls, inline tables, and charts. Each notebook integrates its data in a
+local DuckDB session. See [Notebooks](/docs/notebooks/overview/).
+
+## Present
+
+Visual builders for checked dashboards and narrative reports. Both use
+version-controlled definitions and can read pipeline assets or a read-only
+query on a configured connection. See
+[Dashboards and reports](/docs/presentations/overview/).
 
 ## Runs
 
@@ -47,8 +55,8 @@ with per-asset status, timing, and logs. See
 
 ## Schedules
 
-One schedule per pipeline and environment, with a timeline of recent and
-upcoming runs. See [Scheduling](/docs/scheduling/overview/).
+One schedule per pipeline and environment, plus dedicated deployment and run
+timeline pages. See [Scheduling](/docs/scheduling/overview/).
 
 ## The environment picker
 

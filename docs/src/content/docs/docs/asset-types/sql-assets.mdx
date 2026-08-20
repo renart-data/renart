@@ -46,6 +46,12 @@ Unqualified names resolve to the matching asset when it's unambiguous. For
 relationships the SQL can't express, add a manual dependency in the
 workbench's **Dependencies** card.
 
+The editor can also complete tables positively observed on the selected
+warehouse. Using one is allowed but highlighted as an external-relation
+warning. Choose **Import source asset** from the warning or Type check to review
+the exact table name, connection, path, and columns before adding it to the
+project.
+
 ## Metadata in the workbench
 
 Everything about the asset that isn't the query lives in the workbench
@@ -55,8 +61,18 @@ cards next to the editor:
 - **Materialization** — whether the asset writes a view, replaces a table
   each run, or updates incrementally.
 - **Columns** — names, types, descriptions, and quality checks such as
-  `not_null` or `unique`; refresh them from the query after the SQL
-  changes.
+  `not_null` or `unique`; use **Sync schema** after the SQL changes to compare
+  the query, saved declaration, and optional current table.
+
+## Materialization lifecycle
+
+When an incremental table does not exist yet and the selected warehouse can
+prove that absence, Renart bootstraps it with the corresponding full-refresh
+materialization before continuing. If the target exists as a view while the
+asset now declares a table, or the other way around, an ordinary run stops with
+a clear blocker. Review a **Full refresh** to replace the observed object kind
+on supported warehouses. When the warehouse cannot be inspected confidently,
+Renart warns and preserves the configured strategy instead of guessing.
 
 ## Check it before it runs
 

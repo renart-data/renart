@@ -17,9 +17,11 @@ run.
   height="1800"
 />
 
-- **IntelliSense** completes table names from the pipeline and column names
-  from the actual upstream assets, with their types.
-- **Validation** flags unresolved tables and columns inline as you type.
+- **IntelliSense** completes authored assets and positively observed tables
+  from the selected warehouse, with known columns and types.
+- **Validation** flags unresolved tables and columns inline as you type. A
+  confirmed remote table is a warning until an authored source asset represents
+  it; the warning offers the same reviewed import as Type check.
 - **Format SQL** reformats the query in place.
 - Edits **autosave to the file on disk** — the file in your repository is
   always what you see in the editor.
@@ -42,13 +44,19 @@ The results panel under the editor follows the selected asset:
 To the right of the editor, the workbench shows the asset's metadata as
 editable cards:
 
-- **Identity** — name, type, owner, description, tags.
+- **Identity** — name, type, owner, description, tags, and an optional stable
+  asset URL used by cross-pipeline dependencies.
 - **Materialization** — write behavior (for example view, or table with
   replace).
-- **Dependencies** — upstreams inferred from the SQL, plus any added by
-  hand.
-- **Columns** — names, types, descriptions, and checks; refresh them from
-  the asset's definition after the SQL changes.
+- **Dependencies** — upstreams inferred from the SQL, plus a searchable
+  free-text picker for manual dependencies. Picking an asset from another
+  pipeline uses its URL and links back to the producer; a missing URL is shown
+  before you add the dependency.
+- **Columns** — scan-friendly editable rows for names, types, descriptions,
+  ownership, and checks. **Sync schema** compares the asset definition with
+  optional live-response or current-table evidence. Safe additions apply
+  directly; type or deletion conflicts open a source-by-source resolver, and
+  you can always add a declared column manually.
 
 Like everything in Renart, workbench edits land as plain file changes in
 your repository, so a form edit and a code edit look the same in review —

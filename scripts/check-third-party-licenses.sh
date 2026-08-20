@@ -29,7 +29,7 @@ fi
 # contains a LICENSE file. The deterministic notice generator independently
 # requires and bundles those exact files, so ignoring them here only bypasses
 # the classifier bug; it does not omit their notices.
-if ! GOTOOLCHAIN="${GOTOOLCHAIN:-go1.26.5}" "${go_command}" run github.com/google/go-licenses@v1.6.0 check . \
+if ! GOTOOLCHAIN="${GOTOOLCHAIN:-go1.26.6}" "${go_command}" run github.com/google/go-licenses@v1.6.0 check . \
   --disallowed_types=forbidden,unknown \
   --ignore=github.com/DATA-DOG/go-sqlmock \
   --ignore=github.com/segmentio/asm \

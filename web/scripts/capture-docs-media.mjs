@@ -105,23 +105,66 @@ try {
     await page.waitForTimeout(1200);
   });
 
-  // notebook: table result + @viz chart + the cell-actions menu with
-  // "Promote to pipeline" visible
-  await withPage({ width: 1400, height: 900 }, async (page) => {
+  // notebook: authored text and controls, typed result blocks, a durable
+  // visualization, and its shared settings inspector.
+  await withPage({ width: 1500, height: 960 }, async (page) => {
     await goto(page, `/notebooks/${demo.notebookId}`, 5000);
-    await page.evaluate(() => {
-      const scroller = Array.from(document.querySelectorAll("*")).find(
-        (el) => el.scrollHeight > el.clientHeight + 100 && el.clientHeight > 400,
-      );
-      (scroller ?? document.scrollingElement).scrollTop = 760;
+    const chart = page.locator("[data-notebook-visualization-id]", {
+      hasText: "Revenue trend",
     });
+    await chart.scrollIntoViewIfNeeded();
+    await chart.hover();
+    await chart
+      .getByRole("button", { name: "Edit visualization Revenue trend" })
+      .click()
+      .catch(() => {});
     await page.waitForTimeout(1200);
-    const menuButtons = page.getByRole("button", { name: "Cell actions" });
-    if ((await menuButtons.count()) >= 2) {
-      await menuButtons.nth(1).click();
-      await page.waitForTimeout(900);
-    }
     await shot(page, "notebook");
+  });
+
+  // notebook-agent: the notebook-scoped local agent composer in its safe
+  // default Ask mode. No provider is invoked during media generation.
+  await withPage({ width: 1500, height: 960 }, async (page) => {
+    await goto(page, `/notebooks/${demo.notebookId}`, 5000);
+    await page.getByRole("tab", { name: "AI", exact: true }).click();
+    await page.getByText("Notebook assistant", { exact: true }).waitFor({ timeout: 15000 });
+    await page.waitForTimeout(1200);
+    await shot(page, "notebook-agent");
+  });
+
+  // dashboard-builder: a populated, checked dashboard with its Add rail,
+  // filter strip, responsive canvas, and visualization inspector.
+  await withPage({ width: 1500, height: 960 }, async (page) => {
+    await goto(page, `/dashboards/${demo.dashboardId}`, 8000);
+    await page.getByTestId("presentation-builder").waitFor({ timeout: 15000 });
+    await page
+      .getByRole("tab", { name: "Add", exact: true })
+      .click()
+      .catch(() => {});
+    await page
+      .getByTestId("dashboard-visualization-revenue_trend")
+      .click()
+      .catch(() => {});
+    await page.waitForTimeout(1500);
+    await shot(page, "dashboard-builder");
+  });
+
+  // report-builder: a narrative document with text and visual blocks, its
+  // outline, and the shared inspector visible together.
+  await withPage({ width: 1500, height: 960 }, async (page) => {
+    await goto(page, `/reports/${demo.reportId}`, 8000);
+    await page.getByTestId("presentation-builder").waitFor({ timeout: 15000 });
+    await page
+      .getByRole("tab", { name: "Outline", exact: true })
+      .click()
+      .catch(() => {});
+    await page
+      .getByTestId("report-canvas")
+      .getByText("Revenue over time", { exact: true })
+      .click()
+      .catch(() => {});
+    await page.waitForTimeout(1500);
+    await shot(page, "report-builder");
   });
 
   // schedules: the schedule list with the run timeline
@@ -283,6 +326,9 @@ try {
     "pipeline-canvas",
     "asset-editor",
     "notebook",
+    "notebook-agent",
+    "dashboard-builder",
+    "report-builder",
     "schedules",
     "run-detail",
     "catalog",

@@ -54,7 +54,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: 1.26.5
+          go-version: 1.26.6
           cache: true
           cache-dependency-path: go.sum
 
@@ -93,7 +93,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: 1.26.5
+          go-version: 1.26.6
           cache: true
           cache-dependency-path: go.sum
 
@@ -163,7 +163,7 @@ jobs:
             -v "$HOME/.cache/go-build":/root/.cache/go-build \
             -v "$HOME/.cache/renart/zig":/root/.cache/renart/zig:ro \
             -v "$HOME/.cache/renart/syft/1.44.0/syft":/usr/local/bin/syft:ro \
-            -e GOTOOLCHAIN=go1.26.5 \
+            -e GOTOOLCHAIN=go1.26.6 \
             -v "$PWD":/src \
             -w /src \
             "$GORELEASER_CROSS_IMAGE" \
@@ -182,7 +182,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: 1.26.5
+          go-version: 1.26.6
           cache: true
           cache-dependency-path: go.sum
 
@@ -236,7 +236,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
-          go-version: 1.26.5
+          go-version: 1.26.6
           cache: true
           cache-dependency-path: go.sum
 
@@ -309,7 +309,7 @@ jobs:
             -v "$HOME/.cache/renart/zig":/root/.cache/renart/zig:ro \
             -v "$HOME/.cache/renart/syft/1.44.0/syft":/usr/local/bin/syft:ro \
             -e GITHUB_TOKEN \
-            -e GOTOOLCHAIN=go1.26.5 \
+            -e GOTOOLCHAIN=go1.26.6 \
             -v "$PWD":/src \
             -w /src \
             "$GORELEASER_CROSS_IMAGE" \
