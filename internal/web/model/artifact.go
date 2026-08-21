@@ -4,10 +4,11 @@ package model
 // It complements, rather than replaces, the Bruin pipeline and notebook run
 // models. Execution planning continues to use each host's native graph.
 type ArtifactIndex struct {
-	Revision     string                `json:"revision"`
-	Artifacts    []ArtifactDescriptor  `json:"artifacts"`
-	Containment  []ArtifactContainment `json:"containment,omitempty"`
-	Dependencies []ArtifactDependency  `json:"dependencies,omitempty"`
+	Revision              string                 `json:"revision"`
+	Artifacts             []ArtifactDescriptor   `json:"artifacts"`
+	Containment           []ArtifactContainment  `json:"containment,omitempty"`
+	Dependencies          []ArtifactDependency   `json:"dependencies,omitempty"`
+	BreakingColumnImpacts []ArtifactColumnImpact `json:"breaking_column_impacts,omitempty"`
 }
 
 // ArtifactDescriptor is one Git/versioning and ownership unit. Capabilities
@@ -55,8 +56,9 @@ type ArtifactContainment struct {
 // ArtifactColumnUsage explains which producer columns a consumer references.
 // Role is a stable definition path such as encoding.x.field.
 type ArtifactColumnUsage struct {
-	Name string `json:"name"`
-	Role string `json:"role,omitempty"`
+	Name           string `json:"name"`
+	ConsumerColumn string `json:"consumer_column,omitempty"`
+	Role           string `json:"role,omitempty"`
 }
 
 // ArtifactDependency is a resolved producer-to-consumer lineage edge. Empty
@@ -65,4 +67,19 @@ type ArtifactDependency struct {
 	Producer ArtifactRef           `json:"producer"`
 	Consumer ArtifactRef           `json:"consumer"`
 	Columns  []ArtifactColumnUsage `json:"columns,omitempty"`
+}
+
+// ArtifactColumnImpact is positive evidence that removing or renaming one
+// producer column would break a downstream consumer. ConsumerColumn identifies
+// a derived output that can carry the dependency farther through the graph;
+// Role identifies a terminal authored use such as a chart encoding. Distance
+// is the number of artifact dependency edges from producer to consumer.
+// Unknown or ambiguous relation-only dependencies are deliberately omitted.
+type ArtifactColumnImpact struct {
+	Producer       ArtifactRef `json:"producer"`
+	Column         string      `json:"column"`
+	Consumer       ArtifactRef `json:"consumer"`
+	ConsumerColumn string      `json:"consumer_column,omitempty"`
+	Role           string      `json:"role,omitempty"`
+	Distance       int         `json:"distance"`
 }

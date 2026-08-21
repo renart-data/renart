@@ -17,6 +17,7 @@ const sources = [
       "ArtifactContainment",
       "ArtifactColumnUsage",
       "ArtifactDependency",
+      "ArtifactColumnImpact",
     ],
   },
   {

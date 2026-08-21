@@ -5,6 +5,7 @@ export type ArtifactIndex = {
   artifacts: ArtifactDescriptor[];
   containment?: ArtifactContainment[];
   dependencies?: ArtifactDependency[];
+  breaking_column_impacts?: ArtifactColumnImpact[];
 };
 
 export type ArtifactDescriptor = {
@@ -42,6 +43,7 @@ export type ArtifactContainment = {
 
 export type ArtifactColumnUsage = {
   name: string;
+  consumer_column?: string;
   role?: string;
 };
 
@@ -49,6 +51,15 @@ export type ArtifactDependency = {
   producer: ArtifactRef;
   consumer: ArtifactRef;
   columns?: ArtifactColumnUsage[];
+};
+
+export type ArtifactColumnImpact = {
+  producer: ArtifactRef;
+  column: string;
+  consumer: ArtifactRef;
+  consumer_column?: string;
+  role?: string;
+  distance: number;
 };
 
 export type PresentationArtifact = {

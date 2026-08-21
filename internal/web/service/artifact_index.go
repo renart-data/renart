@@ -33,6 +33,8 @@ const (
 	artifactCapabilityPresentation     = "presentation"
 	artifactCapabilityProducesRelation = "produces_relation"
 	artifactCapabilityVersioned        = "versioned"
+
+	artifactColumnRoleQueryReference = "query.reference"
 )
 
 // BuildArtifactIndex derives the workspace-wide artifact projection from the
@@ -95,6 +97,8 @@ func BuildArtifactIndex(state model.WorkspaceState) model.ArtifactIndex {
 		appendPresentationArtifact(&index, artifact, assetNameRefs, artifactColumns)
 	}
 
+	enrichArtifactColumnDependencies(&index, state)
+	index.BreakingColumnImpacts = deriveBreakingColumnImpacts(index.Dependencies)
 	sortArtifactIndex(&index)
 	index.Revision = artifactIndexRevision(index)
 	return index
@@ -530,7 +534,8 @@ func mergeArtifactColumnUsages(left, right []model.ArtifactColumnUsage) []model.
 	seen := make(map[string]bool, len(merged))
 	result := make([]model.ArtifactColumnUsage, 0, len(merged))
 	for _, usage := range merged {
-		key := strings.ToLower(strings.TrimSpace(usage.Name)) + "\x00" + strings.TrimSpace(usage.Role)
+		key := strings.ToLower(strings.TrimSpace(usage.Name)) + "\x00" +
+			strings.ToLower(strings.TrimSpace(usage.ConsumerColumn)) + "\x00" + strings.TrimSpace(usage.Role)
 		if strings.TrimSpace(usage.Name) == "" || seen[key] {
 			continue
 		}
@@ -539,7 +544,10 @@ func mergeArtifactColumnUsages(left, right []model.ArtifactColumnUsage) []model.
 	}
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Role == result[j].Role {
-			return result[i].Name < result[j].Name
+			if strings.EqualFold(result[i].Name, result[j].Name) {
+				return strings.ToLower(result[i].ConsumerColumn) < strings.ToLower(result[j].ConsumerColumn)
+			}
+			return strings.ToLower(result[i].Name) < strings.ToLower(result[j].Name)
 		}
 		return result[i].Role < result[j].Role
 	})
@@ -573,6 +581,25 @@ func sortArtifactIndex(index *model.ArtifactIndex) {
 			return artifactRefKey(left.Producer) < artifactRefKey(right.Producer)
 		}
 		return artifactRefKey(left.Consumer) < artifactRefKey(right.Consumer)
+	})
+	sort.Slice(index.BreakingColumnImpacts, func(i, j int) bool {
+		left, right := index.BreakingColumnImpacts[i], index.BreakingColumnImpacts[j]
+		if artifactRefKey(left.Producer) != artifactRefKey(right.Producer) {
+			return artifactRefKey(left.Producer) < artifactRefKey(right.Producer)
+		}
+		if !strings.EqualFold(left.Column, right.Column) {
+			return strings.ToLower(left.Column) < strings.ToLower(right.Column)
+		}
+		if left.Distance != right.Distance {
+			return left.Distance < right.Distance
+		}
+		if artifactRefKey(left.Consumer) != artifactRefKey(right.Consumer) {
+			return artifactRefKey(left.Consumer) < artifactRefKey(right.Consumer)
+		}
+		if !strings.EqualFold(left.ConsumerColumn, right.ConsumerColumn) {
+			return strings.ToLower(left.ConsumerColumn) < strings.ToLower(right.ConsumerColumn)
+		}
+		return left.Role < right.Role
 	})
 }
 
