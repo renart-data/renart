@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/bruin-data/bruin/pkg/config"
-	"github.com/bruin-data/bruin/pkg/sqlparser"
+	"renart/internal/bruincompat"
 	"renart/internal/web/duckcoord"
 	"renart/internal/web/notebook"
 )
@@ -38,7 +38,7 @@ func (executor *warehouseSQLSourceExecutor) Analyze(_ context.Context, input not
 	if connection == "" {
 		return notebook.BlockAnalysis{}, fmt.Errorf("warehouse source cell requires a source connection")
 	}
-	dialect, err := sqlparser.AssetTypeToDialect(input.Cell.Asset.Type)
+	dialect, err := bruincompat.AssetTypeToDialect(input.Cell.Asset.Type)
 	if err != nil {
 		return notebook.BlockAnalysis{}, err
 	}

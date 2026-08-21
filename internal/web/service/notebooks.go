@@ -5,8 +5,9 @@ import (
 	"strings"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
-	"github.com/bruin-data/bruin/pkg/sqlparser"
 	"github.com/spf13/afero"
+	"renart/internal/bruincompat"
+	"renart/internal/sqlintelligence"
 	"renart/internal/web/model"
 	"renart/internal/web/notebook"
 )
@@ -26,19 +27,12 @@ func (s *WorkspaceService) appendNotebooks(state *model.WorkspaceState) {
 		return
 	}
 
-	parser, parserErr := sqlparser.NewSQLParser(false)
-	var usedTables notebook.UsedTablesFunc
-	if parserErr == nil {
-		defer parser.Close()
-		usedTables = func(sql, assetType string) ([]string, error) {
-			dialect, dialectErr := sqlparser.AssetTypeToDialect(pipeline.AssetType(assetType))
-			if dialectErr != nil || dialect == "" {
-				dialect = "duckdb"
-			}
-			return parser.UsedTables(sql, dialect)
+	usedTables := func(sql, assetType string) ([]string, error) {
+		dialect, dialectErr := bruincompat.AssetTypeToDialect(pipeline.AssetType(assetType))
+		if dialectErr != nil || dialect == "" {
+			dialect = "duckdb"
 		}
-	} else {
-		state.Errors = append(state.Errors, "notebook dependency scan unavailable: "+parserErr.Error())
+		return sqlintelligence.UsedTables(sql, dialect)
 	}
 
 	loader := notebook.NewLoader(fs, pipeline.CreateTaskFromFileComments(fs), usedTables).

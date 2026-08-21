@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
-	"github.com/bruin-data/bruin/pkg/sqlparser"
 	"github.com/spf13/afero"
+	"renart/internal/sqlintelligence"
 )
 
 // renameFixture builds a five-cell DAG that all reference `base`, used by
@@ -40,12 +40,7 @@ func mustLoad(t *testing.T, dir string) *Notebook {
 	t.Helper()
 	fs := afero.NewOsFs()
 	loader := NewLoader(fs, pipeline.CreateTaskFromFileComments(fs), func(sql, assetType string) ([]string, error) {
-		parser, err := sqlparser.NewSQLParserCached()
-		if err != nil {
-			return nil, err
-		}
-		defer parser.Close()
-		return parser.UsedTables(sql, "duckdb")
+		return sqlintelligence.UsedTables(sql, "duckdb")
 	})
 	nb, err := loader.Load(dir)
 	if err != nil {

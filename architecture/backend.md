@@ -326,11 +326,19 @@ schedulers on one state DB would duplicate runs); run facts still land in
 `.renart/state.db`. The visible command surface is pinned by
 `cmd/root_test.go`.
 
-**Bruin SQL-parser link shim.** Renart does not call Bruin's Rust SQL parser;
-dependency extraction and `DECLARE` hoisting use the native pure-Go Golyglot
-engine. Bruin's `pkg/sqlparser` nevertheless adds `-lbruin_rustsqlparser`
-unconditionally to CGo builds on Linux and macOS, including when Renart uses
-only its Python-backed APIs. `scripts/build_bruin_sqlparser_stub.sh` therefore
+**Bruin SQL-parser compatibility boundary.** Renart does not call Bruin's Rust
+SQL parser. Dependency extraction, `DECLARE` hoisting, read-only validation,
+inspect limits, and notebook/schema-prefix relation rewrites use the native
+pure-Go Golyglot engine. The source-editing operations retain untouched SQL
+byte for byte instead of regenerating a formatted statement. Bruin's direct
+warehouse materializer constructors still require a concrete
+`*sqlparser.SQLParser` when an environment schema prefix is active; that narrow
+upstream-owned path lazily starts Bruin's Python parser. Runs without a schema
+prefix do not create it.
+
+Bruin's `pkg/sqlparser` nevertheless adds `-lbruin_rustsqlparser`
+unconditionally to CGo builds on Linux and macOS. The script
+`scripts/build_bruin_sqlparser_stub.sh` therefore
 builds a tiny fail-closed C ABI shim in
 `${XDG_CACHE_HOME:-$HOME/.cache}/renart/bruin-sqlparser-stub`. It exists only to
 satisfy that upstream linker contract: every entry point returns an explicit

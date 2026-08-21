@@ -11,8 +11,8 @@ import (
 	duck "github.com/bruin-data/bruin/pkg/duckdb"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/bruin-data/bruin/pkg/query"
-	"github.com/bruin-data/bruin/pkg/sqlparser"
 	"github.com/spf13/afero"
+	"renart/internal/sqlintelligence"
 )
 
 type stubFetcher struct {
@@ -61,14 +61,7 @@ func (s *stubFetcher) Snapshot(_ context.Context, _ string) (TabularArtifact, er
 
 func realRenameTables(t *testing.T) RenameTablesFunc {
 	t.Helper()
-	parser, err := sqlparser.NewSQLParserCached()
-	if err != nil {
-		t.Fatalf("sql parser unavailable: %v", err)
-	}
-	t.Cleanup(func() { _ = parser.Close() })
-	return func(sql, dialect string, mapping map[string]string) (string, error) {
-		return parser.RenameTables(sql, dialect, mapping)
-	}
+	return sqlintelligence.RenameTables
 }
 
 func loadRunFixture(t *testing.T, files map[string]string) *Notebook {

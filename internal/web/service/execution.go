@@ -17,9 +17,10 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/pipeline"
-	"github.com/bruin-data/bruin/pkg/sqlparser"
 	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
+	"renart/internal/bruincompat"
+	"renart/internal/sqlintelligence"
 	"renart/internal/web/bus"
 	"renart/internal/web/identity"
 	"renart/internal/web/matlog"
@@ -593,18 +594,12 @@ func loadExecutionConfigOrEmpty(configPath string) *config.Config {
 }
 
 func isReadOnlySelectQuery(queryStr string, assetType pipeline.AssetType) (bool, error) {
-	dialect, err := sqlparser.AssetTypeToDialect(assetType)
+	dialect, err := bruincompat.AssetTypeToDialect(assetType)
 	if err != nil {
 		return false, err
 	}
 
-	parser, err := sqlparser.NewSQLParser(false)
-	if err != nil {
-		return false, err
-	}
-	defer parser.Close()
-
-	return parser.IsSingleSelectQuery(queryStr, dialect)
+	return sqlintelligence.IsReadOnlySingleQuery(queryStr, dialect)
 }
 
 func extractInspectRawOutput(output []byte) string {

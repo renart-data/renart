@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
-	"github.com/bruin-data/bruin/pkg/sqlparser"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
+	"renart/internal/bruincompat"
 	"renart/internal/web/model"
 	"renart/internal/web/notebook"
 )
@@ -386,7 +386,7 @@ func (s *NotebookService) resolvePromotionTarget(pipelineID string) (*promotionD
 		connection = "duckdb-default"
 	}
 	dialect := "duckdb"
-	if parsedDialect, dialectErr := sqlparser.AssetTypeToDialect(pipeline.AssetType(assetType)); dialectErr == nil && parsedDialect != "" {
+	if parsedDialect, dialectErr := bruincompat.AssetTypeToDialect(pipeline.AssetType(assetType)); dialectErr == nil && parsedDialect != "" {
 		dialect = parsedDialect
 	}
 	return &promotionDestination{

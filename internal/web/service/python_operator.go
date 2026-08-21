@@ -21,9 +21,9 @@ import (
 	bruinpython "github.com/bruin-data/bruin/pkg/python"
 	"github.com/bruin-data/bruin/pkg/query"
 	"github.com/bruin-data/bruin/pkg/scheduler"
-	"github.com/bruin-data/bruin/pkg/sqlparser"
 
 	"renart/internal/pysdk"
+	"renart/internal/sqlintelligence"
 	"renart/internal/web/duckcoord"
 	"renart/internal/web/pybroker"
 	"renart/internal/web/runstate"
@@ -337,16 +337,10 @@ func (o *renartPythonOperator) startBroker(ctx context.Context, p *pipeline.Pipe
 		Log:               output,
 	})
 	if err != nil {
-		if tools != nil {
-			tools.close()
-		}
 		return nil, nil, fmt.Errorf("failed to start the python run broker: %w", err)
 	}
 	return broker, func() {
 		broker.Close()
-		if tools != nil {
-			tools.close()
-		}
 	}, nil
 }
 
@@ -367,38 +361,14 @@ func (o *renartPythonOperator) runBrokerQuery(ctx context.Context, connectionNam
 	return selectWithComplexJSONFallback(ctx, querier, sql)
 }
 
-// brokerSQLTools owns the lazily created bruin SQL parser the broker uses for
-// the read-only check and table-reference extraction. The parser is created
-// on first use (starting it costs real time and most scripts never query) and
-// serialized by a mutex (the parser is not safe for concurrent calls).
+// brokerSQLTools applies the shared native SQL read-only and dependency rules
+// for Python SDK queries.
 type brokerSQLTools struct {
-	mu      sync.Mutex
-	parser  *sqlparser.SQLParser
-	failed  bool
 	dialect string
 }
 
-func (b *brokerSQLTools) ensureParser() *sqlparser.SQLParser {
-	if b.parser != nil || b.failed {
-		return b.parser
-	}
-	parser, err := sqlparser.NewSQLParser(false)
-	if err != nil {
-		b.failed = true
-		return nil
-	}
-	b.parser = parser
-	return b.parser
-}
-
 func (b *brokerSQLTools) validateReadOnly(sql string) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	parser := b.ensureParser()
-	if parser == nil {
-		return fmt.Errorf("could not initialize SQL validation")
-	}
-	isSelect, err := parser.IsSingleSelectQuery(sql, b.dialect)
+	isSelect, err := sqlintelligence.IsReadOnlySingleQuery(sql, b.dialect)
 	if err != nil {
 		return fmt.Errorf("could not validate query: %w", err)
 	}
@@ -409,22 +379,7 @@ func (b *brokerSQLTools) validateReadOnly(sql string) error {
 }
 
 func (b *brokerSQLTools) usedTables(sql string) ([]string, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	parser := b.ensureParser()
-	if parser == nil {
-		return nil, nil
-	}
-	return parser.UsedTables(sql, b.dialect)
-}
-
-func (b *brokerSQLTools) close() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.parser != nil {
-		b.parser.Close()
-		b.parser = nil
-	}
+	return sqlintelligence.UsedTables(sql, b.dialect)
 }
 
 // brokerQueryDialect maps the default connection's type to a SQL dialect for

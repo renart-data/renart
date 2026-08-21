@@ -16,8 +16,9 @@ import (
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/jinja"
 	"github.com/bruin-data/bruin/pkg/pipeline"
-	"github.com/bruin-data/bruin/pkg/sqlparser"
 	"github.com/spf13/afero"
+	"renart/internal/bruincompat"
+	"renart/internal/sqlintelligence"
 	"renart/internal/web/model"
 	"renart/internal/web/notebook"
 	"renart/internal/web/presentation"
@@ -77,11 +78,6 @@ type NotebookService struct {
 	notebookEditMu    sync.Mutex
 	notebookEditLocks map[string]*cellEditLock
 
-	// Bruin's SQL parser is created lazily and reused across every load and run
-	// instead of being spun up per operation.
-	parserMu     sync.Mutex
-	cachedParser *sqlparser.SQLParser
-
 	// runtimes holds per-notebook recompute state (staleness, last results,
 	// the auto-recompute toggle) for server-driven auto-recompute.
 	runtimes *notebookRuntimes
@@ -92,43 +88,16 @@ type cellEditLock struct {
 	refs int
 }
 
-// ensureParserLocked returns the shared parser, creating it on first use. The
-// caller must hold parserMu.
-func (s *NotebookService) ensureParserLocked() (*sqlparser.SQLParser, error) {
-	if s.cachedParser == nil {
-		parser, err := sqlparser.NewSQLParser(false)
-		if err != nil {
-			return nil, err
-		}
-		s.cachedParser = parser
-	}
-	return s.cachedParser, nil
-}
-
-// renameTables rewrites cell table references using the shared parser.
-// Serialized because the embedded-Python parser is not concurrency safe;
-// notebook work is interactive and low-concurrency.
+// renameTables rewrites cell table references as lossless Golyglot source
+// edits. It is concurrency-safe and does not start a Python parser process.
 func (s *NotebookService) renameTables(sqlText, dialect string, mapping map[string]string) (string, error) {
-	s.parserMu.Lock()
-	defer s.parserMu.Unlock()
-	parser, err := s.ensureParserLocked()
-	if err != nil {
-		return "", err
-	}
-	return parser.RenameTables(sqlText, dialect, mapping)
+	return sqlintelligence.RenameTables(sqlText, dialect, mapping)
 }
 
 // validateNotebookPythonQuery applies the same single-SELECT boundary as the
-// ordinary Python broker while reusing the notebook service's long-lived SQL
-// parser. Reuse avoids initializing another parser for every Python cell.
+// ordinary Python broker without starting an embedded CPython runtime.
 func (s *NotebookService) validateNotebookPythonQuery(sqlText string) error {
-	s.parserMu.Lock()
-	defer s.parserMu.Unlock()
-	parser, err := s.ensureParserLocked()
-	if err != nil {
-		return fmt.Errorf("could not initialize SQL validation: %w", err)
-	}
-	isSelect, err := parser.IsSingleSelectQuery(sqlText, "duckdb")
+	isSelect, err := sqlintelligence.IsReadOnlySingleQuery(sqlText, "duckdb")
 	if err != nil {
 		return fmt.Errorf("could not validate notebook query: %w", err)
 	}
@@ -224,20 +193,13 @@ func (s *NotebookService) JinjaContextForAsset(_ context.Context, assetID string
 	}, true, nil
 }
 
-// usedTables extracts referenced tables for dependency derivation using the
-// shared parser.
+// usedTables extracts referenced tables for dependency derivation.
 func (s *NotebookService) usedTables(sqlText, assetType string) ([]string, error) {
-	dialect, dialectErr := sqlparser.AssetTypeToDialect(pipeline.AssetType(assetType))
+	dialect, dialectErr := bruincompat.AssetTypeToDialect(pipeline.AssetType(assetType))
 	if dialectErr != nil || dialect == "" {
 		dialect = "duckdb"
 	}
-	s.parserMu.Lock()
-	defer s.parserMu.Unlock()
-	parser, err := s.ensureParserLocked()
-	if err != nil {
-		return nil, err
-	}
-	return parser.UsedTables(sqlText, dialect)
+	return sqlintelligence.UsedTables(sqlText, dialect)
 }
 
 // NewNotebookService constructs the service; session DBs live under
@@ -258,17 +220,11 @@ func NewNotebookService(deps NotebookDependencies) *NotebookService {
 }
 
 func (s *NotebookService) validateNotebookSourceQuery(sqlText, assetType string) error {
-	dialect, dialectErr := sqlparser.AssetTypeToDialect(pipeline.AssetType(assetType))
+	dialect, dialectErr := bruincompat.AssetTypeToDialect(pipeline.AssetType(assetType))
 	if dialectErr != nil || strings.TrimSpace(dialect) == "" {
 		return fmt.Errorf("cannot determine the SQL dialect for notebook source type %q", assetType)
 	}
-	s.parserMu.Lock()
-	defer s.parserMu.Unlock()
-	parser, err := s.ensureParserLocked()
-	if err != nil {
-		return fmt.Errorf("could not initialize SQL validation: %w", err)
-	}
-	isSelect, err := parser.IsSingleSelectQuery(sqlText, dialect)
+	isSelect, err := sqlintelligence.IsReadOnlySingleQuery(sqlText, dialect)
 	if err != nil {
 		return fmt.Errorf("could not validate warehouse source query: %w", err)
 	}

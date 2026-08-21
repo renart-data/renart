@@ -13,9 +13,10 @@ import (
 	"github.com/bruin-data/bruin/pkg/jinja"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/bruin-data/bruin/pkg/query"
-	"github.com/bruin-data/bruin/pkg/sqlparser"
 	"github.com/spf13/afero"
 
+	"renart/internal/bruincompat"
+	"renart/internal/sqlintelligence"
 	"renart/internal/web/duckcoord"
 	"renart/internal/web/secretstore"
 )
@@ -54,7 +55,7 @@ func (e *HybridBruinExecutor) QueryAsset(ctx context.Context, req QueryAssetRequ
 		return output, err
 	}
 
-	dialect, err := sqlparser.AssetTypeToDialect(pp.Asset.Type)
+	dialect, err := bruincompat.AssetTypeToDialect(pp.Asset.Type)
 	if err != nil {
 		dialect = ""
 	}
@@ -79,23 +80,8 @@ func (e *HybridBruinExecutor) QueryAsset(ctx context.Context, req QueryAssetRequ
 		}
 	}
 
-	var parser *sqlparser.SQLParser
-	needsParser := strings.TrimSpace(req.Limit) != "" || pp.Config.SelectedEnvironment.SchemaPrefix != ""
-	if needsParser {
-		parser, err = sqlparser.NewSQLParser(false)
-		if err != nil {
-			wrappedErr := fmt.Errorf("failed to initialize SQL parser: %w", err)
-			output, marshalErr := json.Marshal(directErrorResponse{Error: wrappedErr.Error()})
-			if marshalErr != nil {
-				return nil, wrappedErr
-			}
-			return output, wrappedErr
-		}
-		defer parser.Close()
-	}
-
-	if parser != nil && pp.Config.SelectedEnvironment.SchemaPrefix != "" {
-		queryStr, err = applyDirectSchemaPrefix(ctx, queryStr, dialect, parser, pp, conn)
+	if pp.Config.SelectedEnvironment.SchemaPrefix != "" {
+		queryStr, err = applyDirectSchemaPrefix(ctx, queryStr, dialect, pp, conn)
 		if err != nil {
 			wrappedErr := fmt.Errorf("failed to apply schema prefix: %w", err)
 			_ = e.executionLogSink().SaveQueryLog(ctx, QueryLogRecord{
@@ -115,10 +101,10 @@ func (e *HybridBruinExecutor) QueryAsset(ctx context.Context, req QueryAssetRequ
 		}
 	}
 
-	if parser != nil && strings.TrimSpace(req.Limit) != "" {
+	if strings.TrimSpace(req.Limit) != "" {
 		limitValue, convErr := strconv.ParseInt(strings.TrimSpace(req.Limit), 10, 64)
 		if convErr == nil {
-			queryStr = addDirectLimitToQuery(queryStr, limitValue, conn, parser, dialect)
+			queryStr = addDirectLimitToQuery(queryStr, limitValue, conn, dialect)
 		}
 	}
 
@@ -463,19 +449,15 @@ func (e *HybridBruinExecutor) buildDirectAssetQuery(ctx context.Context, pp *dir
 	return connName, conn, queries[0].Query, manager, nil
 }
 
-func addDirectLimitToQuery(queryStr string, limit int64, conn interface{}, parser *sqlparser.SQLParser, dialect string) string {
-	if parser != nil {
-		isSingleSelect, err := parser.IsSingleSelectQuery(queryStr, dialect)
-		if err == nil && !isSingleSelect {
-			return queryStr
-		}
+func addDirectLimitToQuery(queryStr string, limit int64, conn interface{}, dialect string) string {
+	isSingleSelect, err := sqlintelligence.IsReadOnlySingleQuery(queryStr, dialect)
+	if err == nil && !isSingleSelect {
+		return queryStr
 	}
 
-	if parser != nil {
-		limitedQuery, err := parser.AddLimit(queryStr, int(limit), dialect)
-		if err == nil {
-			return limitedQuery
-		}
+	limitedQuery, err := sqlintelligence.AddLimit(queryStr, int(limit), dialect)
+	if err == nil {
+		return limitedQuery
 	}
 
 	if limiter, ok := conn.(interface{ Limit(string, int64) string }); ok {
@@ -486,12 +468,12 @@ func addDirectLimitToQuery(queryStr string, limit int64, conn interface{}, parse
 	return fmt.Sprintf("SELECT * FROM (\n%s\n) as t LIMIT %d", queryStr, limit)
 }
 
-func applyDirectSchemaPrefix(_ context.Context, queryStr, dialect string, parser *sqlparser.SQLParser, pp *directPipelineInfo, conn interface{}) (string, error) {
+func applyDirectSchemaPrefix(_ context.Context, queryStr, dialect string, pp *directPipelineInfo, conn interface{}) (string, error) {
 	if dialect == "" || pp.Config.SelectedEnvironment == nil || pp.Config.SelectedEnvironment.SchemaPrefix == "" {
 		return queryStr, nil
 	}
 
-	usedTables, err := parser.UsedTables(queryStr, dialect)
+	usedTables, err := sqlintelligence.UsedTables(queryStr, dialect)
 	if err != nil {
 		return queryStr, nil
 	}
@@ -514,7 +496,7 @@ func applyDirectSchemaPrefix(_ context.Context, queryStr, dialect string, parser
 		return queryStr, nil
 	}
 
-	rewrittenQuery, err := parser.RenameTables(queryStr, dialect, renameMapping)
+	rewrittenQuery, err := sqlintelligence.RenameTables(queryStr, dialect, renameMapping)
 	if err != nil {
 		return "", fmt.Errorf("failed to rewrite query with schema prefix: %w", err)
 	}

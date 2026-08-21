@@ -350,7 +350,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
 		Output:    "json",
 	})
 	require.NoError(t, err)
-	assert.Contains(t, querier.query, "SELECT 1 AS customer_id")
+	assert.Contains(t, querier.query, "select 1 as customer_id,'Ada' as customer_name")
 	assert.Contains(t, querier.query, "LIMIT 200")
 	assert.JSONEq(t, `{
 		"columns": [
@@ -359,7 +359,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
 		],
 		"rows": [[1, "alice"]],
 		"connectionName": "duckdb-default",
-		"query": "SELECT 1 AS customer_id, 'Ada' AS customer_name UNION ALL SELECT 2 AS customer_id, 'Grace' AS customer_name LIMIT 200"
+		"query": "select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id,'Grace' as customer_name LIMIT 200"
 	}`, string(output))
 }
 
