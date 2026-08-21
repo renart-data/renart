@@ -7,8 +7,10 @@ endpoints (`/api/sql/lsp/*`) consumed by the web UI's Monaco editors —
 including notebook cells.
 
 The implementation uses the in-process, pure-Go Golyglot parser and semantic
-engine. A tolerant Renart analyzer remains additive for incomplete SQL and for
-LSP features such as navigation, completion, and code actions.
+engine. Golyglot's cursor-aware grammar context routes completion; a tolerant
+Renart analyzer remains additive for scope resolution, navigation, code
+actions, and dialect constructs whose terminal keyword/alias shape is
+intentionally ambiguous.
 
 ## 1. Layering
 
@@ -411,7 +413,12 @@ to `parameters.query`, never to the raw YAML content. Presentation queries also
 use stable in-memory models, but persist into the route-local presentation
 draft and require the dataset's selected query connection.
 
-- **Completions** by context: column fields (after an alias `.`), relations —
+- **Completions** are routed by Golyglot's tolerant `SyntacticContextAt`
+  expectation for the authored prefix, so partially typed clause keywords,
+  relation names, nested CTE expressions, and `QUALIFY`/window contexts do not
+  depend on regex ordering. The existing tolerant scope analyzer supplies the
+  actual candidate sets and remains a bounded fallback for an unclassified
+  parser context. Candidates include column fields (after an alias `.`), relations —
   workspace assets and, in a `from schema.` position,
   `relationCompletionsInSchema` returns schema-stripped inserts — and clause
   **keywords** (`keywordCompletions`, sorted last via a `z` SortText so

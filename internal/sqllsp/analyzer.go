@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/renart-data/golyglot/pkg/golyglot"
 	"renart/internal/authoringdiag"
 	"renart/internal/sqlcatalog"
 	"renart/internal/sqlintelligence"
@@ -879,6 +880,11 @@ func (e *Engine) Complete(doc TextDocumentItem, pos Position) []CompletionItem {
 	}
 	fullAnalysis := analyzeSQLWithResolver(projection.doc.Text, e)
 	analysis := e.analysisForCurrentSelect(projection.doc.Text, renderedOffset, fullAnalysis)
+	context, hasContext := syntacticCompletionContext(
+		projection.doc.Text,
+		renderedOffset,
+		e.dialectForDocument(projection.doc),
+	)
 	if qualifier, ok := qualifierBeforeDot(projection.doc.Text, renderedOffset); ok {
 		// `from schema.` (or join/into/update) is a relation position, not an
 		// alias.column one: offer the relations in that schema rather than the
@@ -890,6 +896,33 @@ func (e *Engine) Complete(doc TextDocumentItem, pos Position) []CompletionItem {
 		}
 		return columnCompletions(e.columnsForQualifier(analysis, qualifier))
 	}
+	if hasContext && contextExpects(context, golyglot.ExpectedTable) {
+		return e.relationCompletions()
+	}
+	if offsetInQuotedIdentifier(projection.doc.Text, renderedOffset) && columnCompletionPosition(projection.doc.Text, renderedOffset) {
+		return columnCompletions(e.columnsForSelectAnalysis(analysis))
+	}
+	if joinConditionPosition(projection.doc.Text, renderedOffset) && (!hasContext || contextExpects(context, golyglot.ExpectedExpression)) {
+		return joinQualifierCompletions(analysis)
+	}
+	if hasContext && contextExpectsColumns(context) {
+		return columnCompletions(e.columnsForSelectAnalysis(analysis))
+	}
+	if hasContext {
+		if keywords := e.keywordCompletionsForContext(context); len(keywords) > 0 {
+			return keywords
+		}
+		// Some dialect keywords are also legal bare aliases. At a terminal
+		// partial expression (notably QUALIFY), the parser can therefore retain
+		// the preceding FROM context. The tolerant clause scanner is additive
+		// here only after the parser has ruled out a matching keyword/table.
+		if context.Prefix != "" && columnCompletionPosition(projection.doc.Text, renderedOffset) {
+			return columnCompletions(e.columnsForSelectAnalysis(analysis))
+		}
+		return append(e.keywordCompletions(), e.relationCompletions()...)
+	}
+	// Keep the tolerant analyzer as a fallback for a dialect or cursor shape
+	// the shared parser cannot classify yet.
 	if relationPosition(projection.doc.Text, renderedOffset) {
 		return e.relationCompletions()
 	}
@@ -902,10 +935,70 @@ func (e *Engine) Complete(doc TextDocumentItem, pos Position) []CompletionItem {
 	return append(e.keywordCompletions(), e.relationCompletions()...)
 }
 
+func syntacticCompletionContext(text string, offset int, dialectName string) (golyglot.SyntacticContext, bool) {
+	if offset < 0 || offset > len(text) {
+		return golyglot.SyntacticContext{}, false
+	}
+	dialect, err := golyglot.ParseDialect(dialectName)
+	if err != nil {
+		return golyglot.SyntacticContext{}, false
+	}
+	// Completion is driven by the authored prefix. Giving the parser only that
+	// prefix makes a token ending exactly at a mid-document cursor behave like
+	// the partially typed token it is, rather than like a completed expression
+	// followed by the document suffix.
+	prefix := text[:offset]
+	context, err := golyglot.SyntacticContextAt(prefix, len(prefix), dialect)
+	if err != nil {
+		return golyglot.SyntacticContext{}, false
+	}
+	return context, true
+}
+
+func contextExpects(context golyglot.SyntacticContext, kind golyglot.ExpectedSyntaxKind) bool {
+	for _, expected := range context.Expected {
+		if expected.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func contextExpectsColumns(context golyglot.SyntacticContext) bool {
+	if contextExpects(context, golyglot.ExpectedExpression) {
+		switch context.Kind {
+		case golyglot.ContextCTE,
+			golyglot.ContextSelectList,
+			golyglot.ContextWhere,
+			golyglot.ContextGroupBy,
+			golyglot.ContextHaving,
+			golyglot.ContextQualify,
+			golyglot.ContextWindow,
+			golyglot.ContextOrderBy,
+			golyglot.ContextExpression,
+			golyglot.ContextUpdate:
+			return true
+		}
+	}
+	// UPDATE ... SET expects an identifier before it can parse the assignment;
+	// those identifiers come from the target relation's schema.
+	return context.Kind == golyglot.ContextUpdate && contextExpects(context, golyglot.ExpectedIdentifier)
+}
+
 // offsetInSingleQuotedString reports whether offset is inside a SQL string
 // literal. Double quotes and backticks are identifiers in the dialects Renart
 // supports, so they intentionally do not suppress identifier completion.
 func offsetInSingleQuotedString(sql string, offset int) bool {
+	inString, _ := quoteContextAtOffset(sql, offset)
+	return inString
+}
+
+func offsetInQuotedIdentifier(sql string, offset int) bool {
+	_, inIdentifier := quoteContextAtOffset(sql, offset)
+	return inIdentifier
+}
+
+func quoteContextAtOffset(sql string, offset int) (bool, bool) {
 	offset = min(max(offset, 0), len(sql))
 	inSingleQuote := false
 	inIdentifierQuote := byte(0)
@@ -967,7 +1060,7 @@ func offsetInSingleQuotedString(sql string, offset int) bool {
 			inIdentifierQuote = ch
 		}
 	}
-	return inSingleQuote
+	return inSingleQuote, inIdentifierQuote != 0
 }
 
 func (e *Engine) Definition(doc TextDocumentItem, pos Position) []Location {
@@ -1865,6 +1958,33 @@ func (e *Engine) keywordCompletions() []CompletionItem {
 	items := make([]CompletionItem, 0, len(sqlKeywordCompletionLabels))
 	for i, label := range sqlKeywordCompletionLabels {
 		items = append(items, CompletionItem{Label: label, Kind: completionKindMethod, SortText: fmt.Sprintf("z%02d", i)})
+	}
+	return items
+}
+
+func (e *Engine) keywordCompletionsForContext(context golyglot.SyntacticContext) []CompletionItem {
+	expected := make(map[string]struct{})
+	for _, syntax := range context.Expected {
+		if syntax.Kind == golyglot.ExpectedKeyword && strings.TrimSpace(syntax.Text) != "" {
+			expected[strings.ToLower(strings.TrimSpace(syntax.Text))] = struct{}{}
+		}
+	}
+	if len(expected) == 0 {
+		return nil
+	}
+	items := make([]CompletionItem, 0, len(expected))
+	prefix := strings.ToLower(strings.TrimSpace(context.Prefix))
+	for index, label := range sqlKeywordCompletionLabels {
+		first, _, _ := strings.Cut(label, " ")
+		if _, ok := expected[first]; !ok {
+			continue
+		}
+		if prefix != "" && !strings.HasPrefix(label, prefix) {
+			continue
+		}
+		items = append(items, CompletionItem{
+			Label: label, Kind: completionKindMethod, SortText: fmt.Sprintf("z%02d", index),
+		})
 	}
 	return items
 }

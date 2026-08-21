@@ -1536,6 +1536,93 @@ func TestEngineCompletesRelationsForSchemaQualifierInFromClause(t *testing.T) {
 	}
 }
 
+func TestEngineUsesParserContextForPartialFromKeyword(t *testing.T) {
+	engine := NewEngine(CanonicalGraph{
+		Version:   1,
+		Relations: []RelationNode{{ID: "orders", Name: "analytics.orders"}},
+		Schemas: []SchemaLayer{{
+			RelationID: "orders",
+			Columns:    []ColumnInfo{{Name: "order_id"}},
+		}},
+	})
+	doc := TextDocumentItem{URI: "file:///query.sql", Text: "SELECT order_id FR"}
+	items := engine.Complete(doc, PositionAt(doc.Text, len(doc.Text)))
+	labels := completionLabels(items)
+	if !slices.Contains(labels, "from") {
+		t.Fatalf("expected FROM for a partial clause keyword, got %#v", labels)
+	}
+	if slices.Contains(labels, "order_id") || slices.Contains(labels, "analytics.orders") {
+		t.Fatalf("partial FROM must not be routed as a projection expression, got %#v", labels)
+	}
+}
+
+func TestEngineUsesParserContextForPartialRelation(t *testing.T) {
+	engine := NewEngine(CanonicalGraph{
+		Version: 1,
+		Relations: []RelationNode{
+			{ID: "orders", Name: "analytics.orders"},
+			{ID: "customers", Name: "analytics.customers"},
+		},
+		Schemas: []SchemaLayer{{
+			RelationID: "orders",
+			Columns:    []ColumnInfo{{Name: "order_id"}},
+		}},
+	})
+	doc := TextDocumentItem{URI: "file:///query.sql", Text: "SELECT * FROM ana"}
+	items := engine.Complete(doc, PositionAt(doc.Text, len(doc.Text)))
+	labels := completionLabels(items)
+	if !slices.Contains(labels, "analytics.orders") || !slices.Contains(labels, "analytics.customers") {
+		t.Fatalf("expected relation candidates for a partial table, got %#v", labels)
+	}
+	if slices.Contains(labels, "order_id") || slices.Contains(labels, "where") {
+		t.Fatalf("partial table must only use relation completion, got %#v", labels)
+	}
+}
+
+func TestEngineUsesParserContextInsideIncompleteNestedCTE(t *testing.T) {
+	engine := NewEngine(CanonicalGraph{
+		Version:   1,
+		Relations: []RelationNode{{ID: "orders", Name: "orders"}},
+		Schemas: []SchemaLayer{{
+			RelationID: "orders",
+			Columns: []ColumnInfo{
+				{Name: "order_id"},
+				{Name: "customer_id"},
+			},
+		}},
+	})
+	doc := TextDocumentItem{URI: "file:///query.sql", Text: `WITH recent AS (
+  SELECT order_id FROM orders WHERE customer_
+)
+SELECT * FROM recent`}
+	cursor := strings.Index(doc.Text, "customer_") + len("customer_")
+	labels := completionLabels(engine.Complete(doc, PositionAt(doc.Text, cursor)))
+	if !slices.Contains(labels, "customer_id") || !slices.Contains(labels, "order_id") {
+		context, _ := syntacticCompletionContext(doc.Text, cursor, "generic")
+		t.Fatalf("expected current CTE-scope columns, got %#v; context=%#v", labels, context)
+	}
+	if slices.Contains(labels, "orders") {
+		t.Fatalf("nested expression must not be routed as a relation, got %#v", labels)
+	}
+}
+
+func TestEngineUsesParserContextForQualifyExpression(t *testing.T) {
+	engine := NewEngine(CanonicalGraph{
+		Version:   1,
+		Relations: []RelationNode{{ID: "orders", Name: "orders"}},
+		Schemas: []SchemaLayer{{
+			RelationID: "orders",
+			Columns:    []ColumnInfo{{Name: "order_id"}, {Name: "row_number"}},
+		}},
+	})
+	doc := TextDocumentItem{URI: "file:///query.sql", Text: "SELECT * FROM orders QUALIFY row_"}
+	labels := completionLabels(engine.Complete(doc, PositionAt(doc.Text, len(doc.Text))))
+	if !slices.Contains(labels, "row_number") || !slices.Contains(labels, "order_id") {
+		context, _ := syntacticCompletionContext(doc.Text, len(doc.Text), "generic")
+		t.Fatalf("expected QUALIFY expression columns, got %#v; context=%#v", labels, context)
+	}
+}
+
 func TestEngineCompletesJoinConditionsWithQueryAliases(t *testing.T) {
 	engine := NewEngine(CanonicalGraph{
 		Version: 1,
