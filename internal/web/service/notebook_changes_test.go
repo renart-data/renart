@@ -105,6 +105,49 @@ func TestNotebookChangeSetPrepareAndApply(t *testing.T) {
 	}
 }
 
+func TestNotebookChangeSetAppliesLosslessSQLRefactor(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewNotebookService(NotebookDependencies{WorkspaceRoot: root})
+	created, apiErr := svc.Create(CreateNotebookRequest{Title: "Semantic SQL edits"})
+	if apiErr != nil {
+		t.Fatalf("create notebook: %+v", apiErr)
+	}
+	cellID := created.Cells[0].CellID
+	content := "/* @bruin\ntype: duckdb.sql\n@bruin */\nselect id, name -- keep this\nfrom users u join orders o on u.id = o.user_id\n"
+	updated, apiErr := svc.UpdateCell(created.ID, cellID, UpdateCellRequest{Content: content})
+	if apiErr != nil {
+		t.Fatalf("seed SQL cell: %+v", apiErr)
+	}
+
+	plan, apiErr := svc.PrepareChangeSet(created.ID, NotebookChangeSet{
+		BaseRevision: updated.Revision,
+		Operations: []NotebookOperation{{
+			Kind:   NotebookOperationCellSQLRefactor,
+			CellID: cellID,
+			SQLRefactor: &NotebookSQLRefactor{
+				Kind: NotebookSQLRefactorColumnQualify, Column: "id", Qualifier: "o",
+			},
+		}},
+	})
+	if apiErr != nil || !plan.CanApply {
+		t.Fatalf("prepare SQL refactor: plan=%+v error=%+v", plan, apiErr)
+	}
+	want := "/* @bruin\nid: \"" + cellID + "\"\ntype: duckdb.sql\n@bruin */\nselect o.id, name -- keep this\nfrom users u join orders o on u.id = o.user_id\n"
+	if got := plan.ChangeSet.Operations[0].Content; got != want {
+		t.Fatalf("prepared source was not lossless\nwant: %q\n got: %q", want, got)
+	}
+	result, apiErr := svc.ApplyChangeSet(created.ID, plan.ChangeSet)
+	if apiErr != nil {
+		t.Fatalf("apply SQL refactor: %+v", apiErr)
+	}
+	if got := result.Notebook.Cells[0].Content; got != want {
+		t.Fatalf("applied source differs from reviewed source\nwant: %q\n got: %q", want, got)
+	}
+}
+
 func TestNotebookChangeSetReplacesTypedParametersAtomically(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".git"), 0o755); err != nil {

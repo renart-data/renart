@@ -455,6 +455,11 @@ draft and require the dataset's selected query connection.
   `query()` dependency declarations are delivered by the Python editor adapter,
   which owns the correct host-language range. Inspect-error markers remain a
   separate execution concern.
+- **Quick fixes** use source ranges rather than generated SQL. Misspelled
+  relations/aliases/columns replace only the offending identifier. An
+  ambiguous unqualified column offers one deterministic qualification action
+  for each visible relation that actually declares the column; applying one
+  retains all surrounding comments, whitespace, and identifier spelling.
 - **Monaco gotcha**: the completion registry is shared across languages, so the
   python/yaml completion providers must register once (keyed on `asset?.id`,
   live state via a ref) — re-registering them on a workspace/SSE update

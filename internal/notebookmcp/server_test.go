@@ -319,6 +319,10 @@ func TestProtocolSurfaceIsBoundedAndAnnotated(t *testing.T) {
 	}
 	for _, required := range []string{
 		`"enum"`, service.NotebookOperationCellUpdate,
+		service.NotebookOperationCellSQLRefactor,
+		service.NotebookSQLRefactorRelationRename,
+		service.NotebookSQLRefactorColumnQualify,
+		service.NotebookSQLRefactorRelationAlias,
 		service.NotebookOperationVisualizationCreate,
 		service.NotebookOperationControlCreate,
 		`never guess or probe operation names`,
@@ -328,12 +332,15 @@ func TestProtocolSurfaceIsBoundedAndAnnotated(t *testing.T) {
 		`encoding.y and encoding.tooltip are arrays`,
 		`"table","kpi","bar","line","area","scatter","pie","donut"`,
 		`typed control definition`,
+		`untouched SQL remains byte-identical`,
 	} {
 		if !strings.Contains(string(encodedSchema), required) {
 			t.Fatalf("prepare schema does not teach agents %q: %s", required, encodedSchema)
 		}
 	}
 	for _, required := range []string{
+		`Prefer cell.sql.refactor`,
+		`untouched SQL stays byte-identical`,
 		`not Vega`,
 		`encoding is singular`,
 		`encoding.y is an array`,

@@ -10,7 +10,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/spf13/afero"
+	"renart/internal/bruincompat"
+	"renart/internal/sqlintelligence"
 	"renart/internal/web/model"
 	"renart/internal/web/notebook"
 	"renart/internal/web/presentation"
@@ -20,6 +23,7 @@ const (
 	NotebookOperationManifestUpgrade      = "manifest.upgrade"
 	NotebookOperationCellCreate           = "cell.create"
 	NotebookOperationCellUpdate           = "cell.update"
+	NotebookOperationCellSQLRefactor      = "cell.sql.refactor"
 	NotebookOperationCellRename           = "cell.rename"
 	NotebookOperationCellDelete           = "cell.delete"
 	NotebookOperationCellSourceConfigure  = "cell.source.configure"
@@ -37,6 +41,24 @@ const (
 	NotebookOperationBlockMove            = "block.move"
 	NotebookOperationBlockDelete          = "block.delete"
 )
+
+const (
+	NotebookSQLRefactorRelationRename = "relation.rename"
+	NotebookSQLRefactorColumnQualify  = "column.qualify"
+	NotebookSQLRefactorRelationAlias  = "relation.alias"
+)
+
+// NotebookSQLRefactor describes a source-preserving semantic SQL edit. Each
+// kind uses only the fields named in its comment and is normalized during
+// Prepare so Apply commits the exact reviewed bytes.
+type NotebookSQLRefactor struct {
+	Kind      string `json:"kind"`
+	Relation  string `json:"relation,omitempty"`
+	NewName   string `json:"new_name,omitempty"`
+	Column    string `json:"column,omitempty"`
+	Qualifier string `json:"qualifier,omitempty"`
+	Alias     string `json:"alias,omitempty"`
+}
 
 const (
 	notebookChangePositionStart = "start"
@@ -62,6 +84,7 @@ type NotebookOperation struct {
 	SnapshotMode  string                          `json:"snapshot_mode,omitempty"`
 	RowLimit      int64                           `json:"row_limit,omitempty"`
 	Content       string                          `json:"content,omitempty"`
+	SQLRefactor   *NotebookSQLRefactor            `json:"sql_refactor,omitempty"`
 	Visualization *model.NotebookVisualization    `json:"visualization,omitempty"`
 	Source        *model.NotebookSourceDefinition `json:"source,omitempty"`
 	Parameter     *model.NotebookParameter        `json:"parameter,omitempty"`
@@ -194,7 +217,7 @@ func (s *NotebookService) ApplyChangeSet(notebookID string, changeSet NotebookCh
 
 	for _, operation := range prepared.plan.ChangeSet.Operations {
 		switch operation.Kind {
-		case NotebookOperationCellCreate, NotebookOperationCellUpdate, NotebookOperationCellSourceConfigure,
+		case NotebookOperationCellCreate, NotebookOperationCellUpdate, NotebookOperationCellSQLRefactor, NotebookOperationCellSourceConfigure,
 			NotebookOperationSourceCreate, NotebookOperationSourceUpdate:
 			s.onCellChanged(notebookID, updatedNotebook, operation.CellID)
 		case NotebookOperationParametersReplace, NotebookOperationControlCreate,
@@ -330,6 +353,10 @@ func cloneNotebookOperations(operations []NotebookOperation) []NotebookOperation
 	result := make([]NotebookOperation, len(operations))
 	copy(result, operations)
 	for index := range result {
+		if result[index].SQLRefactor != nil {
+			refactor := *result[index].SQLRefactor
+			result[index].SQLRefactor = &refactor
+		}
 		if result[index].Visualization != nil {
 			visualization := *result[index].Visualization
 			visualization.Definition = cloneStringAnyMap(visualization.Definition)
@@ -368,6 +395,64 @@ func (s *NotebookService) applyDraftOperation(nb *notebook.Notebook, operation *
 			return internalError("notebook_change_stage_failed", err.Error())
 		}
 		operation.Content = content
+		return nil
+
+	case NotebookOperationCellSQLRefactor:
+		cell := nb.CellByID(strings.TrimSpace(operation.CellID))
+		if cell == nil {
+			return badRequestError("cell_not_found", fmt.Sprintf("cell %q was not found", operation.CellID))
+		}
+		if notebook.IsPythonCell(cell) || notebook.IsSourceCell(cell) {
+			return badRequestError("invalid_sql_refactor", "semantic SQL refactors require a SQL cell")
+		}
+		if operation.SQLRefactor == nil {
+			return badRequestError("invalid_sql_refactor", "sql_refactor is required")
+		}
+		operation.CellID = cell.ID
+		refactor := *operation.SQLRefactor
+		refactor.Kind = strings.ToLower(strings.TrimSpace(refactor.Kind))
+		refactor.Relation = strings.TrimSpace(refactor.Relation)
+		refactor.NewName = strings.TrimSpace(refactor.NewName)
+		refactor.Column = strings.TrimSpace(refactor.Column)
+		refactor.Qualifier = strings.TrimSpace(refactor.Qualifier)
+		refactor.Alias = strings.TrimSpace(refactor.Alias)
+
+		content, err := os.ReadFile(cell.Path)
+		if err != nil {
+			return internalError("notebook_change_stage_failed", err.Error())
+		}
+		dialect, err := bruincompat.AssetTypeToDialect(pipeline.AssetType(cell.Asset.Type))
+		if err != nil || strings.TrimSpace(dialect) == "" {
+			return badRequestError("invalid_sql_refactor", fmt.Sprintf("cannot determine SQL dialect for cell type %q", cell.Asset.Type))
+		}
+		var rewritten string
+		switch refactor.Kind {
+		case NotebookSQLRefactorRelationRename:
+			if refactor.Relation == "" || refactor.NewName == "" {
+				return badRequestError("invalid_sql_refactor", "relation.rename requires relation and new_name")
+			}
+			rewritten, err = sqlintelligence.RenameTables(string(content), dialect, map[string]string{refactor.Relation: refactor.NewName})
+		case NotebookSQLRefactorColumnQualify:
+			if refactor.Column == "" || refactor.Qualifier == "" {
+				return badRequestError("invalid_sql_refactor", "column.qualify requires column and qualifier")
+			}
+			rewritten, err = sqlintelligence.QualifyColumn(string(content), dialect, refactor.Column, refactor.Qualifier)
+		case NotebookSQLRefactorRelationAlias:
+			if refactor.Relation == "" || refactor.Alias == "" {
+				return badRequestError("invalid_sql_refactor", "relation.alias requires relation and alias")
+			}
+			rewritten, err = sqlintelligence.AliasRelation(string(content), dialect, refactor.Relation, refactor.Alias)
+		default:
+			return badRequestError("invalid_sql_refactor", fmt.Sprintf("unknown SQL refactor kind %q", refactor.Kind))
+		}
+		if err != nil {
+			return badRequestError("sql_refactor_failed", err.Error())
+		}
+		if err := os.WriteFile(cell.Path, []byte(rewritten), 0o644); err != nil {
+			return internalError("notebook_change_stage_failed", err.Error())
+		}
+		operation.SQLRefactor = &refactor
+		operation.Content = rewritten
 		return nil
 
 	case NotebookOperationCellSourceConfigure:

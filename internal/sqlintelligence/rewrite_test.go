@@ -71,6 +71,35 @@ func TestRenameTablesRejectsSQLAsDestination(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestQualifyColumnPreservesSource(t *testing.T) {
+	t.Parallel()
+
+	query := "select id, /* id */ name as id\nfrom users u join orders o on u.id = o.user_id\nwhere id > 0 and note = 'id'"
+	got, err := QualifyColumn(query, "postgres", "id", "o")
+	require.NoError(t, err)
+	require.Equal(t, "select o.id, /* id */ name as id\nfrom users u join orders o on u.id = o.user_id\nwhere o.id > 0 and note = 'id'", got)
+}
+
+func TestAliasRelationPreservesSourceAndQualifiers(t *testing.T) {
+	t.Parallel()
+
+	query := "select analytics.orders.id, orders.total\nfrom analytics.orders -- keep\nwhere analytics.orders.id > 0"
+	got, err := AliasRelation(query, "duckdb", "analytics.orders", "o")
+	require.NoError(t, err)
+	require.Equal(t, "select o.id, o.total\nfrom analytics.orders AS o -- keep\nwhere o.id > 0", got)
+
+	got, err = AliasRelation("select old.id from analytics.orders old", "duckdb", "analytics.orders", "renamed")
+	require.NoError(t, err)
+	require.Equal(t, "select renamed.id from analytics.orders renamed", got)
+}
+
+func TestAliasRelationRejectsAmbiguousOccurrence(t *testing.T) {
+	t.Parallel()
+
+	_, err := AliasRelation("select * from orders a join orders b on a.id = b.id", "duckdb", "orders", "o")
+	require.ErrorContains(t, err, "occurs 2 times")
+}
+
 func TestAddLimitPreservesSource(t *testing.T) {
 	t.Parallel()
 

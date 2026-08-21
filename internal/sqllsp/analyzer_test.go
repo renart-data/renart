@@ -1227,6 +1227,37 @@ from orders o`}
 	}
 }
 
+func TestEngineCodeActionsQualifyAmbiguousColumnLosslessly(t *testing.T) {
+	engine := NewEngine(CanonicalGraph{
+		Version: 1,
+		Relations: []RelationNode{
+			{ID: "users", Name: "users"},
+			{ID: "orders", Name: "orders"},
+		},
+		Schemas: []SchemaLayer{
+			{RelationID: "users", Completeness: "complete", Columns: []ColumnInfo{{Name: "id"}, {Name: "name"}}},
+			{RelationID: "orders", Completeness: "complete", Columns: []ColumnInfo{{Name: "id"}, {Name: "user_id"}}},
+		},
+	})
+	doc := TextDocumentItem{URI: "file:///query.sql", Text: "select id -- choose an owner\nfrom users AS u join orders o on u.id = o.user_id"}
+	actions := engine.CodeActions(doc)
+	if len(actions) != 2 {
+		t.Fatalf("expected one qualification per matching relation, got %#v; diagnostics=%#v", actions, engine.Diagnostics(doc))
+	}
+	if actions[0].Title != "Qualify 'id' with 'o'" || actions[1].Title != "Qualify 'id' with 'u'" {
+		t.Fatalf("qualification actions are not deterministic: %#v", actions)
+	}
+	for _, action := range actions {
+		edits := action.Edit.Changes[doc.URI]
+		if len(edits) != 1 || !strings.HasSuffix(edits[0].NewText, ".id") {
+			t.Fatalf("unexpected lossless qualification edit: %#v", action)
+		}
+		if textInRange(doc.Text, edits[0].Range) != "id" {
+			t.Fatalf("quick fix must replace only the ambiguous identifier: %#v", action)
+		}
+	}
+}
+
 func TestEngineResolvesCommaSeparatedQualifiedRelationsAndOffersExternalImport(t *testing.T) {
 	engine := NewEngine(CanonicalGraph{
 		Version: 1,

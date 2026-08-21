@@ -109,6 +109,18 @@ func (s *Server) registerTools() {
 }
 
 func prepareChangeSetTool() *mcp.Tool {
+	refactorSchema, err := jsonschema.For[service.NotebookSQLRefactor](nil)
+	if err != nil {
+		panic(fmt.Sprintf("build SQL refactor schema: %v", err))
+	}
+	if kind := refactorSchema.Properties["kind"]; kind != nil {
+		kind.Description = "Required source-preserving SQL refactor kind. relation.rename uses relation and new_name; column.qualify uses column and qualifier; relation.alias uses relation and alias."
+		kind.Enum = stringEnum([]string{
+			service.NotebookSQLRefactorRelationRename,
+			service.NotebookSQLRefactorColumnQualify,
+			service.NotebookSQLRefactorRelationAlias,
+		})
+	}
 	definitionSchema, err := jsonschema.For[presentation.VisualizationDefinition](nil)
 	if err != nil {
 		panic(fmt.Sprintf("build visualization definition schema: %v", err))
@@ -123,6 +135,7 @@ func prepareChangeSetTool() *mcp.Tool {
 	operationSchema, err := jsonschema.For[notebookOperationInputSchema](&jsonschema.ForOptions{
 		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
 			reflect.TypeFor[presentation.VisualizationDefinition](): definitionSchema,
+			reflect.TypeFor[service.NotebookSQLRefactor]():          refactorSchema,
 		},
 	})
 	if err != nil {
@@ -139,6 +152,7 @@ func prepareChangeSetTool() *mcp.Tool {
 	setSchemaDescription(operationSchema, "snapshot_mode", "For connection-bound cell.create or source.create: sample or full. Prefer sample for a newly discovered remote source unless the user explicitly requested a full import.")
 	setSchemaDescription(operationSchema, "row_limit", "Positive row limit when snapshot_mode is sample. The catalog recipe supplies a conservative default.")
 	setSchemaDescription(operationSchema, "content", "SQL/Python/Markdown content as required by the operation. For a catalog source, use the suggested SELECT from search_workspace_catalog.")
+	setSchemaDescription(operationSchema, "sql_refactor", "Required for cell.sql.refactor. Prefer this bounded semantic edit over cell.update when renaming a relation, qualifying an unqualified column, or adding/changing one relation alias; untouched SQL remains byte-identical.")
 	setSchemaDescription(operationSchema, "source", "Required for source.create. A credential-free file, object-storage, or HTTP definition; never put secrets into an operation.")
 	setSchemaDescription(operationSchema, "visualization", "Required for visualization.create and visualization.update. Set source to a durable data-producing cell ID and definition to a versioned visualization object. The exact definition shape is {version: 1, type: \"line\", encoding: {x: {field: \"date\"}, y: [{field: \"value\"}]}}. Use encoding (singular), and always encode y and tooltip as arrays.")
 	setSchemaDescription(operationSchema, "parameter", "Required for control.create and control.update. A typed control definition with id, type, default, and optional label/options.")
@@ -161,7 +175,7 @@ func prepareChangeSetTool() *mcp.Tool {
 	}
 	tool := readTool(
 		"prepare_notebook_change_set",
-		"Normalize and stage bounded semantic notebook edits without writing files. Operation kinds are exact dotted enum values such as cell.update and visualization.create; do not probe guessed names. Visualization definitions use Renart's schema, not Vega: version is 1, type is table/kpi/bar/line/area/scatter/pie/donut, encoding is singular, and encoding.y is an array of {field: string} objects.",
+		"Normalize and stage bounded semantic notebook edits without writing files. Operation kinds are exact dotted enum values such as cell.sql.refactor and visualization.create; do not probe guessed names. Prefer cell.sql.refactor for supported relation/column edits so untouched SQL stays byte-identical. Visualization definitions use Renart's schema, not Vega: version is 1, type is table/kpi/bar/line/area/scatter/pie/donut, encoding is singular, and encoding.y is an array of {field: string} objects.",
 	)
 	tool.InputSchema = inputSchema
 	return tool

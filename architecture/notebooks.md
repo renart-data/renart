@@ -48,7 +48,8 @@ artifacts live under `.renart` and are not authored state.
 
 `service.NotebookChangeSet` is an ordered batch of operations addressed by
 durable IDs, never caller-owned paths. Supported domain operations cover
-manifest upgrade; cell create/update/rename/delete/source configuration;
+manifest upgrade; cell create/update/rename/delete/source configuration and
+source-preserving SQL relation rename, column qualification, or relation alias;
 file/HTTP/object source create/update; markdown and visualization
 create/update; parameter replacement; ordered control create/update/delete;
 legacy visualization migration; and block move/delete.
@@ -573,7 +574,11 @@ repeat the valid values, and the prompt tells clients to correct from that
 contract rather than probe aliases. Its visualization field projects the real
 versioned definition shape, including the chart-type enum, singular `encoding`
 object, and array-valued `y`/`tooltip` fields instead of exposing an untyped
-map. A source definition alone never transfers data. MCP-started execution
+map. For the supported SQL transformations, `cell.sql.refactor` parses the
+current cell and applies Golyglot source-span edits; the reviewed diff preserves
+comments, whitespace, quoting, and all unrelated text byte for byte. The Edit
+prompt prefers that bounded operation over sending a complete replacement cell.
+A source definition alone never transfers data. MCP-started execution
 rejects the first import, a changed definition, or an explicit refresh for
 every non-DuckDB source until the user reviews the query, sampling policy, and
 row limit and runs it in Renart. Once that approved snapshot is current, the

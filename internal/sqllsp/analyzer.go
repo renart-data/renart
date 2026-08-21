@@ -603,7 +603,8 @@ func (e *Engine) crossConnectionDiagnostics(sql string, analysis sqlAnalysis, cu
 
 func (e *Engine) CodeActions(doc TextDocumentItem) []CodeAction {
 	diagnostics := e.Diagnostics(doc)
-	analysis := analyzeSQLWithResolver(e.renderDocument(doc).doc.Text, e)
+	projection := e.renderDocument(doc)
+	analysis := analyzeSQLWithResolver(projection.doc.Text, e)
 	var actions []CodeAction
 	for _, diagnostic := range diagnostics {
 		switch diagnostic.Code {
@@ -616,6 +617,10 @@ func (e *Engine) CodeActions(doc TextDocumentItem) []CodeAction {
 				actions = append(actions, action)
 			}
 		case "unresolved-column":
+			if ambiguous := e.ambiguousColumnActions(doc, diagnostic, projection, analysis); len(ambiguous) > 0 {
+				actions = append(actions, ambiguous...)
+				continue
+			}
 			if action, ok := e.unresolvedColumnAction(doc, diagnostic, analysis); ok {
 				actions = append(actions, action)
 			}
@@ -626,6 +631,84 @@ func (e *Engine) CodeActions(doc TextDocumentItem) []CodeAction {
 		}
 	}
 	return actions
+}
+
+func (e *Engine) ambiguousColumnActions(doc TextDocumentItem, diagnostic Diagnostic, projection renderProjection, fullAnalysis sqlAnalysis) []CodeAction {
+	column := ambiguousColumnName(diagnostic.Message)
+	if column == "" {
+		return nil
+	}
+	offset := ByteOffset(doc.Text, diagnostic.Range.Start)
+	if projection.changed {
+		offset = projection.rendered.GeneratedOffsetForTemplateOffset(offset)
+	}
+	analysis := e.analysisForCurrentSelect(projection.doc.Text, offset, fullAnalysis)
+	original := textInRange(doc.Text, diagnostic.Range)
+	if strings.TrimSpace(original) == "" {
+		return nil
+	}
+	type candidate struct {
+		qualifier string
+		sortKey   string
+	}
+	candidates := make([]candidate, 0)
+	seen := make(map[string]struct{})
+	for _, ref := range analysis.localAliasRefs() {
+		if !hasColumn(e.columnsForAliasRef(ref), column) {
+			continue
+		}
+		qualifier := aliasQualifierSource(projection.doc.Text, ref)
+		if qualifier == "" {
+			continue
+		}
+		key := strings.ToLower(qualifier)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		candidates = append(candidates, candidate{qualifier: qualifier, sortKey: key})
+	}
+	if len(candidates) < 2 {
+		return nil
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].sortKey < candidates[j].sortKey })
+	actions := make([]CodeAction, 0, len(candidates))
+	for _, candidate := range candidates {
+		actions = append(actions, CodeAction{
+			Title:       fmt.Sprintf("Qualify '%s' with '%s'", column, candidate.qualifier),
+			Kind:        "quickfix",
+			Diagnostics: []Diagnostic{diagnostic},
+			Edit: WorkspaceEdit{Changes: map[URI][]TextEdit{
+				doc.URI: {{Range: diagnostic.Range, NewText: candidate.qualifier + "." + original}},
+			}},
+		})
+	}
+	return actions
+}
+
+func ambiguousColumnName(message string) string {
+	const prefix = "Ambiguous unqualified column '"
+	if !strings.HasPrefix(message, prefix) {
+		return ""
+	}
+	remainder := message[len(prefix):]
+	end := strings.IndexByte(remainder, '\'')
+	if end <= 0 {
+		return ""
+	}
+	return remainder[:end]
+}
+
+func aliasQualifierSource(sql string, ref aliasRef) string {
+	if ref.start >= 0 && ref.end > ref.start && ref.end <= len(sql) {
+		if source := strings.TrimSpace(sql[ref.start:ref.end]); source != "" {
+			return source
+		}
+	}
+	if alias := strings.TrimSpace(ref.alias); alias != "" {
+		return alias
+	}
+	return shortName(ref.name)
 }
 
 func (e *Engine) externalRelationAction(doc TextDocumentItem, diagnostic Diagnostic) (CodeAction, bool) {

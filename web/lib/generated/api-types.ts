@@ -512,6 +512,15 @@ export type WorkspaceEvent = {
   changed_asset_ids?: string[];
 };
 
+export type NotebookSQLRefactor = {
+  kind: string;
+  relation?: string;
+  new_name?: string;
+  column?: string;
+  qualifier?: string;
+  alias?: string;
+};
+
 export type NotebookOperation = {
   kind: string;
   cell_id?: string;
@@ -524,6 +533,7 @@ export type NotebookOperation = {
   snapshot_mode?: string;
   row_limit?: number;
   content?: string;
+  sql_refactor?: NotebookSQLRefactor;
   visualization?: NotebookVisualization;
   source?: NotebookSourceDefinition;
   parameter?: NotebookParameter;

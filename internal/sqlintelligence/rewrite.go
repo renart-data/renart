@@ -102,6 +102,112 @@ func RenameTables(sql, dialectName string, mapping map[string]string) (string, e
 	return parsed.ApplyEdits(edits...)
 }
 
+// QualifyColumn qualifies every unqualified reference to column with one
+// validated relation alias. It edits identifier spans only; aliases, comments,
+// literals, and formatting are left untouched.
+func QualifyColumn(sql, dialectName, column, qualifier string) (string, error) {
+	dialect, err := rewriteDialect(dialectName)
+	if err != nil {
+		return "", err
+	}
+	qualifier, err = singleIdentifier(qualifier, dialect)
+	if err != nil {
+		return "", fmt.Errorf("invalid column qualifier: %w", err)
+	}
+	column = strings.Trim(strings.TrimSpace(column), "`\"")
+	column = strings.TrimSuffix(strings.TrimPrefix(column, "["), "]")
+	if column == "" {
+		return "", fmt.Errorf("column is empty")
+	}
+	parsed, err := golyglot.ParseStrict(sql, dialect)
+	if err != nil {
+		return "", fmt.Errorf("Golyglot SQL parse failed: %w", err)
+	}
+	edits := make([]golyglot.TextEdit, 0)
+	golyglot.WalkResult(parsed, func(node golyglot.Node) golyglot.VisitAction {
+		identifier, ok := node.(*golyglot.IdentifierExpr)
+		if !ok || len(identifier.Parts) != 1 || !identifierMatches(identifier.Parts[0], column) {
+			return golyglot.VisitChildren
+		}
+		source, ok := parsed.SourceSlice(identifier.SourceSpan())
+		if ok {
+			edits = append(edits, golyglot.TextEdit{Span: identifier.SourceSpan(), NewText: qualifier + "." + source})
+		}
+		return golyglot.VisitChildren
+	})
+	if len(edits) == 0 {
+		return "", fmt.Errorf("unqualified column %q was not found", column)
+	}
+	return parsed.ApplyEdits(edits...)
+}
+
+// AliasRelation adds or replaces the alias of one relation occurrence and
+// rewrites that occurrence's qualified column references to the new alias. It
+// fails when the relation occurs more than once because choosing an occurrence
+// would otherwise require a source offset rather than a semantic name.
+func AliasRelation(sql, dialectName, relation, alias string) (string, error) {
+	dialect, err := rewriteDialect(dialectName)
+	if err != nil {
+		return "", err
+	}
+	alias, err = singleIdentifier(alias, dialect)
+	if err != nil {
+		return "", fmt.Errorf("invalid relation alias: %w", err)
+	}
+	sourceParts := splitRelationName(relation)
+	if len(sourceParts) == 0 {
+		return "", fmt.Errorf("relation is empty")
+	}
+	parsed, err := golyglot.ParseStrict(sql, dialect)
+	if err != nil {
+		return "", fmt.Errorf("Golyglot SQL parse failed: %w", err)
+	}
+	var matches []*golyglot.TableName
+	golyglot.WalkResult(parsed, func(node golyglot.Node) golyglot.VisitAction {
+		if table, ok := node.(*golyglot.TableName); ok && identifiersMatchStrings(table.Parts, sourceParts) {
+			matches = append(matches, table)
+		}
+		return golyglot.VisitChildren
+	})
+	if len(matches) == 0 {
+		return "", fmt.Errorf("relation %q was not found", relation)
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("relation %q occurs %d times; a semantic alias edit requires one occurrence", relation, len(matches))
+	}
+	table := matches[0]
+	partsSpan := golyglot.Span{Start: table.Parts[0].Span.Start, End: table.Parts[len(table.Parts)-1].Span.End}
+	edits := make([]golyglot.TextEdit, 0, 2)
+	oldQualifiers := [][]string{sourceParts, {sourceParts[len(sourceParts)-1]}}
+	if table.Alias != nil {
+		oldQualifiers = append(oldQualifiers, []string{table.Alias.Text})
+		edits = append(edits, golyglot.TextEdit{Span: table.Alias.Span, NewText: alias})
+	} else {
+		edits = append(edits, golyglot.TextEdit{
+			Span: golyglot.Span{Start: partsSpan.End, End: partsSpan.End}, NewText: " AS " + alias,
+		})
+	}
+	golyglot.WalkResult(parsed, func(node golyglot.Node) golyglot.VisitAction {
+		identifier, ok := node.(*golyglot.IdentifierExpr)
+		if !ok || len(identifier.Parts) < 2 {
+			return golyglot.VisitChildren
+		}
+		qualifierParts := identifier.Parts[:len(identifier.Parts)-1]
+		for _, oldQualifier := range oldQualifiers {
+			if !identifiersMatchStrings(qualifierParts, oldQualifier) {
+				continue
+			}
+			edits = append(edits, golyglot.TextEdit{
+				Span:    golyglot.Span{Start: qualifierParts[0].Span.Start, End: qualifierParts[len(qualifierParts)-1].Span.End},
+				NewText: alias,
+			})
+			break
+		}
+		return golyglot.VisitChildren
+	})
+	return parsed.ApplyEdits(edits...)
+}
+
 // AddLimit adds or replaces the row limit on one SELECT while retaining all
 // unrelated source text. The syntax emitted for a missing limit follows the
 // target dialect (TOP for T-SQL/Fabric, FETCH FIRST for Oracle, LIMIT elsewhere).
@@ -282,6 +388,25 @@ func identifierEqual(left, right golyglot.Identifier) bool {
 		return left.Text == right.Text
 	}
 	return strings.EqualFold(left.Text, right.Text)
+}
+
+func identifierMatches(identifier golyglot.Identifier, text string) bool {
+	if identifier.Quoted {
+		return identifier.Text == text
+	}
+	return strings.EqualFold(identifier.Text, text)
+}
+
+func singleIdentifier(value string, dialect golyglot.Dialect) (string, error) {
+	value = strings.TrimSpace(value)
+	parts, err := parseDestinationName(value, dialect)
+	if err != nil || len(parts) != 1 {
+		if err != nil {
+			return "", err
+		}
+		return "", fmt.Errorf("expected one identifier")
+	}
+	return value, nil
 }
 
 func topInsertionPosition(parsed golyglot.ParseResult, query *golyglot.SelectStmt) (int, error) {

@@ -28,6 +28,7 @@ var supportedMCPChangeOperationKinds = []string{
 	service.NotebookOperationManifestUpgrade,
 	service.NotebookOperationCellCreate,
 	service.NotebookOperationCellUpdate,
+	service.NotebookOperationCellSQLRefactor,
 	service.NotebookOperationCellRename,
 	service.NotebookOperationCellSourceConfigure,
 	service.NotebookOperationSourceCreate,
@@ -295,6 +296,7 @@ func safePreparedOperation(operation service.NotebookOperation) PreparedOperatio
 		Name:      operation.Name, Language: operation.Language, Connection: operation.Connection,
 		AssetType: operation.AssetType, SnapshotMode: operation.SnapshotMode,
 		RowLimit: operation.RowLimit, Content: operation.Content,
+		SQLRefactor:   cloneSQLRefactor(operation.SQLRefactor),
 		Visualization: cloneVisualization(operation.Visualization),
 		Parameter:     cloneNotebookParameter(operation.Parameter),
 		Parameters:    cloneNotebookParameterDTOs(operation.Parameters),
@@ -305,6 +307,14 @@ func safePreparedOperation(operation service.NotebookOperation) PreparedOperatio
 		result.Source = &safe
 	}
 	return result
+}
+
+func cloneSQLRefactor(value *service.NotebookSQLRefactor) *service.NotebookSQLRefactor {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	return &clone
 }
 
 func cloneNotebookParameter(value *model.NotebookParameter) *model.NotebookParameter {

@@ -325,6 +325,7 @@ type notebookOperationInputSchema struct {
 	SnapshotMode  string                            `json:"snapshot_mode,omitempty"`
 	RowLimit      int64                             `json:"row_limit,omitempty"`
 	Content       string                            `json:"content,omitempty"`
+	SQLRefactor   *service.NotebookSQLRefactor      `json:"sql_refactor,omitempty"`
 	Visualization *notebookVisualizationInputSchema `json:"visualization,omitempty"`
 	Source        *model.NotebookSourceDefinition   `json:"source,omitempty"`
 	Parameter     *model.NotebookParameter          `json:"parameter,omitempty"`
@@ -345,6 +346,7 @@ type PreparedOperation struct {
 	SnapshotMode  string                       `json:"snapshot_mode,omitempty"`
 	RowLimit      int64                        `json:"row_limit,omitempty"`
 	Content       string                       `json:"content,omitempty"`
+	SQLRefactor   *service.NotebookSQLRefactor `json:"sql_refactor,omitempty"`
 	Visualization *model.NotebookVisualization `json:"visualization,omitempty"`
 	Parameter     *model.NotebookParameter     `json:"parameter,omitempty"`
 	Source        *SafeSourceDefinition        `json:"source,omitempty"`

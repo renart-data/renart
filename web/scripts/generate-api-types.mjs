@@ -80,6 +80,7 @@ const sources = [
   {
     file: resolve(repoRoot, "internal", "web", "service", "notebook_changes.go"),
     types: [
+      "NotebookSQLRefactor",
       "NotebookOperation",
       "NotebookChangeSet",
       "NotebookChangeDiff",
