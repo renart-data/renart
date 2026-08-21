@@ -22,6 +22,18 @@ import type { AssetStaleness, FailedQualityCheck } from "@/lib/api-staleness";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
@@ -59,6 +71,11 @@ import type {
   ColumnSchemaSyncResult,
   MaterializationCapability,
 } from "@/lib/generated/api-types";
+import {
+  artifactRefKey,
+  columnImpactsForAsset,
+  type ColumnImpactView,
+} from "@/lib/artifact-column-impact";
 import { classifyDependencies, columnStatus, parseAssetProvenance } from "@/lib/asset-provenance";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getAssetColumnRefreshMode, isSeedAssetType, isSqlAssetType } from "@/lib/asset-types";
@@ -876,6 +893,7 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
   const schemaSourceIdPrefix = `${useId()}-schema-source`;
   const manualColumnInputId = `${schemaSourceIdPrefix}-manual-column`;
   const environment = useAtomValue(selectedEnvironmentAtom);
+  const workspace = useAtomValue(workspaceAtom);
   const sources = useMemo(
     () =>
       asset.column_inference_sources?.length
@@ -890,6 +908,10 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
     [asset.meta, asset.columns],
   );
   const columns = asset.columns ?? [];
+  const impactsByColumn = useMemo(
+    () => columnImpactsForAsset(workspace?.artifact_index, asset.id),
+    [asset.id, workspace?.artifact_index],
+  );
   const definitionSources = useMemo(
     () => sources.filter((source) => source.category === "definition"),
     [sources],
@@ -1144,6 +1166,7 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
                 onToggleUpdateOnMerge={() => toggleUpdateOnMerge(column)}
                 onCommitMergeSQL={(mergeSQL) => commitMergeSQL(column, mergeSQL)}
                 onDrop={() => dropColumn(column.name)}
+                impacts={impactsByColumn.get(column.name.toLowerCase()) ?? []}
               />
             ))}
           </div>
@@ -1467,6 +1490,7 @@ function ColumnRow({
   onToggleUpdateOnMerge,
   onCommitMergeSQL,
   onDrop,
+  impacts,
 }: {
   column: WebColumn;
   status: ReturnType<typeof columnStatus>;
@@ -1477,6 +1501,7 @@ function ColumnRow({
   onToggleUpdateOnMerge: () => void;
   onCommitMergeSQL: (mergeSQL: string) => void;
   onDrop: () => void;
+  impacts: ColumnImpactView[];
 }) {
   const fieldIdPrefix = `${useId()}-column`;
   const typeInputId = `${fieldIdPrefix}-type`;
@@ -1484,6 +1509,8 @@ function ColumnRow({
   const primaryKeyInputId = `${fieldIdPrefix}-primary-key`;
   const updateOnMergeInputId = `${fieldIdPrefix}-update-on-merge`;
   const mergeSQLInputId = `${fieldIdPrefix}-merge-sql`;
+  const affectedArtifactCount = new Set(impacts.map((impact) => artifactRefKey(impact.consumer)))
+    .size;
 
   return (
     <Collapsible className="group/column">
@@ -1512,6 +1539,12 @@ function ColumnRow({
                 </Badge>
               ) : null}
               <ColumnStatusBadge status={status} />
+              {affectedArtifactCount > 0 ? (
+                <Badge variant="destructive" size="xs">
+                  <AlertTriangle data-icon="inline-start" />
+                  {affectedArtifactCount} downstream
+                </Badge>
+              ) : null}
             </span>
             <span className="truncate text-[11px] font-normal text-muted-foreground">
               {column.description?.trim() || "No description"}
@@ -1521,6 +1554,32 @@ function ColumnRow({
       </CollapsibleTrigger>
       <CollapsibleContent className="border-t bg-muted/20 px-3 py-3">
         <FieldGroup className="gap-3">
+          {impacts.length > 0 ? (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>Known downstream impact</AlertTitle>
+              <AlertDescription>
+                Removing or renaming this column would break these statically resolved uses.
+                <span className="mt-1.5 flex flex-col gap-1">
+                  {impacts.slice(0, 4).map((impact) => (
+                    <span
+                      key={impact.key}
+                      className="flex min-w-0 items-center justify-between gap-2"
+                    >
+                      <span className="min-w-0 truncate">{impact.label}</span>
+                      <Badge variant="outline" size="xs">
+                        {impact.useLabel}
+                        {impact.distance > 1 ? ` · ${impact.distance} steps` : ""}
+                      </Badge>
+                    </span>
+                  ))}
+                  {impacts.length > 4 ? (
+                    <span>And {impacts.length - 4} more known uses.</span>
+                  ) : null}
+                </span>
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <Field>
             <FieldLabel htmlFor={typeInputId}>Type</FieldLabel>
             <CommitInput
@@ -1584,10 +1643,55 @@ function ColumnRow({
             </>
           ) : null}
           <div className="flex justify-end">
-            <Button variant="destructive" size="xs" onClick={onDrop}>
-              <Trash2 data-icon="inline-start" />
-              Remove column
-            </Button>
+            {impacts.length > 0 ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="xs">
+                    <Trash2 data-icon="inline-start" />
+                    Remove column
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Remove {column.name}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Renart found {impacts.length} downstream column use
+                      {impacts.length === 1 ? "" : "s"}. Removing this declaration can break those
+                      assets and presentation components. Ambiguous dependencies are not included.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <div className="flex flex-col gap-1.5">
+                    {impacts.slice(0, 5).map((impact) => (
+                      <div
+                        key={impact.key}
+                        className="flex min-w-0 items-center justify-between gap-2"
+                      >
+                        <span className="min-w-0 truncate text-xs">{impact.label}</span>
+                        <Badge variant="outline" size="xs">
+                          {impact.useLabel}
+                        </Badge>
+                      </div>
+                    ))}
+                    {impacts.length > 5 ? (
+                      <span className="text-xs text-muted-foreground">
+                        And {impacts.length - 5} more known uses.
+                      </span>
+                    ) : null}
+                  </div>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel size="sm">Keep column</AlertDialogCancel>
+                    <AlertDialogAction variant="destructive" size="sm" onClick={onDrop}>
+                      Remove column
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ) : (
+              <Button variant="destructive" size="xs" onClick={onDrop}>
+                <Trash2 data-icon="inline-start" />
+                Remove column
+              </Button>
+            )}
           </div>
         </FieldGroup>
       </CollapsibleContent>

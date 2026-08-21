@@ -370,6 +370,18 @@ dataset, filter, visualization, and section components, including asset and
 column-level lineage. These components do not enter a pipeline or notebook run
 graph.
 
+The artifact index also projects conservative cross-host column impact. For SQL
+assets and notebook SQL cells, Golyglot maps known producer columns to declared
+consumer outputs without rewriting the query; single-source wildcard projections
+and direct `WHERE`/join references are included. Asset-backed presentation
+datasets carry identity mappings into filter and visualization roles. Renart
+then follows those mappings transitively and publishes
+`breaking_column_impacts`: positive evidence that removing or renaming a column
+would break a downstream output or authored presentation use. Unparseable Jinja,
+unknown schemas, relation-only edges, nested predicate scopes, and ambiguous
+short relation names deliberately remain unknown rather than becoming guessed
+lineage.
+
 The `/dashboards` and `/reports` routes provide list/create flows plus a shared
 canvas-first builder. List headers contain the compact dashboard/report switch;
 detail routes use one responsive document-authoring command bar for navigation,

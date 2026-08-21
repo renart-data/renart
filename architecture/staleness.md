@@ -790,9 +790,11 @@ after review.
   until jobs persisted by older binaries have drained.
 - Additional network relation families remain deliberately disabled until each
   direct and fallback operator proves it has no hidden shared staging state.
-  Configurable warning gates, connection-backed warehouse
-  validation, automatic builds, and reliable breaking/non-
-  breaking impact categorization are not built.
+  Configurable warning gates, connection-backed warehouse validation,
+  automatic builds, and complete breaking/non-breaking change categorization
+  are not built. The artifact index does expose proven column-removal/rename
+  impacts for statically resolved SQL and presentation lineage; it does not
+  classify unknown or warehouse-only dependencies.
 - **Python fingerprint hardening** (Rust→wasm `renart-pyfp` on
   `ruff_python_parser`: comment/docstring-stripped hash, one-level import
   resolution, runtime-observed variables; the wasm binary's own hash feeds
@@ -800,7 +802,8 @@ after review.
 - Coverage rows for abandoned fingerprints accumulate slowly; harmless, GC
   later (they enable cross-version reuse).
 - Set up for later, deliberately not built: cross-environment physical reuse à
-  la SQLMesh, breaking vs non-breaking change analysis via column lineage,
+  la SQLMesh, full breaking vs non-breaking change analysis beyond the
+  conservative artifact-index column impacts,
   notebook-cell caching on the same engine, cloud schedules (`delegated`).
 
 ## Key files
