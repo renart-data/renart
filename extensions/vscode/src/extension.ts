@@ -36,15 +36,6 @@ async function startClient(context: vscode.ExtensionContext) {
   const command = config.get<string>("serverPath") || "renart";
   const args = ["sql-lsp", "--workspace", folder.uri.fsPath];
 
-  if (config.get<boolean>("disablePolyglotDownload")) {
-    args.push("--no-polyglot-download");
-  }
-
-  const cacheDir = config.get<string>("polyglotCacheDir")?.trim();
-  if (cacheDir) {
-    args.push("--polyglot-cache-dir", cacheDir);
-  }
-
   const serverOptions: ServerOptions = {
     command,
     args,

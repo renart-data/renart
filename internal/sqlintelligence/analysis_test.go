@@ -43,7 +43,7 @@ func TestAnalyzeQueryClassifiesCompleteAndIncompleteProjectionNames(t *testing.T
 		require.NoError(t, err)
 		assert.True(t, analysis.OutputNamesComplete)
 		assert.True(t, analysis.OutputTypesComplete)
-		assert.ElementsMatch(t, []SchemaColumn{{Name: "id", Type: "INTEGER"}, {Name: "label", Type: "TEXT"}}, analysis.OutputColumns)
+		assert.ElementsMatch(t, []SchemaColumn{{Name: "id", Type: "INTEGER"}, {Name: "label", Type: "VARCHAR"}}, analysis.OutputColumns)
 		require.Len(t, analysis.StarProjections, 1)
 		assert.ElementsMatch(t, []string{"id", "label"}, analysis.StarProjections[0].ExpandedColumns)
 	})

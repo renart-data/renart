@@ -45,11 +45,7 @@ func TestInferSchemaSnapshotUsesASTAndPropagatesThroughGraph(t *testing.T) {
 			continue
 		}
 		inferredLayers++
-		wantSource := "inferred-ast"
-		if layer.RelationID == "relation:renart:analytics.final" {
-			wantSource = "inferred-analysis"
-		}
-		if layer.SourceKind != wantSource || layer.Completeness != "complete" || layer.Confidence != "high" {
+		if layer.SourceKind != "inferred-ast" || layer.Completeness != "complete" || layer.Confidence != "high" {
 			t.Fatalf("inferred layer does not have expected source/completeness: %#v", layer)
 		}
 	}
@@ -81,7 +77,7 @@ func TestInferOutputSchemaReadsExistingInferredLayersWithoutRebuildingGraph(t *t
 	assert.Equal(t, before, graph.Schemas)
 }
 
-func TestInferSchemaSnapshotUsesCompactAnalysisForJoinedStar(t *testing.T) {
+func TestInferSchemaSnapshotInfersJoinedStar(t *testing.T) {
 	graph := GraphFromRenartAssets("file:///workspace", []AssetNode{
 		{ID: "left", Name: "analytics.left", URI: "file:///workspace/left.sql", Dialect: "duckdb"},
 		{ID: "right", Name: "analytics.right", URI: "file:///workspace/right.sql", Dialect: "duckdb"},
@@ -104,11 +100,11 @@ func TestInferSchemaSnapshotUsesCompactAnalysisForJoinedStar(t *testing.T) {
 		t.Fatalf("joined star did not include both relation schemas: %#v", got)
 	}
 	for _, layer := range graph.Schemas {
-		if layer.RelationID == "relation:renart:analytics.joined" && layer.SourceKind == "inferred-analysis" {
+		if layer.RelationID == "relation:renart:analytics.joined" && layer.SourceKind == "inferred-ast" {
 			return
 		}
 	}
-	t.Fatalf("joined star did not produce a compact-analysis layer: %#v", graph.Schemas)
+	t.Fatalf("joined star did not produce a native AST layer: %#v", graph.Schemas)
 }
 
 func TestInferSchemaSnapshotFallsBackForDuckDBTableFunctionType(t *testing.T) {

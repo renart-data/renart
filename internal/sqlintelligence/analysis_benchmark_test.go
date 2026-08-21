@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func BenchmarkPolyglotOutputAnalysis(b *testing.B) {
+func BenchmarkGolyglotOutputAnalysis(b *testing.B) {
 	type benchmarkCase struct {
 		name   string
 		query  string

@@ -11,8 +11,8 @@ function resolveBinaryPath(): string {
   return process.env.BRUIN_E2E_BINARY || defaultBinaryPath;
 }
 
-// Compile the embedded WASM modules (polyglot SQL + ty) into the shared on-disk
-// wazero cache once, before any server starts. The first cold compile takes
+// Compile the embedded ty Python-intelligence WASM module into the shared
+// on-disk wazero cache once, before any server starts. The first cold compile takes
 // tens of seconds and spikes memory; warming it here means every per-test
 // server loads the compiled modules from cache instead, staying lean (the live
 // suite spawns one server per test). Best-effort: a failure only forfeits the

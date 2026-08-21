@@ -2,35 +2,14 @@ package bruincompat
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
-
-	"renart/internal/sqlformat"
+	"github.com/renart-data/golyglot/pkg/golyglot"
 )
 
 type DeclareHoister struct{}
-
-type tokenizeResponse struct {
-	Success bool    `json:"success"`
-	Tokens  []token `json:"tokens"`
-	Error   any     `json:"error"`
-}
-
-type token struct {
-	Type string `json:"token_type"`
-	Span struct {
-		Start int `json:"start"`
-		End   int `json:"end"`
-	} `json:"span"`
-}
-
-type parseResponse struct {
-	Success bool            `json:"success"`
-	AST     json.RawMessage `json:"ast"`
-}
 
 func NewDeclareHoister() *DeclareHoister { return &DeclareHoister{} }
 
@@ -119,44 +98,49 @@ func (h *DeclareHoister) HoistDeclaresList(queries []string, assetType pipeline.
 }
 
 func topLevelSemicolons(ctx context.Context, query, dialect string) ([]int, error) {
-	responseJSON, err := sqlformat.Call(ctx, "tokenize", query, dialect)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	nativeDialect, err := golyglot.ParseDialect(dialect)
+	if err != nil {
+		return nil, err
+	}
+	tokens, diagnostics, err := golyglot.Tokenize(query, nativeDialect)
 	if err != nil {
 		return nil, fmt.Errorf("tokenize SQL for DECLARE hoisting: %w", err)
 	}
-	var response tokenizeResponse
-	if err := json.Unmarshal([]byte(responseJSON), &response); err != nil {
-		return nil, fmt.Errorf("decode Polyglot token response: %w", err)
-	}
-	if !response.Success {
-		return nil, fmt.Errorf("Polyglot SQL tokenization failed: %v", response.Error)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == golyglot.SeverityError {
+			return nil, fmt.Errorf("Golyglot SQL tokenization failed: %s", diagnostic.Message)
+		}
 	}
 
 	parenDepth := 0
 	beginEndDepth := 0
 	caseDepth := 0
 	positions := make([]int, 0)
-	for index, current := range response.Tokens {
-		switch current.Type {
-		case "L_PAREN":
+	for index, current := range tokens {
+		switch {
+		case current.Text == "(":
 			parenDepth++
-		case "R_PAREN":
+		case current.Text == ")":
 			if parenDepth > 0 {
 				parenDepth--
 			}
-		case "CASE":
+		case current.IsWord("CASE"):
 			caseDepth++
-		case "BEGIN":
-			nextIsTransaction := index+1 < len(response.Tokens) && response.Tokens[index+1].Type == "TRANSACTION"
+		case current.IsWord("BEGIN"):
+			nextIsTransaction := nextSignificantTokenIs(tokens, index+1, "TRANSACTION")
 			if !nextIsTransaction {
 				beginEndDepth++
 			}
-		case "END":
+		case current.IsWord("END"):
 			if caseDepth > 0 {
 				caseDepth--
 			} else if beginEndDepth > 0 {
 				beginEndDepth--
 			}
-		case "SEMICOLON":
+		case current.Text == ";":
 			if parenDepth == 0 && beginEndDepth == 0 {
 				positions = append(positions, current.Span.Start)
 			}
@@ -165,35 +149,46 @@ func topLevelSemicolons(ctx context.Context, query, dialect string) ([]int, erro
 	return positions, nil
 }
 
+func nextSignificantTokenIs(tokens []golyglot.Token, start int, word string) bool {
+	for index := start; index < len(tokens); index++ {
+		if tokens[index].Kind == golyglot.TokenComment {
+			continue
+		}
+		return tokens[index].IsWord(word)
+	}
+	return false
+}
+
 func isDeclareStatement(ctx context.Context, statement, dialect string) (bool, error) {
 	if !strings.Contains(strings.ToLower(statement), "declare") {
 		return false, nil
 	}
-	responseJSON, err := sqlformat.Call(ctx, "parse", statement, dialect)
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	nativeDialect, err := golyglot.ParseDialect(dialect)
 	if err != nil {
-		return false, fmt.Errorf("parse SQL for DECLARE hoisting: %w", err)
+		return false, err
 	}
-	var response parseResponse
-	if err := json.Unmarshal([]byte(responseJSON), &response); err != nil {
-		return false, fmt.Errorf("decode Polyglot parse response: %w", err)
-	}
-	if !response.Success {
+	parsed, err := golyglot.ParseStrict(statement, nativeDialect)
+	if err != nil {
 		return false, nil
 	}
-
-	var ast []map[string]any
-	if err := json.Unmarshal(response.AST, &ast); err != nil {
-		var encoded string
-		if secondErr := json.Unmarshal(response.AST, &encoded); secondErr != nil {
-			return false, fmt.Errorf("decode Polyglot AST: %w", err)
-		}
-		if secondErr := json.Unmarshal([]byte(encoded), &ast); secondErr != nil {
-			return false, fmt.Errorf("decode Polyglot AST: %w", secondErr)
-		}
-	}
-	if len(ast) != 1 || len(ast[0]) != 1 {
+	if len(parsed.Statements) != 1 {
 		return false, nil
 	}
-	_, ok := ast[0]["declare"]
-	return ok, nil
+	switch node := parsed.Statements[0].Node.(type) {
+	case *golyglot.CommandStmt:
+		return strings.EqualFold(node.Keyword, "DECLARE"), nil
+	case *golyglot.RawStmt:
+		return strings.EqualFold(node.Keyword, "DECLARE"), nil
+	default:
+		for _, token := range parsed.Tokens {
+			if token.Kind == golyglot.TokenComment {
+				continue
+			}
+			return token.IsWord("DECLARE"), nil
+		}
+		return false, nil
+	}
 }

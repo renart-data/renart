@@ -13,7 +13,7 @@ import (
 	"renart/internal/web/pyintelligence"
 )
 
-func TestAssetServiceFormatSQLUsesPolyglotAndPersistsResult(t *testing.T) {
+func TestAssetServiceFormatSQLUsesGolyglotAndPersistsResult(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	pipelineRoot := filepath.Join(workspaceRoot, "analytics")
 	assetPath := filepath.Join("analytics", "assets", "customers.sql")

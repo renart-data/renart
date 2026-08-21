@@ -50,7 +50,7 @@ func TestValidateSQLSuppressesOnlyColumnsDependingOnUnknownSchema(t *testing.T) 
 	assert.Equal(t, "Unresolved column: missing", result.Diagnostics[0].Message)
 }
 
-func TestValidateSQLReportsPolyglotExpressionTypeMismatch(t *testing.T) {
+func TestValidateSQLReportsGolyglotExpressionTypeMismatch(t *testing.T) {
 	result, err := ValidateSQL(context.Background(), ValidationRequest{
 		SQL:     "select id + 'not a number' from values_table",
 		Dialect: "duckdb",
@@ -283,7 +283,7 @@ func TestValidateSQLKeepsUnknownOutputNullabilitySilent(t *testing.T) {
 	assert.Empty(t, result.Diagnostics)
 }
 
-func TestDataTypesEquivalentUsesPolyglotTypeParser(t *testing.T) {
+func TestDataTypesEquivalentUsesGolyglotTypeParser(t *testing.T) {
 	tests := []struct {
 		name       string
 		left       string

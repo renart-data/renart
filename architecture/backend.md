@@ -327,7 +327,7 @@ schedulers on one state DB would duplicate runs); run facts still land in
 `cmd/root_test.go`.
 
 **Bruin SQL-parser link shim.** Renart does not call Bruin's Rust SQL parser;
-dependency extraction and `DECLARE` hoisting use the embedded Polyglot WASM
+dependency extraction and `DECLARE` hoisting use the native pure-Go Golyglot
 engine. Bruin's `pkg/sqlparser` nevertheless adds `-lbruin_rustsqlparser`
 unconditionally to CGo builds on Linux and macOS, including when Renart uses
 only its Python-backed APIs. `scripts/build_bruin_sqlparser_stub.sh` therefore
@@ -338,10 +338,10 @@ disabled error, so a missed runtime call cannot silently use a second parser.
 `RENART_BRUIN_SQLPARSER_STUB_DIR` overrides the cache root for hermetic builds.
 
 **Binary composition.** Release builds are deliberately self-contained: the Go
-link includes the small Bruin compatibility shim and the complete
+link includes the small Bruin compatibility shim, Golyglot, and the complete
 connector/runtime graph, while `go:embed` carries the web application, Monaco
-workers, the Polyglot SQL WASM engine, and the `ty` Python-intelligence WASM
-engine. GoReleaser uses `-s -w`, which removes Go debug sections but not those
+workers, and the `ty` Python-intelligence WASM engine. GoReleaser uses `-s -w`,
+which removes Go debug sections but not those
 runtime components.
 Consequently the executable remains large even when stripped; connector
 dependencies and generated lookup/type data are a larger share than the visible
@@ -1377,16 +1377,12 @@ asset.
 
 ## 6. Embedded engines & memory
 
-SQL intelligence (parse/lineage/validation) and formatting run on the embedded
-Polyglot SQL wasm engine (`sqlintelligence`, `sqlformat`); Python intelligence
-runs ty as wasm (`pyintelligence`).
-All run under wazero with an on-disk compilation cache (`renart debug warm-cache`
-pre-warms it). Polyglot modules use a bounded reusable pool rather than
-call-count recycling: at most four modules, a 256 MiB per-module hard limit,
-and eviction after more than 16 MiB of retained growth. The pinned Go SDK, web
-SDK, and embedded artifact are all Polyglot 0.6.2; the web check task verifies
-the artifact byte-for-byte. RSS is dominated by the embedded engines; the
-interpreter fallback is retired once the cached optimizing compiler is ready.
+SQL intelligence (parse/lineage/validation) and formatting run in-process on
+the pure-Go Golyglot package (`sqlintelligence`, `sqlformat`). There is no SQL
+WASM module, native parser download, FFI boundary, runtime pool, or SQL warmup.
+Python intelligence still runs ty as WASM (`pyintelligence`) under wazero with
+an on-disk compilation cache; `renart debug warm-cache` pre-warms only that
+module.
 
 ## 7. Open items
 

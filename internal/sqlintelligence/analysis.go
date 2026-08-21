@@ -10,11 +10,11 @@ import (
 	"strings"
 	"sync"
 
-	"renart/internal/sqlformat"
+	"github.com/renart-data/golyglot/pkg/golyglot"
 )
 
 // QueryAnalysis is the compact, schema-aware query result returned by
-// Polyglot. It intentionally keeps the facts useful to schema inference and
+// Golyglot. It intentionally keeps the facts useful to schema inference and
 // lineage without retaining the much larger annotated AST.
 type QueryAnalysis struct {
 	Shape           string                `json:"shape"`
@@ -97,23 +97,17 @@ type QuerySetOperationBranch struct {
 }
 
 type polyglotAnalyzeQueryOptions struct {
-	Dialect string         `json:"dialect"`
-	Schema  polyglotSchema `json:"schema"`
-}
-
-type polyglotAnalyzeQueryResponse struct {
-	Success  bool           `json:"success"`
-	Analysis *QueryAnalysis `json:"analysis"`
-	Error    any            `json:"error"`
+	Dialect string                    `json:"dialect"`
+	Schema  golyglot.ValidationSchema `json:"schema"`
 }
 
 const queryAnalysisCacheCapacity = 256
 
 var polyglotQueryAnalysisCache = newQueryAnalysisCache(queryAnalysisCacheCapacity)
 
-// AnalyzeQuery returns Polyglot's compact query facts. Successful results are
+// AnalyzeQuery returns Golyglot's compact query facts. Successful results are
 // cached by SQL, normalized dialect, and deterministic schema payload so graph
-// fixpoint rounds and repeated revision builds do not repeat the WASM work.
+// fixpoint rounds and repeated revision builds do not repeat native analysis.
 // Failures and canceled requests never enter the cache.
 func AnalyzeQuery(ctx context.Context, query, dialect string, schema Schema, constraintSets ...SchemaConstraints) (QueryAnalysis, error) {
 	if err := ctx.Err(); err != nil {
@@ -146,7 +140,7 @@ func AnalyzeQuery(ctx context.Context, query, dialect string, schema Schema, con
 func marshalAnalyzeQueryOptions(dialect string, schema Schema, constraintSets ...SchemaConstraints) (string, error) {
 	options := polyglotAnalyzeQueryOptions{
 		Dialect: polyglotAnalyzeDialect(dialect),
-		Schema:  buildPolyglotSchema(schema, constraintSets...),
+		Schema:  buildGolyglotSchema(schema, constraintSets...),
 	}
 	raw, err := json.Marshal(options)
 	return string(raw), err
@@ -155,7 +149,7 @@ func marshalAnalyzeQueryOptions(dialect string, schema Schema, constraintSets ..
 func polyglotAnalyzeDialect(dialect string) string {
 	switch strings.ToLower(strings.TrimSpace(dialect)) {
 	case "", "generic":
-		return sqlformat.DialectGeneric
+		return string(golyglot.DialectGeneric)
 	case "postgres", "postgresql":
 		return "postgresql"
 	default:
@@ -164,23 +158,105 @@ func polyglotAnalyzeDialect(dialect string) string {
 }
 
 func analyzeQueryUncached(ctx context.Context, query, optionsJSON string, schema Schema) (QueryAnalysis, error) {
-	raw, err := sqlformat.Call(ctx, "analyze_query", query, optionsJSON)
+	if err := ctx.Err(); err != nil {
+		return QueryAnalysis{}, err
+	}
+	var options polyglotAnalyzeQueryOptions
+	if err := json.Unmarshal([]byte(optionsJSON), &options); err != nil {
+		return QueryAnalysis{}, err
+	}
+	dialect, err := golyglot.ParseDialect(options.Dialect)
 	if err != nil {
 		return QueryAnalysis{}, err
 	}
-	var response polyglotAnalyzeQueryResponse
-	if err := json.Unmarshal([]byte(raw), &response); err != nil {
+	native, err := golyglot.AnalyzeQuery(query, golyglot.AnalyzeQueryOptions{Dialect: dialect, Schema: &options.Schema})
+	if err != nil {
 		return QueryAnalysis{}, err
 	}
-	if !response.Success || response.Analysis == nil {
-		message := strings.TrimSpace(fmt.Sprint(response.Error))
-		if message == "" || message == "<nil>" {
-			message = "analyze_query failed"
-		}
-		return QueryAnalysis{}, errors.New(message)
+	if err := ctx.Err(); err != nil {
+		return QueryAnalysis{}, err
 	}
-	finalizeQueryAnalysis(response.Analysis, schema)
-	return *response.Analysis, nil
+	return queryAnalysisFromGolyglot(native, schema), nil
+}
+
+func queryAnalysisFromGolyglot(native golyglot.QueryAnalysis, schema Schema) QueryAnalysis {
+	result := QueryAnalysis{
+		Shape:               native.Shape,
+		CTEs:                append([]string(nil), native.CTEs...),
+		OutputNamesComplete: native.OutputNamesComplete,
+		OutputTypesComplete: native.OutputTypesComplete,
+	}
+	for _, fact := range native.CTEFacts {
+		result.CTEFacts = append(result.CTEFacts, QueryCTEFact{Name: fact.Name, Columns: append([]string(nil), fact.Columns...), BodySQL: fact.BodySQL, OutputColumns: append([]string(nil), fact.OutputColumns...)})
+	}
+	for _, projection := range native.Projections {
+		converted := QueryProjection{
+			Index: projection.Index, Name: cloneString(projection.Name), IsStar: projection.IsStar,
+			StarTable: cloneString(projection.StarTable), TransformKind: projection.TransformKind,
+			CastType: cloneString(projection.CastType), TypeHint: cloneString(projection.TypeHint), Nullability: projection.Nullability,
+		}
+		if projection.TransformFunction != nil {
+			converted.TransformFunction = &QueryTransformFunction{Name: projection.TransformFunction.Name, LiteralArgs: append([]string(nil), projection.TransformFunction.LiteralArgs...)}
+			for _, column := range projection.TransformFunction.ColumnArgs {
+				converted.TransformFunction.ColumnArgs = append(converted.TransformFunction.ColumnArgs, queryColumnReferenceFromGolyglot(column))
+			}
+		}
+		for _, column := range projection.Upstream {
+			converted.Upstream = append(converted.Upstream, queryColumnReferenceFromGolyglot(column))
+		}
+		result.Projections = append(result.Projections, converted)
+	}
+	for _, relation := range native.Relations {
+		result.Relations = append(result.Relations, queryRelationFromGolyglot(relation))
+	}
+	for _, relation := range native.BaseTables {
+		result.BaseTables = append(result.BaseTables, queryRelationFromGolyglot(relation))
+	}
+	for _, star := range native.StarProjections {
+		result.StarProjections = append(result.StarProjections, QueryStarProjection{Index: star.Index, Table: cloneString(star.Table), ExpandedColumns: append([]string(nil), star.ExpandedColumns...)})
+	}
+	for _, set := range native.SetOperations {
+		converted := QuerySetOperation{Kind: set.Kind, All: set.All, Distinct: set.Distinct, OutputColumns: append([]string(nil), set.OutputColumns...)}
+		for _, branch := range set.Branches {
+			convertedBranch := QuerySetOperationBranch{Index: branch.Index}
+			for _, projection := range branch.Projections {
+				convertedBranch.Projections = append(convertedBranch.Projections, QueryProjection{Index: projection.Index, Name: cloneString(projection.Name), IsStar: projection.IsStar, StarTable: cloneString(projection.StarTable), TransformKind: projection.TransformKind, CastType: cloneString(projection.CastType), TypeHint: cloneString(projection.TypeHint), Nullability: projection.Nullability})
+			}
+			converted.Branches = append(converted.Branches, convertedBranch)
+		}
+		result.SetOperations = append(result.SetOperations, converted)
+	}
+	for _, column := range native.OutputColumns {
+		if strings.TrimSpace(column.Name) == "" {
+			continue
+		}
+		columnType := ""
+		if column.TypeHint != nil {
+			columnType = normalizeInferredType(*column.TypeHint)
+		}
+		result.OutputColumns = appendUniqueSchemaColumn(result.OutputColumns, SchemaColumn{Name: column.Name, Type: columnType, Nullable: queryProjectionNullable(column.Nullability)})
+	}
+	if len(result.OutputColumns) == 0 {
+		result.OutputNamesComplete = false
+		result.OutputTypesComplete = false
+	}
+	return result
+}
+
+func queryColumnReferenceFromGolyglot(column golyglot.ColumnReferenceFact) QueryColumnReference {
+	return QueryColumnReference{SourceName: cloneString(column.SourceName), SourceAlias: cloneString(column.SourceAlias), SourceKind: column.SourceKind, Table: cloneString(column.Table), Column: column.Column, Unqualified: column.Unqualified, Confidence: column.Confidence}
+}
+
+func queryRelationFromGolyglot(relation golyglot.RelationFact) QueryRelation {
+	return QueryRelation{Name: relation.Name, Alias: cloneString(relation.Alias), Kind: relation.Kind, Columns: append([]string(nil), relation.Columns...), Catalog: cloneString(relation.Catalog), Schema: cloneString(relation.Schema), Table: cloneString(relation.Table)}
+}
+
+func cloneString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
 }
 
 func finalizeQueryAnalysis(analysis *QueryAnalysis, schema Schema) {

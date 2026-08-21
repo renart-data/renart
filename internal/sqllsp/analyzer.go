@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	polyglot "github.com/tobilg/polyglot/packages/go"
-
 	"renart/internal/authoringdiag"
 	"renart/internal/sqlcatalog"
 	"renart/internal/sqlintelligence"
@@ -65,7 +63,6 @@ type scopeResolver interface {
 type Engine struct {
 	graph                         CanonicalGraph
 	index                         graphIndex
-	poly                          *polyglot.Client
 	disableDuckDBFilesystemAccess bool
 }
 
@@ -150,16 +147,6 @@ func NewEngineWithOptions(graph CanonicalGraph, options EngineOptions) *Engine {
 	}
 }
 
-func NewEngineWithPolyglot(graph CanonicalGraph, client *polyglot.Client) *Engine {
-	return NewEngineWithPolyglotOptions(graph, client, EngineOptions{})
-}
-
-func NewEngineWithPolyglotOptions(graph CanonicalGraph, client *polyglot.Client, options EngineOptions) *Engine {
-	engine := NewEngineWithOptions(graph, options)
-	engine.poly = client
-	return engine
-}
-
 func (e *Engine) Diagnostics(doc TextDocumentItem) []Diagnostic {
 	return e.DiagnosticsContext(context.Background(), doc)
 }
@@ -167,10 +154,7 @@ func (e *Engine) Diagnostics(doc TextDocumentItem) []Diagnostic {
 func (e *Engine) DiagnosticsContext(ctx context.Context, doc TextDocumentItem) []Diagnostic {
 	projection := e.renderDocument(doc)
 	analysis := analyzeSQLWithResolver(projection.doc.Text, e)
-	diagnostics, semanticOK := e.semanticDiagnostics(ctx, projection.doc)
-	if !semanticOK {
-		diagnostics = e.polyglotDiagnostics(projection.doc)
-	}
+	diagnostics := e.semanticDiagnostics(ctx, projection.doc)
 	duckDBFileRelations := e.duckDBFileRelationUses(projection.doc, analysis)
 	diagnostics = withoutUnresolvedDuckDBFileRelations(projection.doc.Text, diagnostics, duckDBFileRelations)
 	currentAsset := e.assetForURI(doc.URI)
@@ -335,7 +319,7 @@ func appendUniqueAssetDiagnostics(existing []Diagnostic, candidates ...Diagnosti
 	return existing
 }
 
-func (e *Engine) semanticDiagnostics(ctx context.Context, doc TextDocumentItem) ([]Diagnostic, bool) {
+func (e *Engine) semanticDiagnostics(ctx context.Context, doc TextDocumentItem) []Diagnostic {
 	schema, constraints, confidence := e.semanticValidationSchema()
 	result, err := sqlintelligence.ValidateSQL(ctx, sqlintelligence.ValidationRequest{
 		URI:                string(doc.URI),
@@ -347,13 +331,13 @@ func (e *Engine) semanticDiagnostics(ctx context.Context, doc TextDocumentItem) 
 		ExpectedOutput:     e.declaredOutputColumns(doc.URI),
 	})
 	if err != nil {
-		return nil, false
+		return nil
 	}
 	diagnostics := make([]Diagnostic, 0, len(result.Diagnostics))
 	for _, diagnostic := range result.Diagnostics {
 		diagnostics = append(diagnostics, diagnosticFromAuthoring(doc.Text, diagnostic))
 	}
-	return diagnostics, true
+	return diagnostics
 }
 
 func (e *Engine) semanticValidationSchema() (sqlintelligence.Schema, sqlintelligence.SchemaConstraints, map[string]sqlintelligence.RelationConfidence) {
@@ -860,40 +844,6 @@ func replacementAction(uri URI, diagnostic Diagnostic, unknown, replacement stri
 		}},
 		IsPreferred: true,
 	}
-}
-
-func (e *Engine) polyglotDiagnostics(doc TextDocumentItem) []Diagnostic {
-	if e.poly == nil {
-		return nil
-	}
-	dialect := e.dialectForDocument(doc)
-	result, err := e.poly.Validate(doc.Text, dialect)
-	if err != nil {
-		return nil
-	}
-	diagnostics := make([]Diagnostic, 0, len(result.Errors))
-	for _, validationErr := range result.Errors {
-		start, end := 0, 1
-		if validationErr.Start != nil {
-			start = *validationErr.Start
-			end = start + 1
-		}
-		if validationErr.End != nil {
-			end = *validationErr.End
-		}
-		if validationErr.Start == nil && validationErr.Line != nil && validationErr.Column != nil {
-			start = ByteOffset(doc.Text, Position{Line: max(*validationErr.Line-1, 0), Character: max(*validationErr.Column-1, 0)})
-			end = start + 1
-		}
-		diagnostics = append(diagnostics, Diagnostic{
-			Range:    RangeFromOffsets(doc.Text, start, end),
-			Severity: diagnosticSeverityError,
-			Code:     validationErr.Code,
-			Source:   "polyglot",
-			Message:  validationErr.Message,
-		})
-	}
-	return diagnostics
 }
 
 func (e *Engine) dialectForDocument(doc TextDocumentItem) string {

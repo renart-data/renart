@@ -2,24 +2,18 @@ package sqlintelligence
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
 	"sync"
 
+	"github.com/renart-data/golyglot/pkg/golyglot"
+
 	"renart/internal/authoringdiag"
-	"renart/internal/sqlformat"
 )
 
-type parsedDataTypeResponse struct {
-	Success  bool            `json:"success"`
-	DataType json.RawMessage `json:"dataType"`
-	Error    any             `json:"error"`
-}
-
 type cachedDataType struct {
-	value map[string]any
+	value golyglot.DataType
 	ok    bool
 }
 
@@ -27,7 +21,7 @@ var parsedDataTypes sync.Map
 
 // OutputDriftDiagnostics compares a SQL asset's inferred projection with its
 // declared output contract. Explicit projection names are compared as a set;
-// same-name columns understood by Polyglot's standalone data-type parser are
+// same-name columns understood by Golyglot's standalone data-type parser are
 // also compared by type. Compact analysis selectively fills names and types
 // through CTEs/stars and checks explicit NOT NULL contracts. Unknown facts stay
 // silent rather than producing low-confidence warnings.
@@ -45,6 +39,11 @@ func OutputDriftDiagnostics(
 	inferred, completeNames, err := annotateOutputColumns(ctx, query, dialect, schema)
 	if err != nil {
 		return nil, err
+	}
+	if completeNames {
+		if analysis, analysisErr := AnalyzeQuery(ctx, query, dialect, schema, constraints); analysisErr == nil {
+			completeNames = analysis.OutputNamesComplete && outputDriftAnalysisNamesReliable(analysis, relationConfidence)
+		}
 	}
 	if outputDriftNeedsCompactAnalysis(inferred, completeNames, expected) {
 		analysis, analysisErr := AnalyzeQuery(ctx, query, dialect, schema, constraints)
@@ -277,166 +276,64 @@ func StrictDataTypesEquivalent(ctx context.Context, left, right, dialect string)
 	return reflect.DeepEqual(leftType, rightType), true, nil
 }
 
-func parseComparableDataType(ctx context.Context, value, dialect string) (map[string]any, bool, error) {
+func parseComparableDataType(ctx context.Context, value, dialect string) (golyglot.DataType, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return golyglot.DataType{}, false, err
+	}
 	key := strings.ToLower(strings.TrimSpace(dialect)) + "\x00" + normalizedTypeText(value)
 	if cached, ok := parsedDataTypes.Load(key); ok {
 		entry := cached.(cachedDataType)
 		return entry.value, entry.ok, nil
 	}
-	raw, err := sqlformat.Call(ctx, "parse_data_type", strings.TrimSpace(value), dialect)
+	nativeDialect, err := golyglot.ParseDialect(dialect)
 	if err != nil {
-		return nil, false, err
+		return golyglot.DataType{}, false, err
 	}
-	var response parsedDataTypeResponse
-	if err := json.Unmarshal([]byte(raw), &response); err != nil {
-		return nil, false, err
-	}
-	if !response.Success || len(response.DataType) == 0 {
+	dataType, err := golyglot.ParseDataType(strings.TrimSpace(value), nativeDialect)
+	if err != nil || !dataType.Known() {
 		parsedDataTypes.Store(key, cachedDataType{})
-		return nil, false, nil
+		return golyglot.DataType{}, false, nil
 	}
-	dataType, err := decodeParsedDataType(response.DataType)
-	if err != nil {
-		return nil, false, err
-	}
-	canonical, ok := canonicalDataTypeMap(dataType)
-	entry := cachedDataType{value: canonical, ok: ok}
+	entry := cachedDataType{value: dataType, ok: true}
 	parsedDataTypes.Store(key, entry)
 	return entry.value, entry.ok, nil
 }
 
-func decodeParsedDataType(raw json.RawMessage) (map[string]any, error) {
-	var result map[string]any
-	if err := json.Unmarshal(raw, &result); err == nil {
-		return result, nil
+func comparableDataTypeValues(left, right golyglot.DataType) bool {
+	if left.Kind != right.Kind {
+		return false
 	}
-	var encoded string
-	if err := json.Unmarshal(raw, &encoded); err != nil {
-		return nil, err
+	if left.Kind == golyglot.DataTypeCustom && !strings.EqualFold(strings.TrimSpace(left.Name), strings.TrimSpace(right.Name)) {
+		return false
 	}
-	if err := json.Unmarshal([]byte(encoded), &result); err != nil {
-		return nil, err
+	if !compatibleOptionalInt(left.Length, right.Length) || !compatibleOptionalInt(left.Precision, right.Precision) || !compatibleOptionalInt(left.Scale, right.Scale) {
+		return false
 	}
-	return result, nil
-}
-
-func canonicalDataTypeMap(value map[string]any) (map[string]any, bool) {
-	rawKind, _ := value["data_type"].(string)
-	kind := canonicalDataTypeKind(rawKind, value)
-	if kind == "" || kind == "unknown" {
-		return nil, false
+	if (left.Kind == golyglot.DataTypeTime || left.Kind == golyglot.DataTypeTimestamp) && left.WithTimezone != right.WithTimezone {
+		return false
 	}
-	result := map[string]any{"data_type": kind}
-	for key, child := range value {
-		if key == "data_type" || child == nil || strings.Contains(key, "spelling") {
-			continue
-		}
-		if rawKind == "custom" && key == "name" {
-			continue
-		}
-		result[key] = canonicalDataTypeValue(child)
+	if !compatibleOptionalDataType(left.Element, right.Element) || !compatibleOptionalDataType(left.Key, right.Key) || !compatibleOptionalDataType(left.Value, right.Value) {
+		return false
 	}
-	return result, true
-}
-
-func canonicalDataTypeValue(value any) any {
-	switch typed := value.(type) {
-	case map[string]any:
-		if canonical, ok := canonicalDataTypeMap(typed); ok {
-			return canonical
-		}
-		result := make(map[string]any, len(typed))
-		for key, child := range typed {
-			if child != nil && !strings.Contains(key, "spelling") {
-				result[key] = canonicalDataTypeValue(child)
-			}
-		}
-		return result
-	case []any:
-		result := make([]any, 0, len(typed))
-		for _, child := range typed {
-			result = append(result, canonicalDataTypeValue(child))
-		}
-		return result
-	case string:
-		return strings.ToUpper(strings.TrimSpace(typed))
-	default:
-		return typed
-	}
-}
-
-func canonicalDataTypeKind(raw string, value map[string]any) string {
-	kind := strings.ToLower(strings.TrimSpace(raw))
-	if kind == "custom" {
-		name, _ := value["name"].(string)
-		kind = strings.ToLower(strings.TrimSpace(name))
-	}
-	switch strings.ReplaceAll(kind, " ", "_") {
-	case "char", "character", "character_varying", "clob", "n_char", "n_varchar", "nchar", "nvarchar", "string", "text", "var_char", "varchar":
-		return "string"
-	case "bool", "boolean":
-		return "boolean"
-	case "int", "int4", "int32", "integer":
-		return "integer"
-	case "big_int", "bigint", "int8", "int64":
-		return "bigint"
-	case "small_int", "smallint", "int2", "int16":
-		return "smallint"
-	case "tiny_int", "tinyint", "int8_t":
-		return "tinyint"
-	case "decimal", "number", "numeric":
-		return "decimal"
-	case "double", "double_precision", "float64":
-		return "double"
-	case "float", "float32", "real":
-		return "float"
-	case "json", "jsonb", "object", "variant":
-		return "json"
-	default:
-		return kind
-	}
-}
-
-func comparableDataTypeValues(left, right any) bool {
-	leftMap, leftIsMap := left.(map[string]any)
-	rightMap, rightIsMap := right.(map[string]any)
-	if leftIsMap || rightIsMap {
-		if !leftIsMap || !rightIsMap {
+	if len(left.Fields) > 0 && len(right.Fields) > 0 {
+		if len(left.Fields) != len(right.Fields) {
 			return false
 		}
-		leftKind, _ := leftMap["data_type"].(string)
-		rightKind, _ := rightMap["data_type"].(string)
-		if leftKind != rightKind {
-			return false
-		}
-		for key, leftValue := range leftMap {
-			if key == "data_type" {
-				continue
-			}
-			rightValue, ok := rightMap[key]
-			if !ok {
-				continue
-			}
-			if !comparableDataTypeValues(leftValue, rightValue) {
+		for index := range left.Fields {
+			if !strings.EqualFold(left.Fields[index].Name, right.Fields[index].Name) || !comparableDataTypeValues(left.Fields[index].Type, right.Fields[index].Type) {
 				return false
 			}
 		}
-		return true
 	}
-	leftSlice, leftIsSlice := left.([]any)
-	rightSlice, rightIsSlice := right.([]any)
-	if leftIsSlice || rightIsSlice {
-		if !leftIsSlice || !rightIsSlice || len(leftSlice) != len(rightSlice) {
-			return false
-		}
-		for index := range leftSlice {
-			if !comparableDataTypeValues(leftSlice[index], rightSlice[index]) {
-				return false
-			}
-		}
-		return true
-	}
-	return fmt.Sprint(left) == fmt.Sprint(right)
+	return true
+}
+
+func compatibleOptionalInt(left, right *int) bool {
+	return left == nil || right == nil || *left == *right
+}
+
+func compatibleOptionalDataType(left, right *golyglot.DataType) bool {
+	return left == nil || right == nil || comparableDataTypeValues(*left, *right)
 }
 
 func normalizedTypeText(value string) string {

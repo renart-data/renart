@@ -18,7 +18,7 @@ import (
 // LoadSQLLSPGraph enriches the provider-neutral filesystem graph with Bruin
 // asset/header findings. It is used by the stdio LSP at startup and on watched
 // file changes. SQL semantics remain per-document; this saved-state pass does
-// not invoke Polyglot.
+// does not rerun semantic SQL validation.
 func LoadSQLLSPGraph(ctx context.Context, workspaceRoot string) (sqllsp.CanonicalGraph, error) {
 	absRoot, err := filepath.Abs(workspaceRoot)
 	if err != nil {

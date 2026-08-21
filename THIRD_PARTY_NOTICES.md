@@ -9,7 +9,6 @@ CI verifies that the checked-in inventory is current.
 
 - [shadcn/ui generated components](https://github.com/shadcn-ui/ui) shadcn CLI 4.13.1 — [license](third_party/licenses/1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f.txt)
 - [Ruff Python intelligence engine](https://github.com/astral-sh/ruff) commit 7287ad8623d11935a64d65ce0eb0a0755a5d87ca — [license](third_party/licenses/2597d854122b77ddc71971564ca2350a37608575ce324adc5650a2b2051c8f18.txt)
-- [Polyglot SQL WASM engine](https://github.com/tobilg/polyglot) v0.6.2 — [license](third_party/licenses/1e63f135949fa11c4557ca23d40cc0d6ad944be21ecfa665284c35b87dbdd709.txt)
 - [Inconsolata variable font](https://fontsource.org/fonts/inconsolata) @fontsource-variable/inconsolata 5.3.0 — [license](third_party/licenses/11527366bb615a5246481b961bcc1f4e51cf5d44294a0bea01f59b61f400e299.txt)
 - [SQLGlot embedded SQL engine](https://github.com/tobymao/sqlglot) 30.7.0 (Bruin v0.11.691) — [license](third_party/licenses/b0bf909b472ddf9bd4eab30f6e6fd8b33bf3997ce038b882fe0663f291958d2d.txt)
 - [CPython embedded runtime](https://www.python.org/) 3.14.5 (v0.0.0-3.14.5-20260510-2) — [license](third_party/licenses/b0e25a78cffb43f4d92de8b61ccfa1f1f98ecbc22330b54b5251e7b6ba010231.txt)
@@ -93,7 +92,6 @@ CI verifies that the checked-in inventory is current.
 | github.com/dlclark/regexp2 | v1.11.5 | [license](third_party/licenses/9be5d04bb4d706914d5bf943710da4afeb42048f7c529902fb57c82762a991a9.txt) |
 | github.com/dustin/go-humanize | v1.0.1 | [license](third_party/licenses/a973b4498c13eb74baa2a8e5c351426a6826f2fcdd909916dbe53ee2e755fd71.txt) |
 | github.com/dvsekhvalnov/jose2go | v1.8.0 | [license](third_party/licenses/2a41b4da4e95c95c4a9c09f87652f67cb92d7072316cc12fc16db1773976e5e3.txt) |
-| github.com/ebitengine/purego | v0.10.0 | [license](third_party/licenses/b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1.txt) |
 | github.com/elastic/go-sysinfo | v1.15.4 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/22887fa31bb69cd4c6071ac6a4904a3ce53e7d8a59a124062dd438aa82f92dbc.txt) |
 | github.com/elastic/go-windows | v1.0.2 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/44b2189c0ec2222e415e856c49980437129c5ac5639011cea7155ee7a826c7b5.txt) |
 | github.com/emirpasic/gods | v1.18.1 | [license](third_party/licenses/871b440e9b348d6b2485c72e15f1d18f4cf8ee7bb424cbcd854b6a4a772b61d8.txt) |
@@ -189,6 +187,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/ProtonMail/go-crypto | v1.3.0 | [license](third_party/licenses/2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067.txt) |
 | github.com/ProtonMail/gopenpgp/v3 | v3.3.0 | [license](third_party/licenses/503bdcb689e2033376caa35eb66f170920221e96706da77be941804bc4f36422.txt) |
 | github.com/remyoudompheng/bigfft | v0.0.0-20230129092748-24d4a6f8daec | [license](third_party/licenses/dd26a7abddd02e2d0aba97805b31f248ef7835d9e10da289b22e3b8ab78b324d.txt) |
+| github.com/renart-data/golyglot | v0.1.0-alpha.4 | [license](third_party/licenses/3a611f35963a65b984b2ea4e7b53c697cd47dea0628bd8189e8bfa5b4f9cedef.txt) |
 | github.com/riverqueue/river | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
 | github.com/riverqueue/river/riverdriver | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
 | github.com/riverqueue/river/riverdriver/riversqlite | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
@@ -218,7 +217,6 @@ CI verifies that the checked-in inventory is current.
 | github.com/tidwall/match | v1.2.0 | [license](third_party/licenses/be83ad53208d03a9fe08c7fac231cabf79422989ef5706bff217bd35104ebf07.txt) |
 | github.com/tidwall/pretty | v1.2.1 | [license](third_party/licenses/0ca70311227fe097c662dece3f359e3317fa7f9d41f8d29eb45fc5135e216139.txt) |
 | github.com/tidwall/sjson | v1.2.5 | [license](third_party/licenses/be83ad53208d03a9fe08c7fac231cabf79422989ef5706bff217bd35104ebf07.txt) |
-| github.com/tobilg/polyglot/packages/go | v0.6.2 | [license](third_party/licenses/1e63f135949fa11c4557ca23d40cc0d6ad944be21ecfa665284c35b87dbdd709.txt) |
 | github.com/trinodb/trino-go-client | v0.326.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/uber-go/tally | v3.3.17+incompatible | [license](third_party/licenses/06738824e7714c8c666cd3dffd99825ea7a95c34d159a7759d07fd79893e7928.txt) |
 | github.com/uber/athenadriver | v1.1.15 | [license](third_party/licenses/111c0a160faceceea1d13f135b2b6d9e1a10ab58a7b4f2badfbba2e179d6d979.txt) |

@@ -120,7 +120,7 @@ delimiter '\t'`}
 	}
 }
 
-func TestEngineReportsPolyglotExpressionTypeMismatch(t *testing.T) {
+func TestEngineReportsGolyglotExpressionTypeMismatch(t *testing.T) {
 	engine := NewEngine(CanonicalGraph{
 		Version:   1,
 		Relations: []RelationNode{{ID: "relation:values", Name: "values_table"}},

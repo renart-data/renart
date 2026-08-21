@@ -270,7 +270,6 @@ func TestParseContextWithSchema_DuckDBPathReferenceDoesNotProduceUnresolvedTable
 	)
 	require.NoError(t, err)
 	require.NotNil(t, parseContext)
-
 	assert.Empty(t, parseContext.Errors)
 	assert.Len(t, parseContext.Tables, 1)
 	assert.Equal(t, "./customers.csv", parseContext.Tables[0].Name)
@@ -396,9 +395,9 @@ ORDER BY total_revenue DESC`,
 	assert.Equal(t, "cte", cteReference.SourceKind)
 	assert.Equal(t, "cust", cteReference.ResolvedName)
 	assert.ElementsMatch(t, []sqlintelligence.SchemaColumn{
-		{Name: "id"},
-		{Name: "name"},
-		{Name: "cit"},
+		{Name: "id", Type: "INTEGER"},
+		{Name: "name", Type: "VARCHAR"},
+		{Name: "cit", Type: "VARCHAR"},
 	}, cteReference.Columns)
 }
 
@@ -515,7 +514,7 @@ select rangee from blub`,
 	}
 	require.NotNil(t, blubReference)
 	assert.Equal(t, "cte", blubReference.SourceKind)
-	assert.ElementsMatch(t, []sqlintelligence.SchemaColumn{{Name: "range", Type: "bigint"}}, blubReference.Columns)
+	assert.ElementsMatch(t, []sqlintelligence.SchemaColumn{{Name: "range", Type: "BIGINT"}}, blubReference.Columns)
 }
 
 func TestParseContextWithSchema_SubqueryColumnsDoNotLeakToOuterQuery(t *testing.T) {

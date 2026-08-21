@@ -99,9 +99,6 @@ importers:
       '@playwright/test':
         specifier: ^1.61.1
         version: 1.61.1
-      '@polyglot-sql/sdk':
-        specifier: 0.6.2
-        version: 0.6.2
       '@svgr/core':
         specifier: ^8.1.0
         version: 8.1.0(typescript@7.0.2)
@@ -674,10 +671,6 @@ packages:
     resolution: {integrity: sha512-8nKv6+0RJSL9FE4jYOEGXnPeM/Hg12qZpmqzZjRh3qM0Y7c3z1mrOTfFLids72RDQYVh9WpLEfR5WdpNX4fkig==}
     engines: {node: '>=18'}
     hasBin: true
-
-  '@polyglot-sql/sdk@0.6.2':
-    resolution: {integrity: sha512-2xpdEMlREkw5B2XX4+tE7GaneI3i/Pc/2+T6RkZfMJUo3NVuuwvTfVIfy/7seI0xC3vcAJht58oQjG8g945oqw==}
-    engines: {node: '>=22', pnpm: '>=10'}
 
   '@radix-ui/number@1.1.2':
     resolution: {integrity: sha512-ceTwaxc4I5IOi97DgCotl3pqiyRGvffcc0oOsE2dQYaJOFIDsDt4VWG6xEbg1QePv9QWausCEIppud/tJ1wNig==}
@@ -4845,8 +4838,6 @@ snapshots:
   '@playwright/test@1.61.1':
     dependencies:
       playwright: 1.61.1
-
-  '@polyglot-sql/sdk@0.6.2': {}
 
   '@radix-ui/number@1.1.2': {}
 

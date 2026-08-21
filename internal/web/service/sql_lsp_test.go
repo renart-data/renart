@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
-	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,7 +16,6 @@ import (
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	polyglot "github.com/tobilg/polyglot/packages/go"
 	"renart/internal/authoringdiag"
 	"renart/internal/sqlintelligence"
 	"renart/internal/sqllsp"
@@ -81,7 +78,7 @@ select a, b from a.example_asset
 	}
 
 	graph := service.graphForState(context.Background(), state)
-	server := sqllsp.NewServer(graph, nil)
+	server := sqllsp.NewServer(graph)
 	uri := assetURI(root, state.Pipelines[0].Assets[1])
 	openPayload, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
@@ -511,7 +508,7 @@ select id from analytics.users u join analytics.orders o on u.id = o.user_id
 	if foreignKey := constraints["analytics.orders"].Columns["user_id"].ForeignKey; foreignKey == nil || foreignKey.Table != "analytics.users" {
 		t.Fatalf("web graph dropped declared constraints: %#v", constraints)
 	}
-	server := sqllsp.NewServer(graph, nil)
+	server := sqllsp.NewServer(graph)
 	uri := assetURI(root, state.Pipelines[0].Assets[2])
 	openPayload, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
@@ -594,7 +591,7 @@ select 1 as id
 	}
 
 	graph := service.graphForState(context.Background(), state)
-	server := sqllsp.NewServer(graph, nil)
+	server := sqllsp.NewServer(graph)
 	uri := assetURI(root, state.Pipelines[0].Assets[0])
 	openPayload, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
@@ -681,7 +678,7 @@ select cast(null as integer) as id
 	}
 
 	graph := service.graphForState(context.Background(), state)
-	server := sqllsp.NewServer(graph, nil)
+	server := sqllsp.NewServer(graph)
 	uri := assetURI(root, state.Pipelines[0].Assets[0])
 	openPayload, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
@@ -765,7 +762,7 @@ select range as ronge from range(10)
 	}
 
 	graph := service.graphForState(context.Background(), state)
-	server := sqllsp.NewServer(graph, nil)
+	server := sqllsp.NewServer(graph)
 	uri := assetURI(root, state.Pipelines[0].Assets[0])
 	openPayload, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
@@ -893,7 +890,7 @@ def materialize():
 
 	graph, err := LoadSQLLSPGraph(context.Background(), root)
 	require.NoError(t, err)
-	server := sqllsp.NewServer(graph, nil)
+	server := sqllsp.NewServer(graph)
 	openPayload, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "textDocument/didOpen",
@@ -1868,7 +1865,7 @@ select 1 as id
 	}
 	reader := parsed.Assets[0]
 	uri := typeCheckAssetURI(root, reader)
-	server := sqllsp.NewServer(graph, nil)
+	server := sqllsp.NewServer(graph)
 	openPayload, err := json.Marshal(map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "textDocument/didOpen",
@@ -2384,37 +2381,7 @@ func hasDiagnosticCode(diagnostics []sqllsp.Diagnostic, code string) bool {
 	return false
 }
 
-// noNetworkTransport fails every request so tests never download the
-// polyglot FFI archive; only an already-cached library can be opened.
-type noNetworkTransport struct{}
-
-func (noNetworkTransport) RoundTrip(*http.Request) (*http.Response, error) {
-	return nil, errors.New("network access disabled in tests")
-}
-
-// openTestPolyglotClient opens the shared polyglot validator from the local
-// cache. The test is skipped when the FFI library is not available on this
-// machine, since fetching it would require network access.
-func openTestPolyglotClient(t *testing.T) *polyglot.Client {
-	t.Helper()
-	client, _, err := sqllsp.OpenPolyglotClient(context.Background(), sqllsp.PolyglotFFIOptions{
-		Client: &http.Client{Transport: noNetworkTransport{}},
-	})
-	if err != nil {
-		t.Skipf("polyglot FFI library unavailable: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := client.Close(); err != nil {
-			t.Errorf("closing polyglot client: %v", err)
-		}
-	})
-	return client
-}
-
-func variableTemplateSQLLSPService(
-	t *testing.T,
-	client *polyglot.Client,
-) (*SQLLSPService, SQLLSPRequest) {
+func variableTemplateSQLLSPService(t *testing.T) (*SQLLSPService, SQLLSPRequest) {
 	t.Helper()
 	const query = `select 42 as answer
 where 42 >= {{ var.notable_magnitude }}
@@ -2461,13 +2428,12 @@ type: duckdb.sql
 				}
 				return asset.ExecutableFile.Path, parsed, asset, nil
 			},
-			PolyglotClient: func() *polyglot.Client { return client },
 		}),
 		SQLLSPRequest{AssetID: assetID, Content: asset.ExecutableFile.Content}
 }
 
 func TestSQLLSPServiceProjectsPipelineVariablesForLiveDocuments(t *testing.T) {
-	service, request := variableTemplateSQLLSPService(t, nil)
+	service, request := variableTemplateSQLLSPService(t)
 	_, doc, apiErr := service.graphAndDocument(context.Background(), request)
 	if apiErr != nil {
 		t.Fatal(apiErr)
@@ -2481,9 +2447,8 @@ func TestSQLLSPServiceProjectsPipelineVariablesForLiveDocuments(t *testing.T) {
 	}
 }
 
-func TestSQLLSPServiceDoesNotSendRenderedVariablesToPolyglotAsJinja(t *testing.T) {
-	client := openTestPolyglotClient(t)
-	service, request := variableTemplateSQLLSPService(t, client)
+func TestSQLLSPServiceDoesNotSendRenderedVariablesToValidatorAsJinja(t *testing.T) {
+	service, request := variableTemplateSQLLSPService(t)
 	response, apiErr := service.Diagnostics(context.Background(), request)
 	if apiErr != nil {
 		t.Fatal(apiErr)
@@ -2495,8 +2460,7 @@ func TestSQLLSPServiceDoesNotSendRenderedVariablesToPolyglotAsJinja(t *testing.T
 	}
 }
 
-func TestSQLLSPServiceReportsPolyglotSyntaxDiagnostics(t *testing.T) {
-	client := openTestPolyglotClient(t)
+func TestSQLLSPServiceReportsNativeSyntaxDiagnostics(t *testing.T) {
 	state := model.WorkspaceState{
 		Pipelines: []model.Pipeline{{
 			ID:   "pipeline",
@@ -2511,9 +2475,8 @@ func TestSQLLSPServiceReportsPolyglotSyntaxDiagnostics(t *testing.T) {
 		}},
 	}
 	service := NewSQLLSPService(SQLLSPDependencies{
-		WorkspaceRoot:  t.TempDir(),
-		CurrentState:   func() model.WorkspaceState { return state },
-		PolyglotClient: func() *polyglot.Client { return client },
+		WorkspaceRoot: t.TempDir(),
+		CurrentState:  func() model.WorkspaceState { return state },
 	})
 
 	invalid, apiErr := service.Diagnostics(context.Background(), SQLLSPRequest{

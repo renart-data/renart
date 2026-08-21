@@ -78,7 +78,7 @@ select customer_id, upper(customer_name) as shout from analytics.customers
 	}
 	// customer_id resolves to its upstream asset's declared type
 	assert.Equal(t, "INTEGER", byName["customer_id"])
-	// computed column gets a type from the polyglot type annotation
+	// computed column gets a type from Golyglot's semantic analysis
 	assert.Equal(t, "VARCHAR", byName["shout"])
 }
 

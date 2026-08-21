@@ -154,7 +154,7 @@ columns:
   - name: store_revenue
     type: bigint
   - name: total_revenue
-    type: decimal
+    type: bigint
 @bruin */
 
 SELECT

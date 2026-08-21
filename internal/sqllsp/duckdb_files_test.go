@@ -69,7 +69,7 @@ func TestWorkspaceServerUsesDuckDBFilePolicyForDocumentEngines(t *testing.T) {
 	server := NewWorkspaceServer(root, CanonicalGraph{
 		Version: 1,
 		Assets:  []AssetNode{{ID: "query", URI: uri, Dialect: "duckdb"}},
-	}, nil)
+	})
 
 	labels := completionLabels(server.engineForDocument(t.Context(), doc).Complete(
 		doc,

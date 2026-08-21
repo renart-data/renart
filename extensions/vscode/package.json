@@ -28,16 +28,6 @@
           "type": "string",
           "default": "renart",
           "description": "Path to the Renart executable that provides the sql-lsp command."
-        },
-        "renartSqlLsp.disablePolyglotDownload": {
-          "type": "boolean",
-          "default": false,
-          "description": "Disable automatic Polyglot native library download by the SQL language server."
-        },
-        "renartSqlLsp.polyglotCacheDir": {
-          "type": "string",
-          "default": "",
-          "description": "Optional cache directory for downloaded Polyglot native libraries."
         }
       }
     }

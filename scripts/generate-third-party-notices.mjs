@@ -58,12 +58,6 @@ const staticEmbeddedComponents = [
     files: [path.join(root, "third_party", "embedded", "ruff", "LICENSE")],
   },
   {
-    name: "Polyglot SQL WASM engine",
-    version: "v0.6.2",
-    source: "https://github.com/tobilg/polyglot",
-    files: [path.join(root, "third_party", "embedded", "polyglot", "LICENSE")],
-  },
-  {
     name: "Inconsolata variable font",
     version: "@fontsource-variable/inconsolata 5.3.0",
     source: "https://fontsource.org/fonts/inconsolata",

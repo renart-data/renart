@@ -17,6 +17,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pkg/errors v0.9.1
+	github.com/renart-data/golyglot v0.1.0-alpha.4
 	github.com/riverqueue/river v0.40.0
 	github.com/riverqueue/river/riverdriver/riversqlite v0.40.0
 	github.com/riverqueue/river/rivertype v0.40.0
@@ -24,7 +25,6 @@ require (
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.11.1
 	github.com/tetratelabs/wazero v1.12.0
-	github.com/tobilg/polyglot/packages/go v0.6.2
 	github.com/urfave/cli/v3 v3.10.1
 	github.com/wailsapp/wails/v2 v2.13.0
 	github.com/zalando/go-keyring v0.2.8
@@ -76,7 +76,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/columnar-tech/dbc v0.3.0 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
-	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/go-faster/jx v1.2.0 // indirect
 	github.com/go-faster/yaml v0.4.6 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect

@@ -14,7 +14,6 @@ import (
 	"github.com/bruin-data/bruin/pkg/jinja"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/spf13/afero"
-	polyglot "github.com/tobilg/polyglot/packages/go"
 
 	"renart/internal/authoringdiag"
 	"renart/internal/sqlformat"
@@ -59,11 +58,6 @@ type SQLLSPDependencies struct {
 	ResolveAssetByID            func(context.Context, string) (string, *pipeline.Pipeline, *pipeline.Asset, error)
 	ResolveNotebookJinjaContext func(context.Context, string) (NotebookJinjaContext, bool, error)
 	RemoteCatalog               RemoteCatalogProvider
-	// PolyglotClient returns a shared SQL validation client, or nil when one is
-	// not (yet) available. It is consulted on every request so an
-	// asynchronously-loaded client is picked up as soon as it is ready. May be
-	// nil, in which case diagnostics fall back to the regex-based checks.
-	PolyglotClient func() *polyglot.Client
 }
 
 type SQLLSPService struct {
@@ -96,43 +90,6 @@ func NewSQLLSPService(deps SQLLSPDependencies) *SQLLSPService {
 		assetCacheEntries: map[string]*assetDiagnosticCacheEntry{},
 		duckDBFileSchemas: sqllsp.NewDuckDBFileSchemaCache(),
 	}
-}
-
-// NewLazyPolyglotClient returns a getter suitable for
-// SQLLSPDependencies.PolyglotClient. The first call kicks off a background load
-// of the native validation library and returns nil; once the library is open,
-// subsequent calls return the shared client. Loading never blocks the request
-// path, and a load failure simply leaves the getter returning nil (regex-only
-// diagnostics).
-func NewLazyPolyglotClient() func() *polyglot.Client {
-	var (
-		once sync.Once
-		mu   sync.RWMutex
-		poly *polyglot.Client
-	)
-	return func() *polyglot.Client {
-		once.Do(func() {
-			go func() {
-				client, _, err := sqllsp.OpenPolyglotClient(context.Background(), sqllsp.PolyglotFFIOptions{})
-				if err != nil {
-					return
-				}
-				mu.Lock()
-				poly = client
-				mu.Unlock()
-			}()
-		})
-		mu.RLock()
-		defer mu.RUnlock()
-		return poly
-	}
-}
-
-func (s *SQLLSPService) polyglotClient() *polyglot.Client {
-	if s.deps.PolyglotClient == nil {
-		return nil
-	}
-	return s.deps.PolyglotClient()
 }
 
 func (s *SQLLSPService) Diagnostics(ctx context.Context, req SQLLSPRequest) (SQLLSPResponse, *APIError) {
@@ -769,7 +726,7 @@ func remoteCatalogRelationID(scope RemoteCatalogScope, name string) string {
 }
 
 func (s *SQLLSPService) newEngine(graph sqllsp.CanonicalGraph) *sqllsp.Engine {
-	return sqllsp.NewEngineWithPolyglotOptions(graph, s.polyglotClient(), sqllsp.EngineOptions{
+	return sqllsp.NewEngineWithOptions(graph, sqllsp.EngineOptions{
 		DisableDuckDBFilesystemAccess: s.deps.DisableFilesystemAccess,
 	})
 }
@@ -789,7 +746,7 @@ func (s *SQLLSPService) enrichDuckDBFileRelations(
 // withJinjaProjection gives the live HTTP LSP fully rendered SQL from the same
 // asset-scoped renderer used by preview and type-check. The projection retains
 // an honest source map back to the unsaved Monaco buffer, so diagnostics and
-// language features stay in template coordinates while Polyglot never sees raw
+// language features stay in template coordinates while Golyglot never sees raw
 // Jinja delimiters.
 //
 // Rendering is best-effort while a template is being edited. If the current

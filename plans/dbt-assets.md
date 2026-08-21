@@ -103,7 +103,7 @@ the catalog.
 
 ### 5.2 Column inference — **medium, works**
 
-Renart's inference runs the Polyglot SQL wasm engine over SQL plus upstream
+Renart's inference runs the native Golyglot engine over SQL plus upstream
 schemas (`sqlintelligence/lineage.go`). For dbt: feed it the **compiled**
 (or substitution-rendered) SQL and build the schema map from, in priority
 order: schema.yml declarations → renart's own inference cascade over

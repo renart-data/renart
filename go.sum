@@ -261,8 +261,6 @@ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkp
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/dvsekhvalnov/jose2go v1.8.0 h1:LqkkVKAlHFfH9LOEl5fe4p/zL02OhWE7pCufMBG2jLA=
 github.com/dvsekhvalnov/jose2go v1.8.0/go.mod h1:QsHjhyTlD/lAVqn/NSbVZmSCGeDehTB/mPZadG+mhXU=
-github.com/ebitengine/purego v0.10.0 h1:QIw4xfpWT6GWTzaW5XEKy3HXoqrJGx1ijYHzTF0/ISU=
-github.com/ebitengine/purego v0.10.0/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/elastic/go-sysinfo v1.8.1/go.mod h1:JfllUnzoQV/JRYymbH3dO1yggI3mV2oTKSXsDHM+uIM=
 github.com/elastic/go-sysinfo v1.15.4 h1:A3zQcunCxik14MgXu39cXFXcIw2sFXZ0zL886eyiv1Q=
 github.com/elastic/go-sysinfo v1.15.4/go.mod h1:ZBVXmqS368dOn/jvijV/zHLfakWTYHBZPk3G244lHrU=
@@ -602,6 +600,8 @@ github.com/prometheus/procfs v0.20.1 h1:XwbrGOIplXW/AU3YhIhLODXMJYyC1isLFfYCsTEy
 github.com/prometheus/procfs v0.20.1/go.mod h1:o9EMBZGRyvDrSPH1RqdxhojkuXstoe4UlK79eF5TGGo=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
+github.com/renart-data/golyglot v0.1.0-alpha.4 h1:aWbTXw07bvRJ/4iN6OQqcgBIpu19nNGgJ31LjzYBImg=
+github.com/renart-data/golyglot v0.1.0-alpha.4/go.mod h1:5YWmXa0Pp9pCNio5wv3Z+eT1xMyq/CC7ql2W4nTZMqs=
 github.com/riverqueue/river v0.40.0 h1:4dynKqqU1P22iPmwWDfDj/YZXnuUTZysXXF3wNHekNw=
 github.com/riverqueue/river v0.40.0/go.mod h1:auvB4kHqM97tnshEQxzy2E7aFvJFhl010NB6N29DXXc=
 github.com/riverqueue/river/riverdriver v0.40.0 h1:QjBHHh+kaxgUgK9tPumrfx7W14vhAHLIt+0dK40ikI8=
@@ -693,8 +693,6 @@ github.com/tidwall/sjson v1.2.5 h1:kLy8mja+1c9jlljvWTlSazM7cKDRfJuR/bOJhcY5NcY=
 github.com/tidwall/sjson v1.2.5/go.mod h1:Fvgq9kS/6ociJEDnK0Fk1cpYF4FIW6ZF7LAe+6jwd28=
 github.com/tkrajina/go-reflector v0.5.8 h1:yPADHrwmUbMq4RGEyaOUpz2H90sRsETNVpjzo3DLVQQ=
 github.com/tkrajina/go-reflector v0.5.8/go.mod h1:ECbqLgccecY5kPmPmXg1MrHW585yMcDkVl6IvJe64T4=
-github.com/tobilg/polyglot/packages/go v0.6.2 h1:vN3sVu0L1GxeCVsQD7a6qh2Jp5yH+O4aOrBnvIDwu48=
-github.com/tobilg/polyglot/packages/go v0.6.2/go.mod h1:S3rORX9g0cs3n5hLXR0ah6vqRMS4G71LXDzuNju2rH0=
 github.com/trinodb/trino-go-client v0.326.0 h1:YBTww/DACsNFIBFh9SfFra3Q/3H9Cs/dnCkWoIYjMZk=
 github.com/trinodb/trino-go-client v0.326.0/go.mod h1:e/nck9W6hy+9bbyZEpXKFlNsufn3lQGpUgDL1d5f1FI=
 github.com/uber-go/tally v3.3.17+incompatible h1:nFHIuW3VQ22wItiE9kPXic8dEgExWOsVOHwpmoIvsMw=

@@ -8,7 +8,7 @@ RENART_CACHE_HOME ?= $(if $(XDG_CACHE_HOME),$(XDG_CACHE_HOME),$(HOME)/.cache)
 HOST_SQLPARSER_TARGET = $(shell $(GO) env GOOS)-$(shell $(GO) env GOARCH)
 BRUIN_SQLPARSER_STUB_LIB_DIR = $(RENART_CACHE_HOME)/renart/bruin-sqlparser-stub/$(HOST_SQLPARSER_TARGET)/release
 
-.PHONY: help dev build test check release-check licenses licenses-check bruin-sqlparser-stub go-build go-test standalone-build web-install web-build web-typecheck web-test-live web-sync-polyglot-wasm docs-install docs-build docs-dev docs-preview vscode-install landing-media docs-media cli-recordings docs-docker docs-docker-run sync-install clean
+.PHONY: help dev build test check release-check licenses licenses-check bruin-sqlparser-stub go-build go-test standalone-build web-install web-build web-typecheck web-test-live docs-install docs-build docs-dev docs-preview vscode-install landing-media docs-media cli-recordings docs-docker docs-docker-run sync-install clean
 
 help:
 	@printf "Renart build targets\n\n"
@@ -23,7 +23,6 @@ help:
 	@printf "  make standalone-build  Build Renart CLI plus the renart-gui desktop helper\n"
 	@printf "  make go-test           Run Go tests\n"
 	@printf "  make web-build         Build React app\n"
-	@printf "  make web-sync-polyglot-wasm  Copy Polyglot SQL WASM from web dependency\n"
 	@printf "  make web-typecheck     Typecheck React app\n"
 	@printf "  make web-test-live     Run live Playwright tests\n"
 	@printf "  make docs-build        Build Astro/Starlight docs\n"
@@ -82,9 +81,6 @@ web-install:
 
 web-build:
 	$(PNPM) --dir web build
-
-web-sync-polyglot-wasm:
-	$(PNPM) --dir web sync:polyglot-wasm
 
 web-typecheck:
 	$(PNPM) --dir web typecheck

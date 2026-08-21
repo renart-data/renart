@@ -39,7 +39,7 @@ func TestServerCompletionOverLSP(t *testing.T) {
 			},
 		}},
 	}
-	server := NewServer(graph, nil)
+	server := NewServer(graph)
 	input := bytes.Join([][]byte{
 		EncodeMessage(mustJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})),
 		EncodeMessage(mustJSON(t, map[string]any{
@@ -88,7 +88,7 @@ select 1 as order_id`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewWorkspaceServer(root, graph, nil)
+	server := NewWorkspaceServer(root, graph)
 
 	open := EncodeMessage(mustJSON(t, map[string]any{
 		"jsonrpc": "2.0",
@@ -200,7 +200,7 @@ func runWorkspaceProtocol(t *testing.T, root, sql string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := NewWorkspaceServer(root, graph, nil)
+	server := NewWorkspaceServer(root, graph)
 	input := bytes.Join([][]byte{
 		EncodeMessage(mustJSON(t, map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}})),
 		EncodeMessage(mustJSON(t, map[string]any{

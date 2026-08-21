@@ -57,8 +57,8 @@ func newDirectStringExecutionMaterializer(assetType pipeline.AssetType, fullRefr
 	}
 
 	// Bruin passes the same DECLARE hoister to every hook-aware string
-	// materializer. Renart preserves that behavior with its shared Polyglot
-	// runtime so previews and direct runs cannot drift when a multi-statement
+	// materializer. Renart preserves that behavior with its shared Golyglot
+	// parser so previews and direct runs cannot drift when a multi-statement
 	// script contains a top-level DECLARE.
 	hoister := bruincompat.NewDeclareHoister()
 	return pipeline.HookWrapperMaterializer{

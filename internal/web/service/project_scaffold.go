@@ -628,7 +628,7 @@ columns:
     description: Unique customer identifier
     primary_key: true
   - name: lifetime_value
-    type: double
+    type: decimal
     description: Total revenue from the customer's completed orders
   - name: customer_name
     type: varchar

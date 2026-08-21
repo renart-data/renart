@@ -77,8 +77,8 @@ source codes are stable; changing one is a file-format migration. All
 
 ## 4. Reconciliation
 
-**Dependencies** (`service/asset_dependencies.go`): inferred from the embedded
-Polyglot WASM SQL AST, then
+**Dependencies** (`service/asset_dependencies.go`): inferred from Golyglot's
+native typed SQL AST, then
 
 ```
 final depends = (inferred − renart_dep_drop) + renart_dep_add
@@ -308,7 +308,7 @@ changed atomically after the dependency is added.
   transaction DTOs: `source_column`, `mask`, `default`, precision/scale/length,
   collation, governance fields, checks, and column-local `meta` are preserved.
   Logical type normalization is comparison-only and ephemeral; native Bruin
-  fields remain the persisted representation. Alias comparison uses Polyglot's
+  fields remain the persisted representation. Alias comparison uses Golyglot's
   data-type parser, but precision, scale, length, nested element types, and
   timezone structure must match losslessly before two evidence sources count as
   the same known type.

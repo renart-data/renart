@@ -14,7 +14,7 @@ import (
 // type) from its rendered definition and the declared columns of the pipeline's
 // assets — the assets are the source of truth, not the materialized warehouse
 // tables. It renders the asset's SQL (Jinja + variables + dates + macros), then
-// asks the polyglot engine to annotate the projection's types against the
+// asks the native Golyglot engine to annotate the projection's types against the
 // upstream asset schema.
 func (s *AssetService) InferAssetColumnsFromDefinition(ctx context.Context, assetID string) ([]WorkspaceColumn, *APIError) {
 	_, parsedPipeline, asset, err := s.deps.ResolveAssetByID(ctx, assetID)

@@ -618,7 +618,7 @@ SELECT
     concat('device_', lpad(cast(1 + ((event_id * 7) % 12) AS varchar), 2, '0')) AS device_id,
     current_timestamp - ((event_id % 180) * INTERVAL '10 minutes') AS observed_at,
     round(18 + ((event_id * 13) % 210) / 10.0, 1) AS temperature_c,
-    5 + ((event_id * 17) % 96) AS battery_percent,
+    (5 + ((event_id * 17) % 96))::integer AS battery_percent,
     CASE
         WHEN event_id % 29 = 0 THEN 'error'
         WHEN event_id % 11 = 0 THEN 'warning'

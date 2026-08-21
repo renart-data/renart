@@ -8,7 +8,5 @@ The extension starts:
 renart sql-lsp --workspace <workspace>
 ```
 
-It is intended for dbt and Bruin pipeline repositories. The server downloads
-and verifies the matching Polyglot SQL FFI library automatically unless
-`renartSqlLsp.disablePolyglotDownload` is enabled.
-
+It is intended for dbt and Bruin pipeline repositories. SQL parsing and
+validation run in-process, so the extension does not download a parser library.

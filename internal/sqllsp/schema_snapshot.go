@@ -32,7 +32,7 @@ type OutputSchemaInference struct {
 const maxSchemaInferenceRounds = 5
 
 // InferSchemaSnapshot fills unknown SQL relation schemas with one shared,
-// topologically ordered fixpoint. Polyglot's AST/type annotation is the fast
+// topologically ordered fixpoint. Golyglot's typed AST analysis is the fast
 // path; cached compact analysis fills incomplete projection names (especially
 // stars), and the tolerant LSP projection analyzer is the final fallback.
 func InferSchemaSnapshot(ctx context.Context, graph CanonicalGraph, assets []InferenceAsset) CanonicalGraph {
@@ -190,7 +190,10 @@ func columnInfosFromSchemaColumns(columns []sqlintelligence.SchemaColumn) []Colu
 	result := make([]ColumnInfo, 0, len(columns))
 	for _, column := range columns {
 		if name := strings.TrimSpace(column.Name); name != "" {
-			result = append(result, ColumnInfo{Name: name, Type: strings.TrimSpace(column.Type), Nullable: column.Nullable})
+			// Inference layers describe names and types only. Constraints belong to
+			// the declared/observed overlays below; otherwise a query expression's
+			// inferred nullability is mistaken for durable table metadata.
+			result = append(result, ColumnInfo{Name: name, Type: strings.TrimSpace(column.Type)})
 		}
 	}
 	return result
@@ -294,7 +297,7 @@ func validationSchemaConstraints(graph CanonicalGraph, validationSchema sqlintel
 			if column.ForeignKey != nil {
 				table := strings.TrimSpace(column.ForeignKey.Table)
 				targetColumn := strings.TrimSpace(column.ForeignKey.Column)
-				// Polyglot validates the entire schema before the query. Only pass
+				// Golyglot validates the entire schema before the query. Only pass
 				// references whose target is represented in this snapshot; otherwise
 				// one unrelated or partially-known asset would emit E220 in every
 				// document. Bruin remains authoritative for invalid FK metadata.

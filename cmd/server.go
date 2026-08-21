@@ -20,7 +20,6 @@ import (
 	gogit "github.com/go-git/go-git/v5"
 	"github.com/spf13/afero"
 	"github.com/urfave/cli/v3"
-	"renart/internal/sqlformat"
 	"renart/internal/web/bus"
 	"renart/internal/web/completion"
 	"renart/internal/web/events"
@@ -522,10 +521,8 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		CurrentState: func() service.WorkspaceState {
 			return server.currentState()
 		},
-		RemoteCatalog:  remoteCatalog,
-		PolyglotClient: service.NewLazyPolyglotClient(),
+		RemoteCatalog: remoteCatalog,
 	})
-	sqlformat.PrewarmPolyglotCompiler()
 	server.jinjaRenderSvc = service.NewJinjaRenderService(service.JinjaRenderDependencies{
 		ResolveAssetByID:            server.resolveAssetByID,
 		ResolveNotebookJinjaContext: server.notebookSvc.JinjaContextForAsset,

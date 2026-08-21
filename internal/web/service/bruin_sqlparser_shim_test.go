@@ -16,5 +16,5 @@ func TestBruinRustSQLParserLinkShimFailsClosed(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = parser.UsedTables("select * from should_not_be_parsed", "duckdb")
-	require.ErrorContains(t, err, "Bruin RustSQLParser is disabled; Renart uses embedded Polyglot WASM")
+	require.ErrorContains(t, err, "Bruin RustSQLParser is disabled; Renart uses native Golyglot")
 }

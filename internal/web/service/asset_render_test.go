@@ -1201,7 +1201,7 @@ SELECT 'second';
 	assert.Less(t, second, post)
 }
 
-func TestAssetRenderServicePostgresUsesPolyglotDeclareHoister(t *testing.T) {
+func TestAssetRenderServicePostgresUsesGolyglotDeclareHoister(t *testing.T) {
 	t.Parallel()
 
 	_, root := writeTypeCheckWorkspace(t, `

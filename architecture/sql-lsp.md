@@ -6,9 +6,9 @@ JSON-RPC LSP server (`renart debug sql-lsp`) for external editors, and HTTP
 endpoints (`/api/sql/lsp/*`) consumed by the web UI's Monaco editors —
 including notebook cells.
 
-The implementation is Go around an embedded parser-backed Polyglot SQL WASM
-engine. A tolerant Go analyzer remains additive for incomplete SQL and for LSP
-features such as navigation, completion, and code actions.
+The implementation uses the in-process, pure-Go Golyglot parser and semantic
+engine. A tolerant Renart analyzer remains additive for incomplete SQL and for
+LSP features such as navigation, completion, and code actions.
 
 ## 1. Layering
 
@@ -18,7 +18,7 @@ Graph/provider sources
         ↓                                      ↓
 Canonical graph + schema confidence + saved asset diagnostics
         ↓
-shared SQL validator (internal/sqlintelligence, embedded Polyglot WASM)
+shared SQL validator (internal/sqlintelligence, native Golyglot)
         + tolerant/policy analyzer (internal/sqllsp)
         ↓                                      ↓
 HTTP/Monaco adapter                     stdio JSON-RPC adapter
@@ -34,24 +34,21 @@ HTTP/Monaco adapter                     stdio JSON-RPC adapter
   type-check, HTTP diagnostics, and stdio diagnostics. A registry classifies
   every type-check code as document, asset/header, or pipeline-only delivery.
 - **Shared semantic validator** (`internal/sqlintelligence`): validates the
-  unsaved document against the canonical schema with the embedded Polyglot
-  WASM runtime. Type-check calls the same validator for rendered SQL. Strict
+  unsaved document against the canonical schema with native Golyglot. Type-check
+  calls the same validator for rendered SQL. Strict
   identifier, expression-type, and reference checks are enabled; declared
   column constraints are sent in the schema payload. Unknown schema confidence
   suppresses only findings that depend on that relation. Heuristic join-quality
   warnings remain lint-policy candidates rather than default type errors.
 - **Engine** (`analyzer.go`): stateless over an immutable graph plus an
-  in-memory index. Its tolerant analyzer remains the fallback when semantic
-  validation cannot run and supplies additive LSP policy checks such as
+  in-memory index. Its tolerant analyzer supplies additive LSP policy checks such as
   circular and cross-connection references. Overlapping findings deduplicate
   by stable code and range.
-- **Native Polyglot FFI** (`polyglot_ffi.go`) is an optional syntax fallback;
-  it is not required for schema-aware diagnostics or offline operation.
 - **Templates**: the HTTP/Monaco adapter resolves the owning pipeline and asset,
   renders the unsaved document with the same variable defaults, macros,
   platform built-ins, and `this` value as preview/type-check plus a
   schedule-derived preview window, then attaches a request-local
-  `ProjectRenderedSQL` source map. Polyglot and every tolerant LSP feature
+  `ProjectRenderedSQL` source map. Golyglot and every tolerant LSP feature
   therefore analyze rendered SQL while ranges map back to the template buffer.
   If an in-progress template cannot render, the core engine falls back to its
   length-aware `{{ ref(...) }}` / `{{ source(...) }}` expansion rather than
@@ -180,7 +177,7 @@ coordinator's `WorkspaceState` rather than the filesystem:
 - Per-edit diagnostics always validate the current unsaved content against the
   saved revision snapshot. For Jinja documents the request additionally carries
   a source-mapped rendering made from the saved pipeline context, so raw
-  delimiters never reach Polyglot and completion/hover/navigation use the same
+  delimiters never reach Golyglot and completion/hover/navigation use the same
   generated SQL. The browser aborts superseded requests and checks the Monaco
   model version and content before installing markers, so response N cannot
   overwrite markers for N+1.
@@ -189,8 +186,8 @@ coordinator's `WorkspaceState` rather than the filesystem:
   workspace, asks DuckDB for the zero-row result schema, and caches columns by
   file size and modification time. A missing or temporarily invalid file keeps
   valid DuckDB relation syntax without becoming an unknown-table error.
-- The optional native Polyglot client is shared and loaded lazily; requests
-  never wait for a native download before publishing embedded-WASM results.
+- No parser artifact is downloaded or initialized lazily. The first request
+  runs the same native engine as every later request.
 
 ## 3. Notebook cells
 
@@ -273,7 +270,7 @@ unfinished plain literals produced while a user is typing.
 
 `InferSchemaSnapshot` is the one output-schema pipeline used by type-check and
 both LSP graph adapters. Declared/provider columns are applied first. For an
-undeclared SQL relation, Polyglot AST/type annotation is the fast path for
+undeclared SQL relation, Golyglot typed-AST analysis is the fast path for
 explicit projections. If projection names are incomplete (most importantly,
 `SELECT *`), a bounded compact-analysis cache keyed by SQL, normalized dialect,
 and deterministic schema payload supplies scope-aware expansion through joins
@@ -308,7 +305,7 @@ Seed and Python outputs: runtime sampling is deliberately not used to make a
 revision-cached authoring graph nondeterministic.
 
 Declared SQL schemas are also an output contract. On the final executable
-query, the shared validator infers the projection with Polyglot. When every
+query, the shared validator infers the projection with Golyglot. When every
 output name is explicit, it compares the declared and inferred name sets and
 emits `declared-output-schema-drift` for missing or undeclared columns; name-only
 declarations participate in this check. The annotated AST remains the fast
@@ -318,7 +315,7 @@ It fills transitive types through nested CTEs and can expand stars when every
 physical source has a complete schema. `SELECT *` name-set comparisons over a
 partial graph schema stay silent.
 
-Same-name columns are compared by type. Polyglot's standalone data-type parser
+Same-name columns are compared by type. Golyglot's standalone data-type parser
 canonicalizes dialect spellings (`INT`/`INTEGER`, `TEXT`/`VARCHAR`,
 `NUMERIC`/`DECIMAL`, timestamp timezone spellings, and parameterized types), so
 only meaningful differences produce `declared-column-type-drift` warnings.
@@ -363,8 +360,8 @@ correctness net for when the edges lie.
 Design notes, in decreasing order of importance:
 
 - **The edges are cheap and reliable**: pipeline `depends:` is auto-reconciled
-  on every asset save (`reconcileSQLAssetDependencies` uses the shared embedded
-  Polyglot WASM table scan and persists the result; async retry while mid-edit
+  on every asset save (`reconcileSQLAssetDependencies` uses the shared native
+  Golyglot table scan and persists the result; async retry while mid-edit
   SQL doesn't parse), and notebook cell upstreams are derived at load time by
   the same used-tables policy (in memory only — cell files are never rewritten).
   Both arrive in `model.Asset.Upstreams`, name-keyed like the graph's
@@ -438,7 +435,7 @@ draft and require the dataset's selected query connection.
   to its version-controlled asset.
 - **Diagnostics**: unresolved relation / alias / column (column checks only fire
   when the relation's columns are known from asset SQL or declared metadata),
-  ambiguous unqualified columns in multi-relation scopes, Polyglot expression
+  ambiguous unqualified columns in multi-relation scopes, Golyglot expression
   type incompatibilities, declared-versus-inferred output name, type, and
   unsafe nullability drift warnings,
   **circular self-reference** (a used relation that resolves to the current
@@ -456,28 +453,17 @@ draft and require the dataset's selected query connection.
   live state via a ref) — re-registering them on a workspace/SSE update
   re-triggers any open SQL suggestion widget and drops its selection.
 
-## 7. Embedded Polyglot runtime lifetime
+## 7. Native Golyglot runtime
 
-The semantic core and formatter use the exact WASM artifact shipped by
-`@polyglot-sql/sdk` 0.6.2. `web/scripts/sync-polyglot-wasm.mjs --check` fails CI
-when the checked-in artifact differs from the pinned package, and a runtime
-test verifies the module's exported version.
+The semantic core, dependency reader, data-type parser, and formatter call the
+typed Golyglot Go APIs directly. There is no SQL WASM artifact, FFI/native
+library download, module pool, or SQL cache warmup. Syntax errors and semantic
+diagnostics carry source byte spans from the same source-backed AST used for
+table and column extraction.
 
-Schema validation enables Polyglot's opt-in expression type checks. Syntax
-diagnostics consume the structured byte offsets returned by the WASM response;
-the older line/column text parser remains only as compatibility fallback.
-Standalone data-type parses are cached by dialect and normalized type text so
-live drift checks do not repeatedly cross the WASM boundary for common types.
+Standalone data-type parses remain cached by dialect and normalized type text.
 Compact query analysis is likewise cached by SQL, normalized dialect, and the
-deterministic schema-plus-constraint payload. It is not added to ordinary
-explicit-projection edits unless the faster inference is missing a fact needed
-by a declared output contract.
-
-Wazero uses the optimizing compiler plus an on-disk compilation cache, with an
-interpreter only as a cold-start bridge. Module instances live in a bounded
-channel pool (at most four), each has a 256 MiB hard memory limit, and an
-instance is discarded only if a call leaves more than 16 MiB of extra linear
-memory retained. Healthy modules are reused indefinitely instead of being
-re-created after a call count. Cancellation closes an executing module; closed
-modules are never returned to the pool. The interpreter is retired once the
-compiled engine is ready.
+deterministic schema-plus-constraint payload. The cache avoids repeating
+semantic work across fixpoint rounds and identical editor requests; canceled or
+failed requests never populate it. Python intelligence is a separate embedded
+WASM concern documented in `backend.md`.

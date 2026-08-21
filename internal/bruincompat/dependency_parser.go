@@ -13,7 +13,7 @@ import (
 )
 
 // DependencyParser supplies the subset of Bruin's parser contract Renart uses
-// for dependency reconciliation, backed by the shared Polyglot WASM runtime.
+// for dependency reconciliation, backed by the shared pure-Go Golyglot parser.
 type DependencyParser struct {
 	ctx context.Context
 }

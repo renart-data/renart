@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"renart/internal/authoringdiag"
-	"renart/internal/sqlformat"
 )
 
 type polyglotParseResponse struct {
@@ -102,6 +101,8 @@ type polyglotColumnMetadata struct {
 	ActualSchemaKnown bool
 }
 
+type polyglotSelectAliasOffsets map[string][]int
+
 var (
 	polyglotQuotedIdentifierPattern   = regexp.MustCompile(`'([^']+)'`)
 	polyglotCallLikeSubqueryPattern   = regexp.MustCompile(`(?i)\b([A-Za-z_][\w$]*)\s+\(\s*select\b`)
@@ -113,80 +114,15 @@ func ParseContextWithSchemaPolyglot(query, dialect string, schema Schema, column
 }
 
 func ParseContextWithSchemaPolyglotContext(ctx context.Context, query, dialect string, schema Schema, columnSourceMethods ...SchemaColumnSourceMethods) (*ParseContext, error) {
-	return parseContextWithSchemaPolyglotContext(ctx, query, dialect, schema, nil, columnSourceMethods...)
+	return parseContextWithSchemaGolyglotContext(ctx, query, dialect, schema, nil, columnSourceMethods...)
 }
 
 func ParseContextWithSchemaConstraintsPolyglotContext(ctx context.Context, query, dialect string, schema Schema, constraints SchemaConstraints, columnSourceMethods ...SchemaColumnSourceMethods) (*ParseContext, error) {
-	return parseContextWithSchemaPolyglotContext(ctx, query, dialect, schema, constraints, columnSourceMethods...)
+	return parseContextWithSchemaGolyglotContext(ctx, query, dialect, schema, constraints, columnSourceMethods...)
 }
 
 func parseContextWithSchemaPolyglotContext(ctx context.Context, query, dialect string, schema Schema, constraints SchemaConstraints, columnSourceMethods ...SchemaColumnSourceMethods) (*ParseContext, error) {
-	if dialect == "" {
-		dialect = sqlformat.DialectGeneric
-	}
-
-	parseJSON, err := sqlformat.Call(ctx, "parse", query, dialect)
-	if err != nil {
-		return nil, err
-	}
-	var parseResp polyglotParseResponse
-	if err := json.Unmarshal([]byte(parseJSON), &parseResp); err != nil {
-		return nil, err
-	}
-	if !parseResp.Success {
-		if recovered := recoverPolyglotCallLikeSubquery(query, fmt.Sprint(parseResp.Error)); recovered != nil {
-			return recovered, nil
-		}
-		message := fmt.Sprint(parseResp.Error)
-		return &ParseContext{Diagnostics: []ParseContextDiagnostic{{Code: authoringdiag.CodeSQLSyntax, Source: authoringdiag.SourcePolyglot, Message: message, Severity: "error", Range: parseResponseErrorRange(query, message, parseResp)}}, Errors: []string{message}}, nil
-	}
-
-	tokenJSON, err := sqlformat.Call(ctx, "tokenize", query, dialect)
-	if err != nil {
-		return nil, err
-	}
-	var tokenResp polyglotTokenizeResponse
-	if err := json.Unmarshal([]byte(tokenJSON), &tokenResp); err != nil {
-		return nil, err
-	}
-	if !tokenResp.Success {
-		return nil, fmt.Errorf("polyglot tokenization failed: %v", tokenResp.Error)
-	}
-
-	ast, err := decodePolyglotAST(parseResp.AST)
-	if err != nil {
-		return nil, err
-	}
-
-	sourceMethods := firstColumnSourceMethods(columnSourceMethods)
-	ctes := extractPolyglotCTEs(query, ast, tokenResp.Tokens, schema, sourceMethods)
-	validationSchema := mergePolyglotCTEsIntoSchema(schema, ctes)
-
-	validateJSON, err := validateWithPolyglot(ctx, query, dialect, validationSchema, constraints)
-	if err != nil {
-		return nil, err
-	}
-	var validateResp polyglotValidateResponse
-	if validateJSON != "" {
-		if err := json.Unmarshal([]byte(validateJSON), &validateResp); err != nil {
-			return nil, err
-		}
-	}
-
-	tables := extractPolyglotTables(query, ast, tokenResp.Tokens, validationSchema, ctes)
-	qualifierToTable := polyglotTableQualifierMap(tables)
-
-	columns := extractPolyglotColumns(query, ast, tokenResp.Tokens, qualifierToTable, tables)
-
-	return &ParseContext{
-		QueryKind:        polyglotQueryKind(ast),
-		IsSingleSelect:   len(ast) == 1 && polyglotQueryKind(ast) == "select",
-		IsReadOnlyResult: polyglotIsReadOnlyResult(ast),
-		Tables:           tables,
-		Columns:          columns,
-		Diagnostics:      polyglotDiagnostics(query, tokenResp.Tokens, validateResp.Errors, tables, columns, validationSchema, ctes, sourceMethods, polyglotSelectAliases(ast), polyglotDescribeColumns(query)),
-		Errors:           []string{},
-	}, nil
+	return parseContextWithSchemaGolyglotContext(ctx, query, dialect, schema, constraints, columnSourceMethods...)
 }
 
 func decodePolyglotAST(raw json.RawMessage) ([]map[string]any, error) {
@@ -305,17 +241,6 @@ func nearestNonSpaceOffsetOnLine(query string, offset int) int {
 
 func isSpaceByte(value byte) bool {
 	return value == ' ' || value == '\t' || value == '\r' || value == '\n'
-}
-
-func validateWithPolyglot(ctx context.Context, query, dialect string, schema Schema, constraints ...SchemaConstraints) (string, error) {
-	if len(schema) == 0 {
-		return "", nil
-	}
-	schemaJSON, err := marshalPolyglotSchema(schema, constraints...)
-	if err != nil {
-		return "", err
-	}
-	return sqlformat.Call(ctx, "validate_with_schema", query, string(schemaJSON), dialect, `{"strict":true,"check_types":true,"check_references":true}`)
 }
 
 func extractPolyglotCTEs(query string, ast []map[string]any, tokens []polyglotToken, schema Schema, columnSourceMethods SchemaColumnSourceMethods) map[string]polyglotCTE {
@@ -1000,7 +925,7 @@ func findTokenRangeFrom(query string, tokens []polyglotToken, parts []string, st
 	return -1, nil
 }
 
-func polyglotDiagnostics(query string, tokens []polyglotToken, errors []polyglotValidationError, tables []ParseContextTable, columns []ParseContextColumn, schema Schema, ctes map[string]polyglotCTE, sourceMethods SchemaColumnSourceMethods, selectAliases map[string]bool, describeColumns map[string]bool) []ParseContextDiagnostic {
+func polyglotDiagnostics(query string, tokens []polyglotToken, errors []polyglotValidationError, tables []ParseContextTable, columns []ParseContextColumn, schema Schema, ctes map[string]polyglotCTE, sourceMethods SchemaColumnSourceMethods, selectAliases polyglotSelectAliasOffsets, describeColumns map[string]bool) []ParseContextDiagnostic {
 	diagnostics := make([]ParseContextDiagnostic, 0, len(errors))
 	validationKeys := map[string]bool{}
 	for _, item := range errors {
@@ -1039,7 +964,7 @@ func polyglotDiagnostics(query string, tokens []polyglotToken, errors []polyglot
 			message = "Unresolved table: " + match[1]
 		}
 		if strings.EqualFold(item.Code, "E201") && len(match) > 1 {
-			if selectAliases[strings.ToLower(match[1])] || describeColumns[strings.ToLower(match[1])] {
+			if polyglotSelectAliasVisible(selectAliases, match[1], rangeInfo) || describeColumns[strings.ToLower(match[1])] {
 				continue
 			}
 			if isCopyOptionValue(query, match[1], rangeInfo) {
@@ -1166,7 +1091,7 @@ func polyglotDiagnosticKey(kind, identifier string) string {
 func polyglotLocalTableDiagnostics(tables []ParseContextTable, schema Schema, validationKeys map[string]bool) []ParseContextDiagnostic {
 	diagnostics := []ParseContextDiagnostic{}
 	for _, table := range tables {
-		if table.Name == "" || table.SourceKind == "cte" || isDuckDBPathTable(table.Name) {
+		if table.Name == "" || table.SourceKind == "cte" || table.SourceKind == "derived" || table.SourceKind == "table_function" || isDuckDBPathTable(table.Name) {
 			continue
 		}
 		if _, ok := schema[table.ResolvedName]; ok {
@@ -1197,13 +1122,17 @@ func isDuckDBPathTable(name string) bool {
 	return strings.Contains(name, "/") || strings.HasPrefix(name, ".")
 }
 
-func polyglotLocalColumnDiagnostics(columns []ParseContextColumn, tables []ParseContextTable, selectAliases map[string]bool, describeColumns map[string]bool, validationKeys map[string]bool) []ParseContextDiagnostic {
+func polyglotLocalColumnDiagnostics(columns []ParseContextColumn, tables []ParseContextTable, selectAliases polyglotSelectAliasOffsets, describeColumns map[string]bool, validationKeys map[string]bool) []ParseContextDiagnostic {
 	diagnostics := []ParseContextDiagnostic{}
 	for _, column := range columns {
 		if column.Name == "" {
 			continue
 		}
-		if column.Qualifier == "" && (selectAliases[strings.ToLower(column.Name)] || describeColumns[strings.ToLower(column.Name)]) {
+		var columnRange *ParseContextRange
+		if len(column.Parts) > 0 {
+			columnRange = &column.Parts[len(column.Parts)-1].Range
+		}
+		if column.Qualifier == "" && (polyglotSelectAliasVisible(selectAliases, column.Name, columnRange) || describeColumns[strings.ToLower(column.Name)]) {
 			continue
 		}
 		if column.ResolvedTable == "" {
@@ -1246,6 +1175,22 @@ func polyglotLocalColumnDiagnostics(columns []ParseContextColumn, tables []Parse
 		}
 	}
 	return diagnostics
+}
+
+func polyglotSelectAliasVisible(aliases polyglotSelectAliasOffsets, name string, reference *ParseContextRange) bool {
+	offsets := aliases[strings.ToLower(strings.TrimSpace(name))]
+	if len(offsets) == 0 {
+		return false
+	}
+	if reference == nil {
+		return true
+	}
+	for _, offset := range offsets {
+		if offset < reference.Start {
+			return true
+		}
+	}
+	return false
 }
 
 func polyglotTableByResolvedName(tables []ParseContextTable, resolvedName string) *ParseContextTable {

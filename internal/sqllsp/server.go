@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 
-	polyglot "github.com/tobilg/polyglot/packages/go"
 	"renart/internal/sqlformat"
 )
 
@@ -22,7 +21,6 @@ type Server struct {
 	engine                        *Engine
 	docs                          map[URI]TextDocumentItem
 	graph                         CanonicalGraph
-	poly                          *polyglot.Client
 	workspaceRoot                 string
 	graphLoader                   WorkspaceGraphLoader
 	duckDBFileSchemas             *DuckDBFileSchemaCache
@@ -31,22 +29,21 @@ type Server struct {
 
 type WorkspaceGraphLoader func(context.Context, string) (CanonicalGraph, error)
 
-func NewServer(graph CanonicalGraph, poly *polyglot.Client) *Server {
+func NewServer(graph CanonicalGraph) *Server {
 	return &Server{
-		engine:            NewEngineWithPolyglot(graph, poly),
+		engine:            NewEngine(graph),
 		docs:              map[URI]TextDocumentItem{},
-		poly:              poly,
 		graph:             graph,
 		duckDBFileSchemas: NewDuckDBFileSchemaCache(),
 	}
 }
 
-func NewWorkspaceServer(workspaceRoot string, graph CanonicalGraph, poly *polyglot.Client) *Server {
-	return NewWorkspaceServerWithLoader(workspaceRoot, graph, poly, LoadGraphFromDir)
+func NewWorkspaceServer(workspaceRoot string, graph CanonicalGraph) *Server {
+	return NewWorkspaceServerWithLoader(workspaceRoot, graph, LoadGraphFromDir)
 }
 
-func NewWorkspaceServerWithLoader(workspaceRoot string, graph CanonicalGraph, poly *polyglot.Client, loader WorkspaceGraphLoader) *Server {
-	server := NewServer(graph, poly)
+func NewWorkspaceServerWithLoader(workspaceRoot string, graph CanonicalGraph, loader WorkspaceGraphLoader) *Server {
+	server := NewServer(graph)
 	server.workspaceRoot = workspaceRoot
 	server.graphLoader = loader
 	return server
@@ -58,7 +55,7 @@ func (s *Server) SetDuckDBFilesystemAccess(enabled bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.disableDuckDBFilesystemAccess = !enabled
-	s.engine = NewEngineWithPolyglotOptions(s.graph, s.poly, EngineOptions{
+	s.engine = NewEngineWithOptions(s.graph, EngineOptions{
 		DisableDuckDBFilesystemAccess: !enabled,
 	})
 }
@@ -312,7 +309,6 @@ func (s *Server) currentEngine() *Engine {
 func (s *Server) engineForDocument(ctx context.Context, doc TextDocumentItem) *Engine {
 	s.mu.RLock()
 	graph := s.graph
-	poly := s.poly
 	workspaceRoot := s.workspaceRoot
 	disableFilesystemAccess := s.disableDuckDBFilesystemAccess
 	cache := s.duckDBFileSchemas
@@ -320,7 +316,7 @@ func (s *Server) engineForDocument(ctx context.Context, doc TextDocumentItem) *E
 	if !disableFilesystemAccess && strings.EqualFold(dialectForDocumentInGraph(graph, doc.URI), "duckdb") {
 		graph = EnrichDuckDBFileRelations(ctx, graph, doc, workspaceRoot, cache)
 	}
-	return NewEngineWithPolyglotOptions(graph, poly, EngineOptions{
+	return NewEngineWithOptions(graph, EngineOptions{
 		DisableDuckDBFilesystemAccess: disableFilesystemAccess,
 	})
 }
@@ -353,7 +349,7 @@ func (s *Server) reloadWorkspaceGraphContext(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.graph = graph
-	s.engine = NewEngineWithPolyglotOptions(graph, s.poly, EngineOptions{
+	s.engine = NewEngineWithOptions(graph, EngineOptions{
 		DisableDuckDBFilesystemAccess: s.disableDuckDBFilesystemAccess,
 	})
 	return nil

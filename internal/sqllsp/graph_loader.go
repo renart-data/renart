@@ -20,6 +20,11 @@ var (
 	dbtSourcePattern  = regexp.MustCompile(`(?is)\{\{\s*source\s*\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]+)['"]`)
 )
 
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
 func LoadGraphFromDir(ctx context.Context, root string) (CanonicalGraph, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
