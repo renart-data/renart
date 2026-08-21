@@ -16,8 +16,8 @@ importers:
         version: 10.1.0
     devDependencies:
       '@types/node':
-        specifier: ^26.1.1
-        version: 26.1.1
+        specifier: ^26.2.0
+        version: 26.2.0
       '@types/vscode':
         specifier: ^1.125.0
         version: 1.125.0
@@ -27,8 +27,8 @@ importers:
 
 packages:
 
-  '@types/node@26.1.1':
-    resolution: {integrity: sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw==}
+  '@types/node@26.2.0':
+    resolution: {integrity: sha512-5IviulTZeRNp2vAJ514cc/HUlY5nZ9fCbq9DMyC52BrhFZACo3nI0R7qBxhQmo/d27NFe96ur/b7Wwxklda+kg==}
 
   '@types/vscode@1.125.0':
     resolution: {integrity: sha512-0icm/ZQAaism87P0ekHqi4/Ju9du+Tm0RUW+y7vqRsxY2cY0FNRX1nAnaW7nT6npPt2tfHiheZ55Zm9UhqonFA==}
@@ -197,7 +197,7 @@ packages:
 
 snapshots:
 
-  '@types/node@26.1.1':
+  '@types/node@26.2.0':
     dependencies:
       undici-types: 8.3.0
 
