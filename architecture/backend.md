@@ -24,7 +24,8 @@ main.go → cmd.Root() → urfave/cli commands (cmd/)
   debug       hidden group: fp (fingerprint DAG), sql-lsp
               (stdio LSP), warm-cache (wasm compile caches)
 
-cmd/server.go  flags → serverConfig → wiring (services, watcher, scheduler)
+cmd/server.go  flags → serverConfig → core wiring (services, watcher, scheduler)
+cmd/server_presentation.go       presentation-domain adapter wiring
 cmd/web.go     route registration + a thin webServer adapter
   ├── internal/web/httpapi        HTTP handlers, one file per domain
   ├── internal/web/service        compatibility facade + remaining application
@@ -59,7 +60,9 @@ revision-checked update, typed replacement, and preview preparation while the
 presentation runtime owns read-only query validation, filter rendering,
 bounded execution, caching, and result shaping. The facade retains narrow
 adapters for workspace schema inference and resolving an asset-backed dataset
-to its environment-specific physical relation.
+to its environment-specific physical relation. Those adapters are assembled by
+`cmd/server_presentation.go`, keeping their secret-purpose and execution wiring
+out of the central server constructor.
 
 ## 2. Runtime model
 

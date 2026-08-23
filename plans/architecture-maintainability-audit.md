@@ -499,7 +499,9 @@ narrow adapters for workspace schema inference, connection construction/query
 execution, and resolving asset-backed datasets to environment-specific
 physical relations. Direct domain tests cover lifecycle/CAS, path traversal,
 query rendering, and query-backed execution while the existing facade tests
-preserve the HTTP-facing contract.
+preserve the HTTP-facing contract. Presentation-specific composition now lives
+in [`cmd/server_presentation.go`](../cmd/server_presentation.go) instead of the
+central server constructor, so later adapter changes have one wiring boundary.
 
 #### Evidence
 
@@ -878,7 +880,8 @@ In progress:
 - the shared application error contract lives below the facade;
 - presentation document/model lifecycle and read-only runtime are owned by the
   presentation domain, with a compatibility facade preserving handler and
-  composition-root APIs.
+  composition-root APIs;
+- presentation adapter construction is split out of the central server wiring.
 
 Next, use the same strangler shape to extract pipeline execution and notebook
 application services. Keep the `service` facade and move handlers one group at
