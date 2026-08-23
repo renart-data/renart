@@ -10,6 +10,7 @@ the original.
 
 | Doc | Status |
 | --- | --- |
+| [architecture-maintainability-audit.md](architecture-maintainability-audit.md) | investigation — prioritized convergence, boundary, test-cost, and scaling cleanup roadmap |
 | [asset-name-path-independence.md](asset-name-path-independence.md) | design plan — make Bruin's explicit asset name independent from the Git definition path, without introducing a physical-output alias |
 | [dbt-assets.md](dbt-assets.md) | evaluation — enabling renart intelligence on existing dbt projects |
 | [distributed-freshness-log.md](distributed-freshness-log.md) | investigated proposal — opt-in append-only warehouse receipt journals for recovery and trusted cross-installation freshness |
