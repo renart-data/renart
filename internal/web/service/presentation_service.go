@@ -33,21 +33,25 @@ type PresentationService struct {
 	mu   sync.Mutex
 }
 
+// renart:web
 type PresentationDocument struct {
 	Artifact model.PresentationArtifact `json:"artifact"`
 	Content  string                     `json:"content"`
 }
 
+// renart:web
 type CreatePresentationRequest struct {
 	Kind  string `json:"kind"`
 	Title string `json:"title"`
 }
 
+// renart:web
 type UpdatePresentationRequest struct {
 	ExpectedRevision string `json:"expected_revision"`
 	Content          string `json:"content"`
 }
 
+// renart:web
 type ReplacePresentationRequest struct {
 	ExpectedRevision string                     `json:"expected_revision"`
 	Artifact         model.PresentationArtifact `json:"artifact"`

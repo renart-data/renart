@@ -3,6 +3,7 @@ package model
 // PresentationArtifact is a Git-native dashboard or report definition loaded
 // from a *.dashboard.yml / *.report.yml file. Runtime filter values and query
 // results are intentionally absent; this DTO is the authored workspace state.
+// renart:web
 type PresentationArtifact struct {
 	ID             string                      `json:"id"`
 	WorkspaceID    string                      `json:"workspace_id"`
@@ -88,6 +89,7 @@ type PresentationFinding struct {
 // PresentationRunRequest contains runtime-only state for a rendered dashboard
 // or report. Filter values and environment selection are deliberately not
 // persisted into the Git-native artifact.
+// renart:web
 type PresentationRunRequest struct {
 	Environment      string         `json:"environment,omitempty"`
 	FilterValues     map[string]any `json:"filter_values,omitempty"`
@@ -98,6 +100,7 @@ type PresentationRunRequest struct {
 // PresentationPreviewRequest carries an unsaved authored snapshot across the
 // same content-revision boundary as the visual editor. Runtime-only fields are
 // kept outside the artifact so preview can never accidentally persist them.
+// renart:web
 type PresentationPreviewRequest struct {
 	ExpectedRevision string               `json:"expected_revision"`
 	Artifact         PresentationArtifact `json:"artifact"`
@@ -110,6 +113,7 @@ type PresentationPreviewRequest struct {
 // PresentationRunResult is a bounded runtime projection. Results are keyed by
 // visualization rather than only by dataset because two visualizations may
 // bind different filters to the same underlying dataset.
+// renart:web
 type PresentationRunResult struct {
 	Status           string                               `json:"status"`
 	ArtifactRevision string                               `json:"artifact_revision"`
@@ -122,6 +126,7 @@ type PresentationRunResult struct {
 // prevent execution. A preview is therefore useful while an artifact is being
 // repaired, without weakening the saved run contract or writing intermediate
 // YAML to the workspace.
+// renart:web
 type PresentationPreviewResult struct {
 	Status           string                               `json:"status"`
 	ArtifactRevision string                               `json:"artifact_revision"`

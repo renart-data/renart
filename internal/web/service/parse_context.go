@@ -62,6 +62,7 @@ type ParseContextSchemaTable struct {
 	Columns        []ParseContextSchemaColumn `json:"columns"`
 }
 
+// renart:web-name SqlParseContextRange
 type ParseContextRange struct {
 	Start   int `json:"start"`
 	End     int `json:"end"`
@@ -71,12 +72,14 @@ type ParseContextRange struct {
 	EndCol  int `json:"end_col"`
 }
 
+// renart:web-name SqlParseContextPart
 type ParseContextPart struct {
 	Name  string            `json:"name"`
 	Kind  string            `json:"kind"`
 	Range ParseContextRange `json:"range"`
 }
 
+// renart:web-name SqlParseContextDiagnostic
 type ParseContextDiagnostic struct {
 	Code     string             `json:"code,omitempty"`
 	Source   string             `json:"source,omitempty"`
@@ -85,6 +88,7 @@ type ParseContextDiagnostic struct {
 	Range    *ParseContextRange `json:"range,omitempty"`
 }
 
+// renart:web-name SqlParseContextTable
 type ParseContextTable struct {
 	Name         string                       `json:"name"`
 	SourceKind   string                       `json:"source_kind,omitempty"`
@@ -97,6 +101,7 @@ type ParseContextTable struct {
 	ScopeRange   *ParseContextRange           `json:"scope_range,omitempty"`
 }
 
+// renart:web-name SqlParseContextColumn
 type ParseContextColumn struct {
 	Name          string             `json:"name"`
 	Qualifier     string             `json:"qualifier,omitempty"`
@@ -104,6 +109,8 @@ type ParseContextColumn struct {
 	Parts         []ParseContextPart `json:"parts"`
 }
 
+// renart:web
+// renart:web-name SqlParseContextResponse
 type ParseContextResult struct {
 	Status           string                   `json:"status"`
 	AssetID          string                   `json:"asset_id"`

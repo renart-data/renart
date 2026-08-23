@@ -65,6 +65,7 @@ type ColumnSchemaDrift struct {
 
 // ColumnInferencePreview is a non-mutating schema observation and its drift
 // from the asset's saved column metadata.
+// renart:web
 type ColumnInferencePreview struct {
 	Status        string                `json:"status"`
 	Source        ColumnInferenceSource `json:"source"`
@@ -114,6 +115,7 @@ type ColumnSchemaMergeRow struct {
 // ColumnSchemaSyncResult is returned by the one-click schema sync. Safe
 // additions and unknown-to-known type refinements are applied immediately;
 // conflicts return the source snapshots and merge rows without writing.
+// renart:web
 type ColumnSchemaSyncResult struct {
 	Status           string                       `json:"status"`
 	Sources          []ColumnSchemaSourceSnapshot `json:"sources"`
@@ -126,6 +128,7 @@ type ColumnSchemaSyncResult struct {
 
 // ColumnSchemaResolution is one explicit merge choice. Source is either a
 // source capability ID or "current"; Action is "use" or "remove".
+// renart:web
 type ColumnSchemaResolution struct {
 	Column string `json:"column"`
 	Action string `json:"action"`
@@ -154,6 +157,7 @@ type WorkspaceDependencyDiagnostic struct {
 	Message    string `json:"message"`
 }
 
+// renart:web-name WebAsset
 type Asset struct {
 	ID                     string                  `json:"id"`
 	Name                   string                  `json:"name"`
@@ -216,6 +220,7 @@ type NotebookSourceSnapshot struct {
 	RowLimit int64  `json:"row_limit,omitempty"`
 }
 
+// renart:web
 type NotebookSourceRequest struct {
 	URL     string            `json:"url"`
 	Method  string            `json:"method,omitempty"`
@@ -224,6 +229,7 @@ type NotebookSourceRequest struct {
 	Body    any               `json:"body,omitempty"`
 }
 
+// renart:web
 type NotebookSourceResponse struct {
 	RecordsPath string            `json:"records_path,omitempty"`
 	Fields      map[string]string `json:"fields,omitempty"`
@@ -242,6 +248,7 @@ type NotebookSourceDefinition struct {
 }
 
 // Column represents a column in an asset.
+// renart:web-name WebColumn
 type Column struct {
 	Name          string            `json:"name"`
 	SourceColumn  string            `json:"source_column,omitempty"`
@@ -271,6 +278,7 @@ type ColumnReference struct {
 }
 
 // ColumnCheck represents a check on a column.
+// renart:web-name WebColumnCheck
 type ColumnCheck struct {
 	Name        string `json:"name"`
 	Value       any    `json:"value,omitempty"`
@@ -281,6 +289,7 @@ type ColumnCheck struct {
 // CustomCheck represents an asset-level SQL quality check. Count is set when
 // Query returns the rows that violate the assertion; otherwise Query must
 // return a scalar integer matching Value.
+// renart:web-name WebCustomCheck
 type CustomCheck struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -292,6 +301,7 @@ type CustomCheck struct {
 }
 
 // Pipeline represents a web API pipeline.
+// renart:web-name WebPipeline
 type Pipeline struct {
 	ID string `json:"id"`
 	// UUID is the stable identity stored in pipeline.yml (`id:`); all durable
@@ -337,6 +347,7 @@ type NotebookParameter struct {
 // NotebookBlock is one ordered entry of a notebook: a cell reference,
 // identity-bearing markdown prose, a parameter-backed control, or a structured
 // visualization.
+// renart:web-name WebNotebookBlock
 type NotebookBlock struct {
 	ID            string                 `json:"id,omitempty"`
 	Cell          string                 `json:"cell,omitempty"`
@@ -347,6 +358,7 @@ type NotebookBlock struct {
 
 // Notebook represents a web API notebook: a folder of class-tagged cell
 // assets plus ordered presentation blocks.
+// renart:web-name WebNotebook
 type Notebook struct {
 	ID string `json:"id"`
 	// UUID is the stable identity stored in notebook.yml (`id:`).
@@ -388,6 +400,7 @@ type WorkspaceQueryConnection struct {
 }
 
 // WorkspaceState represents the current state of a workspace.
+// renart:web
 type WorkspaceState struct {
 	Pipelines               []Pipeline                      `json:"pipelines"`
 	Notebooks               []Notebook                      `json:"notebooks,omitempty"`
@@ -496,6 +509,8 @@ type PipelineConfigVariable struct {
 	Extra        map[string]any `json:"extra,omitempty"`
 }
 
+// renart:web
+// renart:web-name WebPipelineConfigResponse
 type PipelineConfigResponse struct {
 	Status                     string                         `json:"status"`
 	ID                         string                         `json:"id"`
@@ -521,6 +536,8 @@ type PipelineConfigResponse struct {
 	YAML                       string                         `json:"yaml"`
 }
 
+// renart:web
+// renart:web-name WebUpdatePipelineConfigRequest
 type UpdatePipelineConfigRequest struct {
 	Name                 string                     `json:"name"`
 	Schedule             string                     `json:"schedule"`
@@ -543,6 +560,7 @@ type UpdatePipelineConfigRequest struct {
 // PipelinePythonDependenciesResponse is the editable Python environment shared
 // by assets in one pipeline. Path is workspace-relative and points to the
 // canonical pyproject.toml even before that file is created.
+// renart:web
 type PipelinePythonDependenciesResponse struct {
 	Status       string   `json:"status"`
 	PipelineID   string   `json:"pipeline_id"`
@@ -550,6 +568,7 @@ type PipelinePythonDependenciesResponse struct {
 	Dependencies []string `json:"dependencies"`
 }
 
+// renart:web
 type UpdatePipelinePythonDependenciesRequest struct {
 	Dependencies []string `json:"dependencies"`
 }
@@ -613,6 +632,8 @@ type CommandResult struct {
 }
 
 // InspectResult represents the result of an asset inspection.
+// renart:web
+// renart:web-name AssetInspectResponse
 type InspectResult struct {
 	Status                              string            `json:"status"`
 	Columns                             []string          `json:"columns"`
@@ -629,6 +650,8 @@ type InspectResult struct {
 }
 
 // InferColumnsResult represents the result of column inference.
+// renart:web
+// renart:web-name InferColumnsResponse
 type InferColumnsResult struct {
 	Status    string            `json:"status"`
 	Columns   []Column          `json:"columns"`

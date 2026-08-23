@@ -18,6 +18,8 @@ type SQLColumnValuesResult struct {
 	Error  string `json:"error,omitempty"`
 }
 
+// renart:web
+// renart:web-name SqlQueryResponse
 type SQLQueryResult struct {
 	Status    string           `json:"status"`
 	Columns   []string         `json:"columns"`
@@ -26,6 +28,8 @@ type SQLQueryResult struct {
 	Error     string           `json:"error,omitempty"`
 }
 
+// renart:web
+// renart:web-name SqlDiscoveryDatabasesResponse
 type SQLDatabaseDiscoveryResult struct {
 	Status         string   `json:"status"`
 	ConnectionName string   `json:"connection_name"`
@@ -34,6 +38,7 @@ type SQLDatabaseDiscoveryResult struct {
 	Error          string   `json:"error,omitempty"`
 }
 
+// renart:web-name SqlDiscoveryTable
 type SQLDiscoveryTableItem struct {
 	Name         string `json:"name"`
 	ShortName    string `json:"short_name"`
@@ -41,6 +46,8 @@ type SQLDiscoveryTableItem struct {
 	DatabaseName string `json:"database_name,omitempty"`
 }
 
+// renart:web
+// renart:web-name SqlDiscoveryTablesResponse
 type SQLTableDiscoveryResult struct {
 	Status         string                  `json:"status"`
 	ConnectionName string                  `json:"connection_name"`
@@ -55,6 +62,8 @@ type SQLColumn struct {
 	Type string `json:"type,omitempty"`
 }
 
+// renart:web
+// renart:web-name SqlDiscoveryTableColumnsResponse
 type SQLTableColumnsResult struct {
 	Status         string            `json:"status"`
 	ConnectionName string            `json:"connection_name"`

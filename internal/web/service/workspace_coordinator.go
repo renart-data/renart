@@ -16,6 +16,7 @@ import (
 	webmodel "renart/internal/web/model"
 )
 
+// renart:web
 type WorkspaceEvent struct {
 	Type            string         `json:"type"`
 	Path            string         `json:"path,omitempty"`

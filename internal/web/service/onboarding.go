@@ -50,6 +50,7 @@ type OnboardingImportResultState struct {
 	AssetPaths   []string `json:"asset_paths,omitempty"`
 }
 
+// renart:web
 type OnboardingSessionState struct {
 	Active          bool                         `json:"active"`
 	Step            string                       `json:"step,omitempty"`
@@ -69,6 +70,8 @@ type OnboardingDiscoveryRequest struct {
 	Database        string
 }
 
+// renart:web
+// renart:web-name OnboardingDiscoveryResponse
 type OnboardingDiscoveryResult struct {
 	Status           string                  `json:"status"`
 	ConnectionType   string                  `json:"connection_type,omitempty"`
@@ -78,6 +81,8 @@ type OnboardingDiscoveryResult struct {
 	Error            string                  `json:"error,omitempty"`
 }
 
+// renart:web
+// renart:web-name OnboardingPathSuggestionsResponse
 type OnboardingPathSuggestionsResult struct {
 	Status      string           `json:"status"`
 	Suggestions []SuggestionItem `json:"suggestions"`

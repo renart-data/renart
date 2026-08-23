@@ -35,6 +35,7 @@ var assetCreationKinds = []string{
 // AssetCreationProfile is the secret-free, environment-specific authoring
 // contract consumed by New asset. Concrete Bruin types are candidates derived
 // from connection identity; the browser never reconstructs this registry.
+// renart:web
 type AssetCreationProfile struct {
 	Status      string                     `json:"status"`
 	Environment string                     `json:"environment"`

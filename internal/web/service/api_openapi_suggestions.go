@@ -43,6 +43,7 @@ type OpenAPIQueryParameterSuggestion struct {
 
 // OpenAPISuggestionsResult feeds the API-asset editor's intellisense for
 // OpenAPI-backed request URLs, query parameters, and response dot-path fields.
+// renart:web
 type OpenAPISuggestionsResult struct {
 	Status          string                            `json:"status"`
 	RequestURLs     []OpenAPIEndpointSuggestion       `json:"request_urls"`

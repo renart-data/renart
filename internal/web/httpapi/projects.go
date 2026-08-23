@@ -27,6 +27,7 @@ type ProjectInfo struct {
 	Default      bool      `json:"default"`
 }
 
+// renart:web
 type ProjectListResponse struct {
 	Status           string        `json:"status"`
 	DefaultProjectID string        `json:"default_project_id"`
@@ -38,6 +39,7 @@ type OpenProjectRequest struct {
 	Path string `json:"path"`
 }
 
+// renart:web
 type OpenProjectResponse struct {
 	Status  string      `json:"status"`
 	Project ProjectInfo `json:"project"`
@@ -46,6 +48,7 @@ type OpenProjectResponse struct {
 // CreateProjectRequest scaffolds a new project from a template. Either Path
 // (scaffold into an existing directory, e.g. the current empty workspace) or
 // ParentDir+Name (create a fresh directory) selects the target.
+// renart:web
 type CreateProjectRequest struct {
 	Template  string `json:"template"`
 	Name      string `json:"name,omitempty"`
@@ -53,6 +56,7 @@ type CreateProjectRequest struct {
 	Path      string `json:"path,omitempty"`
 }
 
+// renart:web
 type CreateProjectResponse struct {
 	Status         string      `json:"status"`
 	Project        ProjectInfo `json:"project"`
@@ -68,6 +72,7 @@ type BrowseDirEntry struct {
 	IsProject bool   `json:"is_project"`
 }
 
+// renart:web
 type BrowseDirsResponse struct {
 	Status  string           `json:"status"`
 	Path    string           `json:"path"`
@@ -75,11 +80,13 @@ type BrowseDirsResponse struct {
 	Entries []BrowseDirEntry `json:"entries"`
 }
 
+// renart:web
 type CreateDirectoryRequest struct {
 	ParentDir string `json:"parent_dir"`
 	Name      string `json:"name"`
 }
 
+// renart:web
 type CreateDirectoryResponse struct {
 	Status string `json:"status"`
 	Path   string `json:"path"`

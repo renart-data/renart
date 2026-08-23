@@ -88,6 +88,7 @@ const (
 	AssetRenderFidelityUnsupported AssetRenderFidelity = "unsupported"
 )
 
+// renart:web
 type AssetRenderRequest struct {
 	Environment   string `json:"environment,omitempty"`
 	StartDate     string `json:"start_date,omitempty"`
@@ -193,6 +194,7 @@ type AssetRenderIssue struct {
 	Message  string `json:"message"`
 }
 
+// renart:web
 type AssetRenderResult struct {
 	Status     AssetRenderStatus      `json:"status"`
 	Provenance AssetRenderProvenance  `json:"provenance"`

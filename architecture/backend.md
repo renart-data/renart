@@ -1355,10 +1355,12 @@ asset.
 ## 5. Conventions
 
 - **One DTO set.** `internal/web/model` owns workspace DTOs, `service` owns
-  request/response DTOs, `httpapi` re-exports aliases. When a Go DTO changes,
-  `web/scripts/generate-api-types.mjs` must regenerate
-  `web/lib/generated/api-types.ts` — it parses the Go structs in
-  `internal/web/model/dto.go`.
+  request/response DTOs, and `httpapi` re-exports aliases. Public contract roots
+  carry a `// renart:web` annotation (with an optional `// renart:web-name`
+  override). The Go AST generator in `internal/tools/apitypes` follows referenced
+  types transitively across `internal/web`, writes
+  `web/lib/generated/api-types.ts`, and has a check-only mode used by frontend
+  typechecking so generated drift fails CI.
 - **One error type.** `service.APIError` (`{Status, Code, Message}`) with
   sentinel errors + `errors.Is/As` at service boundaries; one `api.Response`
   envelope.

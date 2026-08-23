@@ -3,6 +3,7 @@ package model
 // ArtifactIndex is a read-only projection of versioned workspace artifacts.
 // It complements, rather than replaces, the Bruin pipeline and notebook run
 // models. Execution planning continues to use each host's native graph.
+// renart:web
 type ArtifactIndex struct {
 	Revision              string                 `json:"revision"`
 	Artifacts             []ArtifactDescriptor   `json:"artifacts"`

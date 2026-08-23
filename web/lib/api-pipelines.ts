@@ -14,10 +14,19 @@ import {
   UpdatePipelinePythonDependenciesRequest,
 } from "@/lib/types";
 import type { AssetTransaction } from "@/lib/api-asset-transactions";
+import type {
+  ExternalRelationImportResult as GeneratedExternalRelationImportResult,
+  TypeCheckAsset,
+  TypeCheckCrossPipelineReference,
+  TypeCheckExternalRelation,
+  TypeCheckFinding,
+  TypeCheckPresentation,
+  TypeCheckPresentationFinding,
+  TypeCheckReport,
+  TypeCheckResolution,
+} from "@/lib/generated/api-types";
 
-export type PipelineTypeCheckResolution = {
-  id: string;
-  title: string;
+export type PipelineTypeCheckResolution = Omit<TypeCheckResolution, "transaction" | "action"> & {
   transaction?: AssetTransaction;
   action?: PipelineTypeCheckResolutionAction;
 };
@@ -65,102 +74,61 @@ export async function getPipelineConfig(pipelineId: string) {
   });
 }
 
-export type PipelineTypeCheckFinding = {
-  code: string;
-  source: string;
+export type PipelineTypeCheckFinding = Omit<
+  TypeCheckFinding,
+  "severity" | "scope" | "confidence" | "resolutions"
+> & {
   severity: "error" | "warning";
-  message: string;
-  line?: number;
-  column?: number;
-  end_line?: number;
-  end_column?: number;
   scope?: "document" | "asset" | "pipeline";
   confidence?: "high" | "medium" | "low";
   resolutions?: PipelineTypeCheckResolution[];
 };
 
-export type PipelineTypeCheckAsset = {
-  id?: string;
-  name: string;
-  type: string;
-  dialect?: string;
+export type PipelineTypeCheckAsset = Omit<TypeCheckAsset, "status" | "findings"> & {
   status: "ok" | "warning" | "error";
   findings: PipelineTypeCheckFinding[];
 };
 
-export type PipelineTypeCheckPresentationFinding = {
-  code: string;
+export type PipelineTypeCheckPresentationFinding = Omit<
+  TypeCheckPresentationFinding,
+  "severity"
+> & {
   severity: "error" | "warning";
-  message: string;
-  path?: string;
-  field?: string;
-  physical_type?: string;
 };
 
-export type PipelineTypeCheckPresentation = {
-  id: string;
-  workspace_id: string;
+export type PipelineTypeCheckPresentation = Omit<
+  TypeCheckPresentation,
+  "kind" | "status" | "findings"
+> & {
   kind: "dashboard" | "report";
-  title: string;
-  path: string;
   status: "ok" | "warning" | "error";
   findings: PipelineTypeCheckPresentationFinding[];
 };
 
-export type PipelineTypeCheckReport = {
+export type PipelineTypeCheckReport = Omit<
+  TypeCheckReport,
+  "status" | "assets" | "presentations" | "external_relations" | "cross_pipeline_references"
+> & {
   status: "ok" | "warning" | "error";
-  pipeline_id?: string;
-  pipeline_name: string;
-  start_date?: string;
-  end_date?: string;
   assets: PipelineTypeCheckAsset[];
   presentations?: PipelineTypeCheckPresentation[];
   external_relations?: PipelineTypeCheckExternalRelation[];
   cross_pipeline_references?: PipelineTypeCheckCrossPipelineReference[];
-  summary: { assets: number; presentations?: number; errors: number; warnings: number };
 };
 
-export type PipelineTypeCheckExternalRelation = {
-  id: string;
-  connection: string;
-  environment?: string;
-  qualified_name: string;
-  schema_name?: string;
-  name: string;
-  columns: Array<{ name: string; type: string }>;
-  columns_known: boolean;
-  observed_at?: string;
-  stale?: boolean;
-  referenced_by_asset_ids: string[];
-  referenced_by_asset_names: string[];
-};
+export type PipelineTypeCheckExternalRelation = TypeCheckExternalRelation;
 
-export type PipelineTypeCheckCrossPipelineReference = {
-  id: string;
+export type PipelineTypeCheckCrossPipelineReference = Omit<
+  TypeCheckCrossPipelineReference,
+  "status"
+> & {
   status: "declarable" | "producer_uri_missing" | "connection_unknown" | "connection_mismatch";
-  relation: string;
-  consumer_asset_id: string;
-  consumer_asset_name: string;
-  producer_asset_id: string;
-  producer_asset_name: string;
-  producer_pipeline_id: string;
-  producer_pipeline_name: string;
-  producer_uri?: string;
 };
 
-export type ExternalRelationImportResult = {
-  status: string;
-  preview: boolean;
-  relation: PipelineTypeCheckExternalRelation;
-  asset: {
-    name: string;
-    path: string;
-    type: string;
-    columns: Array<{ name: string; type: string }>;
-  };
-  include_columns: boolean;
-  warnings: Array<{ table: string; warning: string }>;
-};
+export type ExternalRelationImportResult = Omit<
+  GeneratedExternalRelationImportResult,
+  "relation"
+> & { relation: PipelineTypeCheckExternalRelation };
 
 /** Type-checks every asset in a pipeline (SQL columns/types + missing column declarations). */
 export async function typeCheckPipeline(

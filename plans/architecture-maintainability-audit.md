@@ -1,9 +1,10 @@
 # Architecture and maintainability audit
 
-Status: investigation and prioritized cleanup roadmap, 2026-08-23. This is not
-a proposal for a rewrite. Each accepted implementation slice should remain
-small, preserve Renart's filesystem/SSE/runtime contracts, and be folded into
-the relevant document under [`architecture/`](../architecture/) when it ships.
+Status: implementation in progress, 2026-08-23. The native-runtime fact guard
+and annotated Go-AST API contract generator have shipped locally. This is not a
+proposal for a rewrite. Each accepted implementation slice should remain small,
+preserve Renart's filesystem/SSE/runtime contracts, and be folded into the
+relevant document under [`architecture/`](../architecture/) when it ships.
 
 ## 1. Executive assessment
 
@@ -113,10 +114,10 @@ feature-adjacent slices, not as a development freeze.
 
 #### Evidence
 
-[`web/scripts/generate-api-types.mjs`](../web/scripts/generate-api-types.mjs)
-contains a hand-maintained `sources` array naming every Go struct to export. It
-finds struct bodies and fields using string searches and regular expressions.
-That has three consequences:
+At audit time, the deleted `web/scripts/generate-api-types.mjs` contained a
+hand-maintained `sources` array naming every Go struct to export. It found
+struct bodies and fields using string searches and regular expressions. That
+had three consequences:
 
 - a new response type is invisible until someone remembers to add it;
 - Go syntax that exceeds the script's small grammar can be silently
@@ -136,13 +137,23 @@ verify that generation leaves the worktree unchanged. A stale generated file is
 therefore repaired inside CI rather than reported as a failure, and an omitted
 allowlist entry is not observable at all.
 
-#### Risk
+#### Implemented result
+
+[`internal/tools/apitypes`](../internal/tools/apitypes) now scans explicit
+`// renart:web` roots, follows referenced internal DTOs transitively through the
+Go AST, emits named string-constant unions, rejects incompatible TypeScript-name
+collisions, and supports a check-only mode. Frontend typechecking uses that
+mode, so stale generated output fails locally and in CI. The complete manually
+duplicated pipeline type-check/import responses now derive from generated
+contracts and retain only small UI-specific union refinements.
+
+#### Residual risk
 
 This is a correctness boundary, not just code style. A backend field can ship
 without a typed frontend representation, and a manually narrowed union can
 drift from the server without the compiler seeing both sides.
 
-#### Recommendation
+#### Original recommendation
 
 1. Move all public request/response/event contracts into
    `internal/web/model` or a new `internal/web/contracts` package. Services may

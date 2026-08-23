@@ -13,6 +13,7 @@ import (
 	"renart/internal/web/service/assetmeta"
 )
 
+// renart:web
 type ExternalRelationImportRequest struct {
 	RelationID     string `json:"relation_id"`
 	IncludeColumns *bool  `json:"include_columns,omitempty"`
@@ -30,6 +31,7 @@ type ExternalRelationImportWarning struct {
 	Warning string `json:"warning"`
 }
 
+// renart:web
 type ExternalRelationImportResult struct {
 	Status         string                          `json:"status"`
 	Preview        bool                            `json:"preview"`

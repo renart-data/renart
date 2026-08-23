@@ -183,6 +183,7 @@ func projectTemplateFromPipelineStarter(id string) projectTemplate {
 	return template
 }
 
+// renart:web
 type ProjectTemplatesResponse struct {
 	Status    string                `json:"status"`
 	Templates []ProjectTemplateInfo `json:"templates"`

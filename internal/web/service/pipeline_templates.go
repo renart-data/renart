@@ -21,6 +21,7 @@ type PipelineTemplateInfo struct {
 	Features      []string `json:"features"`
 }
 
+// renart:web
 type PipelineTemplatesResponse struct {
 	Status    string                 `json:"status"`
 	Templates []PipelineTemplateInfo `json:"templates"`

@@ -118,6 +118,7 @@ type APIRecordsPathSample struct {
 	Detail string `json:"detail,omitempty"`
 }
 
+// renart:web
 type APIInferResult struct {
 	Status       string                 `json:"status"`
 	RequestURL   string                 `json:"request_url"`

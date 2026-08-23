@@ -86,6 +86,7 @@ type WorkspaceRetentionSettings struct {
 	TemporaryDirectoriesHours int                      `json:"temporary_directories_hours"`
 }
 
+// renart:web
 type WorkspaceConfigResponse struct {
 	Status              string                          `json:"status"`
 	Path                string                          `json:"path"`
@@ -103,6 +104,7 @@ type WorkspaceConfigResponse struct {
 	SecretBindingsError string                          `json:"secret_bindings_error,omitempty"`
 }
 
+// renart:web
 type WorkspaceEnvironmentPolicyResponse struct {
 	Status      string                   `json:"status"`
 	Environment string                   `json:"environment"`

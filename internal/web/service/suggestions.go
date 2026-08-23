@@ -12,12 +12,15 @@ import (
 	"github.com/spf13/afero"
 )
 
+// renart:web-name IngestrSuggestion
 type SuggestionItem struct {
 	Value  string `json:"value"`
 	Kind   string `json:"kind,omitempty"`
 	Detail string `json:"detail,omitempty"`
 }
 
+// renart:web
+// renart:web-name IngestrSuggestionsResponse
 type IngestrSuggestionsResult struct {
 	Status         string           `json:"status"`
 	ConnectionType string           `json:"connection_type,omitempty"`
@@ -25,6 +28,8 @@ type IngestrSuggestionsResult struct {
 	Error          string           `json:"error,omitempty"`
 }
 
+// renart:web
+// renart:web-name SqlPathSuggestionsResponse
 type SQLPathSuggestionsResult struct {
 	Status      string           `json:"status"`
 	Suggestions []SuggestionItem `json:"suggestions"`

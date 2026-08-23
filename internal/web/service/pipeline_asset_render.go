@@ -12,6 +12,7 @@ import (
 	"renart/internal/web/snapshot"
 )
 
+// renart:web
 type PipelineAssetRenderRequest struct {
 	AssetName     string                    `json:"asset_name"`
 	Source        PipelinePlanSourceRequest `json:"source,omitempty"`
@@ -22,6 +23,7 @@ type PipelineAssetRenderRequest struct {
 	FullRefresh   bool                      `json:"full_refresh"`
 }
 
+// renart:web
 type PipelineAssetRenderComparisonRequest struct {
 	AssetName         string `json:"asset_name"`
 	SnapshotVersionID string `json:"snapshot_version_id,omitempty"`
@@ -46,6 +48,7 @@ type AssetRenderComparisonSummary struct {
 	Unchanged int `json:"unchanged"`
 }
 
+// renart:web
 type PipelineAssetRenderComparison struct {
 	Status      string                       `json:"status"`
 	AssetName   string                       `json:"asset_name"`

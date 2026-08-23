@@ -158,6 +158,7 @@ type PipelineMaterializationState struct {
 	DeclaredMatType       string `json:"materialization_type,omitempty"`
 }
 
+// renart:web
 type PipelineMaterializationResponse struct {
 	PipelineID string                         `json:"pipeline_id"`
 	Assets     []PipelineMaterializationState `json:"assets"`

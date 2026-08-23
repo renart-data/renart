@@ -197,6 +197,7 @@ type TypeCheckCrossPipelineReference struct {
 }
 
 // TypeCheckReport is the full result of type-checking a pipeline.
+// renart:web
 type TypeCheckReport struct {
 	Status                  string                            `json:"status"`
 	PipelineID              string                            `json:"pipeline_id,omitempty"`

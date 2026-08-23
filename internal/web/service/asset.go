@@ -44,6 +44,7 @@ type AssetConnectionSelectionRequest struct {
 	ConfirmTypeMigration bool   `json:"confirm_type_migration,omitempty"`
 }
 
+// renart:web
 type AssetMutationResponse struct {
 	Status     string `json:"status"`
 	AssetID    string `json:"asset_id,omitempty"`
@@ -78,6 +79,7 @@ type FormatSQLAssetRequest struct {
 	Persist *bool `json:"persist,omitempty"`
 }
 
+// renart:web
 type FormatSQLAssetResponse struct {
 	Status  string `json:"status"`
 	AssetID string `json:"asset_id"`

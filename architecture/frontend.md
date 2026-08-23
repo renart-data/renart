@@ -595,8 +595,8 @@ than hand-rolled `div` shells.
   application-wide API barrel.
 - [lib/types.ts](../web/lib/types.ts): shared web-side types; re-exports the
   generated API types. The generated types come from the Go DTOs via
-  `web/scripts/generate-api-types.mjs` (see [backend.md](backend.md) §5) — don't
-  hand-edit `web/lib/generated/api-types.ts`.
+  `internal/tools/apitypes` (see [backend.md](backend.md) §5) — don't hand-edit
+  `web/lib/generated/api-types.ts`.
 - [lib/atoms/](../web/lib/atoms): Jotai atoms split by domain (`workspace`,
   `selection`, `editor`, `results`, `materialization`, `sql-discovery`, suggestion
   catalog).

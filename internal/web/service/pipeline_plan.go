@@ -61,6 +61,7 @@ type PipelinePlanSelectionRequest struct {
 
 // PipelinePlanRequest contains only behavior-changing plan inputs. Source is
 // resolved to an exact Merkle/version before the response is returned.
+// renart:web
 type PipelinePlanRequest struct {
 	Purpose             string                       `json:"purpose,omitempty"`
 	Environment         string                       `json:"environment,omitempty"`
@@ -96,6 +97,7 @@ type PipelinePlanRequest struct {
 // PipelinePlanConfirmRequest carries the exact read-only request used to
 // regenerate a reviewed plan. Confirmation never trusts rendered content from
 // the client; it compares PlanID against a fresh server-side result.
+// renart:web
 type PipelinePlanConfirmRequest struct {
 	PlanID               string                        `json:"plan_id"`
 	Plan                 PipelinePlanRequest           `json:"plan"`
@@ -275,6 +277,7 @@ type PipelinePlanSummary struct {
 	Warnings              int `json:"warnings"`
 }
 
+// renart:web
 type PipelinePlan struct {
 	ID                 string                          `json:"id"`
 	Status             string                          `json:"status"`

@@ -96,6 +96,7 @@ type NotebookOperation struct {
 // NotebookChangeSet is a notebook-wide optimistic change. ExpectedRevision is
 // empty on input to Prepare and populated in the normalized result. Apply
 // requires it so reviewed bytes cannot differ from committed bytes.
+// renart:web
 type NotebookChangeSet struct {
 	BaseRevision     string              `json:"base_revision"`
 	ExpectedRevision string              `json:"expected_revision,omitempty"`
@@ -110,6 +111,7 @@ type NotebookChangeDiff struct {
 	After  string `json:"after,omitempty"`
 }
 
+// renart:web
 type NotebookChangePlan struct {
 	Status           string               `json:"status"`
 	ChangeSet        NotebookChangeSet    `json:"change_set"`
@@ -119,6 +121,7 @@ type NotebookChangePlan struct {
 	CanApply         bool                 `json:"can_apply"`
 }
 
+// renart:web
 type NotebookChangeApplyResult struct {
 	Status   string               `json:"status"`
 	Notebook model.Notebook       `json:"notebook"`
