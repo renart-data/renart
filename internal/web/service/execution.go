@@ -798,7 +798,7 @@ func (s *ExecutionService) MaterializeAssetStreamWithSensorMode(ctx context.Cont
 		}
 		admitted, admitErr := inlineLedger.AdmitInlineRun(ctx, webscheduler.InlineRunAdmission{
 			PipelineID: pipelineID, PipelineUUID: strings.TrimSpace(pipelineView.UUID),
-			PipelineName: inlinePipelineName(pipelineView, pipelineTarget, s.deps.WorkspaceRoot),
+			PipelineName: webexecution.PipelineDisplayName(pipelineView.Name, pipelineTarget, s.deps.WorkspaceRoot),
 			Environment:  environment, Origin: ExecutionOrigin(ctx), Source: webscheduler.RunSourceWorkingTree,
 			Start: timeWindow.Start, End: timeWindow.End, ExecutionTime: executionTime,
 			FullRefresh: fullRefresh, Backfill: backfill, ConfirmedEnvironment: confirmedEnvironment,
@@ -890,7 +890,7 @@ func (s *ExecutionService) MaterializeAssetStreamWithSensorMode(ctx context.Cont
 			if assetErr != nil {
 				unitStatus = webscheduler.PipelineRunUnitFailed
 				unitError = assetErr.Error()
-				if executionWasCancelled(ctx, assetErr) {
+				if webexecution.ExecutionWasCancelled(ctx, assetErr) {
 					unitStatus = webscheduler.PipelineRunUnitCancelled
 				}
 			}
@@ -942,7 +942,7 @@ func (s *ExecutionService) MaterializeAssetStreamWithSensorMode(ctx context.Cont
 		terminalErr := errors.Join(runErr, completionErr)
 		if terminalErr != nil {
 			terminalStatus = webscheduler.RunStatusFailed
-			if runErr != nil && executionWasCancelled(ctx, runErr) {
+			if runErr != nil && webexecution.ExecutionWasCancelled(ctx, runErr) {
 				terminalStatus = webscheduler.RunStatusCancelled
 			}
 		}
@@ -960,7 +960,7 @@ func (s *ExecutionService) MaterializeAssetStreamWithSensorMode(ctx context.Cont
 	exitCode := 0
 	if runErr != nil || completionErr != nil {
 		status = "error"
-		if runErr != nil && executionWasCancelled(ctx, runErr) {
+		if runErr != nil && webexecution.ExecutionWasCancelled(ctx, runErr) {
 			status = "cancelled"
 		}
 		exitCode = 1
@@ -1466,7 +1466,7 @@ func (s *ExecutionService) MaterializePipelineRun(ctx context.Context, spec Pipe
 			if pipelineUUID == "" {
 				pipelineUUID = strings.TrimSpace(pipelineView.UUID)
 			}
-			pipelineName := inlinePipelineName(pipelineView, target, s.deps.WorkspaceRoot)
+			pipelineName := webexecution.PipelineDisplayName(pipelineView.Name, target, s.deps.WorkspaceRoot)
 			source := webscheduler.RunSourceWorkingTree
 			if strings.TrimSpace(spec.SnapshotDir) != "" || strings.TrimSpace(spec.SnapshotVersionID) != "" {
 				source = webscheduler.RunSourceSnapshot
@@ -1550,9 +1550,9 @@ func (s *ExecutionService) MaterializePipelineRun(ctx context.Context, spec Pipe
 				return nil
 			}
 			existingAssetEvent := onAssetEvent
-			stepEvents := newPipelineAssetStepEvents(spec.Plan)
+			stepEvents := webexecution.NewAssetStepEvents(spec.Plan)
 			onAssetEvent = func(event ExecutionAssetEvent) error {
-				persist, err := stepEvents.shouldPersist(event)
+				persist, err := stepEvents.ShouldPersist(event)
 				if err != nil {
 					return fmt.Errorf("resolve inline execution step: %w", err)
 				}
@@ -1632,19 +1632,19 @@ func (s *ExecutionService) MaterializePipelineRun(ctx context.Context, spec Pipe
 		if !plannedExecution {
 			return nil
 		}
-		unit, ok := pipelineExecutionUnitAt(spec.Plan, event.Position)
+		unit, ok := webexecution.ExecutionUnitAt(spec.Plan, event.Position)
 		if !ok {
 			return fmt.Errorf("planned execution unit %d is unavailable", event.Position)
 		}
-		unitCompletionID := pipelineExecutionUnitCompletionID(spec.CompletionID, event.Position)
+		unitCompletionID := webexecution.ExecutionUnitCompletionID(spec.CompletionID, event.Position)
 		if strings.EqualFold(strings.TrimSpace(event.Status), "running") {
 			observed.setAssetCompletionID(unit.AssetName, unitCompletionID)
 			return nil
 		}
-		if !terminalPipelineExecutionUnitStatus(event.Status) {
+		if !webexecution.IsTerminalExecutionUnitStatus(event.Status) {
 			return nil
 		}
-		unitWindow, err := executionWindowForPlannedUnit(unit)
+		unitWindow, err := webexecution.ExecutionUnitWindow(unit)
 		if err != nil {
 			return err
 		}
@@ -1779,7 +1779,7 @@ func (s *ExecutionService) MaterializePipelineRun(ctx context.Context, spec Pipe
 		terminalErr := errors.Join(runErr, completionErr)
 		if terminalErr != nil {
 			terminalStatus = webscheduler.RunStatusFailed
-			if runErr != nil && executionWasCancelled(ctx, runErr) {
+			if runErr != nil && webexecution.ExecutionWasCancelled(ctx, runErr) {
 				terminalStatus = webscheduler.RunStatusCancelled
 			}
 		}
@@ -1793,7 +1793,7 @@ func (s *ExecutionService) MaterializePipelineRun(ctx context.Context, spec Pipe
 	exitCode := 0
 	if runErr != nil || completionErr != nil {
 		status = "error"
-		if runErr != nil && executionWasCancelled(ctx, runErr) {
+		if runErr != nil && webexecution.ExecutionWasCancelled(ctx, runErr) {
 			status = "cancelled"
 		}
 		exitCode = 1
@@ -1816,48 +1816,6 @@ func (s *ExecutionService) MaterializePipelineRun(ctx context.Context, spec Pipe
 		MaterializedAt:  materializedAt,
 		Warnings:        warnings.snapshot(),
 	}
-}
-
-func terminalPipelineExecutionUnitStatus(status string) bool {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "success", "succeeded", "failed", "cancelled", "canceled", "skipped":
-		return true
-	default:
-		return false
-	}
-}
-
-func pipelineExecutionUnitAt(plan *PipelineExecutionPlan, position int) (PipelineExecutionUnit, bool) {
-	if plan == nil || position < 0 || position >= len(plan.Units) {
-		return PipelineExecutionUnit{}, false
-	}
-	unit := plan.Units[position]
-	if unit.Position != position {
-		return PipelineExecutionUnit{}, false
-	}
-	return unit, true
-}
-
-func pipelineExecutionUnitCompletionID(base string, position int) string {
-	return fmt.Sprintf("%s/unit/%d", strings.TrimSpace(base), position)
-}
-
-func executionWindowForPlannedUnit(unit PipelineExecutionUnit) (ExecutionTimeWindow, error) {
-	start, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(unit.StartDate))
-	if err != nil {
-		return ExecutionTimeWindow{}, fmt.Errorf("planned execution unit %d has an invalid start time", unit.Position)
-	}
-	end, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(unit.EndDate))
-	if err != nil || !start.Before(end) {
-		return ExecutionTimeWindow{}, fmt.Errorf("planned execution unit %d has an invalid end time", unit.Position)
-	}
-	return ExecutionTimeWindow{Start: start.UTC(), End: end.UTC()}, nil
-}
-
-func executionWasCancelled(ctx context.Context, runErr error) bool {
-	return errors.Is(runErr, context.Canceled) ||
-		errors.Is(runErr, context.DeadlineExceeded) ||
-		(ctx != nil && ctx.Err() != nil)
 }
 
 func (s *ExecutionService) acquireExecutionLease(ctx context.Context) (func() error, error) {
@@ -2465,23 +2423,6 @@ func completedExecutionStatus(status string) string {
 	}
 }
 
-func inlinePipelineName(view PipelineView, target, workspaceRoot string) string {
-	if name := strings.TrimSpace(view.Name); name != "" {
-		return name
-	}
-	cleaned := filepath.Clean(strings.TrimSpace(target))
-	if cleaned == "." || cleaned == "" {
-		if workspaceName := strings.TrimSpace(filepath.Base(filepath.Clean(workspaceRoot))); workspaceName != "" && workspaceName != "." {
-			return workspaceName
-		}
-		return "workspace"
-	}
-	if name := strings.TrimSpace(filepath.Base(cleaned)); name != "" && name != "." {
-		return name
-	}
-	return "pipeline"
-}
-
 func schedulerExecutionTargetSnapshot(snapshot ExecutionTargetSnapshot) webscheduler.ExecutionTargetSnapshot {
 	entries := make(map[string]webscheduler.ExecutionTargetSnapshotEntry, len(snapshot.Entries))
 	for assetName, entry := range snapshot.Entries {
@@ -2617,61 +2558,6 @@ func schedulerPipelineRunUnitEvent(event PipelineExecutionUnitEvent) webschedule
 	return webscheduler.PipelineRunUnitEvent{
 		Position: event.Position, Status: status,
 		StartedAt: event.StartedAt, FinishedAt: event.FinishedAt, Error: event.Error,
-	}
-}
-
-type pipelineAssetStepEvents struct {
-	plan  *PipelineExecutionPlan
-	first map[string]int
-	last  map[string]int
-}
-
-func newPipelineAssetStepEvents(plan *PipelineExecutionPlan) *pipelineAssetStepEvents {
-	events := &pipelineAssetStepEvents{
-		plan:  plan,
-		first: make(map[string]int),
-		last:  make(map[string]int),
-	}
-	if plan == nil || plan.Version < PipelineExecutionPlanVersionV3 {
-		return events
-	}
-	for position, unit := range plan.Units {
-		if _, exists := events.first[unit.AssetName]; !exists {
-			events.first[unit.AssetName] = position
-		}
-		events.last[unit.AssetName] = position
-	}
-	return events
-}
-
-// shouldPersist keeps one durable run step per asset while execution units
-// retain the exact status of every asset/window pair. The first window opens
-// the aggregate step, the last successful window closes it, and any failure or
-// cancellation closes it immediately.
-func (e *pipelineAssetStepEvents) shouldPersist(event ExecutionAssetEvent) (bool, error) {
-	if e == nil || e.plan == nil || e.plan.Version < PipelineExecutionPlanVersionV3 {
-		return true, nil
-	}
-	if !event.HasUnitPosition ||
-		event.UnitPosition < 0 ||
-		event.UnitPosition >= len(e.plan.Units) {
-		return false, fmt.Errorf("execution asset %s has no confirmed unit position", event.Asset)
-	}
-	unit := e.plan.Units[event.UnitPosition]
-	if unit.AssetName != event.Asset {
-		return false, fmt.Errorf(
-			"execution unit %d belongs to %s, not %s",
-			event.UnitPosition, unit.AssetName, event.Asset,
-		)
-	}
-	status := schedulerRunStatus(event.Status)
-	switch status {
-	case webscheduler.RunStatusRunning:
-		return event.UnitPosition == e.first[event.Asset], nil
-	case webscheduler.RunStatusSuccess:
-		return event.UnitPosition == e.last[event.Asset], nil
-	default:
-		return true, nil
 	}
 }
 

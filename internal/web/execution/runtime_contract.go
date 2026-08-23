@@ -1,6 +1,10 @@
 package execution
 
-import "time"
+import (
+	"time"
+
+	"renart/internal/web/bus"
+)
 
 const (
 	ExecutionTargetSnapshotVersion = 5
@@ -130,4 +134,56 @@ type ResolvedRunContext struct {
 	FullRefresh bool
 	Backfill    bool
 	SensorMode  string
+}
+
+// PipelineRequest is the private contract passed from execution orchestration
+// to the physical Bruin adapter. Its callbacks form the durability barrier
+// before targets or execution units can start.
+type PipelineRequest struct {
+	Target             string
+	Environment        string
+	SensorMode         string
+	DryRun             bool
+	StartDate          string
+	EndDate            string
+	ExecutionTime      time.Time
+	VariableOverrides  map[string]any
+	RunID              string
+	AssetEvent         func(AssetEvent) error
+	SelectionMode      string
+	PlanVersion        int
+	MaxActiveSteps     int
+	ExecutionContracts []ExecutionContract
+	Prerequisites      []Prerequisite
+	ExecutionUnits     []ExecutionUnit
+	UnitEvent          func(ExecutionUnitEvent) error
+	// OnExecutionUnitsResolved must succeed after a dynamic full-pipeline plan
+	// is normalized and before the first unit starts.
+	OnExecutionUnitsResolved func([]ExecutionUnit) error
+	// BeforeTargetWrite fences operators whose successful main task does not
+	// itself prove that the declared output was written.
+	BeforeTargetWrite func(assetName string) error
+	// OnTargetsResolved must succeed after effective target resolution and
+	// before the first task starts. Dry runs do not resolve target snapshots.
+	OnTargetsResolved func(TargetSnapshot) error
+	// ConfigPath overrides .bruin.yml discovery for immutable snapshot runs.
+	ConfigPath  string
+	FullRefresh bool
+}
+
+type AssetEvent struct {
+	Asset                     string
+	Status                    string
+	TaskKind                  string
+	CheckName                 string
+	CheckColumn               string
+	CheckBlocking             bool
+	StartedAt                 *time.Time
+	FinishedAt                *time.Time
+	Error                     string
+	CompletionOrdinal         *int64
+	UpstreamWriters           map[string]bus.UpstreamWriterSnapshot
+	HasUpstreamWriterSnapshot bool
+	UnitPosition              int
+	HasUnitPosition           bool
 }

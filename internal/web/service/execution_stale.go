@@ -302,7 +302,7 @@ func (t *staleBuildTracker) handle(event PipelineExecutionUnitEvent) error {
 		}
 		return nil
 	}
-	if !terminalPipelineExecutionUnitStatus(status) {
+	if !webexecution.IsTerminalExecutionUnitStatus(status) {
 		return nil
 	}
 	if progress.remaining > 0 {

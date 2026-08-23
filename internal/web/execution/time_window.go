@@ -41,24 +41,31 @@ func ResolveTimeWindow(schedule, start, end string, now time.Time) (TimeWindow, 
 	start = strings.TrimSpace(start)
 	end = strings.TrimSpace(end)
 	if start != "" || end != "" {
-		if start == "" || end == "" {
-			return TimeWindow{}, fmt.Errorf("both start and end must be provided")
-		}
-		parsedStart, err := time.Parse(time.RFC3339, start)
-		if err != nil {
-			return TimeWindow{}, fmt.Errorf("invalid start time: %w", err)
-		}
-		parsedEnd, err := time.Parse(time.RFC3339, end)
-		if err != nil {
-			return TimeWindow{}, fmt.Errorf("invalid end time: %w", err)
-		}
-		if !parsedEnd.After(parsedStart) {
-			return TimeWindow{}, fmt.Errorf("end time must be after start time")
-		}
-		return TimeWindow{Start: parsedStart.UTC(), End: parsedEnd.UTC()}, nil
+		return ParseTimeWindow(start, end)
 	}
 
 	return DefaultTimeWindow(schedule, now)
+}
+
+// ParseTimeWindow validates one explicit half-open execution interval.
+func ParseTimeWindow(start, end string) (TimeWindow, error) {
+	start = strings.TrimSpace(start)
+	end = strings.TrimSpace(end)
+	if start == "" || end == "" {
+		return TimeWindow{}, fmt.Errorf("both start and end must be provided")
+	}
+	parsedStart, err := time.Parse(time.RFC3339, start)
+	if err != nil {
+		return TimeWindow{}, fmt.Errorf("invalid start time: %w", err)
+	}
+	parsedEnd, err := time.Parse(time.RFC3339, end)
+	if err != nil {
+		return TimeWindow{}, fmt.Errorf("invalid end time: %w", err)
+	}
+	if !parsedEnd.After(parsedStart) {
+		return TimeWindow{}, fmt.Errorf("end time must be after start time")
+	}
+	return TimeWindow{Start: parsedStart.UTC(), End: parsedEnd.UTC()}, nil
 }
 
 // DefaultTimeWindow resolves the previous completed interval for a schedule.

@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"renart/internal/web/bus"
 )
 
 type RunAssetRequest struct {
@@ -27,57 +25,6 @@ type RunAssetRequest struct {
 	// OnTargetsResolved must succeed synchronously after effective execution
 	// context and target resolution but before the first task starts.
 	OnTargetsResolved func(ExecutionTargetSnapshot) error
-}
-
-type RunPipelineRequest struct {
-	Target        string
-	Environment   string
-	SensorMode    string
-	DryRun        bool
-	StartDate     string
-	EndDate       string
-	ExecutionTime time.Time
-	// VariableOverrides is a private normalized RunSpec input. It is applied as
-	// a pipeline mutator before assets are constructed.
-	VariableOverrides  map[string]any
-	RunID              string
-	AssetEvent         func(ExecutionAssetEvent) error
-	SelectionMode      string
-	PlanVersion        int
-	MaxActiveSteps     int
-	ExecutionContracts []PipelinePlanExecutionContract
-	Prerequisites      []PipelinePlanPrerequisite
-	ExecutionUnits     []PipelineExecutionUnit
-	UnitEvent          func(PipelineExecutionUnitEvent) error
-	// OnExecutionUnitsResolved must succeed after a dynamic full-pipeline plan
-	// is normalized and before the first unit starts.
-	OnExecutionUnitsResolved func([]PipelineExecutionUnit) error
-	BeforeTargetWrite        func(assetName string) error
-	// OnTargetsResolved must succeed synchronously after effective execution
-	// context and target resolution but before the first task starts. Dry runs
-	// do not resolve or capture execution targets.
-	OnTargetsResolved func(ExecutionTargetSnapshot) error
-	// ConfigPath overrides .bruin.yml discovery via the git repo root. Set
-	// for snapshot runs, whose target directory lives outside the workspace.
-	ConfigPath  string
-	FullRefresh bool
-}
-
-type ExecutionAssetEvent struct {
-	Asset                     string
-	Status                    string
-	TaskKind                  string
-	CheckName                 string
-	CheckColumn               string
-	CheckBlocking             bool
-	StartedAt                 *time.Time
-	FinishedAt                *time.Time
-	Error                     string
-	CompletionOrdinal         *int64
-	UpstreamWriters           map[string]bus.UpstreamWriterSnapshot
-	HasUpstreamWriterSnapshot bool
-	UnitPosition              int
-	HasUnitPosition           bool
 }
 
 type QueryAssetRequest struct {

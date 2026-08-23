@@ -63,6 +63,8 @@ type PipelineExecutionPlan = webexecution.ExecutionPlan
 type PipelineExecutionUnit = webexecution.ExecutionUnit
 type PipelineExecutionUnitEvent = webexecution.ExecutionUnitEvent
 type ResolvedPipelineRunContext = webexecution.ResolvedRunContext
+type RunPipelineRequest = webexecution.PipelineRequest
+type ExecutionAssetEvent = webexecution.AssetEvent
 
 const (
 	PipelinePlanStatusReady   = webexecution.PlanStatusReady
