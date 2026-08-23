@@ -203,10 +203,15 @@ not underscore-flattened route hacks.
   useful width. It defaults to the entire pipeline and names the exact
   saved working tree or immutable deployment, environment, UTC interval,
   refresh/sensor mode, asset and execution-unit counts, checks, blockers,
-  warnings, and source/configuration/variable identities. Run review is one
-  linear reading path: readiness issues and code-check findings, followed by a
-  shared, initially collapsed Execution details section containing the exact
-  ordered asset/window units and their rendered operation/check sequence. The
+  warnings, and source/configuration/variable identities. A shared headless
+  reducer/model owns initial request construction, plan loading and refresh
+  transitions, selector drafts, destructive confirmation, admission errors, and
+  the derived confirmation gate for both run and deployment review. Those
+  transitions are unit-tested without rendering the dialog; deployment history
+  and schedule promotion remain separate resources owned by the presenter. Run
+  review is one linear reading path: readiness issues and code-check findings,
+  followed by a shared, initially collapsed Execution details section containing
+  the exact ordered asset/window units and their rendered operation/check sequence. The
   deployment review uses the same section for representative execution.
   Runtime-only Python notices are aggregated across affected assets. The happy
   path is summarized as one readiness result; successful code checks do not

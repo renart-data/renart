@@ -408,7 +408,7 @@ The clearest examples are:
 | --- | ---: | ---: | ---: |
 | `notebook-page.tsx` | 4,451 | 67 | 28 |
 | `build-page.tsx` | 3,446 | 34 | 11 |
-| `pipeline-plan-sheet.tsx` | 2,257 | 27 | 5 |
+| `pipeline-plan-sheet.tsx` | 2,235 | 16 | 5 |
 
 The issue is not the raw count. `notebook-page.tsx`, for example, coordinates
 document selection, runtime events, source approval/import, cell execution,
@@ -811,18 +811,22 @@ These workstreams landed as separate reviewable commits.
 
 ### Phase C — headless application controllers
 
-The first feature-adjacent slice is complete: pipeline settings now use a
-unit-tested reducer/controller for independent config and Python dependency
-state, validation, sequential persistence, and partial-save recovery. The
-settings UI is lazy-loaded because the production bundle budget identified it
-as a concrete initial-chunk owner.
+Two feature-adjacent slices are complete:
+
+- pipeline settings use a unit-tested reducer/controller for independent config
+  and Python dependency state, validation, sequential persistence, and
+  partial-save recovery; the settings UI is lazy-loaded because the production
+  bundle budget identified it as a concrete initial-chunk owner;
+- pipeline run/deployment review shares a pure reducer/model for request
+  construction, plan loading and refresh, selector and destructive-confirmation
+  gates, and admission errors, while deployment history and schedule promotion
+  stay separate presenter-owned resources.
 
 Continue with the next feature or bug touching each remaining surface:
 
 1. notebook document/mutation/run controller plus unit tests;
 2. notebook source-import controller;
 3. build selection/run-output controller;
-4. shared pipeline-plan/review model.
 
 Keep rendered components and route behavior stable. This is an extraction, not
 a redesign.

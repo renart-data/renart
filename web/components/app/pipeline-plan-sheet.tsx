@@ -13,7 +13,7 @@ import {
   RefreshCw,
   ShieldAlert,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import {
   ReadOnlyRenderedOperation,
@@ -81,13 +81,20 @@ import {
 import { activePipelineRunConflict, type PipelineRunSource } from "@/lib/api-scheduler";
 import type { PipelineRun } from "@/lib/types";
 import type { PipelinePlanSelectionRequest } from "@/lib/generated/api-types";
+import {
+  createPipelinePlanRequest,
+  derivePipelinePlanReview,
+  initialPipelinePlanReviewState,
+  pipelinePlanReviewReducer,
+  planSelectionLabel,
+  sensorModeLabel,
+  type PlanIntent,
+  type PlanSelectionMode,
+  type SensorMode,
+} from "@/lib/pipeline-plan-review-model";
 import { awaitWorkspaceSaves } from "@/lib/workspace-save-barrier";
 import { cn } from "@/lib/utils";
 import { deploymentLabel } from "@/lib/deployment-label";
-
-type PlanSelectionMode = "all" | "needed" | "asset" | "selector" | "selector_needed";
-type SensorMode = "once" | "wait" | "skip";
-type PlanIntent = "run" | "deploy";
 
 export function PipelinePlanSheet({
   open,
@@ -118,15 +125,23 @@ export function PipelinePlanSheet({
   onDeploy?: (expectedSourceMerkle: string) => Promise<DeployResponse>;
   onSchedulesChanged?: () => void | Promise<void>;
 }) {
-  const [request, setRequest] = useState<PipelinePlanRequest | null>(null);
-  const [plan, setPlan] = useState<PipelinePlan | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [contentLoading, setContentLoading] = useState(false);
-  const [stageContentLoaded, setStageContentLoaded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
-  const [confirmation, setConfirmation] = useState("");
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [review, dispatchReview] = useReducer(
+    pipelinePlanReviewReducer,
+    initialPipelinePlanReviewState,
+  );
+  const {
+    request,
+    plan,
+    loading,
+    contentLoading,
+    stageContentLoaded,
+    error,
+    confirming,
+    confirmation,
+    activeRunId,
+    selectorDraft,
+    runOptionsOpen,
+  } = review;
   const [deploySchedulesOpen, setDeploySchedulesOpen] = useState(false);
   const [deployStatus, setDeployStatus] = useState<DeployStatus | null>(null);
   const [deployment, setDeployment] = useState<DeployResponse | null>(null);
@@ -135,8 +150,6 @@ export function PipelinePlanSheet({
   const [selectedScheduleKeys, setSelectedScheduleKeys] = useState<Set<string>>(() => new Set());
   const [promoting, setPromoting] = useState(false);
   const [promotionError, setPromotionError] = useState<string | null>(null);
-  const [selectorDraft, setSelectorDraft] = useState("*");
-  const [runOptionsOpen, setRunOptionsOpen] = useState(false);
   const requestSerial = useRef(0);
   const initialPlanContext = useRef<string | null>(null);
   const requestedSourceKind = intent === "deploy" ? "working_tree" : source?.source;
@@ -146,33 +159,28 @@ export function PipelinePlanSheet({
   const fetchPlan = useCallback(
     async (input: PipelinePlanRequest, includeStageContent = false) => {
       const serial = ++requestSerial.current;
-      if (includeStageContent) setContentLoading(true);
-      else setLoading(true);
-      setError(null);
-      setActiveRunId(null);
+      dispatchReview({ type: "plan_load_started", includeStageContent });
       try {
         const next = await planPipeline(pipelineId, {
           ...input,
           include_stage_content: includeStageContent,
         });
         if (serial !== requestSerial.current) return;
-        setPlan(next);
-        if (next.selection.mode === "selector" || next.selection.mode === "selector_needed") {
-          setSelectorDraft(next.selection.selector ?? "");
-        }
-        setRequest({
-          ...canonicalPipelinePlanRequest(next, false),
-          purpose: input.purpose,
+        dispatchReview({
+          type: "plan_loaded",
+          plan: next,
+          request: {
+            ...canonicalPipelinePlanRequest(next, false),
+            purpose: input.purpose,
+          },
+          includeStageContent,
         });
-        setStageContentLoaded(includeStageContent);
       } catch (cause) {
         if (serial !== requestSerial.current) return;
-        setError(cause instanceof Error ? cause.message : "Pipeline planning failed.");
-      } finally {
-        if (serial === requestSerial.current) {
-          setLoading(false);
-          setContentLoading(false);
-        }
+        dispatchReview({
+          type: "plan_load_failed",
+          message: cause instanceof Error ? cause.message : "Pipeline planning failed.",
+        });
       }
     },
     [pipelineId],
@@ -186,43 +194,29 @@ export function PipelinePlanSheet({
     }
     if (initialPlanContext.current !== null) return;
     initialPlanContext.current = "open";
-    setPlan(null);
-    setRequest(null);
-    setError(null);
-    setActiveRunId(null);
-    setConfirmation("");
+    dispatchReview({ type: "opened" });
     setDeploySchedulesOpen(false);
-    setStageContentLoaded(false);
     setDeployStatus(null);
     setDeployment(null);
     setSchedules([]);
     setSchedulerOwnership(null);
     setSelectedScheduleKeys(new Set());
     setPromotionError(null);
-    setSelectorDraft("*");
-    setRunOptionsOpen(false);
-    setLoading(true);
     const serial = ++requestSerial.current;
     void (async () => {
       try {
         await awaitWorkspaceSaves();
         if (serial !== requestSerial.current) return;
-        const input: PipelinePlanRequest = {
-          purpose: intent === "deploy" ? "deployment" : "execution",
-          environment: environment || undefined,
-          start_date: timeWindow?.start,
-          end_date: timeWindow?.end,
-          execution_time: new Date().toISOString(),
-          sensor_mode: "once",
-          source: requestedSourceKind
-            ? {
-                kind: requestedSourceKind,
-                version_id: requestedSourceVersion,
-              }
-            : undefined,
-          selection: initialSelection ? { ...initialSelection } : { mode: "all" },
-        };
-        setRequest(input);
+        const input = createPipelinePlanRequest({
+          intent,
+          environment,
+          timeWindow,
+          sourceKind: requestedSourceKind,
+          sourceVersion: requestedSourceVersion,
+          initialSelection,
+          executionTime: new Date().toISOString(),
+        });
+        dispatchReview({ type: "request_set", request: input });
         if (intent === "deploy") {
           const [statusResponse, scheduleResponse] = await Promise.all([
             getDeployStatus(pipelineId),
@@ -236,8 +230,10 @@ export function PipelinePlanSheet({
         await fetchPlan(input);
       } catch (cause) {
         if (serial !== requestSerial.current) return;
-        setError(cause instanceof Error ? cause.message : "Saving the workspace failed.");
-        setLoading(false);
+        dispatchReview({
+          type: "plan_load_failed",
+          message: cause instanceof Error ? cause.message : "Saving the workspace failed.",
+        });
       }
     })();
   }, [
@@ -259,42 +255,25 @@ export function PipelinePlanSheet({
   const updateRequest = (update: (current: PipelinePlanRequest) => PipelinePlanRequest) => {
     if (!request) return;
     const next = update(request);
-    setRequest(next);
-    setStageContentLoaded(false);
+    dispatchReview({ type: "request_changed", request: next });
     void fetchPlan(next);
   };
 
-  const selectionMode = (request?.selection?.mode ??
-    plan?.selection.mode ??
-    "all") as PlanSelectionMode;
-  const selectorMode = selectionMode === "selector" || selectionMode === "selector_needed";
-  const appliedSelector = request?.selection?.selector?.trim() ?? "";
-  const selectorDraftApplied = !selectorMode || selectorDraft.trim() === appliedSelector;
-  const selectorPlanIsCurrent = Boolean(
-    selectorMode &&
-    plan?.selection.mode === selectionMode &&
-    plan.selection.selector === appliedSelector,
-  );
-  const sensorMode = (request?.sensor_mode ?? plan?.context.sensor_mode ?? "once") as SensorMode;
-  const fullRefresh = Boolean(request?.full_refresh ?? plan?.context.requested_full_refresh);
-  const destructiveConfirmationRequired = Boolean(
-    intent === "run" && confirmDestructive && plan?.context.destructive,
-  );
-  const confirmationMatches =
-    !destructiveConfirmationRequired || confirmation.trim() === plan?.context.environment;
-  const hasBlockers = Boolean(
-    plan && (plan.status === "blocked" || plan.readiness.blockers.length),
-  );
-  const canConfirm = Boolean(
-    plan &&
-    !hasBlockers &&
-    confirmationMatches &&
-    selectorDraftApplied &&
-    !loading &&
-    !error &&
-    !deployment &&
-    (intent === "deploy" ? plan.summary.assets > 0 : plan.summary.execution_units > 0),
-  );
+  const {
+    selectionMode,
+    selectorMode,
+    appliedSelector,
+    selectorDraftApplied,
+    selectorPlanIsCurrent,
+    sensorMode,
+    fullRefresh,
+    destructiveConfirmationRequired,
+    canConfirm,
+  } = derivePipelinePlanReview(review, {
+    intent,
+    confirmDestructive,
+    deploymentExists: Boolean(deployment),
+  });
 
   const applySelector = () => {
     const selector = selectorDraft.trim();
@@ -332,9 +311,7 @@ export function PipelinePlanSheet({
 
   const confirm = async () => {
     if (!plan || !canConfirm) return;
-    setConfirming(true);
-    setError(null);
-    setActiveRunId(null);
+    dispatchReview({ type: "confirm_started" });
     try {
       if (intent === "deploy") {
         if (!onDeploy) {
@@ -365,36 +342,49 @@ export function PipelinePlanSheet({
         cause.code === "deployment_source_changed" &&
         request
       ) {
-        setError("The saved source changed after review. Review the refreshed deployment plan.");
+        dispatchReview({
+          type: "confirm_failed",
+          message: "The saved source changed after review. Review the refreshed deployment plan.",
+        });
         setDeployStatus(await getDeployStatus(pipelineId));
         await fetchPlan(request);
         return;
       }
       const refreshed = pipelinePlanFromConflict(cause);
       if (refreshed) {
-        setPlan(refreshed);
-        setRequest(canonicalPipelinePlanRequest(refreshed, false));
-        setStageContentLoaded(false);
-        setError(
-          cause instanceof APIError && cause.code === "plan_data_changed"
-            ? "The data state now requires additional or changed work. Review the refreshed plan before running."
-            : cause instanceof APIError && cause.code === "plan_stale"
-              ? "The source or configuration changed. Review the refreshed plan before running."
-              : cause instanceof Error
-                ? cause.message
-                : "The refreshed plan is blocked.",
-        );
+        dispatchReview({
+          type: "plan_refreshed",
+          plan: refreshed,
+          request: {
+            ...canonicalPipelinePlanRequest(refreshed, false),
+            purpose: request?.purpose,
+          },
+          message:
+            cause instanceof APIError && cause.code === "plan_data_changed"
+              ? "The data state now requires additional or changed work. Review the refreshed plan before running."
+              : cause instanceof APIError && cause.code === "plan_stale"
+                ? "The source or configuration changed. Review the refreshed plan before running."
+                : cause instanceof Error
+                  ? cause.message
+                  : "The refreshed plan is blocked.",
+        });
         return;
       }
       const active = activePipelineRunConflict(cause);
       if (active) {
-        setActiveRunId(active.activeRunId);
-        setError("Another run was admitted first. Open it to follow its progress.");
+        dispatchReview({
+          type: "confirm_failed",
+          message: "Another run was admitted first. Open it to follow its progress.",
+          activeRunId: active.activeRunId,
+        });
         return;
       }
-      setError(cause instanceof Error ? cause.message : "Pipeline run could not be started.");
+      dispatchReview({
+        type: "confirm_failed",
+        message: cause instanceof Error ? cause.message : "Pipeline run could not be started.",
+      });
     } finally {
-      setConfirming(false);
+      dispatchReview({ type: "confirm_finished" });
     }
   };
 
@@ -500,7 +490,9 @@ export function PipelinePlanSheet({
             {intent === "run" ? (
               <Collapsible
                 open={runOptionsOpen}
-                onOpenChange={setRunOptionsOpen}
+                onOpenChange={(nextOpen) =>
+                  dispatchReview({ type: "run_options_changed", open: nextOpen })
+                }
                 className="mt-3 rounded-lg border"
               >
                 <CollapsibleTrigger asChild>
@@ -540,7 +532,9 @@ export function PipelinePlanSheet({
                             const mode = value as PlanSelectionMode;
                             const usesSelector = mode === "selector" || mode === "selector_needed";
                             const selector = selectorDraft.trim() || appliedSelector || "*";
-                            if (usesSelector) setSelectorDraft(selector);
+                            if (usesSelector) {
+                              dispatchReview({ type: "selector_draft_changed", selector });
+                            }
                             updateRequest((current) => ({
                               ...current,
                               selection: usesSelector ? { mode, selector } : { mode },
@@ -622,7 +616,12 @@ export function PipelinePlanSheet({
                             <Input
                               id="pipeline-plan-selector"
                               value={selectorDraft}
-                              onChange={(event) => setSelectorDraft(event.target.value)}
+                              onChange={(event) =>
+                                dispatchReview({
+                                  type: "selector_draft_changed",
+                                  selector: event.target.value,
+                                })
+                              }
                               onKeyDown={(event) => {
                                 if (event.key === "Enter") {
                                   event.preventDefault();
@@ -723,7 +722,12 @@ export function PipelinePlanSheet({
               <Input
                 id="pipeline-plan-confirm-environment"
                 value={confirmation}
-                onChange={(event) => setConfirmation(event.target.value)}
+                onChange={(event) =>
+                  dispatchReview({
+                    type: "confirmation_changed",
+                    confirmation: event.target.value,
+                  })
+                }
                 autoComplete="off"
               />
             </div>
@@ -800,32 +804,6 @@ function PlanContextItem({ label, value }: { label: string; value: string }) {
       </dd>
     </div>
   );
-}
-
-function planSelectionLabel(mode: PlanSelectionMode) {
-  switch (mode) {
-    case "asset":
-      return "Selected asset";
-    case "needed":
-      return "Needed assets";
-    case "selector":
-      return "Matching selector";
-    case "selector_needed":
-      return "Needed matching selector";
-    default:
-      return "Entire pipeline";
-  }
-}
-
-function sensorModeLabel(mode: SensorMode) {
-  switch (mode) {
-    case "wait":
-      return "wait for sensors";
-    case "skip":
-      return "skip sensors";
-    default:
-      return "check sensors once";
-  }
 }
 
 function PlanReadySummary({ plan, intent }: { plan: PipelinePlan; intent: PlanIntent }) {
