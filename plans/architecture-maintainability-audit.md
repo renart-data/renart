@@ -554,8 +554,14 @@ later reads remain unchanged.
 
 `BenchmarkCloneWorkspaceState` records roughly 0.08 ms for 10, 0.8 ms for 100,
 and 7–8 ms for 1,000 synthetic two-column assets on the audit machine. Full
-refresh/SSE payload instrumentation and budgets remain the next evidence step;
-these numbers do not justify a delta protocol.
+refresh/SSE instrumentation now records refresh count/failures/duration,
+revision and snapshot shape, serialized event bytes, coalescing, live clients,
+deliveries, and slow-client drops. HTTP request logs include response bytes, so
+the full `/api/workspace` payload has the same observable size/latency boundary.
+Unit tests cover refresh outcomes, debounce replacement, delivery, drops, and
+marshal failures. Production-scale budgets still require collected CI/local
+measurements; neither the clone benchmark nor the counters justify a delta
+protocol by themselves.
 
 #### Evidence
 
@@ -579,7 +585,8 @@ fan-out should be observed as the workspace grows.
    whole; otherwise deep-copy at publication boundaries. Add a test proving a
    consumer cannot mutate future coordinator reads.
 2. Instrument refresh duration, snapshot byte size, event coalescing, hub client
-   count, and dropped/slow-client events.
+   count, and dropped/slow-client events. **Implemented; collect baselines before
+   setting budgets.**
 3. Add small/medium/large synthetic workspace benchmarks for parse, strip,
    marshal, and frontend merge.
 4. Define budgets before designing incremental events.

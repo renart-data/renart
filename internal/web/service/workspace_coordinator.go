@@ -54,8 +54,30 @@ type WorkspaceCoordinator struct {
 	state    WorkspaceState
 	revision atomic.Int64
 
+	refreshes           atomic.Uint64
+	refreshFailures     atomic.Uint64
+	lastRefreshNanos    atomic.Int64
+	workspacePipelines  atomic.Int64
+	workspaceAssetCount atomic.Int64
+	workspaceNotebooks  atomic.Int64
+	workspaceCellCount  atomic.Int64
+
 	recentServerWritesMu sync.Mutex
 	recentServerWrites   map[string]time.Time
+}
+
+// WorkspaceCoordinatorStats exposes bounded, content-free measurements for
+// deciding whether full SSE snapshots remain within budget.
+type WorkspaceCoordinatorStats struct {
+	Revision            int64
+	Refreshes           uint64
+	RefreshFailures     uint64
+	LastRefreshDuration time.Duration
+	Pipelines           int
+	Assets              int
+	Notebooks           int
+	NotebookCells       int
+	Hub                 events.HubStats
 }
 
 func NewWorkspaceCoordinator(deps WorkspaceCoordinatorDependencies) *WorkspaceCoordinator {
@@ -74,16 +96,32 @@ func (c *WorkspaceCoordinator) CurrentState() WorkspaceState {
 
 func (c *WorkspaceCoordinator) SetState(state WorkspaceState) {
 	state = cloneWorkspaceState(state)
+	pipelineCount, assetCount, notebookCount, cellCount := workspaceStateCounts(state)
 	c.stateMu.Lock()
-	defer c.stateMu.Unlock()
 	c.state = state
+	c.workspacePipelines.Store(int64(pipelineCount))
+	c.workspaceAssetCount.Store(int64(assetCount))
+	c.workspaceNotebooks.Store(int64(notebookCount))
+	c.workspaceCellCount.Store(int64(cellCount))
+	c.stateMu.Unlock()
 }
 
-func (c *WorkspaceCoordinator) Refresh(ctx context.Context) error {
+func (c *WorkspaceCoordinator) Refresh(ctx context.Context) (err error) {
+	started := time.Now()
+	defer func() {
+		duration := time.Since(started)
+		c.refreshes.Add(1)
+		c.lastRefreshNanos.Store(duration.Nanoseconds())
+		if err != nil {
+			c.refreshFailures.Add(1)
+		}
+		c.logRefresh(duration, err)
+	}()
+
 	if c.deps.RefreshHook != nil {
 		return c.deps.RefreshHook(ctx)
 	}
-	if err := c.deps.WorkspaceService.Refresh(ctx); err != nil {
+	if err = c.deps.WorkspaceService.Refresh(ctx); err != nil {
 		return err
 	}
 
@@ -91,6 +129,57 @@ func (c *WorkspaceCoordinator) Refresh(ctx context.Context) error {
 	state.Revision = c.revision.Add(1)
 	c.SetState(state)
 	return nil
+}
+
+func (c *WorkspaceCoordinator) Stats() WorkspaceCoordinatorStats {
+	c.stateMu.RLock()
+	revision := c.state.Revision
+	c.stateMu.RUnlock()
+
+	stats := WorkspaceCoordinatorStats{
+		Revision:            revision,
+		Refreshes:           c.refreshes.Load(),
+		RefreshFailures:     c.refreshFailures.Load(),
+		LastRefreshDuration: time.Duration(c.lastRefreshNanos.Load()),
+		Pipelines:           int(c.workspacePipelines.Load()),
+		Assets:              int(c.workspaceAssetCount.Load()),
+		Notebooks:           int(c.workspaceNotebooks.Load()),
+		NotebookCells:       int(c.workspaceCellCount.Load()),
+	}
+	if c.deps.Hub != nil {
+		stats.Hub = c.deps.Hub.Stats()
+	}
+	return stats
+}
+
+func (c *WorkspaceCoordinator) logRefresh(duration time.Duration, refreshErr error) {
+	if c.deps.Logger == nil {
+		return
+	}
+	stats := c.Stats()
+	c.deps.Logger.Debug("workspace refreshed",
+		zap.Bool("success", refreshErr == nil),
+		zap.Duration("duration", duration),
+		zap.Int64("revision", stats.Revision),
+		zap.Int("pipelines", stats.Pipelines),
+		zap.Int("assets", stats.Assets),
+		zap.Int("notebooks", stats.Notebooks),
+		zap.Int("notebook_cells", stats.NotebookCells),
+		zap.Uint64("refreshes", stats.Refreshes),
+		zap.Uint64("refresh_failures", stats.RefreshFailures),
+	)
+}
+
+func workspaceStateCounts(state WorkspaceState) (int, int, int, int) {
+	assets := 0
+	for _, pipeline := range state.Pipelines {
+		assets += len(pipeline.Assets)
+	}
+	cells := 0
+	for _, notebook := range state.Notebooks {
+		cells += len(notebook.Cells)
+	}
+	return len(state.Pipelines), assets, len(state.Notebooks), cells
 }
 
 // refreshLogged refreshes the workspace state and logs failures; the
@@ -139,6 +228,7 @@ func (c *WorkspaceCoordinator) PushUpdate(ctx context.Context, eventType, eventP
 		Lite:            true,
 		ChangedAssetIDs: changed,
 	})
+	c.logWorkspacePublish(false, eventType, eventPath)
 }
 
 func (c *WorkspaceCoordinator) PushUpdateImmediate(ctx context.Context, eventType, eventPath string) {
@@ -163,6 +253,7 @@ func (c *WorkspaceCoordinator) PushUpdateImmediateWithChangedIDs(ctx context.Con
 		Lite:            true,
 		ChangedAssetIDs: changed,
 	})
+	c.logWorkspacePublish(true, eventType, eventPath)
 }
 
 func (c *WorkspaceCoordinator) PushAssetContentUpdateImmediate(eventType, eventPath string, changedAssetIDs []string, content string) {
@@ -182,6 +273,26 @@ func (c *WorkspaceCoordinator) PushAssetContentUpdateImmediate(eventType, eventP
 		Lite:            true,
 		ChangedAssetIDs: changed,
 	})
+	c.logWorkspacePublish(true, eventType, eventPath)
+}
+
+func (c *WorkspaceCoordinator) logWorkspacePublish(immediate bool, eventType, eventPath string) {
+	if c.deps.Logger == nil || c.deps.Hub == nil {
+		return
+	}
+	stats := c.deps.Hub.Stats()
+	c.deps.Logger.Debug("workspace event published",
+		zap.String("event_type", eventType),
+		zap.String("path", filepath.ToSlash(eventPath)),
+		zap.Bool("immediate", immediate),
+		zap.Uint64("payload_bytes", stats.LastPayloadBytes),
+		zap.Int("clients", stats.Clients),
+		zap.Bool("pending", stats.Pending),
+		zap.Uint64("published", stats.Published),
+		zap.Uint64("coalesced", stats.Coalesced),
+		zap.Uint64("delivered", stats.Delivered),
+		zap.Uint64("dropped", stats.Dropped),
+	)
 }
 
 func (c *WorkspaceCoordinator) updateAssetContent(assetIDs []string, content string, updatedAt time.Time) WorkspaceState {

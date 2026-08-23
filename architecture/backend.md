@@ -65,8 +65,13 @@ back as change events. The coordinator owns an immutable, whole-state snapshot:
 state accepted by `SetState` and state returned by `CurrentState` are deep
 copies of the JSON-shaped DTO, so maps, slices, pointers, and nested `any`
 values cannot mutate a later read. A focused benchmark tracks clone cost at
-10, 100, and 1,000 synthetic assets. Every HTTP request inherits the process
-lifecycle context. Cancelling that context therefore releases long-lived SSE handlers
+10, 100, and 1,000 synthetic assets. The coordinator records refresh counts,
+failures, duration, revision, and snapshot shape. The SSE hub exposes monotonic
+publish, coalescing, fan-out, payload-byte, and slow-client drop counters; debug
+logs attach those measurements to each workspace refresh/event. HTTP request
+logs include response bytes, so `/api/workspace` size and latency can be
+measured without a second serialization path. Every HTTP request inherits the
+process lifecycle context. Cancelling that context therefore releases long-lived SSE handlers
 before `http.Server.Shutdown` waits for active requests, while ordinary
 requests still receive the normal graceful-drain window.
 

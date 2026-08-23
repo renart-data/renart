@@ -6,9 +6,31 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	webscheduler "renart/internal/web/scheduler"
 	"renart/internal/web/service"
 )
+
+func TestRequestLoggerRecordsResponseSize(t *testing.T) {
+	t.Parallel()
+
+	core, observed := observer.New(zap.InfoLevel)
+	handler := RequestLogger(zap.New(core))(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusCreated)
+		_, _ = writer.Write([]byte("hello"))
+	}))
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/example", nil))
+
+	require.Equal(t, http.StatusCreated, response.Code)
+	entries := observed.FilterMessage("http").All()
+	require.Len(t, entries, 1)
+	fields := entries[0].ContextMap()
+	assert.EqualValues(t, 5, fields["response_bytes"])
+}
 
 func TestSessionTokenAuthenticatesCLIRunOrigin(t *testing.T) {
 	t.Parallel()

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -155,4 +156,43 @@ func TestWorkspaceCoordinatorPushAssetContentUpdateImmediateSkipsRefresh(t *test
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for workspace event")
 	}
+}
+
+func TestWorkspaceCoordinatorStatsRecordRefreshOutcomes(t *testing.T) {
+	t.Parallel()
+
+	fail := false
+	coord := NewWorkspaceCoordinator(WorkspaceCoordinatorDependencies{
+		Hub: events.NewHub(),
+		RefreshHook: func(context.Context) error {
+			time.Sleep(time.Millisecond)
+			if fail {
+				return errors.New("refresh failed")
+			}
+			return nil
+		},
+	})
+	coord.SetState(WorkspaceState{
+		Revision: 7,
+		Pipelines: []WorkspacePipeline{{
+			Assets: []WorkspaceAsset{{ID: "one"}, {ID: "two"}},
+		}},
+		Notebooks: []WorkspaceNotebook{{
+			Cells: []WorkspaceAsset{{ID: "cell"}},
+		}},
+	})
+
+	require.NoError(t, coord.Refresh(t.Context()))
+	fail = true
+	require.EqualError(t, coord.Refresh(t.Context()), "refresh failed")
+
+	stats := coord.Stats()
+	assert.Equal(t, int64(7), stats.Revision)
+	assert.Equal(t, uint64(2), stats.Refreshes)
+	assert.Equal(t, uint64(1), stats.RefreshFailures)
+	assert.GreaterOrEqual(t, stats.LastRefreshDuration, time.Millisecond)
+	assert.Equal(t, 1, stats.Pipelines)
+	assert.Equal(t, 2, stats.Assets)
+	assert.Equal(t, 1, stats.Notebooks)
+	assert.Equal(t, 1, stats.NotebookCells)
 }

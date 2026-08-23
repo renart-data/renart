@@ -27,7 +27,8 @@ func isLoopbackHost(hostname string) bool {
 // http.Flusher behavior streaming handlers (SSE) depend on.
 type statusWriter struct {
 	http.ResponseWriter
-	status int
+	status        int
+	responseBytes int64
 }
 
 func (w *statusWriter) WriteHeader(code int) {
@@ -39,7 +40,9 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
-	return w.ResponseWriter.Write(b)
+	written, err := w.ResponseWriter.Write(b)
+	w.responseBytes += int64(written)
+	return written, err
 }
 
 func (w *statusWriter) Flush() {
@@ -70,6 +73,7 @@ func RequestLogger(logger *zap.Logger) func(http.Handler) http.Handler {
 				zap.String("method", r.Method),
 				zap.String("path", r.URL.Path),
 				zap.Int("status", status),
+				zap.Int64("response_bytes", sw.responseBytes),
 				zap.Duration("duration", time.Since(start)),
 			)
 		})
