@@ -325,6 +325,14 @@ the notebook-scoped conversation. The rail remains visible on wide screens and
 moves into one left Sheet on narrower screens so the notebook canvas stays the
 primary surface.
 
+The Add data dialog is a presenter over a focused source controller. A pure
+reducer owns its warehouse/file/HTTP form transitions, table discovery state,
+request normalization, and the policy that distinguishes local DuckDB/file
+sources from imports requiring review. The controller waits for pending cell
+saves and then uses the ordinary notebook change APIs; it does not become a
+second document store. The server response and subsequent workspace/runtime
+events remain authoritative.
+
 Visualization blocks keep the rendered chart in that primary document flow.
 Selecting a chart opens its Visual/Definition controls in a contextual right
 inspector on wide screens or a right Sheet on narrower screens; the outline and

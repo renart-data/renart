@@ -92,13 +92,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   cancelNotebookRun,
   closeNotebookSession,
-  configureNotebookCellSource,
   createNotebookControl,
   createNotebookCellAt,
   createNotebookMarkdown,
   createNotebookVisualization,
-  createNotebookSource,
-  createNotebookWarehouseSource,
   deleteNotebookBlock,
   deleteNotebookControl,
   deleteNotebook,
@@ -136,6 +133,13 @@ import {
 import { sqlDiscoveryTablesAtom } from "@/lib/atoms/sql-discovery";
 import { usesPythonSource } from "@/lib/asset-types";
 import { addDependency, missingPythonImports } from "@/lib/notebook-python-deps";
+import {
+  isDuckDBNotebookConnection,
+  notebookSourceRequiresImportReview,
+  useNotebookDataSourceForm,
+  useNotebookSourceImport,
+  type NotebookDataSourceInput,
+} from "@/hooks/use-notebook-data-source";
 import {
   AUTHORED_CONTROL_TYPE_LABELS,
   AUTHORED_CONTROL_TYPES,
@@ -942,6 +946,19 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     },
     [mutateWithResult],
   );
+  const handleSourceCreated = useCallback((cellId: string) => {
+    setEnteringBlockKey(`cell:${cellId}`);
+    setScrollRevision((current) => current + 1);
+  }, []);
+  const closeAddData = useCallback(() => setAddDataOpen(false), []);
+  const { configureCellSource, createDataSource } = useNotebookSourceImport({
+    notebookId,
+    notebook,
+    flushPendingSaves,
+    mutateWithResult,
+    onCreated: handleSourceCreated,
+    onClose: closeAddData,
+  });
 
   const selectVisualization = useCallback(
     (visualizationID: string) => {
@@ -1117,117 +1134,6 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       selectControl,
       selectVisualization,
     ],
-  );
-
-  const configureCellSource = useCallback(
-    async (
-      cellId: string,
-      input: { connection?: string; snapshot_mode?: "full" | "sample"; row_limit?: number },
-    ) => {
-      await flushPendingSaves();
-      await mutateWithResult(() => configureNotebookCellSource(notebookId, cellId, input));
-    },
-    [flushPendingSaves, mutateWithResult, notebookId],
-  );
-
-  const createWarehouseSource = useCallback(
-    async (input: {
-      connection: string;
-      relation: string;
-      snapshotMode: "full" | "sample";
-      rowLimit?: number;
-    }) => {
-      if (!notebook) return;
-      await flushPendingSaves();
-      const existing = new Set(
-        notebook.cells.map((cell) => cell.cell_id).filter((id): id is string => Boolean(id)),
-      );
-      const updated = await mutateWithResult(() =>
-        createNotebookWarehouseSource(notebookId, {
-          connection: input.connection,
-          query: `select * from ${input.relation}\n`,
-          snapshot_mode: input.snapshotMode,
-          row_limit: input.rowLimit,
-        }),
-      );
-      const created = updated?.cells.find((cell) => cell.cell_id && !existing.has(cell.cell_id));
-      if (created?.cell_id) {
-        setEnteringBlockKey(`cell:${created.cell_id}`);
-        setScrollRevision((current) => current + 1);
-      }
-      setAddDataOpen(false);
-    },
-    [flushPendingSaves, mutateWithResult, notebook, notebookId],
-  );
-
-  const createDataSource = useCallback(
-    async (
-      input:
-        | {
-            kind: "warehouse";
-            connection: string;
-            relation: string;
-            snapshotMode: "full" | "sample";
-            rowLimit?: number;
-          }
-        | {
-            kind: "file";
-            connection?: string;
-            uri: string;
-            format?: string;
-            snapshotMode: "full" | "sample";
-            rowLimit?: number;
-          }
-        | {
-            kind: "http";
-            url: string;
-            method: string;
-            body?: unknown;
-            recordsPath?: string;
-            snapshotMode: "full" | "sample";
-            rowLimit?: number;
-          },
-    ) => {
-      if (input.kind === "warehouse") {
-        await createWarehouseSource(input);
-        return;
-      }
-      if (!notebook) return;
-      await flushPendingSaves();
-      const existing = new Set(
-        notebook.cells.map((cell) => cell.cell_id).filter((id): id is string => Boolean(id)),
-      );
-      const updated = await mutateWithResult(() =>
-        createNotebookSource(
-          notebookId,
-          input.kind === "file"
-            ? {
-                kind: "file",
-                connection: input.connection,
-                uri: input.uri,
-                format: input.format,
-                snapshot: { mode: input.snapshotMode, row_limit: input.rowLimit },
-              }
-            : {
-                kind: "http",
-                request: {
-                  url: input.url,
-                  method: input.method,
-                  body: input.body,
-                },
-                response: { records_path: input.recordsPath },
-                snapshot: { mode: input.snapshotMode, row_limit: input.rowLimit },
-              },
-        ),
-      );
-      const created = updated?.cells.find((cell) => cell.cell_id && !existing.has(cell.cell_id));
-      if (created?.cell_id) {
-        setEnteringBlockKey(`cell:${created.cell_id}`);
-        setScrollRevision((current) => current + 1);
-      }
-      setAddDataOpen(false);
-    },
-    [createWarehouseSource, flushPendingSaves, mutateWithResult, notebook, notebookId],
   );
 
   const dependencies = useMemo(() => notebook?.dependencies ?? [], [notebook?.dependencies]);
@@ -2490,32 +2396,6 @@ function PendingNotebookBlock({ kind }: { kind: PendingNotebookBlockKind }) {
   );
 }
 
-type NotebookDataSourceInput =
-  | {
-      kind: "warehouse";
-      connection: string;
-      relation: string;
-      snapshotMode: "full" | "sample";
-      rowLimit?: number;
-    }
-  | {
-      kind: "file";
-      connection?: string;
-      uri: string;
-      format?: string;
-      snapshotMode: "full" | "sample";
-      rowLimit?: number;
-    }
-  | {
-      kind: "http";
-      url: string;
-      method: string;
-      body?: unknown;
-      recordsPath?: string;
-      snapshotMode: "full" | "sample";
-      rowLimit?: number;
-    };
-
 function NotebookAddDataDialog({
   open,
   onOpenChange,
@@ -2532,25 +2412,49 @@ function NotebookAddDataDialog({
   onCreate: (input: NotebookDataSourceInput) => Promise<void>;
 }) {
   const loadTables = useSetAtom(sqlDiscoveryTablesAtom);
-  const [kind, setKind] = useState<"warehouse" | "file" | "http">("warehouse");
-  const [connection, setConnection] = useState("");
-  const [relation, setRelation] = useState("");
-  const [filter, setFilter] = useState("");
-  const [tables, setTables] = useState<Array<{ name: string; short_name: string }>>([]);
-  const [fileConnection, setFileConnection] = useState("__local__");
-  const [fileURI, setFileURI] = useState("");
-  const [fileFormat, setFileFormat] = useState("__auto__");
-  const [requestURL, setRequestURL] = useState("");
-  const [requestMethod, setRequestMethod] = useState("GET");
-  const [requestBody, setRequestBody] = useState("");
-  const [recordsPath, setRecordsPath] = useState("");
-  const [snapshotMode, setSnapshotMode] = useState<"full" | "sample">("full");
-  const [rowLimit, setRowLimit] = useState(10000);
-  const [loading, setLoading] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState("");
-  const wasOpen = useRef(false);
   const defaultQueryConnection = queryConnections[0]?.name ?? "";
+  const {
+    state: {
+      kind,
+      connection,
+      relation,
+      filter,
+      fileConnection,
+      fileURI,
+      fileFormat,
+      requestURL,
+      requestMethod,
+      requestBody,
+      recordsPath,
+      snapshotMode,
+      rowLimit,
+      loading,
+      creating,
+      error,
+    },
+    visibleTables,
+    canSubmit,
+    submit,
+    setKind,
+    setConnection,
+    setRelation,
+    setFilter,
+    setFileConnection,
+    setFileURI,
+    setFileFormat,
+    setRequestURL,
+    setRequestMethod,
+    setRequestBody,
+    setRecordsPath,
+    setSnapshotMode,
+    setRowLimit,
+  } = useNotebookDataSourceForm({
+    open,
+    defaultQueryConnection,
+    environment,
+    loadTables,
+    onCreate,
+  });
   const storageConnections = useMemo(
     () =>
       Object.entries(connections)
@@ -2558,110 +2462,6 @@ function NotebookAddDataDialog({
         .sort(([left], [right]) => left.localeCompare(right)),
     [connections],
   );
-
-  useEffect(() => {
-    const justOpened = open && !wasOpen.current;
-    wasOpen.current = open;
-    if (!justOpened) return;
-    setConnection(defaultQueryConnection);
-    setKind("warehouse");
-    setRelation("");
-    setFilter("");
-    setFileConnection("__local__");
-    setFileURI("");
-    setFileFormat("__auto__");
-    setRequestURL("");
-    setRequestMethod("GET");
-    setRequestBody("");
-    setRecordsPath("");
-    setSnapshotMode("full");
-    setRowLimit(10000);
-    setError("");
-  }, [defaultQueryConnection, open]);
-
-  useEffect(() => {
-    if (open && !connection && defaultQueryConnection) {
-      setConnection(defaultQueryConnection);
-    }
-  }, [connection, defaultQueryConnection, open]);
-
-  useEffect(() => {
-    if (!open || kind !== "warehouse" || !connection) {
-      setTables([]);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError("");
-    void loadTables({ connection, environment })
-      .then((result) => {
-        if (!cancelled) setTables(result);
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setTables([]);
-          setError(cause instanceof Error ? cause.message : "Could not browse this connection.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [connection, environment, kind, loadTables, open]);
-
-  const visibleTables = tables.filter((table) =>
-    table.name.toLowerCase().includes(filter.trim().toLowerCase()),
-  );
-  const submit = async () => {
-    if (creating) return;
-    setCreating(true);
-    setError("");
-    try {
-      const snapshot = {
-        snapshotMode,
-        rowLimit: snapshotMode === "sample" ? rowLimit : undefined,
-      };
-      if (kind === "warehouse") {
-        await onCreate({ kind, connection, relation: relation.trim(), ...snapshot });
-      } else if (kind === "file") {
-        await onCreate({
-          kind,
-          connection: fileConnection === "__local__" ? undefined : fileConnection,
-          uri: fileURI.trim(),
-          format: fileFormat === "__auto__" ? undefined : fileFormat,
-          ...snapshot,
-        });
-      } else {
-        let body: unknown;
-        if (requestBody.trim()) {
-          try {
-            body = JSON.parse(requestBody);
-          } catch {
-            throw new Error("Request body must be valid JSON.");
-          }
-        }
-        await onCreate({
-          kind,
-          url: requestURL.trim(),
-          method: requestMethod,
-          body,
-          recordsPath: recordsPath.trim() || undefined,
-          ...snapshot,
-        });
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not add the data source.");
-    } finally {
-      setCreating(false);
-    }
-  };
-  const canSubmit =
-    (snapshotMode === "full" || rowLimit > 0) &&
-    ((kind === "warehouse" && Boolean(connection && relation.trim())) ||
-      (kind === "file" && Boolean(fileURI.trim())) ||
-      (kind === "http" && Boolean(requestURL.trim())));
 
   return (
     <Dialog open={open} onOpenChange={(next) => !creating && onOpenChange(next)}>
@@ -3209,44 +3009,6 @@ function NotebookResultPreview({
       </div>
     </div>
   );
-}
-
-function isDuckDBNotebookConnection(
-  connection: string,
-  assetType: string | undefined,
-  queryConnections: WorkspaceQueryConnection[],
-) {
-  const normalized = connection.trim().toLowerCase();
-  const configured = queryConnections.find(
-    (candidate) => candidate.name.trim().toLowerCase() === normalized,
-  );
-  return (
-    configured?.connection_type.trim().toLowerCase() === "duckdb" ||
-    configured?.asset_type.trim().toLowerCase().startsWith("duckdb.") === true ||
-    assetType?.trim().toLowerCase().startsWith("duckdb.") === true
-  );
-}
-
-function notebookSourceRequiresImportReview(
-  cell: WebAsset,
-  queryConnections: WorkspaceQueryConnection[],
-) {
-  const source = cell.notebook_source;
-  if (!source) {
-    const connection = cell.connection?.trim() ?? "";
-    return (
-      Boolean(connection) && !isDuckDBNotebookConnection(connection, cell.type, queryConnections)
-    );
-  }
-  const connection = source.connection?.trim() ?? "";
-  if (connection) {
-    return !isDuckDBNotebookConnection(connection, cell.type, queryConnections);
-  }
-  if (source.kind === "http" || source.kind === "object" || source.kind === "object_storage") {
-    return true;
-  }
-  const uri = source.uri?.trim().toLowerCase() ?? "";
-  return uri.includes("://") && !uri.startsWith("file://");
 }
 
 function downloadNotebookCell(notebookId: string, cellId: string, format: "csv" | "parquet") {

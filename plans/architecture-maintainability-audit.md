@@ -99,7 +99,7 @@ The cleanup should explicitly retain these strengths:
 | 1 | Make API contracts generated, closed, and CI-verified | Complete | Add roots as new public DTO surfaces appear |
 | 2 | Create one asset/connection capability registry | Complete | Fingerprint-v3 mapping changes require an explicit migration |
 | 3 | Batch repeated semantic analysis and consolidate SQL helpers | Complete for direct projections | Recursive CTE batch lineage waits for a released reusable Golyglot API |
-| 4 | Extract controllers from notebook/build/review UI | Deferred | Extract with the next behavior change, not as a file-splitting rewrite |
+| 4 | Extract controllers from notebook/build/review UI | In progress | Notebook document/mutation/run ownership remains |
 | 5 | Introduce compiler-visible backend domain seams | Guarded | Import direction is enforced; move one cohesive domain beside feature work |
 | 6 | Rebalance the test pyramid and shard live E2E | Measuring | Collect timing artifacts before choosing CI groups/mobile coverage |
 | 7 | Make workspace snapshots immutable and instrument refresh/SSE | Complete for guardrails | Collect production-scale baselines before budgets or deltas |
@@ -409,6 +409,11 @@ The clearest examples are:
 | `notebook-page.tsx` | 4,451 | 67 | 28 |
 | `build-page.tsx` | 3,473 | 30 | 10 |
 | `pipeline-plan-sheet.tsx` | 2,235 | 16 | 5 |
+
+The table records the audit baseline. After the source-import extraction,
+`notebook-page.tsx` is 4,213 lines and contains 53 `useState` and 25 `useEffect`
+calls across all of its presenters; source form/discovery transitions now live
+in a tested hook instead of contributing to those counts.
 
 The issue is not the raw count. `notebook-page.tsx`, for example, coordinates
 document selection, runtime events, source approval/import, cell execution,
@@ -811,7 +816,7 @@ These workstreams landed as separate reviewable commits.
 
 ### Phase C — headless application controllers
 
-Four feature-adjacent slices are complete:
+Five feature-adjacent slices are complete:
 
 - pipeline settings use a unit-tested reducer/controller for independent config
   and Python dependency state, validation, sequential persistence, and
@@ -827,11 +832,13 @@ Four feature-adjacent slices are complete:
   unit coverage;
 - Build route/local selection reconciliation and mobile/desktop panel state now
   live in a focused reducer hook; routing and presentation stay in the page.
+- Notebook warehouse/file/HTTP source form state, discovery, request
+  normalization, remote-import review policy, and mutation orchestration now
+  live in a focused reducer/controller hook. The dialog remains a presenter,
+  and durable state continues to reconcile from the notebook APIs and SSE.
 
-Continue with the next feature or bug touching each remaining surface:
-
-1. notebook document/mutation/run controller plus unit tests;
-2. notebook source-import controller.
+Continue with the next feature or bug touching the remaining surface: the
+notebook document/mutation/run controller plus unit tests.
 
 Keep rendered components and route behavior stable. This is an extraction, not
 a redesign.

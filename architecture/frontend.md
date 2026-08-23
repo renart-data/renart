@@ -599,6 +599,12 @@ than hand-rolled `div` shells.
   desktop side-panel, and result-panel visibility. Its reducer keeps those
   independent layout modes explicit and unit-testable while navigation remains
   owned by the Build route presenter.
+- [use-notebook-data-source.ts](../web/hooks/use-notebook-data-source.ts): owns
+  notebook source-dialog state, table discovery, normalized warehouse/file/HTTP
+  requests, and source-creation orchestration. Its pure reducer and policy
+  helpers keep source validation and remote-import review rules testable without
+  mounting the notebook page; durable changes still go through the notebook
+  transaction APIs and reconcile from the server.
 - [use-app-asset-materialization-status.ts](../web/hooks/use-app-asset-materialization-status.ts):
   freshness / materialization enrichment with a post-terminal event guard.
 - [use-pipeline-staleness.ts](../web/hooks/use-pipeline-staleness.ts): per-pipeline
