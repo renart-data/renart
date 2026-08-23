@@ -288,47 +288,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 	server.pipelineSvc.SetExternalRelationImporter(hybridExecutor)
 	server.policyLoader = policy.NewLoader(filepath.Join(absRoot, ".renart", "environments.yml"))
 
-	server.executionSvc = service.NewExecutionService(service.ExecutionDependencies{
-		WorkspaceRoot:        absRoot,
-		ConfigPath:           resolveConfigFilePath(absRoot),
-		Executor:             server.executor,
-		ResolveAssetByID:     server.resolveAssetByID,
-		ResolveAssetNameByID: server.findAssetNameByID,
-		FindInspectIDs:       server.findMaterializationInspectIDs,
-		CurrentPipelines: func() []service.PipelineView {
-			state := server.currentState()
-			pipelines := make([]service.PipelineView, 0, len(state.Pipelines))
-			for _, pipeline := range state.Pipelines {
-				assets := make([]service.AssetView, 0, len(pipeline.Assets))
-				for _, asset := range pipeline.Assets {
-					qualityCheckCount := len(asset.CustomChecks)
-					for _, column := range asset.Columns {
-						qualityCheckCount += len(column.Checks)
-					}
-					assets = append(assets, service.AssetView{
-						ID: asset.ID, Name: asset.Name, QualityCheckCount: qualityCheckCount,
-					})
-				}
-				pipelines = append(pipelines, service.PipelineView{ID: pipeline.ID, UUID: pipeline.UUID, Name: pipeline.Name, Assets: assets})
-			}
-			return pipelines
-		},
-		Events:       server.eventBus,
-		TargetWrites: serverTargetWriteStore{server: server},
-		DispatchCompletion: func(ctx context.Context, event bus.RunCompleted) error {
-			return server.dispatchRunCompletion(ctx, event)
-		},
-		AcquireExecutionLease: executionCoordinator.AcquireShared,
-		PolicyFor: func(environment string) policy.EnvironmentPolicy {
-			if strings.TrimSpace(environment) == "" {
-				environment = server.currentState().SelectedEnvironment
-			}
-			return server.policyLoader.For(environment)
-		},
-		SelectedEnvironment: func() string { return server.currentState().SelectedEnvironment },
-		ParseQueryOutput:    service.ParseQueryJSONOutput,
-		NewPipelineBuilder:  server.newPipelineBuilder,
-	})
+	configureExecutionService(server, absRoot, executionCoordinator)
 
 	server.assetSvc = service.NewAssetService(service.AssetDependencies{
 		Fs:                           afero.NewOsFs(),
@@ -608,72 +568,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		Logger: logger,
 	})
 	server.stalenessSvc.AttachBus(server.eventBus)
-	server.pipelinePlanSvc = service.NewPipelinePlanService(service.PipelinePlanDependencies{
-		WorkspaceRoot:    absRoot,
-		ConfigPath:       resolveConfigFilePath(absRoot),
-		Snapshots:        server.snapshotStore,
-		Staleness:        server.stalenessSvc,
-		DependencyGraph:  server.resolveWorkspaceDependencyGraph,
-		WorkspaceGraph:   server.sqlLSPSvc.WorkspaceGraph,
-		CurrentState:     func() service.WorkspaceState { return server.currentState() },
-		Fingerprints:     server.fingerprintEngine,
-		Materializations: server.matlogStore,
-		ResolveProducerDeployment: func(ctx context.Context, pipelineUUID, environment string) (service.PipelinePlanProducerDeployment, error) {
-			selection := service.PipelinePlanProducerDeployment{}
-			for _, current := range server.currentState().Pipelines {
-				if current.UUID == pipelineUUID {
-					selection.PipelineID = current.ID
-					selection.PipelineName = current.Name
-					break
-				}
-			}
-			if selection.PipelineID == "" {
-				return selection, fmt.Errorf("producer pipeline %s is not present in the workspace", pipelineUUID)
-			}
-			if server.schedulerSvc != nil {
-				schedule, variables, found, err := server.schedulerSvc.ResolveEnvScheduleExecutionContext(
-					ctx, pipelineUUID, environment,
-				)
-				if err != nil {
-					return selection, err
-				}
-				selection.ScheduleFound = found
-				if found {
-					selection.ScheduleStatus = string(schedule.Status)
-					selection.VariableOverrides = variables
-					if strings.TrimSpace(schedule.SnapshotVersionID) != "" {
-						selection.SnapshotVersionID = schedule.SnapshotVersionID
-						return selection, nil
-					}
-				}
-			}
-			latest, err := server.snapshotStore.Latest(ctx, pipelineUUID)
-			if err != nil {
-				return selection, err
-			}
-			if latest != nil {
-				selection.SnapshotVersionID = latest.VersionID
-			}
-			return selection, nil
-		},
-		ResolvePipelineUUID: server.findPipelineUUIDByID,
-		PolicyFor:           server.policyLoader.For,
-		ActiveRunID:         server.schedulerStore.ActiveRunID,
-		ConflictingRunID: func(ctx context.Context, pipelineID, pipelineUUID string, resources service.PipelinePlanResources) (string, error) {
-			claims := make([]webscheduler.PipelineRunResourceClaim, 0, len(resources.Claims))
-			for _, claim := range resources.Claims {
-				claims = append(claims, webscheduler.PipelineRunResourceClaim{
-					Kind: claim.Kind, Identity: claim.Identity,
-				})
-			}
-			return server.schedulerStore.ConflictingRunID(ctx, pipelineID, pipelineUUID, webscheduler.PipelineRunPlanResources{
-				Isolation: resources.Isolation, Claims: claims,
-			})
-		},
-		NewPipelineBuilder: func() *pipeline.Builder {
-			return service.NewRenartPipelineBuilder(afero.NewOsFs())
-		},
-	})
+	configurePipelinePlanService(server, absRoot)
 
 	server.schedulerSvc = webscheduler.New(webscheduler.Options{
 		Store:                server.schedulerStore,
