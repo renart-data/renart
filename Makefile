@@ -16,7 +16,7 @@ help:
 	@printf "  make build             Build web app, Go binary, and docs\n"
 	@printf "  make check             Run Go tests plus web/docs builds\n"
 	@printf "  make release-check     Run local alpha release checks\n"
-	@printf "  make architecture-check  Reject retired current-state architecture claims\n"
+	@printf "  make architecture-check  Verify current-state claims and Go dependency directions\n"
 	@printf "  make licenses          Regenerate third-party notices\n"
 	@printf "  make licenses-check    Verify dependency licenses and notices\n"
 	@printf "  make bruin-sqlparser-stub  Build Bruin's compatibility link shim\n"
@@ -62,6 +62,7 @@ licenses-check:
 
 architecture-check:
 	./scripts/check_architecture_current_state.sh
+	GO="$(GO)" ./scripts/check_go_dependency_boundaries.sh
 
 bruin-sqlparser-stub:
 	./scripts/build_bruin_sqlparser_stub.sh "$(HOST_SQLPARSER_TARGET)"

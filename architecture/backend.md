@@ -1388,6 +1388,13 @@ asset.
   accept exactly one non-null object, and reject unknown fields. Routes with
   smaller or larger known payloads pass an explicit limit; multipart uploads
   and intentionally optional bodies keep separate bounded paths.
+- **Dependency direction.** `cmd` is the composition root and `httpapi` is a
+  transport edge. Only the composition/adaptor packages (`cmd`, `httpapi`,
+  `clientapi`, and `notebookmcp`) may depend directly on the broad `service`
+  facade; extracted domain and foundation packages stay below it. The
+  architecture check derives production import edges with `go list` and fails
+  if transport, composition-root, or service-facade dependencies point back
+  into lower layers.
 - **Middleware** (`httpapi/middleware.go`): zap request logging, panic
   recovery, and an Origin/Host guard on state-changing requests (loopback
   origins are trusted so the Vite dev proxy works). SSE keeps the write

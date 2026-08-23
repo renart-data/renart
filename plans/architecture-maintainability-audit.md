@@ -1,11 +1,11 @@
 # Architecture and maintainability audit
 
-Status: implementation in progress, 2026-08-23. The native-runtime fact guard,
-annotated Go-AST API contract generator, and backend connection capability
-registry have shipped locally. This is not a proposal for a rewrite. Each
-accepted implementation slice should remain small, preserve Renart's
-filesystem/SSE/runtime contracts, and be folded into the relevant document
-under [`architecture/`](../architecture/) when it ships.
+Status: implementation in progress, 2026-08-23. The guardrail, contract,
+capability, lineage, snapshot-ownership, request-boundary, observability, live
+timing, and bundle-budget slices described below have shipped locally. This is
+not a proposal for a rewrite. Each accepted implementation slice should remain
+small, preserve Renart's filesystem/SSE/runtime contracts, and be folded into
+the relevant document under [`architecture/`](../architecture/) when it ships.
 
 ## 1. Executive assessment
 
@@ -446,6 +446,17 @@ to shorten a file.
   integration rather than every local toggle.
 
 ### 5.6 `internal/web/service` no longer provides a meaningful boundary
+
+#### Implemented guardrail
+
+The architecture check now derives the production import graph with `go list`
+and preserves the direction that already exists: `cmd` remains the composition
+root, `httpapi` remains a transport edge, and only the current
+composition/adaptor packages may import the broad `service` facade. New domain
+packages therefore cannot quietly depend back on transport or the facade while
+the strangler extraction proceeds. No runtime ownership or package was moved;
+the larger execution/notebook/presentation splits still belong beside concrete
+feature work.
 
 #### Evidence
 
