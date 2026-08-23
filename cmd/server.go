@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/git"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	gogit "github.com/go-git/go-git/v5"
@@ -391,47 +390,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		NewConnectionManager: server.newConnectionManager,
 	})
 
-	server.notebookSvc = service.NewNotebookService(service.NotebookDependencies{
-		WorkspaceRoot:           absRoot,
-		ConfigPath:              resolveConfigFilePath(absRoot),
-		DisableFilesystemAccess: cfg.disableFilesystemAccess,
-		SnapshotMaxBytes:        cfg.notebookSnapshotMaxBytes,
-		SnapshotTimeout:         cfg.notebookSnapshotTimeout,
-		CurrentState:            func() service.WorkspaceState { return server.currentState() },
-		NewConnectionManager: func(ctx context.Context, environment string) (config.ConnectionAndDetailsGetter, error) {
-			return server.newConnectionManager(
-				secretstore.WithPurpose(ctx, secretstore.PurposeNotebookQuery),
-				environment,
-			)
-		},
-		PushWorkspaceUpdate: server.pushWorkspaceUpdate,
-		// Validate cells for server-side auto-recompute with the same
-		// parse-context the editor uses (constructed below; referenced lazily).
-		ValidateSQL: func(ctx context.Context, assetID, content string, schemaTables []service.ParseContextSchemaTable) (service.ParseContextResult, *service.APIError) {
-			return server.parseContextSvc.Parse(ctx, assetID, content, schemaTables, "")
-		},
-		PublishEvent: func(payload any) { server.hub.PublishImmediate(payload) },
-	})
-	renartExecutable, executableErr := os.Executable()
-	if executableErr != nil {
-		logger.Warn("notebook agent executable discovery failed", zap.Error(executableErr))
-	}
-	server.notebookAgentSvc = service.NewNotebookAgentService(ctx, service.NotebookAgentDependencies{
-		WorkspaceRoot:    absRoot,
-		RenartExecutable: renartExecutable,
-		ValidateNotebook: func(notebookID string) *service.APIError {
-			_, apiErr := server.notebookSvc.Get(notebookID)
-			return apiErr
-		},
-		ResolveReferences: func(notebookID string, references []service.NotebookAgentReferenceRequest) ([]service.NotebookAgentReference, *service.APIError) {
-			notebook, apiErr := server.notebookSvc.Get(notebookID)
-			if apiErr != nil {
-				return nil, apiErr
-			}
-			return service.ResolveNotebookAgentReferences(notebook, server.currentState(), references)
-		},
-		PublishEvent: func(payload any) { server.hub.PublishImmediate(payload) },
-	})
+	configureNotebookServices(ctx, server, cfg, logger)
 	configurePresentationService(server, absRoot)
 
 	server.suggestionsSvc = service.NewSuggestionsService(service.SuggestionsDependencies{
