@@ -273,26 +273,42 @@ treatment.
 
 ### 5.3 The native Golyglot migration is complete at runtime but not in shape
 
+#### Implemented result
+
+The unused JSON-AST compatibility path has been removed from SQL intelligence:
+the old parse/tokenize/validate response DTOs, map walkers, range reconstruction,
+duplicate validation-schema model, and their tests no longer remain beside the
+native adapter. The live parse-context types and helpers now use
+engine-neutral/Golyglot names, and their source file reflects that ownership.
+The observable diagnostic source and fallback code prefix remain `polyglot` for
+client compatibility, as does Golyglot's own `SyntaxError.Polyglot` compatibility
+field.
+
+The LSP's tolerant editor scanner is intentionally unchanged. Replacing its
+remaining structural fallbacks requires equivalent released Golyglot cursor and
+recovery facts plus behavior-by-behavior tests; deleting it as part of a naming
+cleanup would reduce editor correctness.
+
 #### Evidence
 
-[`architecture/backend.md`](../architecture/backend.md) and
+At audit time, [`architecture/backend.md`](../architecture/backend.md) and
 [`architecture/sql-lsp.md`](../architecture/sql-lsp.md) correctly say that SQL
 parse, validation, lineage, and formatting now call typed Golyglot Go APIs.
 There is no SQL WASM runtime.
 
-However:
+The remaining convergence debt at that point was:
 
-- the repository-level `AGENTS.md` still describes SQL intelligence and
-  formatting as embedded WASM;
-- [`architecture/staleness.md`](../architecture/staleness.md) still calls SQL
-  formatting embedded WASM and records the old approximately 66 ms cost;
-- [`architecture/notebooks.md`](../architecture/notebooks.md) still names the
+- the repository-level `AGENTS.md` described SQL intelligence and formatting as
+  embedded WASM;
+- [`architecture/staleness.md`](../architecture/staleness.md) called SQL
+  formatting embedded WASM and recorded the old approximately 66 ms cost;
+- [`architecture/notebooks.md`](../architecture/notebooks.md) named the
   implementation worktree in its status line;
-- [`internal/sqlintelligence/polyglot.go`](../internal/sqlintelligence/polyglot.go)
-  retains legacy `polyglot*` response/schema/token names and JSON tags even
-  though native Golyglot now supplies the parsed representation;
+- the former `internal/sqlintelligence/polyglot.go` retained legacy
+  `polyglot*` response/schema/token names and JSON tags even though native
+  Golyglot supplied the parsed representation;
 - [`internal/sqlintelligence/schema.go`](../internal/sqlintelligence/schema.go)
-  still describes a WASM boundary;
+  described a WASM boundary;
 - the LSP's [`internal/sqllsp/analyzer.go`](../internal/sqllsp/analyzer.go)
   still contains a large secondary SQL scanner for scopes, CTEs, subqueries,
   projections, identifiers, and clause position.

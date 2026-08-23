@@ -21,7 +21,7 @@ func parseContextWithSchemaGolyglotContext(ctx context.Context, query, dialectNa
 	}
 	parsed, parseErr := golyglot.ParseStrict(query, dialect)
 	if parseErr != nil {
-		if recovered := recoverPolyglotCallLikeSubquery(query, parseErr.Error()); recovered != nil {
+		if recovered := recoverCallLikeSubquery(query, parseErr.Error()); recovered != nil {
 			return recovered, nil
 		}
 		span := golyglotSyntaxErrorSpan(parseErr, len(query))
@@ -43,24 +43,24 @@ func parseContextWithSchemaGolyglotContext(ctx context.Context, query, dialectNa
 		schema:        schema,
 		constraints:   constraints,
 		sourceMethods: firstColumnSourceMethods(columnSourceMethods),
-		ctes:          make(map[string]polyglotCTE),
-		selectAliases: make(polyglotSelectAliasOffsets),
+		ctes:          make(map[string]parseContextCTE),
+		selectAliases: make(selectAliasOffsets),
 	}
 	for _, statement := range parsed.Statements {
 		if selectStmt, ok := statement.Node.(*golyglot.SelectStmt); ok {
 			collector.visitSelect(selectStmt, nil, nil)
 		}
 	}
-	sortPolyglotTablesBySource(collector.tables)
+	sortParseContextTablesBySource(collector.tables)
 
-	validationSchema := mergePolyglotCTEsIntoSchema(schema, collector.ctes)
+	validationSchema := mergeCTEsIntoSchema(schema, collector.ctes)
 	strict := true
 	nativeSchema := buildGolyglotSchema(validationSchema, constraints)
 	nativeSchema.Strict = &strict
 	validation := golyglot.ValidateWithOptions(query, golyglot.ValidationOptions{Dialect: dialect, Semantic: true, Schema: &nativeSchema})
-	tokens := golyglotTokens(parsed.Tokens)
-	validationErrors := nativeValidationErrors(validation.Errors)
-	diagnostics := polyglotDiagnostics(query, tokens, validationErrors, collector.tables, collector.columns, validationSchema, collector.ctes, collector.sourceMethods, collector.selectAliases, polyglotDescribeColumns(query))
+	tokens := parseContextTokensFromGolyglot(parsed.Tokens)
+	validationErrors := validationIssuesFromGolyglot(validation.Errors)
+	diagnostics := buildValidationDiagnostics(query, tokens, validationErrors, collector.tables, collector.columns, validationSchema, collector.ctes, collector.sourceMethods, collector.selectAliases, describeOutputColumns(query))
 	diagnostics = append(diagnostics, golyglotCallLikeSubqueryDiagnostics(query, diagnostics)...)
 
 	kind := golyglotQueryKind(parsed.Statements)
@@ -98,7 +98,7 @@ func golyglotSyntaxErrorSpan(err error, queryLength int) golyglot.Span {
 type nativeParseScope struct {
 	parent *nativeParseScope
 	tables []ParseContextTable
-	ctes   map[string]polyglotCTE
+	ctes   map[string]parseContextCTE
 }
 
 type nativeParseContextCollector struct {
@@ -110,27 +110,27 @@ type nativeParseContextCollector struct {
 	sourceMethods SchemaColumnSourceMethods
 	tables        []ParseContextTable
 	columns       []ParseContextColumn
-	ctes          map[string]polyglotCTE
-	selectAliases polyglotSelectAliasOffsets
+	ctes          map[string]parseContextCTE
+	selectAliases selectAliasOffsets
 }
 
-func (c *nativeParseContextCollector) visitSelect(selectStmt *golyglot.SelectStmt, parent *nativeParseScope, inherited map[string]polyglotCTE) {
+func (c *nativeParseContextCollector) visitSelect(selectStmt *golyglot.SelectStmt, parent *nativeParseScope, inherited map[string]parseContextCTE) {
 	if selectStmt == nil || c.ctx.Err() != nil {
 		return
 	}
-	localCTEs := clonePolyglotCTEs(inherited)
-	workingSchema := mergePolyglotCTEsIntoSchema(c.schema, localCTEs)
-	workingMethods := clonePolyglotColumnSourceMethods(c.sourceMethods)
+	localCTEs := cloneParseContextCTEs(inherited)
+	workingSchema := mergeCTEsIntoSchema(c.schema, localCTEs)
+	workingMethods := cloneColumnSourceMethods(c.sourceMethods)
 	for _, cte := range localCTEs {
-		workingMethods[cte.Name] = sourceMethodsForPolyglotCTE(cte)
+		workingMethods[cte.Name] = sourceMethodsForCTE(cte)
 	}
 	for _, cteNode := range selectStmt.With {
 		c.visitSelect(cteNode.Query, nil, localCTEs)
 		cte := c.deriveCTE(cteNode, workingSchema, workingMethods)
 		localCTEs[strings.ToLower(cte.Name)] = cte
 		c.ctes[strings.ToLower(cte.Name)] = cte
-		workingSchema[cte.Name] = schemaMapForPolyglotCTE(cte)
-		workingMethods[cte.Name] = sourceMethodsForPolyglotCTE(cte)
+		workingSchema[cte.Name] = schemaMapForCTE(cte)
+		workingMethods[cte.Name] = sourceMethodsForCTE(cte)
 	}
 
 	scopeRange := nativeNodeRange(c.query, selectStmt.SourceSpan())
@@ -164,16 +164,16 @@ func (c *nativeParseContextCollector) visitSelect(selectStmt *golyglot.SelectStm
 	}
 }
 
-func clonePolyglotCTEs(source map[string]polyglotCTE) map[string]polyglotCTE {
-	result := make(map[string]polyglotCTE, len(source))
+func cloneParseContextCTEs(source map[string]parseContextCTE) map[string]parseContextCTE {
+	result := make(map[string]parseContextCTE, len(source))
 	for name, cte := range source {
 		result[name] = cte
 	}
 	return result
 }
 
-func (c *nativeParseContextCollector) deriveCTE(node golyglot.CTE, schema Schema, sourceMethods SchemaColumnSourceMethods) polyglotCTE {
-	result := polyglotCTE{Name: node.Name.Text, ColumnRanges: make(map[string]ParseContextRange), Metadata: make(map[string]polyglotColumnMetadata)}
+func (c *nativeParseContextCollector) deriveCTE(node golyglot.CTE, schema Schema, sourceMethods SchemaColumnSourceMethods) parseContextCTE {
+	result := parseContextCTE{Name: node.Name.Text, ColumnRanges: make(map[string]ParseContextRange), Metadata: make(map[string]columnSourceMetadata)}
 	if node.Query == nil {
 		return result
 	}
@@ -204,7 +204,7 @@ func (c *nativeParseContextCollector) deriveCTE(node golyglot.CTE, schema Schema
 	return result
 }
 
-func nativeOutputColumnMetadata(name string, index int, analysis golyglot.QueryAnalysis, sourceMethods SchemaColumnSourceMethods) polyglotColumnMetadata {
+func nativeOutputColumnMetadata(name string, index int, analysis golyglot.QueryAnalysis, sourceMethods SchemaColumnSourceMethods) columnSourceMetadata {
 	if index < len(analysis.Projections) {
 		for _, upstream := range analysis.Projections[index].Upstream {
 			sourceName := ""
@@ -214,18 +214,18 @@ func nativeOutputColumnMetadata(name string, index int, analysis golyglot.QueryA
 				sourceName = *upstream.Table
 			}
 			if methods, resolved := nativeColumnSourceMethods(sourceMethods, sourceName, upstream.Column); len(methods) > 0 {
-				return polyglotColumnMetadata{SourceMethods: methods, OriginTable: resolved, ActualSchemaKnown: polyglotActualSchemaKnown(sourceMethods[resolved])}
+				return columnSourceMetadata{SourceMethods: methods, OriginTable: resolved, ActualSchemaKnown: actualSchemaKnown(sourceMethods[resolved])}
 			}
 		}
 	}
 	for sourceName, columns := range sourceMethods {
 		for columnName, methods := range columns {
 			if strings.EqualFold(columnName, name) {
-				return polyglotColumnMetadata{SourceMethods: append([]string(nil), methods...), OriginTable: sourceName, ActualSchemaKnown: polyglotActualSchemaKnown(columns)}
+				return columnSourceMetadata{SourceMethods: append([]string(nil), methods...), OriginTable: sourceName, ActualSchemaKnown: actualSchemaKnown(columns)}
 			}
 		}
 	}
-	return polyglotColumnMetadata{SourceMethods: []string{"query-expression"}}
+	return columnSourceMetadata{SourceMethods: []string{"query-expression"}}
 }
 
 func nativeColumnSourceMethods(sourceMethods SchemaColumnSourceMethods, tableName, columnName string) ([]string, string) {
@@ -255,7 +255,7 @@ func nativeProjectionNameSpan(projection golyglot.SelectItem) golyglot.Span {
 	return golyglot.Span{Start: -1, End: -1}
 }
 
-func (c *nativeParseContextCollector) collectSelectTables(selectStmt *golyglot.SelectStmt, ctes map[string]polyglotCTE, scopeRange *ParseContextRange) ([]ParseContextTable, []*golyglot.SelectStmt) {
+func (c *nativeParseContextCollector) collectSelectTables(selectStmt *golyglot.SelectStmt, ctes map[string]parseContextCTE, scopeRange *ParseContextRange) ([]ParseContextTable, []*golyglot.SelectStmt) {
 	var tables []ParseContextTable
 	var nested []*golyglot.SelectStmt
 	var collect func(golyglot.FromItem)
@@ -290,7 +290,7 @@ func (c *nativeParseContextCollector) collectSelectTables(selectStmt *golyglot.S
 	return tables, nested
 }
 
-func (c *nativeParseContextCollector) parseTableName(value *golyglot.TableName, ctes map[string]polyglotCTE, scopeRange *ParseContextRange) ParseContextTable {
+func (c *nativeParseContextCollector) parseTableName(value *golyglot.TableName, ctes map[string]parseContextCTE, scopeRange *ParseContextRange) ParseContextTable {
 	parts := make([]string, 0, len(value.Parts))
 	partRanges := make([]ParseContextPart, 0, len(value.Parts))
 	for index, identifier := range value.Parts {
@@ -326,12 +326,12 @@ func (c *nativeParseContextCollector) parseTableName(value *golyglot.TableName, 
 	}
 }
 
-func (c *nativeParseContextCollector) parseDerivedTable(value *golyglot.SubqueryFrom, ctes map[string]polyglotCTE, scopeRange *ParseContextRange) ParseContextTable {
+func (c *nativeParseContextCollector) parseDerivedTable(value *golyglot.SubqueryFrom, ctes map[string]parseContextCTE, scopeRange *ParseContextRange) ParseContextTable {
 	name := optionalGolyglotIdentifier(value.Alias)
 	columns := []SchemaColumn(nil)
 	if value.Query != nil {
 		body := nativeSourceSlice(c.query, value.Query.SourceSpan())
-		schema := buildGolyglotSchema(mergePolyglotCTEsIntoSchema(c.schema, ctes), c.constraints)
+		schema := buildGolyglotSchema(mergeCTEsIntoSchema(c.schema, ctes), c.constraints)
 		if analysis, err := golyglot.AnalyzeQuery(body, golyglot.AnalyzeQueryOptions{Dialect: c.dialect, Schema: &schema}); err == nil {
 			for _, output := range analysis.OutputColumns {
 				column := SchemaColumn{Name: output.Name, Nullable: queryProjectionNullable(output.Nullability)}
@@ -563,7 +563,7 @@ func nativeExpressionIdentifiers(expression golyglot.Expr) ([]*golyglot.Identifi
 
 func golyglotCallLikeSubqueryDiagnostics(query string, existing []ParseContextDiagnostic) []ParseContextDiagnostic {
 	var diagnostics []ParseContextDiagnostic
-	for _, match := range polyglotCallLikeSubqueryPattern.FindAllStringSubmatchIndex(query, -1) {
+	for _, match := range callLikeSubqueryPattern.FindAllStringSubmatchIndex(query, -1) {
 		if len(match) < 4 {
 			continue
 		}
@@ -609,8 +609,8 @@ func spanInsideAny(span golyglot.Span, parents []golyglot.Span) bool {
 	return false
 }
 
-func nativeValidationErrors(errors []golyglot.ValidationError) []polyglotValidationError {
-	result := make([]polyglotValidationError, 0, len(errors))
+func validationIssuesFromGolyglot(errors []golyglot.ValidationError) []validationIssue {
+	result := make([]validationIssue, 0, len(errors))
 	for _, issue := range errors {
 		code := strings.ToUpper(strings.TrimSpace(issue.Code))
 		switch code {
@@ -624,8 +624,7 @@ func nativeValidationErrors(errors []golyglot.ValidationError) []polyglotValidat
 			}
 		}
 		start, end := issue.Span.Start, issue.Span.End
-		line, column := issue.Line, issue.Column
-		result = append(result, polyglotValidationError{Message: issue.Message, Severity: issue.Severity, Code: code, Line: line, Column: column, Start: &start, End: &end})
+		result = append(result, validationIssue{Message: issue.Message, Severity: issue.Severity, Code: code, Start: &start, End: &end})
 	}
 	return result
 }
@@ -644,41 +643,15 @@ func quotedIdentifierFromMessage(message string) string {
 	return ""
 }
 
-func golyglotTokens(tokens []golyglot.Token) []polyglotToken {
-	result := make([]polyglotToken, 0, len(tokens))
+func parseContextTokensFromGolyglot(tokens []golyglot.Token) []parseContextToken {
+	result := make([]parseContextToken, 0, len(tokens))
 	for _, token := range tokens {
 		if token.Kind == golyglot.TokenEOF {
 			continue
 		}
-		result = append(result, polyglotToken{Type: golyglotTokenType(token), Text: token.Text, Span: polyglotSpan{Start: token.Span.Start, End: token.Span.End}})
+		result = append(result, parseContextToken{Text: token.Text, Span: parseContextSpan{Start: token.Span.Start, End: token.Span.End}})
 	}
 	return result
-}
-
-func golyglotTokenType(token golyglot.Token) string {
-	switch token.Text {
-	case "(":
-		return "L_PAREN"
-	case ")":
-		return "R_PAREN"
-	case ";":
-		return "SEMICOLON"
-	}
-	if token.Kind == golyglot.TokenKeyword {
-		return strings.ToUpper(token.Text)
-	}
-	switch token.Kind {
-	case golyglot.TokenIdentifier, golyglot.TokenQuotedIdentifier:
-		return "IDENTIFIER"
-	case golyglot.TokenString:
-		return "STRING"
-	case golyglot.TokenNumber:
-		return "NUMBER"
-	case golyglot.TokenComment:
-		return "COMMENT"
-	default:
-		return strings.ToUpper(token.Text)
-	}
 }
 
 func golyglotQueryKind(statements []golyglot.Statement) string {

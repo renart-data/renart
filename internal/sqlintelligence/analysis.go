@@ -96,14 +96,14 @@ type QuerySetOperationBranch struct {
 	Projections []QueryProjection `json:"projections"`
 }
 
-type polyglotAnalyzeQueryOptions struct {
+type analyzeQueryOptions struct {
 	Dialect string                    `json:"dialect"`
 	Schema  golyglot.ValidationSchema `json:"schema"`
 }
 
 const queryAnalysisCacheCapacity = 256
 
-var polyglotQueryAnalysisCache = newQueryAnalysisCache(queryAnalysisCacheCapacity)
+var sharedQueryAnalysisCache = newQueryAnalysisCache(queryAnalysisCacheCapacity)
 
 // AnalyzeQuery returns Golyglot's compact query facts. Successful results are
 // cached by SQL, normalized dialect, and deterministic schema payload so graph
@@ -122,7 +122,7 @@ func AnalyzeQuery(ctx context.Context, query, dialect string, schema Schema, con
 		return QueryAnalysis{}, err
 	}
 	key := queryAnalysisKey(query, optionsJSON)
-	if cached, ok := polyglotQueryAnalysisCache.get(key); ok {
+	if cached, ok := sharedQueryAnalysisCache.get(key); ok {
 		return cached, nil
 	}
 
@@ -133,20 +133,20 @@ func AnalyzeQuery(ctx context.Context, query, dialect string, schema Schema, con
 	if err := ctx.Err(); err != nil {
 		return QueryAnalysis{}, err
 	}
-	polyglotQueryAnalysisCache.add(key, analysis)
+	sharedQueryAnalysisCache.add(key, analysis)
 	return analysis, nil
 }
 
 func marshalAnalyzeQueryOptions(dialect string, schema Schema, constraintSets ...SchemaConstraints) (string, error) {
-	options := polyglotAnalyzeQueryOptions{
-		Dialect: polyglotAnalyzeDialect(dialect),
+	options := analyzeQueryOptions{
+		Dialect: normalizeAnalyzeDialect(dialect),
 		Schema:  buildGolyglotSchema(schema, constraintSets...),
 	}
 	raw, err := json.Marshal(options)
 	return string(raw), err
 }
 
-func polyglotAnalyzeDialect(dialect string) string {
+func normalizeAnalyzeDialect(dialect string) string {
 	switch strings.ToLower(strings.TrimSpace(dialect)) {
 	case "", "generic":
 		return string(golyglot.DialectGeneric)
@@ -161,7 +161,7 @@ func analyzeQueryUncached(ctx context.Context, query, optionsJSON string, schema
 	if err := ctx.Err(); err != nil {
 		return QueryAnalysis{}, err
 	}
-	var options polyglotAnalyzeQueryOptions
+	var options analyzeQueryOptions
 	if err := json.Unmarshal([]byte(optionsJSON), &options); err != nil {
 		return QueryAnalysis{}, err
 	}

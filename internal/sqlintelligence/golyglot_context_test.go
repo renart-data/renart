@@ -10,8 +10,8 @@ import (
 	"renart/internal/authoringdiag"
 )
 
-func TestParseContextWithSchemaPolyglotExtractsTablesColumnsAndDiagnostics(t *testing.T) {
-	parseContext, err := ParseContextWithSchemaPolyglot(
+func TestParseContextWithSchemaGolyglotExtractsTablesColumnsAndDiagnostics(t *testing.T) {
+	parseContext, err := ParseContextWithSchemaGolyglot(
 		"select c.customer_id, o.total from analytics.customers c join analytics.orders o on c.customer_id = o.customer_id where missing_col = 1",
 		"duckdb",
 		Schema{
@@ -47,14 +47,14 @@ func TestParseContextWithSchemaPolyglotExtractsTablesColumnsAndDiagnostics(t *te
 	assert.Equal(t, "missing_col", parseContext.Diagnostics[0].Range.RangeText("select c.customer_id, o.total from analytics.customers c join analytics.orders o on c.customer_id = o.customer_id where missing_col = 1"))
 }
 
-func TestParseContextWithSchemaPolyglotDoesNotTreatCopyOptionsAsColumns(t *testing.T) {
+func TestParseContextWithSchemaGolyglotDoesNotTreatCopyOptionsAsColumns(t *testing.T) {
 	query := `COPY create_partitions.create_partitions
 TO .data/create_all_partitions.sql
 format csv
 header FALSE
 delimiter '\t'`
 
-	parseContext, err := ParseContextWithSchemaPolyglot(query, "duckdb", Schema{
+	parseContext, err := ParseContextWithSchemaGolyglot(query, "duckdb", Schema{
 		"create_partitions.create_partitions": {"partition": "varchar"},
 	})
 	require.NoError(t, err)
@@ -85,7 +85,7 @@ func TestCopyOptionValueDiagnosticSuppressionIsNarrow(t *testing.T) {
 	}))
 }
 
-func TestParseContextWithSchemaPolyglotResolvesCTEAfterVizComment(t *testing.T) {
+func TestParseContextWithSchemaGolyglotResolvesCTEAfterVizComment(t *testing.T) {
 	query := `/* @viz(line, x: count, y: count_star()) */
 with preagg as (
 SELECT
@@ -105,7 +105,7 @@ select
 from preagg
 group by count`
 
-	parseContext, err := ParseContextWithSchemaPolyglot(query, "duckdb", Schema{
+	parseContext, err := ParseContextWithSchemaGolyglot(query, "duckdb", Schema{
 		"playful_maple": {
 			"trino_seconds":     "double",
 			"starrocks_seconds": "double",
@@ -118,16 +118,16 @@ group by count`
 	assert.NotContains(t, diagnosticMessages(parseContext.Diagnostics), "Unresolved table: preagg")
 }
 
-func TestParseContextUsesPolyglotStructuredErrorOffsets(t *testing.T) {
+func TestParseContextUsesGolyglotStructuredErrorOffsets(t *testing.T) {
 	query := "select\n  from"
-	parseContext, err := ParseContextWithSchemaPolyglot(query, "duckdb", Schema{})
+	parseContext, err := ParseContextWithSchemaGolyglot(query, "duckdb", Schema{})
 	require.NoError(t, err)
 	require.Len(t, parseContext.Diagnostics, 1)
 	require.NotNil(t, parseContext.Diagnostics[0].Range)
 	assert.Equal(t, "from", parseContext.Diagnostics[0].Range.RangeText(query))
 }
 
-func TestParseContextWithSchemaPolyglotResolvesQuickstartPlayerStats(t *testing.T) {
+func TestParseContextWithSchemaGolyglotResolvesQuickstartPlayerStats(t *testing.T) {
 	query := `WITH players_white AS (
     SELECT white->>'@id' AS player_id
     FROM quickstart.games
@@ -150,7 +150,7 @@ SELECT
     ) as games_black
 FROM quickstart.players`
 
-	parseContext, err := ParseContextWithSchemaPolyglot(query, "duckdb", Schema{
+	parseContext, err := ParseContextWithSchemaGolyglot(query, "duckdb", Schema{
 		"quickstart.games":   {"white": "json", "black": "json"},
 		"quickstart.players": {"aid": "varchar", "name": "varchar"},
 	})
@@ -159,7 +159,7 @@ FROM quickstart.players`
 	assert.Empty(t, parseContext.Diagnostics)
 }
 
-func TestParseContextWithSchemaPolyglotPropagatesSelectStarAcrossCTEs(t *testing.T) {
+func TestParseContextWithSchemaGolyglotPropagatesSelectStarAcrossCTEs(t *testing.T) {
 	query := `WITH opening_rollup AS (
     SELECT
         name,
@@ -184,7 +184,7 @@ SELECT * EXCLUDE (repertoire_rank)
 FROM ranked_openings
 ORDER BY username, time_class, color, games DESC`
 
-	parseContext, err := ParseContextWithSchemaPolyglot(query, "duckdb", Schema{
+	parseContext, err := ParseContextWithSchemaGolyglot(query, "duckdb", Schema{
 		"chess.game_results": {
 			"name":       "varchar",
 			"username":   "varchar",
@@ -209,13 +209,13 @@ ORDER BY username, time_class, color, games DESC`
 	}
 }
 
-func TestParseContextWithSchemaPolyglotResolvesScalarSubqueryColumnsInLocalScope(t *testing.T) {
+func TestParseContextWithSchemaGolyglotResolvesScalarSubqueryColumnsInLocalScope(t *testing.T) {
 	query := `SELECT
   *,
   (select first(range) from example.my_sql_asset_2)
 FROM example.my_sql_asset_3`
 
-	parseContext, err := ParseContextWithSchemaPolyglot(query, "duckdb", Schema{
+	parseContext, err := ParseContextWithSchemaGolyglot(query, "duckdb", Schema{
 		"example.my_sql_asset_2": {"range": "BIGINT"},
 		"example.my_sql_asset_3": {"range": "BIGINT"},
 	})
@@ -224,13 +224,13 @@ FROM example.my_sql_asset_3`
 	assert.NotContains(t, diagnosticMessages(parseContext.Diagnostics), "Unresolved column: range")
 }
 
-func TestParseContextWithSchemaPolyglotResolvesShortQualifierForSchemaQualifiedTable(t *testing.T) {
+func TestParseContextWithSchemaGolyglotResolvesShortQualifierForSchemaQualifiedTable(t *testing.T) {
 	query := `SELECT *
 FROM example.parabola p
 JOIN example.range_10
   ON range_10.range = p.x`
 
-	parseContext, err := ParseContextWithSchemaPolyglot(query, "duckdb", Schema{
+	parseContext, err := ParseContextWithSchemaGolyglot(query, "duckdb", Schema{
 		"example.parabola": {"x": "BIGINT", "y": "BIGINT"},
 		"example.range_10": {"range": "BIGINT"},
 	})
@@ -248,33 +248,10 @@ JOIN example.range_10
 	assert.Equal(t, "example.range_10", rangeColumn.ResolvedTable)
 }
 
-func TestPolyglotTableQualifierMapKeepsShortNamesSafe(t *testing.T) {
-	t.Run("ambiguous short names stay unresolved", func(t *testing.T) {
-		qualifiers := polyglotTableQualifierMap([]ParseContextTable{
-			{Name: "sales.orders", ResolvedName: "sales.orders"},
-			{Name: "audit.orders", ResolvedName: "audit.orders"},
-		})
-
-		assert.Equal(t, "sales.orders", qualifiers["sales.orders"])
-		assert.Equal(t, "audit.orders", qualifiers["audit.orders"])
-		assert.NotContains(t, qualifiers, "orders")
-	})
-
-	t.Run("an alias hides the original table qualifiers", func(t *testing.T) {
-		qualifiers := polyglotTableQualifierMap([]ParseContextTable{
-			{Name: "example.range_10", ResolvedName: "example.range_10", Alias: "r"},
-		})
-
-		assert.Equal(t, "example.range_10", qualifiers["r"])
-		assert.NotContains(t, qualifiers, "range_10")
-		assert.NotContains(t, qualifiers, "example.range_10")
-	})
-}
-
-func TestParseContextWithSchemaPolyglotResolvesUnqualifiedTableToUniqueSchemaEntry(t *testing.T) {
+func TestParseContextWithSchemaGolyglotResolvesUnqualifiedTableToUniqueSchemaEntry(t *testing.T) {
 	// pg_get_viewdef drops the schema for tables on the search path, so
 	// imported views reference "accounts" while the asset is "public.accounts".
-	parseContext, err := ParseContextWithSchemaPolyglot(
+	parseContext, err := ParseContextWithSchemaGolyglot(
 		"select id, user_id from accounts",
 		"postgres",
 		Schema{
@@ -290,8 +267,8 @@ func TestParseContextWithSchemaPolyglotResolvesUnqualifiedTableToUniqueSchemaEnt
 	assert.Equal(t, "public.accounts", parseContext.Tables[0].ResolvedName)
 }
 
-func TestParseContextWithSchemaPolyglotKeepsAmbiguousUnqualifiedTableUnresolved(t *testing.T) {
-	parseContext, err := ParseContextWithSchemaPolyglot(
+func TestParseContextWithSchemaGolyglotKeepsAmbiguousUnqualifiedTableUnresolved(t *testing.T) {
+	parseContext, err := ParseContextWithSchemaGolyglot(
 		"select id from accounts",
 		"postgres",
 		Schema{
@@ -304,8 +281,8 @@ func TestParseContextWithSchemaPolyglotKeepsAmbiguousUnqualifiedTableUnresolved(
 	assert.Contains(t, diagnosticMessages(parseContext.Diagnostics), "Unresolved table: accounts")
 }
 
-func TestParseContextWithSchemaPolyglotReportsUnknownTable(t *testing.T) {
-	parseContext, err := ParseContextWithSchemaPolyglot(
+func TestParseContextWithSchemaGolyglotReportsUnknownTable(t *testing.T) {
+	parseContext, err := ParseContextWithSchemaGolyglot(
 		"select * from analytics.ordrs",
 		"duckdb",
 		Schema{"analytics.orders": {"order_id": "integer"}},
@@ -318,14 +295,14 @@ func TestParseContextWithSchemaPolyglotReportsUnknownTable(t *testing.T) {
 	assert.Equal(t, "analytics.ordrs", parseContext.Diagnostics[0].Range.RangeText("select * from analytics.ordrs"))
 }
 
-func TestParseContextWithSchemaPolyglotReportsDanglingComparisonOperator(t *testing.T) {
+func TestParseContextWithSchemaGolyglotReportsDanglingComparisonOperator(t *testing.T) {
 	query := `SELECT
   small
 FROM simple.small
 WHERE
   small = 1 AND small = 1
   >   -- I'd expect the '<' to cause problems`
-	parseContext, err := ParseContextWithSchemaPolyglot(
+	parseContext, err := ParseContextWithSchemaGolyglot(
 		query,
 		"duckdb",
 		Schema{"simple.small": {"small": "integer"}},
@@ -352,7 +329,7 @@ func diagnosticMessages(diagnostics []ParseContextDiagnostic) []string {
 	return result
 }
 
-func TestParseContextReadOnlyResultClassification(t *testing.T) {
+func TestGolyglotParseContextReadOnlyResultClassification(t *testing.T) {
 	cases := []struct {
 		name         string
 		query        string
@@ -370,7 +347,7 @@ func TestParseContextReadOnlyResultClassification(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			pc, err := ParseContextWithSchemaPolyglot(tc.query, "duckdb", Schema{})
+			pc, err := ParseContextWithSchemaGolyglot(tc.query, "duckdb", Schema{})
 			require.NoError(t, err)
 			assert.Equal(t, tc.singleSelect, pc.IsSingleSelect, "IsSingleSelect")
 			assert.Equal(t, tc.readOnly, pc.IsReadOnlyResult, "IsReadOnlyResult")

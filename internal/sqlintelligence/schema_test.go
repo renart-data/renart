@@ -1,13 +1,15 @@
 package sqlintelligence
 
 import (
+	"encoding/json"
 	"testing"
 
+	"github.com/renart-data/golyglot/pkg/golyglot"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildPolyglotSchemaIncludesDeclaredConstraints(t *testing.T) {
+func TestBuildGolyglotSchemaIncludesDeclaredConstraints(t *testing.T) {
 	nullable := false
 	schema := Schema{
 		"users":  {"name": "VARCHAR", "id": "INTEGER"},
@@ -22,7 +24,7 @@ func TestBuildPolyglotSchemaIncludesDeclaredConstraints(t *testing.T) {
 		}},
 	}
 
-	result := buildPolyglotSchema(schema, constraints)
+	result := buildGolyglotSchema(schema, constraints)
 	require.Len(t, result.Tables, 2)
 	assert.Equal(t, "orders", result.Tables[0].Name, "tables should stay deterministic")
 	assert.Equal(t, "users", result.Tables[1].Name)
@@ -33,7 +35,7 @@ func TestBuildPolyglotSchemaIncludesDeclaredConstraints(t *testing.T) {
 	assert.Equal(t, "users", orders.ForeignKeys[0].References.Table)
 	assert.Equal(t, []string{"id"}, orders.ForeignKeys[0].References.Columns)
 	require.NotNil(t, orders.Columns[1].References)
-	assert.Equal(t, polyglotColumnReference{Table: "users", Column: "id"}, *orders.Columns[1].References)
+	assert.Equal(t, golyglot.SchemaColumnReference{Table: "users", Column: "id"}, *orders.Columns[1].References)
 
 	users := result.Tables[1]
 	assert.Equal(t, []string{"id"}, users.PrimaryKey)
@@ -42,7 +44,7 @@ func TestBuildPolyglotSchemaIncludesDeclaredConstraints(t *testing.T) {
 	assert.True(t, users.Columns[0].PrimaryKey)
 }
 
-func TestMarshalPolyglotSchemaIsDeterministicWithConstraints(t *testing.T) {
+func TestGolyglotSchemaIsDeterministicWithConstraints(t *testing.T) {
 	left := SchemaConstraints{"t": {Columns: map[string]SchemaColumnConstraints{
 		"b": {PrimaryKey: true},
 		"a": {PrimaryKey: true},
@@ -53,9 +55,9 @@ func TestMarshalPolyglotSchemaIsDeterministicWithConstraints(t *testing.T) {
 	}}}
 	schema := Schema{"t": {"b": "BIGINT", "a": "INTEGER"}}
 
-	leftJSON, err := marshalPolyglotSchema(schema, left)
+	leftJSON, err := json.Marshal(buildGolyglotSchema(schema, left))
 	require.NoError(t, err)
-	rightJSON, err := marshalPolyglotSchema(schema, right)
+	rightJSON, err := json.Marshal(buildGolyglotSchema(schema, right))
 	require.NoError(t, err)
 	assert.Equal(t, string(leftJSON), string(rightJSON))
 }

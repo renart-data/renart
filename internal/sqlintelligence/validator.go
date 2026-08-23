@@ -38,7 +38,7 @@ type ValidationResult struct {
 // schema-validation rules while suppressing only column findings that depend
 // on a relation whose schema is unknown.
 func ValidateSQL(ctx context.Context, req ValidationRequest) (ValidationResult, error) {
-	parseContext, err := ParseContextWithSchemaConstraintsPolyglotContext(
+	parseContext, err := ParseContextWithSchemaConstraintsGolyglotContext(
 		ctx,
 		req.SQL,
 		req.Dialect,

@@ -106,5 +106,5 @@ func ParseContextWithSchema(query, dialect string, schema Schema, columnSourceMe
 }
 
 func ParseContextWithSchemaContext(ctx context.Context, query, dialect string, schema Schema, columnSourceMethods ...SchemaColumnSourceMethods) (*ParseContext, error) {
-	return ParseContextWithSchemaPolyglotContext(ctx, query, dialect, schema, columnSourceMethods...)
+	return ParseContextWithSchemaGolyglotContext(ctx, query, dialect, schema, columnSourceMethods...)
 }
