@@ -98,8 +98,6 @@ import {
   deleteNotebookControl,
   deleteNotebook,
   deleteNotebookCell,
-  getNotebook,
-  joinCellContent,
   migrateLegacyNotebookVisualization,
   notebookCellExportURL,
   NotebookCellRunResult,
@@ -111,7 +109,6 @@ import {
   renameNotebookCell,
   setNotebookSettings,
   splitCellContent,
-  updateNotebookCell,
   updateNotebookControl,
   updateNotebookBlocks,
   updateNotebookDependencies,
@@ -136,6 +133,7 @@ import {
   useNotebookSourceImport,
   type NotebookDataSourceInput,
 } from "@/hooks/use-notebook-data-source";
+import { useNotebookDocument } from "@/hooks/use-notebook-document";
 import { useNotebookRuntime } from "@/hooks/use-notebook-runtime";
 import {
   AUTHORED_CONTROL_TYPE_LABELS,
@@ -347,59 +345,18 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     () => workspace?.notebooks?.find((candidate) => candidate.id === notebookId) ?? null,
     [notebookId, workspace?.notebooks],
   );
-  // Mutations return the fresh notebook before the SSE state catches up;
-  // prefer the newer of the two.
-  const [mutated, setMutated] = useState<WebNotebook | null>(null);
-  const [loadError, setLoadError] = useState("");
-  const notebook = mutated ?? stateNotebook;
-
-  useEffect(() => {
-    if (!mutated || !stateNotebook) {
-      return;
-    }
-    if (mutated.revision === stateNotebook.revision) {
-      setMutated(null);
-      return;
-    }
-
-    // Workspace SSE can overtake a just-completed mutation with a snapshot
-    // that was assembled before the filesystem watcher observed that write.
-    // Resolve differing revisions against the authoritative notebook endpoint
-    // instead of briefly replacing the mutation response with stale blocks.
-    let cancelled = false;
-    getNotebook(notebookId)
-      .then((loaded) => {
-        if (cancelled) return;
-        setMutated(loaded.revision === stateNotebook.revision ? null : loaded);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [mutated?.revision, notebookId, stateNotebook]);
-
-  useEffect(() => {
-    if (stateNotebook || mutated) {
-      return;
-    }
-    let cancelled = false;
-    getNotebook(notebookId)
-      .then((loaded) => {
-        if (!cancelled) {
-          setMutated(loaded);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setLoadError(String(error));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [mutated, notebookId, stateNotebook]);
-
-  const [actionError, setActionError] = useState("");
+  const {
+    notebook,
+    loadError,
+    actionError,
+    reportActionError: setActionError,
+    adoptNotebook,
+    mutateWithResult,
+    mutateOrThrow,
+    mutate,
+    saveCellBody,
+    flushPendingSaves,
+  } = useNotebookDocument({ notebookId, workspaceNotebook: stateNotebook });
   const [notebookScrolled, setNotebookScrolled] = useState(false);
   const [pendingBlock, setPendingBlock] = useState<{
     id: number;
@@ -586,108 +543,6 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     return map;
   }, [notebook?.cells]);
 
-  // In-flight cell saves, keyed by cell id. A run must wait for these to land
-  // on disk first: otherwise the backend reloads the cell before the save's
-  // write completes and runs stale SQL (the "run twice for @viz" bug).
-  const pendingSavesRef = useRef<Map<string, Promise<void>>>(new Map());
-  const saveSeqRef = useRef<Map<string, number>>(new Map());
-  // Full-document saves are serialized per cell. Besides fixing response
-  // reordering in one editor, each request carries the revision acknowledged
-  // by the previous response, so another tab or a filesystem edit becomes an
-  // explicit conflict instead of a silent last-writer-wins overwrite.
-  const saveQueuesRef = useRef<
-    Map<
-      string,
-      {
-        tail: Promise<void>;
-        pending: number;
-        revision: string;
-        knownRevisions: Set<string>;
-      }
-    >
-  >(new Map());
-
-  const saveCellBody = useCallback(
-    (cell: WebAsset, body: string, baseRevision: string): Promise<void> => {
-      const { header } = splitCellContent(cell.content);
-      const cellId = cell.cell_id ?? "";
-      const seq = (saveSeqRef.current.get(cellId) ?? 0) + 1;
-      saveSeqRef.current.set(cellId, seq);
-      const draftRevision = baseRevision || cell.content_revision || "";
-      let queue = saveQueuesRef.current.get(cellId);
-      if (!queue) {
-        queue = {
-          tail: Promise.resolve(),
-          pending: 0,
-          revision: draftRevision,
-          knownRevisions: new Set(draftRevision ? [draftRevision] : []),
-        };
-        saveQueuesRef.current.set(cellId, queue);
-      } else if (
-        queue.pending === 0 &&
-        draftRevision &&
-        draftRevision !== queue.revision &&
-        !queue.knownRevisions.has(draftRevision)
-      ) {
-        // The cell card only advances its draft revision when it adopts the
-        // corresponding server body. A different revision here is therefore a
-        // clean external snapshot, not merely a delayed echo of our last save.
-        queue.revision = draftRevision;
-        queue.knownRevisions.add(draftRevision);
-      }
-      queue.pending += 1;
-
-      const previous = queue.tail;
-      const promise = previous.then(async () => {
-        try {
-          const requestRevision = queue.revision;
-          if (requestRevision) {
-            queue.knownRevisions.add(requestRevision);
-          }
-          // Saving marks the cell + descendants stale on the server, which then
-          // drives auto-recompute and pushes the new state over SSE.
-          const updated = await updateNotebookCell(
-            notebookId,
-            cellId,
-            joinCellContent(header, body),
-            requestRevision,
-          );
-          const updatedCell = updated.cells.find((candidate) => candidate.cell_id === cellId);
-          if (updatedCell?.content_revision) {
-            queue.revision = updatedCell.content_revision;
-            queue.knownRevisions.add(updatedCell.content_revision);
-          }
-          // A queued newer save owns the visible mutation result. Applying an
-          // intermediate response here would recreate the stale echo that can
-          // replace the tail of an actively edited Monaco document.
-          if (saveSeqRef.current.get(cellId) === seq) {
-            setMutated(updated);
-          }
-        } catch (error) {
-          setActionError(String(error));
-        } finally {
-          queue.pending = Math.max(0, queue.pending - 1);
-          // Only the most recent save for this cell clears the pending slot,
-          // so a slower earlier save cannot drop a newer one.
-          if (saveSeqRef.current.get(cellId) === seq) {
-            pendingSavesRef.current.delete(cellId);
-          }
-        }
-      });
-      queue.tail = promise;
-      pendingSavesRef.current.set(cellId, promise);
-      return promise;
-    },
-    [notebookId],
-  );
-
-  const flushPendingSaves = useCallback(async () => {
-    const pending = [...pendingSavesRef.current.values()];
-    if (pending.length > 0) {
-      await Promise.allSettled(pending);
-    }
-  }, []);
-
   const allCellIds = useMemo(
     () => (notebook?.cells ?? []).map((cell) => cell.cell_id ?? "").filter(Boolean),
     [notebook?.cells],
@@ -791,7 +646,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         }
       }
     },
-    [notebookId],
+    [notebookId, setActionError],
   );
 
   // Runtime SSE messages contain result deltas. Refresh dataset-backed control
@@ -820,23 +675,6 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     }
   }, [notebook, notebookId, notebookRuntimeEvent, refreshControlOptions]);
 
-  const mutateWithResult = useCallback(async (operation: () => Promise<WebNotebook>) => {
-    setActionError("");
-    try {
-      const updated = await operation();
-      setMutated(updated);
-      return updated;
-    } catch (error) {
-      setActionError(String(error));
-      return null;
-    }
-  }, []);
-  const mutate = useCallback(
-    async (operation: () => Promise<WebNotebook>) => {
-      await mutateWithResult(operation);
-    },
-    [mutateWithResult],
-  );
   const handleSourceCreated = useCallback((cellId: string) => {
     setEnteringBlockKey(`cell:${cellId}`);
     setScrollRevision((current) => current + 1);
@@ -1042,21 +880,14 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   );
   const saveParameterDefinitions = useCallback(
     async (next: NonNullable<WebNotebook["parameters"]>) => {
-      setActionError("");
-      try {
-        const updated = await replaceNotebookParameters(notebookId, next);
-        setMutated(updated);
-        setParameterValues(
-          Object.fromEntries(
-            (updated.parameters ?? []).map((parameter) => [parameter.id, parameter.default]),
-          ),
-        );
-      } catch (error) {
-        setActionError(String(error));
-        throw error;
-      }
+      const updated = await mutateOrThrow(() => replaceNotebookParameters(notebookId, next));
+      setParameterValues(
+        Object.fromEntries(
+          (updated.parameters ?? []).map((parameter) => [parameter.id, parameter.default]),
+        ),
+      );
     },
-    [notebookId],
+    [mutateOrThrow, notebookId],
   );
   const saveParameterValues = useCallback(
     async (next: Record<string, unknown>) => {
@@ -1073,7 +904,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         throw error;
       }
     },
-    [autoRecompute, notebookId, selectedEnvironment],
+    [autoRecompute, notebookId, selectedEnvironment, setActionError],
   );
   const queueParameterValue = useCallback(
     (id: string, value: unknown) => {
@@ -1168,7 +999,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       setActionError("");
       setPromoting(cell);
     },
-    [pipelines],
+    [pipelines, setActionError],
   );
 
   const runPromote = useCallback(
@@ -1185,7 +1016,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       setActionError("");
       try {
         const response = await promoteNotebookCell(notebookId, cell.cell_id ?? "", input);
-        setMutated(response.notebook);
+        adoptNotebook(response.notebook);
         setPromoting(null);
         if (response.dialect_warning) {
           const where =
@@ -1196,7 +1027,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         setActionError(String(error));
       }
     },
-    [notebookId],
+    [adoptNotebook, notebookId, setActionError],
   );
 
   if (!notebook) {

@@ -529,6 +529,13 @@ until SSE reaches the same revision. If a differing workspace snapshot races
 that response, the frontend resolves it once against the authoritative notebook
 endpoint instead of briefly dropping newly authored blocks.
 
+One document controller owns that projection for every semantic mutation and
+direct cell save. Per-cell saves are serialized and carry the revision accepted
+by the preceding response; a run waits on the same notebook-scoped save barrier.
+Mutation responses are ignored after navigation, while the current notebook
+response remains visible until the workspace reaches its revision. Initial-load
+failures and action failures remain separate UI states.
+
 The frontend runtime controller models the initial snapshot, SSE deltas, manual
 run, cancellation, and session reset as notebook-scoped events. Server-reported
 running cells and request-local optimistic targets are separate sets, so an HTTP

@@ -3,7 +3,7 @@
 Status: standalone low-risk slices complete locally, 2026-08-23. Contract,
 capability, native-SQL cleanup, lineage, snapshot ownership, request-boundary,
 observability, live-timing, bundle-budget, dependency-direction, and first plan
-folds are implemented below. The remaining controller/domain moves are
+folds are implemented below. The remaining backend domain moves are
 feature-adjacent; E2E sharding, workspace deltas, and runtime eviction are
 evidence-gated. This is not a proposal for a rewrite.
 
@@ -99,7 +99,7 @@ The cleanup should explicitly retain these strengths:
 | 1 | Make API contracts generated, closed, and CI-verified | Complete | Add roots as new public DTO surfaces appear |
 | 2 | Create one asset/connection capability registry | Complete | Fingerprint-v3 mapping changes require an explicit migration |
 | 3 | Batch repeated semantic analysis and consolidate SQL helpers | Complete for direct projections | Recursive CTE batch lineage waits for a released reusable Golyglot API |
-| 4 | Extract controllers from notebook/build/review UI | In progress | Notebook document/mutation ownership remains |
+| 4 | Extract controllers from notebook/build/review UI | Complete | Keep presenter-local UI state local until adjacent work justifies a move |
 | 5 | Introduce compiler-visible backend domain seams | Guarded | Import direction is enforced; move one cohesive domain beside feature work |
 | 6 | Rebalance the test pyramid and shard live E2E | Measuring | Collect timing artifacts before choosing CI groups/mobile coverage |
 | 7 | Make workspace snapshots immutable and instrument refresh/SSE | Complete for guardrails | Collect production-scale baselines before budgets or deltas |
@@ -410,11 +410,11 @@ The clearest examples are:
 | `build-page.tsx` | 3,473 | 30 | 10 |
 | `pipeline-plan-sheet.tsx` | 2,235 | 16 | 5 |
 
-The table records the audit baseline. After the source-import and runtime
-extractions, `notebook-page.tsx` is 4,090 lines and contains 47 `useState` and 23
-`useEffect` calls across all of its presenters. Source form/discovery plus
-run/runtime transitions now live in tested hooks instead of contributing to
-those counts.
+The table records the audit baseline. After the source-import, runtime, and
+document/mutation extractions, `notebook-page.tsx` is 3,921 lines and contains
+44 `useState` and 21 `useEffect` calls across all of its presenters. Source
+form/discovery, run/runtime, and revision/save transitions now live in tested
+hooks instead of contributing to those counts.
 
 The issue is not the raw count. `notebook-page.tsx`, for example, coordinates
 document selection, runtime events, source approval/import, cell execution,
@@ -817,7 +817,7 @@ These workstreams landed as separate reviewable commits.
 
 ### Phase C — headless application controllers
 
-Six feature-adjacent slices are complete:
+Seven feature-adjacent slices are complete:
 
 - pipeline settings use a unit-tested reducer/controller for independent config
   and Python dependency state, validation, sequential persistence, and
@@ -841,12 +841,15 @@ Six feature-adjacent slices are complete:
   cancellation, session reset, and result/staleness projections now share a
   notebook-scoped reducer/controller. Late responses from a previous notebook
   are ignored, and HTTP completion cannot erase newer server running state.
+- Notebook initial loading, mutation-response preference, authoritative
+  workspace revision reconciliation, shared mutation errors, and serialized
+  revision-checked cell saves now share a notebook-scoped document controller.
+  Runs and source imports cross the controller's save barrier before execution.
 
-Continue with the next feature or bug touching the remaining surface: the
-notebook document/mutation controller plus unit tests.
-
-Keep rendered components and route behavior stable. This is an extraction, not
-a redesign.
+The audited application-controller boundaries are complete. Presenter-local
+selection, inspector, insertion, and dialog state remains local intentionally;
+move it only with adjacent behavior that benefits from a shared model. Keep
+rendered components and route behavior stable when doing so.
 
 ### Phase D — backend domain extraction
 

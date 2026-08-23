@@ -605,6 +605,12 @@ than hand-rolled `div` shells.
   helpers keep source validation and remote-import review rules testable without
   mounting the notebook page; durable changes still go through the notebook
   transaction APIs and reconcile from the server.
+- [use-notebook-document.ts](../web/hooks/use-notebook-document.ts): owns initial
+  notebook loading, mutation-response preference, workspace/SSE revision
+  reconciliation, shared mutation errors, and revision-checked per-cell save
+  queues. All events are notebook-scoped so late loads or mutations cannot
+  replace the document after route navigation; the workspace remains the final
+  authority once it reaches the mutation revision.
 - [use-notebook-runtime.ts](../web/hooks/use-notebook-runtime.ts): combines the
   initial server runtime snapshot, notebook-runtime SSE deltas, and request-local
   optimistic execution state. Its notebook-scoped reducer owns stale, pending,
