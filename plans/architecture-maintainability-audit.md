@@ -101,7 +101,7 @@ The cleanup should explicitly retain these strengths:
 | 2 | Create one asset/connection capability registry | Complete | Fingerprint-v3 mapping changes require an explicit migration |
 | 3 | Batch repeated semantic analysis and consolidate SQL helpers | Complete for direct projections | Recursive CTE batch lineage waits for a released reusable Golyglot API |
 | 4 | Extract controllers from notebook/build/review UI | Complete | Keep presenter-local UI state local until adjacent work justifies a move |
-| 5 | Introduce compiler-visible backend domain seams | In progress | Presentation application services are extracted; move execution/notebook slices beside feature work |
+| 5 | Introduce compiler-visible backend domain seams | In progress | Presentation and execution planning/admission are extracted; move the notebook document boundary as one transaction authority |
 | 6 | Rebalance the test pyramid and shard live E2E | Measuring | Collect timing artifacts before choosing CI groups/mobile coverage |
 | 7 | Make workspace snapshots immutable and instrument refresh/SSE | Complete for guardrails | Collect production-scale baselines before budgets or deltas |
 | 8 | Standardize bounded strict request decoding | Complete | Streaming and multipart endpoints remain explicit exceptions |
@@ -478,9 +478,7 @@ and preserves the direction that already exists: `cmd` remains the composition
 root, `httpapi` remains a transport edge, and only the current
 composition/adaptor packages may import the broad `service` facade. New domain
 packages therefore cannot quietly depend back on transport or the facade while
-the strangler extraction proceeds. No runtime ownership or package was moved;
-the larger execution/notebook/presentation splits still belong beside concrete
-feature work.
+the strangler extraction proceeds.
 
 The shared structured application error now belongs to
 [`internal/web/apperror`](../internal/web/apperror), below the facade and HTTP
@@ -503,12 +501,18 @@ preserve the HTTP-facing contract. Presentation-specific composition now lives
 in [`cmd/server_presentation.go`](../cmd/server_presentation.go) instead of the
 central server constructor, so later adapter changes have one wiring boundary.
 
-The execution extraction now has a lower-domain foothold as well:
-[`internal/web/execution`](../internal/web/execution) owns the canonical
-schedule/explicit time-window contract used by plan, render, type-check,
-staleness, and run paths. The service name is a type/function compatibility
-alias, avoiding a noisy signature migration while subsequent execution slices
-move around the same type.
+[`internal/web/execution`](../internal/web/execution) now owns the canonical
+render, reviewed-plan, resource, private run, target-snapshot, and time-window
+contracts. It also owns deterministic resource/identity normalization, DAG and
+staleness selection, execution-unit binding, a reviewed planner driven through
+source/configuration/render/prerequisite/policy ports, pre-side-effect run
+admission, and plan-driven unit lifecycle rules. The scheduler consumes the
+lower resource and plan contracts rather than maintaining a parallel copy.
+`service.PipelinePlanService` and `service.ExecutionService` retain compatibility
+aliases and the concrete Bruin, snapshot, type-check, durable-ledger,
+target-observation, and completion adapters. Their composition now lives in
+[`cmd/server_execution.go`](../cmd/server_execution.go), outside the central
+server constructor.
 
 [`internal/web/workspacefs`](../internal/web/workspacefs) now provides the
 shared lower boundary needed by file-authored domains: encoded path IDs,
@@ -895,24 +899,30 @@ In progress:
 - presentation document/model lifecycle and read-only runtime are owned by the
   presentation domain, with a compatibility facade preserving handler and
   composition-root APIs;
-- presentation adapter construction is split out of the central server wiring.
-- the shared execution time-window contract and schedule resolution live below
-  the facade, with compatibility aliases for existing consumers.
+- presentation adapter construction is split out of the central server wiring;
+- execution render/plan/resource/run contracts, reviewed planning, admission,
+  selection, and unit lifecycle live below the facade. Scheduler consumes the
+  lower contracts and execution/planner adapter construction is split out of
+  the central server wiring;
 - shared Git-workspace path and atomic-write primitives live below both
   presentation and notebook code.
 
-Next, use the same strangler shape to extract pipeline execution and notebook
-application services. Keep the `service` facade and move handlers one group at
-a time. Split server wiring alongside each domain so the composition root
-shrinks naturally.
+The reviewed execution sequence is complete without moving the 3,000-line
+executor as a block. The lower planner owns the workflow around snapshot,
+staleness, policy, and active-run ports; the lower admitter normalizes and
+checks a run before durable admission or side effects; and plan-driven runtime
+transitions share the same contracts as scheduler persistence. The facade still
+owns the deliberately integration-heavy Bruin executor, inline durable ledger,
+target-write observation, and completion adapter. Keep those together until a
+feature change supplies a cohesive lower port; do not manufacture a scheduler
+cycle merely to reduce the facade line count.
+
+Next, use the same strangler shape for the notebook application service. Keep
+the `service` facade and move handlers one group at a time. Split server wiring
+alongside the domain so the composition root continues to shrink naturally.
 
 The reviewed next boundaries are deliberately larger than a file move:
 
-- **Execution:** do not move the 3,000-line executor or 1,700-line planner as a
-  block. First move the plan/render/resource contract graph and its pure
-  canonicalization together, then move planning behind adapters for snapshots,
-  staleness, policy, and active-run lookup. Execution admission/orchestration
-  follows only after both planner and scheduler consume the lower contracts.
 - **Notebooks:** keep loader/path validation, cell and notebook locks, manifest
   plus cell mutation, interrupted-transaction recovery, change-set CAS, and DTO
   conversion in one document-service extraction. Moving individual CRUD

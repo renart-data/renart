@@ -67,11 +67,22 @@ to its environment-specific physical relation. Those adapters are assembled by
 `cmd/server_presentation.go`, keeping their secret-purpose and execution wiring
 out of the central server constructor.
 
-The execution strangler starts at `internal/web/execution.TimeWindow`, the
-single schedule/explicit interval contract consumed by planning, rendering,
-type-checking, staleness, and materialization. `service.ExecutionTimeWindow`
-is a type alias during migration, so those paths share lower-domain behavior
-without a broad signature rewrite.
+The execution boundary lives in `internal/web/execution`. It owns the shared
+render, reviewed-plan, resource, private run, target-snapshot, and time-window
+contracts; pure resource canonicalization and plan identity; DAG selection and
+execution-unit binding; the port-driven reviewed planner; pre-side-effect run
+admission; and plan-driven unit lifecycle rules. The scheduler consumes these
+same lower-domain contracts. Compatibility aliases in `service` preserve the
+existing handler and Bruin-adapter APIs without duplicating behavior.
+
+`service.PipelinePlanService` is now a narrow planning adapter: it opens working
+tree or snapshot sources and supplies configuration, type-check, render,
+staleness, prerequisite, policy, and active-run ports to the lower planner.
+`service.ExecutionService` invokes the lower admitter before durable admission
+or warehouse effects, then retains the intentionally integration-heavy Bruin
+executor, inline-run ledger, target-write observation, and completion handoff.
+Those adapters are assembled together in `cmd/server_execution.go`, rather
+than inline in the central server constructor.
 
 Git-authored application domains share `internal/web/workspacefs` for encoded
 path IDs, traversal-safe workspace joins, and synced atomic single-file
@@ -1467,10 +1478,10 @@ module.
   intelligence, onboarding, suggestions in one namespace). Compiler-enforced
   dependency direction and the lower `apperror` contract now support a
   strangler migration; presentation document lifecycle is the first extracted
-  application slice, followed by the presentation read-only runtime. Move
-  pipeline execution and notebook application logic only as cohesive
-  feature-adjacent slices; the shared execution time-window contract is already
-  below the facade.
+  application slice, followed by the presentation read-only runtime and the
+  execution planning/admission boundary. Physical Bruin execution remains an
+  adapter in the facade; move the notebook document application boundary next
+  as one cohesive lock/transaction authority rather than method by method.
 - Every file event triggers a full workspace re-parse + full-state broadcast.
   Fine at current scale behind the debounce; `Revision` exists if incremental
   diffs are ever needed.
