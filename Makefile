@@ -8,7 +8,7 @@ RENART_CACHE_HOME ?= $(if $(XDG_CACHE_HOME),$(XDG_CACHE_HOME),$(HOME)/.cache)
 HOST_SQLPARSER_TARGET = $(shell $(GO) env GOOS)-$(shell $(GO) env GOARCH)
 BRUIN_SQLPARSER_STUB_LIB_DIR = $(RENART_CACHE_HOME)/renart/bruin-sqlparser-stub/$(HOST_SQLPARSER_TARGET)/release
 
-.PHONY: help dev build test check release-check licenses licenses-check bruin-sqlparser-stub go-build go-test standalone-build web-install web-build web-typecheck web-test-live docs-install docs-build docs-dev docs-preview vscode-install landing-media docs-media cli-recordings docs-docker docs-docker-run sync-install clean
+.PHONY: help dev build test check release-check architecture-check licenses licenses-check bruin-sqlparser-stub go-build go-test standalone-build web-install web-build web-typecheck web-test-live docs-install docs-build docs-dev docs-preview vscode-install landing-media docs-media cli-recordings docs-docker docs-docker-run sync-install clean
 
 help:
 	@printf "Renart build targets\n\n"
@@ -16,6 +16,7 @@ help:
 	@printf "  make build             Build web app, Go binary, and docs\n"
 	@printf "  make check             Run Go tests plus web/docs builds\n"
 	@printf "  make release-check     Run local alpha release checks\n"
+	@printf "  make architecture-check  Reject retired current-state architecture claims\n"
 	@printf "  make licenses          Regenerate third-party notices\n"
 	@printf "  make licenses-check    Verify dependency licenses and notices\n"
 	@printf "  make bruin-sqlparser-stub  Build Bruin's compatibility link shim\n"
@@ -40,9 +41,9 @@ build: web-build go-build docs-build
 dev:
 	./scripts/dev.sh $(WORKSPACE)
 
-check: go-test web-build docs-build
+check: architecture-check go-test web-build docs-build
 
-release-check: bruin-sqlparser-stub web-install docs-install vscode-install licenses-check
+release-check: architecture-check bruin-sqlparser-stub web-install docs-install vscode-install licenses-check
 	$(GO) mod verify
 	CGO_LDFLAGS="-L$(BRUIN_SQLPARSER_STUB_LIB_DIR) $(CGO_LDFLAGS)" $(GO) test -p=1 ./...
 	CGO_LDFLAGS="-L$(BRUIN_SQLPARSER_STUB_LIB_DIR) $(CGO_LDFLAGS)" $(GO) vet -p=1 ./...
@@ -58,6 +59,9 @@ licenses:
 
 licenses-check:
 	GO="$(GO)" ./scripts/check-third-party-licenses.sh
+
+architecture-check:
+	./scripts/check_architecture_current_state.sh
 
 bruin-sqlparser-stub:
 	./scripts/build_bruin_sqlparser_stub.sh "$(HOST_SQLPARSER_TARGET)"

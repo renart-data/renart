@@ -654,8 +654,10 @@ Relevant files: [asset-editor.tsx](../web/components/app/asset-editor.tsx),
 
 ## 8. Validation
 
-Run `pnpm check` from `web/` to verify the embedded wasm build, Oxfmt, Oxlint,
+Run `pnpm check` from `web/` to verify generated API contracts, Oxfmt, Oxlint,
 Vitest, TypeScript, and the Vite production build (prefer `pnpm` over `npm`).
+The Python-intelligence WASM module is exercised by the Go build/test path;
+SQL intelligence and formatting are native Go.
 For behavior that touches workspace sync, canvas interactions,
 inspect/materialize, or Monaco, run the live e2e suite:
 `corepack pnpm test:e2e:live` in `web/`.

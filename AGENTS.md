@@ -80,8 +80,9 @@ example/                sample workspaces used by tooling and tests
 
 - **Backend:** Go HTTP server (transport `httpapi` → domain `service` → Bruin
   packages), River + SQLite scheduler, SSE hub, fsnotify watcher. Durable state
-  in `.renart/state.db`; user-authored files stay plain Bruin files. SQL/Python
-  intelligence and SQL formatting run as embedded wasm engines under wazero.
+  in `.renart/state.db`; user-authored files stay plain Bruin files. SQL
+  intelligence and formatting use the native pure-Go Golyglot package; Python
+  intelligence runs as an embedded WASM engine under wazero.
   Full detail: [architecture/backend.md](architecture/backend.md).
 - **Frontend:** React 19 + TypeScript, TanStack Router, Vite, Tailwind + shadcn,
   React Flow canvas, Monaco editor, Jotai/SWR state. Full detail:

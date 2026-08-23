@@ -25,7 +25,7 @@ func benchmarkPipeline(assetCount int) *pipeline.Pipeline {
 }
 
 // BenchmarkDAGColdFormatter measures the first DAG computation, paying the
-// wasm formatter cost for every asset (what a fresh server start pays once
+// native formatter cost for every asset (what a fresh server start pays once
 // per pipeline).
 func BenchmarkDAGColdFormatter(b *testing.B) {
 	p := benchmarkPipeline(20)

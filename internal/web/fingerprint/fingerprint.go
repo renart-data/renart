@@ -75,11 +75,9 @@ type Result struct {
 
 // Engine computes fingerprint DAGs. It caches disk-derived inputs (Python
 // lockfiles, shared-code directories, depends_on_files pins) validated by
-// stat, and formatter-normalized SQL keyed by content hash (the wasm
-// formatter costs tens of milliseconds per statement — far too slow to run
-// on every DAG recompute, but a given content only ever formats to one
-// result, so the cache cannot go stale). Everything else in-memory is
-// hashed fresh on every call.
+// stat, and formatter-normalized SQL keyed by content hash. A given SQL input
+// only ever formats to one result, so that cache cannot go stale. Everything
+// else in-memory is hashed fresh on every call.
 type Engine struct {
 	mu           sync.Mutex
 	fileHashes   map[string]fileHashEntry
@@ -556,8 +554,8 @@ func normalizedExternalDependencyType(value string) string {
 // commas, layout) never change the fingerprint. When the formatter cannot
 // parse the statement (e.g. Jinja in identifier position) the stripped form
 // is used — deterministic for a given content either way. Results are
-// cached by content hash because a single format call costs tens of
-// milliseconds.
+// cached by content hash to avoid repeating deterministic parsing/formatting
+// work across DAG recomputes.
 func (e *Engine) normalizedSQL(content string, asset *pipeline.Asset) string {
 	stripped := CanonicalSQL(content)
 	dialect := sqlDialectForAsset(asset)

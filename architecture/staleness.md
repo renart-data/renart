@@ -43,13 +43,13 @@ SQL:    H(fp_version ‖ canonical_sql ‖ config_hash ‖ consumed_vars_hash �
 Python: H(fp_version ‖ file_bytes ‖ lockfile_hash ‖ shared_dir_hash ‖ config_hash ‖ upstream_fps)
 ```
 
-- **SQL canonicalization runs through the embedded wasm formatter**: comments
+- **SQL canonicalization runs through the native Golyglot formatter**: comments
   stripped, statement formatted per-asset-dialect (`internal/sqlformat`),
   whitespace collapsed — format-on-save, keyword-case edits, and trailing
-  commas never change a fingerprint; identifier case stays significant. A
-  format call costs ~66 ms, so results are cached by content hash (content
-  only ever formats one way; the cache cannot go stale): cold DAG on 20 assets
-  ≈ 1.3 s, warm ≈ 0.4 ms. The server pre-warms all pipelines at startup.
+  commas never change a fingerprint; identifier case stays significant.
+  Results remain cached by content hash (content only ever formats one way; the
+  cache cannot go stale), and the cold/warm DAG paths have focused benchmarks.
+  The server pre-warms all pipelines at startup.
   Statements the formatter can't parse (e.g. Jinja in identifier position)
   fall back to the stripped canonical form, deterministically.
 - **Consumed variables are detected textually** (`var.NAME` references

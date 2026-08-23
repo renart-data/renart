@@ -37,6 +37,9 @@ jobs:
       - name: Verify module integrity
         run: go mod verify
 
+      - name: Verify current-state architecture markers
+        run: make architecture-check
+
       - name: Test backend
         run: go test -tags=webdev -p=1 ./...
 

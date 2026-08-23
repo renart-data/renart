@@ -1,6 +1,6 @@
 # Notebooks — current architecture
 
-Status: current state on `codex/notebook-platform`, August 2026. A notebook is
+Status: current state, August 2026. A notebook is
 a Git-native ordered document whose data-producing blocks share one local
 DuckDB integration warehouse. Remote systems are read-only sources; Renart
 transfers typed snapshots into the local session before downstream work runs.

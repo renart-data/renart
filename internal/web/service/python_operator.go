@@ -383,8 +383,8 @@ func (b *brokerSQLTools) usedTables(sql string) ([]string, error) {
 }
 
 // brokerQueryDialect maps the default connection's type to a SQL dialect for
-// parsing SDK queries. Unknown types parse as duckdb (renart's default
-// warehouse; sqlglot's duckdb dialect accepts standard SQL).
+// parsing SDK queries. Unknown types parse as DuckDB, Renart's default
+// warehouse and the most useful generic fallback for local notebook queries.
 func brokerQueryDialect(manager config.ConnectionAndDetailsGetter, connectionName string) string {
 	if manager == nil || connectionName == "" {
 		return "duckdb"

@@ -53,9 +53,9 @@ func buildGolyglotSchema(schema Schema, constraintSets ...SchemaConstraints) gol
 	return result
 }
 
-// buildPolyglotSchema makes the map-backed Renart schema deterministic before
-// it crosses the WASM boundary. Stable ordering is required for analysis cache
-// keys and also keeps identical requests byte-for-byte identical.
+// buildPolyglotSchema makes the map-backed Renart schema deterministic. Stable
+// ordering is required for analysis cache keys and makes equivalent native
+// Golyglot inputs identical.
 func buildPolyglotSchema(schema Schema, constraintSets ...SchemaConstraints) polyglotSchema {
 	constraints := firstSchemaConstraints(constraintSets)
 	tableNames := make([]string, 0, len(schema))
