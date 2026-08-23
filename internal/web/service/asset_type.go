@@ -1,10 +1,10 @@
 package service
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
+	"renart/internal/bruincompat"
 )
 
 func sqlAssetTypeForIngestrDestination(destination string) (string, bool) {
@@ -39,44 +39,11 @@ func sqlAssetTypeForConnectionType(connectionType string) (string, bool) {
 }
 
 func queryAssetTypeForConnectionType(connectionType string) (pipeline.AssetType, bool) {
-	canonical := normalizeConnectionType(connectionType)
-	if canonical == "" {
-		return "", false
-	}
-
-	candidates := make([]pipeline.AssetType, 0, 1)
-	for assetType, mappedConnectionType := range pipeline.AssetTypeConnectionMapping {
-		if normalizeConnectionType(mappedConnectionType) == canonical && isQueryAssetType(assetType) {
-			if assetType == pipeline.AssetTypeFabricQueryLegacy {
-				continue
-			}
-			candidates = append(candidates, assetType)
-		}
-	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i] < candidates[j] })
-	if len(candidates) == 0 {
-		return "", false
-	}
-	return candidates[0], true
+	return bruincompat.QueryAssetTypeForConnectionType(connectionType)
 }
 
 func sourceAssetTypeForConnectionType(connectionType string) (pipeline.AssetType, bool) {
-	canonical := normalizeConnectionType(connectionType)
-	if canonical == "" {
-		return "", false
-	}
-
-	candidates := make([]pipeline.AssetType, 0, 1)
-	for assetType, mappedConnectionType := range pipeline.AssetTypeConnectionMapping {
-		if normalizeConnectionType(mappedConnectionType) == canonical && isSourceAssetType(assetType) {
-			candidates = append(candidates, assetType)
-		}
-	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i] < candidates[j] })
-	if len(candidates) == 0 {
-		return "", false
-	}
-	return candidates[0], true
+	return bruincompat.SourceAssetTypeForConnectionType(connectionType)
 }
 
 func convertDirectSourceTypeToQueryType(sourceType pipeline.AssetType) pipeline.AssetType {
@@ -92,28 +59,13 @@ func convertDirectSourceTypeToQueryType(sourceType pipeline.AssetType) pipeline.
 }
 
 func isQueryAssetType(assetType pipeline.AssetType) bool {
-	return strings.HasSuffix(string(assetType), ".sql")
+	return bruincompat.IsQueryAssetType(assetType)
 }
 
 func isSourceAssetType(assetType pipeline.AssetType) bool {
-	return strings.HasSuffix(string(assetType), ".source")
+	return bruincompat.IsSourceAssetType(assetType)
 }
 
 func normalizeConnectionType(connectionType string) string {
-	switch strings.ToLower(strings.TrimSpace(connectionType)) {
-	case "bigquery", "gcp":
-		return "google_cloud_platform"
-	case "sqlserver", "ms":
-		return "mssql"
-	case "pg":
-		return "postgres"
-	case "rs":
-		return "redshift"
-	case "sf":
-		return "snowflake"
-	case "bq":
-		return "google_cloud_platform"
-	default:
-		return strings.ToLower(strings.TrimSpace(connectionType))
-	}
+	return bruincompat.NormalizeConnectionType(connectionType)
 }

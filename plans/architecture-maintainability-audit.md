@@ -1,10 +1,11 @@
 # Architecture and maintainability audit
 
-Status: implementation in progress, 2026-08-23. The native-runtime fact guard
-and annotated Go-AST API contract generator have shipped locally. This is not a
-proposal for a rewrite. Each accepted implementation slice should remain small,
-preserve Renart's filesystem/SSE/runtime contracts, and be folded into the
-relevant document under [`architecture/`](../architecture/) when it ships.
+Status: implementation in progress, 2026-08-23. The native-runtime fact guard,
+annotated Go-AST API contract generator, and backend connection capability
+registry have shipped locally. This is not a proposal for a rewrite. Each
+accepted implementation slice should remain small, preserve Renart's
+filesystem/SSE/runtime contracts, and be folded into the relevant document
+under [`architecture/`](../architecture/) when it ships.
 
 ## 1. Executive assessment
 
@@ -183,6 +184,23 @@ generator can remain lightweight once its roots and parser are reliable.
   omitted fields, and nested generic-looking syntax.
 
 ### 5.2 Warehouse and asset capabilities are duplicated
+
+#### Implemented result
+
+[`internal/bruincompat/capabilities.go`](../internal/bruincompat/capabilities.go)
+now owns connection aliases/families, Bruin-derived preferred query and source
+types, and explicit parser, analyzer, formatter, and fingerprint dialects.
+Service connection normalization/asset selection, SQL LSP graph loading,
+parse-context/typecheck, format-on-save, fingerprinting, and brokered Python SQL
+consume that registry. A parity test enumerates Bruin's asset-to-connection
+mapping and requires each connection family to be supported or explicitly
+classified as outside the SQL registry.
+
+Two historical v3 canonicalization differences remain visible rather than
+being silently changed: MotherDuck and Vertica format with DuckDB/PostgreSQL
+respectively, while their existing fingerprints use generic formatting.
+Unifying those fields requires an explicit fingerprint-version migration and
+is intentionally deferred for a product decision.
 
 #### Evidence
 

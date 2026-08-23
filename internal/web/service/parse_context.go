@@ -7,43 +7,10 @@ import (
 	"strings"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
+	"renart/internal/bruincompat"
 	"renart/internal/sqlintelligence"
 	"renart/internal/web/model"
 )
-
-var assetTypeDialectMap = map[pipeline.AssetType]string{
-	pipeline.AssetTypeBigqueryQuery:         "bigquery",
-	pipeline.AssetTypeBigqueryQuerySensor:   "bigquery",
-	pipeline.AssetTypeSnowflakeQuery:        "snowflake",
-	pipeline.AssetTypeSnowflakeQuerySensor:  "snowflake",
-	pipeline.AssetTypePostgresQuery:         "postgres",
-	pipeline.AssetTypePostgresQuerySensor:   "postgres",
-	pipeline.AssetTypeRedshiftQuery:         "postgres",
-	pipeline.AssetTypeRedshiftQuerySensor:   "postgres",
-	pipeline.AssetTypeTrinoQuery:            "trino",
-	pipeline.AssetTypeTrinoQuerySensor:      "trino",
-	pipeline.AssetTypeAthenaQuery:           "athena",
-	pipeline.AssetTypeAthenaSQLSensor:       "athena",
-	pipeline.AssetTypeClickHouse:            "clickhouse",
-	pipeline.AssetTypeClickHouseQuerySensor: "clickhouse",
-	pipeline.AssetTypeDatabricksQuery:       "databricks",
-	pipeline.AssetTypeDatabricksQuerySensor: "databricks",
-	pipeline.AssetTypeMsSQLQuery:            "tsql",
-	pipeline.AssetTypeMsSQLQuerySensor:      "tsql",
-	pipeline.AssetTypeSynapseQuery:          "tsql",
-	pipeline.AssetTypeSynapseQuerySensor:    "tsql",
-	pipeline.AssetTypeFabricQuery:           "fabric",
-	pipeline.AssetTypeFabricQueryLegacy:     "fabric",
-	pipeline.AssetTypeMySQLQuery:            "mysql",
-	pipeline.AssetTypeMySQLQuerySensor:      "mysql",
-	pipeline.AssetTypeStarRocksQuery:        "mysql",
-	pipeline.AssetTypeStarRocksQuerySensor:  "mysql",
-	pipeline.AssetTypeOracleQuery:           "oracle",
-	pipeline.AssetTypeVerticaQuery:          "postgres",
-	pipeline.AssetTypeDuckDBQuery:           "duckdb",
-	pipeline.AssetTypeDuckDBQuerySensor:     "duckdb",
-	pipeline.AssetTypeMotherduckQuery:       "duckdb",
-}
 
 var (
 	selectAliasPattern  = regexp.MustCompile(`(?i)\bas\s+([a-zA-Z_][\w$]*|"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `)\s*$`)
@@ -307,7 +274,7 @@ func MergeShortNameColumnSourceMethods(sources sqlintelligence.SchemaColumnSourc
 }
 
 func AssetTypeToDialect(assetType pipeline.AssetType) (string, error) {
-	dialect, ok := assetTypeDialectMap[assetType]
+	dialect, ok := bruincompat.AnalyzerDialectForAssetType(assetType)
 	if !ok {
 		return "", fmt.Errorf("unsupported asset type %s", assetType)
 	}

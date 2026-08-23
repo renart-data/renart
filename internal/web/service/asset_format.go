@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"renart/internal/bruincompat"
 	"renart/internal/sqlformat"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
@@ -81,32 +82,9 @@ func (s *AssetService) sqlFormatDialect(ctx context.Context, assetID string) str
 }
 
 func sqlFormatDialectForAssetType(assetType pipeline.AssetType) string {
-	dialect, err := AssetTypeToDialect(assetType)
-	if err != nil {
+	dialect, ok := bruincompat.FormatterDialectForAssetType(assetType)
+	if !ok {
 		return sqlformat.DialectGeneric
 	}
-	switch strings.ToLower(strings.TrimSpace(dialect)) {
-	case "bigquery":
-		return "bigquery"
-	case "snowflake":
-		return "snowflake"
-	case "postgres":
-		return "postgresql"
-	case "redshift":
-		return "redshift"
-	case "trino":
-		return "trino"
-	case "athena":
-		return "athena"
-	case "clickhouse":
-		return "clickhouse"
-	case "databricks":
-		return "databricks"
-	case "tsql":
-		return "tsql"
-	case "duckdb":
-		return "duckdb"
-	default:
-		return sqlformat.DialectGeneric
-	}
+	return dialect
 }

@@ -171,6 +171,12 @@ func TestDialectFromAssetTypeSupportsQuerySensors(t *testing.T) {
 		"my.sql":                  "mysql",
 		"my.sensor.query":         "mysql",
 		"oracle.sql":              "oracle",
+		"doris.sql":               "doris",
+		"dremio.sensor.query":     "trino",
+		"sail.sql":                "trino",
+		"fabric.sql":              "fabric",
+		"vertica.sql":             "postgres",
+		"motherduck.sql":          "duckdb",
 	}
 	for assetType, expected := range tests {
 		t.Run(assetType, func(t *testing.T) {

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
+	"renart/internal/bruincompat"
 	"renart/internal/sqlformat"
 	"renart/internal/web/dependencygraph"
 	"renart/internal/web/identity"
@@ -584,34 +585,15 @@ func (e *Engine) normalizedSQL(content string, asset *pipeline.Asset) string {
 	return canonical
 }
 
-// sqlDialectForAsset mirrors the formatter dialect mapping used by the
-// format-on-save path (service.sqlFormatDialectForAssetType), kept local to
-// avoid pulling the service package into the fingerprint dependency graph.
 func sqlDialectForAsset(asset *pipeline.Asset) string {
-	switch asset.Type {
-	case pipeline.AssetTypeBigqueryQuery:
-		return "bigquery"
-	case pipeline.AssetTypeSnowflakeQuery:
-		return "snowflake"
-	case pipeline.AssetTypePostgresQuery:
-		return "postgresql"
-	case pipeline.AssetTypeRedshiftQuery:
-		return "redshift"
-	case pipeline.AssetTypeTrinoQuery:
-		return "trino"
-	case pipeline.AssetTypeAthenaQuery:
-		return "athena"
-	case pipeline.AssetTypeClickHouse:
-		return "clickhouse"
-	case pipeline.AssetTypeDatabricksQuery:
-		return "databricks"
-	case pipeline.AssetTypeMsSQLQuery, pipeline.AssetTypeSynapseQuery:
-		return "tsql"
-	case pipeline.AssetTypeDuckDBQuery:
-		return "duckdb"
-	default:
+	if asset == nil {
 		return sqlformat.DialectGeneric
 	}
+	dialect, ok := bruincompat.FingerprintDialectForAssetType(asset.Type)
+	if !ok {
+		return sqlformat.DialectGeneric
+	}
+	return dialect
 }
 
 type assetKindType string

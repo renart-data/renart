@@ -1123,6 +1123,16 @@ Bruin mapping used by execution. The Build ad-hoc editor consumes this contract,
 so adding another supported query warehouse does not require a parallel
 TypeScript mapping.
 
+Warehouse semantics are centralized in `internal/bruincompat` connection
+profiles. Bruin's `AssetTypeConnectionMapping` remains authoritative for the
+concrete query/source asset types, while Renart owns accepted aliases, a stable
+connection family, and explicit parser, analyzer, formatter, and fingerprint
+dialect decisions. LSP/typecheck, connection-scoped parsing, brokered Python
+queries, format-on-save, fingerprints, and asset creation all consume that
+registry. A parity test requires every connection family newly introduced by
+Bruin to be either supported or explicitly classified as non-SQL/unsupported;
+frontend icon and colour choices intentionally remain presentation-only.
+
 New asset creation has a broader pipeline/environment-scoped contract at
 `GET /api/pipelines/{pipelineID}/asset-creation-profile`. The response is
 secret-free and describes compatible configured connections, the resolved or

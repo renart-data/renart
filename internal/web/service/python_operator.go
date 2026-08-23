@@ -22,6 +22,7 @@ import (
 	"github.com/bruin-data/bruin/pkg/query"
 	"github.com/bruin-data/bruin/pkg/scheduler"
 
+	"renart/internal/bruincompat"
 	"renart/internal/pysdk"
 	"renart/internal/sqlintelligence"
 	"renart/internal/web/duckcoord"
@@ -389,30 +390,10 @@ func brokerQueryDialect(manager config.ConnectionAndDetailsGetter, connectionNam
 	if manager == nil || connectionName == "" {
 		return "duckdb"
 	}
-	switch manager.GetConnectionType(connectionName) {
-	case "postgres", "redshift":
-		return "postgres"
-	case "snowflake":
-		return "snowflake"
-	case "google_cloud_platform", "bigquery":
-		return "bigquery"
-	case "mysql":
-		return "mysql"
-	case "mssql", "synapse", "fabric":
-		return "tsql"
-	case "clickhouse":
-		return "clickhouse"
-	case "databricks":
-		return "databricks"
-	case "athena":
-		return "athena"
-	case "trino":
-		return "trino"
-	case "oracle":
-		return "oracle"
-	default:
-		return "duckdb"
+	if dialect, ok := bruincompat.AnalyzerDialectForConnectionType(manager.GetConnectionType(connectionName)); ok {
+		return dialect
 	}
+	return "duckdb"
 }
 
 // pythonRun carries everything one task invocation needs.

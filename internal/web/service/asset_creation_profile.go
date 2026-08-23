@@ -241,29 +241,15 @@ func assetCreationCandidates(kind, role, connectionType string) []AssetCreationC
 }
 
 func supportedSQLAssetTypeForConnectionType(connectionType string) (pipeline.AssetType, string, bool) {
-	canonical := normalizeConnectionType(connectionType)
-	if canonical == "" {
+	assetType, ok := queryAssetTypeForConnectionType(connectionType)
+	if !ok || !isDirectRunAssetTypeSupported(assetType) {
 		return "", "", false
 	}
-	candidates := make([]pipeline.AssetType, 0, 1)
-	for assetType, mappedConnectionType := range pipeline.AssetTypeConnectionMapping {
-		if normalizeConnectionType(mappedConnectionType) != canonical || !isQueryAssetType(assetType) {
-			continue
-		}
-		if assetType == pipeline.AssetTypeFabricQueryLegacy || !isDirectRunAssetTypeSupported(assetType) {
-			continue
-		}
-		if _, err := AssetTypeToDialect(assetType); err != nil {
-			continue
-		}
-		candidates = append(candidates, assetType)
-	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i] < candidates[j] })
-	if len(candidates) == 0 {
+	dialect, err := AssetTypeToDialect(assetType)
+	if err != nil {
 		return "", "", false
 	}
-	dialect, _ := AssetTypeToDialect(candidates[0])
-	return candidates[0], dialect, true
+	return assetType, dialect, true
 }
 
 func semanticAssetCreationCandidates(kind, connectionType string) []AssetCreationCandidate {

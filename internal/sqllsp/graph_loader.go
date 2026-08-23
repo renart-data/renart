@@ -11,7 +11,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bruin-data/bruin/pkg/pipeline"
 	"gopkg.in/yaml.v3"
+	"renart/internal/bruincompat"
 )
 
 var (
@@ -391,34 +393,11 @@ func normalizeGraph(graph CanonicalGraph) CanonicalGraph {
 // DialectFromAssetType maps a Bruin/dbt asset type (e.g. "duckdb.sql") to the
 // SQL dialect name used by the analyzer and validator.
 func DialectFromAssetType(assetType string) string {
-	switch strings.ToLower(strings.TrimSpace(assetType)) {
-	case "duckdb.sql", "duckdb.sensor.query":
-		return "duckdb"
-	case "bq.sql", "bq.sensor.query":
-		return "bigquery"
-	case "sf.sql", "sf.sensor.query":
-		return "snowflake"
-	case "pg.sql", "pg.sensor.query", "rs.sql", "rs.sensor.query":
-		return "postgres"
-	case "athena.sql", "athena.sensor.query":
-		return "athena"
-	case "databricks.sql", "databricks.sensor.query":
-		return "databricks"
-	case "ms.sql", "ms.sensor.query", "synapse.sql", "synapse.sensor.query":
-		return "tsql"
-	case "ch.sql", "clickhouse.sql", "clickhouse.sensor.query":
-		return "clickhouse"
-	case "trino.sql", "trino.sensor.query":
-		return "trino"
-	case "my.sql", "my.sensor.query":
-		return "mysql"
-	case "starrocks.sql", "starrocks.sensor.query":
-		return "mysql"
-	case "oracle.sql":
-		return "oracle"
-	default:
+	dialect, ok := bruincompat.AnalyzerDialectForAssetType(pipeline.AssetType(assetType))
+	if !ok {
 		return "generic"
 	}
+	return dialect
 }
 
 func relationID(provider, name string) string {

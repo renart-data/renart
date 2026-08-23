@@ -227,6 +227,12 @@ overridden dialect. Ad-hoc requests do not attach asset/header diagnostics, and
 a reference to the context asset is not treated as the asset circularly
 referencing itself.
 
+Asset and connection dialect resolution comes from the shared
+`internal/bruincompat` capability registry rather than an LSP-local asset-type
+switch. Query sensors and connection aliases therefore receive the same
+analyzer dialect as typecheck, parse-context, and brokered notebook SQL; Bruin's
+asset mapping remains the source of concrete query/source types.
+
 The custom-check and pre/post-hook dialogs use the same hook for completion and
 diagnostics. Their Monaco models are independent from the asset body, so
 markers point at the assertion or hook SQL itself. Pipeline type-check renders

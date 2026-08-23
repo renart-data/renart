@@ -544,5 +544,7 @@ func pythonCompletionLabels(completions []PythonCompletion) []string {
 func TestSQLFormatDialectForAssetTypeUsesBruinDialect(t *testing.T) {
 	assert.Equal(t, "postgresql", sqlFormatDialectForAssetType(pipeline.AssetTypePostgresQuery))
 	assert.Equal(t, "databricks", sqlFormatDialectForAssetType(pipeline.AssetTypeDatabricksQuery))
+	assert.Equal(t, "duckdb", sqlFormatDialectForAssetType(pipeline.AssetTypeMotherduckQuery))
+	assert.Equal(t, "postgresql", sqlFormatDialectForAssetType(pipeline.AssetTypeVerticaQuery))
 	assert.Equal(t, "generic", sqlFormatDialectForAssetType(pipeline.AssetTypePython))
 }
