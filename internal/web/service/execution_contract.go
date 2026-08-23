@@ -11,6 +11,7 @@ import (
 	"github.com/bruin-data/bruin/pkg/pipeline"
 
 	"renart/internal/web/duckcoord"
+	webexecution "renart/internal/web/execution"
 	"renart/internal/web/identity"
 )
 
@@ -212,60 +213,21 @@ func duckDBConnectionPath(connection any) (string, bool) {
 }
 
 func pipelineExclusiveResources() PipelinePlanResources {
-	return PipelinePlanResources{
-		Isolation: PipelinePlanResourceIsolationPipeline,
-		Claims:    []PipelinePlanResourceClaim{},
-	}
+	return webexecution.PipelineExclusiveResources()
 }
 
 func clonePipelinePlanResources(resources PipelinePlanResources) PipelinePlanResources {
-	return PipelinePlanResources{
-		Isolation: resources.Isolation,
-		Claims:    append([]PipelinePlanResourceClaim(nil), resources.Claims...),
-	}
+	return webexecution.CloneResources(resources)
 }
 
 func canonicalPipelinePlanResources(resources PipelinePlanResources) PipelinePlanResources {
-	result := PipelinePlanResources{
-		Isolation: strings.TrimSpace(resources.Isolation),
-		Claims:    append([]PipelinePlanResourceClaim(nil), resources.Claims...),
-	}
-	sort.Slice(result.Claims, func(i, j int) bool {
-		if result.Claims[i].Kind == result.Claims[j].Kind {
-			return result.Claims[i].Identity < result.Claims[j].Identity
-		}
-		return result.Claims[i].Kind < result.Claims[j].Kind
-	})
-	deduped := result.Claims[:0]
-	for _, claim := range result.Claims {
-		claim.Kind = strings.TrimSpace(claim.Kind)
-		claim.Identity = strings.TrimSpace(claim.Identity)
-		if len(deduped) > 0 && deduped[len(deduped)-1] == claim {
-			continue
-		}
-		deduped = append(deduped, claim)
-	}
-	result.Claims = deduped
-	if result.Claims == nil {
-		result.Claims = []PipelinePlanResourceClaim{}
-	}
-	return result
+	return webexecution.CanonicalResources(resources)
 }
 
 func aggregatePipelinePlanMutationResources(
 	contracts []PipelinePlanExecutionContract,
 ) PipelinePlanResources {
-	result := PipelinePlanResources{
-		Isolation: PipelinePlanResourceIsolationResources,
-		Claims:    []PipelinePlanResourceClaim{},
-	}
-	for _, contract := range contracts {
-		if contract.MutationResources.Isolation == PipelinePlanResourceIsolationPipeline {
-			result.Isolation = PipelinePlanResourceIsolationPipeline
-		}
-		result.Claims = append(result.Claims, contract.MutationResources.Claims...)
-	}
-	return canonicalPipelinePlanResources(result)
+	return webexecution.AggregateMutationResources(contracts)
 }
 
 func executionContractsForUnits(
@@ -295,31 +257,11 @@ func executionContractsForUnits(
 func equalPipelinePlanExecutionContracts(
 	left, right []PipelinePlanExecutionContract,
 ) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index].AssetID != right[index].AssetID ||
-			left[index].AssetName != right[index].AssetName ||
-			!equalStringSlices(left[index].ConnectionKeys, right[index].ConnectionKeys) ||
-			!equalPipelinePlanResources(left[index].MutationResources, right[index].MutationResources) ||
-			!equalPipelinePlanResources(left[index].CoordinationResources, right[index].CoordinationResources) {
-			return false
-		}
-	}
-	return true
+	return webexecution.EqualExecutionContracts(left, right)
 }
 
 func equalPipelinePlanResources(left, right PipelinePlanResources) bool {
-	if left.Isolation != right.Isolation || len(left.Claims) != len(right.Claims) {
-		return false
-	}
-	for index := range left.Claims {
-		if left.Claims[index] != right.Claims[index] {
-			return false
-		}
-	}
-	return true
+	return webexecution.EqualResources(left, right)
 }
 
 func equalStringSlices(left, right []string) bool {

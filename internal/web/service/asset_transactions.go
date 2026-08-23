@@ -46,11 +46,7 @@ type AssetTransaction struct {
 }
 
 // TransactionDependency describes a dependency to add manually.
-type TransactionDependency struct {
-	Asset string `json:"asset,omitempty"`
-	URI   string `json:"uri,omitempty"`
-	Mode  string `json:"mode,omitempty"`
-}
+type TransactionDependency = webmodel.TransactionDependency
 
 // AssetTransactionResult is the post-transaction asset state the UI needs to
 // refresh its cards.

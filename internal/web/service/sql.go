@@ -10,6 +10,8 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/tablename"
+
+	webmodel "renart/internal/web/model"
 )
 
 type SQLColumnValuesResult struct {
@@ -57,10 +59,7 @@ type SQLTableDiscoveryResult struct {
 	Error          string                  `json:"error,omitempty"`
 }
 
-type SQLColumn struct {
-	Name string `json:"name"`
-	Type string `json:"type,omitempty"`
-}
+type SQLColumn = webmodel.SQLColumn
 
 // renart:web
 // renart:web-name SqlDiscoveryTableColumnsResponse

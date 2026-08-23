@@ -3,6 +3,22 @@ package model
 
 import "time"
 
+// SQLColumn is the compact schema contract shared by SQL discovery,
+// type-checking, and execution planning. It intentionally carries only the
+// physical name and type observed from a query or remote catalog.
+type SQLColumn struct {
+	Name string `json:"name"`
+	Type string `json:"type,omitempty"`
+}
+
+// TransactionDependency is the dependency payload shared by diagnostics and
+// the authoritative asset transaction endpoint.
+type TransactionDependency struct {
+	Asset string `json:"asset,omitempty"`
+	URI   string `json:"uri,omitempty"`
+	Mode  string `json:"mode,omitempty"`
+}
+
 // MaterializationCapability describes one write mode Renart can safely offer
 // for an asset's concrete execution path. Labels remain a frontend concern;
 // the backend owns availability and field requirements.

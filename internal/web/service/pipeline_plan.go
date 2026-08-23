@@ -2,9 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +14,7 @@ import (
 	"github.com/spf13/afero"
 
 	"renart/internal/sqllsp"
+	webexecution "renart/internal/web/execution"
 	"renart/internal/web/fingerprint"
 	"renart/internal/web/identity"
 	"renart/internal/web/matlog"
@@ -26,275 +24,6 @@ import (
 	"renart/internal/web/snapshot"
 	"renart/internal/web/staleness"
 )
-
-const (
-	PipelinePlanStatusReady   = "ready"
-	PipelinePlanStatusWarning = "warning"
-	PipelinePlanStatusBlocked = "blocked"
-
-	PipelinePlanSourceWorkingTree = "working_tree"
-	PipelinePlanSourceSnapshot    = "snapshot"
-	PipelinePlanPurposeExecution  = "execution"
-	PipelinePlanPurposeDeployment = "deployment"
-
-	PipelinePlanSelectionNeeded         = "needed"
-	PipelinePlanSelectionAll            = "all"
-	PipelinePlanSelectionAsset          = "asset"
-	PipelinePlanSelectionSelector       = "selector"
-	PipelinePlanSelectionSelectorNeeded = "selector_needed"
-
-	PipelinePlanResourceIsolationResources = "resources"
-	PipelinePlanResourceIsolationPipeline  = "pipeline"
-)
-
-type PipelinePlanSourceRequest struct {
-	Kind      string `json:"kind,omitempty"`
-	VersionID string `json:"version_id,omitempty"`
-}
-
-type PipelinePlanSelectionRequest struct {
-	Mode      string `json:"mode,omitempty"`
-	AssetName string `json:"asset_name,omitempty"`
-	Scope     string `json:"scope,omitempty"`
-	Selector  string `json:"selector,omitempty"`
-}
-
-// PipelinePlanRequest contains only behavior-changing plan inputs. Source is
-// resolved to an exact Merkle/version before the response is returned.
-// renart:web
-type PipelinePlanRequest struct {
-	Purpose             string                       `json:"purpose,omitempty"`
-	Environment         string                       `json:"environment,omitempty"`
-	StartDate           string                       `json:"start_date,omitempty"`
-	EndDate             string                       `json:"end_date,omitempty"`
-	ExecutionTime       string                       `json:"execution_time,omitempty"`
-	FullRefresh         bool                         `json:"full_refresh,omitempty"`
-	Backfill            bool                         `json:"backfill,omitempty"`
-	SensorMode          string                       `json:"sensor_mode,omitempty"`
-	Source              PipelinePlanSourceRequest    `json:"source,omitempty"`
-	Selection           PipelinePlanSelectionRequest `json:"selection,omitempty"`
-	IncludeStageContent bool                         `json:"include_stage_content,omitempty"`
-	// ConfigurationAssetNames is an internal confirmation-only override used
-	// to re-evaluate the reviewed selection's configuration after a Needed plan
-	// shrinks. It is never decoded from HTTP JSON.
-	ConfigurationAssetNames []string `json:"-"`
-	// VariableOverrides and their value-free provenance source are internal
-	// admission inputs. Public plan JSON cannot set or recover their values.
-	VariableOverrides      map[string]any `json:"-"`
-	VariableOverrideSource string         `json:"-"`
-	// ProducerDeploymentPins freezes producer snapshots selected by a durable
-	// scheduled occurrence while its Renart-observed coverage is incomplete.
-	// It is private admission context and never accepted from HTTP JSON.
-	ProducerDeploymentPins map[string]string `json:"-"`
-	// Scheduled admission arbitrates the active run slot transactionally and
-	// always selects all assets, so transient active/data-state checks must not
-	// turn a due interval into a failed plan before admission.
-	SkipActiveRunCheck bool `json:"-"`
-	SkipDataStateCheck bool `json:"-"`
-	Scheduled          bool `json:"-"`
-}
-
-// PipelinePlanConfirmRequest carries the exact read-only request used to
-// regenerate a reviewed plan. Confirmation never trusts rendered content from
-// the client; it compares PlanID against a fresh server-side result.
-// renart:web
-type PipelinePlanConfirmRequest struct {
-	PlanID               string                        `json:"plan_id"`
-	Plan                 PipelinePlanRequest           `json:"plan"`
-	ConfirmedEnvironment string                        `json:"confirmed_environment,omitempty"`
-	Reviewed             *PipelinePlanReviewedIdentity `json:"reviewed,omitempty"`
-}
-
-// PipelinePlanReviewedIdentity is exactly the compact value hashed into a
-// plan ID. Confirmation can therefore validate a prior preview without
-// accepting rendered statements back from the client.
-type PipelinePlanReviewedIdentity struct {
-	PipelineUUID       string                          `json:"pipeline_uuid"`
-	Source             AssetRenderSource               `json:"source"`
-	Context            PipelinePlanContext             `json:"context"`
-	Selection          PipelinePlanSelection           `json:"selection"`
-	Prerequisites      []PipelinePlanPrerequisite      `json:"prerequisites,omitempty"`
-	Resources          PipelinePlanResources           `json:"resources"`
-	ExecutionContracts []PipelinePlanExecutionContract `json:"execution_contracts"`
-	ExecutionUnits     []PipelinePlanExecutionUnit     `json:"execution_units"`
-}
-
-type PipelinePlanContext struct {
-	Environment           string                          `json:"environment,omitempty"`
-	SchemaPrefix          string                          `json:"schema_prefix,omitempty"`
-	StartDate             string                          `json:"start_date"`
-	EndDate               string                          `json:"end_date"`
-	ExecutionTime         string                          `json:"execution_time"`
-	MaxActiveSteps        int                             `json:"max_active_steps"`
-	RequestedFullRefresh  bool                            `json:"requested_full_refresh"`
-	FullRefresh           bool                            `json:"full_refresh"`
-	Backfill              bool                            `json:"backfill"`
-	SensorMode            string                          `json:"sensor_mode"`
-	VariablesDigest       string                          `json:"variables_digest"`
-	VariableProvenance    []AssetRenderVariableProvenance `json:"variable_provenance"`
-	ConfigurationDigest   string                          `json:"configuration_digest,omitempty"`
-	ConfigurationFidelity string                          `json:"configuration_fidelity"`
-	Destructive           bool                            `json:"destructive"`
-}
-
-type PipelinePlanIssue struct {
-	Code      string `json:"code"`
-	Severity  string `json:"severity"`
-	Message   string `json:"message"`
-	AssetID   string `json:"asset_id,omitempty"`
-	AssetName string `json:"asset_name,omitempty"`
-}
-
-type PipelinePlanReadiness struct {
-	CodeChecks TypeCheckReport     `json:"code_checks"`
-	Blockers   []PipelinePlanIssue `json:"blockers"`
-	Warnings   []PipelinePlanIssue `json:"warnings"`
-	ActiveRun  string              `json:"active_run_id,omitempty"`
-}
-
-type PipelinePlanSelection struct {
-	Mode           string `json:"mode"`
-	AssetName      string `json:"asset_name,omitempty"`
-	Scope          string `json:"scope,omitempty"`
-	Selector       string `json:"selector,omitempty"`
-	DataStateToken string `json:"data_state_token,omitempty"`
-}
-
-type PipelinePlanRender struct {
-	StartDate   string                 `json:"start_date"`
-	EndDate     string                 `json:"end_date"`
-	Status      AssetRenderStatus      `json:"status"`
-	FullRefresh bool                   `json:"full_refresh"`
-	Stages      []AssetRenderStage     `json:"stages"`
-	Issues      []AssetRenderIssue     `json:"issues"`
-	Redactions  []AssetRenderRedaction `json:"redactions"`
-}
-
-type PipelinePlanAsset struct {
-	ID               string               `json:"id"`
-	WorkspaceAssetID string               `json:"workspace_asset_id,omitempty"`
-	Name             string               `json:"name"`
-	Type             string               `json:"type"`
-	Dialect          string               `json:"dialect,omitempty"`
-	ConnectionName   string               `json:"connection_name,omitempty"`
-	Fingerprint      string               `json:"fingerprint,omitempty"`
-	Target           AssetRenderTarget    `json:"target"`
-	Staleness        string               `json:"staleness,omitempty"`
-	InclusionReasons []string             `json:"inclusion_reasons"`
-	Renders          []PipelinePlanRender `json:"renders"`
-}
-
-type PipelinePlanExecutionUnit struct {
-	AssetID             string `json:"asset_id"`
-	AssetName           string `json:"asset_name"`
-	StartDate           string `json:"start_date"`
-	EndDate             string `json:"end_date"`
-	RenderIndex         int    `json:"render_index"`
-	Reason              string `json:"reason"`
-	DependencyPositions []int  `json:"dependency_positions"`
-}
-
-const (
-	PipelinePlanPrerequisiteReady   = "ready"
-	PipelinePlanPrerequisiteBlocked = "blocked"
-)
-
-// PipelinePlanPrerequisite is the immutable, secret-free producer evidence a
-// full URI dependency requires. Ready evidence is bound into the reviewed plan
-// and revalidated immediately before the consumer task starts.
-type PipelinePlanPrerequisite struct {
-	Status                    string  `json:"status"`
-	Reason                    string  `json:"reason"`
-	ConsumerAssetID           string  `json:"consumer_asset_id"`
-	ConsumerAssetName         string  `json:"consumer_asset_name"`
-	URI                       string  `json:"uri"`
-	ProducerPipelineID        string  `json:"producer_pipeline_id"`
-	ProducerPipelineUUID      string  `json:"producer_pipeline_uuid"`
-	ProducerPipelineName      string  `json:"producer_pipeline_name"`
-	ProducerAssetID           string  `json:"producer_asset_id"`
-	ProducerAssetName         string  `json:"producer_asset_name"`
-	ProducerSnapshotVersionID string  `json:"producer_snapshot_version_id,omitempty"`
-	ProducerDeploymentOrdinal int64   `json:"producer_deployment_ordinal,omitempty"`
-	Environment               string  `json:"environment"`
-	RequiredStart             string  `json:"required_start"`
-	RequiredEnd               string  `json:"required_end"`
-	ExpectedFingerprint       string  `json:"expected_fingerprint"`
-	TargetIdentity            string  `json:"target_identity,omitempty"`
-	VarsHash                  string  `json:"vars_hash"`
-	TargetGeneration          int64   `json:"target_generation,omitempty"`
-	WriterRunID               string  `json:"writer_run_id,omitempty"`
-	WriterSnapshotVersionID   string  `json:"writer_snapshot_version_id,omitempty"`
-	WriterCompletionID        string  `json:"writer_completion_id,omitempty"`
-	WriterCompletionOrdinal   int64   `json:"writer_completion_ordinal,omitempty"`
-	WriterMaterializedAt      string  `json:"writer_materialized_at,omitempty"`
-	CoveredSeconds            float64 `json:"covered_seconds,omitempty"`
-	RequiredSeconds           float64 `json:"required_seconds,omitempty"`
-}
-
-type PipelinePlanProducerDeployment struct {
-	PipelineID        string
-	PipelineName      string
-	SnapshotVersionID string
-	VariableOverrides map[string]any
-	ScheduleFound     bool
-	ScheduleStatus    string
-}
-
-// PipelinePlanResourceClaim is one exclusive, secret-free mutation resource.
-// Identity is generated by the execution target resolver; raw database and
-// filesystem coordinates never enter the public plan or durable run artifact.
-type PipelinePlanResourceClaim struct {
-	Kind     string `json:"kind"`
-	Identity string `json:"identity"`
-}
-
-// PipelinePlanResources describes admission isolation for the selected work.
-// Resources allows distinct proven outputs to execute concurrently. Pipeline
-// retains the conservative logical-pipeline slot whenever any selected
-// operator cannot prove a stable write-resource contract.
-type PipelinePlanResources struct {
-	Isolation string                      `json:"isolation"`
-	Claims    []PipelinePlanResourceClaim `json:"claims"`
-}
-
-// PipelinePlanExecutionContract is the reviewed, secret-free runtime policy
-// for one selected asset. It is stored once even when the asset has multiple
-// execution windows.
-type PipelinePlanExecutionContract struct {
-	AssetID               string                `json:"asset_id"`
-	AssetName             string                `json:"asset_name"`
-	ConnectionKeys        []string              `json:"connection_keys"`
-	MutationResources     PipelinePlanResources `json:"mutation_resources"`
-	CoordinationResources PipelinePlanResources `json:"coordination_resources"`
-}
-
-type PipelinePlanSummary struct {
-	Assets                int `json:"assets"`
-	ExecutionUnits        int `json:"execution_units"`
-	Stages                int `json:"stages"`
-	DestructiveOperations int `json:"destructive_operations"`
-	Blockers              int `json:"blockers"`
-	Warnings              int `json:"warnings"`
-}
-
-// renart:web
-type PipelinePlan struct {
-	ID                 string                          `json:"id"`
-	Status             string                          `json:"status"`
-	PipelineID         string                          `json:"pipeline_id"`
-	PipelineUUID       string                          `json:"pipeline_uuid"`
-	PipelineName       string                          `json:"pipeline_name"`
-	Source             AssetRenderSource               `json:"source"`
-	Context            PipelinePlanContext             `json:"context"`
-	Readiness          PipelinePlanReadiness           `json:"readiness"`
-	Selection          PipelinePlanSelection           `json:"selection"`
-	Prerequisites      []PipelinePlanPrerequisite      `json:"prerequisites"`
-	Resources          PipelinePlanResources           `json:"resources"`
-	Assets             []PipelinePlanAsset             `json:"assets"`
-	ExecutionContracts []PipelinePlanExecutionContract `json:"execution_contracts"`
-	ExecutionUnits     []PipelinePlanExecutionUnit     `json:"execution_units"`
-	Summary            PipelinePlanSummary             `json:"summary"`
-}
 
 type PipelinePlanSnapshotStore interface {
 	Latest(ctx context.Context, pipelineUUID string) (*snapshot.Snapshot, error)
@@ -966,85 +695,15 @@ func (s *PipelinePlanService) executionTime(raw string) (time.Time, error) {
 }
 
 func normalizePipelinePlanPurpose(raw string) (string, error) {
-	purpose := strings.TrimSpace(raw)
-	if purpose == "" {
-		return PipelinePlanPurposeExecution, nil
-	}
-	switch purpose {
-	case PipelinePlanPurposeExecution, PipelinePlanPurposeDeployment:
-		return purpose, nil
-	default:
-		return "", fmt.Errorf("purpose must be execution or deployment")
-	}
+	return webexecution.NormalizePlanPurpose(raw)
 }
 
 func normalizePipelinePlanSource(req PipelinePlanSourceRequest, envPolicy policy.EnvironmentPolicy) (PipelinePlanSourceRequest, error) {
-	req.Kind = strings.TrimSpace(req.Kind)
-	req.VersionID = strings.TrimSpace(req.VersionID)
-	if req.Kind == "" && req.VersionID != "" {
-		req.Kind = PipelinePlanSourceSnapshot
-	}
-	if req.Kind == "" {
-		if envPolicy.DeployedOnly {
-			req.Kind = PipelinePlanSourceSnapshot
-		} else {
-			req.Kind = PipelinePlanSourceWorkingTree
-		}
-	}
-	switch req.Kind {
-	case PipelinePlanSourceWorkingTree:
-		if req.VersionID != "" {
-			return PipelinePlanSourceRequest{}, fmt.Errorf("working_tree source does not accept version_id")
-		}
-	case PipelinePlanSourceSnapshot:
-	default:
-		return PipelinePlanSourceRequest{}, fmt.Errorf("source kind must be working_tree or snapshot")
-	}
-	return req, nil
+	return webexecution.NormalizePlanSource(req, envPolicy.DeployedOnly)
 }
 
 func normalizePipelinePlanSelection(req PipelinePlanSelectionRequest) (PipelinePlanSelectionRequest, error) {
-	req.Mode = strings.TrimSpace(req.Mode)
-	req.AssetName = strings.TrimSpace(req.AssetName)
-	req.Scope = strings.TrimSpace(req.Scope)
-	req.Selector = strings.TrimSpace(req.Selector)
-	if req.Mode == "" {
-		req.Mode = PipelinePlanSelectionNeeded
-	}
-	switch req.Mode {
-	case PipelinePlanSelectionNeeded, PipelinePlanSelectionAll:
-		if req.AssetName != "" || req.Scope != "" || req.Selector != "" {
-			return PipelinePlanSelectionRequest{}, fmt.Errorf("asset_name, scope, and selector are not valid for %s selection", req.Mode)
-		}
-	case PipelinePlanSelectionAsset:
-		if req.Selector != "" {
-			return PipelinePlanSelectionRequest{}, fmt.Errorf("selector is only valid for selector selection")
-		}
-		if req.AssetName == "" {
-			return PipelinePlanSelectionRequest{}, fmt.Errorf("asset selection requires asset_name")
-		}
-		if req.Scope == "" {
-			req.Scope = "asset"
-		}
-		switch req.Scope {
-		case "asset", "asset_with_upstreams", "asset_with_downstreams", "asset_with_upstreams_and_downstreams":
-		default:
-			return PipelinePlanSelectionRequest{}, fmt.Errorf("invalid asset selection scope")
-		}
-	case PipelinePlanSelectionSelector, PipelinePlanSelectionSelectorNeeded:
-		if req.AssetName != "" || req.Scope != "" {
-			return PipelinePlanSelectionRequest{}, fmt.Errorf("asset_name and scope are not valid for selector selection")
-		}
-		if req.Selector == "" {
-			return PipelinePlanSelectionRequest{}, fmt.Errorf("selector selection requires selector")
-		}
-		if len(req.Selector) > 4096 {
-			return PipelinePlanSelectionRequest{}, fmt.Errorf("selector exceeds the 4096 byte limit")
-		}
-	default:
-		return PipelinePlanSelectionRequest{}, fmt.Errorf("selection mode must be needed, all, asset, selector, or selector_needed")
-	}
-	return req, nil
+	return webexecution.NormalizePlanSelection(req)
 }
 
 func (s *PipelinePlanService) resolveSource(
@@ -1389,14 +1048,7 @@ func planWorkspaceAssetID(root string, asset *pipeline.Asset) string {
 }
 
 func clonePipelinePlanStages(stages []AssetRenderStage, includeContent bool) []AssetRenderStage {
-	cloned := append([]AssetRenderStage(nil), stages...)
-	if includeContent {
-		return cloned
-	}
-	for index := range cloned {
-		cloned[index].Content = ""
-	}
-	return cloned
+	return webexecution.CloneRenderStages(stages, includeContent)
 }
 
 func safePipelinePlanRenderError(err error) string {
@@ -1544,51 +1196,19 @@ func (s *PipelinePlanService) addRenderIssues(plan *PipelinePlan, assetID, asset
 }
 
 func pipelinePlanPartialRenderWarning(result AssetRenderResult) (string, bool) {
-	for _, stage := range result.Stages {
-		if stage.Status == AssetRenderStageStatusError {
-			return "one or more execution stages could not be rendered", true
-		}
-		if stage.Status == AssetRenderStageStatusUnsupported || stage.Fidelity == AssetRenderFidelityUnsupported {
-			return "one or more execution stages cannot be rendered statically", true
-		}
-	}
-	for _, stage := range result.Stages {
-		if stage.Fidelity == AssetRenderFidelityRuntimeOnly {
-			return "some execution details are only available at runtime", true
-		}
-	}
-	if result.Asset.Target.Fidelity == AssetRenderFidelityRuntimeOnly {
-		return "the physical output target is only available at runtime", true
-	}
-	return "", false
+	return webexecution.PartialRenderWarning(result)
 }
 
 func pipelinePlanID(plan PipelinePlan) string {
-	return PipelinePlanReviewedIdentityID(PipelinePlanReviewedIdentity{
-		PipelineUUID:       plan.PipelineUUID,
-		Source:             plan.Source,
-		Context:            plan.Context,
-		Selection:          plan.Selection,
-		Prerequisites:      plan.Prerequisites,
-		Resources:          plan.Resources,
-		ExecutionContracts: plan.ExecutionContracts,
-		ExecutionUnits:     plan.ExecutionUnits,
-	})
+	return webexecution.PlanID(plan)
 }
 
 func PipelinePlanReviewedIdentityID(identity PipelinePlanReviewedIdentity) string {
-	encoded, _ := json.Marshal(identity)
-	digest := sha256.Sum256(encoded)
-	return hex.EncodeToString(digest[:])
+	return webexecution.ReviewedIdentityID(identity)
 }
 
 func PipelinePlanReviewedIdentityFromPlan(plan PipelinePlan) PipelinePlanReviewedIdentity {
-	return PipelinePlanReviewedIdentity{
-		PipelineUUID: plan.PipelineUUID, Source: plan.Source, Context: plan.Context,
-		Selection: plan.Selection, Prerequisites: append([]PipelinePlanPrerequisite(nil), plan.Prerequisites...), Resources: plan.Resources,
-		ExecutionContracts: append([]PipelinePlanExecutionContract(nil), plan.ExecutionContracts...),
-		ExecutionUnits:     append([]PipelinePlanExecutionUnit(nil), plan.ExecutionUnits...),
-	}
+	return webexecution.ReviewedIdentityFromPlan(plan)
 }
 
 func (s *PipelinePlanService) addActiveRunIssue(ctx context.Context, plan *PipelinePlan) {
@@ -1628,17 +1248,7 @@ func (s *PipelinePlanService) addActiveRunIssue(ctx context.Context, plan *Pipel
 }
 
 func dedupePipelinePlanIssues(issues []PipelinePlanIssue) []PipelinePlanIssue {
-	seen := make(map[string]struct{}, len(issues))
-	result := make([]PipelinePlanIssue, 0, len(issues))
-	for _, issue := range issues {
-		key := issue.Code + "\x00" + issue.AssetID + "\x00" + issue.Message
-		if _, exists := seen[key]; exists {
-			continue
-		}
-		seen[key] = struct{}{}
-		result = append(result, issue)
-	}
-	return result
+	return webexecution.DedupePlanIssues(issues)
 }
 
 func aggregatePythonRuntimePlanWarnings(
