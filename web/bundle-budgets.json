@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "initial": {
+    "maxJavaScriptBytes": 2400000,
+    "maxCssBytes": 215000
+  },
+  "maxJavaScriptChunkBytes": 800000,
+  "families": {
+    "notebooks": {
+      "matches": ["/notebooks/"],
+      "maxJavaScriptBytes": 725000,
+      "maxCssBytes": 25000
+    },
+    "presentations": {
+      "matches": ["/_presentations/"],
+      "maxJavaScriptBytes": 725000,
+      "maxCssBytes": 25000
+    },
+    "pipeline-authoring": {
+      "matches": ["/pipelines/"],
+      "maxJavaScriptBytes": 300000,
+      "maxCssBytes": 25000
+    },
+    "schedules-and-runs": {
+      "matches": ["/schedules/", "/runs/"],
+      "maxJavaScriptBytes": 175000,
+      "maxCssBytes": 25000
+    },
+    "project-settings": {
+      "matches": ["/project/"],
+      "maxJavaScriptBytes": 125000,
+      "maxCssBytes": 25000
+    }
+  }
+}

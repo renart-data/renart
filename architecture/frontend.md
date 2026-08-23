@@ -665,3 +665,9 @@ The live fixture attaches workspace setup, Renart startup, test-body, and
 server-teardown timings to every attempt. Its custom reporter writes aggregate
 phase percentiles plus the 50 slowest attempts to `live-timings.json` and
 `live-timings.md`; CI uploads those files even when the test run succeeds.
+Production builds emit Vite's manifest and run
+`scripts/check-bundle-budgets.mjs`. The check follows static imports from the
+entry, measures lazy route families after subtracting that initial closure,
+records raw and gzip bytes, and enforces the reviewed limits in
+`bundle-budgets.json`. CI always uploads the generated JSON/Markdown bundle
+report; a budget change is therefore an explicit source diff.

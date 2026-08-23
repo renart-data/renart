@@ -654,6 +654,21 @@ explicit helpers rather than weakening the default.
 
 ### 5.10 Frontend splitting exists, but there are no bundle budgets
 
+#### Implemented measurement and budgets
+
+Vite now emits its manifest on every production build. A manifest-driven check
+computes the full initial static import closure and incremental notebook,
+presentation, pipeline-authoring, schedule/run, and project-settings families,
+plus the largest individual JavaScript chunks. It budgets raw minified bytes,
+records gzip bytes for diagnosis, writes JSON and Markdown reports, and fails
+the build on a regression. CI uploads the reports even when the budget fails.
+
+The calibrated baseline is about 2.13 MiB initial JavaScript and 195 KiB CSS;
+notebooks add about 641 KiB, presentations about 653 KiB, and the largest chunk
+is about 748 KiB. Those figures are now regression signals, not a claim about
+startup time. The high initial closure—especially charting and Markdown shared
+chunks—remains a profiling target before changing lazy boundaries.
+
 #### Evidence
 
 Vite route splitting and manual vendor chunks already keep notebooks,
@@ -675,9 +690,9 @@ startup time. It is a missing regression signal.
 
 #### Recommendation
 
-1. Produce a Vite manifest/bundle analysis artifact in CI.
+1. Produce a Vite manifest/bundle analysis artifact in CI. **Implemented.**
 2. Set budgets for the initial shell and for lazy feature families rather than
-   one arbitrary global chunk limit.
+   one arbitrary global chunk limit. **Implemented.**
 3. Measure cold start to first interactive canvas/editor on the supported local
    hardware class.
 4. Before changing chunks, inspect the main bundle with a visualizer. Prefer

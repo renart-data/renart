@@ -67,6 +67,7 @@ export default defineConfig({
     prepareMonacoAssetsPlugin(),
   ],
   build: {
+    manifest: true,
     rollupOptions: {
       output: {
         manualChunks(id) {
