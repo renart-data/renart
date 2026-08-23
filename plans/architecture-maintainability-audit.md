@@ -729,13 +729,21 @@ startup time. It is a missing regression signal.
 
 ### 5.11 Plans and current-state docs are starting to overlap
 
+#### Implemented first fold
+
+The 1,900-line readiness/rendering implementation journal has been removed.
+Its shipped contracts were already recorded in backend, frontend, and staleness
+architecture. A focused `workspace-command-handoff.md` now retains only the
+verified launcher/delegation gaps and the explicitly decision-gated legacy-job
+retirement criteria. Git history remains the implementation narrative.
+
 #### Evidence
 
 [`plans/README.md`](README.md) correctly says plans are ephemeral and shipped
 reality belongs in `architecture/`. In practice:
 
-- `pipeline-readiness-and-rendering.md` is about 1,900 lines and retains the
-  history of several shipped phases for a small remaining tail;
+- the former `pipeline-readiness-and-rendering.md` was about 1,900 lines and
+  retained the history of several shipped phases for a small remaining tail;
 - `execution-parallelism.md`, `secret-management.md`, `python-asset-sdk.md`, and
   `notebook-platform.md` mix current implementation records with remaining work;
 - a few current-state documents still contain branch names or pre-Golyglot

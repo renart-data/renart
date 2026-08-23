@@ -310,7 +310,7 @@ commands still run locally, stateful embedded commands skip the long-lived
 workspace lease, and `--local` can bypass discovery. A second `web` or
 `standalone` launch currently exits with owner details rather than opening the
 existing server. These are bounded single-authority handoff gaps, tracked in
-`plans/pipeline-readiness-and-rendering.md`; they are not a supported
+`plans/workspace-command-handoff.md`; they are not a supported
 multi-server mode.
 
 `renart standalone` starts its loopback server before opening the optional
