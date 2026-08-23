@@ -6,9 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 	"time"
+
+	webexecution "renart/internal/web/execution"
 )
 
 const (
@@ -19,8 +20,8 @@ const (
 	pipelineDataStateTokenV1 = "renart-data-state-v1"
 	pipelineDataStateTokenV2 = "renart-data-state-v2"
 
-	PipelineRunResourceIsolationResources = "resources"
-	PipelineRunResourceIsolationPipeline  = "pipeline"
+	PipelineRunResourceIsolationResources = webexecution.PlanResourceIsolationResources
+	PipelineRunResourceIsolationPipeline  = webexecution.PlanResourceIsolationPipeline
 	PipelineRunResourceKindLocalFile      = "local_file"
 	PipelineRunResourceKindDuckDBDatabase = "duckdb_database"
 	PipelineRunResourceKindWarehouse      = "warehouse_relation"
@@ -69,52 +70,10 @@ type PipelineRunPlanSelection struct {
 	DataStateToken string `json:"data_state_token,omitempty"`
 }
 
-type PipelineRunResourceClaim struct {
-	Kind     string `json:"kind"`
-	Identity string `json:"identity"`
-}
-
-type PipelineRunPlanResources struct {
-	Isolation string                     `json:"isolation"`
-	Claims    []PipelineRunResourceClaim `json:"claims"`
-}
-
-type PipelineRunExecutionContract struct {
-	AssetID               string                   `json:"asset_id"`
-	AssetName             string                   `json:"asset_name"`
-	ConnectionKeys        []string                 `json:"connection_keys"`
-	MutationResources     PipelineRunPlanResources `json:"mutation_resources"`
-	CoordinationResources PipelineRunPlanResources `json:"coordination_resources"`
-}
-
-type PipelineRunPrerequisite struct {
-	Status                    string  `json:"status"`
-	Reason                    string  `json:"reason"`
-	ConsumerAssetID           string  `json:"consumer_asset_id"`
-	ConsumerAssetName         string  `json:"consumer_asset_name"`
-	URI                       string  `json:"uri"`
-	ProducerPipelineID        string  `json:"producer_pipeline_id"`
-	ProducerPipelineUUID      string  `json:"producer_pipeline_uuid"`
-	ProducerPipelineName      string  `json:"producer_pipeline_name"`
-	ProducerAssetID           string  `json:"producer_asset_id"`
-	ProducerAssetName         string  `json:"producer_asset_name"`
-	ProducerSnapshotVersionID string  `json:"producer_snapshot_version_id,omitempty"`
-	ProducerDeploymentOrdinal int64   `json:"producer_deployment_ordinal,omitempty"`
-	Environment               string  `json:"environment"`
-	RequiredStart             string  `json:"required_start"`
-	RequiredEnd               string  `json:"required_end"`
-	ExpectedFingerprint       string  `json:"expected_fingerprint"`
-	TargetIdentity            string  `json:"target_identity,omitempty"`
-	VarsHash                  string  `json:"vars_hash"`
-	TargetGeneration          int64   `json:"target_generation,omitempty"`
-	WriterRunID               string  `json:"writer_run_id,omitempty"`
-	WriterSnapshotVersionID   string  `json:"writer_snapshot_version_id,omitempty"`
-	WriterCompletionID        string  `json:"writer_completion_id,omitempty"`
-	WriterCompletionOrdinal   int64   `json:"writer_completion_ordinal,omitempty"`
-	WriterMaterializedAt      string  `json:"writer_materialized_at,omitempty"`
-	CoveredSeconds            float64 `json:"covered_seconds,omitempty"`
-	RequiredSeconds           float64 `json:"required_seconds,omitempty"`
-}
+type PipelineRunResourceClaim = webexecution.ResourceClaim
+type PipelineRunPlanResources = webexecution.Resources
+type PipelineRunExecutionContract = webexecution.ExecutionContract
+type PipelineRunPrerequisite = webexecution.Prerequisite
 
 type PipelineRunExecutionUnit struct {
 	AssetID             string `json:"asset_id"`
@@ -362,31 +321,7 @@ func validateCanonicalConnectionKeys(keys []string) error {
 func aggregatePipelineRunMutationResources(
 	contracts []PipelineRunExecutionContract,
 ) PipelineRunPlanResources {
-	result := PipelineRunPlanResources{
-		Isolation: PipelineRunResourceIsolationResources,
-		Claims:    []PipelineRunResourceClaim{},
-	}
-	seen := make(map[string]struct{})
-	for _, contract := range contracts {
-		if contract.MutationResources.Isolation == PipelineRunResourceIsolationPipeline {
-			result.Isolation = PipelineRunResourceIsolationPipeline
-		}
-		for _, claim := range contract.MutationResources.Claims {
-			key := claim.Kind + "\x00" + claim.Identity
-			if _, exists := seen[key]; exists {
-				continue
-			}
-			seen[key] = struct{}{}
-			result.Claims = append(result.Claims, claim)
-		}
-	}
-	sort.Slice(result.Claims, func(i, j int) bool {
-		if result.Claims[i].Kind == result.Claims[j].Kind {
-			return result.Claims[i].Identity < result.Claims[j].Identity
-		}
-		return result.Claims[i].Kind < result.Claims[j].Kind
-	})
-	return result
+	return webexecution.AggregateMutationResources(contracts)
 }
 
 func validatePipelineRunPlanResources(resources PipelineRunPlanResources) error {
@@ -692,33 +627,13 @@ func equalPipelineRunPrerequisites(left, right []PipelineRunPrerequisite) bool {
 }
 
 func equalPipelineRunPlanResources(left, right PipelineRunPlanResources) bool {
-	if left.Isolation != right.Isolation || len(left.Claims) != len(right.Claims) {
-		return false
-	}
-	for index := range left.Claims {
-		if left.Claims[index] != right.Claims[index] {
-			return false
-		}
-	}
-	return true
+	return webexecution.EqualResources(left, right)
 }
 
 func equalPipelineRunExecutionContracts(
 	left, right []PipelineRunExecutionContract,
 ) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for index := range left {
-		if left[index].AssetID != right[index].AssetID ||
-			left[index].AssetName != right[index].AssetName ||
-			!equalStrings(left[index].ConnectionKeys, right[index].ConnectionKeys) ||
-			!equalPipelineRunPlanResources(left[index].MutationResources, right[index].MutationResources) ||
-			!equalPipelineRunPlanResources(left[index].CoordinationResources, right[index].CoordinationResources) {
-			return false
-		}
-	}
-	return true
+	return webexecution.EqualExecutionContracts(left, right)
 }
 
 func equalStrings(left, right []string) bool {
