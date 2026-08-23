@@ -25,6 +25,7 @@ module_path="$(${go_command} list -m)"
 # ownership. Keep this check cheap and resource-bounded because it runs before
 # build artifacts exist in CI.
 GOMAXPROCS="${GOMAXPROCS:-2}" "${go_command}" list \
+	-tags=webdev \
 	-f '{{ $pkg := .ImportPath }}{{ range .Imports }}{{ printf "%s\t%s\n" $pkg . }}{{ end }}' \
 	./internal/... ./cmd/... >"${edge_file}"
 
