@@ -77,10 +77,10 @@ type TimelineSchedule = {
   next_run_at?: string;
 };
 
-export function AppSchedulesPage() {
+export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string }) {
   const { runs, runsError, refreshRuns } = usePipelineRuns();
   const envSchedules = useEnvSchedules();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [bucket, setBucket] = useState<(typeof buckets)[number]>("12hr");
   const [newScheduleOpen, setNewScheduleOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<EnvSchedule | null>(null);
@@ -102,6 +102,10 @@ export function AppSchedulesPage() {
     );
   });
   const schedulerRefreshError = runsError;
+
+  useEffect(() => {
+    setQuery(initialQuery);
+  }, [initialQuery]);
 
   return (
     <AppPage>
@@ -163,6 +167,7 @@ export function AppSchedulesPage() {
         <div className="relative min-w-0 flex-1 md:max-w-sm">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
+            aria-label="Filter schedules"
             className="pl-8"
             placeholder="Filter schedules..."
             value={query}

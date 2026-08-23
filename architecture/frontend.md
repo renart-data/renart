@@ -435,17 +435,26 @@ not underscore-flattened route hacks.
   Provider/manifest parse failures remain visible as shadcn alerts instead of
   silently resetting the form. The same write-only form contract is used by
   inline asset connection creation and onboarding database import.
-  Pipeline settings use a vertical, icon-labelled shadcn tab menu at desktop
-  widths and retain the compact horizontally scrollable section buttons on
-  mobile. The dialog has one fixed viewport-relative height, its desktop sidebar
-  stretches through the available body, and the shared ScrollArea absorbs
-  section-length changes instead of resizing the dialog. The Python section
-  edits the pipeline-root `pyproject.toml` dependency list; Microsoft Teams has
-  no settings surface, while any existing unsupported notification fields are
-  preserved when another section is saved. General settings distinguish
-  **Overlapping pipeline runs** (`concurrency`) from **Maximum active steps**
-  (`max_active_steps`). A blank step value explains the sequential default;
-  values above one opt safe independent assets into bounded overlap.
+  Pipeline settings are lazy-loaded behind a stable fixed-size shell. They use
+  an icon-labelled vertical shadcn tab menu at desktop widths and the same tabs
+  in a horizontally scrollable rail on mobile. The dialog has one fixed
+  viewport-relative height, its desktop sidebar stretches through the available
+  body, and the shared ScrollArea absorbs section-length changes instead of
+  resizing the dialog. A headless reducer/controller owns loading, validation,
+  dirty state, and persistence. It saves `pipeline.yml` before the separate
+  pipeline-root `pyproject.toml` dependency list, retains the successfully saved
+  half after a partial failure, and guards closing or navigating away from
+  unsaved edits. Microsoft Teams has no settings surface, while any existing
+  unsupported notification fields are preserved when another section is saved.
+  The sections are General, Execution, Connections, Variables, Python, and
+  Advanced. Execution distinguishes **Overlapping pipeline runs**
+  (`concurrency`) from **Maximum active steps** (`max_active_steps`); a blank
+  step value explains the sequential default, while values above one opt safe
+  independent assets into bounded overlap. Renart's environment-specific,
+  deployment-pinned schedules remain on the Schedules route, linked with a
+  pipeline filter from Execution. The old Bruin `pipeline.yml` schedule and
+  catch-up fields remain clearly labelled as CLI compatibility settings under
+  Advanced rather than masquerading as a Renart schedule.
   Connections select platform and connection defaults from the configured
   pairs in the active environment, prevent duplicate platform rows, and show
   unavailable legacy values until the user explicitly corrects them. The same

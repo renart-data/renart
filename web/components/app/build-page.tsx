@@ -41,6 +41,8 @@ import {
   ComponentType,
   ReactNode,
   createContext,
+  lazy,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -174,7 +176,7 @@ import {
   type AppLineageCanvasAsset,
 } from "./lineage-canvas";
 import { NewNotebookDialog } from "./new-notebook-dialog";
-import { PipelineSettingsDialog, type PipelineSettingsSection } from "./pipeline-settings-dialog";
+import type { PipelineSettingsSection } from "./pipeline-settings-dialog";
 import { TypeCheckPanel } from "./type-check-panel";
 import { ExternalRelationImportDialog } from "./external-relation-import-dialog";
 import {
@@ -188,6 +190,10 @@ import {
 
 const WORKING_TREE_RUN_SOURCE: PipelineRunSource = { source: "working_tree" };
 const adhocQueryLimit = 500;
+const PipelineSettingsDialog = lazy(async () => {
+  const module = await import("./pipeline-settings-dialog");
+  return { default: module.PipelineSettingsDialog };
+});
 
 export type AppBuildView = "canvas" | "split" | "code";
 export type AppResultTab = "inspect" | "render" | "materialize" | "query" | "typecheck";
@@ -210,6 +216,30 @@ export function normalizeAppBuildSearch(search: Record<string, unknown>): AppBui
       ? (search.editor as AppEditorMode)
       : undefined,
   };
+}
+
+function PipelineSettingsLoadingDialog() {
+  return (
+    <Dialog open>
+      <DialogContent
+        showCloseButton={false}
+        className="grid h-[min(46rem,calc(100dvh-2rem))] min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:max-w-4xl"
+      >
+        <DialogHeader>
+          <DialogTitle>Pipeline settings</DialogTitle>
+          <DialogDescription>Loading version-controlled pipeline settings.</DialogDescription>
+        </DialogHeader>
+        <div className="flex items-center justify-center gap-2 text-muted-foreground">
+          <Spinner />
+          Loading settings…
+        </div>
+        <DialogFooter className="border-t pt-4">
+          <Skeleton className="h-7 w-16" />
+          <Skeleton className="h-7 w-24" />
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 const scrollableTabsListClass = "w-max max-w-none";
@@ -1757,13 +1787,17 @@ export function AppBuildPage({
             openNewAssetInGroup(prefix);
           }}
         />
-        <PipelineSettingsDialog
-          open={pipelineSettingsOpen}
-          onOpenChange={setPipelineSettingsOpen}
-          pipelineId={pipelineId}
-          initialSection={pipelineSettingsSection}
-          highlightedVariable={pipelineSettingsVariable}
-        />
+        {pipelineSettingsOpen ? (
+          <Suspense fallback={<PipelineSettingsLoadingDialog />}>
+            <PipelineSettingsDialog
+              open
+              onOpenChange={setPipelineSettingsOpen}
+              pipelineId={pipelineId}
+              initialSection={pipelineSettingsSection}
+              highlightedVariable={pipelineSettingsVariable}
+            />
+          </Suspense>
+        ) : null}
         <ExternalRelationImportDialog
           pipelineId={activePipeline.id}
           relationId={externalRelationImportId}

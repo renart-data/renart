@@ -706,12 +706,13 @@ The largest minified outputs in this audit were approximately:
 
 | Chunk | Size |
 | --- | ---: |
-| main application | 765 KB |
+| main application | 730 KB |
 | Markdown editor | 524 KB |
 | chart vendor | 476 KB |
 | UI vendor | 275 KB |
 | presentation page | 142 KB |
 | notebook page | 130 KB |
+| pipeline settings (lazy) | 31 KB |
 
 This is not automatically a defect for a local IDE, and minified bytes are not
 startup time. It is a missing regression signal.
@@ -810,7 +811,13 @@ These workstreams landed as separate reviewable commits.
 
 ### Phase C — headless application controllers
 
-Start with the next feature or bug touching each surface:
+The first feature-adjacent slice is complete: pipeline settings now use a
+unit-tested reducer/controller for independent config and Python dependency
+state, validation, sequential persistence, and partial-save recovery. The
+settings UI is lazy-loaded because the production bundle budget identified it
+as a concrete initial-chunk owner.
+
+Continue with the next feature or bug touching each remaining surface:
 
 1. notebook document/mutation/run controller plus unit tests;
 2. notebook source-import controller;

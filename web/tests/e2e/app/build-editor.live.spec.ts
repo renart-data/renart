@@ -166,11 +166,11 @@ select customer_id, customer_name from analytics.customers
     await page.getByRole("button", { name: "Pipeline settings" }).click();
     const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
     await expect(dialog).toBeVisible({ timeout: 15000 });
-    expect((await dialog.boundingBox())?.width).toBeGreaterThan(700);
     const settingsSidebar = dialog.getByRole("tablist", {
       name: "Pipeline settings sections",
     });
     await expect(settingsSidebar).toBeVisible();
+    expect((await dialog.boundingBox())?.width).toBeGreaterThan(700);
     await expect(settingsSidebar.getByRole("tab", { name: "General" })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -179,6 +179,8 @@ select customer_id, customer_name from analytics.customers
       "data-slot",
       "scroll-area",
     );
+    await settingsSidebar.getByRole("tab", { name: "Execution" }).click();
+    await expect(dialog.getByRole("button", { name: "Manage schedules" })).toBeVisible();
     await expect(
       dialog.getByRole("spinbutton", { name: "Overlapping pipeline runs" }),
     ).toBeVisible();
@@ -187,6 +189,7 @@ select customer_id, customer_name from analytics.customers
       "1",
     );
     await expect(dialog).toContainText("Leave blank to run one asset at a time.");
+    await settingsSidebar.getByRole("tab", { name: "General" }).click();
 
     await dialog.getByRole("textbox", { name: "Tags" }).fill("finance, north");
     await dialog.getByRole("textbox", { name: "Tags" }).press("Enter");
@@ -230,6 +233,7 @@ select customer_id, customer_name from analytics.customers
 
     const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
     await dialog.getByRole("tab", { name: "Connections" }).click();
+    await expect(dialog).toContainText("Connection choices reflect default");
     const platform = dialog.getByRole("combobox", { name: "Platform" });
     const connection = dialog.getByRole("combobox", { name: "Connection" });
     await expect(platform).toContainText("duckdb");
@@ -285,7 +289,8 @@ select customer_id, customer_name from analytics.customers
       )
       .toBe(true);
 
-    const sidebar = dialog.getByRole("tablist", { name: "Pipeline settings sections" });
+    const tablist = dialog.getByRole("tablist", { name: "Pipeline settings sections" });
+    const sidebar = dialog.getByTestId("pipeline-settings-navigation");
     const content = dialog.getByTestId("pipeline-settings-content");
     const generalDialogBounds = await dialog.boundingBox();
     const sidebarBounds = await sidebar.boundingBox();
@@ -295,7 +300,7 @@ select customer_id, customer_name from analytics.customers
     expect(contentBounds).not.toBeNull();
     expect(Math.abs(sidebarBounds!.height - contentBounds!.height)).toBeLessThan(3);
 
-    await sidebar.getByRole("tab", { name: "Python" }).click();
+    await tablist.getByRole("tab", { name: "Python" }).click();
     await expect(dialog.getByRole("textbox", { name: "Packages" })).toBeVisible();
     const pythonDialogBounds = await dialog.boundingBox();
     expect(pythonDialogBounds).not.toBeNull();
@@ -340,9 +345,60 @@ select customer_id, customer_name from analytics.customers
 
     const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
     await expect(dialog).toBeVisible({ timeout: 15000 });
-    await expect(dialog.getByRole("tablist", { name: "Pipeline settings sections" })).toBeHidden();
-    await dialog.getByRole("button", { name: "Schedule", exact: true }).click();
-    await expect(dialog.getByRole("textbox", { name: /^Schedule/ })).toBeVisible();
+    const navigation = dialog.getByRole("tablist", { name: "Pipeline settings sections" });
+    await expect(navigation).toBeVisible();
+    await navigation.getByRole("tab", { name: "Execution" }).click();
+    await expect(dialog.getByRole("button", { name: "Manage schedules" })).toBeVisible();
+    await expect(dialog.getByRole("textbox", { name: "Start date" })).toBeVisible();
+  });
+
+  test("pipeline settings open the filtered Renart schedules page", async ({ liveApp, page }) => {
+    test.skip(
+      test.info().project.name.includes("mobile"),
+      "Pipeline settings schedule navigation coverage is desktop-only.",
+    );
+
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
+    await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
+    await page.getByRole("button", { name: "Pipeline settings" }).click();
+
+    const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
+    await expect(dialog.getByRole("tab", { name: "Schedule", exact: true })).toHaveCount(0);
+    await dialog.getByRole("tab", { name: "Advanced" }).click();
+    await expect(dialog).toContainText(
+      "It does not create or update a Renart environment schedule.",
+    );
+    await dialog.getByRole("tab", { name: "Execution" }).click();
+    await dialog.getByRole("button", { name: "Manage schedules" }).click();
+
+    await expect(page).toHaveURL(/\/schedules[?].*pipeline=analytics/);
+    await expect(page.getByRole("textbox", { name: "Filter schedules" })).toHaveValue("analytics");
+  });
+
+  test("pipeline settings guard unsaved changes", async ({ liveApp, page }) => {
+    test.skip(
+      test.info().project.name.includes("mobile"),
+      "Pipeline settings discard confirmation coverage is desktop-only.",
+    );
+
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
+    await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
+    await page.getByRole("button", { name: "Pipeline settings" }).click();
+
+    const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
+    await dialog.getByRole("textbox", { name: "Owner" }).fill("data@example.com");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+
+    const confirmation = page.getByRole("alertdialog", {
+      name: "Discard unsaved pipeline settings?",
+    });
+    await expect(confirmation).toBeVisible();
+    await confirmation.getByRole("button", { name: "Keep editing" }).click();
+    await expect(dialog.getByRole("textbox", { name: "Owner" })).toHaveValue("data@example.com");
+
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await confirmation.getByRole("button", { name: "Discard changes" }).click();
+    await expect(dialog).toBeHidden();
   });
 
   test("inferred pipeline defaults are shown and link to the project connection", async ({
