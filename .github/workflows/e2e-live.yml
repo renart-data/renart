@@ -99,6 +99,16 @@ jobs:
           path: /dev/shm/bruin-playwright/test-results
           if-no-files-found: ignore
 
+      - name: Upload live timing report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: live-e2e-timings
+          path: |
+            /dev/shm/bruin-playwright/test-results/live-timings.json
+            /dev/shm/bruin-playwright/test-results/live-timings.md
+          if-no-files-found: ignore
+
       - name: Clean up live e2e containers
         if: always()
         run: |

@@ -498,6 +498,19 @@ binary.
 
 ### 5.7 Live E2E is high-value but pays a serial, duplicated cost
 
+#### Implemented measurement seam
+
+The shared live fixture now records workspace preparation, Renart startup,
+test-body, and teardown durations for every attempt. A Playwright reporter
+combines those phases with total/other-fixture time, writes JSON plus a readable
+Markdown percentile/slowest-test report, and CI uploads both on success or
+failure. `--list` smoke validation proves reporter discovery/output, and
+TypeScript validates the fixture/reporter contract.
+
+No test has been moved, sharded, or removed yet. The timing artifact is the
+evidence needed to choose groups and a focused mobile contract without guessing
+which costs are setup, server lifecycle, database fixtures, or browser work.
+
 #### Evidence
 
 [`web/playwright.live.config.ts`](../web/playwright.live.config.ts) sets one
@@ -519,7 +532,7 @@ cost distribution for local UI behavior.
 #### Recommendation
 
 1. Add a timing reporter that records per-test setup, server startup, body, and
-   teardown durations. Publish the slowest list as a CI artifact.
+   teardown durations. Publish the slowest list as a CI artifact. **Implemented.**
 2. Define explicit test groups: core authoring/SSE, notebooks/presentations,
    scheduler/freshness, and warehouse/runtime matrix.
 3. Run those groups as separate CI jobs. Keep one worker inside groups that

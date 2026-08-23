@@ -661,3 +661,7 @@ SQL intelligence and formatting are native Go.
 For behavior that touches workspace sync, canvas interactions,
 inspect/materialize, or Monaco, run the live e2e suite:
 `corepack pnpm test:e2e:live` in `web/`.
+The live fixture attaches workspace setup, Renart startup, test-body, and
+server-teardown timings to every attempt. Its custom reporter writes aggregate
+phase percentiles plus the 50 slowest attempts to `live-timings.json` and
+`live-timings.md`; CI uploads those files even when the test run succeeds.

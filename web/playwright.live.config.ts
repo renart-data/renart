@@ -1,11 +1,16 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const liveWorkers = Number.parseInt(process.env.RENART_E2E_LIVE_WORKERS ?? "1", 10);
+const liveOutputDir = process.env.RENART_E2E_OUTPUT_DIR ?? "/dev/shm/bruin-playwright/test-results";
 
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: "**/*.live.spec.ts",
-  outputDir: "/dev/shm/bruin-playwright/test-results",
+  outputDir: liveOutputDir,
+  reporter: [
+    ["list"],
+    ["./tests/e2e/live-timing-reporter.ts", { outputDir: liveOutputDir, slowest: 50 }],
+  ],
   globalSetup: "./tests/e2e/live-global-setup.ts",
   fullyParallel: false,
   workers: Number.isFinite(liveWorkers) && liveWorkers > 0 ? liveWorkers : 1,

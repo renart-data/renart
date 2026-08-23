@@ -20,6 +20,15 @@ export type LivePostgres = {
   database: string;
 };
 
+type LiveAppTimings = {
+  fixture: string;
+  workspaceSetupMs: number;
+  serverStartupMs?: number;
+  testBodyMs?: number;
+  serverTeardownMs: number;
+  serverReady: boolean;
+};
+
 const retryTestTimeoutExtensionMs = 60_000;
 
 export function timeoutForRetry(
@@ -151,7 +160,14 @@ export const liveTest = base.extend<{
       }
     }
   },
-  liveApp: async ({ fixtureName, isolateUserConfig, livePostgres, liveAppEnv }, use) => {
+  liveApp: async ({ fixtureName, isolateUserConfig, livePostgres, liveAppEnv }, use, testInfo) => {
+    const fixtureStartedAt = Date.now();
+    const timings: LiveAppTimings = {
+      fixture: fixtureName,
+      workspaceSetupMs: 0,
+      serverTeardownMs: 0,
+      serverReady: false,
+    };
     void livePostgres;
     if (!existsSync(binaryPath)) {
       throw new Error(
@@ -204,6 +220,8 @@ environments:
 
     const port = await getAvailablePort();
     const baseURL = `http://${host}:${port}`;
+    timings.workspaceSetupMs = Date.now() - fixtureStartedAt;
+    const serverStartedAt = Date.now();
     const child = spawn(
       binaryPath,
       [
@@ -238,11 +256,30 @@ environments:
 
     try {
       await waitForServer(baseURL);
-      await use({ baseURL, workspaceDir });
+      timings.serverReady = true;
+      timings.serverStartupMs = Date.now() - serverStartedAt;
+      const bodyStartedAt = Date.now();
+      try {
+        await use({ baseURL, workspaceDir });
+      } finally {
+        timings.testBodyMs = Date.now() - bodyStartedAt;
+      }
     } finally {
-      child.kill("SIGTERM");
-      await waitForExit(child);
-      await removeDirectoryWithRetry(workspaceDir);
+      if (timings.serverStartupMs === undefined) {
+        timings.serverStartupMs = Date.now() - serverStartedAt;
+      }
+      const teardownStartedAt = Date.now();
+      try {
+        child.kill("SIGTERM");
+        await waitForExit(child);
+        await removeDirectoryWithRetry(workspaceDir);
+      } finally {
+        timings.serverTeardownMs = Date.now() - teardownStartedAt;
+        await testInfo.attach("live-app-timings", {
+          body: Buffer.from(JSON.stringify(timings)),
+          contentType: "application/json",
+        });
+      }
     }
   },
 });
