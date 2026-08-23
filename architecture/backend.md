@@ -1380,9 +1380,11 @@ asset.
   types transitively across `internal/web`, writes
   `web/lib/generated/api-types.ts`, and has a check-only mode used by frontend
   typechecking so generated drift fails CI.
-- **One error type.** `service.APIError` (`{Status, Code, Message}`) with
-  sentinel errors + `errors.Is/As` at service boundaries; one `api.Response`
-  envelope.
+- **One error type.** `apperror.Error` (`{Status, Code, Message}`), re-exported
+  as `service.APIError` while the service facade is decomposed, with sentinel
+  errors + `errors.Is/As` at application boundaries; one `api.Response`
+  envelope. New backend domains depend on `apperror`, not on the broad
+  `service` package.
 - **One ordinary JSON boundary.** Mutation handlers decode through
   `httpapi.decodeJSONObject`: request bodies are bounded to 4 MiB by default,
   accept exactly one non-null object, and reject unknown fields. Routes with

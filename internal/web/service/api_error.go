@@ -1,22 +1,15 @@
 package service
 
-import "net/http"
+import (
+	"net/http"
 
-// APIError is the single error shape services return to HTTP handlers.
-// Status is the HTTP status code, Code a stable machine-readable
-// identifier, and Message a human-readable description.
-type APIError struct {
-	Status  int
-	Code    string
-	Message string
-}
+	"renart/internal/web/apperror"
+)
 
-func (e *APIError) Error() string {
-	if e == nil {
-		return ""
-	}
-	return e.Message
-}
+// APIError remains the service-facade name for the shared application error
+// contract. New backend domains should depend on apperror directly instead of
+// importing the broad service package.
+type APIError = apperror.Error
 
 func newAPIError(status int, code, message string) *APIError {
 	return &APIError{Status: status, Code: code, Message: message}

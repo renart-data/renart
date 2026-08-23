@@ -470,7 +470,7 @@ to shorten a file.
 
 ### 5.6 `internal/web/service` no longer provides a meaningful boundary
 
-#### Implemented guardrail
+#### Implemented guardrail and extraction foundation
 
 The architecture check now derives the production import graph with `go list`
 and preserves the direction that already exists: `cmd` remains the composition
@@ -480,6 +480,12 @@ packages therefore cannot quietly depend back on transport or the facade while
 the strangler extraction proceeds. No runtime ownership or package was moved;
 the larger execution/notebook/presentation splits still belong beside concrete
 feature work.
+
+The shared structured application error now belongs to
+[`internal/web/apperror`](../internal/web/apperror), below the facade and HTTP
+transport. `service.APIError` remains a type alias during migration, so existing
+handler interfaces do not churn while new domain packages can report the same
+stable status/code/message contract without importing all of `service`.
 
 #### Evidence
 
