@@ -67,11 +67,13 @@ func NewWorkspaceCoordinator(deps WorkspaceCoordinatorDependencies) *WorkspaceCo
 
 func (c *WorkspaceCoordinator) CurrentState() WorkspaceState {
 	c.stateMu.RLock()
-	defer c.stateMu.RUnlock()
-	return c.state
+	state := c.state
+	c.stateMu.RUnlock()
+	return cloneWorkspaceState(state)
 }
 
 func (c *WorkspaceCoordinator) SetState(state WorkspaceState) {
+	state = cloneWorkspaceState(state)
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 	c.state = state
@@ -194,35 +196,27 @@ func (c *WorkspaceCoordinator) updateAssetContent(assetIDs []string, content str
 	c.stateMu.Lock()
 	defer c.stateMu.Unlock()
 
-	state := c.state
+	state := cloneWorkspaceState(c.state)
 	state.UpdatedAt = updatedAt
 	state.Revision = c.revision.Add(1)
-	state.Pipelines = make([]WorkspacePipeline, len(c.state.Pipelines))
-	for i, pipeline := range c.state.Pipelines {
-		nextPipeline := pipeline
-		nextPipeline.Assets = make([]WorkspaceAsset, len(pipeline.Assets))
+	for i, pipeline := range state.Pipelines {
 		for j, asset := range pipeline.Assets {
 			if _, ok := changed[asset.ID]; ok {
 				asset.Content = content
 			}
-			nextPipeline.Assets[j] = asset
+			state.Pipelines[i].Assets[j] = asset
 		}
-		state.Pipelines[i] = nextPipeline
 	}
-	state.Notebooks = make([]webmodel.Notebook, len(c.state.Notebooks))
-	for i, notebook := range c.state.Notebooks {
-		nextNotebook := notebook
-		nextNotebook.Cells = make([]WorkspaceAsset, len(notebook.Cells))
+	for i, notebook := range state.Notebooks {
 		for j, cell := range notebook.Cells {
 			if _, ok := changed[cell.ID]; ok {
 				cell.Content = content
 			}
-			nextNotebook.Cells[j] = cell
+			state.Notebooks[i].Cells[j] = cell
 		}
-		state.Notebooks[i] = nextNotebook
 	}
 	c.state = state
-	return state
+	return cloneWorkspaceState(state)
 }
 
 func (c *WorkspaceCoordinator) Subscribe() chan []byte {

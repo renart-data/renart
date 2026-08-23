@@ -61,8 +61,12 @@ buffered per-client channels with non-blocking drop-on-slow sends,
 debounce-with-coalescing for watcher noise, and `PublishImmediate` for
 handler-triggered events. Self-write suppression (a short window in
 `WorkspaceCoordinator`) prevents the server's own file writes from echoing
-back as change events. Every HTTP request inherits the process lifecycle
-context. Cancelling that context therefore releases long-lived SSE handlers
+back as change events. The coordinator owns an immutable, whole-state snapshot:
+state accepted by `SetState` and state returned by `CurrentState` are deep
+copies of the JSON-shaped DTO, so maps, slices, pointers, and nested `any`
+values cannot mutate a later read. A focused benchmark tracks clone cost at
+10, 100, and 1,000 synthetic assets. Every HTTP request inherits the process
+lifecycle context. Cancelling that context therefore releases long-lived SSE handlers
 before `http.Server.Shutdown` waits for active requests, while ordinary
 requests still receive the normal graceful-drain window.
 
@@ -1413,8 +1417,6 @@ module.
 - Every file event triggers a full workspace re-parse + full-state broadcast.
   Fine at current scale behind the debounce; `Revision` exists if incremental
   diffs are ever needed.
-- `WorkspaceCoordinator.CurrentState()` returns aliased slices/maps; consumers
-  are read-only today but nothing enforces it.
 - Project runtimes are opened lazily but never evicted: each open project
   keeps its watcher, SQLite pool, and scheduler alive for the life of the
   process. Idle eviction (close after N hours unused, keep the registry

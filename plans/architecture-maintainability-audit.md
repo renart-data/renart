@@ -541,6 +541,22 @@ runtime coverage, not a particular test count.
 
 ### 5.8 Workspace snapshots need ownership and measurements before deltas
 
+#### Implemented result
+
+`WorkspaceCoordinator` now owns an immutable whole-state snapshot. `SetState`
+clones caller-owned input, `CurrentState` returns a caller-owned deep copy, and
+the fast asset-content update clones before changing and replacing state. The
+clone preserves concrete values inside `any` fields without a JSON round trip
+and fails closed if a future DTO introduces mutable unsupported runtime types.
+Tests mutate nested maps, slices, pointers, notebook definitions, and
+presentation definitions on both sides of the coordinator boundary and prove
+later reads remain unchanged.
+
+`BenchmarkCloneWorkspaceState` records roughly 0.08 ms for 10, 0.8 ms for 100,
+and 7–8 ms for 1,000 synthetic two-column assets on the audit machine. Full
+refresh/SSE payload instrumentation and budgets remain the next evidence step;
+these numbers do not justify a delta protocol.
+
 #### Evidence
 
 [`internal/web/service/workspace_coordinator.go`](../internal/web/service/workspace_coordinator.go)
