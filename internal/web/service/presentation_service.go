@@ -28,6 +28,7 @@ type PresentationDependencies struct {
 type PresentationService struct {
 	deps      PresentationDependencies
 	documents *presentation.DocumentService
+	runtime   *presentation.RuntimeService
 }
 
 type PresentationDocument = presentation.PresentationDocument
@@ -41,6 +42,18 @@ func NewPresentationService(deps PresentationDependencies) *PresentationService 
 		WorkspaceRoot:       deps.WorkspaceRoot,
 		Enrich:              service.enrichProblems,
 		PushWorkspaceUpdate: deps.PushWorkspaceUpdate,
+	})
+	var newConnectionLookup func(context.Context, string) (presentation.ConnectionTypeLookup, error)
+	if deps.NewConnectionManager != nil {
+		newConnectionLookup = func(ctx context.Context, environment string) (presentation.ConnectionTypeLookup, error) {
+			return deps.NewConnectionManager(ctx, environment)
+		}
+	}
+	service.runtime = presentation.NewRuntimeService(presentation.RuntimeDependencies{
+		Documents:           service.documents,
+		NewConnectionLookup: newConnectionLookup,
+		ResolveAssetDataset: service.resolvePresentationAssetDataset,
+		RunConnectionQuery:  deps.RunConnectionQuery,
 	})
 	return service
 }

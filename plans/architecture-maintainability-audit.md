@@ -101,7 +101,7 @@ The cleanup should explicitly retain these strengths:
 | 2 | Create one asset/connection capability registry | Complete | Fingerprint-v3 mapping changes require an explicit migration |
 | 3 | Batch repeated semantic analysis and consolidate SQL helpers | Complete for direct projections | Recursive CTE batch lineage waits for a released reusable Golyglot API |
 | 4 | Extract controllers from notebook/build/review UI | Complete | Keep presenter-local UI state local until adjacent work justifies a move |
-| 5 | Introduce compiler-visible backend domain seams | In progress | Presentation documents are extracted; move execution/notebook/runtime slices beside feature work |
+| 5 | Introduce compiler-visible backend domain seams | In progress | Presentation application services are extracted; move execution/notebook slices beside feature work |
 | 6 | Rebalance the test pyramid and shard live E2E | Measuring | Collect timing artifacts before choosing CI groups/mobile coverage |
 | 7 | Make workspace snapshots immutable and instrument refresh/SSE | Complete for guardrails | Collect production-scale baselines before budgets or deltas |
 | 8 | Standardize bounded strict request decoding | Complete | Streaming and multipart endpoints remain explicit exceptions |
@@ -492,10 +492,14 @@ Presentation document lifecycle is the first compiler-visible application
 slice. [`internal/web/presentation`](../internal/web/presentation) now owns
 dashboard/report creation, path validation, atomic persistence, revisioned raw
 updates, typed replacement, preview preparation, and model conversion.
-`service.PresentationService` delegates those operations and retains only the
-workspace-schema and warehouse-query adapters that still cross domains. Direct
-domain tests cover lifecycle/CAS and path traversal while the existing facade
-tests preserve the HTTP-facing contract.
+The same domain now owns read-only query validation, typed filter rendering,
+bounded run/preview orchestration, per-query result caching, and result shaping.
+`service.PresentationService` delegates those operations and retains only
+narrow adapters for workspace schema inference, connection construction/query
+execution, and resolving asset-backed datasets to environment-specific
+physical relations. Direct domain tests cover lifecycle/CAS, path traversal,
+query rendering, and query-backed execution while the existing facade tests
+preserve the HTTP-facing contract.
 
 #### Evidence
 
@@ -872,14 +876,14 @@ rendered components and route behavior stable when doing so.
 In progress:
 
 - the shared application error contract lives below the facade;
-- presentation document/model lifecycle is owned by the presentation domain,
-  with a compatibility facade preserving handler and composition-root APIs.
+- presentation document/model lifecycle and read-only runtime are owned by the
+  presentation domain, with a compatibility facade preserving handler and
+  composition-root APIs.
 
-Next, use the same strangler shape to extract execution and notebook
-application services, followed by presentation warehouse runtime when its
-connection/execution adapters can move as one cohesive slice. Keep the
-`service` facade and move handlers one group at a time. Split server wiring
-alongside each domain so the composition root shrinks naturally.
+Next, use the same strangler shape to extract pipeline execution and notebook
+application services. Keep the `service` facade and move handlers one group at
+a time. Split server wiring alongside each domain so the composition root
+shrinks naturally.
 
 ### Phase E — scale only from measurements
 

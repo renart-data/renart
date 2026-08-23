@@ -39,8 +39,9 @@ cmd/web.go     route registration + a thin webServer adapter
   ├── internal/web/secretstore                → typed secret references,
   │                                             providers, leases, bindings
   ├── internal/web/notebook                   → see notebooks.md
-  ├── internal/web/presentation               → visualization contracts plus
-  │                                             Git document lifecycle
+  ├── internal/web/presentation               → visualization contracts,
+  │                                             Git document lifecycle, and
+  │                                             read-only presentation runtime
   ├── internal/web/service/assetmeta          → see asset-editing.md
   ├── internal/web/{sqlintelligence, pyintelligence, sqlformat,
   │                freshness, profiling, static}
@@ -55,7 +56,10 @@ needs (`AssetHandlers`, `SchedulerHandlers`, …) and is pointed directly at the
 owning service. New focused domains stay below `service`: for example,
 `presentation.DocumentService` owns dashboard/report create, load,
 revision-checked update, typed replacement, and preview preparation while the
-facade retains cross-domain schema and warehouse-runtime adapters.
+presentation runtime owns read-only query validation, filter rendering,
+bounded execution, caching, and result shaping. The facade retains narrow
+adapters for workspace schema inference and resolving an asset-backed dataset
+to its environment-specific physical relation.
 
 ## 2. Runtime model
 
@@ -1440,8 +1444,9 @@ module.
   intelligence, onboarding, suggestions in one namespace). Compiler-enforced
   dependency direction and the lower `apperror` contract now support a
   strangler migration; presentation document lifecycle is the first extracted
-  application slice. Move execution, notebook application logic, and the
-  presentation warehouse runtime only as cohesive feature-adjacent slices.
+  application slice, followed by the presentation read-only runtime. Move
+  pipeline execution and notebook application logic only as cohesive
+  feature-adjacent slices.
 - Every file event triggers a full workspace re-parse + full-state broadcast.
   Fine at current scale behind the debounce; `Revision` exists if incremental
   diffs are ever needed.
