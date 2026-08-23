@@ -54,6 +54,16 @@ type PipelinePlanExecutionContract = webexecution.ExecutionContract
 type PipelinePlanSummary = webexecution.PlanSummary
 type PipelinePlan = webexecution.Plan
 
+type ExecutionCoverageMode = webexecution.CoverageMode
+type ExecutionUpstreamSnapshot = webexecution.UpstreamSnapshot
+type ExecutionTargetSnapshot = webexecution.TargetSnapshot
+type ExecutionTargetSnapshotEntry = webexecution.TargetSnapshotEntry
+type PipelineRunSpec = webexecution.RunSpec
+type PipelineExecutionPlan = webexecution.ExecutionPlan
+type PipelineExecutionUnit = webexecution.ExecutionUnit
+type PipelineExecutionUnitEvent = webexecution.ExecutionUnitEvent
+type ResolvedPipelineRunContext = webexecution.ResolvedRunContext
+
 const (
 	PipelinePlanStatusReady   = webexecution.PlanStatusReady
 	PipelinePlanStatusWarning = webexecution.PlanStatusWarning
@@ -75,4 +85,11 @@ const (
 
 	PipelinePlanPrerequisiteReady   = webexecution.PlanPrerequisiteReady
 	PipelinePlanPrerequisiteBlocked = webexecution.PlanPrerequisiteBlocked
+
+	ExecutionTargetSnapshotVersion = webexecution.ExecutionTargetSnapshotVersion
+	PipelineExecutionPlanVersionV3 = webexecution.ExecutionPlanVersionV3
+
+	ExecutionCoverageMarker          = webexecution.CoverageMarker
+	ExecutionCoverageUnionIntervals  = webexecution.CoverageUnionIntervals
+	ExecutionCoverageReplaceInterval = webexecution.CoverageReplaceInterval
 )

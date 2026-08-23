@@ -22,6 +22,7 @@ import (
 	"renart/internal/bruincompat"
 	"renart/internal/sqlintelligence"
 	"renart/internal/web/bus"
+	webexecution "renart/internal/web/execution"
 	"renart/internal/web/identity"
 	"renart/internal/web/matlog"
 	"renart/internal/web/policy"
@@ -166,6 +167,7 @@ type PipelineMaterializationResponse struct {
 
 type ExecutionService struct {
 	deps         ExecutionDependencies
+	admitter     *webexecution.Admitter
 	inlineRunsMu sync.RWMutex
 	inlineRuns   InlineRunLedger
 }
@@ -173,7 +175,33 @@ type ExecutionService struct {
 const inspectReadOnlyErrorMessage = "Inspect only supports read-only single SELECT queries. Materialize the asset to run write, delete, copy, or multi-statement SQL."
 
 func NewExecutionService(deps ExecutionDependencies) *ExecutionService {
-	return &ExecutionService{deps: deps, inlineRuns: deps.InlineRuns}
+	service := &ExecutionService{deps: deps, inlineRuns: deps.InlineRuns}
+	service.admitter = service.newExecutionAdmitter()
+	return service
+}
+
+func (s *ExecutionService) newExecutionAdmitter() *webexecution.Admitter {
+	return webexecution.NewAdmitter(webexecution.AdmissionDependencies{
+		EffectiveEnvironment: s.effectiveEnvironment,
+		EffectiveFullRefresh: s.effectiveFullRefresh,
+		PolicyFor: func(environment string) policy.EnvironmentPolicy {
+			if s == nil || s.deps.PolicyFor == nil {
+				return policy.EnvironmentPolicy{}
+			}
+			return s.deps.PolicyFor(environment)
+		},
+		ResolveTarget: ResolvePipelineRunTarget,
+		ResolveWindow: func(
+			ctx context.Context,
+			spec webexecution.RunSpec,
+			executionTime time.Time,
+		) (webexecution.TimeWindow, error) {
+			return s.resolvePipelineExecutionTimeWindow(
+				ctx, spec.PipelineID, spec.SnapshotDir,
+				spec.StartDate, spec.EndDate, executionTime,
+			)
+		},
+	})
 }
 
 // SetInlineRunLedger attaches the durable ledger after the shared scheduler
@@ -241,7 +269,7 @@ func (s *ExecutionService) emitRunCompletedForSpec(ctx context.Context, spec Pip
 		SnapshotVersionID: spec.SnapshotVersionID,
 		SnapshotDir:       spec.SnapshotDir,
 	}
-	if snapshot := spec.executionTargetSnapshot; snapshot != nil {
+	if snapshot := spec.TargetSnapshot; snapshot != nil {
 		event.ExecutionTargetSnapshotVersion = snapshot.Version
 		event.ExecutionPipelineUUID = snapshot.PipelineUUID
 		event.ExecutionTargets = make(map[string]bus.ExecutionTargetSnapshotEntry, len(snapshot.Entries))
@@ -898,11 +926,11 @@ func (s *ExecutionService) MaterializeAssetStreamWithSensorMode(ctx context.Cont
 				pipelineUUID = pipelineView.UUID
 			}
 			completionErr = s.emitRunCompletedForSpec(ctx, PipelineRunSpec{
-				RunID:                   inlineRunID,
-				CompletionID:            completionID,
-				Environment:             environment,
-				FullRefresh:             fullRefresh,
-				executionTargetSnapshot: observed.executionTargetSnapshot(),
+				RunID:          inlineRunID,
+				CompletionID:   completionID,
+				Environment:    environment,
+				FullRefresh:    fullRefresh,
+				TargetSnapshot: observed.executionTargetSnapshot(),
 			}, pipelineUUID, timeWindow, now, runAssets)
 			if completionErr != nil {
 				completionErr = errors.Join(completionErr, observed.markSuccessfulTargetWritesDirty(now))
@@ -1365,77 +1393,6 @@ func (s *ExecutionService) MaterializePipelineStreamForRun(ctx context.Context, 
 	}, onChunk, onAssetEvent)
 }
 
-// PipelineRunSpec describes one pipeline execution. When SnapshotDir is set
-// the executor runs the materialized snapshot instead of the working tree;
-// PipelineID still identifies the pipeline for events and asset listing.
-type PipelineRunSpec struct {
-	RunID string
-	// CompletionID orders target-aware writes. Scheduler-backed runs use RunID;
-	// inline executions receive a UUID before execution.
-	CompletionID string
-	PipelineID   string
-	// PipelineUUID is the stable identity admitted with a scheduler RunSpec.
-	// Snapshot execution must use it instead of re-resolving the mutable path.
-	PipelineUUID string
-	Environment  string
-	// Scheduled is derived from the server-owned run origin. A queued manual
-	// run also has a RunID, so RunID must not be used for this distinction.
-	Scheduled                   bool
-	SensorMode                  string
-	DryRun                      bool
-	FullRefresh                 bool
-	Backfill                    bool
-	StartDate                   string
-	EndDate                     string
-	ConfirmedEnvironment        string
-	SnapshotDir                 string
-	SnapshotVersionID           string
-	ExecutionTime               string
-	VariableOverrides           map[string]any
-	ExpectedSourceMerkle        string
-	ExpectedConfigurationDigest string
-	Plan                        *PipelineExecutionPlan
-	// ConfigPath points the executor at .bruin.yml when the target directory
-	// is outside the workspace git repository (snapshot runs).
-	ConfigPath string
-	// OnContextResolved persists the effective context after policy and source
-	// normalization but before the first asset starts. A scheduler-backed run
-	// uses it to make crash recovery preserve materialization semantics.
-	OnContextResolved func(ResolvedPipelineRunContext) error
-	// OnTargetsResolved persists the complete value-only pipeline snapshot
-	// after effective configuration is selected and before the first task.
-	OnTargetsResolved func(ExecutionTargetSnapshot) error
-	// OnExecutionUnitsResolved persists a dynamically resolved full-pipeline
-	// unit selection before any unit can start.
-	OnExecutionUnitsResolved func([]PipelineExecutionUnit) error
-	// OnUnit persists progress for one exact asset/window execution unit.
-	OnUnit func(PipelineExecutionUnitEvent) error
-	// executionTargetSnapshot is populated internally by the executor callback
-	// and carried only on the synchronous completion event.
-	executionTargetSnapshot *ExecutionTargetSnapshot
-}
-
-type PipelineExecutionPlan struct {
-	Version        int
-	SelectionMode  string
-	MaxActiveSteps int
-	Contracts      []PipelinePlanExecutionContract
-	Prerequisites  []PipelinePlanPrerequisite
-	Units          []PipelineExecutionUnit
-}
-
-type PipelineExecutionUnit struct {
-	Position            int
-	AssetID             string
-	AssetName           string
-	AssetPath           string
-	StartDate           string
-	EndDate             string
-	RenderIndex         int
-	Reason              string
-	DependencyPositions []int
-}
-
 func inlineRunSelection(plan *PipelineExecutionPlan) webscheduler.RunSelection {
 	selection := webscheduler.RunSelection{Mode: webscheduler.RunSelectionAll}
 	if plan == nil {
@@ -1473,78 +1430,22 @@ func schedulerInlineRunExecutionUnits(
 	return selectionUnits
 }
 
-type PipelineExecutionUnitEvent struct {
-	Position   int
-	Status     string
-	StartedAt  *time.Time
-	FinishedAt *time.Time
-	Error      string
-}
-
-type ResolvedPipelineRunContext struct {
-	Environment string
-	WinStart    time.Time
-	WinEnd      time.Time
-	FullRefresh bool
-	Backfill    bool
-	SensorMode  string
-}
-
 func (s *ExecutionService) MaterializePipelineRun(ctx context.Context, spec PipelineRunSpec, onChunk func([]byte), onAssetEvent func(ExecutionAssetEvent) error) MaterializeResult {
-	contextInput := runcontext.Input{
-		Start:       spec.StartDate,
-		End:         spec.EndDate,
-		FullRefresh: spec.FullRefresh,
-		Backfill:    spec.Backfill,
-		SensorMode:  spec.SensorMode,
-	}
-	normalizedContext, contextErr := runcontext.Normalize(contextInput)
-	if contextErr != nil {
-		return MaterializeResult{Status: "error", Error: contextErr.Error(), ExitCode: 1}
-	}
-	if contextErr := runcontext.ValidateDryRun(spec.DryRun, contextInput); contextErr != nil {
-		return MaterializeResult{Status: "error", Error: contextErr.Error(), ExitCode: 1}
-	}
-	spec.StartDate = normalizedContext.StartString()
-	spec.EndDate = normalizedContext.EndString()
-	spec.SensorMode = normalizedContext.SensorMode
-	executionTime := time.Now().UTC()
-	if rawExecutionTime := strings.TrimSpace(spec.ExecutionTime); rawExecutionTime != "" {
-		parsedExecutionTime, parseErr := time.Parse(time.RFC3339Nano, rawExecutionTime)
-		if parseErr != nil {
-			return MaterializeResult{Status: "error", Error: "invalid execution time", ExitCode: 1}
-		}
-		executionTime = parsedExecutionTime.UTC()
-	}
 	ctx, warnings := withExecutionWarnings(ctx)
-	spec.Environment = s.effectiveEnvironment(spec.Environment)
-	spec.FullRefresh = s.effectiveFullRefresh(ctx, spec.Environment, spec.FullRefresh)
-	policyRequest := policy.RunRequest{
-		Environment:          spec.Environment,
-		Interactive:          !spec.Scheduled,
-		SnapshotBased:        spec.SnapshotDir != "",
-		Destructive:          !spec.DryRun && (spec.FullRefresh || spec.Backfill),
-		ConfirmedEnvironment: strings.TrimSpace(spec.ConfirmedEnvironment),
+	admitter := s.admitter
+	if admitter == nil {
+		admitter = s.newExecutionAdmitter()
 	}
-	if err := s.checkRunPolicy(policyRequest); err != nil {
-		return MaterializeResult{Status: "error", Error: err.Error(), ExitCode: 1}
+	admission, admissionErr := admitter.Admit(ctx, spec)
+	if admissionErr != nil {
+		return MaterializeResult{Status: "error", Error: admissionErr.Error(), ExitCode: 1}
 	}
-	target, err := ResolvePipelineRunTarget(spec.PipelineID)
-	if err != nil {
-		return MaterializeResult{Status: "error", Error: "invalid pipeline id", ExitCode: 1}
-	}
-	if spec.SnapshotDir != "" {
-		target = spec.SnapshotDir
-	}
-
-	timeWindow := ExecutionTimeWindow{}
-	if !spec.DryRun {
-		var timeWindowErr error
-		timeWindow, timeWindowErr = s.resolvePipelineExecutionTimeWindow(ctx, spec.PipelineID, spec.SnapshotDir, spec.StartDate, spec.EndDate, executionTime)
-		if timeWindowErr != nil {
-			return MaterializeResult{Status: "error", Error: timeWindowErr.Error(), ExitCode: 1}
-		}
-	}
+	spec = admission.Spec
+	executionTime := admission.ExecutionTime
+	target := admission.Target
+	timeWindow := admission.Window
+	policyRequest := webexecution.RunPolicyRequest(spec)
+	var err error
 	operation := withOperationTimeWindow(runOperation(target, spec.PipelineID, "", spec.Environment), timeWindow)
 
 	var inlineLedger InlineRunLedger
@@ -1807,7 +1708,7 @@ func (s *ExecutionService) MaterializePipelineRun(ctx context.Context, spec Pipe
 				return err
 			}
 			captured := snapshot
-			spec.executionTargetSnapshot = &captured
+			spec.TargetSnapshot = &captured
 			return nil
 		},
 		ConfigPath:               spec.ConfigPath,

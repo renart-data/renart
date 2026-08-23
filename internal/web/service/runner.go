@@ -12,8 +12,6 @@ import (
 	"renart/internal/web/bus"
 )
 
-const PipelineExecutionPlanVersionV3 = 3
-
 type RunAssetRequest struct {
 	AssetPath   string
 	Environment string
