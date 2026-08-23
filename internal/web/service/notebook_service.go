@@ -204,16 +204,16 @@ func NewNotebookService(deps NotebookDependencies) *NotebookService {
 				InstalledModules: notebookInstalledModules(notebookVenvDir(deps.WorkspaceRoot, nb.Dir)),
 			}
 		},
-		PipelineAssetNames:  service.pipelineAssetNameSet,
-		PushWorkspaceUpdate: service.pushUpdate,
-		RemoveSession:       store.Remove,
-		DropCellObjects:     store.DropCellObjects,
-		OnCellChanged:       service.onCellChanged,
-		OnCellDeleted:       service.forgetCell,
-		ValidateVisualizations: func(ctx context.Context, nb *notebook.Notebook) []string {
-			_, blocking := service.notebookVisualizationProblems(ctx, nb)
-			return blocking
-		},
+		PipelineAssetNames:        service.pipelineAssetNameSet,
+		PushWorkspaceUpdate:       service.pushUpdate,
+		RemoveSession:             store.Remove,
+		DropCellObjects:           store.DropCellObjects,
+		OnCellChanged:             service.onCellChanged,
+		OnCellDeleted:             service.forgetCell,
+		OnParametersChanged:       service.onNotebookParametersChanged,
+		CheckVisualizations:       service.notebookVisualizationProblems,
+		ValidateStorageConnection: service.validateNotebookStorageConnection,
+		ResolveSourceAssetType:    service.resolveNotebookSourceAssetType,
 	})
 	return service
 }

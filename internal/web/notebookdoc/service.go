@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"renart/internal/sqlintelligence"
 	"renart/internal/web/apperror"
 	"renart/internal/web/model"
 	"renart/internal/web/notebook"
@@ -26,13 +27,16 @@ type Dependencies struct {
 	NewLoader     func() *notebook.Loader
 	ModelMetadata func(*notebook.Notebook) ModelMetadata
 
-	PipelineAssetNames     func() map[string]bool
-	PushWorkspaceUpdate    func(path string)
-	RemoveSession          func(notebookUUID string) error
-	DropCellObjects        func(notebookUUID, cellID string) error
-	OnCellChanged          func(notebookID string, nb *notebook.Notebook, cellID string)
-	OnCellDeleted          func(notebookID, notebookUUID, cellID string)
-	ValidateVisualizations func(context.Context, *notebook.Notebook) []string
+	PipelineAssetNames        func() map[string]bool
+	PushWorkspaceUpdate       func(path string)
+	RemoveSession             func(notebookUUID string) error
+	DropCellObjects           func(notebookUUID, cellID string) error
+	OnCellChanged             func(notebookID string, nb *notebook.Notebook, cellID string)
+	OnCellDeleted             func(notebookID, notebookUUID, cellID string)
+	OnParametersChanged       func(notebookID string, nb *notebook.Notebook)
+	CheckVisualizations       func(context.Context, *notebook.Notebook) (problems, blocking []string)
+	ValidateStorageConnection func(connection string) *apperror.Error
+	ResolveSourceAssetType    func(connection string) (string, *apperror.Error)
 }
 
 // Service is the single in-process authority for loading and locking authored
@@ -151,4 +155,47 @@ func (s *Service) ToModel(nb *notebook.Notebook) model.Notebook {
 		metadata = s.deps.ModelMetadata(nb)
 	}
 	return ToModel(s.WorkspaceRoot(), nb, metadata)
+}
+
+func (s *Service) newLoader() (*notebook.Loader, func()) {
+	if s == nil || s.deps.NewLoader == nil {
+		return nil, func() {}
+	}
+	return s.deps.NewLoader(), func() {}
+}
+
+func (s *Service) renameTables(sqlText, dialect string, mapping map[string]string) (string, error) {
+	return sqlintelligence.RenameTables(sqlText, dialect, mapping)
+}
+
+func (s *Service) notebookVisualizationProblems(ctx context.Context, nb *notebook.Notebook) (problems, blocking []string) {
+	if s == nil || s.deps.CheckVisualizations == nil {
+		return nil, nil
+	}
+	return s.deps.CheckVisualizations(ctx, nb)
+}
+
+func (s *Service) onCellChanged(notebookID string, nb *notebook.Notebook, cellID string) {
+	if s != nil && s.deps.OnCellChanged != nil {
+		s.deps.OnCellChanged(notebookID, nb, cellID)
+	}
+}
+
+func (s *Service) onNotebookParametersChanged(notebookID string, nb *notebook.Notebook) {
+	if s != nil && s.deps.OnParametersChanged != nil {
+		s.deps.OnParametersChanged(notebookID, nb)
+	}
+}
+
+func (s *Service) dropCellObjects(notebookUUID, cellID string) error {
+	if s == nil || s.deps.DropCellObjects == nil {
+		return nil
+	}
+	return s.deps.DropCellObjects(notebookUUID, cellID)
+}
+
+func (s *Service) forgetCell(notebookID, notebookUUID, cellID string) {
+	if s != nil && s.deps.OnCellDeleted != nil {
+		s.deps.OnCellDeleted(notebookID, notebookUUID, cellID)
+	}
 }

@@ -306,8 +306,8 @@ func (s *Service) UpdateBlocks(notebookID string, blocks []model.NotebookBlock) 
 		}
 	}
 	nb.Blocks = next
-	if s.deps.ValidateVisualizations != nil {
-		if blocking := s.deps.ValidateVisualizations(context.Background(), nb); len(blocking) > 0 {
+	if s.deps.CheckVisualizations != nil {
+		if _, blocking := s.deps.CheckVisualizations(context.Background(), nb); len(blocking) > 0 {
 			return model.Notebook{}, apiError(http.StatusBadRequest, "invalid_visualization_definition", strings.Join(blocking, "; "))
 		}
 	}

@@ -1,4 +1,4 @@
-package service
+package notebookdoc
 
 import (
 	"bytes"
@@ -138,8 +138,8 @@ type preparedNotebookChange struct {
 
 // PrepareChangeSet normalizes and validates a semantic change set against an
 // isolated copy of the notebook and returns the exact authored-file diff.
-func (s *NotebookService) PrepareChangeSet(notebookID string, changeSet NotebookChangeSet) (NotebookChangePlan, *APIError) {
-	unlockNotebook := s.lockNotebookEdit(notebookID)
+func (s *Service) PrepareChangeSet(notebookID string, changeSet NotebookChangeSet) (NotebookChangePlan, *APIError) {
+	unlockNotebook := s.LockNotebook(notebookID)
 	defer unlockNotebook()
 
 	prepared, apiErr := s.prepareChangeSetLocked(notebookID, changeSet)
@@ -155,8 +155,8 @@ func (s *NotebookService) PrepareChangeSet(notebookID string, changeSet Notebook
 // ApplyChangeSet re-prepares the normalized operations, verifies their result
 // revision matches the reviewed revision, and commits the file set through a
 // recoverable journal. It publishes one workspace update after all files land.
-func (s *NotebookService) ApplyChangeSet(notebookID string, changeSet NotebookChangeSet) (NotebookChangeApplyResult, *APIError) {
-	unlockNotebook := s.lockNotebookEdit(notebookID)
+func (s *Service) ApplyChangeSet(notebookID string, changeSet NotebookChangeSet) (NotebookChangeApplyResult, *APIError) {
+	unlockNotebook := s.LockNotebook(notebookID)
 	defer unlockNotebook()
 
 	if strings.TrimSpace(changeSet.ExpectedRevision) == "" {
@@ -188,11 +188,11 @@ func (s *NotebookService) ApplyChangeSet(notebookID string, changeSet NotebookCh
 		}
 	}
 
-	nb, loadErr := s.load(notebookID)
+	nb, loadErr := s.Load(notebookID)
 	if loadErr != nil {
 		return NotebookChangeApplyResult{}, loadErr
 	}
-	currentFiles, err := readNotebookAuthoredFiles(nb.Dir)
+	currentFiles, err := ReadAuthoredFiles(nb.Dir)
 	if err != nil {
 		return NotebookChangeApplyResult{}, &APIError{Status: 500, Code: "notebook_change_read_failed", Message: err.Error()}
 	}
@@ -203,11 +203,11 @@ func (s *NotebookService) ApplyChangeSet(notebookID string, changeSet NotebookCh
 			Message: "This notebook changed while the prepared edit was being applied. Prepare it again.",
 		}
 	}
-	if err := applyNotebookFileTransaction(s.deps.WorkspaceRoot, nb.Dir, prepared.beforeFiles, prepared.afterFiles, nil); err != nil {
+	if err := ApplyNotebookFileTransaction(s.deps.WorkspaceRoot, nb.Dir, prepared.beforeFiles, prepared.afterFiles, nil); err != nil {
 		return NotebookChangeApplyResult{}, &APIError{Status: 500, Code: "notebook_change_apply_failed", Message: err.Error()}
 	}
 
-	updatedNotebook, apiErr := s.load(notebookID)
+	updatedNotebook, apiErr := s.Load(notebookID)
 	if apiErr != nil {
 		return NotebookChangeApplyResult{}, apiErr
 	}
@@ -228,19 +228,19 @@ func (s *NotebookService) ApplyChangeSet(notebookID string, changeSet NotebookCh
 			NotebookOperationControlUpdate, NotebookOperationControlDelete:
 			s.onNotebookParametersChanged(notebookID, updatedNotebook)
 		case NotebookOperationCellDelete:
-			_ = s.store.DropCellObjects(updatedNotebook.UUID, operation.CellID)
+			_ = s.dropCellObjects(updatedNotebook.UUID, operation.CellID)
 			s.forgetCell(notebookID, updatedNotebook.UUID, operation.CellID)
 		}
 	}
 	s.pushUpdate(updatedNotebook.Dir)
 	return NotebookChangeApplyResult{
 		Status:   "ok",
-		Notebook: s.toModel(updatedNotebook),
+		Notebook: s.ToModel(updatedNotebook),
 		Diff:     prepared.plan.Diff,
 	}, nil
 }
 
-func (s *NotebookService) prepareChangeSetLocked(notebookID string, changeSet NotebookChangeSet) (*preparedNotebookChange, *APIError) {
+func (s *Service) prepareChangeSetLocked(notebookID string, changeSet NotebookChangeSet) (*preparedNotebookChange, *APIError) {
 	if strings.TrimSpace(changeSet.BaseRevision) == "" {
 		return nil, &APIError{Status: 400, Code: "notebook_revision_required", Message: "a notebook base revision is required"}
 	}
@@ -256,7 +256,7 @@ func (s *NotebookService) prepareChangeSetLocked(notebookID string, changeSet No
 		}
 	}
 
-	nb, apiErr := s.load(notebookID)
+	nb, apiErr := s.Load(notebookID)
 	if apiErr != nil {
 		return nil, apiErr
 	}
@@ -267,7 +267,7 @@ func (s *NotebookService) prepareChangeSetLocked(notebookID string, changeSet No
 			Message: "This notebook changed after the edit was prepared. Reload it and try again.",
 		}
 	}
-	beforeFiles, err := readNotebookAuthoredFiles(nb.Dir)
+	beforeFiles, err := ReadAuthoredFiles(nb.Dir)
 	if err != nil {
 		return nil, &APIError{Status: 500, Code: "notebook_change_read_failed", Message: err.Error()}
 	}
@@ -307,7 +307,7 @@ func (s *NotebookService) prepareChangeSetLocked(notebookID string, changeSet No
 		}
 	}
 
-	afterFiles, err := readNotebookAuthoredFiles(tempDir)
+	afterFiles, err := ReadAuthoredFiles(tempDir)
 	if err != nil {
 		cleanup()
 		return nil, &APIError{Status: 500, Code: "notebook_change_stage_failed", Message: err.Error()}
@@ -375,7 +375,7 @@ func cloneNotebookOperations(operations []NotebookOperation) []NotebookOperation
 	return result
 }
 
-func (s *NotebookService) applyDraftOperation(nb *notebook.Notebook, operation *NotebookOperation) *APIError {
+func (s *Service) applyDraftOperation(nb *notebook.Notebook, operation *NotebookOperation) *APIError {
 	operation.Kind = strings.ToLower(strings.TrimSpace(operation.Kind))
 	switch operation.Kind {
 	case NotebookOperationManifestUpgrade:
@@ -501,7 +501,7 @@ func (s *NotebookService) applyDraftOperation(nb *notebook.Notebook, operation *
 		}
 		operation.CellID = cell.ID
 		operation.Name = strings.TrimSpace(operation.Name)
-		if message := notebook.ValidateCellName(nb, operation.Name, cell.ID, s.pipelineAssetNameSet()); message != "" {
+		if message := notebook.ValidateCellName(nb, operation.Name, cell.ID, s.pipelineAssetNames()); message != "" {
 			return badRequestError("invalid_cell_name", message)
 		}
 		edits, err := notebook.PlanRename(nb, cell.ID, operation.Name)
@@ -933,7 +933,7 @@ func cloneJSONValue(value any) any {
 	return result
 }
 
-func (s *NotebookService) applyDraftCellCreate(nb *notebook.Notebook, operation *NotebookOperation) *APIError {
+func (s *Service) applyDraftCellCreate(nb *notebook.Notebook, operation *NotebookOperation) *APIError {
 	operation.Language = strings.ToLower(strings.TrimSpace(operation.Language))
 	if operation.Language == "" {
 		operation.Language = "sql"
@@ -949,9 +949,9 @@ func (s *NotebookService) applyDraftCellCreate(nb *notebook.Notebook, operation 
 	}
 	operation.Name = strings.TrimSpace(operation.Name)
 	if operation.Name == "" {
-		operation.Name = nextCellAutoname(nb, s.pipelineAssetNameSet())
+		operation.Name = NextCellAutoname(nb, s.pipelineAssetNames())
 	}
-	if message := notebook.ValidateCellName(nb, operation.Name, "", s.pipelineAssetNameSet()); message != "" {
+	if message := notebook.ValidateCellName(nb, operation.Name, "", s.pipelineAssetNames()); message != "" {
 		return badRequestError("invalid_cell_name", message)
 	}
 	python := operation.Language == "python"
@@ -1003,7 +1003,7 @@ func (s *NotebookService) applyDraftCellCreate(nb *notebook.Notebook, operation 
 	return nil
 }
 
-func (s *NotebookService) applyDraftSourceCreate(nb *notebook.Notebook, operation *NotebookOperation) *APIError {
+func (s *Service) applyDraftSourceCreate(nb *notebook.Notebook, operation *NotebookOperation) *APIError {
 	if nb.Version < notebook.ManifestVersionCurrent {
 		return notebookUpgradeRequiredError()
 	}
@@ -1015,9 +1015,9 @@ func (s *NotebookService) applyDraftSourceCreate(nb *notebook.Notebook, operatio
 	}
 	operation.Name = strings.TrimSpace(operation.Name)
 	if operation.Name == "" {
-		operation.Name = nextCellAutoname(nb, s.pipelineAssetNameSet())
+		operation.Name = NextCellAutoname(nb, s.pipelineAssetNames())
 	}
-	if message := notebook.ValidateCellName(nb, operation.Name, "", s.pipelineAssetNameSet()); message != "" {
+	if message := notebook.ValidateCellName(nb, operation.Name, "", s.pipelineAssetNames()); message != "" {
 		return badRequestError("invalid_cell_name", message)
 	}
 	definition, apiErr := s.notebookSourceDefinition(operation.Source, operation.CellID)
@@ -1049,7 +1049,7 @@ func (s *NotebookService) applyDraftSourceCreate(nb *notebook.Notebook, operatio
 	return nil
 }
 
-func (s *NotebookService) notebookSourceDefinition(input *model.NotebookSourceDefinition, sourceID string) (*notebook.SourceDefinition, *APIError) {
+func (s *Service) notebookSourceDefinition(input *model.NotebookSourceDefinition, sourceID string) (*notebook.SourceDefinition, *APIError) {
 	if input == nil {
 		return nil, badRequestError("invalid_notebook_source", "a notebook source definition is required")
 	}
@@ -1104,27 +1104,14 @@ func notebookSourceDefinitionToModel(definition *notebook.SourceDefinition) *mod
 	}
 }
 
-func (s *NotebookService) validateNotebookStorageConnection(connection string) *APIError {
-	if s.deps.CurrentState == nil {
+func (s *Service) validateNotebookStorageConnection(connection string) *APIError {
+	if s == nil || s.deps.ValidateStorageConnection == nil {
 		return badRequestError("unknown_notebook_source_connection", fmt.Sprintf("storage connection %q is unavailable", connection))
 	}
-	connectionType := ""
-	for name, candidateType := range s.deps.CurrentState().Connections {
-		if strings.EqualFold(strings.TrimSpace(name), strings.TrimSpace(connection)) {
-			connectionType = candidateType
-			break
-		}
-	}
-	if connectionType == "" {
-		return badRequestError("unknown_notebook_source_connection", fmt.Sprintf("connection %q is not configured", connection))
-	}
-	if loadConnectionCategory(connectionType) != LoadCategoryStorage {
-		return badRequestError("invalid_notebook_source_connection", fmt.Sprintf("connection %q is not an object-storage connection", connection))
-	}
-	return nil
+	return s.deps.ValidateStorageConnection(connection)
 }
 
-func (s *NotebookService) configureDraftCellSource(cell *notebook.Cell, operation *NotebookOperation) *APIError {
+func (s *Service) configureDraftCellSource(cell *notebook.Cell, operation *NotebookOperation) *APIError {
 	connection := strings.TrimSpace(operation.Connection)
 	assetType := notebook.DefaultCellType
 	if connection != "" {
@@ -1150,20 +1137,15 @@ func (s *NotebookService) configureDraftCellSource(cell *notebook.Cell, operatio
 	return nil
 }
 
-func (s *NotebookService) resolveNotebookSourceAssetType(connection string) (string, *APIError) {
+func (s *Service) resolveNotebookSourceAssetType(connection string) (string, *APIError) {
 	connection = strings.TrimSpace(connection)
 	if connection == "" {
 		return notebook.DefaultCellType, nil
 	}
-	if s.deps.CurrentState == nil {
+	if s == nil || s.deps.ResolveSourceAssetType == nil {
 		return "", badRequestError("unknown_notebook_source_connection", fmt.Sprintf("query connection %q is unavailable", connection))
 	}
-	for _, candidate := range s.deps.CurrentState().QueryConnections {
-		if strings.EqualFold(strings.TrimSpace(candidate.Name), connection) {
-			return strings.TrimSpace(candidate.AssetType), nil
-		}
-	}
-	return "", badRequestError("unknown_notebook_source_connection", fmt.Sprintf("connection %q cannot execute notebook SQL", connection))
+	return s.deps.ResolveSourceAssetType(connection)
 }
 
 func normalizeDraftVisualization(nb *notebook.Notebook, blockID string, input *model.NotebookVisualization) (*model.NotebookVisualization, *APIError) {
@@ -1281,7 +1263,7 @@ func newNotebookProblems(before, after []string) []string {
 	return result
 }
 
-func readNotebookAuthoredFiles(dir string) (map[string][]byte, error) {
+func ReadAuthoredFiles(dir string) (map[string][]byte, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -1380,10 +1362,10 @@ type notebookTransactionState struct {
 	Entries []notebookTransactionEntry `json:"entries"`
 }
 
-type notebookTransactionHook func(index int, path string) error
+type TransactionHook func(index int, path string) error
 
-func applyNotebookFileTransaction(workspaceRoot, notebookDir string, before, after map[string][]byte, hook notebookTransactionHook) error {
-	current, err := readNotebookAuthoredFiles(notebookDir)
+func ApplyNotebookFileTransaction(workspaceRoot, notebookDir string, before, after map[string][]byte, hook TransactionHook) error {
+	current, err := ReadAuthoredFiles(notebookDir)
 	if err != nil {
 		return err
 	}
@@ -1395,7 +1377,7 @@ func applyNotebookFileTransaction(workspaceRoot, notebookDir string, before, aft
 	if err != nil || strings.HasPrefix(notebookRel, "..") {
 		return fmt.Errorf("notebook directory is outside the workspace")
 	}
-	return applyWorkspaceFileTransaction(
+	return ApplyWorkspaceFileTransaction(
 		workspaceRoot,
 		prefixWorkspaceFileSet(notebookRel, before),
 		prefixWorkspaceFileSet(notebookRel, after),
@@ -1411,13 +1393,13 @@ func prefixWorkspaceFileSet(prefix string, files map[string][]byte) map[string][
 	return result
 }
 
-// applyWorkspaceFileTransaction commits an exact set of workspace-relative
+// ApplyWorkspaceFileTransaction commits an exact set of workspace-relative
 // file mutations through the notebook recovery journal. Notebook promotion
 // needs this wider boundary because it removes notebook blocks, rewrites
 // sibling cells, and creates pipeline assets as one logical operation. The
 // journal already stores workspace-relative targets, so startup recovery works
 // for both notebook-only and cross-artifact transactions.
-func applyWorkspaceFileTransaction(workspaceRoot string, before, after map[string][]byte, hook notebookTransactionHook) error {
+func ApplyWorkspaceFileTransaction(workspaceRoot string, before, after map[string][]byte, hook TransactionHook) error {
 	paths := make(map[string]bool, len(before)+len(after))
 	for path := range before {
 		paths[filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))] = true
@@ -1432,7 +1414,7 @@ func applyWorkspaceFileTransaction(workspaceRoot string, before, after map[strin
 		if beforeExists && afterExists && bytes.Equal(beforeContent, afterContent) {
 			continue
 		}
-		targetPath, err := SafeJoin(workspaceRoot, filepath.FromSlash(rel))
+		targetPath, err := workspacefs.Join(workspaceRoot, filepath.FromSlash(rel))
 		if err != nil {
 			return err
 		}
@@ -1495,7 +1477,7 @@ func applyWorkspaceFileTransaction(workspaceRoot string, before, after map[strin
 
 	rollback := func() error { return rollbackNotebookTransaction(workspaceRoot, journalDir, state) }
 	for index, rel := range ordered {
-		targetPath, joinErr := SafeJoin(workspaceRoot, filepath.FromSlash(rel))
+		targetPath, joinErr := workspacefs.Join(workspaceRoot, filepath.FromSlash(rel))
 		if joinErr != nil {
 			if rollbackErr := rollback(); rollbackErr != nil {
 				return fmt.Errorf("resolve %s: %v; rollback: %w", rel, joinErr, rollbackErr)
@@ -1554,7 +1536,7 @@ func rollbackNotebookTransaction(workspaceRoot, journalDir string, state noteboo
 	var failures []string
 	for index := len(state.Entries) - 1; index >= 0; index-- {
 		entry := state.Entries[index]
-		target, err := SafeJoin(workspaceRoot, filepath.FromSlash(entry.Path))
+		target, err := workspacefs.Join(workspaceRoot, filepath.FromSlash(entry.Path))
 		if err != nil {
 			failures = append(failures, err.Error())
 			continue
@@ -1580,7 +1562,7 @@ func rollbackNotebookTransaction(workspaceRoot, journalDir string, state noteboo
 	return os.RemoveAll(journalDir)
 }
 
-func recoverNotebookFileTransactions(workspaceRoot string) error {
+func RecoverFileTransactions(workspaceRoot string) error {
 	journalRoot := filepath.Join(workspaceRoot, ".renart", "notebook-transactions")
 	entries, err := os.ReadDir(journalRoot)
 	if os.IsNotExist(err) {
