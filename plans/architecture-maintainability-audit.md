@@ -1,11 +1,11 @@
 # Architecture and maintainability audit
 
-Status: implementation in progress, 2026-08-23. The guardrail, contract,
-capability, lineage, snapshot-ownership, request-boundary, observability, live
-timing, and bundle-budget slices described below have shipped locally. This is
-not a proposal for a rewrite. Each accepted implementation slice should remain
-small, preserve Renart's filesystem/SSE/runtime contracts, and be folded into
-the relevant document under [`architecture/`](../architecture/) when it ships.
+Status: standalone low-risk slices complete locally, 2026-08-23. Contract,
+capability, native-SQL cleanup, lineage, snapshot ownership, request-boundary,
+observability, live-timing, bundle-budget, dependency-direction, and first plan
+folds are implemented below. The remaining controller/domain moves are
+feature-adjacent; E2E sharding, workspace deltas, and runtime eviction are
+evidence-gated. This is not a proposal for a rewrite.
 
 ## 1. Executive assessment
 
@@ -17,7 +17,8 @@ runtime. The repository also has unusually broad backend and live-flow test
 coverage for a project at this stage.
 
 The main maintainability risk is not a missing framework or a bad top-level
-design. It is **convergence debt** caused by rapid feature growth:
+design. At audit time it was **convergence debt** caused by rapid feature
+growth:
 
 - the same warehouse/asset capability knowledge is encoded in several places;
 - the API type generator still needs a hand-maintained list and is followed by
@@ -92,22 +93,22 @@ The cleanup should explicitly retain these strengths:
 
 ## 4. Priority map
 
-| Order | Workstream | Impact | Effort | Why now |
-| ---: | --- | --- | --- | --- |
-| 0 | Correct post-Golyglot docs and add cheap drift gates | Medium | Small | Current architecture text contradicts the shipped runtime |
-| 1 | Make API contracts generated, closed, and CI-verified | High | Medium | Backend/frontend drift is currently easy and partially hidden |
-| 2 | Create one asset/connection capability registry | High | Medium | Every new warehouse or variant crosses several divergent switches |
-| 3 | Batch repeated semantic analysis and consolidate SQL helpers | High | Medium | Column-impact work can analyze the same query once per output column |
-| 4 | Extract controllers from notebook/build/review UI | High | Medium–large | These pages combine unrelated state machines and are hard to test locally |
-| 5 | Introduce compiler-visible backend domain seams | High | Large, incremental | `internal/web/service` is now a shared namespace for most product domains |
-| 6 | Rebalance the test pyramid and shard live E2E | High | Medium | CI proof is strong but slow, serial, and duplicated across viewports |
-| 7 | Make workspace snapshots immutable and instrument refresh/SSE | Medium | Medium | Aliasing is unenforced and full snapshots will scale with every feature |
-| 8 | Standardize bounded strict request decoding | Medium | Small–medium | Mutation endpoints currently have inconsistent limits and JSON semantics |
-| 9 | Add frontend bundle and interaction budgets | Medium | Small first | Existing route splitting works, but large chunks can regress unnoticed |
-| 10 | Retire shipped plan history and finish composition-root hygiene | Medium | Ongoing | The current-state/plans distinction is starting to erode |
+| Order | Workstream | State | Remaining boundary |
+| ---: | --- | --- | --- |
+| 0 | Correct post-Golyglot docs and add cheap drift gates | Complete | External `polyglot` diagnostic identity remains intentionally compatible |
+| 1 | Make API contracts generated, closed, and CI-verified | Complete | Add roots as new public DTO surfaces appear |
+| 2 | Create one asset/connection capability registry | Complete | Fingerprint-v3 mapping changes require an explicit migration |
+| 3 | Batch repeated semantic analysis and consolidate SQL helpers | Complete for direct projections | Recursive CTE batch lineage waits for a released reusable Golyglot API |
+| 4 | Extract controllers from notebook/build/review UI | Deferred | Extract with the next behavior change, not as a file-splitting rewrite |
+| 5 | Introduce compiler-visible backend domain seams | Guarded | Import direction is enforced; move one cohesive domain beside feature work |
+| 6 | Rebalance the test pyramid and shard live E2E | Measuring | Collect timing artifacts before choosing CI groups/mobile coverage |
+| 7 | Make workspace snapshots immutable and instrument refresh/SSE | Complete for guardrails | Collect production-scale baselines before budgets or deltas |
+| 8 | Standardize bounded strict request decoding | Complete | Streaming and multipart endpoints remain explicit exceptions |
+| 9 | Add frontend bundle and interaction budgets | Complete for build budgets | Profile cold interaction before changing lazy boundaries |
+| 10 | Retire shipped plan history and finish composition-root hygiene | In progress | Fold remaining large mixed-status plans one at a time |
 
-Order 0–3 are the best near-term return. Workstreams 4–7 should be done as
-feature-adjacent slices, not as a development freeze.
+The remaining workstreams should be done as feature-adjacent or
+measurement-backed slices, not as a development freeze.
 
 ## 5. Detailed findings
 
@@ -787,24 +788,25 @@ plane.
 
 ### Phase A — guardrails and factual cleanup
 
-Small, low-risk work that makes subsequent changes safer:
+Completed low-risk work that makes subsequent changes safer:
 
-1. correct post-Golyglot architecture/AGENTS comments and old timing claims;
-2. add generated-API drift verification;
-3. add a bundle manifest and Playwright timing artifact;
-4. benchmark all-output column lineage;
-5. add an immutable-snapshot ownership test before changing implementation.
+1. corrected post-Golyglot architecture/AGENTS comments and old timing claims;
+2. added generated-API drift verification;
+3. added a bundle manifest and Playwright timing artifact;
+4. benchmarked and batched direct all-output column lineage;
+5. enforced immutable snapshot ownership and measured clone cost.
 
 ### Phase B — shared semantic sources
 
-1. introduce the capability registry with parity tests;
-2. migrate formatter/fingerprint/LSP/Python-broker consumers;
-3. expose the public capability subset to the frontend;
-4. replace the API generator allowlist/regex parser with annotated AST roots;
-5. remove duplicated frontend response types.
+Completed:
 
-These two workstreams should land in separate commits but can share review
-because together they remove the most common cross-layer drift.
+1. introduced the capability registry with parity tests;
+2. migrated formatter/fingerprint/LSP/Python-broker consumers;
+3. exposed the public capability subset to the frontend;
+4. replaced the API generator allowlist/regex parser with annotated AST roots;
+5. removed duplicated complete frontend response types.
+
+These workstreams landed as separate reviewable commits.
 
 ### Phase C — headless application controllers
 
@@ -827,9 +829,11 @@ the composition root shrinks naturally.
 
 ### Phase E — scale only from measurements
 
-1. shard live E2E and reduce duplicated mobile execution;
-2. make workspace snapshots immutable;
-3. add runtime idle eviction if measurements justify it;
+1. collect live timing artifacts, then shard E2E and reduce duplicated mobile
+   execution only where the evidence supports it;
+2. collect workspace refresh/payload/fan-out baselines from the implemented
+   instrumentation;
+3. add runtime idle eviction only if resource measurements justify it;
 4. introduce workspace deltas only if refresh/payload budgets are exceeded;
 5. tune lazy chunks only after bundle/startup profiling identifies the owner.
 
