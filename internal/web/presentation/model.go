@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"renart/internal/web/model"
+	"renart/internal/web/workspacefs"
 )
 
 // ArtifactToModel maps a Git-authored presentation and its resolved schemas to
@@ -25,7 +26,7 @@ func ArtifactToModel(
 		relPath = artifact.Path
 	}
 	result := model.PresentationArtifact{
-		ID: artifact.ID, WorkspaceID: encodeWorkspaceID(filepath.ToSlash(relPath)), Kind: string(artifact.Kind), Version: artifact.Version,
+		ID: artifact.ID, WorkspaceID: workspacefs.EncodePathID(filepath.ToSlash(relPath)), Kind: string(artifact.Kind), Version: artifact.Version,
 		Revision: artifact.Revision, Title: artifact.Title, Path: filepath.ToSlash(relPath),
 		Filters:        make([]model.PresentationFilter, 0, len(artifact.Filters)),
 		Visualizations: make([]model.PresentationVisualization, 0, len(artifact.Visualizations)),

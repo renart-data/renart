@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"renart/internal/web/model"
+	"renart/internal/web/workspacefs"
 )
 
 type runtimeConnectionLookup struct {
@@ -128,7 +129,7 @@ layout:
 		},
 	})
 
-	result, apiErr := runtime.Run(context.Background(), encodeWorkspaceID("dashboards/sales.dashboard.yml"), model.PresentationRunRequest{
+	result, apiErr := runtime.Run(context.Background(), workspacefs.EncodePathID("dashboards/sales.dashboard.yml"), model.PresentationRunRequest{
 		Environment: "dev", FilterValues: map[string]any{"region": "us"},
 	})
 	if apiErr != nil {

@@ -2,7 +2,6 @@ package presentation
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,6 +12,7 @@ import (
 
 	"renart/internal/web/apperror"
 	"renart/internal/web/model"
+	"renart/internal/web/workspacefs"
 )
 
 const maxDefinitionBytes = 2 << 20
@@ -158,7 +158,7 @@ func (s *DocumentService) Create(ctx context.Context, request CreatePresentation
 		if attempt > 1 {
 			candidate = fmt.Sprintf("%s_%d", baseID, attempt)
 		}
-		candidatePath, err := safeJoin(s.deps.WorkspaceRoot, filepath.Join(directory, candidate+suffix))
+		candidatePath, err := workspacefs.Join(s.deps.WorkspaceRoot, filepath.Join(directory, candidate+suffix))
 		if err != nil {
 			return PresentationDocument{}, &apperror.Error{Status: http.StatusBadRequest, Code: "presentation_path_invalid", Message: err.Error()}
 		}
@@ -178,7 +178,7 @@ func (s *DocumentService) Create(ctx context.Context, request CreatePresentation
 	if err != nil {
 		return PresentationDocument{}, &apperror.Error{Status: http.StatusInternalServerError, Code: "presentation_create_failed", Message: err.Error()}
 	}
-	if err := writeFileAtomically(path, content, 0o644); err != nil {
+	if err := workspacefs.WriteFileAtomic(path, content, 0o644); err != nil {
 		return PresentationDocument{}, &apperror.Error{Status: http.StatusInternalServerError, Code: "presentation_create_failed", Message: err.Error()}
 	}
 	s.pushUpdate(ctx, "presentation-created", path)
@@ -232,7 +232,7 @@ func (s *DocumentService) Update(
 		datasetSchemas := s.enrich(ctx, current)
 		return PresentationDocument{Artifact: ArtifactToModel(s.deps.WorkspaceRoot, current, datasetSchemas), Content: request.Content}, nil
 	}
-	if err := writeFileAtomically(path, nextContent, 0o644); err != nil {
+	if err := workspacefs.WriteFileAtomic(path, nextContent, 0o644); err != nil {
 		return PresentationDocument{}, &apperror.Error{Status: http.StatusInternalServerError, Code: "presentation_update_failed", Message: err.Error()}
 	}
 	s.pushUpdate(ctx, "presentation-updated", path)
@@ -287,7 +287,7 @@ func (s *DocumentService) Replace(
 		datasetSchemas := s.enrich(ctx, current)
 		return PresentationDocument{Artifact: ArtifactToModel(s.deps.WorkspaceRoot, current, datasetSchemas), Content: string(currentContent)}, nil
 	}
-	if err := writeFileAtomically(path, content, 0o644); err != nil {
+	if err := workspacefs.WriteFileAtomic(path, content, 0o644); err != nil {
 		return PresentationDocument{}, &apperror.Error{Status: http.StatusInternalServerError, Code: "presentation_update_failed", Message: err.Error()}
 	}
 	s.pushUpdate(ctx, "presentation-updated", path)
@@ -332,11 +332,11 @@ func (s *DocumentService) enrich(ctx context.Context, artifact *Artifact) map[st
 }
 
 func (s *DocumentService) resolvePath(workspaceID string) (string, *apperror.Error) {
-	relPath, err := decodeWorkspaceID(strings.TrimSpace(workspaceID))
+	relPath, err := workspacefs.DecodePathID(strings.TrimSpace(workspaceID))
 	if err != nil {
 		return "", &apperror.Error{Status: http.StatusBadRequest, Code: "presentation_id_invalid", Message: "invalid presentation id"}
 	}
-	path, err := safeJoin(s.deps.WorkspaceRoot, relPath)
+	path, err := workspacefs.Join(s.deps.WorkspaceRoot, relPath)
 	if err != nil {
 		return "", &apperror.Error{Status: http.StatusBadRequest, Code: "presentation_id_invalid", Message: err.Error()}
 	}
@@ -366,63 +366,4 @@ func presentationIDFromTitle(title string) string {
 		id = "presentation_" + id
 	}
 	return id
-}
-
-func encodeWorkspaceID(value string) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(filepath.ToSlash(value)))
-}
-
-func decodeWorkspaceID(value string) (string, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(value)
-	if err != nil {
-		return "", err
-	}
-	return string(decoded), nil
-}
-
-func safeJoin(root, relPath string) (string, error) {
-	clean := filepath.Clean(filepath.FromSlash(relPath))
-	if clean == "." || clean == "" {
-		return root, nil
-	}
-	if filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
-		return "", fmt.Errorf("invalid path: %s", relPath)
-	}
-	return filepath.Join(root, clean), nil
-}
-
-func writeFileAtomically(path string, content []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".renart-write-*")
-	if err != nil {
-		return err
-	}
-	tempPath := temp.Name()
-	cleanup := func() {
-		_ = temp.Close()
-		_ = os.Remove(tempPath)
-	}
-	if _, err := temp.Write(content); err != nil {
-		cleanup()
-		return err
-	}
-	if err := temp.Chmod(mode); err != nil {
-		cleanup()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		_ = os.Remove(tempPath)
-		return err
-	}
-	if err := os.Rename(tempPath, path); err != nil {
-		_ = os.Remove(tempPath)
-		return err
-	}
-	return nil
 }

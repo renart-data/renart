@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"renart/internal/web/workspacefs"
 )
 
 func TestDocumentServiceOwnsRevisionedFileLifecycle(t *testing.T) {
@@ -59,7 +61,7 @@ func TestDocumentServiceOwnsRevisionedFileLifecycle(t *testing.T) {
 
 func TestDocumentServiceRejectsWorkspacePathTraversal(t *testing.T) {
 	service := NewDocumentService(DocumentDependencies{WorkspaceRoot: t.TempDir()})
-	_, apiErr := service.Get(context.Background(), encodeWorkspaceID("../outside.dashboard.yml"))
+	_, apiErr := service.Get(context.Background(), workspacefs.EncodePathID("../outside.dashboard.yml"))
 	if apiErr == nil || apiErr.Code != "presentation_id_invalid" {
 		t.Fatalf("path traversal was accepted: %+v", apiErr)
 	}

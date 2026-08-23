@@ -1,11 +1,12 @@
 package service
 
 import (
-	"encoding/base64"
 	"fmt"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"renart/internal/web/workspacefs"
 )
 
 var (
@@ -17,28 +18,17 @@ var (
 
 // EncodeID creates a URL-safe base64 ID from a path.
 func EncodeID(value string) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(filepath.ToSlash(value)))
+	return workspacefs.EncodePathID(value)
 }
 
 // DecodeID decodes a URL-safe base64 ID back to a path.
 func DecodeID(value string) (string, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(value)
-	if err != nil {
-		return "", err
-	}
-	return string(decoded), nil
+	return workspacefs.DecodePathID(value)
 }
 
 // SafeJoin safely joins paths, preventing directory traversal attacks.
 func SafeJoin(root, relPath string) (string, error) {
-	clean := filepath.Clean(filepath.FromSlash(relPath))
-	if clean == "." || clean == "" {
-		return root, nil
-	}
-	if filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
-		return "", fmt.Errorf("invalid path: %s", relPath)
-	}
-	return filepath.Join(root, clean), nil
+	return workspacefs.Join(root, relPath)
 }
 
 // Slug converts a string to a URL-safe slug.

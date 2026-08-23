@@ -33,8 +33,9 @@ cmd/web.go     route registration + a thin webServer adapter
   ├── internal/web/scheduler      River + SQLite scheduler
   ├── internal/web/events         SSE pub/sub hub with debounce
   ├── internal/web/watch          fsnotify/poll filesystem watcher
-  ├── internal/web/{model, api, apperror}
+  ├── internal/web/{model, api, apperror, workspacefs}
   │                               canonical DTOs, response/error envelopes
+  │                               and safe Git-workspace file primitives
   ├── internal/web/{bus, identity, fingerprint, matlog, staleness,
   │                snapshot, policy}          → see staleness.md
   ├── internal/web/execution                  → shared execution-domain
@@ -71,6 +72,13 @@ single schedule/explicit interval contract consumed by planning, rendering,
 type-checking, staleness, and materialization. `service.ExecutionTimeWindow`
 is a type alias during migration, so those paths share lower-domain behavior
 without a broad signature rewrite.
+
+Git-authored application domains share `internal/web/workspacefs` for encoded
+path IDs, traversal-safe workspace joins, and synced atomic single-file
+replacement. The service facade keeps `EncodeID`, `DecodeID`, `SafeJoin`, and
+its private notebook writer as delegates during migration. Multi-file notebook
+transactions remain owned by the notebook application layer; the shared helper
+does not pretend one-file atomicity is a transaction.
 
 ## 2. Runtime model
 
@@ -1412,6 +1420,10 @@ asset.
   accept exactly one non-null object, and reject unknown fields. Routes with
   smaller or larger known payloads pass an explicit limit; multipart uploads
   and intentionally optional bodies keep separate bounded paths.
+- **One workspace file primitive.** Git-authored domains use `workspacefs` for
+  encoded relative paths, traversal-safe resolution, and atomic single-file
+  replacement. Domain-level multi-file transactions retain their own journal
+  and rollback semantics.
 - **Dependency direction.** `cmd` is the composition root and `httpapi` is a
   transport edge. Only the composition/adaptor packages (`cmd`, `httpapi`,
   `clientapi`, and `notebookmcp`) may depend directly on the broad `service`

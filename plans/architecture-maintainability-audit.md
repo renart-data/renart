@@ -510,6 +510,13 @@ staleness, and run paths. The service name is a type/function compatibility
 alias, avoiding a noisy signature migration while subsequent execution slices
 move around the same type.
 
+[`internal/web/workspacefs`](../internal/web/workspacefs) now provides the
+shared lower boundary needed by file-authored domains: encoded path IDs,
+traversal-safe joins, and synced atomic single-file replacement. Service
+helpers remain compatibility delegates. Presentation no longer duplicates
+those mechanics, and the existing notebook transaction journal delegates its
+individual file replacements without weakening multi-file rollback semantics.
+
 #### Evidence
 
 The package contains roughly 150 production files and 61,000 production lines,
@@ -891,11 +898,27 @@ In progress:
 - presentation adapter construction is split out of the central server wiring.
 - the shared execution time-window contract and schedule resolution live below
   the facade, with compatibility aliases for existing consumers.
+- shared Git-workspace path and atomic-write primitives live below both
+  presentation and notebook code.
 
 Next, use the same strangler shape to extract pipeline execution and notebook
 application services. Keep the `service` facade and move handlers one group at
 a time. Split server wiring alongside each domain so the composition root
 shrinks naturally.
+
+The reviewed next boundaries are deliberately larger than a file move:
+
+- **Execution:** do not move the 3,000-line executor or 1,700-line planner as a
+  block. First move the plan/render/resource contract graph and its pure
+  canonicalization together, then move planning behind adapters for snapshots,
+  staleness, policy, and active-run lookup. Execution admission/orchestration
+  follows only after both planner and scheduler consume the lower contracts.
+- **Notebooks:** keep loader/path validation, cell and notebook locks, manifest
+  plus cell mutation, interrupted-transaction recovery, change-set CAS, and DTO
+  conversion in one document-service extraction. Moving individual CRUD
+  methods first would create two lock/transaction authorities. Runtime,
+  warehouse/source imports, promotion, and agent adapters can remain on the
+  facade until that document boundary is stable.
 
 ### Phase E — scale only from measurements
 

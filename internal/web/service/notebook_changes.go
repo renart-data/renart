@@ -17,6 +17,7 @@ import (
 	"renart/internal/web/model"
 	"renart/internal/web/notebook"
 	"renart/internal/web/presentation"
+	"renart/internal/web/workspacefs"
 )
 
 const (
@@ -1537,39 +1538,7 @@ func applyWorkspaceFileTransaction(workspaceRoot string, before, after map[strin
 }
 
 func writeFileAtomically(path string, content []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	temp, err := os.CreateTemp(filepath.Dir(path), ".renart-write-*")
-	if err != nil {
-		return err
-	}
-	tempPath := temp.Name()
-	cleanup := func() {
-		_ = temp.Close()
-		_ = os.Remove(tempPath)
-	}
-	if _, err := temp.Write(content); err != nil {
-		cleanup()
-		return err
-	}
-	if err := temp.Chmod(mode); err != nil {
-		cleanup()
-		return err
-	}
-	if err := temp.Sync(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := temp.Close(); err != nil {
-		_ = os.Remove(tempPath)
-		return err
-	}
-	if err := os.Rename(tempPath, path); err != nil {
-		_ = os.Remove(tempPath)
-		return err
-	}
-	return nil
+	return workspacefs.WriteFileAtomic(path, content, mode)
 }
 
 func writeNotebookTransactionState(journalDir string, state notebookTransactionState) error {
