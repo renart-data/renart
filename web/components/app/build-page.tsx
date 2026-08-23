@@ -2009,16 +2009,6 @@ function BuildTopBar({
       <Breadcrumb className="min-w-0 flex-1">
         <BreadcrumbList className="flex-nowrap text-xs">
           <BreadcrumbItem className="min-w-0">
-            <BreadcrumbLink asChild className="truncate">
-              <Link to="/">data_platform</Link>
-            </BreadcrumbLink>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <span className="text-muted-foreground">pipeline</span>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator />
-          <BreadcrumbItem className="min-w-0">
             <BreadcrumbLink asChild className="truncate font-mono">
               <Link to="/pipelines/$pipelineId/canvas" params={{ pipelineId }} search={search}>
                 {pipelineLabel}
