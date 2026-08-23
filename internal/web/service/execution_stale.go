@@ -9,19 +9,13 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/pipeline"
 
+	webexecution "renart/internal/web/execution"
 	webmodel "renart/internal/web/model"
 	"renart/internal/web/policy"
 	"renart/internal/web/staleness"
 )
 
-// StaleAssetPlan is one stale asset to rebuild. Windows carries the uncovered
-// gap intervals of a partially-covered incremental; empty means one build over
-// the selection (or the pipeline's default) window.
-type StaleAssetPlan struct {
-	AssetName string
-	Windows   []ExecutionTimeWindow
-	Reason    string
-}
+type StaleAssetPlan = webexecution.StaleAssetPlan
 
 // PipelineUpstreamNames returns the transitive in-pipeline upstream closure
 // for targetAssetName. The target itself is excluded, including when a cycle
@@ -63,23 +57,7 @@ func PipelineUpstreamNames(view webmodel.Pipeline, targetAssetName string) (map[
 // items. When include is non-nil, only those asset names are considered; an
 // empty non-nil set therefore means there is deliberately nothing to build.
 func BuildStalePlan(statuses []staleness.AssetStatus, include map[string]struct{}) []StaleAssetPlan {
-	plan := make([]StaleAssetPlan, 0, len(statuses))
-	for _, status := range statuses {
-		if status.Status == staleness.StatusFresh || status.Status == staleness.StatusExternal {
-			continue
-		}
-		if include != nil {
-			if _, selected := include[status.AssetName]; !selected {
-				continue
-			}
-		}
-		item := StaleAssetPlan{AssetName: status.AssetName, Reason: pipelinePlanStalenessReason(status)}
-		for _, gap := range status.Gaps {
-			item.Windows = append(item.Windows, ExecutionTimeWindow{Start: gap.Start, End: gap.End})
-		}
-		plan = append(plan, item)
-	}
-	return plan
+	return webexecution.BuildStalePlan(statuses, include)
 }
 
 // StaleBuildEvent reports per-asset progress of a stale build stream.
@@ -362,25 +340,10 @@ func (t *staleBuildTracker) emit(assetName, status string, step int) {
 // them topologically (Kahn over the full dependency graph, ties broken by
 // pipeline declaration order) so upstreams always build before downstreams.
 func orderStalePlan(parsed *pipeline.Pipeline, plan []StaleAssetPlan) (steps []stalePlanStep, unknown []string) {
-	planByName := make(map[string]StaleAssetPlan, len(plan))
-	for _, item := range plan {
-		planByName[item.AssetName] = item
-	}
-
-	assetByName := make(map[string]*pipeline.Asset, len(parsed.Assets))
-	for _, asset := range parsed.Assets {
-		assetByName[asset.Name] = asset
-	}
-	for _, item := range plan {
-		if assetByName[item.AssetName] == nil {
-			unknown = append(unknown, item.AssetName)
-		}
-	}
-
-	for _, asset := range pipelineAssetsInTopologicalOrder(parsed) {
-		if item, ok := planByName[asset.Name]; ok {
-			steps = append(steps, stalePlanStep{asset: asset, plan: item})
-		}
+	ordered, unknown := webexecution.OrderStalePlan(parsed, plan)
+	steps = make([]stalePlanStep, 0, len(ordered))
+	for _, step := range ordered {
+		steps = append(steps, stalePlanStep{asset: step.Asset, plan: step.Plan})
 	}
 	return steps, unknown
 }
@@ -390,74 +353,7 @@ func orderStalePlan(parsed *pipeline.Pipeline, plan []StaleAssetPlan) (steps []s
 // members, allowing the execution graph binder to report the cycle instead of
 // silently dropping assets.
 func pipelineAssetsInTopologicalOrder(parsed *pipeline.Pipeline) []*pipeline.Asset {
-	if parsed == nil {
-		return nil
-	}
-	assetByName := make(map[string]*pipeline.Asset, len(parsed.Assets))
-	declarationOrder := make(map[string]int, len(parsed.Assets))
-	for index, asset := range parsed.Assets {
-		if asset != nil {
-			assetByName[asset.Name] = asset
-			declarationOrder[asset.Name] = index
-		}
-	}
-	indegree := make(map[string]int, len(assetByName))
-	downstream := make(map[string][]string)
-	for _, asset := range parsed.Assets {
-		if asset == nil {
-			continue
-		}
-		indegree[asset.Name] += 0
-		for _, up := range asset.Upstreams {
-			upName := strings.TrimSpace(up.Value)
-			if upName == "" || assetByName[upName] == nil {
-				continue
-			}
-			indegree[asset.Name]++
-			downstream[upName] = append(downstream[upName], asset.Name)
-		}
-	}
-
-	queue := make([]string, 0, len(parsed.Assets))
-	for _, asset := range parsed.Assets {
-		if asset == nil {
-			continue
-		}
-		if indegree[asset.Name] == 0 {
-			queue = append(queue, asset.Name)
-		}
-	}
-	visited := make(map[string]bool, len(parsed.Assets))
-	ordered := make([]*pipeline.Asset, 0, len(assetByName))
-	for len(queue) > 0 {
-		next := 0
-		for index := 1; index < len(queue); index++ {
-			if declarationOrder[queue[index]] < declarationOrder[queue[next]] {
-				next = index
-			}
-		}
-		name := queue[next]
-		queue = append(queue[:next], queue[next+1:]...)
-		if visited[name] {
-			continue
-		}
-		visited[name] = true
-		ordered = append(ordered, assetByName[name])
-		for _, next := range downstream[name] {
-			indegree[next]--
-			if indegree[next] == 0 {
-				queue = append(queue, next)
-			}
-		}
-	}
-	// Cycles never reach indegree zero. Keep declaration-order resolution so
-	// the graph binder can reject the non-topological dependency explicitly.
-	for _, asset := range parsed.Assets {
-		if asset != nil && !visited[asset.Name] {
-			ordered = append(ordered, asset)
-		}
-	}
-	return ordered
+	return webexecution.PipelineAssetsInTopologicalOrder(parsed)
 }
 
 // failedUpstreamFor remains as a small graph helper used by compatibility

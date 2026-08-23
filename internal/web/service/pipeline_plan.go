@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -593,10 +592,7 @@ func pipelinePlanAssetIsExecutable(asset *pipeline.Asset) bool {
 }
 
 func effectivePipelineMaxActiveSteps(pl *pipeline.Pipeline) int {
-	if pl == nil || pl.MaxActiveSteps == nil || *pl.MaxActiveSteps < 1 {
-		return 1
-	}
-	return *pl.MaxActiveSteps
+	return webexecution.EffectiveMaxActiveSteps(pl)
 }
 
 // bindPipelinePlanExecutionDependencies records a conservative, stable unit
@@ -605,71 +601,7 @@ func effectivePipelineMaxActiveSteps(pl *pipeline.Pipeline) int {
 // upstream. Symbolic dependencies remain lineage-only, while unselected full
 // upstreams remain reviewed data-state preconditions rather than runtime nodes.
 func bindPipelinePlanExecutionDependencies(pl *pipeline.Pipeline, units []PipelinePlanExecutionUnit) error {
-	if len(units) == 0 {
-		return nil
-	}
-	if pl == nil {
-		return errors.New("pipeline is required")
-	}
-	assetByName := make(map[string]*pipeline.Asset, len(pl.Assets))
-	positionsByAsset := make(map[string][]int, len(pl.Assets))
-	for _, asset := range pl.Assets {
-		if asset != nil {
-			assetByName[asset.Name] = asset
-		}
-	}
-	for position := range units {
-		name := strings.TrimSpace(units[position].AssetName)
-		if assetByName[name] == nil {
-			return fmt.Errorf("execution unit %d references unknown asset %q", position, name)
-		}
-		positionsByAsset[name] = append(positionsByAsset[name], position)
-	}
-	for assetName, positions := range positionsByAsset {
-		asset := assetByName[assetName]
-		for index, position := range positions {
-			dependencies := make([]int, 0, len(asset.Upstreams)+1)
-			if index > 0 {
-				dependencies = append(dependencies, positions[index-1])
-			} else {
-				for _, upstream := range asset.Upstreams {
-					if upstream.Mode == pipeline.UpstreamModeSymbolic {
-						continue
-					}
-					upstreamPositions := positionsByAsset[strings.TrimSpace(upstream.Value)]
-					if len(upstreamPositions) > 0 {
-						dependencies = append(dependencies, upstreamPositions[len(upstreamPositions)-1])
-					}
-				}
-			}
-			sort.Ints(dependencies)
-			dependencies = dedupeSortedInts(dependencies)
-			for _, dependency := range dependencies {
-				if dependency < 0 || dependency >= position {
-					return fmt.Errorf(
-						"execution unit %d has non-topological dependency %d",
-						position,
-						dependency,
-					)
-				}
-			}
-			units[position].DependencyPositions = dependencies
-		}
-	}
-	return nil
-}
-
-func dedupeSortedInts(values []int) []int {
-	if len(values) < 2 {
-		return values
-	}
-	result := values[:1]
-	for _, value := range values[1:] {
-		if value != result[len(result)-1] {
-			result = append(result, value)
-		}
-	}
-	return result
+	return webexecution.BindPlanExecutionDependencies(pl, units)
 }
 
 func (s *PipelinePlanService) resolvePipelineUUID(pipelineID string) (string, bool) {
@@ -861,182 +793,25 @@ func selectPipelinePlanAssets(
 	statuses []staleness.AssetStatus,
 	dataStateAvailable bool,
 ) selectedPipelinePlanAssets {
-	if parsed == nil {
-		return selectedPipelinePlanAssets{err: fmt.Errorf("pipeline is unavailable")}
+	selected, err := webexecution.SelectPlanAssets(parsed, req, statuses, dataStateAvailable)
+	if err != nil {
+		return selectedPipelinePlanAssets{err: err}
 	}
-	statusByName := make(map[string]staleness.AssetStatus, len(statuses))
-	for _, status := range statuses {
-		statusByName[status.AssetName] = status
-	}
-
-	plans := make([]StaleAssetPlan, 0, len(parsed.Assets))
-	reasons := make(map[string][]string, len(parsed.Assets))
-	switch req.Mode {
-	case PipelinePlanSelectionNeeded:
-		if !dataStateAvailable {
-			return selectedPipelinePlanAssets{}
-		}
-		plans = BuildStalePlan(statuses, nil)
-		for _, plan := range plans {
-			reasons[plan.AssetName] = []string{pipelinePlanStalenessReason(statusByName[plan.AssetName])}
-		}
-	case PipelinePlanSelectionAll:
-		for _, asset := range parsed.Assets {
-			plans = append(plans, StaleAssetPlan{AssetName: asset.Name})
-			reasons[asset.Name] = []string{"entire_pipeline"}
-		}
-	case PipelinePlanSelectionAsset:
-		assetByName, downstream := pipelinePlanGraph(parsed)
-		target := assetByName[req.AssetName]
-		if target == nil {
-			return selectedPipelinePlanAssets{err: fmt.Errorf("selected asset was not found")}
-		}
-		include := map[string]struct{}{target.Name: {}}
-		reasons[target.Name] = []string{"explicit"}
-		if req.Scope == "asset_with_upstreams" || req.Scope == "asset_with_upstreams_and_downstreams" {
-			for name := range pipelinePlanUpstreamClosure(target.Name, assetByName) {
-				include[name] = struct{}{}
-				reasons[name] = append(reasons[name], "required_upstream")
-			}
-		}
-		if req.Scope == "asset_with_downstreams" || req.Scope == "asset_with_upstreams_and_downstreams" {
-			for name := range pipelinePlanDownstreamClosure(target.Name, downstream) {
-				include[name] = struct{}{}
-				reasons[name] = append(reasons[name], "selected_downstream")
-			}
-		}
-		for name := range include {
-			plans = append(plans, StaleAssetPlan{AssetName: name})
-		}
-	case PipelinePlanSelectionSelector, PipelinePlanSelectionSelectorNeeded:
-		matched, err := pipeline.ResolveSelectorAssets(req.Selector, parsed)
-		if err != nil {
-			return selectedPipelinePlanAssets{err: fmt.Errorf("resolve selector: %w", err)}
-		}
-		matchedNames := make(map[string]struct{}, len(matched))
-		for _, asset := range matched {
-			if asset != nil {
-				matchedNames[asset.Name] = struct{}{}
-			}
-		}
-		if req.Mode == PipelinePlanSelectionSelectorNeeded {
-			if !dataStateAvailable {
-				return selectedPipelinePlanAssets{}
-			}
-			for _, plan := range BuildStalePlan(statuses, nil) {
-				if _, ok := matchedNames[plan.AssetName]; !ok {
-					continue
-				}
-				plans = append(plans, plan)
-				reasons[plan.AssetName] = []string{
-					pipelinePlanStalenessReason(statusByName[plan.AssetName]),
-					"selector_match",
-				}
-			}
-		} else {
-			for _, asset := range matched {
-				if asset == nil {
-					continue
-				}
-				plans = append(plans, StaleAssetPlan{AssetName: asset.Name})
-				reasons[asset.Name] = []string{"selector_match"}
-			}
-		}
-	}
-
-	ordered, unknown := orderStalePlan(parsed, plans)
-	if len(unknown) > 0 {
-		return selectedPipelinePlanAssets{err: fmt.Errorf("selection contains unknown assets")}
-	}
-	items := make([]selectedPipelinePlanAsset, 0, len(ordered))
-	for _, step := range ordered {
+	items := make([]selectedPipelinePlanAsset, 0, len(selected))
+	for _, item := range selected {
 		items = append(items, selectedPipelinePlanAsset{
-			asset:   step.asset,
-			reasons: dedupeStrings(reasons[step.asset.Name]),
-			windows: step.plan.Windows,
+			asset: item.Asset, reasons: item.Reasons, windows: item.Windows,
 		})
 	}
 	return selectedPipelinePlanAssets{items: items}
 }
 
-func pipelinePlanGraph(parsed *pipeline.Pipeline) (map[string]*pipeline.Asset, map[string][]string) {
-	assetByName := make(map[string]*pipeline.Asset, len(parsed.Assets))
-	downstream := make(map[string][]string)
-	for _, asset := range parsed.Assets {
-		assetByName[asset.Name] = asset
-	}
-	for _, asset := range parsed.Assets {
-		for _, upstream := range asset.Upstreams {
-			name := strings.TrimSpace(upstream.Value)
-			if assetByName[name] != nil {
-				downstream[name] = append(downstream[name], asset.Name)
-			}
-		}
-	}
-	return assetByName, downstream
-}
-
 func pipelinePlanUpstreamClosure(name string, assets map[string]*pipeline.Asset) map[string]struct{} {
-	result := make(map[string]struct{})
-	queue := []string{name}
-	for len(queue) > 0 {
-		current := assets[queue[0]]
-		queue = queue[1:]
-		if current == nil {
-			continue
-		}
-		for _, upstream := range current.Upstreams {
-			upstreamName := strings.TrimSpace(upstream.Value)
-			if upstreamName == name || assets[upstreamName] == nil {
-				continue
-			}
-			if _, exists := result[upstreamName]; exists {
-				continue
-			}
-			result[upstreamName] = struct{}{}
-			queue = append(queue, upstreamName)
-		}
-	}
-	return result
+	return webexecution.UpstreamClosure(name, assets)
 }
 
 func pipelinePlanDownstreamClosure(name string, downstream map[string][]string) map[string]struct{} {
-	result := make(map[string]struct{})
-	queue := append([]string(nil), downstream[name]...)
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		if current == name {
-			continue
-		}
-		if _, exists := result[current]; exists {
-			continue
-		}
-		result[current] = struct{}{}
-		queue = append(queue, downstream[current]...)
-	}
-	return result
-}
-
-func pipelinePlanStalenessReason(status staleness.AssetStatus) string {
-	switch status.Status {
-	case staleness.StatusStaleEdited:
-		return "stale_edited"
-	case staleness.StatusStaleDeployment:
-		return "stale_deployment"
-	case staleness.StatusStaleUpstream:
-		return "stale_upstream"
-	case staleness.StatusPartial:
-		return "uncovered_interval"
-	case staleness.StatusNeverBuilt:
-		return "never_built"
-	case staleness.StatusMissing:
-		return "missing_output"
-	case staleness.StatusVolatile:
-		return "volatile_sensor"
-	default:
-		return string(status.Status)
-	}
+	return webexecution.DownstreamClosure(name, downstream)
 }
 
 func planWorkspaceAssetID(root string, asset *pipeline.Asset) string {
