@@ -442,6 +442,17 @@ test.describe("seed and sensor assets live", () => {
       assetKinds.map(async (name) => {
         const selector = dialog.getByRole("radio", { name, exact: true });
         await expect(selector).toBeVisible();
+        await expect(selector.locator('[data-slot="asset-kind-label"]')).toHaveCSS(
+          "white-space",
+          "nowrap",
+        );
+        await expect(selector.locator('[data-slot="asset-kind-description"]')).toHaveCSS(
+          "white-space",
+          "nowrap",
+        );
+        expect(
+          await selector.evaluate((element) => element.scrollHeight <= element.clientHeight + 1),
+        ).toBe(true);
         const box = await selector.boundingBox();
         expect(box).not.toBeNull();
         return { width: Math.round(box!.width), height: Math.round(box!.height) };

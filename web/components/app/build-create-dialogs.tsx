@@ -510,11 +510,21 @@ export function NewAssetDialog({
                           key={option.id}
                           value={option.id}
                           aria-label={option.label}
-                          className="h-24 w-full min-w-0 flex-col items-start justify-start whitespace-normal p-3 text-left data-[state=on]:border-primary data-[state=on]:ring-1 data-[state=on]:ring-primary"
+                          className="h-24 w-full min-w-0 flex-col items-start justify-start overflow-hidden p-3 text-left data-[state=on]:border-primary data-[state=on]:ring-1 data-[state=on]:ring-primary"
                         >
-                          <AssetTypePreview type={option.id} className="h-10 max-w-16" />
-                          <div className="font-medium">{option.label}</div>
-                          <div className="text-xs text-muted-foreground">{option.description}</div>
+                          <AssetTypePreview type={option.id} className="h-8 max-w-14 shrink-0" />
+                          <div className="grid w-full min-w-0 gap-0.5">
+                            <div data-slot="asset-kind-label" className="truncate font-medium">
+                              {option.label}
+                            </div>
+                            <div
+                              data-slot="asset-kind-description"
+                              className="truncate text-xs text-muted-foreground"
+                              title={option.description}
+                            >
+                              {option.description}
+                            </div>
+                          </div>
                         </ToggleGroupItem>
                       ))}
                     </ToggleGroup>
