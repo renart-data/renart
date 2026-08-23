@@ -21,6 +21,14 @@ import { useSchedulerRunEvents } from "@/hooks/use-scheduler-run-events";
 import { materializeAssetStream } from "@/lib/api-assets-inspect";
 import { materializePipelineStream } from "@/lib/api-pipelines";
 import {
+  assetResultsReducer,
+  createMaterializeEntry,
+  deriveAssetResults,
+  terminalSchedulerRun,
+  type MaterializeHistoryEntry,
+  type TerminalSchedulerRun,
+} from "@/lib/asset-results-model";
+import {
   activePipelineRunConflict,
   getRun,
   triggerPipelineRun,
@@ -34,25 +42,6 @@ import { AssetInspectResponse, type PipelineRun, WebAsset } from "@/lib/types";
 
 let nextMaterializeHistoryId = 0;
 const maxRememberedTerminalSchedulerRuns = 128;
-
-type TerminalSchedulerRun = {
-  runId: string;
-  status: "ok" | "error";
-  error: string;
-  output?: string;
-};
-
-function terminalSchedulerRun(run: PipelineRun, output?: string): TerminalSchedulerRun | null {
-  if (run.status !== "success" && run.status !== "failed" && run.status !== "cancelled") {
-    return null;
-  }
-  return {
-    runId: run.id,
-    status: run.status === "success" ? "ok" : "error",
-    error: run.error ?? "",
-    output,
-  };
-}
 
 function rememberTerminalSchedulerRun(
   cache: Map<string, TerminalSchedulerRun>,
@@ -79,42 +68,6 @@ function rememberTerminalSchedulerRun(
 function createMaterializeHistoryId() {
   nextMaterializeHistoryId += 1;
   return `materialize-${Date.now()}-${nextMaterializeHistoryId}`;
-}
-
-function createMaterializeEntry(input: {
-  id: string;
-  kind: "asset" | "pipeline" | "batch";
-  label: string;
-  assetId?: string | null;
-  assetName?: string | null;
-  pipelineId?: string | null;
-  pipelineName?: string | null;
-  runId?: string | null;
-  output?: string;
-  status?: "ok" | "error" | null;
-  error?: string;
-  loading?: boolean;
-  createdAt: number;
-  updatedAt?: number;
-  timeWindow?: { start: string; end: string } | null;
-}) {
-  return {
-    id: input.id,
-    kind: input.kind,
-    label: input.label,
-    assetId: input.assetId,
-    assetName: input.assetName,
-    pipelineId: input.pipelineId,
-    pipelineName: input.pipelineName,
-    runId: input.runId,
-    output: input.output ?? "",
-    status: input.status ?? null,
-    error: input.error ?? "",
-    loading: input.loading ?? false,
-    createdAt: input.createdAt,
-    updatedAt: input.updatedAt ?? input.createdAt,
-    timeWindow: input.timeWindow ?? null,
-  };
 }
 
 export function resolveScopedMaterializingAssetIds(
@@ -194,7 +147,7 @@ export function useAssetResults() {
     canLoadMoreByAssetId,
     loadMorePreviewRows,
   } = useAssetInspect(inspectAssets);
-  const { resultTab, selectedMaterializeEntryId, materializeHistory } = results;
+  const { materializeHistory } = results;
 
   const inspectResult = selectedAssetId ? (inspectByAssetId[selectedAssetId] ?? null) : null;
   const inspectLoading = selectedAssetId
@@ -206,49 +159,30 @@ export function useAssetResults() {
 
   const effectiveMaterializeLoading = assetMaterializeLoading || pipelineMaterializeLoading;
 
-  const setResultTab = (tab: "inspect" | "materialize") => {
-    setResults((previous) => ({
-      ...previous,
-      resultTab: tab,
-    }));
-  };
+  const setResultTab = (tab: "inspect" | "materialize") =>
+    setResults((previous) => assetResultsReducer(previous, { type: "result_tab_selected", tab }));
 
   const selectMaterializeEntry = (entryId: string) => {
-    const entry = materializeHistory.find((item) => item.id === entryId);
-    if (!entry) {
-      return;
-    }
-
-    setResults((previous) => ({
-      ...previous,
-      resultTab: "materialize",
-      selectedMaterializeEntryId: entryId,
-    }));
+    setResults((previous) =>
+      assetResultsReducer(previous, { type: "materialize_entry_selected", entryId }),
+    );
   };
 
   const hasInspectData = Boolean(inspectResult);
-  const selectedMaterializeEntry =
-    materializeHistory.find((entry) => entry.id === selectedMaterializeEntryId) ?? null;
-  const hasResultData =
-    hasInspectData ||
-    resultTab === "materialize" ||
-    materializeHistory.length > 0 ||
-    inspectLoading ||
-    effectiveMaterializeLoading;
+  const { selectedMaterializeEntry, hasResultData, effectiveResultTab } = deriveAssetResults(
+    results,
+    {
+      hasInspectData,
+      inspectLoading,
+      materializeLoading: effectiveMaterializeLoading,
+    },
+  );
 
   const ansiConverter = useMemo(() => new AnsiToHtml({ escapeXML: true }), []);
   const materializeOutputHtml = useMemo(() => {
     const normalized = (selectedMaterializeEntry?.output ?? "").replace(/\r\n/g, "\n");
     return ansiConverter.toHtml(normalized);
   }, [ansiConverter, selectedMaterializeEntry?.output]);
-
-  const effectiveResultTab = useMemo(() => {
-    if (resultTab === "inspect" && !hasInspectData && materializeHistory.length > 0) {
-      return "materialize" as const;
-    }
-
-    return resultTab;
-  }, [hasInspectData, materializeHistory.length, resultTab]);
 
   const loadMoreInspectRows = () => {
     if (selectedAssetId) {
@@ -258,46 +192,27 @@ export function useAssetResults() {
 
   const upsertMaterializeEntry = (
     entryId: string,
-    updater: (
-      previous: (typeof materializeHistory)[number] | null,
-    ) => (typeof materializeHistory)[number],
+    updater: (previous: MaterializeHistoryEntry | null) => MaterializeHistoryEntry,
   ) => {
     setResults((previous) => {
       const existingEntry =
         previous.materializeHistory.find((entry) => entry.id === entryId) ?? null;
-      const nextEntry = updater(existingEntry);
-      const nextHistory = [
-        nextEntry,
-        ...previous.materializeHistory.filter((entry) => entry.id !== entryId),
-      ].sort((left, right) => right.updatedAt - left.updatedAt);
-
-      return {
-        ...previous,
-        resultTab: "materialize",
-        selectedMaterializeEntryId: entryId,
-        materializeHistory: nextHistory,
-      };
+      return assetResultsReducer(previous, {
+        type: "materialize_entry_upserted",
+        entry: updater(existingEntry),
+      });
     });
   };
 
   const applyTerminalSchedulerRun = useCallback(
     (terminal: TerminalSchedulerRun) => {
-      setResults((previous) => {
-        let matched = false;
-        const materializeHistory = previous.materializeHistory.map((entry) => {
-          if (entry.runId !== terminal.runId) return entry;
-          matched = true;
-          return {
-            ...entry,
-            ...(terminal.output === undefined ? {} : { output: terminal.output }),
-            status: terminal.status,
-            error: terminal.error,
-            loading: false,
-            updatedAt: Date.now(),
-          };
-        });
-        return matched ? { ...previous, materializeHistory } : previous;
-      });
+      setResults((previous) =>
+        assetResultsReducer(previous, {
+          type: "terminal_run_applied",
+          terminal,
+          observedAt: Date.now(),
+        }),
+      );
     },
     [setResults],
   );
@@ -349,52 +264,13 @@ export function useAssetResults() {
       return;
     }
 
-    setResults((previous) => {
-      let matched = false;
-      const nextHistory = previous.materializeHistory.map((entry) => {
-        if (schedulerRunEvent.type === "run.log") {
-          if (entry.runId !== schedulerRunEvent.run.run_id) {
-            return entry;
-          }
-          if (entry.status !== null && !entry.loading) return entry;
-          matched = true;
-          const line = schedulerRunEvent.run.log.line;
-          return {
-            ...entry,
-            // Scheduler log events are raw stream chunks and already contain
-            // their own newlines. Adding another separator here made the Build
-            // output double-spaced while the Runs view correctly joins chunks.
-            output: entry.output + line,
-            loading: true,
-            updatedAt: Date.now(),
-          };
-        }
-
-        if (schedulerRunEvent.type === "run.step") {
-          return entry;
-        }
-
-        if (entry.runId !== schedulerRunEvent.run.id) {
-          return entry;
-        }
-        if (entry.status !== null && !entry.loading) return entry;
-        matched = true;
-        return {
-          ...entry,
-          loading: true,
-          updatedAt: Date.now(),
-        };
-      });
-
-      if (!matched) {
-        return previous;
-      }
-
-      return {
-        ...previous,
-        materializeHistory: nextHistory,
-      };
-    });
+    setResults((previous) =>
+      assetResultsReducer(previous, {
+        type: "scheduler_run_observed",
+        event: schedulerRunEvent,
+        observedAt: Date.now(),
+      }),
+    );
   });
 
   const runInspectForAsset = useCallback(
@@ -969,12 +845,10 @@ export function useAssetResults() {
     const entryId = createMaterializeHistoryId();
     const now = Date.now();
 
-    setResults((previous) => ({
-      ...previous,
-      resultTab: "materialize",
-      selectedMaterializeEntryId: entryId,
-      materializeHistory: [
-        {
+    setResults((previous) =>
+      assetResultsReducer(previous, {
+        type: "materialize_entry_prepended",
+        entry: createMaterializeEntry({
           id: entryId,
           kind: "batch",
           label: "Tutorial materialize",
@@ -987,29 +861,18 @@ export function useAssetResults() {
           error: errorMessage,
           loading: false,
           createdAt: now,
-          updatedAt: now,
-        },
-        ...previous.materializeHistory,
-      ],
-    }));
+        }),
+      }),
+    );
   };
 
   const clearResultsAfterDelete = () => {
-    setResults((previous) => {
-      const remainingHistory = previous.materializeHistory.filter(
-        (entry) => entry.assetId !== selectedAssetId,
-      );
-
-      return {
-        ...previous,
-        materializeHistory: remainingHistory,
-        selectedMaterializeEntryId: remainingHistory.some(
-          (entry) => entry.id === previous.selectedMaterializeEntryId,
-        )
-          ? previous.selectedMaterializeEntryId
-          : (remainingHistory[0]?.id ?? null),
-      };
-    });
+    setResults((previous) =>
+      assetResultsReducer(previous, {
+        type: "asset_results_removed",
+        assetId: selectedAssetId,
+      }),
+    );
   };
 
   return {

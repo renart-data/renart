@@ -811,7 +811,7 @@ These workstreams landed as separate reviewable commits.
 
 ### Phase C — headless application controllers
 
-Two feature-adjacent slices are complete:
+Three feature-adjacent slices are complete:
 
 - pipeline settings use a unit-tested reducer/controller for independent config
   and Python dependency state, validation, sequential persistence, and
@@ -820,13 +820,17 @@ Two feature-adjacent slices are complete:
 - pipeline run/deployment review shares a pure reducer/model for request
   construction, plan loading and refresh, selector and destructive-confirmation
   gates, and admission errors, while deployment history and schedule promotion
-  stay separate presenter-owned resources.
+  stay separate presenter-owned resources;
+- Build inspect/materialize orchestration retains its existing Jotai container
+  and SSE/API hook, while a pure timestamp-injected reducer now owns result-tab,
+  history, streamed-log, terminal-run, and deletion transitions with focused
+  unit coverage.
 
 Continue with the next feature or bug touching each remaining surface:
 
 1. notebook document/mutation/run controller plus unit tests;
 2. notebook source-import controller;
-3. build selection/run-output controller;
+3. build selection/layout controller.
 
 Keep rendered components and route behavior stable. This is an extraction, not
 a redesign.

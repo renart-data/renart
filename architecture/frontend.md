@@ -588,7 +588,12 @@ than hand-rolled `div` shells.
   connection expressions deliberately remain runtime-only.
 - [use-asset-results.ts](../web/hooks/use-asset-results.ts): inspect and materialize
   flows, including API-asset full refresh, scheduler-run links, and terminal
-  event/trigger-response correlation for very fast runs.
+  event/trigger-response correlation for very fast runs. Transport and async
+  orchestration stay in the hook; the timestamp-injected reducer in
+  [asset-results-model.ts](../web/lib/asset-results-model.ts) owns result-tab,
+  history selection/upsert/removal, streamed-log, and terminal reconciliation
+  transitions. Those transitions are unit-tested without mounting the Build
+  page or opening an SSE connection.
 - [use-app-asset-materialization-status.ts](../web/hooks/use-app-asset-materialization-status.ts):
   freshness / materialization enrichment with a post-terminal event guard.
 - [use-pipeline-staleness.ts](../web/hooks/use-pipeline-staleness.ts): per-pipeline
