@@ -407,7 +407,7 @@ The clearest examples are:
 | Surface | Lines | Local state calls | Effect calls |
 | --- | ---: | ---: | ---: |
 | `notebook-page.tsx` | 4,451 | 67 | 28 |
-| `build-page.tsx` | 3,446 | 34 | 11 |
+| `build-page.tsx` | 3,473 | 30 | 10 |
 | `pipeline-plan-sheet.tsx` | 2,235 | 16 | 5 |
 
 The issue is not the raw count. `notebook-page.tsx`, for example, coordinates
@@ -811,7 +811,7 @@ These workstreams landed as separate reviewable commits.
 
 ### Phase C — headless application controllers
 
-Three feature-adjacent slices are complete:
+Four feature-adjacent slices are complete:
 
 - pipeline settings use a unit-tested reducer/controller for independent config
   and Python dependency state, validation, sequential persistence, and
@@ -824,13 +824,14 @@ Three feature-adjacent slices are complete:
 - Build inspect/materialize orchestration retains its existing Jotai container
   and SSE/API hook, while a pure timestamp-injected reducer now owns result-tab,
   history, streamed-log, terminal-run, and deletion transitions with focused
-  unit coverage.
+  unit coverage;
+- Build route/local selection reconciliation and mobile/desktop panel state now
+  live in a focused reducer hook; routing and presentation stay in the page.
 
 Continue with the next feature or bug touching each remaining surface:
 
 1. notebook document/mutation/run controller plus unit tests;
-2. notebook source-import controller;
-3. build selection/layout controller.
+2. notebook source-import controller.
 
 Keep rendered components and route behavior stable. This is an extraction, not
 a redesign.

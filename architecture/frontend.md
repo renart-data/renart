@@ -594,6 +594,11 @@ than hand-rolled `div` shells.
   history selection/upsert/removal, streamed-log, and terminal reconciliation
   transitions. Those transitions are unit-tested without mounting the Build
   page or opening an SSE connection.
+- [use-build-selection-layout.ts](../web/hooks/use-build-selection-layout.ts):
+  route/local asset-selection reconciliation plus mobile explorer/inspector,
+  desktop side-panel, and result-panel visibility. Its reducer keeps those
+  independent layout modes explicit and unit-testable while navigation remains
+  owned by the Build route presenter.
 - [use-app-asset-materialization-status.ts](../web/hooks/use-app-asset-materialization-status.ts):
   freshness / materialization enrichment with a post-terminal event guard.
 - [use-pipeline-staleness.ts](../web/hooks/use-pipeline-staleness.ts): per-pipeline

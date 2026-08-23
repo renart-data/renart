@@ -144,6 +144,7 @@ import { cn } from "@/lib/utils";
 import { deploymentLabel } from "@/lib/deployment-label";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import { resolveScopedMaterializingAssetIds, useAssetResults } from "@/hooks/use-asset-results";
+import { useBuildSelectionLayout } from "@/hooks/use-build-selection-layout";
 import { useSelectedEnvironmentPolicy } from "@/hooks/use-environment-policy";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { usePipelineDeploy, type PipelineDeployState } from "@/hooks/use-pipeline-deploy";
@@ -802,10 +803,22 @@ export function AppBuildPage({
   const [destructiveMaterializationConfirmation, setDestructiveMaterializationConfirmation] =
     useState("");
   const firstAssetId = displayedPipelineAssets[0]?.id ?? "";
-  const [visualSelectedAssetId, setVisualSelectedAssetId] = useState(
-    selectedAssetId ?? firstAssetId,
-  );
-  const effectiveSelectedAssetId = visualSelectedAssetId ?? selectedAssetId ?? firstAssetId;
+  const {
+    effectiveSelectedAssetId,
+    explorerOpen,
+    inspectorOpen,
+    explorerCollapsed,
+    inspectorCollapsed,
+    resultsCollapsed,
+    pickAsset,
+    setVisualSelectedAssetId,
+    setExplorerOpen,
+    setInspectorOpen,
+    setInspectorCollapsed,
+    toggleExplorerCollapsed,
+    toggleInspectorCollapsed,
+    setResultsCollapsed,
+  } = useBuildSelectionLayout({ routedAssetId: selectedAssetId, firstAssetId });
   const selectedAsset =
     displayedPipelineAssets.find((asset) => asset.id === effectiveSelectedAssetId) ??
     displayedPipelineAssets[0];
@@ -848,13 +861,9 @@ export function AppBuildPage({
   const visibleAssetRenderResult = assetRenderMatchesSelection ? assetRenderResult : null;
   const visibleAssetRenderLoading = assetRenderMatchesSelection && assetRenderLoading;
   const visibleAssetRenderError = assetRenderMatchesSelection ? assetRenderError : null;
-  const [explorerOpen, setExplorerOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
   // Large-screen collapse for the side columns; small screens keep using the
   // Sheets above. Collapsed columns are dropped from the grid entirely and
   // reopened from the top-bar toggles.
-  const [explorerCollapsed, setExplorerCollapsed] = useState(false);
-  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
   const [focusedQualityCheck, setFocusedQualityCheck] = useState<
     (QualityCheckFocus & { assetId: string }) | null
   >(null);
@@ -901,7 +910,6 @@ export function AppBuildPage({
     useState<PipelinePlanSelectionRequest | null>(null);
   const [deploymentPlanOpen, setDeploymentPlanOpen] = useState(false);
   const resultsPanelRef = useRef<PanelImperativeHandle | null>(null);
-  const [resultsCollapsed, setResultsCollapsed] = useState(false);
   const toggleResultsPanel = () => {
     const panel = resultsPanelRef.current;
     if (!panel) {
@@ -913,10 +921,6 @@ export function AppBuildPage({
       panel.collapse();
     }
   };
-
-  useEffect(() => {
-    setVisualSelectedAssetId(selectedAssetId ?? firstAssetId);
-  }, [firstAssetId, selectedAssetId]);
 
   useEffect(() => {
     assetRenderRequestId.current += 1;
@@ -1322,9 +1326,8 @@ export function AppBuildPage({
     }
   };
   const selectAsset = (assetId: string) => {
-    setVisualSelectedAssetId(assetId);
+    pickAsset(assetId);
     onAssetSelect?.(assetId);
-    setExplorerOpen(false);
   };
   const reviewFailedCheck = (assetId: string) => {
     const target = displayedPipelineAssets.find((asset) => asset.id === assetId);
@@ -1576,8 +1579,8 @@ export function AppBuildPage({
           onOpenInspector={() => setInspectorOpen(true)}
           explorerCollapsed={explorerCollapsed}
           inspectorCollapsed={inspectorCollapsed}
-          onToggleExplorer={() => setExplorerCollapsed((value) => !value)}
-          onToggleInspector={() => setInspectorCollapsed((value) => !value)}
+          onToggleExplorer={toggleExplorerCollapsed}
+          onToggleInspector={toggleInspectorCollapsed}
           onReviewRun={() => {
             setPipelinePlanInitialSelection(null);
             setPipelinePlanOpen(true);
