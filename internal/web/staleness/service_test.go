@@ -1,4 +1,4 @@
-package staleness
+package staleness_test
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"renart/internal/web/identity"
 	"renart/internal/web/matlog"
 	"renart/internal/web/scheduler"
+	. "renart/internal/web/staleness"
 )
 
 type fixture struct {
@@ -93,10 +94,9 @@ func TestEvaluateUsesResolvedPipelineWithoutMutatingCachedPanelState(t *testing.
 	require.Len(t, result.Assets, 1)
 	assert.Equal(t, "snapshot_source", result.Assets[0].AssetName)
 
-	f.service.mu.Lock()
-	defer f.service.mu.Unlock()
-	assert.Empty(t, f.service.selections)
-	assert.Empty(t, f.service.snapshots)
+	selections, snapshots := f.service.TestCacheSizes()
+	assert.Zero(t, selections)
+	assert.Zero(t, snapshots)
 }
 
 func TestWorkspaceFingerprintMakesConsumerStaleAfterCrossPipelineProducerEdit(t *testing.T) {
@@ -273,13 +273,13 @@ func (f *fixture) recordRunAttempt(t *testing.T, environment, status string, ass
 }
 
 func (f *fixture) enableTargetAware(targets map[string]PhysicalTarget) {
-	f.service.deps.ResolveTargets = func(
+	f.service.TestSetResolveTargets(func(
 		ctx context.Context,
 		selection Selection,
 		parsed *pipeline.Pipeline,
 	) (map[string]PhysicalTarget, error) {
 		return targets, nil
-	}
+	})
 }
 
 func (f *fixture) recordTargetRun(
@@ -457,7 +457,7 @@ func TestSensorRemainsVolatileAfterSuccessfulRun(t *testing.T) {
 	assert.Equal(t, StatusVolatile, after.Status)
 	assert.True(t, after.Volatile)
 	assert.NotNil(t, after.LastMaterializedAt)
-	assert.False(t, verifiableByName(sensor))
+	assert.False(t, VerifiableByNameForTest(sensor))
 }
 
 // State 1: you edited the asset, ran that exact edit, and it failed. Base status
@@ -1126,7 +1126,7 @@ func TestUnavailableVerificationKeepsRecordedCoverageFresh(t *testing.T) {
 	f := newFixture(t, sqlAsset("a", "select 1"))
 	f.recordRun(t, "dev", nil, "a")
 	verifyCalls := make(chan struct{}, 1)
-	f.service.deps.Verify = func(
+	f.service.TestSetVerify(func(
 		context.Context,
 		Selection,
 		[]string,
@@ -1135,7 +1135,7 @@ func TestUnavailableVerificationKeepsRecordedCoverageFresh(t *testing.T) {
 		// An omitted asset is unknown, not confirmed absent. This is how a
 		// locked local vault or temporarily unavailable warehouse is reported.
 		return map[string]bool{}, nil
-	}
+	})
 
 	assert.Equal(t, StatusFresh, f.statuses(t, "dev", nil, nil)["a"].Status)
 	select {
@@ -1151,13 +1151,13 @@ func TestSuccessfulRunClearsRememberedMissingVerification(t *testing.T) {
 	f := newFixture(t, sqlAsset("a", "select 1"))
 	f.recordRun(t, "dev", nil, "a")
 	present := false
-	f.service.deps.Verify = func(
+	f.service.TestSetVerify(func(
 		context.Context,
 		Selection,
 		[]string,
 	) (map[string]bool, error) {
 		return map[string]bool{"a": present}, nil
-	}
+	})
 
 	assert.Equal(t, StatusFresh, f.statuses(t, "dev", nil, nil)["a"].Status)
 	deadline := time.After(5 * time.Second)
@@ -1280,10 +1280,10 @@ func TestVerificationThrottledPerSession(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t, sqlAsset("a", "select 1"))
 	calls := 0
-	f.service.deps.Verify = func(ctx context.Context, selection Selection, assetNames []string) (map[string]bool, error) {
+	f.service.TestSetVerify(func(ctx context.Context, selection Selection, assetNames []string) (map[string]bool, error) {
 		calls++
 		return map[string]bool{"a": true}, nil
-	}
+	})
 	f.recordRun(t, "dev", nil, "a")
 
 	f.statuses(t, "dev", nil, nil)
