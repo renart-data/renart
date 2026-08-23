@@ -90,8 +90,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  cancelNotebookRun,
-  closeNotebookSession,
   createNotebookControl,
   createNotebookCellAt,
   createNotebookMarkdown,
@@ -101,7 +99,6 @@ import {
   deleteNotebook,
   deleteNotebookCell,
   getNotebook,
-  getNotebookRuntime,
   joinCellContent,
   migrateLegacyNotebookVisualization,
   notebookCellExportURL,
@@ -112,7 +109,6 @@ import {
   type PromoteCellPlan,
   replaceNotebookParameters,
   renameNotebookCell,
-  runNotebook,
   setNotebookSettings,
   splitCellContent,
   updateNotebookCell,
@@ -140,6 +136,7 @@ import {
   useNotebookSourceImport,
   type NotebookDataSourceInput,
 } from "@/hooks/use-notebook-data-source";
+import { useNotebookRuntime } from "@/hooks/use-notebook-runtime";
 import {
   AUTHORED_CONTROL_TYPE_LABELS,
   AUTHORED_CONTROL_TYPES,
@@ -402,17 +399,6 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     };
   }, [mutated, notebookId, stateNotebook]);
 
-  // Staleness, results, the running set, and which stale cells will auto-update
-  // are all owned by the server now; the client renders what the runtime SSE
-  // stream (and the initial snapshot) report. See
-  // architecture/notebooks.md.
-  const [results, setResults] = useState<Record<string, NotebookCellRunResult>>({});
-  const [staleCells, setStaleCells] = useState<Set<string>>(new Set());
-  const [autoPending, setAutoPending] = useState<Set<string>>(new Set());
-  const [runningCells, setRunningCells] = useState<Set<string>>(new Set());
-  const [runBusy, setRunBusy] = useState(false);
-  const [stopping, setStopping] = useState(false);
-  const busy = runBusy || stopping;
   const [actionError, setActionError] = useState("");
   const [notebookScrolled, setNotebookScrolled] = useState(false);
   const [pendingBlock, setPendingBlock] = useState<{
@@ -600,44 +586,6 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     return map;
   }, [notebook?.cells]);
 
-  // name → downstream cell ids, for client-side stale propagation.
-  // Merge run results into the local map for immediate feedback after a manual
-  // run. Staleness is reconciled by the runtime SSE stream, not here.
-  const applyResults = useCallback((runResults: NotebookCellRunResult[]) => {
-    setResults((current) => {
-      const next = { ...current };
-      for (const result of runResults) {
-        next[result.cell_id] = result;
-      }
-      return next;
-    });
-  }, []);
-
-  // Apply a runtime snapshot/event from the server: the authoritative stale,
-  // auto-pending, and running sets, plus any result deltas.
-  const applyRuntime = useCallback(
-    (runtime: {
-      stale: string[];
-      auto_pending: string[];
-      running?: string[];
-      results?: Record<string, NotebookCellRunResult>;
-      parameter_values?: Record<string, unknown>;
-    }) => {
-      setStaleCells(new Set(runtime.stale));
-      setAutoPending(new Set(runtime.auto_pending));
-      if (runtime.running) {
-        setRunningCells(new Set(runtime.running));
-      }
-      if (runtime.results && Object.keys(runtime.results).length > 0) {
-        setResults((current) => ({ ...current, ...runtime.results }));
-      }
-      if (runtime.parameter_values) {
-        setParameterValues(runtime.parameter_values);
-      }
-    },
-    [],
-  );
-
   // In-flight cell saves, keyed by cell id. A run must wait for these to land
   // on disk first: otherwise the backend reloads the cell before the save's
   // write completes and runs stale SQL (the "run twice for @viz" bug).
@@ -740,91 +688,34 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     }
   }, []);
 
-  // The in-flight request is aborted immediately when Stop is pressed, while
-  // the explicit cancellation endpoint provides the durable server-side
-  // barrier that waits for DuckDB to release the notebook session.
-  const runAbortRef = useRef<AbortController | null>(null);
-  const runRequest = useCallback(
-    async (
-      input: { all?: boolean; from?: string; cells?: string[]; refresh_imports?: boolean },
-      targetIds: string[],
-    ) => {
-      const controller = new AbortController();
-      runAbortRef.current = controller;
-      setRunBusy(true);
-      setActionError("");
-      setRunningCells(new Set(targetIds));
-      try {
-        // Make sure any unsaved cell edits have landed before the backend
-        // reloads the notebook, so the run sees the latest SQL and directives.
-        await flushPendingSaves();
-        const response = await runNotebook(
-          notebookId,
-          {
-            ...input,
-            environment: selectedEnvironment,
-            // Render Jinja against the same execution window the editor previews.
-            start_date: selectedExecutionTimeWindow?.start,
-            end_date: selectedExecutionTimeWindow?.end,
-          },
-          controller.signal,
-        );
-        applyResults(response.results);
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          setActionError(String(error));
-        }
-        // On abort the server parks the cells (via the cancel call below); the
-        // runtime SSE stream reconciles staleness, so nothing to do here.
-      } finally {
-        if (runAbortRef.current === controller) {
-          runAbortRef.current = null;
-        }
-        setRunBusy(false);
-        setRunningCells(new Set());
-      }
-    },
-    [applyResults, flushPendingSaves, notebookId, selectedEnvironment, selectedExecutionTimeWindow],
-  );
-
-  // Stop both manual and automatic work. Keep the notebook busy until the
-  // server confirms every run has unwound and released the session lock.
-  const cancelRun = useCallback(() => {
-    if (stopping) return;
-    setStopping(true);
-    runAbortRef.current?.abort();
-    void cancelNotebookRun(notebookId)
-      .catch((error) => setActionError(String(error)))
-      .finally(() => setStopping(false));
-  }, [notebookId, stopping]);
-
   const allCellIds = useMemo(
     () => (notebook?.cells ?? []).map((cell) => cell.cell_id ?? "").filter(Boolean),
     [notebook?.cells],
   );
-
-  // Seed from the server's current runtime. Live updates arrive through the
-  // app shell's single workspace SSE connection.
-  useEffect(() => {
-    let cancelled = false;
-    const runtimeEventAtRequest = notebookRuntimeEventRef.current;
-    getNotebookRuntime(notebookId)
-      .then((snapshot) => {
-        if (!cancelled && notebookRuntimeEventRef.current === runtimeEventAtRequest) {
-          applyRuntime(snapshot);
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [notebookId, applyRuntime]);
-
-  useEffect(() => {
-    if (notebookRuntimeEvent?.notebook_id === notebookId) {
-      applyRuntime(notebookRuntimeEvent);
-    }
-  }, [applyRuntime, notebookId, notebookRuntimeEvent]);
+  // The server owns stale/running truth. The controller combines its initial
+  // snapshot and SSE deltas with only the request-local optimistic state.
+  const {
+    results,
+    staleCells,
+    autoPending,
+    runningCells,
+    manualStaleCells,
+    staleCount,
+    busy,
+    stopping,
+    run: runRequest,
+    cancel: cancelRun,
+    resetSession,
+  } = useNotebookRuntime({
+    notebookId,
+    runtimeEvent: notebookRuntimeEvent,
+    cellIds: allCellIds,
+    environment: selectedEnvironment,
+    executionWindow: selectedExecutionTimeWindow,
+    flushPendingSaves,
+    onParameterValues: setParameterValues,
+    onError: setActionError,
+  });
 
   // Each cell's last successful run columns, so a cell that reads from a sibling
   // gets that sibling's real output columns for intellisense and parse-context.
@@ -1318,11 +1209,6 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     );
   }
 
-  // Only cells the user must act on: those auto-recompute won't refresh on its
-  // own. When auto-recompute is off, the server reports no auto-pending cells,
-  // so this is every stale cell.
-  const manualStaleCells = [...staleCells].filter((id) => !autoPending.has(id));
-  const staleCount = manualStaleCells.length;
   const placedControlIDs = new Set(
     notebook.blocks.map((block) => block.control).filter((id): id is string => Boolean(id)),
   );
@@ -1521,16 +1407,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                       <RotateCw />
                       Refresh sources and run all
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        void closeNotebookSession(notebookId)
-                          .then(() => {
-                            setResults({});
-                            setStaleCells(new Set(allCellIds));
-                          })
-                          .catch((error) => setActionError(String(error)));
-                      }}
-                    >
+                    <DropdownMenuItem onSelect={() => void resetSession()}>
                       <Database />
                       Reset session (delete local DB)
                     </DropdownMenuItem>

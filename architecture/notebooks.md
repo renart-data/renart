@@ -529,6 +529,14 @@ until SSE reaches the same revision. If a differing workspace snapshot races
 that response, the frontend resolves it once against the authoritative notebook
 endpoint instead of briefly dropping newly authored blocks.
 
+The frontend runtime controller models the initial snapshot, SSE deltas, manual
+run, cancellation, and session reset as notebook-scoped events. Server-reported
+running cells and request-local optimistic targets are separate sets, so an HTTP
+request finishing cannot erase newer SSE state. Switching notebooks resets the
+local projection and late results from the previous notebook are ignored. A run
+still crosses the pending-save barrier before calling the server; the reducer is
+only a view projection, not runtime authority.
+
 Preview tables stay bounded, block editors grow with short content before
 using their internal scroll area, and output panes retain user scroll position
 unless the user is already following the end. The shared result table switches

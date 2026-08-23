@@ -605,6 +605,12 @@ than hand-rolled `div` shells.
   helpers keep source validation and remote-import review rules testable without
   mounting the notebook page; durable changes still go through the notebook
   transaction APIs and reconcile from the server.
+- [use-notebook-runtime.ts](../web/hooks/use-notebook-runtime.ts): combines the
+  initial server runtime snapshot, notebook-runtime SSE deltas, and request-local
+  optimistic execution state. Its notebook-scoped reducer owns stale, pending,
+  running, result, cancel, and session-reset transitions; the hook waits for the
+  notebook save barrier before executing and delegates durable runtime truth to
+  the server.
 - [use-app-asset-materialization-status.ts](../web/hooks/use-app-asset-materialization-status.ts):
   freshness / materialization enrichment with a post-terminal event guard.
 - [use-pipeline-staleness.ts](../web/hooks/use-pipeline-staleness.ts): per-pipeline
