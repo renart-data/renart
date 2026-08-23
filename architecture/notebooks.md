@@ -382,6 +382,15 @@ unknown schemas, relation-only edges, nested predicate scopes, and ambiguous
 short relation names deliberately remain unknown rather than becoming guessed
 lineage.
 
+Wide direct projections reuse one schema-aware Golyglot `AnalyzeQuery` result
+for output discovery and every positively resolved table-column mapping;
+single-source wildcard identity mappings likewise bypass per-output lineage
+calls. CTE, derived-table, set-operation, and unresolved projections retain the
+full recursive schema-aware/schema-free lineage fallback. The benchmark in
+`artifact_column_lineage_benchmark_test.go` covers 10/50/200 direct columns plus
+a CTE and wildcard case so future semantic changes keep both conservative
+correctness and scaling visible.
+
 The `/dashboards` and `/reports` routes provide list/create flows plus a shared
 canvas-first builder. List headers contain the compact dashboard/report switch;
 detail routes use one responsive document-authoring command bar for navigation,

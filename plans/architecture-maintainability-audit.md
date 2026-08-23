@@ -328,6 +328,24 @@ removed merely because Renart's own SQL path is native.
 
 ### 5.4 Column-impact lineage repeats semantic work
 
+#### Implemented result
+
+Artifact column lineage now computes schema-aware compact analysis once and
+reuses its output/projection facts for every direct physical-table projection.
+It also treats a positively resolved single-source wildcard as a completed
+identity mapping instead of asking Golyglot for the same star lineage once per
+declared output. Complex CTE, derived, set-operation, ambiguous, and unresolved
+cases retain the existing recursive lineage fallback.
+
+`BenchmarkArtifactColumnLineageWideProjection` pins 10-, 50-, and 200-column
+direct queries plus 50-column CTE and 200-column wildcard cases. On the audit
+machine, the 200-column direct case moved from roughly 118–139 ms, 53.4 MB, and
+224k allocations to roughly 3.6–4.6 ms, 1.1 MB, and 6.4k allocations. The
+200-column wildcard case is roughly 3.0 ms. The remaining 50-column recursive
+CTE case is roughly 26.8 ms and is the evidence for a future reusable analyzed-
+query/batch-lineage API in a released Golyglot version; Renart does not add a
+workspace-lifetime cache or duplicate Golyglot's recursive semantics locally.
+
 #### Evidence
 
 [`internal/web/service/artifact_column_lineage.go`](../internal/web/service/artifact_column_lineage.go)

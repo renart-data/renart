@@ -218,21 +218,49 @@ func sqlArtifactColumnUsages(
 		return nil
 	}
 
-	output, err := golyglot.OutputColumnsWithSchema(definition.sql, schema, definition.dialect)
-	if err != nil {
-		return nil
-	}
-	knownOutputs := make(map[string]bool, len(output.Columns))
-	for _, column := range output.Columns {
-		if column.Name != nil && strings.TrimSpace(*column.Name) != "" {
-			knownOutputs[strings.ToLower(strings.TrimSpace(*column.Name))] = true
+	analysis, analysisErr := golyglot.AnalyzeQuery(definition.sql, golyglot.AnalyzeQueryOptions{
+		Dialect: definition.dialect,
+		Schema:  &schema,
+	})
+	knownOutputs := make(map[string]bool)
+	if analysisErr == nil {
+		knownOutputs = make(map[string]bool, len(analysis.OutputColumns))
+		for _, column := range analysis.OutputColumns {
+			if name := strings.TrimSpace(column.Name); name != "" {
+				knownOutputs[strings.ToLower(name)] = true
+			}
+		}
+	} else {
+		// INSERT ... SELECT remains accepted by Golyglot's lineage API even
+		// though compact query analysis intentionally accepts SELECT only.
+		output, err := golyglot.OutputColumnsWithSchema(definition.sql, schema, definition.dialect)
+		if err != nil {
+			return nil
+		}
+		knownOutputs = make(map[string]bool, len(output.Columns))
+		for _, column := range output.Columns {
+			if column.Name != nil && strings.TrimSpace(*column.Name) != "" {
+				knownOutputs[strings.ToLower(strings.TrimSpace(*column.Name))] = true
+			}
 		}
 	}
 	result := make(map[string][]model.ArtifactColumnUsage)
-	appendSingleSourceStarUsages(result, definition, schema, consumerColumns, sources, knownOutputs)
+	var projectionFacts map[string]golyglot.ProjectionFact
+	var resolvedStarOutputs map[string]bool
+	if analysisErr == nil {
+		resolvedStarOutputs = appendSingleSourceStarUsages(result, consumerColumns, sources, knownOutputs, analysis)
+		projectionFacts = directArtifactProjectionFacts(analysis)
+	}
 	for _, outputColumn := range consumerColumns {
 		consumerName := strings.TrimSpace(outputColumn.Name)
 		if consumerName == "" || !knownOutputs[strings.ToLower(consumerName)] {
+			continue
+		}
+		if resolvedStarOutputs[strings.ToLower(consumerName)] {
+			continue
+		}
+		if projection, ok := projectionFacts[strings.ToLower(consumerName)]; ok &&
+			appendResolvedProjectionUsages(result, projection, consumerName, sources) {
 			continue
 		}
 		lineage, lineageErr := golyglot.LineageWithSchema(consumerName, definition.sql, schema, definition.dialect)
@@ -253,6 +281,67 @@ func sqlArtifactColumnUsages(
 		result[key] = mergeArtifactColumnUsages(nil, columns)
 	}
 	return result
+}
+
+// directArtifactProjectionFacts identifies concrete, uniquely named output
+// projections whose already-computed compact analysis can be reused. Complex
+// CTE/derived/set lineage stays on Golyglot's full recursive lineage path.
+func directArtifactProjectionFacts(analysis golyglot.QueryAnalysis) map[string]golyglot.ProjectionFact {
+	if analysis.Shape != "select" && analysis.Shape != "select_with_cte" {
+		return nil
+	}
+	result := make(map[string]golyglot.ProjectionFact, len(analysis.Projections))
+	ambiguous := make(map[string]bool)
+	for _, projection := range analysis.Projections {
+		if projection.Name == nil || projection.IsStar {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(*projection.Name))
+		if name == "" || ambiguous[name] {
+			continue
+		}
+		if _, exists := result[name]; exists {
+			delete(result, name)
+			ambiguous[name] = true
+			continue
+		}
+		result[name] = projection
+	}
+	return result
+}
+
+func appendResolvedProjectionUsages(
+	result map[string][]model.ArtifactColumnUsage,
+	projection golyglot.ProjectionFact,
+	consumerName string,
+	sources []artifactLineageSource,
+) bool {
+	type resolvedUsage struct {
+		source artifactLineageSource
+		column string
+	}
+	resolved := make([]resolvedUsage, 0, len(projection.Upstream))
+	for _, upstream := range projection.Upstream {
+		if upstream.SourceKind != "table" || upstream.SourceName == nil || strings.TrimSpace(*upstream.SourceName) == "" {
+			return false
+		}
+		source, ok := resolveArtifactLineageSource(*upstream.SourceName, sources)
+		if !ok {
+			return false
+		}
+		producerColumn, ok := artifactColumnName(source.columns, upstream.Column)
+		if !ok {
+			return false
+		}
+		resolved = append(resolved, resolvedUsage{source: source, column: producerColumn})
+	}
+	for _, usage := range resolved {
+		key := artifactRefKey(usage.source.ref)
+		result[key] = append(result[key], model.ArtifactColumnUsage{
+			Name: usage.column, ConsumerColumn: consumerName,
+		})
+	}
+	return true
 }
 
 type artifactDirectTableBinding struct {
@@ -401,31 +490,29 @@ func artifactColumnAlreadyMapped(usages []model.ArtifactColumnUsage, column stri
 
 func appendSingleSourceStarUsages(
 	result map[string][]model.ArtifactColumnUsage,
-	definition artifactSQLDefinition,
-	schema golyglot.ValidationSchema,
 	consumerColumns []model.Column,
 	sources []artifactLineageSource,
 	knownOutputs map[string]bool,
-) {
-	analysis, err := golyglot.AnalyzeQuery(definition.sql, golyglot.AnalyzeQueryOptions{
-		Dialect: definition.dialect,
-		Schema:  &schema,
-	})
-	if err != nil || analysis.Shape != "select" || len(analysis.StarProjections) == 0 ||
+	analysis golyglot.QueryAnalysis,
+) map[string]bool {
+	if analysis.Shape != "select" || len(analysis.StarProjections) == 0 ||
 		len(analysis.BaseTables) != 1 {
-		return
+		return nil
 	}
 	source, resolved := resolveArtifactLineageSource(analysis.BaseTables[0].Name, sources)
 	if !resolved {
-		return
+		return nil
 	}
+	resolvedOutputs := make(map[string]bool)
 	for _, usage := range identityArtifactColumnUsages(source.columns, consumerColumns) {
 		if !knownOutputs[strings.ToLower(usage.ConsumerColumn)] {
 			continue
 		}
 		key := artifactRefKey(source.ref)
 		result[key] = append(result[key], usage)
+		resolvedOutputs[strings.ToLower(usage.ConsumerColumn)] = true
 	}
+	return resolvedOutputs
 }
 
 func appendResolvedLineageUsages(
