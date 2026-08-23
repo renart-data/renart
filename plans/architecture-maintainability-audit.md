@@ -591,30 +591,43 @@ The current synchronization architecture is correct.
 
 ### 5.9 JSON request handling has inconsistent safety semantics
 
+#### Implemented result
+
+All ordinary JSON handlers now use one generic request boundary. It applies a
+4 MiB default limit, permits endpoint-specific limits, accepts exactly one
+non-null JSON object, rejects unknown fields and trailing values, and retains
+the existing stable `invalid_request_body` response code. Presentation,
+rendering, planning, notebook-agent, and vault endpoints preserve their tighter
+limits. Multipart seed uploads and the optional scheduler-trigger body remain
+explicit separate paths; the optional body is now bounded as well.
+
+Table-driven tests cover a valid object, unknown fields, `null`, two objects,
+malformed JSON, and an oversized request. The focused HTTP API package passes
+with Bruin's compatibility link shim.
+
 #### Evidence
 
 [`internal/web/httpapi/request_json.go`](../internal/web/httpapi/request_json.go)
-provides a good strict decoder: one non-null object, unknown-field rejection,
-and trailing-JSON rejection. Several handlers also use `http.MaxBytesReader`.
-Other mutation handlers still construct `json.NewDecoder(r.Body)` directly and
-therefore differ in unknown-field, trailing-content, and size-limit behavior.
+owns the ordinary JSON contract. A repository scan leaves only its internal
+decoder and the intentionally optional scheduler-trigger decoder as direct
+`json.Decoder` users in `internal/web/httpapi`; multipart seed parsing remains
+separately size-limited.
 
 Renart is local-first, so this should not be framed as an internet-service
 emergency. It still matters for accidental huge editor payloads and for users
 who explicitly run with remote access enabled.
 
-#### Recommendation
+#### Contract
 
-Create one handler-level helper:
+The implemented handler-level helper is:
 
 ```go
 func decodeJSONObject[T any](w http.ResponseWriter, r *http.Request, max int64) (T, error)
 ```
 
-It should apply `MaxBytesReader`, strict single-object decoding, stable API error
+It applies `MaxBytesReader`, strict single-object decoding, stable API error
 codes, and a conservative default. Editor/definition/import endpoints can opt
-into documented larger limits. Migrate mutation endpoints in groups and test
-unknown fields, `null`, two objects, malformed JSON, and an oversized body.
+into documented larger limits.
 
 Streaming uploads and intentionally polymorphic payloads should use separate,
 explicit helpers rather than weakening the default.

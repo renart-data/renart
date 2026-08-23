@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -74,8 +73,8 @@ func (h *PipelineHandlers) HandleTypeCheckPipeline(w http.ResponseWriter, r *htt
 }
 
 func (h *PipelineHandlers) HandlePreviewExternalRelationImport(w http.ResponseWriter, r *http.Request) {
-	var req service.ExternalRelationImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[service.ExternalRelationImportRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -91,8 +90,8 @@ func (h *PipelineHandlers) HandlePreviewExternalRelationImport(w http.ResponseWr
 }
 
 func (h *PipelineHandlers) HandleImportExternalRelation(w http.ResponseWriter, r *http.Request) {
-	var req service.ExternalRelationImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[service.ExternalRelationImportRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -111,8 +110,8 @@ func (h *PipelineHandlers) HandleImportExternalRelation(w http.ResponseWriter, r
 }
 
 func (h *PipelineHandlers) HandleCreatePipeline(w http.ResponseWriter, r *http.Request) {
-	var req CreatePipelineRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[CreatePipelineRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -154,8 +153,8 @@ func (h *PipelineHandlers) HandleCreatePipeline(w http.ResponseWriter, r *http.R
 }
 
 func (h *PipelineHandlers) HandleUpdatePipeline(w http.ResponseWriter, r *http.Request) {
-	var req UpdatePipelineRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[UpdatePipelineRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -217,8 +216,8 @@ func (h *PipelineHandlers) HandleGetPipelineConfig(w http.ResponseWriter, r *htt
 
 func (h *PipelineHandlers) HandleUpdatePipelineConfig(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	var req webmodel.UpdatePipelineConfigRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[webmodel.UpdatePipelineConfigRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -245,8 +244,8 @@ func (h *PipelineHandlers) HandleGetPipelinePythonDependencies(w http.ResponseWr
 }
 
 func (h *PipelineHandlers) HandleUpdatePipelinePythonDependencies(w http.ResponseWriter, r *http.Request) {
-	var req webmodel.UpdatePipelinePythonDependenciesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[webmodel.UpdatePipelinePythonDependenciesRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

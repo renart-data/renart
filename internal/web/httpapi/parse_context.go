@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -31,8 +30,8 @@ func RegisterParseContextRoutes(router chi.Router, handlers *ParseContextAPI) {
 }
 
 func (h *ParseContextAPI) HandleParseContext(w http.ResponseWriter, r *http.Request) {
-	var req ParseContextRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[ParseContextRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

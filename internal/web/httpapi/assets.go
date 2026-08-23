@@ -141,15 +141,12 @@ func (h *AssetsAPI) HandleCreateAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 func decodeCreateAssetRequest(w http.ResponseWriter, r *http.Request) (CreateAssetRequest, error) {
-	var req CreateAssetRequest
 	mediaType, _, mediaTypeErr := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if mediaTypeErr != nil || mediaType != "multipart/form-data" {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			return CreateAssetRequest{}, err
-		}
-		return req, nil
+		return decodeJSONObject[CreateAssetRequest](w, r, 0)
 	}
 
+	var req CreateAssetRequest
 	r.Body = http.MaxBytesReader(w, r.Body, maxSeedUploadBytes+(1<<20))
 	if err := r.ParseMultipartForm(16 << 20); err != nil {
 		return CreateAssetRequest{}, err
@@ -186,8 +183,8 @@ func decodeCreateAssetRequest(w http.ResponseWriter, r *http.Request) (CreateAss
 }
 
 func (h *AssetsAPI) HandleUpdateAsset(w http.ResponseWriter, r *http.Request) {
-	var req UpdateAssetRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[UpdateAssetRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -258,8 +255,8 @@ func decodeSeedFileUpload(w http.ResponseWriter, r *http.Request) (string, []byt
 }
 
 func (h *AssetsAPI) HandleApplyAssetTransaction(w http.ResponseWriter, r *http.Request) {
-	var tx AssetTransaction
-	if err := json.NewDecoder(r.Body).Decode(&tx); err != nil {
+	tx, err := decodeJSONObject[AssetTransaction](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -281,8 +278,8 @@ func (h *AssetsAPI) HandleDeleteAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AssetsAPI) HandleFormatSQLAsset(w http.ResponseWriter, r *http.Request) {
-	var req FormatSQLAssetRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[FormatSQLAssetRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -295,8 +292,8 @@ func (h *AssetsAPI) HandleFormatSQLAsset(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AssetsAPI) HandleFormatPythonAsset(w http.ResponseWriter, r *http.Request) {
-	var req FormatPythonAssetRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[FormatPythonAssetRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -309,8 +306,8 @@ func (h *AssetsAPI) HandleFormatPythonAsset(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *AssetsAPI) HandlePythonDiagnostics(w http.ResponseWriter, r *http.Request) {
-	var req PythonDiagnosticsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[PythonDiagnosticsRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -323,8 +320,8 @@ func (h *AssetsAPI) HandlePythonDiagnostics(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *AssetsAPI) HandlePythonCompletions(w http.ResponseWriter, r *http.Request) {
-	var req PythonCompletionsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[PythonCompletionsRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -337,8 +334,8 @@ func (h *AssetsAPI) HandlePythonCompletions(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *AssetsAPI) HandlePythonHover(w http.ResponseWriter, r *http.Request) {
-	var req PythonPositionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[PythonPositionRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -351,8 +348,8 @@ func (h *AssetsAPI) HandlePythonHover(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AssetsAPI) HandlePythonSignatureHelp(w http.ResponseWriter, r *http.Request) {
-	var req PythonPositionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[PythonPositionRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -365,8 +362,8 @@ func (h *AssetsAPI) HandlePythonSignatureHelp(w http.ResponseWriter, r *http.Req
 }
 
 func (h *AssetsAPI) HandlePythonGotoDefinition(w http.ResponseWriter, r *http.Request) {
-	var req PythonPositionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[PythonPositionRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -388,8 +385,8 @@ func (h *AssetsAPI) HandlePythonDeps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AssetsAPI) HandleAddPythonDependency(w http.ResponseWriter, r *http.Request) {
-	var req AddPythonDependencyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[AddPythonDependencyRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

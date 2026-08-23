@@ -65,7 +65,7 @@ func (h *EnvSchedulesAPI) HandlePromote(w http.ResponseWriter, r *http.Request) 
 		webapi.WriteNotFound(w, "pipeline_not_found", "pipeline not found")
 		return
 	}
-	req, err := decodeStrictJSONObject[scheduler.PromoteEnvSchedulesRequest](r.Body)
+	req, err := decodeJSONObject[scheduler.PromoteEnvSchedulesRequest](w, r, 0)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
@@ -113,7 +113,7 @@ func (h *EnvSchedulesAPI) HandleUpsert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	req, err := decodeStrictJSONObject[scheduler.UpsertEnvScheduleRequest](r.Body)
+	req, err := decodeJSONObject[scheduler.UpsertEnvScheduleRequest](w, r, 0)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
@@ -137,7 +137,7 @@ func (h *EnvSchedulesAPI) HandleSetStatus(w http.ResponseWriter, r *http.Request
 	type statusRequest struct {
 		Status string `json:"status"`
 	}
-	req, err := decodeStrictJSONObject[statusRequest](r.Body)
+	req, err := decodeJSONObject[statusRequest](w, r, 0)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return

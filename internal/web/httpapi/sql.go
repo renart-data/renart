@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -45,8 +44,8 @@ func RegisterSQLRoutes(router chi.Router, handlers *SQLAPI) {
 }
 
 func (h *SQLAPI) HandleSQLColumnValues(w http.ResponseWriter, r *http.Request) {
-	var req SQLColumnValuesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[SQLColumnValuesRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -68,8 +67,8 @@ func (h *SQLAPI) HandleSQLColumnValues(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SQLAPI) HandleSQLQuery(w http.ResponseWriter, r *http.Request) {
-	var req SQLQueryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[SQLQueryRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

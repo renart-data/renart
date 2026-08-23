@@ -62,7 +62,7 @@ func (h *DeployAPI) HandleDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	request := deployRequest{}
 	if r.ContentLength != 0 {
-		decoded, decodeErr := decodeStrictJSONObject[deployRequest](r.Body)
+		decoded, decodeErr := decodeJSONObject[deployRequest](w, r, 0)
 		if decodeErr != nil {
 			webapi.WriteBadRequest(w, "invalid_request_body", decodeErr.Error())
 			return

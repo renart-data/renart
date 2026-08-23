@@ -62,7 +62,7 @@ func (h *SchedulerAPI) HandleGetPipelineSchedule(w http.ResponseWriter, r *http.
 }
 
 func (h *SchedulerAPI) HandleUpdatePipelineSchedule(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeStrictJSONObject[scheduler.UpdateScheduleRequest](r.Body)
+	req, err := decodeJSONObject[scheduler.UpdateScheduleRequest](w, r, 0)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
@@ -82,6 +82,7 @@ func (h *SchedulerAPI) HandleUpdatePipelineSchedule(w http.ResponseWriter, r *ht
 func (h *SchedulerAPI) HandleTriggerPipeline(w http.ResponseWriter, r *http.Request) {
 	var req scheduler.TriggerRequest
 	if r.Body != nil && r.Body != http.NoBody {
+		r.Body = http.MaxBytesReader(w, r.Body, defaultMaxJSONRequestBytes)
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 		var decoded *scheduler.TriggerRequest
@@ -194,7 +195,7 @@ func (h *SchedulerAPI) HandleGetRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SchedulerAPI) HandleReexecuteRun(w http.ResponseWriter, r *http.Request) {
-	if _, err := decodeStrictJSONObject[struct{}](r.Body); err != nil {
+	if _, err := decodeJSONObject[struct{}](w, r, 0); err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -225,7 +226,7 @@ func (h *SchedulerAPI) HandleReexecuteRun(w http.ResponseWriter, r *http.Request
 }
 
 func (h *SchedulerAPI) HandleCancelRun(w http.ResponseWriter, r *http.Request) {
-	if _, err := decodeStrictJSONObject[struct{}](r.Body); err != nil {
+	if _, err := decodeJSONObject[struct{}](w, r, 0); err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

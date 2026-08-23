@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"mime"
 	"net/http"
 	"os"
@@ -87,8 +86,8 @@ func (h *NotebookAPI) HandleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *NotebookAPI) HandleCreate(w http.ResponseWriter, r *http.Request) {
-	var req service.CreateNotebookRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[service.CreateNotebookRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -117,8 +116,8 @@ func (h *NotebookAPI) HandleCloseSession(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *NotebookAPI) HandleCreateCell(w http.ResponseWriter, r *http.Request) {
-	var req service.CreateCellRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[service.CreateCellRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -131,8 +130,8 @@ func (h *NotebookAPI) HandleCreateCell(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *NotebookAPI) HandleUpdateCell(w http.ResponseWriter, r *http.Request) {
-	var req service.UpdateCellRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[service.UpdateCellRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -150,8 +149,8 @@ type UpdateDependenciesRequest struct {
 }
 
 func (h *NotebookAPI) HandleUpdateDependencies(w http.ResponseWriter, r *http.Request) {
-	var req UpdateDependenciesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[UpdateDependenciesRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -169,8 +168,8 @@ type RenameCellRequest struct {
 }
 
 func (h *NotebookAPI) HandleRenameCell(w http.ResponseWriter, r *http.Request) {
-	var req RenameCellRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[RenameCellRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -197,8 +196,8 @@ type UpdateBlocksRequest struct {
 }
 
 func (h *NotebookAPI) HandleUpdateBlocks(w http.ResponseWriter, r *http.Request) {
-	var req UpdateBlocksRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[UpdateBlocksRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -211,10 +210,10 @@ func (h *NotebookAPI) HandleUpdateBlocks(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *NotebookAPI) HandleUpgradeManifest(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, err := decodeJSONObject[struct {
 		BaseRevision string `json:"base_revision,omitempty"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	}](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -227,8 +226,8 @@ func (h *NotebookAPI) HandleUpgradeManifest(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *NotebookAPI) HandlePrepareChangeSet(w http.ResponseWriter, r *http.Request) {
-	var changeSet service.NotebookChangeSet
-	if err := json.NewDecoder(r.Body).Decode(&changeSet); err != nil {
+	changeSet, err := decodeJSONObject[service.NotebookChangeSet](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -241,8 +240,8 @@ func (h *NotebookAPI) HandlePrepareChangeSet(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *NotebookAPI) HandleApplyChangeSet(w http.ResponseWriter, r *http.Request) {
-	var changeSet service.NotebookChangeSet
-	if err := json.NewDecoder(r.Body).Decode(&changeSet); err != nil {
+	changeSet, err := decodeJSONObject[service.NotebookChangeSet](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -255,8 +254,8 @@ func (h *NotebookAPI) HandleApplyChangeSet(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *NotebookAPI) HandleCheckVisualization(w http.ResponseWriter, r *http.Request) {
-	var request service.NotebookVisualizationCheckRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	request, err := decodeJSONObject[service.NotebookVisualizationCheckRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -269,8 +268,8 @@ func (h *NotebookAPI) HandleCheckVisualization(w http.ResponseWriter, r *http.Re
 }
 
 func (h *NotebookAPI) HandlePromoteCell(w http.ResponseWriter, r *http.Request) {
-	var req service.PromoteCellRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[service.PromoteCellRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -283,8 +282,8 @@ func (h *NotebookAPI) HandlePromoteCell(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *NotebookAPI) HandlePlanPromoteCell(w http.ResponseWriter, r *http.Request) {
-	var req service.PromoteCellRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[service.PromoteCellRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -324,8 +323,8 @@ func (h *NotebookAPI) HandleExportCell(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *NotebookAPI) HandleRun(w http.ResponseWriter, r *http.Request) {
-	var req service.RunNotebookRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[service.RunNotebookRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -361,12 +360,12 @@ func (h *NotebookAPI) HandleRefreshControlOptions(w http.ResponseWriter, r *http
 }
 
 func (h *NotebookAPI) HandleSettings(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, err := decodeJSONObject[struct {
 		AutoRecompute   bool           `json:"auto_recompute"`
 		Environment     string         `json:"environment,omitempty"`
 		ParameterValues map[string]any `json:"parameter_values,omitempty"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	}](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

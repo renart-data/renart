@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -73,8 +72,8 @@ func (h *SourceControlAPI) HandleDiff(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SourceControlAPI) HandleStage(w http.ResponseWriter, r *http.Request) {
-	var req sourceControlPathsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[sourceControlPathsRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -86,8 +85,8 @@ func (h *SourceControlAPI) HandleStage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SourceControlAPI) HandleUnstage(w http.ResponseWriter, r *http.Request) {
-	var req sourceControlPathsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[sourceControlPathsRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -99,8 +98,8 @@ func (h *SourceControlAPI) HandleUnstage(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *SourceControlAPI) HandleCheckout(w http.ResponseWriter, r *http.Request) {
-	var req sourceControlCheckoutRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[sourceControlCheckoutRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -112,8 +111,8 @@ func (h *SourceControlAPI) HandleCheckout(w http.ResponseWriter, r *http.Request
 }
 
 func (h *SourceControlAPI) HandleCommit(w http.ResponseWriter, r *http.Request) {
-	var req sourceControlCommitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[sourceControlCommitRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

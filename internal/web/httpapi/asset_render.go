@@ -32,8 +32,7 @@ func (h *AssetRenderAPI) HandleRenderAsset(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxAssetRenderRequestBytes)
-	req, err := decodeStrictJSONObject[service.AssetRenderRequest](r.Body)
+	req, err := decodeJSONObject[service.AssetRenderRequest](w, r, maxAssetRenderRequestBytes)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return

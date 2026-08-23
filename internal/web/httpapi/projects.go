@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -124,8 +123,8 @@ func (a *ProjectsAPI) HandleProjectTemplates(w http.ResponseWriter, _ *http.Requ
 }
 
 func (a *ProjectsAPI) HandleCreateProject(w http.ResponseWriter, r *http.Request) {
-	var req CreateProjectRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[CreateProjectRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -151,8 +150,8 @@ func (a *ProjectsAPI) HandleListProjects(w http.ResponseWriter, _ *http.Request)
 }
 
 func (a *ProjectsAPI) HandleOpenProject(w http.ResponseWriter, r *http.Request) {
-	var req OpenProjectRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[OpenProjectRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -236,8 +235,8 @@ func (a *ProjectsAPI) HandleBrowseDirs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *ProjectsAPI) HandleCreateDirectory(w http.ResponseWriter, r *http.Request) {
-	var req CreateDirectoryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[CreateDirectoryRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

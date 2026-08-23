@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -87,8 +86,8 @@ func (h *SQLLSPAPI) HandleSignatureHelp(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *SQLLSPAPI) handle(w http.ResponseWriter, r *http.Request, fn func(context.Context, service.SQLLSPRequest) (service.SQLLSPResponse, *service.APIError)) {
-	var req service.SQLLSPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[service.SQLLSPRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

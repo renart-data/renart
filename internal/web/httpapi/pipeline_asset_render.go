@@ -35,8 +35,7 @@ func (h *PipelineAssetRenderAPI) HandleRenderPipelineAsset(w http.ResponseWriter
 		webapi.WriteInternalError(w, "renderer_unavailable", "pipeline asset rendering is unavailable")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxAssetRenderRequestBytes)
-	req, err := decodeStrictJSONObject[service.PipelineAssetRenderRequest](r.Body)
+	req, err := decodeJSONObject[service.PipelineAssetRenderRequest](w, r, maxAssetRenderRequestBytes)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
@@ -59,8 +58,7 @@ func (h *PipelineAssetRenderAPI) HandleComparePipelineAssetRenders(w http.Respon
 		webapi.WriteInternalError(w, "renderer_unavailable", "pipeline asset rendering is unavailable")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxAssetRenderRequestBytes)
-	req, err := decodeStrictJSONObject[service.PipelineAssetRenderComparisonRequest](r.Body)
+	req, err := decodeJSONObject[service.PipelineAssetRenderComparisonRequest](w, r, maxAssetRenderRequestBytes)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return

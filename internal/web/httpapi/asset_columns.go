@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -66,8 +65,8 @@ func RegisterAssetColumnRoutes(router chi.Router, handlers *AssetColumnsAPI) {
 }
 
 func (h *AssetColumnsAPI) HandleSyncAssetColumns(w http.ResponseWriter, r *http.Request) {
-	var req SyncAssetColumnsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[SyncAssetColumnsRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -85,8 +84,8 @@ func (h *AssetColumnsAPI) HandleSyncAssetColumns(w http.ResponseWriter, r *http.
 }
 
 func (h *AssetColumnsAPI) HandleApplyAssetColumnSchemaResolution(w http.ResponseWriter, r *http.Request) {
-	var req ApplyAssetColumnSchemaResolutionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[ApplyAssetColumnSchemaResolutionRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -110,8 +109,8 @@ func (h *AssetColumnsAPI) HandleApplyAssetColumnSchemaResolution(w http.Response
 }
 
 func (h *AssetColumnsAPI) HandlePreviewAssetColumns(w http.ResponseWriter, r *http.Request) {
-	var req PreviewAssetColumnsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[PreviewAssetColumnsRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -156,8 +155,8 @@ func (h *AssetColumnsAPI) HandleInferAPIAsset(w http.ResponseWriter, r *http.Req
 }
 
 func (h *AssetColumnsAPI) HandleUpdateAssetColumns(w http.ResponseWriter, r *http.Request) {
-	var req UpdateAssetColumnsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[UpdateAssetColumnsRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -170,8 +169,8 @@ func (h *AssetColumnsAPI) HandleUpdateAssetColumns(w http.ResponseWriter, r *htt
 }
 
 func (h *AssetColumnsAPI) HandleReconcileAssetColumns(w http.ResponseWriter, r *http.Request) {
-	var req ReconcileAssetColumnsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[ReconcileAssetColumnsRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

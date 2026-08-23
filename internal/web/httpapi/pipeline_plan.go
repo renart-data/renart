@@ -44,8 +44,7 @@ func (h *PipelinePlanAPI) HandlePipelinePlan(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxPipelinePlanRequestBytes)
-	req, err := decodeStrictJSONObject[service.PipelinePlanRequest](r.Body)
+	req, err := decodeJSONObject[service.PipelinePlanRequest](w, r, maxPipelinePlanRequestBytes)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
@@ -70,8 +69,7 @@ func (h *PipelinePlanAPI) HandleConfirmPipelinePlan(w http.ResponseWriter, r *ht
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxPipelinePlanRequestBytes)
-	req, err := decodeStrictJSONObject[service.PipelinePlanConfirmRequest](r.Body)
+	req, err := decodeJSONObject[service.PipelinePlanConfirmRequest](w, r, maxPipelinePlanRequestBytes)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return

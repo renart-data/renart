@@ -1378,6 +1378,11 @@ asset.
 - **One error type.** `service.APIError` (`{Status, Code, Message}`) with
   sentinel errors + `errors.Is/As` at service boundaries; one `api.Response`
   envelope.
+- **One ordinary JSON boundary.** Mutation handlers decode through
+  `httpapi.decodeJSONObject`: request bodies are bounded to 4 MiB by default,
+  accept exactly one non-null object, and reject unknown fields. Routes with
+  smaller or larger known payloads pass an explicit limit; multipart uploads
+  and intentionally optional bodies keep separate bounded paths.
 - **Middleware** (`httpapi/middleware.go`): zap request logging, panic
   recovery, and an Origin/Host guard on state-changing requests (loopback
   origins are trusted so the Vite dev proxy works). SSE keeps the write

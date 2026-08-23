@@ -5,7 +5,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 )
+
+const defaultMaxJSONRequestBytes int64 = 4 << 20
+
+// decodeJSONObject is the handler boundary for ordinary JSON requests. It
+// applies a bounded body before enforcing exactly one non-null object and
+// rejecting unknown fields. Streaming uploads and intentionally optional or
+// polymorphic bodies use separate explicit paths.
+func decodeJSONObject[T any](writer http.ResponseWriter, request *http.Request, maxBytes int64) (T, error) {
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxJSONRequestBytes
+	}
+	request.Body = http.MaxBytesReader(writer, request.Body, maxBytes)
+	return decodeStrictJSONObject[T](request.Body)
+}
 
 // decodeStrictJSONObject accepts exactly one non-null JSON object and rejects
 // unknown fields. Behavior-changing request bodies use this instead of letting

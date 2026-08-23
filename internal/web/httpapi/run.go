@@ -23,7 +23,7 @@ func RegisterRunRoutes(router chi.Router, handlers *RunAPI) {
 }
 
 func (h *RunAPI) HandleRun(w http.ResponseWriter, r *http.Request) {
-	req, err := decodeStrictJSONObject[service.RunRequest](r.Body)
+	req, err := decodeJSONObject[service.RunRequest](w, r, 0)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return

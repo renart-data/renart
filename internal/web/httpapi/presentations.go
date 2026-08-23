@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -34,8 +33,8 @@ func RegisterPresentationRoutes(router chi.Router, handlers *PresentationAPI) {
 }
 
 func (h *PresentationAPI) HandlePreview(writer http.ResponseWriter, request *http.Request) {
-	var body model.PresentationPreviewRequest
-	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 3<<20)).Decode(&body); err != nil {
+	body, err := decodeJSONObject[model.PresentationPreviewRequest](writer, request, 3<<20)
+	if err != nil {
 		webapi.WriteBadRequest(writer, "invalid_request_body", err.Error())
 		return
 	}
@@ -48,8 +47,8 @@ func (h *PresentationAPI) HandlePreview(writer http.ResponseWriter, request *htt
 }
 
 func (h *PresentationAPI) HandleRun(writer http.ResponseWriter, request *http.Request) {
-	var body model.PresentationRunRequest
-	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 256<<10)).Decode(&body); err != nil {
+	body, err := decodeJSONObject[model.PresentationRunRequest](writer, request, 256<<10)
+	if err != nil {
 		webapi.WriteBadRequest(writer, "invalid_request_body", err.Error())
 		return
 	}
@@ -62,8 +61,8 @@ func (h *PresentationAPI) HandleRun(writer http.ResponseWriter, request *http.Re
 }
 
 func (h *PresentationAPI) HandleReplace(writer http.ResponseWriter, request *http.Request) {
-	var body service.ReplacePresentationRequest
-	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 3<<20)).Decode(&body); err != nil {
+	body, err := decodeJSONObject[service.ReplacePresentationRequest](writer, request, 3<<20)
+	if err != nil {
 		webapi.WriteBadRequest(writer, "invalid_request_body", err.Error())
 		return
 	}
@@ -85,8 +84,8 @@ func (h *PresentationAPI) HandleGet(writer http.ResponseWriter, request *http.Re
 }
 
 func (h *PresentationAPI) HandleCreate(writer http.ResponseWriter, request *http.Request) {
-	var body service.CreatePresentationRequest
-	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 64<<10)).Decode(&body); err != nil {
+	body, err := decodeJSONObject[service.CreatePresentationRequest](writer, request, 64<<10)
+	if err != nil {
 		webapi.WriteBadRequest(writer, "invalid_request_body", err.Error())
 		return
 	}
@@ -99,8 +98,8 @@ func (h *PresentationAPI) HandleCreate(writer http.ResponseWriter, request *http
 }
 
 func (h *PresentationAPI) HandleUpdate(writer http.ResponseWriter, request *http.Request) {
-	var body service.UpdatePresentationRequest
-	if err := json.NewDecoder(http.MaxBytesReader(writer, request.Body, 3<<20)).Decode(&body); err != nil {
+	body, err := decodeJSONObject[service.UpdatePresentationRequest](writer, request, 3<<20)
+	if err != nil {
 		webapi.WriteBadRequest(writer, "invalid_request_body", err.Error())
 		return
 	}

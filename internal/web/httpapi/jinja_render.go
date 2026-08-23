@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -31,8 +30,8 @@ func (h *JinjaRenderAPI) HandleRenderJinja(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var req service.JinjaRenderRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[service.JinjaRenderRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

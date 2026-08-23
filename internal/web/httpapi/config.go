@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -167,11 +166,8 @@ func (h *ConfigHandlers) writeWorkspaceConfig(w http.ResponseWriter) {
 }
 
 func decodeVaultPassphrase(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxVaultRequestBytes)
-	var request VaultPassphraseRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
+	request, err := decodeJSONObject[VaultPassphraseRequest](w, r, maxVaultRequestBytes)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", "Enter a valid vault passphrase.")
 		return nil, false
 	}
@@ -208,8 +204,8 @@ func clearStringBytes(value []byte) {
 }
 
 func (h *ConfigHandlers) HandleUpdateWorkspaceProject(w http.ResponseWriter, r *http.Request) {
-	var req UpdateWorkspaceProjectRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[UpdateWorkspaceProjectRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -278,8 +274,8 @@ func (h *ConfigHandlers) HandleUpdateEnvironmentPolicy(w http.ResponseWriter, r 
 		return
 	}
 
-	var req policy.EnvironmentPolicy
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[policy.EnvironmentPolicy](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -299,8 +295,8 @@ func (h *ConfigHandlers) HandleUpdateEnvironmentPolicy(w http.ResponseWriter, r 
 }
 
 func (h *ConfigHandlers) HandleCreateWorkspaceEnvironment(w http.ResponseWriter, r *http.Request) {
-	var req CreateWorkspaceEnvironmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[CreateWorkspaceEnvironmentRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -321,8 +317,8 @@ func (h *ConfigHandlers) HandleCreateWorkspaceEnvironment(w http.ResponseWriter,
 }
 
 func (h *ConfigHandlers) HandleUpdateWorkspaceEnvironment(w http.ResponseWriter, r *http.Request) {
-	var req UpdateWorkspaceEnvironmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[UpdateWorkspaceEnvironmentRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -361,8 +357,8 @@ func (h *ConfigHandlers) HandleUpdateWorkspaceEnvironment(w http.ResponseWriter,
 }
 
 func (h *ConfigHandlers) HandleCloneWorkspaceEnvironment(w http.ResponseWriter, r *http.Request) {
-	var req CloneWorkspaceEnvironmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[CloneWorkspaceEnvironmentRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -394,8 +390,8 @@ func (h *ConfigHandlers) HandleCloneWorkspaceEnvironment(w http.ResponseWriter, 
 }
 
 func (h *ConfigHandlers) HandleDeleteWorkspaceEnvironment(w http.ResponseWriter, r *http.Request) {
-	var req DeleteWorkspaceEnvironmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[DeleteWorkspaceEnvironmentRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -417,8 +413,8 @@ func (h *ConfigHandlers) HandleDeleteWorkspaceEnvironment(w http.ResponseWriter,
 }
 
 func (h *ConfigHandlers) HandleCreateWorkspaceConnection(w http.ResponseWriter, r *http.Request) {
-	var req UpsertWorkspaceConnectionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[UpsertWorkspaceConnectionRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -443,8 +439,8 @@ func (h *ConfigHandlers) HandleCreateWorkspaceConnection(w http.ResponseWriter, 
 }
 
 func (h *ConfigHandlers) HandleUpdateWorkspaceConnection(w http.ResponseWriter, r *http.Request) {
-	var req UpsertWorkspaceConnectionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[UpsertWorkspaceConnectionRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -469,8 +465,8 @@ func (h *ConfigHandlers) HandleUpdateWorkspaceConnection(w http.ResponseWriter, 
 }
 
 func (h *ConfigHandlers) HandleDeleteWorkspaceConnection(w http.ResponseWriter, r *http.Request) {
-	var req DeleteWorkspaceConnectionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[DeleteWorkspaceConnectionRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -492,8 +488,8 @@ func (h *ConfigHandlers) HandleDeleteWorkspaceConnection(w http.ResponseWriter, 
 }
 
 func (h *ConfigHandlers) HandleTestWorkspaceConnection(w http.ResponseWriter, r *http.Request) {
-	var req TestWorkspaceConnectionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[TestWorkspaceConnectionRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}

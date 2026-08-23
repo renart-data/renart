@@ -38,9 +38,7 @@ func (h *NotebookAgentAPI) HandleState(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *NotebookAgentAPI) HandleStartTurn(w http.ResponseWriter, r *http.Request) {
-	request, err := decodeStrictJSONObject[service.StartNotebookAgentTurnRequest](
-		http.MaxBytesReader(w, r.Body, maxNotebookAgentRequestBytes),
-	)
+	request, err := decodeJSONObject[service.StartNotebookAgentTurnRequest](w, r, maxNotebookAgentRequestBytes)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return

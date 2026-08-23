@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 
@@ -77,8 +76,8 @@ func (h *OnboardingAPI) HandleGetOnboardingState(w http.ResponseWriter, _ *http.
 }
 
 func (h *OnboardingAPI) HandleImportDatabase(w http.ResponseWriter, r *http.Request) {
-	var req ImportDatabaseRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[ImportDatabaseRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -109,8 +108,8 @@ func (h *OnboardingAPI) HandleImportDatabase(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *OnboardingAPI) HandleCreateDuckDBQuickstart(w http.ResponseWriter, r *http.Request) {
-	var req OnboardingQuickstartRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[OnboardingQuickstartRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -139,8 +138,8 @@ func (h *OnboardingAPI) HandleCreateDuckDBQuickstart(w http.ResponseWriter, r *h
 }
 
 func (h *OnboardingAPI) HandlePreviewDiscovery(w http.ResponseWriter, r *http.Request) {
-	var req OnboardingDiscoveryRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[OnboardingDiscoveryRequest](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
@@ -161,8 +160,8 @@ func (h *OnboardingAPI) HandlePathSuggestions(w http.ResponseWriter, r *http.Req
 }
 
 func (h *OnboardingAPI) HandleUpdateOnboardingState(w http.ResponseWriter, r *http.Request) {
-	var req service.OnboardingSessionState
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req, err := decodeJSONObject[service.OnboardingSessionState](w, r, 0)
+	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
 		return
 	}
