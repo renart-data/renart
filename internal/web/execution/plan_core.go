@@ -120,6 +120,55 @@ func PartialRenderWarning(result RenderResult) (string, bool) {
 	return "", false
 }
 
+// RenderIssues converts one renderer result into plan-level blockers and
+// warnings without coupling render implementations to planner state.
+func RenderIssues(assetID, assetName string, result RenderResult) (blockers, warnings []PlanIssue) {
+	blockers = []PlanIssue{}
+	warnings = []PlanIssue{}
+	if result.Status == RenderStatusUnsupported || result.Status == RenderStatusError {
+		blockers = append(blockers, PlanIssue{
+			Code: "asset_render_" + string(result.Status), Severity: "error",
+			Message: "asset execution could not be rendered completely",
+			AssetID: assetID, AssetName: assetName,
+		})
+	} else if message, warn := PartialRenderWarning(result); result.Status == RenderStatusPartial && warn {
+		warnings = append(warnings, PlanIssue{
+			Code: "asset_render_partial", Severity: "warning", Message: message,
+			AssetID: assetID, AssetName: assetName,
+		})
+	}
+	for _, issue := range result.Issues {
+		planIssue := PlanIssue{
+			Code: issue.Code, Severity: issue.Severity, Message: issue.Message,
+			AssetID: assetID, AssetName: assetName,
+		}
+		if issue.Severity == "error" {
+			blockers = append(blockers, planIssue)
+		} else {
+			warnings = append(warnings, planIssue)
+		}
+	}
+	for _, stage := range result.Stages {
+		if stage.Status == RenderStageStatusOK {
+			continue
+		}
+		issue := PlanIssue{
+			Code: "stage_render_" + string(stage.Status), Severity: "error",
+			Message: stage.Message, AssetID: assetID, AssetName: assetName,
+		}
+		if strings.TrimSpace(issue.Message) == "" {
+			issue.Message = "execution stage could not be rendered"
+		}
+		if stage.Kind == "check" && stage.CheckBlocking != nil && !*stage.CheckBlocking {
+			issue.Severity = "warning"
+			warnings = append(warnings, issue)
+		} else {
+			blockers = append(blockers, issue)
+		}
+	}
+	return blockers, warnings
+}
+
 func DedupePlanIssues(issues []PlanIssue) []PlanIssue {
 	seen := make(map[string]struct{}, len(issues))
 	result := make([]PlanIssue, 0, len(issues))
