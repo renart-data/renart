@@ -2,15 +2,11 @@ package service
 
 import (
 	"context"
-	cryptorand "crypto/rand"
-	"encoding/binary"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bruin-data/bruin/pkg/config"
@@ -21,6 +17,7 @@ import (
 	"renart/internal/sqlintelligence"
 	"renart/internal/web/model"
 	"renart/internal/web/notebook"
+	"renart/internal/web/notebookdoc"
 	"renart/internal/web/presentation"
 )
 
@@ -63,29 +60,13 @@ type NotebookJinjaContext struct {
 // NotebookService implements notebook CRUD and cell execution on top of the
 // notebook package.
 type NotebookService struct {
-	deps  NotebookDependencies
-	store *notebook.SessionStore
-
-	// cellEditLocks serialize the compare-and-write section for each cell.
-	// The content revision prevents stale writers; the lock makes that check
-	// atomic within this server process.
-	cellEditMu    sync.Mutex
-	cellEditLocks map[string]*cellEditLock
-	// notebookEditLocks serialize authored snapshot mutations across manifest
-	// and cell files. Cell-specific locks retain the precise conflict behavior
-	// for current editors; this wider lock is the substrate for notebook-wide
-	// revision-checked change sets.
-	notebookEditMu    sync.Mutex
-	notebookEditLocks map[string]*cellEditLock
+	deps      NotebookDependencies
+	store     *notebook.SessionStore
+	documents *notebookdoc.Service
 
 	// runtimes holds per-notebook recompute state (staleness, last results,
 	// the auto-recompute toggle) for server-driven auto-recompute.
 	runtimes *notebookRuntimes
-}
-
-type cellEditLock struct {
-	mu   sync.Mutex
-	refs int
 }
 
 // renameTables rewrites cell table references as lossless Golyglot source
@@ -210,13 +191,31 @@ func NewNotebookService(deps NotebookDependencies) *NotebookService {
 	}
 	store := notebook.NewSessionStore(filepath.Join(deps.WorkspaceRoot, ".renart", "notebooks"), deps.WorkspaceRoot)
 	store.DisableFilesystemAccess = deps.DisableFilesystemAccess
-	return &NotebookService{
-		deps:              deps,
-		store:             store,
-		cellEditLocks:     make(map[string]*cellEditLock),
-		notebookEditLocks: make(map[string]*cellEditLock),
-		runtimes:          newNotebookRuntimes(),
-	}
+	service := &NotebookService{deps: deps, store: store, runtimes: newNotebookRuntimes()}
+	service.documents = notebookdoc.New(notebookdoc.Dependencies{
+		WorkspaceRoot: deps.WorkspaceRoot,
+		NewLoader: func() *notebook.Loader {
+			loader, _ := service.newLoader()
+			return loader
+		},
+		ModelMetadata: func(nb *notebook.Notebook) notebookdoc.ModelMetadata {
+			return notebookdoc.ModelMetadata{
+				Dependencies:     readNotebookDependencies(nb.Dir),
+				InstalledModules: notebookInstalledModules(notebookVenvDir(deps.WorkspaceRoot, nb.Dir)),
+			}
+		},
+		PipelineAssetNames:  service.pipelineAssetNameSet,
+		PushWorkspaceUpdate: service.pushUpdate,
+		RemoveSession:       store.Remove,
+		DropCellObjects:     store.DropCellObjects,
+		OnCellChanged:       service.onCellChanged,
+		OnCellDeleted:       service.forgetCell,
+		ValidateVisualizations: func(ctx context.Context, nb *notebook.Notebook) []string {
+			_, blocking := service.notebookVisualizationProblems(ctx, nb)
+			return blocking
+		},
+	})
+	return service
 }
 
 func (s *NotebookService) validateNotebookSourceQuery(sqlText, assetType string) error {
@@ -238,48 +237,11 @@ func (s *NotebookService) validateNotebookSourceQuery(sqlText, assetType string)
 // It is keyed by durable notebook/cell identity rather than a path so renames
 // cannot create a second lock for the same logical document.
 func (s *NotebookService) lockCellEdit(notebookID, cellID string) func() {
-	key := notebookID + ":" + cellID
-	s.cellEditMu.Lock()
-	lock, ok := s.cellEditLocks[key]
-	if !ok {
-		lock = &cellEditLock{}
-		s.cellEditLocks[key] = lock
-	}
-	lock.refs++
-	s.cellEditMu.Unlock()
-
-	lock.mu.Lock()
-	return func() {
-		lock.mu.Unlock()
-		s.cellEditMu.Lock()
-		lock.refs--
-		if lock.refs == 0 && s.cellEditLocks[key] == lock {
-			delete(s.cellEditLocks, key)
-		}
-		s.cellEditMu.Unlock()
-	}
+	return s.documents.LockCell(notebookID, cellID)
 }
 
 func (s *NotebookService) lockNotebookEdit(notebookID string) func() {
-	s.notebookEditMu.Lock()
-	lock, ok := s.notebookEditLocks[notebookID]
-	if !ok {
-		lock = &cellEditLock{}
-		s.notebookEditLocks[notebookID] = lock
-	}
-	lock.refs++
-	s.notebookEditMu.Unlock()
-
-	lock.mu.Lock()
-	return func() {
-		lock.mu.Unlock()
-		s.notebookEditMu.Lock()
-		lock.refs--
-		if lock.refs == 0 && s.notebookEditLocks[notebookID] == lock {
-			delete(s.notebookEditLocks, notebookID)
-		}
-		s.notebookEditMu.Unlock()
-	}
+	return s.documents.LockNotebook(notebookID)
 }
 
 // SessionStore exposes the store for startup sweeps.
@@ -321,509 +283,20 @@ func (s *NotebookService) newLoader() (*notebook.Loader, func()) {
 // resolveDir maps an encoded notebook ID to its absolute folder, verifying
 // it stays inside the workspace and is a notebook.
 func (s *NotebookService) resolveDir(notebookID string) (string, *APIError) {
-	relDir, err := DecodeID(notebookID)
-	if err != nil {
-		return "", &APIError{Status: http.StatusBadRequest, Code: "invalid_notebook_id", Message: "invalid notebook id"}
-	}
-	absDir := filepath.Join(s.deps.WorkspaceRoot, filepath.FromSlash(relDir))
-	cleanRoot := filepath.Clean(s.deps.WorkspaceRoot)
-	if absDir != cleanRoot && !strings.HasPrefix(absDir, cleanRoot+string(filepath.Separator)) {
-		return "", &APIError{Status: http.StatusBadRequest, Code: "invalid_notebook_id", Message: "notebook path escapes the workspace"}
-	}
-	if _, statErr := os.Stat(filepath.Join(absDir, notebook.ManifestFileName)); statErr != nil {
-		return "", &APIError{Status: http.StatusNotFound, Code: "notebook_not_found", Message: "notebook not found"}
-	}
-	return absDir, nil
+	return s.documents.ResolveDir(notebookID)
 }
 
 func (s *NotebookService) load(notebookID string) (*notebook.Notebook, *APIError) {
-	absDir, apiErr := s.resolveDir(notebookID)
-	if apiErr != nil {
-		return nil, apiErr
-	}
-	loader, cleanup := s.newLoader()
-	defer cleanup()
-	nb, err := loader.Load(absDir)
-	if err != nil {
-		return nil, &APIError{Status: http.StatusBadRequest, Code: "notebook_load_failed", Message: err.Error()}
-	}
-	return nb, nil
+	return s.documents.Load(notebookID)
 }
 
 // Get returns the notebook in API shape, loaded fresh from disk.
 func (s *NotebookService) Get(notebookID string) (model.Notebook, *APIError) {
-	nb, apiErr := s.load(notebookID)
-	if apiErr != nil {
-		return model.Notebook{}, apiErr
-	}
-	return s.toModel(nb), nil
+	return s.documents.Get(notebookID)
 }
 
 func (s *NotebookService) toModel(nb *notebook.Notebook) model.Notebook {
-	workspace := &WorkspaceService{workspaceRoot: s.deps.WorkspaceRoot}
-	return workspace.notebookToModel(nb)
-}
-
-var notebookSlugSanitizer = regexp.MustCompile(`[^a-z0-9_-]+`)
-
-// CreateNotebookRequest creates a new notebook folder.
-type CreateNotebookRequest struct {
-	Title string `json:"title"`
-	Path  string `json:"path,omitempty"`
-}
-
-// Create makes a new notebook folder with a manifest (no cells yet).
-func (s *NotebookService) Create(req CreateNotebookRequest) (model.Notebook, *APIError) {
-	title := strings.TrimSpace(req.Title)
-	if title == "" {
-		title = "untitled"
-	}
-
-	relDir := strings.TrimSpace(req.Path)
-	if relDir == "" {
-		slug := notebookSlugSanitizer.ReplaceAllString(strings.ToLower(title), "-")
-		slug = strings.Trim(slug, "-")
-		if slug == "" {
-			slug = "untitled"
-		}
-		relDir = filepath.ToSlash(filepath.Join("notebooks", slug))
-	}
-
-	absDir := filepath.Join(s.deps.WorkspaceRoot, filepath.FromSlash(relDir))
-	if _, err := os.Stat(filepath.Join(absDir, notebook.ManifestFileName)); err == nil {
-		return model.Notebook{}, &APIError{Status: http.StatusConflict, Code: "notebook_exists", Message: fmt.Sprintf("a notebook already exists at %s", relDir)}
-	}
-	if err := os.MkdirAll(absDir, 0o755); err != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "notebook_create_failed", Message: err.Error()}
-	}
-
-	// Seed a small example cell so a new notebook is immediately runnable. Its
-	// concise generated name keeps relation completion readable from the start.
-	exampleID := notebook.NewCellID()
-	exampleName := nextCellAutoname(&notebook.Notebook{}, s.pipelineAssetNameSet())
-	exampleContent := fmt.Sprintf(
-		"/* @bruin\nid: %s\ntype: %s\nclass: %s\n@bruin */\n\nselect 'hello' as greeting, 42 as answer\n",
-		exampleID, notebook.DefaultCellType, notebook.ClassNotebook)
-	if err := os.WriteFile(filepath.Join(absDir, exampleName+".sql"), []byte(exampleContent), 0o644); err != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "notebook_create_failed", Message: err.Error()}
-	}
-	manifest := &notebook.Notebook{
-		Version: notebook.ManifestVersionCurrent,
-		Title:   title,
-		Dir:     absDir,
-		Blocks:  []notebook.Block{{Cell: exampleID}},
-	}
-	if err := notebook.SaveManifest(afero.NewOsFs(), manifest); err != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "notebook_create_failed", Message: err.Error()}
-	}
-
-	encodedID := EncodeID(filepath.ToSlash(relDir))
-	result, apiErr := s.Get(encodedID)
-	if apiErr != nil {
-		return model.Notebook{}, apiErr
-	}
-	s.pushUpdate(absDir)
-	return result, nil
-}
-
-// Delete removes the notebook folder and its session database. Cleanup is
-// "delete the file" — nothing else to reconcile for the DuckDB target.
-func (s *NotebookService) Delete(notebookID string) *APIError {
-	nb, apiErr := s.load(notebookID)
-	if apiErr != nil {
-		return apiErr
-	}
-	if err := os.RemoveAll(nb.Dir); err != nil {
-		return &APIError{Status: http.StatusInternalServerError, Code: "notebook_delete_failed", Message: err.Error()}
-	}
-	if err := s.store.Remove(nb.UUID); err != nil {
-		return &APIError{Status: http.StatusInternalServerError, Code: "notebook_session_delete_failed", Message: err.Error()}
-	}
-	s.pushUpdate(nb.Dir)
-	return nil
-}
-
-// CloseSession deletes the notebook's session database file (the default
-// close-notebook cleanup); the notebook itself is untouched.
-func (s *NotebookService) CloseSession(notebookID string) *APIError {
-	nb, apiErr := s.load(notebookID)
-	if apiErr != nil {
-		return apiErr
-	}
-	if err := s.store.Remove(nb.UUID); err != nil {
-		return &APIError{Status: http.StatusInternalServerError, Code: "notebook_session_delete_failed", Message: err.Error()}
-	}
-	return nil
-}
-
-var cellNamePattern = regexp.MustCompile(`^\w+$`)
-
-// CreateCellRequest adds a cell to a notebook.
-type CreateCellRequest struct {
-	Name string `json:"name,omitempty"`
-	// Language selects the cell kind: "sql" (default) or "python".
-	Language string `json:"language,omitempty"`
-}
-
-// UpdateCellRequest replaces a cell snapshot. BaseRevision is optional for
-// backwards-compatible API callers; interactive editors always provide it so
-// stale full-document writes fail explicitly instead of losing newer text.
-type UpdateCellRequest struct {
-	Content      string `json:"content"`
-	BaseRevision string `json:"base_revision,omitempty"`
-}
-
-// CreateCell writes a new cell file and appends it to the blocks.
-func (s *NotebookService) CreateCell(notebookID string, req CreateCellRequest) (model.Notebook, *APIError) {
-	unlockNotebook := s.lockNotebookEdit(notebookID)
-	defer unlockNotebook()
-
-	nb, apiErr := s.load(notebookID)
-	if apiErr != nil {
-		return model.Notebook{}, apiErr
-	}
-
-	name := strings.TrimSpace(req.Name)
-	if name == "" {
-		name = nextCellAutoname(nb, s.pipelineAssetNameSet())
-	}
-	if !cellNamePattern.MatchString(name) {
-		return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_cell_name", Message: "cell names may only contain letters, digits, and underscores"}
-	}
-	if nb.CellByName(name) != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusConflict, Code: "cell_exists", Message: fmt.Sprintf("a cell named %q already exists", name)}
-	}
-	if conflict := s.pipelineAssetByName(name); conflict != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusConflict, Code: "cell_name_collides", Message: fmt.Sprintf("%q is already a pipeline asset name", name)}
-	}
-
-	cellID := notebook.NewCellID()
-	for nb.CellByID(cellID) != nil {
-		cellID = notebook.NewCellID()
-	}
-	python := strings.EqualFold(strings.TrimSpace(req.Language), "python")
-	ext, template := ".sql", notebook.CellFileTemplate(cellID)
-	if python {
-		ext, template = ".py", notebook.PythonCellFileTemplate(cellID)
-	}
-	path := filepath.Join(nb.Dir, name+ext)
-	if err := os.WriteFile(path, []byte(template), 0o644); err != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "cell_create_failed", Message: err.Error()}
-	}
-
-	nb.Blocks = append(nb.Blocks, notebook.Block{Cell: cellID})
-	if err := notebook.SaveManifest(afero.NewOsFs(), nb); err != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "cell_create_failed", Message: err.Error()}
-	}
-
-	s.pushUpdate(path)
-	return s.Get(notebookID)
-}
-
-// RenameCell renames a cell's display name: it rewrites references in
-// sibling cells (span splice, formatting preserved), moves the cell file,
-// and drops the old session object. Zero fingerprints change (invariant 1),
-// so nothing goes stale and the warehouse is untouched.
-func (s *NotebookService) RenameCell(notebookID, cellID, newName string) (model.Notebook, *APIError) {
-	unlockNotebook := s.lockNotebookEdit(notebookID)
-	defer unlockNotebook()
-
-	nb, apiErr := s.load(notebookID)
-	if apiErr != nil {
-		return model.Notebook{}, apiErr
-	}
-	cell := nb.CellByID(cellID)
-	if cell == nil {
-		return model.Notebook{}, &APIError{Status: http.StatusNotFound, Code: "cell_not_found", Message: "cell not found"}
-	}
-
-	newName = strings.TrimSpace(newName)
-	pipelineNames := s.pipelineAssetNameSet()
-	if message := notebook.ValidateCellName(nb, newName, cellID, pipelineNames); message != "" {
-		return model.Notebook{}, &APIError{Status: http.StatusConflict, Code: "invalid_cell_name", Message: message}
-	}
-
-	edits, err := notebook.PlanRename(nb, cellID, newName)
-	if err != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "rename_failed", Message: err.Error()}
-	}
-
-	// Apply content rewrites first, then the file move, so a failure midway
-	// never leaves a dangling rename with stale references.
-	for _, edit := range edits {
-		if edit.NewContent != "" {
-			if writeErr := os.WriteFile(edit.Path, []byte(edit.NewContent), 0o644); writeErr != nil {
-				return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "rename_failed", Message: writeErr.Error()}
-			}
-		}
-	}
-	for _, edit := range edits {
-		if edit.NewPath != "" {
-			if renameErr := os.Rename(edit.Path, edit.NewPath); renameErr != nil {
-				return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "rename_failed", Message: renameErr.Error()}
-			}
-		}
-	}
-
-	// The renamed cell's session view is named by ID, so it survives; but a
-	// stale object under the *old* name never existed (objects are
-	// cell_<id>). Nothing to drop.
-
-	s.pushUpdate(cell.Path)
-	return s.Get(notebookID)
-}
-
-// UpdateCell replaces a cell file's content. The frontmatter id is forced
-// back to the cell's durable id — identity is not editable.
-func (s *NotebookService) UpdateCell(notebookID, cellID string, req UpdateCellRequest) (model.Notebook, *APIError) {
-	unlock := s.lockCellEdit(notebookID, cellID)
-	defer unlock()
-	unlockNotebook := s.lockNotebookEdit(notebookID)
-	defer unlockNotebook()
-
-	nb, apiErr := s.load(notebookID)
-	if apiErr != nil {
-		return model.Notebook{}, apiErr
-	}
-	cell := nb.CellByID(cellID)
-	if cell == nil {
-		return model.Notebook{}, &APIError{Status: http.StatusNotFound, Code: "cell_not_found", Message: "cell not found"}
-	}
-	currentContent := cell.Raw
-	if currentContent == "" {
-		if raw, readErr := os.ReadFile(cell.Path); readErr == nil {
-			currentContent = string(raw)
-		}
-	}
-	if req.BaseRevision != "" && req.BaseRevision != notebook.ContentRevision(currentContent) {
-		return model.Notebook{}, &APIError{
-			Status:  http.StatusConflict,
-			Code:    "cell_edit_conflict",
-			Message: "This cell changed after editing began. Your draft was kept; reload or reconcile the newer content before saving.",
-		}
-	}
-
-	normalized := notebook.NormalizeCellID(req.Content, cellID, notebook.IsPythonCell(cell))
-	if normalized == notebook.NormalizeCellID(currentContent, cellID, notebook.IsPythonCell(cell)) {
-		// Blur and focus transitions can race the client's acknowledgement of
-		// an autosave. Treat an identical revision-checked save as a true no-op:
-		// rewriting the file would emit workspace churn and, more importantly,
-		// incorrectly mark the cell and all descendants stale.
-		return s.toModel(nb), nil
-	}
-	if err := os.WriteFile(cell.Path, []byte(normalized), 0o644); err != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "cell_update_failed", Message: err.Error()}
-	}
-
-	s.pushUpdate(cell.Path)
-	// Reload against the new content so the dependency graph (and thus the
-	// descendant closure marked stale) reflects this edit, then trigger
-	// server-side recompute.
-	if fresh, freshErr := s.load(notebookID); freshErr == nil {
-		s.onCellChanged(notebookID, fresh, cellID)
-	}
-	return s.Get(notebookID)
-}
-
-// DeleteCell removes the cell file, its block entry, and its materialized
-// session objects.
-func (s *NotebookService) DeleteCell(notebookID, cellID string) (model.Notebook, *APIError) {
-	unlockNotebook := s.lockNotebookEdit(notebookID)
-	defer unlockNotebook()
-
-	nb, apiErr := s.load(notebookID)
-	if apiErr != nil {
-		return model.Notebook{}, apiErr
-	}
-	cell := nb.CellByID(cellID)
-	if cell == nil {
-		return model.Notebook{}, &APIError{Status: http.StatusNotFound, Code: "cell_not_found", Message: "cell not found"}
-	}
-
-	if err := os.Remove(cell.Path); err != nil && !os.IsNotExist(err) {
-		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "cell_delete_failed", Message: err.Error()}
-	}
-
-	blocks := make([]notebook.Block, 0, len(nb.Blocks))
-	for _, block := range nb.Blocks {
-		if block.Cell == cellID || (block.Visualization != nil && block.Visualization.Source == cellID) {
-			continue
-		}
-		blocks = append(blocks, block)
-	}
-	nb.Blocks = blocks
-	remaining := make([]*notebook.Cell, 0, len(nb.Cells))
-	for _, candidate := range nb.Cells {
-		if candidate.ID != cellID {
-			remaining = append(remaining, candidate)
-		}
-	}
-	nb.Cells = remaining
-	if err := notebook.SaveManifest(afero.NewOsFs(), nb); err != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "cell_delete_failed", Message: err.Error()}
-	}
-
-	_ = s.store.DropCellObjects(nb.UUID, cellID)
-
-	s.pushUpdate(cell.Path)
-	s.forgetCell(notebookID, nb.UUID, cellID)
-	return s.Get(notebookID)
-}
-
-// UpdateBlocks replaces the notebook's ordered blocks (markdown edits and
-// reordering). Cell blocks must reference existing cells; every cell must
-// remain referenced exactly once.
-func (s *NotebookService) UpdateBlocks(notebookID string, blocks []model.NotebookBlock) (model.Notebook, *APIError) {
-	unlockNotebook := s.lockNotebookEdit(notebookID)
-	defer unlockNotebook()
-
-	nb, apiErr := s.load(notebookID)
-	if apiErr != nil {
-		return model.Notebook{}, apiErr
-	}
-
-	seen := map[string]bool{}
-	seenBlockIDs := map[string]bool{}
-	next := make([]notebook.Block, 0, len(blocks))
-	for _, block := range blocks {
-		if block.Cell != "" {
-			if block.Visualization != nil || block.Markdown != "" || block.Control != "" || block.ID != "" {
-				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_notebook_block", Message: "a cell block cannot also contain presentation content"}
-			}
-			if nb.CellByID(block.Cell) == nil {
-				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "unknown_cell", Message: fmt.Sprintf("block references unknown cell %q", block.Cell)}
-			}
-			if seen[block.Cell] {
-				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "duplicate_cell_block", Message: fmt.Sprintf("cell %q appears more than once", block.Cell)}
-			}
-			seen[block.Cell] = true
-			next = append(next, notebook.Block{Cell: block.Cell})
-			continue
-		}
-
-		if block.Control != "" {
-			if nb.Version < notebook.ManifestVersionCurrent {
-				return model.Notebook{}, &APIError{Status: http.StatusConflict, Code: "notebook_upgrade_required", Message: "upgrade this notebook before placing controls"}
-			}
-			if block.Visualization != nil || block.Markdown != "" || block.ID != "" {
-				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_notebook_block", Message: "a control block cannot also contain other presentation content"}
-			}
-			parameterID := strings.TrimSpace(block.Control)
-			known := false
-			for _, parameter := range nb.Parameters {
-				if parameter.ID == parameterID {
-					known = true
-					break
-				}
-			}
-			if !known {
-				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "unknown_notebook_control", Message: fmt.Sprintf("control references unknown parameter %q", parameterID)}
-			}
-			stableID := "control:" + parameterID
-			if seenBlockIDs[stableID] {
-				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "duplicate_notebook_block", Message: fmt.Sprintf("control %q appears more than once", parameterID)}
-			}
-			seenBlockIDs[stableID] = true
-			next = append(next, notebook.Block{Control: parameterID})
-			continue
-		}
-
-		if block.Visualization != nil {
-			if nb.Version < notebook.ManifestVersionCurrent {
-				return model.Notebook{}, &APIError{Status: http.StatusConflict, Code: "notebook_upgrade_required", Message: "upgrade this notebook before adding structured visualizations"}
-			}
-			id := strings.TrimSpace(block.ID)
-			visualizationID := strings.TrimSpace(block.Visualization.ID)
-			if id != "" && visualizationID != "" && id != visualizationID {
-				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_notebook_block", Message: "visualization block ids do not match"}
-			}
-			if id == "" {
-				id = visualizationID
-			}
-			if id == "" {
-				id = notebook.NewBlockID("viz")
-			}
-			if seenBlockIDs[id] {
-				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "duplicate_notebook_block", Message: fmt.Sprintf("block id %q appears more than once", id)}
-			}
-			seenBlockIDs[id] = true
-			source := strings.TrimSpace(block.Visualization.Source)
-			if nb.CellByID(source) == nil {
-				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "unknown_visualization_source", Message: fmt.Sprintf("visualization %q references unknown source cell %q", id, source)}
-			}
-			if len(block.Visualization.Definition) == 0 {
-				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_visualization_definition", Message: fmt.Sprintf("visualization %q has no definition", id)}
-			}
-			next = append(next, notebook.Block{
-				ID: id,
-				Visualization: &notebook.VisualizationBlock{
-					ID:         id,
-					Source:     source,
-					Definition: cloneStringAnyMap(block.Visualization.Definition),
-				},
-			})
-			continue
-		}
-
-		id := strings.TrimSpace(block.ID)
-		if nb.Version >= notebook.ManifestVersionCurrent {
-			if id == "" {
-				id = notebook.NewBlockID("md")
-			}
-			if seenBlockIDs[id] {
-				return model.Notebook{}, &APIError{Status: http.StatusBadRequest, Code: "duplicate_notebook_block", Message: fmt.Sprintf("block id %q appears more than once", id)}
-			}
-			seenBlockIDs[id] = true
-		}
-		next = append(next, notebook.Block{ID: id, Markdown: block.Markdown})
-	}
-	for _, cell := range nb.Cells {
-		if !seen[cell.ID] {
-			next = append(next, notebook.Block{Cell: cell.ID})
-		}
-	}
-
-	nb.Blocks = next
-	if _, blocking := s.notebookVisualizationProblems(context.Background(), nb); len(blocking) > 0 {
-		return model.Notebook{}, &APIError{
-			Status: http.StatusBadRequest, Code: "invalid_visualization_definition",
-			Message: strings.Join(blocking, "; "),
-		}
-	}
-	if err := notebook.SaveManifest(afero.NewOsFs(), nb); err != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "blocks_update_failed", Message: err.Error()}
-	}
-
-	s.pushUpdate(filepath.Join(nb.Dir, notebook.ManifestFileName))
-	return s.Get(notebookID)
-}
-
-// UpgradeManifest upgrades a legacy notebook.yml to the identity-bearing v2
-// block format. BaseRevision is required by interactive callers so an external
-// edit cannot be overwritten by the migration.
-func (s *NotebookService) UpgradeManifest(notebookID, baseRevision string) (model.Notebook, *APIError) {
-	unlockNotebook := s.lockNotebookEdit(notebookID)
-	defer unlockNotebook()
-
-	nb, apiErr := s.load(notebookID)
-	if apiErr != nil {
-		return model.Notebook{}, apiErr
-	}
-	if baseRevision != "" && baseRevision != nb.Revision {
-		return model.Notebook{}, &APIError{
-			Status:  http.StatusConflict,
-			Code:    "notebook_edit_conflict",
-			Message: "This notebook changed after the upgrade was prepared. Reload it before upgrading.",
-		}
-	}
-	changed, err := notebook.UpgradeManifestV2(afero.NewOsFs(), nb)
-	if err != nil {
-		return model.Notebook{}, &APIError{Status: http.StatusInternalServerError, Code: "notebook_upgrade_failed", Message: err.Error()}
-	}
-	if changed {
-		s.pushUpdate(filepath.Join(nb.Dir, notebook.ManifestFileName))
-	}
-	return s.Get(notebookID)
+	return s.documents.ToModel(nb)
 }
 
 // RunNotebookRequest selects which cells to execute.
@@ -1053,51 +526,6 @@ func (s *NotebookService) existingNotebookCellObjects(uuid string) map[string]bo
 		return map[string]bool{}
 	}
 	return existingObjects
-}
-
-var cellNameAdjectives = [...]string{
-	"amber", "brisk", "calm", "clever", "cozy", "crisp", "eager", "gentle",
-	"golden", "happy", "hidden", "kind", "lively", "lucid", "merry", "nimble",
-	"quiet", "rapid", "ready", "silver", "smooth", "steady", "sunny", "swift",
-	"tidy", "vivid", "warm", "wise", "bright", "fresh", "playful", "soft",
-}
-
-var cellNameNouns = [...]string{
-	"badger", "beacon", "brook", "cedar", "comet", "coral", "dune", "ember",
-	"fern", "fox", "grove", "harbor", "heron", "hill", "iris", "lake",
-	"maple", "meadow", "moon", "otter", "pine", "river", "robin", "sparrow",
-	"stone", "summit", "tiger", "valley", "willow", "wren", "orchid", "pebble",
-}
-
-func nextCellAutoname(nb *notebook.Notebook, pipelineAssetNames map[string]bool) string {
-	var random [8]byte
-	seed := uint64(time.Now().UnixNano())
-	if _, err := cryptorand.Read(random[:]); err == nil {
-		seed = binary.LittleEndian.Uint64(random[:])
-	}
-	return cellAutonameFromSeed(nb, pipelineAssetNames, seed)
-}
-
-func cellAutonameFromSeed(nb *notebook.Notebook, pipelineAssetNames map[string]bool, seed uint64) string {
-	total := len(cellNameAdjectives) * len(cellNameNouns)
-	start := int(seed % uint64(total))
-	for attempt := 0; attempt < total; attempt++ {
-		index := (start + attempt) % total
-		candidate := cellNameAdjectives[index/len(cellNameNouns)] + "_" + cellNameNouns[index%len(cellNameNouns)]
-		if notebook.ValidateCellName(nb, candidate, "", pipelineAssetNames) == "" {
-			return candidate
-		}
-	}
-
-	// Exhausting all 1,024 pairs is improbable, but a suffix keeps the function
-	// total and collision-safe for generated or adversarial workspaces.
-	base := cellNameAdjectives[start/len(cellNameNouns)] + "_" + cellNameNouns[start%len(cellNameNouns)]
-	for suffix := 2; ; suffix++ {
-		candidate := fmt.Sprintf("%s_%d", base, suffix)
-		if notebook.ValidateCellName(nb, candidate, "", pipelineAssetNames) == "" {
-			return candidate
-		}
-	}
 }
 
 func (s *NotebookService) pipelineAssetNameSet() map[string]bool {
