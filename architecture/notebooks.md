@@ -46,7 +46,17 @@ artifacts live under `.renart` and are not authored state.
 
 ## 2. Semantic changes and transactions
 
-`service.NotebookChangeSet` is an ordered batch of operations addressed by
+`internal/web/notebookdoc.Service` is the single authority for the authored
+document lifecycle. It resolves route IDs inside the Git workspace, loads fresh
+filesystem snapshots, owns the per-cell and per-notebook edit locks, converts
+documents to API models, and performs manifest/cell CRUD plus reviewed compound
+changes. `service.NotebookService` preserves the existing HTTP/MCP-facing types
+and methods as aliases and delegates while retaining runtime sessions, imports,
+promotion, and agent integration. Those integrations use the document
+service's locks and transaction boundary when they touch authored files.
+
+`notebookdoc.NotebookChangeSet` (also exposed through the compatibility facade
+as `service.NotebookChangeSet`) is an ordered batch of operations addressed by
 durable IDs, never caller-owned paths. Supported domain operations cover
 manifest upgrade; cell create/update/rename/delete/source configuration and
 source-preserving SQL relation rename, column qualification, or relation alias;
@@ -66,6 +76,10 @@ then writes all affected files through a recoverable journal. Startup recovery
 completes or rolls back an interrupted journal. A successful transaction emits
 one logical workspace update; watcher/SSE reconciliation remains the final
 frontend authority.
+
+Notebook-specific runtime and agent adapters are assembled in
+`cmd/server_notebook.go`; the central server constructor only determines their
+initialization order.
 
 Ordinary single-cell typing keeps its faster per-file revision/save queue. The
 compound transaction is shared by multi-block UI actions and MCP rather than

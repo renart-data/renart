@@ -101,7 +101,7 @@ The cleanup should explicitly retain these strengths:
 | 2 | Create one asset/connection capability registry | Complete | Fingerprint-v3 mapping changes require an explicit migration |
 | 3 | Batch repeated semantic analysis and consolidate SQL helpers | Complete for direct projections | Recursive CTE batch lineage waits for a released reusable Golyglot API |
 | 4 | Extract controllers from notebook/build/review UI | Complete | Keep presenter-local UI state local until adjacent work justifies a move |
-| 5 | Introduce compiler-visible backend domain seams | In progress | Presentation and execution planning/admission are extracted; move the notebook document boundary as one transaction authority |
+| 5 | Introduce compiler-visible backend domain seams | Complete | Integration-heavy execution/notebook adapters remain cohesive until feature work exposes a smaller port |
 | 6 | Rebalance the test pyramid and shard live E2E | Measuring | Collect timing artifacts before choosing CI groups/mobile coverage |
 | 7 | Make workspace snapshots immutable and instrument refresh/SSE | Complete for guardrails | Collect production-scale baselines before budgets or deltas |
 | 8 | Standardize bounded strict request decoding | Complete | Streaming and multipart endpoints remain explicit exceptions |
@@ -893,7 +893,7 @@ rendered components and route behavior stable when doing so.
 
 ### Phase D — backend domain extraction
 
-In progress:
+Complete:
 
 - the shared application error contract lives below the facade;
 - presentation document/model lifecycle and read-only runtime are owned by the
@@ -905,7 +905,15 @@ In progress:
   lower contracts and execution/planner adapter construction is split out of
   the central server wiring;
 - shared Git-workspace path and atomic-write primitives live below both
-  presentation and notebook code.
+  presentation and notebook code;
+- `internal/web/notebookdoc` is the single authored-notebook authority for
+  loader/path validation, cell and notebook locks, manifest/cell CRUD, DTO
+  conversion, semantic change-set CAS, and interrupted-transaction recovery;
+- the notebook compatibility facade retains runtime, transfer, promotion, and
+  agent adapters, while every authored mutation uses the shared document locks
+  and transaction journal;
+- notebook/runtime/agent adapter construction lives in
+  `cmd/server_notebook.go` instead of the central server constructor.
 
 The reviewed execution sequence is complete without moving the 3,000-line
 executor as a block. The lower planner owns the workflow around snapshot,
@@ -917,18 +925,12 @@ target-write observation, and completion adapter. Keep those together until a
 feature change supplies a cohesive lower port; do not manufacture a scheduler
 cycle merely to reduce the facade line count.
 
-Next, use the same strangler shape for the notebook application service. Keep
-the `service` facade and move handlers one group at a time. Split server wiring
-alongside the domain so the composition root continues to shrink naturally.
-
-The reviewed next boundaries are deliberately larger than a file move:
-
-- **Notebooks:** keep loader/path validation, cell and notebook locks, manifest
-  plus cell mutation, interrupted-transaction recovery, change-set CAS, and DTO
-  conversion in one document-service extraction. Moving individual CRUD
-  methods first would create two lock/transaction authorities. Runtime,
-  warehouse/source imports, promotion, and agent adapters can remain on the
-  facade until that document boundary is stable.
+The notebook extraction deliberately moved the full document transaction
+boundary together rather than creating separate CRUD and CAS authorities.
+Runtime, warehouse/source imports, promotion, and agents remain facade adapters
+by design; move one only when a cohesive feature supplies a narrower lower
+port. Phase E remains measurement-driven rather than continuing extraction for
+line-count reduction alone.
 
 ### Phase E — scale only from measurements
 

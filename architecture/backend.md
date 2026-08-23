@@ -25,6 +25,8 @@ main.go → cmd.Root() → urfave/cli commands (cmd/)
               (stdio LSP), warm-cache (wasm compile caches)
 
 cmd/server.go  flags → serverConfig → core wiring (services, watcher, scheduler)
+cmd/server_execution.go          execution/planner adapter wiring
+cmd/server_notebook.go           notebook/runtime/agent adapter wiring
 cmd/server_presentation.go       presentation-domain adapter wiring
 cmd/web.go     route registration + a thin webServer adapter
   ├── internal/web/httpapi        HTTP handlers, one file per domain
@@ -43,6 +45,8 @@ cmd/web.go     route registration + a thin webServer adapter
   ├── internal/web/secretstore                → typed secret references,
   │                                             providers, leases, bindings
   ├── internal/web/notebook                   → see notebooks.md
+  ├── internal/web/notebookdoc                → authored notebook lifecycle,
+  │                                             locks, CAS, and recovery
   ├── internal/web/presentation               → visualization contracts,
   │                                             Git document lifecycle, and
   │                                             read-only presentation runtime
@@ -84,12 +88,22 @@ executor, inline-run ledger, target-write observation, and completion handoff.
 Those adapters are assembled together in `cmd/server_execution.go`, rather
 than inline in the central server constructor.
 
+The authored notebook boundary lives in `internal/web/notebookdoc`. One
+document service owns route-ID/path validation, fresh filesystem loads, cell
+and notebook locks, manifest/cell CRUD, API-model conversion, semantic
+change-set preparation/application, and the interrupted-write recovery journal.
+`service.NotebookService` delegates those responsibilities while retaining
+runtime sessions, source transfers, promotion, and agent integration. The
+remaining integration flows acquire the same document locks and use the same
+transaction journal when they mutate authored notebook state. Notebook and
+agent adapters are assembled in `cmd/server_notebook.go`.
+
 Git-authored application domains share `internal/web/workspacefs` for encoded
 path IDs, traversal-safe workspace joins, and synced atomic single-file
-replacement. The service facade keeps `EncodeID`, `DecodeID`, `SafeJoin`, and
-its private notebook writer as delegates during migration. Multi-file notebook
-transactions remain owned by the notebook application layer; the shared helper
-does not pretend one-file atomicity is a transaction.
+replacement. The service facade keeps `EncodeID`, `DecodeID`, and `SafeJoin`
+delegates for compatibility. Multi-file transactions remain owned by
+`notebookdoc`; the shared helper does not pretend one-file atomicity is a
+transaction.
 
 ## 2. Runtime model
 
