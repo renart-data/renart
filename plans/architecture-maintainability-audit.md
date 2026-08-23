@@ -503,6 +503,13 @@ preserve the HTTP-facing contract. Presentation-specific composition now lives
 in [`cmd/server_presentation.go`](../cmd/server_presentation.go) instead of the
 central server constructor, so later adapter changes have one wiring boundary.
 
+The execution extraction now has a lower-domain foothold as well:
+[`internal/web/execution`](../internal/web/execution) owns the canonical
+schedule/explicit time-window contract used by plan, render, type-check,
+staleness, and run paths. The service name is a type/function compatibility
+alias, avoiding a noisy signature migration while subsequent execution slices
+move around the same type.
+
 #### Evidence
 
 The package contains roughly 150 production files and 61,000 production lines,
@@ -882,6 +889,8 @@ In progress:
   presentation domain, with a compatibility facade preserving handler and
   composition-root APIs;
 - presentation adapter construction is split out of the central server wiring.
+- the shared execution time-window contract and schedule resolution live below
+  the facade, with compatibility aliases for existing consumers.
 
 Next, use the same strangler shape to extract pipeline execution and notebook
 application services. Keep the `service` facade and move handlers one group at

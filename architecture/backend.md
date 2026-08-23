@@ -37,6 +37,8 @@ cmd/web.go     route registration + a thin webServer adapter
   │                               canonical DTOs, response/error envelopes
   ├── internal/web/{bus, identity, fingerprint, matlog, staleness,
   │                snapshot, policy}          → see staleness.md
+  ├── internal/web/execution                  → shared execution-domain
+  │                                             contracts (time windows first)
   ├── internal/web/secretstore                → typed secret references,
   │                                             providers, leases, bindings
   ├── internal/web/notebook                   → see notebooks.md
@@ -63,6 +65,12 @@ adapters for workspace schema inference and resolving an asset-backed dataset
 to its environment-specific physical relation. Those adapters are assembled by
 `cmd/server_presentation.go`, keeping their secret-purpose and execution wiring
 out of the central server constructor.
+
+The execution strangler starts at `internal/web/execution.TimeWindow`, the
+single schedule/explicit interval contract consumed by planning, rendering,
+type-checking, staleness, and materialization. `service.ExecutionTimeWindow`
+is a type alias during migration, so those paths share lower-domain behavior
+without a broad signature rewrite.
 
 ## 2. Runtime model
 
@@ -1449,7 +1457,8 @@ module.
   strangler migration; presentation document lifecycle is the first extracted
   application slice, followed by the presentation read-only runtime. Move
   pipeline execution and notebook application logic only as cohesive
-  feature-adjacent slices.
+  feature-adjacent slices; the shared execution time-window contract is already
+  below the facade.
 - Every file event triggers a full workspace re-parse + full-state broadcast.
   Fine at current scale behind the debounce; `Revision` exists if incremental
   diffs are ever needed.
