@@ -1,11 +1,12 @@
 # Architecture and maintainability audit
 
-Status: standalone low-risk slices complete locally, 2026-08-23. Contract,
-capability, native-SQL cleanup, lineage, snapshot ownership, request-boundary,
-observability, live-timing, bundle-budget, dependency-direction, and first plan
-folds are implemented below. The remaining backend domain moves are
-feature-adjacent; E2E sharding, workspace deltas, and runtime eviction are
-evidence-gated. This is not a proposal for a rewrite.
+Status: standalone low-risk slices and the first backend domain extraction are
+complete locally, 2026-08-23. Contract, capability, native-SQL cleanup,
+lineage, snapshot ownership, request-boundary, observability, live-timing,
+bundle-budget, dependency-direction, and first plan folds are implemented
+below. The remaining backend domain moves are feature-adjacent; E2E sharding,
+workspace deltas, and runtime eviction are evidence-gated. This is not a
+proposal for a rewrite.
 
 ## 1. Executive assessment
 
@@ -100,7 +101,7 @@ The cleanup should explicitly retain these strengths:
 | 2 | Create one asset/connection capability registry | Complete | Fingerprint-v3 mapping changes require an explicit migration |
 | 3 | Batch repeated semantic analysis and consolidate SQL helpers | Complete for direct projections | Recursive CTE batch lineage waits for a released reusable Golyglot API |
 | 4 | Extract controllers from notebook/build/review UI | Complete | Keep presenter-local UI state local until adjacent work justifies a move |
-| 5 | Introduce compiler-visible backend domain seams | Guarded | Import direction is enforced; move one cohesive domain beside feature work |
+| 5 | Introduce compiler-visible backend domain seams | In progress | Presentation documents are extracted; move execution/notebook/runtime slices beside feature work |
 | 6 | Rebalance the test pyramid and shard live E2E | Measuring | Collect timing artifacts before choosing CI groups/mobile coverage |
 | 7 | Make workspace snapshots immutable and instrument refresh/SSE | Complete for guardrails | Collect production-scale baselines before budgets or deltas |
 | 8 | Standardize bounded strict request decoding | Complete | Streaming and multipart endpoints remain explicit exceptions |
@@ -487,6 +488,15 @@ transport. `service.APIError` remains a type alias during migration, so existing
 handler interfaces do not churn while new domain packages can report the same
 stable status/code/message contract without importing all of `service`.
 
+Presentation document lifecycle is the first compiler-visible application
+slice. [`internal/web/presentation`](../internal/web/presentation) now owns
+dashboard/report creation, path validation, atomic persistence, revisioned raw
+updates, typed replacement, preview preparation, and model conversion.
+`service.PresentationService` delegates those operations and retains only the
+workspace-schema and warehouse-query adapters that still cross domains. Direct
+domain tests cover lifecycle/CAS and path traversal while the existing facade
+tests preserve the HTTP-facing contract.
+
 #### Evidence
 
 The package contains roughly 150 production files and 61,000 production lines,
@@ -859,10 +869,17 @@ rendered components and route behavior stable when doing so.
 
 ### Phase D — backend domain extraction
 
-Use the newly stable contracts and capability package to extract execution,
-notebook, and presentation application services. Keep the `service` facade and
-move handlers one group at a time. Split server wiring alongside each domain so
-the composition root shrinks naturally.
+In progress:
+
+- the shared application error contract lives below the facade;
+- presentation document/model lifecycle is owned by the presentation domain,
+  with a compatibility facade preserving handler and composition-root APIs.
+
+Next, use the same strangler shape to extract execution and notebook
+application services, followed by presentation warehouse runtime when its
+connection/execution adapters can move as one cohesive slice. Keep the
+`service` facade and move handlers one group at a time. Split server wiring
+alongside each domain so the composition root shrinks naturally.
 
 ### Phase E — scale only from measurements
 

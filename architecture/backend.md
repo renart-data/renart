@@ -27,17 +27,20 @@ main.go → cmd.Root() → urfave/cli commands (cmd/)
 cmd/server.go  flags → serverConfig → wiring (services, watcher, scheduler)
 cmd/web.go     route registration + a thin webServer adapter
   ├── internal/web/httpapi        HTTP handlers, one file per domain
-  ├── internal/web/service        domain logic (asset CRUD, execution,
-  │                               intelligence, onboarding, config, …)
+  ├── internal/web/service        compatibility facade + remaining application
+  │                               logic (asset CRUD, execution, intelligence, …)
   ├── internal/web/scheduler      River + SQLite scheduler
   ├── internal/web/events         SSE pub/sub hub with debounce
   ├── internal/web/watch          fsnotify/poll filesystem watcher
-  ├── internal/web/{model, api}   canonical DTOs, response envelope
+  ├── internal/web/{model, api, apperror}
+  │                               canonical DTOs, response/error envelopes
   ├── internal/web/{bus, identity, fingerprint, matlog, staleness,
   │                snapshot, policy}          → see staleness.md
   ├── internal/web/secretstore                → typed secret references,
   │                                             providers, leases, bindings
   ├── internal/web/notebook                   → see notebooks.md
+  ├── internal/web/presentation               → visualization contracts plus
+  │                                             Git document lifecycle
   ├── internal/web/service/assetmeta          → see asset-editing.md
   ├── internal/web/{sqlintelligence, pyintelligence, sqlformat,
   │                freshness, profiling, static}
@@ -45,10 +48,14 @@ cmd/web.go     route registration + a thin webServer adapter
       connections, per-warehouse materializers, execution operators
 ```
 
-Layering: transport (`httpapi`) → domain (`service`) → Bruin. Handlers are
-mechanical decode → delegate → encode; each `httpapi` file declares the narrow
-consumer-side interface it needs (`AssetHandlers`, `SchedulerHandlers`, …) and
-is pointed directly at the owning service.
+Layering: transport (`httpapi`) → compatibility/application facade (`service`)
+→ focused domains and Bruin. Handlers are mechanical decode → delegate →
+encode; each `httpapi` file declares the narrow consumer-side interface it
+needs (`AssetHandlers`, `SchedulerHandlers`, …) and is pointed directly at the
+owning service. New focused domains stay below `service`: for example,
+`presentation.DocumentService` owns dashboard/report create, load,
+revision-checked update, typed replacement, and preview preparation while the
+facade retains cross-domain schema and warehouse-runtime adapters.
 
 ## 2. Runtime model
 
@@ -1429,10 +1436,12 @@ module.
 
 ## 7. Open items
 
-- `internal/web/service` is a large flat package (asset CRUD, execution,
-  intelligence, onboarding, suggestions in one namespace). Sub-packages would
-  make boundaries legible (`assetmeta` and `notebook` already split out).
-  Opportunistic, not urgent.
+- `internal/web/service` remains a large flat package (asset CRUD, execution,
+  intelligence, onboarding, suggestions in one namespace). Compiler-enforced
+  dependency direction and the lower `apperror` contract now support a
+  strangler migration; presentation document lifecycle is the first extracted
+  application slice. Move execution, notebook application logic, and the
+  presentation warehouse runtime only as cohesive feature-adjacent slices.
 - Every file event triggers a full workspace re-parse + full-state broadcast.
   Fine at current scale behind the debounce; `Revision` exists if incremental
   diffs are ever needed.

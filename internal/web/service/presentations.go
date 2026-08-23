@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -196,166 +195,17 @@ func presentationToModel(
 	artifact *presentation.Artifact,
 	datasetSchemas map[string]presentation.ResolvedSchema,
 ) model.PresentationArtifact {
-	if artifact == nil {
-		return model.PresentationArtifact{}
-	}
-	relPath, err := filepath.Rel(workspaceRoot, artifact.Path)
-	if err != nil {
-		relPath = artifact.Path
-	}
-	result := model.PresentationArtifact{
-		ID: artifact.ID, WorkspaceID: EncodeID(filepath.ToSlash(relPath)), Kind: string(artifact.Kind), Version: artifact.Version,
-		Revision: artifact.Revision, Title: artifact.Title, Path: filepath.ToSlash(relPath),
-		Filters:        make([]model.PresentationFilter, 0, len(artifact.Filters)),
-		Visualizations: make([]model.PresentationVisualization, 0, len(artifact.Visualizations)),
-		Layout:         make([]model.PresentationLayoutItem, 0, len(artifact.Layout)),
-		Sections:       make([]model.PresentationSection, 0, len(artifact.Sections)),
-		Problems:       presentationFindingsToModel(artifact.Problems),
-	}
-	for _, id := range sortedPresentationDatasetIDs(artifact.Datasets) {
-		dataset := artifact.Datasets[id]
-		modelDataset := model.PresentationDataset{
-			ID: id, Asset: dataset.Asset, Connection: dataset.Connection, Query: dataset.Query,
-			Columns: make([]model.Column, 0, len(dataset.Columns)),
-		}
-		for _, column := range dataset.Columns {
-			modelDataset.Columns = append(modelDataset.Columns, model.Column{
-				Name: column.Name, Type: column.Type, Nullable: column.Nullable,
-			})
-		}
-		if schema, ok := datasetSchemas[id]; ok {
-			modelDataset.ResolvedColumns = make([]model.Column, 0, len(schema.Columns))
-			for _, column := range schema.Columns {
-				modelDataset.ResolvedColumns = append(modelDataset.ResolvedColumns, model.Column{
-					Name: column.Name, Type: column.PhysicalType, Nullable: column.Nullable,
-				})
-			}
-		}
-		result.Datasets = append(result.Datasets, modelDataset)
-	}
-	for _, filter := range artifact.Filters {
-		modelFilter := model.PresentationFilter{
-			ID: filter.ID, Label: filter.Label, Type: string(filter.Type), Default: cloneJSONValue(filter.Default),
-			Min: filter.Min, Max: filter.Max, Step: filter.Step,
-		}
-		if filter.Options != nil {
-			modelFilter.Options = &model.PresentationFilterOptions{
-				Values: append([]any(nil), filter.Options.Values...), Dataset: filter.Options.Dataset,
-				ValueField: filter.Options.ValueField, LabelField: filter.Options.LabelField,
-			}
-		}
-		result.Filters = append(result.Filters, modelFilter)
-	}
-	for _, visualization := range artifact.Visualizations {
-		modelVisualization := model.PresentationVisualization{
-			ID: visualization.ID, Dataset: visualization.Dataset,
-			Definition:     cloneStringAnyMap(visualization.Definition),
-			FilterBindings: make([]model.PresentationFilterBinding, 0, len(visualization.FilterBindings)),
-		}
-		for _, binding := range visualization.FilterBindings {
-			modelVisualization.FilterBindings = append(modelVisualization.FilterBindings, model.PresentationFilterBinding{
-				Filter: binding.Filter, Dataset: binding.Dataset, Column: binding.Column, Operator: binding.Operator,
-			})
-		}
-		result.Visualizations = append(result.Visualizations, modelVisualization)
-	}
-	for _, item := range artifact.Layout {
-		result.Layout = append(result.Layout, model.PresentationLayoutItem{
-			Visualization: item.Visualization, X: item.X, Y: item.Y, Width: item.Width, Height: item.Height,
-		})
-	}
-	for _, section := range artifact.Sections {
-		result.Sections = append(result.Sections, model.PresentationSection{
-			ID: section.ID, Title: section.Title, Markdown: section.Markdown,
-			Visualization: section.Visualization, PageBreak: section.PageBreak,
-		})
-	}
-	return result
+	return presentation.ArtifactToModel(workspaceRoot, artifact, datasetSchemas)
 }
 
 func presentationFindingsToModel(findings []presentation.Finding) []model.PresentationFinding {
-	result := make([]model.PresentationFinding, 0, len(findings))
-	for _, finding := range findings {
-		result = append(result, model.PresentationFinding{
-			Code: finding.Code, Severity: finding.Severity, Message: finding.Message,
-			Path: finding.Path, Field: finding.Field, PhysicalType: finding.PhysicalType,
-		})
-	}
-	return result
+	return presentation.FindingsToModel(findings)
 }
 
 func presentationFromModel(path string, input model.PresentationArtifact) (*presentation.Artifact, error) {
-	artifact := &presentation.Artifact{
-		Version: input.Version, ID: input.ID, Title: input.Title, Path: path,
-		Kind:           presentation.ArtifactKind(strings.ToLower(strings.TrimSpace(input.Kind))),
-		Datasets:       make(map[string]presentation.DatasetDefinition, len(input.Datasets)),
-		Filters:        make([]presentation.FilterDefinition, 0, len(input.Filters)),
-		Visualizations: make([]presentation.ArtifactVisualization, 0, len(input.Visualizations)),
-		Layout:         make([]presentation.DashboardLayoutItem, 0, len(input.Layout)),
-		Sections:       make([]presentation.ReportSection, 0, len(input.Sections)),
-	}
-	for _, dataset := range input.Datasets {
-		id := strings.TrimSpace(dataset.ID)
-		if _, exists := artifact.Datasets[id]; exists {
-			return nil, fmt.Errorf("dataset id %q is duplicated", id)
-		}
-		definition := presentation.DatasetDefinition{
-			Asset: dataset.Asset, Connection: dataset.Connection, Query: dataset.Query,
-			Columns: make([]presentation.DatasetColumn, 0, len(dataset.Columns)),
-		}
-		for _, column := range dataset.Columns {
-			definition.Columns = append(definition.Columns, presentation.DatasetColumn{
-				Name: column.Name, Type: column.Type, Nullable: column.Nullable,
-			})
-		}
-		artifact.Datasets[id] = definition
-	}
-	for _, filter := range input.Filters {
-		definition := presentation.FilterDefinition{
-			ID: filter.ID, Label: filter.Label,
-			Type: presentation.ParameterType(filter.Type), Default: cloneJSONValue(filter.Default),
-			Min: filter.Min, Max: filter.Max, Step: filter.Step,
-		}
-		if filter.Options != nil {
-			definition.Options = &presentation.ParameterOptions{
-				Values: append([]any(nil), filter.Options.Values...), Dataset: filter.Options.Dataset,
-				ValueField: filter.Options.ValueField, LabelField: filter.Options.LabelField,
-			}
-		}
-		artifact.Filters = append(artifact.Filters, definition)
-	}
-	for _, visualization := range input.Visualizations {
-		definition := presentation.ArtifactVisualization{
-			ID: visualization.ID, Dataset: visualization.Dataset,
-			Definition:     cloneStringAnyMap(visualization.Definition),
-			FilterBindings: make([]presentation.FilterBinding, 0, len(visualization.FilterBindings)),
-		}
-		for _, binding := range visualization.FilterBindings {
-			definition.FilterBindings = append(definition.FilterBindings, presentation.FilterBinding{
-				Filter: binding.Filter, Dataset: binding.Dataset, Column: binding.Column, Operator: binding.Operator,
-			})
-		}
-		artifact.Visualizations = append(artifact.Visualizations, definition)
-	}
-	for _, item := range input.Layout {
-		artifact.Layout = append(artifact.Layout, presentation.DashboardLayoutItem{
-			Visualization: item.Visualization, X: item.X, Y: item.Y, Width: item.Width, Height: item.Height,
-		})
-	}
-	for _, section := range input.Sections {
-		artifact.Sections = append(artifact.Sections, presentation.ReportSection{
-			ID: section.ID, Title: section.Title, Markdown: section.Markdown,
-			Visualization: section.Visualization, PageBreak: section.PageBreak,
-		})
-	}
-	return artifact, nil
+	return presentation.ArtifactFromModel(path, input)
 }
 
 func sortedPresentationDatasetIDs(datasets map[string]presentation.DatasetDefinition) []string {
-	ids := make([]string, 0, len(datasets))
-	for id := range datasets {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids
+	return presentation.SortedDatasetIDs(datasets)
 }

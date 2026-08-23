@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -211,70 +210,11 @@ func (s *PresentationService) loadPreviewArtifact(
 	workspaceID string,
 	request model.PresentationPreviewRequest,
 ) (*presentation.Artifact, *APIError) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	path, apiErr := s.resolvePath(workspaceID)
-	if apiErr != nil {
-		return nil, apiErr
-	}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, &APIError{Status: http.StatusNotFound, Code: "presentation_not_found", Message: "presentation not found"}
-		}
-		return nil, &APIError{Status: http.StatusInternalServerError, Code: "presentation_read_failed", Message: err.Error()}
-	}
-	current, err := presentation.DecodeArtifact(path, content)
-	if err != nil {
-		return nil, &APIError{Status: http.StatusBadRequest, Code: "presentation_invalid", Message: err.Error()}
-	}
-	if strings.TrimSpace(request.ExpectedRevision) == "" || request.ExpectedRevision != current.Revision {
-		return nil, &APIError{
-			Status: http.StatusConflict, Code: "presentation_preview_conflict",
-			Message: "This presentation changed after preview began. Reload the latest file before running the draft.",
-		}
-	}
-	draft, err := presentationFromModel(path, request.Artifact)
-	if err != nil {
-		return nil, &APIError{Status: http.StatusBadRequest, Code: "presentation_snapshot_invalid", Message: err.Error()}
-	}
-	if draft.ID != current.ID || draft.Kind != current.Kind {
-		return nil, &APIError{
-			Status: http.StatusBadRequest, Code: "presentation_identity_immutable",
-			Message: "Presentation identity and kind cannot be changed while previewing a draft.",
-		}
-	}
-	normalized, err := presentation.MarshalArtifact(*draft)
-	if err != nil {
-		return nil, &APIError{Status: http.StatusBadRequest, Code: "presentation_snapshot_invalid", Message: err.Error()}
-	}
-	draft, err = presentation.DecodeArtifact(path, normalized)
-	if err != nil {
-		return nil, &APIError{Status: http.StatusBadRequest, Code: "presentation_snapshot_invalid", Message: err.Error()}
-	}
-	s.enrichProblems(ctx, draft)
-	return draft, nil
+	return s.documents.PreparePreview(ctx, workspaceID, request.ExpectedRevision, request.Artifact)
 }
 
 func (s *PresentationService) loadRuntimeArtifact(ctx context.Context, workspaceID string) (*presentation.Artifact, *APIError) {
-	path, apiErr := s.resolvePath(workspaceID)
-	if apiErr != nil {
-		return nil, apiErr
-	}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, &APIError{Status: http.StatusNotFound, Code: "presentation_not_found", Message: "presentation not found"}
-		}
-		return nil, &APIError{Status: http.StatusInternalServerError, Code: "presentation_read_failed", Message: err.Error()}
-	}
-	artifact, err := presentation.DecodeArtifact(path, content)
-	if err != nil {
-		return nil, &APIError{Status: http.StatusBadRequest, Code: "presentation_invalid", Message: err.Error()}
-	}
-	s.enrichProblems(ctx, artifact)
-	return artifact, nil
+	return s.documents.LoadRuntimeArtifact(ctx, workspaceID)
 }
 
 func firstPresentationError(findings []presentation.Finding) *presentation.Finding {
