@@ -8,6 +8,17 @@ async function createNotebook(request: APIRequestContext, baseURL: string, title
   return (await response.json()).notebook as { id: string };
 }
 
+async function disableAutoRecompute(
+  request: APIRequestContext,
+  baseURL: string,
+  notebookId: string,
+) {
+  const response = await request.put(`${baseURL}/api/notebooks/${notebookId}/settings`, {
+    data: { auto_recompute: false },
+  });
+  expect(response.ok()).toBe(true);
+}
+
 async function addCell(
   request: APIRequestContext,
   baseURL: string,
@@ -60,6 +71,10 @@ test.describe("notebook run cancellation", () => {
     );
 
     const notebook = await createNotebook(request, liveApp.baseURL, "Cancel");
+    // API-authored cells can trigger the server-side recompute loop before the
+    // notebook page mounts and mirrors localStorage. Disable it at the owning
+    // runtime before writing the intentionally expensive query.
+    await disableAutoRecompute(request, liveApp.baseURL, notebook.id);
     const heavyCell = await addCell(request, liveApp.baseURL, notebook.id, "heavy");
     await setSql(request, liveApp.baseURL, notebook.id, heavyCell, HEAVY_SQL);
 

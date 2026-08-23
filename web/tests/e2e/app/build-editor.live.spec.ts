@@ -276,6 +276,12 @@ select customer_id, customer_name from analytics.customers
 
     const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
     await expect(dialog).toBeVisible({ timeout: 15000 });
+    // The lazy-loading placeholder and the settings dialog share the same
+    // accessible name. Wait for authored settings content before measuring so
+    // the placeholder cannot be replaced between boundingBox() calls.
+    await expect(dialog.getByRole("textbox", { name: "Pipeline name" })).toBeVisible({
+      timeout: 15000,
+    });
     await expect(dialog.getByRole("tab", { name: "Notifications" })).toHaveCount(0);
     await expect(dialog.getByText("Microsoft Teams")).toHaveCount(0);
 

@@ -317,6 +317,8 @@ insert into analytics.customer_activity_source (customer_id, activity_score) val
         networkName,
         "-p",
         `127.0.0.1:${trinoPort}:8080`,
+        "--tmpfs",
+        "/data/trino:rw,noexec,nosuid,size=512m,uid=1000,gid=1000,mode=0755",
         "--volume",
         `${trinoCatalogDir}:/etc/trino/catalog:ro`,
         TRINO_IMAGE,
@@ -347,6 +349,12 @@ insert into analytics.customer_activity_source (customer_id, activity_score) val
         networkName,
         "--tmpfs",
         "/data/deploy/starrocks/be/storage:rw,noexec,nosuid,size=2g",
+        "--tmpfs",
+        // StarRocks refuses to start its FE when the metadata filesystem reports
+        // less than 5 GiB free. Keep that tiny test-only metadata directory on a
+        // sparse tmpfs so transient host/Docker disk pressure cannot consume the
+        // entire ten-minute fixture setup window.
+        "/data/deploy/starrocks/fe/meta:rw,noexec,nosuid,size=6g",
         "-p",
         `127.0.0.1:${starrocksMySQLPort}:9030`,
         "-p",
