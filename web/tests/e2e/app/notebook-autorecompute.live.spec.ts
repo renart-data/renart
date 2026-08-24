@@ -41,6 +41,25 @@ async function setSql(
   ).toBe(true);
 }
 
+async function setAutoRecompute(
+  request: APIRequestContext,
+  baseURL: string,
+  notebookId: string,
+  enabled: boolean,
+) {
+  const response = await request.put(`${baseURL}/api/notebooks/${notebookId}/settings`, {
+    data: { auto_recompute: enabled },
+  });
+  expect(response.ok()).toBe(true);
+}
+
+function resultCell(card: Locator, column: string, row: number, value: string) {
+  return card.getByRole("button", {
+    name: `${column}, row ${row}: ${value}`,
+    exact: true,
+  });
+}
+
 async function replaceEditorContent(page: Page, card: Locator, content: string) {
   // Click the rendered code line, not Monaco's outer shell (whose center can
   // be blank) or its intentionally zero-width native input proxy.
@@ -65,7 +84,7 @@ test.describe("notebook auto-recompute", () => {
     const srcCard = page
       .locator('[data-slot="delimited-card"]')
       .filter({ has: page.getByRole("button", { name: "src", exact: true }) });
-    await expect(srcCard.getByRole("cell", { name: "111", exact: true })).toBeVisible({
+    await expect(resultCell(srcCard, "n", 1, "111")).toBeVisible({
       timeout: 20000,
     });
 
@@ -74,10 +93,10 @@ test.describe("notebook auto-recompute", () => {
     await replaceEditorContent(page, srcCard, "select 222 as n");
     await page.getByText("AutoSelf").first().click(); // blur → save → recompute
 
-    await expect(srcCard.getByRole("cell", { name: "222", exact: true })).toBeVisible({
+    await expect(resultCell(srcCard, "n", 1, "222")).toBeVisible({
       timeout: 20000,
     });
-    await expect(srcCard.getByRole("cell", { name: "111", exact: true })).toBeHidden({
+    await expect(resultCell(srcCard, "n", 1, "111")).toBeHidden({
       timeout: 20000,
     });
   });
@@ -101,19 +120,19 @@ test.describe("notebook auto-recompute", () => {
     const card = page
       .locator('[data-slot="delimited-card"]')
       .filter({ has: page.getByRole("button", { name: "u", exact: true }) });
-    await expect(card.getByRole("cell", { name: "111", exact: true })).toBeVisible({
+    await expect(resultCell(card, "n", 1, "111")).toBeVisible({
       timeout: 20000,
     });
     await replaceEditorContent(page, card, "select 333 as n union all select 444");
     await page.getByText("AutoUnion").first().click(); // blur → save → recompute
 
-    await expect(card.getByRole("cell", { name: "333", exact: true })).toBeVisible({
+    await expect(resultCell(card, "n", 1, "333")).toBeVisible({
       timeout: 20000,
     });
-    await expect(card.getByRole("cell", { name: "444", exact: true })).toBeVisible({
+    await expect(resultCell(card, "n", 2, "444")).toBeVisible({
       timeout: 20000,
     });
-    await expect(card.getByRole("cell", { name: "111", exact: true })).toBeHidden({
+    await expect(resultCell(card, "n", 1, "111")).toBeHidden({
       timeout: 20000,
     });
     // It is not flagged stale — auto-recompute handled it.
@@ -126,6 +145,10 @@ test.describe("notebook auto-recompute", () => {
   }) => {
     const { request } = page;
     const notebook = await createNotebook(request, liveApp.baseURL, "Auto");
+    // Author the whole graph before starting its initial recompute. Under CI
+    // load, letting the base cell run while the dependent is still being added
+    // can leave the setup waiting on an intermediate result.
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, false);
     const baseCell = await addCell(request, liveApp.baseURL, notebook.id, "base");
     await setSql(request, liveApp.baseURL, notebook.id, baseCell, "select 10 as amount");
     const doubledCell = await addCell(request, liveApp.baseURL, notebook.id, "doubled");
@@ -136,6 +159,7 @@ test.describe("notebook auto-recompute", () => {
       doubledCell,
       "select amount * 2 as doubled from base",
     );
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, true);
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     await expect(page.getByText("Auto").first()).toBeVisible({ timeout: 15000 });
@@ -164,6 +188,7 @@ test.describe("notebook auto-recompute", () => {
   }) => {
     const { request } = page;
     const notebook = await createNotebook(request, liveApp.baseURL, "AutoType");
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, false);
     const baseCell = await addCell(request, liveApp.baseURL, notebook.id, "base");
     await setSql(request, liveApp.baseURL, notebook.id, baseCell, "select 10 as amount");
     const doubledCell = await addCell(request, liveApp.baseURL, notebook.id, "doubled");
@@ -174,6 +199,7 @@ test.describe("notebook auto-recompute", () => {
       doubledCell,
       "select amount * 2 as doubled from base",
     );
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, true);
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     await expect(page.getByText("AutoType").first()).toBeVisible({ timeout: 15000 });
@@ -200,6 +226,7 @@ test.describe("notebook auto-recompute", () => {
   }) => {
     const { request } = page;
     const notebook = await createNotebook(request, liveApp.baseURL, "AutoBreak");
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, false);
     const baseCell = await addCell(request, liveApp.baseURL, notebook.id, "base");
     await setSql(request, liveApp.baseURL, notebook.id, baseCell, "select 10 as amount");
     const doubledCell = await addCell(request, liveApp.baseURL, notebook.id, "doubled");
@@ -210,6 +237,7 @@ test.describe("notebook auto-recompute", () => {
       doubledCell,
       "select amount * 2 as doubled from base",
     );
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, true);
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     await expect(page.getByText("AutoBreak").first()).toBeVisible({ timeout: 15000 });
