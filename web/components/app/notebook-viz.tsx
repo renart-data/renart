@@ -26,6 +26,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { VirtualDataTable } from "@/components/virtual-data-table";
 import {
   NotebookCellRunResult,
   NotebookVisualizationDefinition,
@@ -141,32 +142,24 @@ export function NotebookVisualizationRenderer({
       result.columns.findIndex((candidate) => candidate.toLowerCase() === column.toLowerCase()),
     );
     const visibleRows = result.rows.slice(0, limit);
+    const columnKeys = columns.map((_, index) => `column_${index}`);
+    const tableRows = visibleRows.map((row) =>
+      Object.fromEntries(
+        indexes.map((sourceIndex, columnIndex) => [columnKeys[columnIndex], row[sourceIndex]]),
+      ),
+    );
     return (
       <div className="overflow-hidden rounded-lg border">
-        <div className="max-h-72 overflow-auto">
-          <table aria-label={ariaLabel} className="w-full text-left text-xs">
-            <thead className="sticky top-0 bg-muted/90 backdrop-blur">
-              <tr>
-                {columns.map((column) => (
-                  <th key={column} className="whitespace-nowrap border-b px-2 py-1.5 font-medium">
-                    {column}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRows.map((row, rowIndex) => (
-                <tr key={rowIndex} className="border-b last:border-0">
-                  {indexes.map((index, columnIndex) => (
-                    <td key={columnIndex} className="max-w-80 truncate px-2 py-1.5 font-mono">
-                      {row[index] === null || row[index] === undefined ? "" : String(row[index])}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <VirtualDataTable
+          ariaLabel={ariaLabel}
+          columnKeys={columnKeys}
+          columns={columns}
+          dense
+          frameless
+          height={288}
+          rows={tableRows}
+          viewportClassName="max-h-72"
+        />
         {result.total_rows > visibleRows.length ? (
           <div className="border-t bg-muted/30 px-2 py-1 text-[11px] text-muted-foreground">
             showing {visibleRows.length} of {result.total_rows} rows

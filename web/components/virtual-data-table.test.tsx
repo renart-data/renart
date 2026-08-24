@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { VirtualDataTable, virtualRowWindow } from "@/components/virtual-data-table";
+import {
+  serializeSelectedCells,
+  VirtualDataTable,
+  virtualRowWindow,
+} from "@/components/virtual-data-table";
+import { EMPTY_DATA_GRID_SELECTION, selectDataGridCell } from "@/lib/data-grid-selection";
 
 describe("virtualRowWindow", () => {
   it("keeps a bounded overscanned window around the viewport", () => {
@@ -53,7 +58,7 @@ describe("VirtualDataTable", () => {
     expect(markup.match(/data-row-index=/g)?.length).toBeLessThan(30);
   });
 
-  it("keeps small results as ordinary semantic tables", () => {
+  it("keeps small results as semantic interactive grids", () => {
     const markup = renderToStaticMarkup(
       <VirtualDataTable
         ariaLabel="Small result"
@@ -63,6 +68,7 @@ describe("VirtualDataTable", () => {
     );
 
     expect(markup).not.toContain("data-virtualized");
+    expect(markup).toContain('role="grid"');
     expect(markup).toContain("one");
     expect(markup).toContain("two");
   });
@@ -80,5 +86,25 @@ describe("VirtualDataTable", () => {
     expect(markup.match(/>value</g)).toHaveLength(2);
     expect(markup).toContain("first");
     expect(markup).toContain("second");
+  });
+
+  it("serializes rectangular and disjoint selections like a spreadsheet", () => {
+    let selection = selectDataGridCell(EMPTY_DATA_GRID_SELECTION, { row: 0, column: 0 });
+    selection = selectDataGridCell(selection, { row: 1, column: 1 }, "extend");
+    selection = selectDataGridCell(selection, { row: 0, column: 1 }, "toggle");
+
+    expect(
+      serializeSelectedCells(
+        selection,
+        ["left", "right"],
+        [
+          { left: "one", right: "two" },
+          { left: "three", right: "four" },
+        ],
+      ),
+    ).toEqual({
+      text: "one\t\nthree\tfour",
+      html: "<table><tbody><tr><td>one</td><td></td></tr><tr><td>three</td><td>four</td></tr></tbody></table>",
+    });
   });
 });

@@ -632,7 +632,7 @@ test.describe("app notebooks live", () => {
     expect(result.performance?.runtime_sync_ms).toBeGreaterThanOrEqual(0);
     expect(result.performance?.session_bytes).toBeGreaterThan(0);
 
-    const table = page.getByRole("table", { name: "many_rows result preview" });
+    const table = page.getByRole("grid", { name: "many_rows result preview" });
     await expect(table).toHaveAttribute("aria-rowcount", "101");
     await expect(table.locator("tbody")).toHaveAttribute("data-virtualized", "true");
     await expect(table.locator("[data-row-index]")).toHaveCount(17);
@@ -646,6 +646,29 @@ test.describe("app notebooks live", () => {
     });
     await expect(table.locator('[data-row-index="50"]')).toBeAttached();
     expect(await table.locator("[data-row-index]").count()).toBeLessThan(30);
+
+    const cell50 = table.locator('[data-grid-row-index="50"][data-grid-column-index="0"]');
+    const cell51 = table.locator('[data-grid-row-index="51"][data-grid-column-index="0"]');
+    const cell52 = table.locator('[data-grid-row-index="52"][data-grid-column-index="0"]');
+    await cell50.click();
+    await expect(cell50.locator("..")).toHaveAttribute("aria-selected", "true");
+    if (!test.info().project.name.includes("mobile")) {
+      await cell51.hover();
+      await expect(page.locator('[data-slot="hover-card-content"]')).toBeHidden();
+      await cell50.hover();
+      await expect(page.locator('[data-slot="hover-card-content"]')).toBeVisible();
+    }
+
+    await cell52.click({ modifiers: ["Shift"] });
+    await expect(table.locator('td[aria-selected="true"]')).toHaveCount(3);
+    await cell52.press("Shift+ArrowDown");
+    await expect(table.locator('td[aria-selected="true"]')).toHaveCount(4);
+    await cell51.click({ modifiers: ["Control"] });
+    await expect(table.locator('td[aria-selected="true"]')).toHaveCount(3);
+    await cell52.press("Control+c");
+    await expect(page.getByText("Copied", { exact: true })).toBeVisible();
+    await cell52.press("Escape");
+    await expect(table.locator('td[aria-selected="true"]')).toHaveCount(0);
 
     const performanceButton = page
       .locator(`[data-notebook-cell-id="${cellId}"]`)
@@ -728,7 +751,7 @@ test.describe("app notebooks live", () => {
       sourcePayload.results[0].snapshot!.imported_at,
     );
     await expect(
-      sourceCard.getByRole("table", { name: `${source!.name} result preview` }),
+      sourceCard.getByRole("grid", { name: `${source!.name} result preview` }),
     ).toBeVisible();
 
     const totalCell = await addCell(page.request, liveApp.baseURL, notebook.id, "file_total");
