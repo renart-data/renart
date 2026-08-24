@@ -3,13 +3,13 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   AtSign,
+  ArrowUp,
   Bot,
   Check,
   CircleAlert,
   Database,
   FileCode,
   RotateCcw,
-  Send,
   Square,
   UserRound,
   X,
@@ -454,6 +454,7 @@ export function NotebookAgentChat({
                   type="button"
                   variant="outline"
                   size="sm"
+                  className="ml-auto"
                   disabled={requestBusy || conversation?.status === "cancelling"}
                   onClick={() => void stop()}
                 >
@@ -468,15 +469,13 @@ export function NotebookAgentChat({
                 <InputGroupButton
                   type="submit"
                   variant="default"
-                  size="icon-sm"
+                  size="icon-xs"
+                  className="ml-auto shrink-0 rounded-full"
+                  aria-label="Send message"
                   title="Send message"
                   disabled={!draft.trim() || requestBusy || !selectedProvider?.available}
                 >
-                  {requestBusy ? (
-                    <Spinner aria-label="Starting agent" />
-                  ) : (
-                    <Send data-icon="inline-start" />
-                  )}
+                  {requestBusy ? <Spinner aria-label="Starting agent" /> : <ArrowUp />}
                   <span className="sr-only">Send message</span>
                 </InputGroupButton>
               )}

@@ -44,6 +44,15 @@ test.describe("notebook agent chat live", () => {
 
     await expect(page.getByText("Work on this notebook together")).toBeVisible();
     const composer = page.getByPlaceholder("Ask about this notebook…");
+    const send = page.getByRole("button", { name: "Send message" });
+    const [composerBounds, sendBounds] = await Promise.all([
+      composer.boundingBox(),
+      send.boundingBox(),
+    ]);
+    expect(composerBounds).not.toBeNull();
+    expect(sendBounds).not.toBeNull();
+    expect(Math.abs(sendBounds!.width - sendBounds!.height)).toBeLessThan(2);
+    expect(sendBounds!.x).toBeGreaterThan(composerBounds!.x + composerBounds!.width / 2);
     await page.getByRole("button", { name: "Reference" }).click();
     await page.getByRole("option", { name: new RegExp(referencedCell.name) }).click();
     await page.getByRole("button", { name: "Reference" }).click();

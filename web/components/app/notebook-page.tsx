@@ -179,7 +179,7 @@ const NOTEBOOK_CELL_JUMP_HIGHLIGHT_MS = 1600;
 const NOTEBOOK_BLOCK_ENTER_ANIMATION =
   "animate-in fade-in-0 slide-in-from-bottom-2 duration-300 motion-reduce:animate-none";
 const NOTEBOOK_BLOCK_CARD_CLASS =
-  "group/notebook-block border-transparent bg-transparent shadow-none transition-colors hover:border-border hover:bg-card hover:shadow-sm focus-within:border-border focus-within:bg-card focus-within:shadow-sm";
+  "group/notebook-block border-transparent bg-transparent shadow-none transition-colors hover:border-border hover:bg-card hover:shadow-sm focus-within:border-primary/35 focus-within:bg-card focus-within:shadow-sm";
 const NOTEBOOK_BLOCK_HEADER_CLASS =
   "border-transparent bg-transparent transition-colors group-hover/notebook-block:border-border group-hover/notebook-block:bg-muted/20 group-focus-within/notebook-block:border-border group-focus-within/notebook-block:bg-muted/20";
 
@@ -374,6 +374,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const [promoting, setPromoting] = useState<WebAsset | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolsTab, setToolsTab] = useState("outline");
+  const [selectedBlockID, setSelectedBlockID] = useState<string | null>(null);
   const [selectedVisualizationID, setSelectedVisualizationID] = useState<string | null>(null);
   const [selectedControlID, setSelectedControlID] = useState<string | null>(null);
   const [visualizationInspectorOpen, setVisualizationInspectorOpen] = useState(false);
@@ -423,6 +424,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     setParametersOpen(false);
     setToolsOpen(false);
     setToolsTab("outline");
+    setSelectedBlockID(null);
     setSelectedVisualizationID(null);
     setSelectedControlID(null);
     setVisualizationInspectorOpen(false);
@@ -468,6 +470,15 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     setSelectedControlID(null);
     setVisualizationInspectorOpen(false);
   }, [notebook, selectedControlID]);
+
+  useEffect(() => {
+    if (!selectedBlockID || !notebook) return;
+    const exists =
+      notebook.blocks.some((block, index) => notebookBlockKey(block, index) === selectedBlockID) ||
+      (selectedBlockID.startsWith("control:") &&
+        notebook.parameters?.some((parameter) => `control:${parameter.id}` === selectedBlockID));
+    if (!exists) setSelectedBlockID(null);
+  }, [notebook, selectedBlockID]);
 
   useEffect(() => {
     if (wideNotebookTools) setVisualizationInspectorOpen(false);
@@ -691,6 +702,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
 
   const selectVisualization = useCallback(
     (visualizationID: string) => {
+      setSelectedBlockID(`block:${visualizationID}`);
       setSelectedVisualizationID(visualizationID);
       setSelectedControlID(null);
       if (!wideNotebookTools) setVisualizationInspectorOpen(true);
@@ -700,6 +712,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
 
   const selectControl = useCallback(
     (controlID: string) => {
+      setSelectedBlockID(`control:${controlID}`);
       setSelectedControlID(controlID);
       setSelectedVisualizationID(null);
       if (!wideNotebookTools) setVisualizationInspectorOpen(true);
@@ -707,15 +720,23 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     [wideNotebookTools],
   );
 
+  const selectContentBlock = useCallback((blockID: string) => {
+    setSelectedBlockID(blockID);
+    setSelectedVisualizationID(null);
+    setSelectedControlID(null);
+    setVisualizationInspectorOpen(false);
+  }, []);
+
   const confirmDeleteCell = useCallback(async () => {
     if (!cellToDelete || deletingCell) {
       return;
     }
     setDeletingCell(true);
     await mutateWithResult(() => deleteNotebookCell(notebookId, cellToDelete.id));
+    if (selectedBlockID === `cell:${cellToDelete.id}`) setSelectedBlockID(null);
     setDeletingCell(false);
     setCellToDelete(null);
-  }, [cellToDelete, deletingCell, mutateWithResult, notebookId]);
+  }, [cellToDelete, deletingCell, mutateWithResult, notebookId, selectedBlockID]);
 
   const createNotebookBlock = useCallback(
     async (kind: PendingNotebookBlockKind, options: NotebookBlockCreateOptions = {}) => {
@@ -967,9 +988,8 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       } else if (block.control) {
         selectControl(block.control);
       } else {
-        setSelectedVisualizationID(null);
-        setSelectedControlID(null);
-        setVisualizationInspectorOpen(false);
+        const blockIndex = Math.max(notebook?.blocks.indexOf(block) ?? 0, 0);
+        selectContentBlock(notebookBlockKey(block, blockIndex));
       }
       if (block.cell) {
         goToCell(block.cell);
@@ -986,7 +1006,14 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       }
       if (!wideNotebookTools) setToolsOpen(false);
     },
-    [goToCell, selectControl, selectVisualization, wideNotebookTools],
+    [
+      goToCell,
+      notebook?.blocks,
+      selectContentBlock,
+      selectControl,
+      selectVisualization,
+      wideNotebookTools,
+    ],
   );
 
   const pipelines = workspace?.pipelines ?? [];
@@ -1061,6 +1088,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         key={`control:${control.id}`}
         data-notebook-control-id={control.id}
         data-notebook-block-entering={entering || undefined}
+        data-notebook-block-selected={selectedBlockID === `control:${control.id}` || undefined}
         className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
       >
         <NotebookControlBlock
@@ -1075,6 +1103,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
           inspectorTarget={visualizationInspectorTarget}
           onSelect={() => selectControl(control.id)}
           onCloseInspector={() => {
+            setSelectedBlockID(null);
             setSelectedControlID(null);
             setVisualizationInspectorOpen(false);
           }}
@@ -1093,12 +1122,14 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                 parameterValuesRef.current = next;
                 return next;
               });
+              setSelectedBlockID(`control:${nextControl.id}`);
               setSelectedControlID(nextControl.id);
             }
             return true;
           }}
           onDelete={async () => {
             await mutateWithResult(() => deleteNotebookControl(notebookId, control.id));
+            setSelectedBlockID(null);
             setSelectedControlID(null);
             setVisualizationInspectorOpen(false);
           }}
@@ -1394,7 +1425,10 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                       data-notebook-cell-jump-highlight={
                         jumpHighlightedCellId === block.cell || undefined
                       }
+                      data-notebook-block-selected={selectedBlockID === blockKey || undefined}
                       className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+                      onPointerDown={() => selectContentBlock(blockKey)}
+                      onFocusCapture={() => selectContentBlock(blockKey)}
                     >
                       {cell.notebook_source ? (
                         <NotebookSourceCard
@@ -1405,6 +1439,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                           stale={staleCells.has(block.cell)}
                           running={runningCells.has(block.cell)}
                           busy={busy}
+                          selected={selectedBlockID === blockKey}
                           onRun={() =>
                             void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
                           }
@@ -1436,6 +1471,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                           stale={staleCells.has(block.cell)}
                           running={runningCells.has(block.cell)}
                           busy={busy}
+                          selected={selectedBlockID === blockKey}
                           onRun={() =>
                             void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
                           }
@@ -1499,6 +1535,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                   data-notebook-block-id={block.id}
                   data-notebook-visualization-id={block.id}
                   data-notebook-block-entering={entering || undefined}
+                  data-notebook-block-selected={selectedBlockID === blockKey || undefined}
                   className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
                 >
                   <NotebookVisualizationBlockCard
@@ -1512,6 +1549,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                     inspectorTarget={visualizationInspectorTarget}
                     onSelect={() => selectVisualization(block.id ?? "")}
                     onCloseInspector={() => {
+                      setSelectedBlockID(null);
                       setSelectedVisualizationID(null);
                       setVisualizationInspectorOpen(false);
                     }}
@@ -1529,6 +1567,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                       await flushPendingSaves();
                       await mutateWithResult(() => deleteNotebookBlock(notebookId, block.id ?? ""));
                       if (selectedVisualizationID === block.id) {
+                        setSelectedBlockID(null);
                         setSelectedVisualizationID(null);
                         setVisualizationInspectorOpen(false);
                       }
@@ -1541,10 +1580,14 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                   data-notebook-block-id={block.id || undefined}
                   data-notebook-markdown-index={index}
                   data-notebook-block-entering={entering || undefined}
+                  data-notebook-block-selected={selectedBlockID === blockKey || undefined}
                   className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+                  onPointerDown={() => selectContentBlock(blockKey)}
+                  onFocusCapture={() => selectContentBlock(blockKey)}
                 >
                   <MarkdownBlockCard
                     markdown={block.markdown ?? ""}
+                    selected={selectedBlockID === blockKey}
                     onSave={async (markdown) => {
                       if (!block.id) {
                         const blocks: WebNotebookBlock[] = notebook.blocks.map(
@@ -1562,6 +1605,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                       );
                     }}
                     onDelete={() => {
+                      if (selectedBlockID === blockKey) setSelectedBlockID(null);
                       if (!block.id) {
                         const blocks = notebook.blocks.filter(
                           (_, candidateIndex) => candidateIndex !== index,
@@ -2733,6 +2777,7 @@ function NotebookSourceCard({
   stale,
   running,
   busy,
+  selected,
   onRun,
   onCancel,
   onRunFromHere,
@@ -2747,6 +2792,7 @@ function NotebookSourceCard({
   stale: boolean;
   running: boolean;
   busy: boolean;
+  selected: boolean;
   onRun: () => void;
   onCancel: () => void;
   onRunFromHere: () => void;
@@ -2778,6 +2824,7 @@ function NotebookSourceCard({
       className={cn(
         NOTEBOOK_BLOCK_CARD_CLASS,
         "border-l-2 border-l-cyan-500/55 hover:bg-cyan-500/[0.025]",
+        selected && "border-primary/45 bg-card shadow-sm ring-1 ring-primary/15",
       )}
     >
       <DelimitedCardHeader
@@ -2961,6 +3008,7 @@ function NotebookCellCard({
   stale,
   running,
   busy,
+  selected,
   onRun,
   onCancel,
   onRunFromHere,
@@ -2988,6 +3036,7 @@ function NotebookCellCard({
   stale: boolean;
   running: boolean;
   busy: boolean;
+  selected: boolean;
   onRun: () => void;
   onCancel: () => void;
   onRunFromHere: () => void;
@@ -3118,6 +3167,7 @@ function NotebookCellCard({
       className={cn(
         NOTEBOOK_BLOCK_CARD_CLASS,
         sourceConnection && "border-l-2 border-l-primary/50 hover:bg-primary/[0.02]",
+        selected && "border-primary/45 bg-card shadow-sm ring-1 ring-primary/15",
       )}
     >
       <DelimitedCardHeader
@@ -3836,10 +3886,12 @@ function PromoteCellDialog({
 
 function MarkdownBlockCard({
   markdown,
+  selected,
   onSave,
   onDelete,
 }: {
   markdown: string;
+  selected: boolean;
   onSave: (markdown: string) => Promise<boolean>;
   onDelete: () => void;
 }) {
@@ -3864,9 +3916,15 @@ function MarkdownBlockCard({
   };
 
   return (
-    <section className="group/markdown-block relative rounded-xl border border-transparent transition-colors hover:border-border focus-within:border-primary/30">
+    <section
+      className={cn(
+        "group/markdown-block relative rounded-xl border border-transparent transition-colors hover:border-border focus-within:border-primary/35",
+        selected && "border-primary/45 bg-card shadow-sm ring-1 ring-primary/15",
+      )}
+    >
       <MarkdownEditor
         value={draft}
+        selected={selected}
         ariaLabel="Markdown cell"
         placeholder="Write a note…"
         className="border-0 hover:border-transparent focus-within:border-transparent"

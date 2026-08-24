@@ -75,7 +75,7 @@ const presentationMeta = {
 
 export function AppPresentationsLayout() {
   return (
-    <div className="h-full min-h-0 bg-muted/40">
+    <div className="flex h-full min-h-0 flex-col bg-muted/40">
       <Outlet />
     </div>
   );
@@ -502,9 +502,9 @@ export function AppPresentationLivePage({
         <Tabs
           value={mode}
           onValueChange={(value) => setMode(value as "visual" | "definition")}
-          className="min-h-0 flex-1 gap-0"
+          className="h-full min-h-0 flex-1 gap-0 overflow-hidden"
         >
-          <TabsContent value="visual" className="min-h-0 overflow-hidden">
+          <TabsContent value="visual" className="h-full min-h-0 overflow-hidden">
             <PresentationBuilder
               presentationId={presentationId}
               artifact={visualDraft}
@@ -517,7 +517,7 @@ export function AppPresentationLivePage({
               onChange={setVisualDraft}
             />
           </TabsContent>
-          <TabsContent value="definition" className="min-h-0 overflow-hidden">
+          <TabsContent value="definition" className="h-full min-h-0 overflow-hidden">
             <DocumentAuthoringShell
               commandBar={
                 <DocumentAuthoringCommandBar

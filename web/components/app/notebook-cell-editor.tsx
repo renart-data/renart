@@ -402,7 +402,7 @@ export function NotebookCellMonaco({
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div className="overflow-hidden">
       <div data-slot="notebook-cell-editor" style={{ height: editorHeight }}>
         <AssetCodeEditor
           asset={cell}

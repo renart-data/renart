@@ -772,14 +772,14 @@ export function PresentationBuilder({
   );
 
   return (
-    <div data-testid="presentation-builder" className="h-full min-h-0">
+    <div data-testid="presentation-builder" className="h-full min-h-0 overflow-hidden">
       <DocumentAuthoringShell commandBar={commandBar} banner={banner} className="bg-muted/30">
-        <div className="flex min-h-0 flex-1">
+        <div className="flex h-full min-h-0 flex-1 overflow-hidden">
           {wideBuilder ? (
             <aside className="w-60 shrink-0 border-r bg-background">{renderSidebar()}</aside>
           ) : null}
-          <main className="min-w-0 flex-1">
-            <ScrollArea className="h-full">
+          <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            <ScrollArea data-testid="presentation-builder-scroll" className="h-full min-h-0">
               <div
                 className="min-h-full p-3 sm:p-5"
                 style={{

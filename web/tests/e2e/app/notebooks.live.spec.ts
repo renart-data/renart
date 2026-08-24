@@ -1366,6 +1366,13 @@ test.describe("app notebooks live", () => {
 
     const editor = page.getByLabel("Markdown cell");
     await expect(editor).toHaveAttribute("contenteditable", "true");
+    await expect(editor).toHaveAttribute("spellcheck", "false");
+    await editor.focus();
+    await expect(editor).toHaveAttribute("spellcheck", "true");
+    await expect(page.locator("[data-notebook-markdown-index]").last()).toHaveAttribute(
+      "data-notebook-block-selected",
+      "true",
+    );
     await editor.fill("A ");
     await page.getByRole("button", { name: "Bold", exact: true }).click();
     await editor.pressSequentially("visual");
@@ -1380,6 +1387,7 @@ test.describe("app notebooks live", () => {
     );
     await page.getByRole("heading", { name: "Markdown Creation" }).first().click();
     expect((await saveResponse).ok()).toBe(true);
+    await expect(editor).toHaveAttribute("spellcheck", "false");
 
     const response = await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`);
     expect(response.ok()).toBe(true);
