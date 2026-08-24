@@ -17,6 +17,7 @@ the original.
 | [execution-parallelism.md](execution-parallelism.md) | core + native DuckDB concurrency implemented — operator audits and wait telemetry remain |
 | [materialization-reach.md](materialization-reach.md) | proposed reach — guided advanced SQL modes, coverage timeline, Python pre-run diagnostic |
 | [materialization-target-lifecycle.md](materialization-target-lifecycle.md) | runtime target safety implemented for DuckDB/Postgres/Snowflake/BigQuery/Databricks — rename/orphan workflow pending asset-name/path independence |
+| [notebook-agent-and-interaction-ux.md](notebook-agent-and-interaction-ux.md) | approved implementation plan — native agent questionnaires, credential-blind connection grants, realistic agent evaluation, selectable result grids, and notebook/presentation release polish |
 | [notebook-platform.md](notebook-platform.md) | core platform implemented — focused release evidence for transfer fidelity, restart/concurrency, performance, accessibility, and authenticated agent-client corpus remains |
 | [open-project-links.md](open-project-links.md) | investigation — safe docs-to-local open intents, native protocol registration, and hosted routing |
 | [object-storage-assets.md](object-storage-assets.md) | partial support + proposal — existing Load S3/GCS browsing, upstream-compatible Seed sources, schema preview, lineage, and storage write safety |
