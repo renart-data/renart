@@ -8,7 +8,7 @@ RENART_CACHE_HOME ?= $(if $(XDG_CACHE_HOME),$(XDG_CACHE_HOME),$(HOME)/.cache)
 HOST_SQLPARSER_TARGET = $(shell $(GO) env GOOS)-$(shell $(GO) env GOARCH)
 BRUIN_SQLPARSER_STUB_LIB_DIR = $(RENART_CACHE_HOME)/renart/bruin-sqlparser-stub/$(HOST_SQLPARSER_TARGET)/release
 
-.PHONY: help dev build test check release-check architecture-check licenses licenses-check bruin-sqlparser-stub go-build go-test standalone-build web-install web-build web-typecheck web-test-live docs-install docs-build docs-dev docs-preview vscode-install landing-media docs-media cli-recordings docs-docker docs-docker-run sync-install clean
+.PHONY: help dev build test check release-check architecture-check licenses licenses-check bruin-sqlparser-stub go-build go-test standalone-build web-install web-build web-typecheck web-test-live notebook-agent-eval docs-install docs-build docs-dev docs-preview vscode-install landing-media docs-media cli-recordings docs-docker docs-docker-run sync-install clean
 
 help:
 	@printf "Renart build targets\n\n"
@@ -26,6 +26,7 @@ help:
 	@printf "  make web-build         Build React app\n"
 	@printf "  make web-typecheck     Typecheck React app\n"
 	@printf "  make web-test-live     Run live Playwright tests\n"
+	@printf "  make notebook-agent-eval  Run deterministic notebook-agent evaluation tasks\n"
 	@printf "  make docs-build        Build Astro/Starlight docs\n"
 	@printf "  make docs-dev          Start docs dev server\n"
 	@printf "  make vscode-install    Install VS Code extension dependencies\n"
@@ -92,6 +93,9 @@ web-typecheck:
 
 web-test-live: go-build
 	PWTEST_CACHE_DIR=/dev/shm/bruin-playwright/cache $(PNPM) --dir web exec playwright test --config=playwright.live.config.ts
+
+notebook-agent-eval: go-build
+	node scripts/notebook-agent-eval.mjs --provider fake
 
 docs-install:
 	$(PNPM) --dir docs install --frozen-lockfile

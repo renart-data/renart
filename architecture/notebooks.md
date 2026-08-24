@@ -431,6 +431,10 @@ Sheets. Inspector forms switch to compact, shrink-safe field layouts and hide
 horizontal overflow rather than widening the page or Sheet. Dashboard
 tablet/mobile modes are deterministic previews derived from the one authored
 desktop layout rather than hidden breakpoint state.
+The routed presentation shell, tabs, builder, center pane, and canvas form one
+explicit `h-full min-h-0` chain. The visual canvas owns vertical scrolling when
+a dashboard or report grows beyond the viewport; the command bar and wide
+sidebars stay fixed, and definition mode keeps Monaco as its own scroll owner.
 
 Report text sections use the shared visual-first Markdown editor and retain an
 exact source-mode escape hatch. The document canvas selects a visualization
@@ -565,6 +569,12 @@ to fixed-row windowing above fifty loaded rows: only the viewport plus a small
 overscan is mounted, spacer rows retain the complete scroll geometry, and ARIA
 row counts/indexes retain the logical table position. Notebook cells show every
 row in the server's bounded preview instead of applying a second frontend cap.
+That table also owns the spreadsheet-style selection contract shared by asset
+inspect and structured table visualizations: click/drag/Shift extends a range,
+Ctrl/Cmd toggles cells, arrows move the active cell, and Ctrl/Cmd+C copies the
+selection as TSV plus HTML. A full-value popover is available only for the
+active selected cell, never on hover. Selection is keyed by logical row/column
+coordinates so virtualization does not discard it.
 
 Local SQL previews append `count(*) over ()` to the bounded query and remove the
 final bookkeeping column by position, so exact row count and preview require one
@@ -626,6 +636,30 @@ inventing connector details. The native Edit prompt tells the agent to compare
 these facts and not mistake a truncate-and-replace snapshot for retained
 history.
 
+Native turns can pause on one server-owned interaction. `ask_user` renders a
+bounded Questionnaire in the chat and resumes the same tool call with the
+validated answer. `request_connection_access` can instead ask the user to
+approve an existing connection or create one through Renart's write-only
+connection form. The agent receives only the approved connection identity and
+capabilities. The browser never echoes secret fields into the transcript.
+
+An opaque random token binds native interactions to one notebook, turn, mode,
+and expiration. Codex forwards that token to its MCP child through the client's
+explicit environment-variable allowlist; Claude Code and OpenCode launch their
+MCP child from the same isolated provider environment. The token is absent from
+prompts, argv, authored files, and external MCP. Reset, cancellation,
+completion, timeout, or shutdown removes both the token and every grant.
+
+Edit turns with a valid token additionally receive credential-blind connection
+tools. Local DuckDB is implicit; every other connection needs a user grant.
+The tools list safe connection identities, perform bounded catalog discovery,
+and execute exactly one parsed read-only result-producing sample query. Samples
+default to 50 and cap at 100 rows, 128 KiB total and 8 KiB per value, with a
+30-second deadline and connection-aware error redaction. Credentials are
+resolved only inside the server for the operation. Adding the resulting source
+still uses the ordinary semantic change set and retains the first-import review
+boundary for non-DuckDB data.
+
 Edit's prepare tool publishes the exact supported dotted operation kinds as a
 JSON Schema enum with field-specific source descriptions. Validation errors
 repeat the valid values, and the prompt tells clients to correct from that
@@ -668,6 +702,8 @@ The HTTP surface is notebook-scoped:
 - `GET /api/notebooks/{id}/agent` returns the current snapshot and discovered
   providers;
 - `POST /api/notebooks/{id}/agent/messages` starts one turn;
+- `POST /api/notebooks/{id}/agent/interactions/{interactionID}/answer` answers
+  the active Questionnaire or connection request;
 - `POST /api/notebooks/{id}/agent/cancel` terminates the provider process tree;
 - `DELETE /api/notebooks/{id}/agent` starts a fresh chat.
 
@@ -760,12 +796,18 @@ and verifies the exact tool catalog, annotations, redaction, payload bounds,
 revision conflict, exact apply, Python approval, asynchronous status, and
 cancellation. Native-agent service tests cover provider commands, notebook and
 Ask/Edit scoping, structured reference resolution, normalized streaming,
-resumption, cancellation, private configuration, and generic-tool rejection. A
-deterministic fake-provider Playwright test covers desktop/mobile streaming,
-cell/asset references, and transcript restoration; a
-real local Codex smoke test covers launch, MCP discovery, a tool call, and
-session resumption. Playwright live tests also exercise a complete two-named-
-connection Postgres-to-Parquet-to-DuckDB join, warehouse/file/HTTP source chains,
+resumption, cancellation, private configuration, Questionnaire state,
+turn-scoped connection grants, bounded live queries, secret redaction, and
+generic-tool rejection. A deterministic fake-provider Playwright test covers
+desktop/mobile streaming, structured interactions, cell/asset references, and
+transcript restoration. `make notebook-agent-eval` runs the credential-free
+fixture corpus through the fake provider. The same harness accepts an explicit
+authenticated Codex, Claude Code, or OpenCode provider, creates a temporary Git
+workspace and optional ephemeral Postgres, and records exact diffs, tool calls,
+interactions, diagnostics, runtime results, retries, durations, and secret-scan
+findings as JSON plus Markdown. Playwright live tests also exercise a complete
+two-named-connection Postgres-to-Parquet-to-DuckDB join,
+warehouse/file/HTTP source chains,
 visual editing/migration, typed parameter editing/execution, export bytes,
 reviewed source/connected-cell promotion, header-created durable markdown, and
 race-sensitive notebook UI paths. Frontend unit coverage verifies bounded

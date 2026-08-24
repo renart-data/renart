@@ -38,6 +38,267 @@ function codexEvent(event) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
 }
 
+async function callMCPTool(request, tool, args, suffix = tool) {
+  const id = `call-${suffix}`;
+  codexEvent({
+    type: "item.started",
+    item: { id, type: "mcp_tool_call", server: "renart", tool, status: "in_progress" },
+  });
+  try {
+    const result = await request("tools/call", { name: tool, arguments: args });
+    codexEvent({
+      type: "item.completed",
+      item: { id, type: "mcp_tool_call", server: "renart", tool, status: "completed" },
+    });
+    return result?.structuredContent ?? result;
+  } catch (error) {
+    codexEvent({
+      type: "item.failed",
+      item: { id, type: "mcp_tool_call", server: "renart", tool, status: "failed" },
+    });
+    throw error;
+  }
+}
+
+async function callMCPToolQuiet(request, tool, args) {
+  const result = await request("tools/call", { name: tool, arguments: args });
+  return result?.structuredContent ?? result;
+}
+
+function finishWithMessage(id, text) {
+  codexEvent({
+    type: "item.completed",
+    item: { id, type: "agent_message", text },
+  });
+  codexEvent({ type: "turn.completed" });
+}
+
+async function runEvaluationTask(task, notebookID) {
+  if (task === "ask-failing-cell") {
+    await withMCP(async (request) => {
+      await callMCPTool(request, "get_notebook_outline", { notebook_id: notebookID }, "outline");
+      await callMCPTool(
+        request,
+        "get_notebook_block",
+        { notebook_id: notebookID, block_id: "broken_orders" },
+        "block",
+      );
+      await callMCPTool(
+        request,
+        "search_workspace_catalog",
+        { query: "order history", kinds: ["pipeline_asset"], limit: 10 },
+        "catalog",
+      );
+    });
+    finishWithMessage("message-eval-ask", "The relation is missing; the catalog contains retained order assets.");
+    return true;
+  }
+
+  if (task === "repair-sql-cell") {
+    await withMCP(async (request) => {
+      const outline = await callMCPTool(
+        request,
+        "get_notebook_outline",
+        { notebook_id: notebookID },
+        "outline",
+      );
+      await callMCPTool(
+        request,
+        "search_workspace_catalog",
+        { query: "retail order events", kinds: ["pipeline_asset"], limit: 10 },
+        "catalog",
+      );
+      const prepared = await callMCPTool(
+        request,
+        "prepare_notebook_change_set",
+        {
+          notebook_id: notebookID,
+          base_revision: outline.notebook.revision,
+          operations: [
+            {
+              kind: "cell.sql.refactor",
+              cell_id: "daily_totals",
+              sql_refactor: {
+                kind: "relation.rename",
+                relation: "retail.order_event",
+                new_name: "retail.order_events",
+              },
+            },
+          ],
+        },
+        "prepare",
+      );
+      await callMCPTool(
+        request,
+        "apply_notebook_change_set",
+        { prepared_id: prepared.prepared_id },
+        "apply",
+      );
+      const run = await callMCPTool(
+        request,
+        "run_notebook_cells",
+        { notebook_id: notebookID, cells: ["daily_totals"] },
+        "run",
+      );
+      for (let attempt = 0; attempt < 200; attempt++) {
+        const status = await callMCPToolQuiet(request, "get_notebook_run_status", {
+          run_id: run.run_id,
+        });
+        if (["succeeded", "failed", "cancelled"].includes(status.status)) return;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      throw new Error("fake notebook run did not finish");
+    });
+    finishWithMessage("message-eval-repair", "Repaired the relation with a source-preserving edit and verified the cell.");
+    return true;
+  }
+
+  if (task === "add-checked-visualization") {
+    await withMCP(async (request) => {
+      const outline = await callMCPTool(
+        request,
+        "get_notebook_outline",
+        { notebook_id: notebookID },
+        "outline",
+      );
+      await callMCPTool(
+        request,
+        "get_notebook_result_schema",
+        { notebook_id: notebookID, cell_id: "trend_data" },
+        "schema",
+      );
+      const prepared = await callMCPTool(
+        request,
+        "prepare_notebook_change_set",
+        {
+          notebook_id: notebookID,
+          base_revision: outline.notebook.revision,
+          operations: [
+            {
+              kind: "visualization.create",
+              visualization: {
+                source: "trend_data",
+                definition: {
+                  version: 1,
+                  type: "line",
+                  title: "Daily revenue",
+                  encoding: { x: { field: "order_date" }, y: [{ field: "revenue" }] },
+                },
+              },
+            },
+          ],
+        },
+        "prepare",
+      );
+      await callMCPTool(
+        request,
+        "apply_notebook_change_set",
+        { prepared_id: prepared.prepared_id },
+        "apply",
+      );
+    });
+    finishWithMessage("message-eval-chart", "Added a checked daily revenue line chart without changing SQL.");
+    return true;
+  }
+
+  if (task === "clarify-ambiguous-metric") {
+    await withMCP(async (request) => {
+      const outline = await callMCPTool(
+        request,
+        "get_notebook_outline",
+        { notebook_id: notebookID },
+        "outline",
+      );
+      const answered = await callMCPTool(
+        request,
+        "ask_user",
+        {
+          title: "Choose a primary sales metric",
+          description: "The notebook exposes two reasonable daily measures.",
+          questions: [
+            {
+              id: "metric",
+              kind: "single_choice",
+              prompt: "Which metric should the trend chart show?",
+              required: true,
+              options: [
+                { value: "revenue", label: "Revenue", recommended: true },
+                { value: "orders", label: "Order count" },
+              ],
+            },
+          ],
+        },
+        "questionnaire",
+      );
+      const metric = answered.answers?.[0]?.values?.[0] ?? "revenue";
+      await callMCPTool(
+        request,
+        "get_notebook_result_schema",
+        { notebook_id: notebookID, cell_id: "metric_data" },
+        "schema",
+      );
+      const prepared = await callMCPTool(
+        request,
+        "prepare_notebook_change_set",
+        {
+          notebook_id: notebookID,
+          base_revision: outline.notebook.revision,
+          operations: [
+            {
+              kind: "visualization.create",
+              visualization: {
+                source: "metric_data",
+                definition: {
+                  version: 1,
+                  type: "line",
+                  title: "Daily sales",
+                  encoding: { x: { field: "order_date" }, y: [{ field: metric }] },
+                },
+              },
+            },
+          ],
+        },
+        "prepare",
+      );
+      await callMCPTool(
+        request,
+        "apply_notebook_change_set",
+        { prepared_id: prepared.prepared_id },
+        "apply",
+      );
+    });
+    finishWithMessage("message-eval-question", "Used the selected metric in a checked chart.");
+    return true;
+  }
+
+  if (task === "cancel-pending-question") {
+    await withMCP(async (request) => {
+      await callMCPTool(
+        request,
+        "ask_user",
+        {
+          title: "Choose a metric",
+          questions: [
+            {
+              id: "metric",
+              kind: "single_choice",
+              prompt: "Which metric should this notebook show?",
+              required: true,
+              options: [
+                { value: "revenue", label: "Revenue" },
+                { value: "orders", label: "Order count" },
+              ],
+            },
+          ],
+        },
+        "questionnaire",
+      );
+    });
+    return true;
+  }
+  return false;
+}
+
 async function withMCP(callback) {
   const command = codexConfigValue("mcp_servers.renart.command");
   const args = codexConfigValue("mcp_servers.renart.args");
@@ -96,8 +357,18 @@ async function withMCP(callback) {
 
 async function main() {
   const prompt = await readPrompt();
+  const evaluationTask = process.env.RENART_NOTEBOOK_EVAL_TASK_ID ?? "";
+  const mcpArguments = codexConfigValue("mcp_servers.renart.args");
+  const notebookIndex = mcpArguments.indexOf("--notebook");
+  const notebookID = notebookIndex >= 0 ? mcpArguments[notebookIndex + 1] : "";
   const editConnectionTurn = prompt.includes("Connect me to a new notebook data source");
-  if (editConnectionTurn) {
+  const evaluationEditTurn = new Set([
+    "repair-sql-cell",
+    "add-checked-visualization",
+    "clarify-ambiguous-metric",
+    "cancel-pending-question",
+  ]).has(evaluationTask);
+  if (editConnectionTurn || evaluationEditTurn) {
     if (joinedArguments.includes("--read-only") || joinedArguments.includes("--no-runs")) {
       fail("edit mode unexpectedly restricted MCP capabilities");
     }
@@ -106,6 +377,9 @@ async function main() {
   }
   codexEvent({ type: "thread.started", thread_id: "fake-notebook-thread" });
   codexEvent({ type: "turn.started" });
+  if (evaluationTask && (await runEvaluationTask(evaluationTask, notebookID))) {
+    return;
+  }
   if (prompt.includes("Ask me which metric")) {
     codexEvent({
       type: "item.started",

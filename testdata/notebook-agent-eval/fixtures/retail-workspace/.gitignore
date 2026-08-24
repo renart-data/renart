@@ -1,0 +1,4 @@
+.bruin.yml
+.renart/
+duckdb-files/
+logs/queries

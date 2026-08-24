@@ -328,6 +328,7 @@ func TestNotebookAgentProviderCommandsOnlyExposeScopedMCP(t *testing.T) {
 	base := NotebookAgentProviderRunRequest{
 		Mode: NotebookAgentModeAsk, NotebookID: "notebook-one", RunDir: runDir,
 		WorkspaceRoot: "/workspace", RenartExecutable: "/usr/bin/renart",
+		TurnToken: "opaque-turn-token",
 	}
 
 	codex := base
@@ -337,10 +338,16 @@ func TestNotebookAgentProviderCommandsOnlyExposeScopedMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(command.Args, " ")
-	for _, expected := range []string{"--ignore-user-config", `sandbox_mode="read-only"`, "--notebook", "--read-only", "--no-runs"} {
+	for _, expected := range []string{
+		"--ignore-user-config", `sandbox_mode="read-only"`, "--notebook", "--read-only", "--no-runs",
+		`mcp_servers.renart.env_vars=["RENART_NOTEBOOK_AGENT_TURN_TOKEN"]`,
+	} {
 		if !strings.Contains(joined, expected) {
 			t.Errorf("Codex command misses %q: %s", expected, joined)
 		}
+	}
+	if strings.Contains(joined, base.TurnToken) {
+		t.Fatalf("opaque turn token leaked into Codex argv: %s", joined)
 	}
 	if strings.Contains(joined, "current request") {
 		t.Fatalf("prompt leaked into Codex argv: %s", joined)

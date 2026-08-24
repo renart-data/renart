@@ -1,0 +1,7 @@
+id: 8fca39cb-b0d7-4776-9c86-07b431b47f7a
+name: Retail analytics
+schedule: daily
+start_date: "2026-08-01"
+
+default_connections:
+  duckdb: duckdb-default

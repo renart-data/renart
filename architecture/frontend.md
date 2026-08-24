@@ -414,6 +414,18 @@ not underscore-flattened route hacks.
   bundled Simple Icons Iconify set; local glyphs cover file storage and engines
   without a matching mark. Icon data is compiled into the web bundle and never
   fetched from a third-party API at runtime.
+- Bounded analytical results share `VirtualDataTable` across notebook outputs,
+  asset inspect, and table visualizations in notebooks, dashboards, and reports.
+  Its controlled-capable logical-coordinate selection model survives virtual
+  row mounting, supports pointer ranges and keyboard navigation/toggling, and
+  copies selected cells as TSV and HTML. Hover alone never expands a value;
+  only the active selected cell can open its complete content. Tables whose
+  row-action semantics do not fit this spreadsheet contract remain separate.
+- Dashboard/report authoring keeps one explicit shrink-safe height chain from
+  the routed page through the tabs and builder. The visual canvas ScrollArea
+  owns overflow for tall content while the command bar and desktop sidebars
+  remain fixed; definition Monaco and audience viewers retain their own scroll
+  owners.
 - Other pages: [catalog-page.tsx](../web/components/app/catalog-page.tsx),
   [notebook-page.tsx](../web/components/app/notebook-page.tsx),
   [runs-page.tsx](../web/components/app/runs-page.tsx),

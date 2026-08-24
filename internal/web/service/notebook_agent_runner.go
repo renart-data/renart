@@ -191,6 +191,11 @@ func codexNotebookAgentCommand(ctx context.Context, binary string, request Noteb
 		"-c", `mcp_servers.renart.default_tools_approval_mode="approve"`,
 		"-c", `mcp_servers.renart.tool_timeout_sec=1800`,
 	}
+	if strings.TrimSpace(request.TurnToken) != "" {
+		common = append(common,
+			"-c", `mcp_servers.renart.env_vars=["RENART_NOTEBOOK_AGENT_TURN_TOKEN"]`,
+		)
+	}
 	args := []string{"exec"}
 	if strings.TrimSpace(request.SessionID) == "" {
 		args = append(args, common...)

@@ -121,7 +121,7 @@ func (s *Server) registerTools() {
 				s.mcp,
 				changeTool(
 					"request_connection_access",
-					"Ask the user to approve an existing query connection or create one of the requested type. Never ask for or receive credentials. DuckDB is approved automatically; other grants last only for this Edit turn.",
+					"Required handoff whenever notebook work needs a query connection that is not already granted. Pause this turn while the user approves an existing connection or creates one, then resume with only its safe name/type/capabilities. Do not replace this call with prose asking the user to configure access. Never ask for or receive credentials. DuckDB is approved automatically; other grants last only for this Edit turn.",
 					false,
 					false,
 				),
