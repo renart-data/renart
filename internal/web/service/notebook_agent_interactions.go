@@ -18,6 +18,7 @@ type NotebookAgentInteractionKind string
 
 const (
 	NotebookAgentInteractionQuestionnaire NotebookAgentInteractionKind = "questionnaire"
+	NotebookAgentInteractionConnection    NotebookAgentInteractionKind = "connection_access"
 )
 
 type NotebookAgentQuestionKind string
@@ -56,27 +57,65 @@ type NotebookAgentQuestionAnswer struct {
 	Text       string   `json:"text,omitempty"`
 }
 
+type NotebookAgentConnectionCapability string
+
+const (
+	NotebookAgentConnectionDiscover    NotebookAgentConnectionCapability = "discover"
+	NotebookAgentConnectionSampleQuery NotebookAgentConnectionCapability = "sample_query"
+)
+
+type NotebookAgentConnectionAccessRequest struct {
+	Title          string                              `json:"title"`
+	Description    string                              `json:"description,omitempty"`
+	ConnectionName string                              `json:"connection_name,omitempty"`
+	ConnectionType string                              `json:"connection_type,omitempty"`
+	Capabilities   []NotebookAgentConnectionCapability `json:"capabilities,omitempty"`
+}
+
+type NotebookAgentQueryConnection struct {
+	Name           string                              `json:"name"`
+	ConnectionType string                              `json:"connection_type"`
+	AssetType      string                              `json:"asset_type"`
+	Dialect        string                              `json:"dialect"`
+	Environment    string                              `json:"environment"`
+	Capabilities   []NotebookAgentConnectionCapability `json:"capabilities"`
+	Granted        bool                                `json:"granted"`
+}
+
+type NotebookAgentConnectionGrant struct {
+	NotebookID     string
+	TurnID         string
+	ConnectionName string
+	Environment    string
+	Capabilities   []NotebookAgentConnectionCapability
+	ExpiresAt      time.Time
+}
+
 type NotebookAgentInteraction struct {
-	ID          string                        `json:"id"`
-	TurnID      string                        `json:"turn_id"`
-	Kind        NotebookAgentInteractionKind  `json:"kind"`
-	Status      string                        `json:"status"`
-	Title       string                        `json:"title"`
-	Description string                        `json:"description,omitempty"`
-	Questions   []NotebookAgentQuestion       `json:"questions,omitempty"`
-	Answers     []NotebookAgentQuestionAnswer `json:"answers,omitempty"`
-	CreatedAt   string                        `json:"created_at"`
-	FinishedAt  string                        `json:"finished_at,omitempty"`
+	ID                string                                `json:"id"`
+	TurnID            string                                `json:"turn_id"`
+	Kind              NotebookAgentInteractionKind          `json:"kind"`
+	Status            string                                `json:"status"`
+	Title             string                                `json:"title"`
+	Description       string                                `json:"description,omitempty"`
+	Questions         []NotebookAgentQuestion               `json:"questions,omitempty"`
+	Answers           []NotebookAgentQuestionAnswer         `json:"answers,omitempty"`
+	ConnectionRequest *NotebookAgentConnectionAccessRequest `json:"connection_request,omitempty"`
+	Connection        *NotebookAgentQueryConnection         `json:"connection,omitempty"`
+	CreatedAt         string                                `json:"created_at"`
+	FinishedAt        string                                `json:"finished_at,omitempty"`
 }
 
 type AnswerNotebookAgentInteractionRequest struct {
-	Answers  []NotebookAgentQuestionAnswer `json:"answers,omitempty"`
-	Declined bool                          `json:"declined,omitempty"`
+	Answers        []NotebookAgentQuestionAnswer `json:"answers,omitempty"`
+	ConnectionName string                        `json:"connection_name,omitempty"`
+	Declined       bool                          `json:"declined,omitempty"`
 }
 
 type NotebookAgentInteractionResult struct {
-	Status  string                        `json:"status"`
-	Answers []NotebookAgentQuestionAnswer `json:"answers,omitempty"`
+	Status     string                        `json:"status"`
+	Answers    []NotebookAgentQuestionAnswer `json:"answers,omitempty"`
+	Connection *NotebookAgentQueryConnection `json:"connection,omitempty"`
 }
 
 type notebookAgentPendingInteraction struct {
@@ -102,7 +141,7 @@ func (s *NotebookAgentService) RequestQuestionnaire(
 	now := s.deps.Now().UTC().Format(time.RFC3339Nano)
 	s.mu.Lock()
 	conversation := s.items[notebookID]
-	if conversation == nil || conversation.activeTurn == "" || conversation.activeToken != turnToken {
+	if conversation == nil || conversation.snapshot.Status != "running" || conversation.activeTurn == "" || conversation.activeToken != turnToken {
 		s.mu.Unlock()
 		return NotebookAgentInteractionResult{}, &APIError{
 			Status:  http.StatusConflict,
@@ -170,13 +209,46 @@ func (s *NotebookAgentService) AnswerInteraction(
 			Message: "this notebook agent question is no longer awaiting an answer",
 		}
 	}
-	answers, apiErr := validateNotebookAgentAnswers(
-		conversation.snapshot.Interaction.Questions,
-		request,
-	)
-	if apiErr != nil {
+	interaction := conversation.snapshot.Interaction
+	if request.Declined && (len(request.Answers) != 0 || strings.TrimSpace(request.ConnectionName) != "") {
 		s.mu.Unlock()
-		return NotebookAgentSnapshot{}, apiErr
+		return NotebookAgentSnapshot{}, badRequestError("notebook_agent_interaction_answer_invalid", "a declined interaction cannot include an answer")
+	}
+	var answers []NotebookAgentQuestionAnswer
+	var approvedConnection *NotebookAgentQueryConnection
+	switch interaction.Kind {
+	case NotebookAgentInteractionQuestionnaire:
+		if strings.TrimSpace(request.ConnectionName) != "" {
+			s.mu.Unlock()
+			return NotebookAgentSnapshot{}, badRequestError("notebook_agent_interaction_answer_invalid", "a questionnaire answer cannot approve a connection")
+		}
+		var apiErr *APIError
+		answers, apiErr = validateNotebookAgentAnswers(interaction.Questions, request)
+		if apiErr != nil {
+			s.mu.Unlock()
+			return NotebookAgentSnapshot{}, apiErr
+		}
+	case NotebookAgentInteractionConnection:
+		if len(request.Answers) != 0 {
+			s.mu.Unlock()
+			return NotebookAgentSnapshot{}, badRequestError("notebook_agent_interaction_answer_invalid", "a connection approval cannot include questionnaire answers")
+		}
+		if !request.Declined {
+			connection, grant, apiErr := s.validateNotebookAgentConnectionAnswerLocked(
+				notebookID,
+				conversation,
+				strings.TrimSpace(request.ConnectionName),
+			)
+			if apiErr != nil {
+				s.mu.Unlock()
+				return NotebookAgentSnapshot{}, apiErr
+			}
+			approvedConnection = &connection
+			conversation.connectionGrants[connection.Name] = grant
+		}
+	default:
+		s.mu.Unlock()
+		return NotebookAgentSnapshot{}, &APIError{Status: http.StatusConflict, Code: "notebook_agent_interaction_invalid", Message: "this notebook agent interaction has an unsupported kind"}
 	}
 	status := "answered"
 	resultStatus := "answered"
@@ -187,13 +259,16 @@ func (s *NotebookAgentService) AnswerInteraction(
 	now := s.deps.Now().UTC().Format(time.RFC3339Nano)
 	conversation.snapshot.Interaction.Status = status
 	conversation.snapshot.Interaction.Answers = answers
+	conversation.snapshot.Interaction.Connection = approvedConnection
 	conversation.snapshot.Interaction.FinishedAt = now
 	pending := conversation.pendingInteraction
 	conversation.pendingInteraction = nil
 	conversation.snapshot.Revision++
 	snapshot := cloneNotebookAgentSnapshot(conversation.snapshot)
 	s.mu.Unlock()
-	pending.result <- NotebookAgentInteractionResult{Status: resultStatus, Answers: answers}
+	pending.result <- NotebookAgentInteractionResult{
+		Status: resultStatus, Answers: answers, Connection: approvedConnection,
+	}
 	s.publish(snapshot)
 	return snapshot, nil
 }

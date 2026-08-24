@@ -135,7 +135,7 @@ func quoteRuntimeRelation(name, connectionType string) string {
 	}
 
 	switch connectionType {
-	case "google_cloud_platform":
+	case "google_cloud_platform", "bigquery":
 		return "`" + strings.ReplaceAll(strings.Trim(strings.TrimSpace(name), "`"), "`", "\\`") + "`"
 	case "databricks", "mysql", "doris", "vitess", "planetscale_mysql", "clickhouse", "starrocks":
 		return quoteParts("`", "`")

@@ -31,6 +31,7 @@ export function WorkspaceConnectionDialog({
   environment,
   connectionTypes,
   requestedConnectionType,
+  requestedConnectionName,
   onCreated,
 }: {
   open: boolean;
@@ -38,6 +39,7 @@ export function WorkspaceConnectionDialog({
   environment: string;
   connectionTypes: WorkspaceConfigConnectionType[];
   requestedConnectionType?: string;
+  requestedConnectionName?: string;
   onCreated: (connectionName: string) => void | Promise<void>;
 }) {
   const settings = useWorkspaceSettingsData();
@@ -58,6 +60,7 @@ export function WorkspaceConnectionDialog({
     onSelectedEnvironmentChange: () => {},
     onUpdateConnection: settings.handleUpdateWorkspaceConnection,
     requestedConnectionType,
+    requestedConnectionName,
     selectedConnectionName: null,
     selectedEnvironmentName: environment,
   });

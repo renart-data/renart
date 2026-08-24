@@ -245,15 +245,37 @@ export type NotebookAgentQuestionAnswer = {
   text?: string;
 };
 
+export type NotebookAgentConnectionCapability = "discover" | "sample_query";
+
+export type NotebookAgentConnectionAccessRequest = {
+  title: string;
+  description?: string;
+  connection_name?: string;
+  connection_type?: string;
+  capabilities?: NotebookAgentConnectionCapability[];
+};
+
+export type NotebookAgentQueryConnection = {
+  name: string;
+  connection_type: string;
+  asset_type: string;
+  dialect: string;
+  environment: string;
+  capabilities: NotebookAgentConnectionCapability[];
+  granted: boolean;
+};
+
 export type NotebookAgentInteraction = {
   id: string;
   turn_id: string;
-  kind: "questionnaire";
+  kind: "questionnaire" | "connection_access";
   status: "pending" | "answered" | "declined" | "cancelled";
   title: string;
   description?: string;
   questions?: NotebookAgentQuestion[];
   answers?: NotebookAgentQuestionAnswer[];
+  connection_request?: NotebookAgentConnectionAccessRequest;
+  connection?: NotebookAgentQueryConnection;
   created_at: string;
   finished_at?: string;
 };
@@ -321,7 +343,11 @@ export async function resetNotebookAgent(notebookId: string) {
 export async function answerNotebookAgentInteraction(
   notebookId: string,
   interactionId: string,
-  input: { answers?: NotebookAgentQuestionAnswer[]; declined?: boolean },
+  input: {
+    answers?: NotebookAgentQuestionAnswer[];
+    connection_name?: string;
+    declined?: boolean;
+  },
 ) {
   const payload = await fetchJSONWithBody<{
     status: "ok";

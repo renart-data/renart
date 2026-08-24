@@ -293,6 +293,12 @@ func notebookAgentMCPToolNames(mode NotebookAgentMode, native bool) []string {
 	}
 	if native {
 		tools = append(tools, "ask_user")
+		if mode == NotebookAgentModeEdit {
+			tools = append(tools,
+				"request_connection_access", "list_query_connections",
+				"discover_connection_catalog", "query_connection_sample",
+			)
+		}
 	}
 	if mode == NotebookAgentModeEdit {
 		tools = append(tools,

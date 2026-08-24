@@ -121,10 +121,11 @@ func TestQuoteRuntimeRelationUsesWarehouseIdentifierRules(t *testing.T) {
 		name           string
 		want           string
 	}{
-		"ansi":       {connectionType: "postgres", name: "analytics.order", want: `"analytics"."order"`},
-		"bigquery":   {connectionType: "google_cloud_platform", name: "project.analytics.order", want: "`project.analytics.order`"},
-		"databricks": {connectionType: "databricks", name: "catalog.analytics.order", want: "`catalog`.`analytics`.`order`"},
-		"sql server": {connectionType: "mssql", name: "analytics.order", want: "[analytics].[order]"},
+		"ansi":               {connectionType: "postgres", name: "analytics.order", want: `"analytics"."order"`},
+		"bigquery":           {connectionType: "google_cloud_platform", name: "project.analytics.order", want: "`project.analytics.order`"},
+		"bigquery canonical": {connectionType: "bigquery", name: "project.analytics.order", want: "`project.analytics.order`"},
+		"databricks":         {connectionType: "databricks", name: "catalog.analytics.order", want: "`catalog`.`analytics`.`order`"},
+		"sql server":         {connectionType: "mssql", name: "analytics.order", want: "[analytics].[order]"},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

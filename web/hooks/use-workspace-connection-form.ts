@@ -40,6 +40,7 @@ export function useWorkspaceConnectionForm({
   onSelectedEnvironmentChange,
   onUpdateConnection,
   requestedConnectionType,
+  requestedConnectionName,
   selectedConnectionName,
   selectedEnvironmentName,
 }: {
@@ -70,6 +71,7 @@ export function useWorkspaceConnectionForm({
     secret_changes?: WorkspaceConnectionSecretChanges;
   }) => Promise<WorkspaceConfigResponse>;
   requestedConnectionType?: string;
+  requestedConnectionName?: string;
   selectedConnectionName?: string | null;
   selectedEnvironmentName?: string | null;
 }) {
@@ -112,7 +114,7 @@ export function useWorkspaceConnectionForm({
           environments,
           selectedEnvironmentName,
         }),
-        name: "",
+        name: requestedConnectionName?.trim() ?? "",
         type: fallbackType,
         values: buildConnectionFieldDefaults({
           connectionTypes,
@@ -164,6 +166,7 @@ export function useWorkspaceConnectionForm({
     environments,
     mode,
     requestedConnectionType,
+    requestedConnectionName,
     selectedEnvironmentName,
   ]);
 

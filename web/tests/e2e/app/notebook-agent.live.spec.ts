@@ -133,4 +133,61 @@ test.describe("notebook agent chat live", () => {
     await expect(page.getByText("Continuing with revenue.", { exact: true })).toBeVisible();
     await expect(composer).toBeEnabled();
   });
+
+  test("creates and grants a credential-blind connection for one Edit turn", async ({
+    page,
+    liveApp,
+  }) => {
+    const created = await page.request.post(`${liveApp.baseURL}/api/notebooks`, {
+      data: { title: "Connection approval workspace" },
+    });
+    expect(created.ok()).toBe(true);
+    const payload = (await created.json()) as { notebook: { id: string } };
+
+    await page.goto(`${liveApp.baseURL}/notebooks/${payload.notebook.id}`);
+    await openNotebookAssistant(page);
+    await page.getByRole("radio", { name: "Edit", exact: true }).click();
+
+    const composer = page.getByPlaceholder("Describe what to change in this notebook…");
+    await composer.fill("Connect me to a new notebook data source.");
+    await composer.press("Enter");
+
+    const approval = page.getByTestId("notebook-agent-connection-access");
+    await expect(approval.getByText("Create a notebook source connection")).toBeVisible();
+    await expect(approval).toContainText("credentials write-only");
+    await expect(approval).toContainText("Approval expires when this Edit turn ends");
+    await expect(composer).toBeDisabled();
+
+    await approval.getByRole("button", { name: "New connection" }).click();
+    const dialog = page.getByRole("dialog", { name: "New connection" });
+    await expect(dialog.getByLabel("Name")).toHaveValue("agent-source");
+    await expect(dialog.getByLabel("Type")).toContainText("duckdb");
+    await dialog.getByLabel("path").fill("duckdb-files/agent-source.db");
+    const answerResponse = page.waitForResponse(
+      (response) => response.url().includes("/agent/interactions/") && response.ok(),
+    );
+    await dialog.getByRole("button", { name: "Create connection" }).click();
+    await answerResponse;
+
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText("Connection approved", { exact: true })).toBeVisible();
+    await expect(page.getByText("Previewing approved source data", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Connected to agent-source and previewed 42 without receiving credentials.", {
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(composer).toBeEnabled();
+
+    const workspaceResponse = await page.request.get(`${liveApp.baseURL}/api/workspace`);
+    const workspace = (await workspaceResponse.json()) as {
+      query_connections?: Array<{ name: string; connection_type: string }>;
+    };
+    expect(workspace.query_connections).toContainEqual({
+      name: "agent-source",
+      connection_type: "duckdb",
+      asset_type: "duckdb.sql",
+      dialect: "duckdb",
+    });
+  });
 });

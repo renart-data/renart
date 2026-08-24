@@ -17,6 +17,10 @@ type NotebookAgentHandlers interface {
 	Cancel(notebookID string) (service.NotebookAgentSnapshot, *service.APIError)
 	Reset(notebookID string) (service.NotebookAgentSnapshot, *service.APIError)
 	RequestQuestionnaire(context.Context, string, string, service.NotebookAgentQuestionnaireRequest) (service.NotebookAgentInteractionResult, *service.APIError)
+	RequestConnectionAccess(context.Context, string, string, service.NotebookAgentConnectionAccessRequest) (service.NotebookAgentInteractionResult, *service.APIError)
+	ListQueryConnections(string, string) (service.NotebookAgentConnectionListResult, *service.APIError)
+	DiscoverConnectionCatalog(context.Context, string, string, service.NotebookAgentConnectionCatalogRequest) (service.NotebookAgentConnectionCatalogResult, *service.APIError)
+	QueryConnectionSample(context.Context, string, string, service.NotebookAgentConnectionSampleRequest) (service.NotebookAgentConnectionSampleResult, *service.APIError)
 	AnswerInteraction(string, string, service.AnswerNotebookAgentInteractionRequest) (service.NotebookAgentSnapshot, *service.APIError)
 }
 
@@ -29,8 +33,77 @@ func RegisterNotebookAgentRoutes(router chi.Router, handlers *NotebookAgentAPI) 
 	router.Post("/api/notebooks/{id}/agent/messages", handlers.HandleStartTurn)
 	router.Post("/api/notebooks/{id}/agent/cancel", handlers.HandleCancel)
 	router.Post("/api/notebooks/{id}/agent/native/questionnaire", handlers.HandleNativeQuestionnaire)
+	router.Post("/api/notebooks/{id}/agent/native/connections/request", handlers.HandleNativeConnectionRequest)
+	router.Post("/api/notebooks/{id}/agent/native/connections/list", handlers.HandleNativeConnectionList)
+	router.Post("/api/notebooks/{id}/agent/native/connections/discover", handlers.HandleNativeConnectionCatalog)
+	router.Post("/api/notebooks/{id}/agent/native/connections/query", handlers.HandleNativeConnectionSample)
 	router.Post("/api/notebooks/{id}/agent/interactions/{interactionID}/answer", handlers.HandleAnswerInteraction)
 	router.Delete("/api/notebooks/{id}/agent", handlers.HandleReset)
+}
+
+func (h *NotebookAgentAPI) HandleNativeConnectionRequest(w http.ResponseWriter, r *http.Request) {
+	request, err := decodeJSONObject[service.NotebookAgentConnectionAccessRequest](w, r, maxNotebookAgentRequestBytes)
+	if err != nil {
+		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
+		return
+	}
+	result, apiErr := h.Service.RequestConnectionAccess(
+		r.Context(), chi.URLParam(r, "id"), notebookAgentTurnToken(r), request,
+	)
+	if apiErr != nil {
+		writeNotebookError(w, apiErr)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "result": result})
+}
+
+func (h *NotebookAgentAPI) HandleNativeConnectionList(w http.ResponseWriter, r *http.Request) {
+	if _, err := decodeJSONObject[struct{}](w, r, maxNotebookAgentRequestBytes); err != nil {
+		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
+		return
+	}
+	result, apiErr := h.Service.ListQueryConnections(chi.URLParam(r, "id"), notebookAgentTurnToken(r))
+	if apiErr != nil {
+		writeNotebookError(w, apiErr)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "result": result})
+}
+
+func (h *NotebookAgentAPI) HandleNativeConnectionCatalog(w http.ResponseWriter, r *http.Request) {
+	request, err := decodeJSONObject[service.NotebookAgentConnectionCatalogRequest](w, r, maxNotebookAgentRequestBytes)
+	if err != nil {
+		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
+		return
+	}
+	result, apiErr := h.Service.DiscoverConnectionCatalog(
+		r.Context(), chi.URLParam(r, "id"), notebookAgentTurnToken(r), request,
+	)
+	if apiErr != nil {
+		writeNotebookError(w, apiErr)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "result": result})
+}
+
+func (h *NotebookAgentAPI) HandleNativeConnectionSample(w http.ResponseWriter, r *http.Request) {
+	request, err := decodeJSONObject[service.NotebookAgentConnectionSampleRequest](w, r, maxNotebookAgentRequestBytes)
+	if err != nil {
+		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
+		return
+	}
+	result, apiErr := h.Service.QueryConnectionSample(
+		r.Context(), chi.URLParam(r, "id"), notebookAgentTurnToken(r), request,
+	)
+	if apiErr != nil {
+		writeNotebookError(w, apiErr)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "result": result})
+}
+
+func notebookAgentTurnToken(r *http.Request) string {
+	return r.Header.Get("X-Renart-Agent-Turn-Token")
 }
 
 func (h *NotebookAgentAPI) HandleNativeQuestionnaire(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +115,7 @@ func (h *NotebookAgentAPI) HandleNativeQuestionnaire(w http.ResponseWriter, r *h
 	result, apiErr := h.Service.RequestQuestionnaire(
 		r.Context(),
 		chi.URLParam(r, "id"),
-		r.Header.Get("X-Renart-Agent-Turn-Token"),
+		notebookAgentTurnToken(r),
 		request,
 	)
 	if apiErr != nil {

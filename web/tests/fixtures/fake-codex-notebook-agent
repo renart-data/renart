@@ -12,9 +12,6 @@ const joinedArguments = process.argv.slice(2).join(" ");
 if (!joinedArguments.includes("--notebook")) {
   fail("missing scoped notebook argument");
 }
-if (!joinedArguments.includes("--read-only") || !joinedArguments.includes("--no-runs")) {
-  fail("ask mode did not restrict MCP capabilities");
-}
 
 function codexConfigValue(name) {
   const prefix = `${name}=`;
@@ -41,7 +38,7 @@ function codexEvent(event) {
   process.stdout.write(`${JSON.stringify(event)}\n`);
 }
 
-async function askQuestionnaireThroughMCP() {
+async function withMCP(callback) {
   const command = codexConfigValue("mcp_servers.renart.command");
   const args = codexConfigValue("mcp_servers.renart.args");
   const child = spawn(command, args, {
@@ -89,25 +86,7 @@ async function askQuestionnaireThroughMCP() {
       clientInfo: { name: "renart-e2e-agent", version: "1" },
     });
     notify("notifications/initialized");
-    return await request("tools/call", {
-      name: "ask_user",
-      arguments: {
-        title: "Choose a metric",
-        description: "The requested chart could reasonably show either measure.",
-        questions: [
-          {
-            id: "metric",
-            kind: "single_choice",
-            prompt: "Which metric should the chart use?",
-            required: true,
-            options: [
-              { value: "revenue", label: "Revenue", recommended: true },
-              { value: "orders", label: "Orders" },
-            ],
-          },
-        ],
-      },
-    });
+    return await callback(request);
   } finally {
     child.stdin.end();
     process.removeListener("SIGTERM", stopChild);
@@ -117,6 +96,14 @@ async function askQuestionnaireThroughMCP() {
 
 async function main() {
   const prompt = await readPrompt();
+  const editConnectionTurn = prompt.includes("Connect me to a new notebook data source");
+  if (editConnectionTurn) {
+    if (joinedArguments.includes("--read-only") || joinedArguments.includes("--no-runs")) {
+      fail("edit mode unexpectedly restricted MCP capabilities");
+    }
+  } else if (!joinedArguments.includes("--read-only") || !joinedArguments.includes("--no-runs")) {
+    fail("ask mode did not restrict MCP capabilities");
+  }
   codexEvent({ type: "thread.started", thread_id: "fake-notebook-thread" });
   codexEvent({ type: "turn.started" });
   if (prompt.includes("Ask me which metric")) {
@@ -130,7 +117,27 @@ async function main() {
         status: "in_progress",
       },
     });
-    const result = await askQuestionnaireThroughMCP();
+    const result = await withMCP((request) =>
+      request("tools/call", {
+        name: "ask_user",
+        arguments: {
+          title: "Choose a metric",
+          description: "The requested chart could reasonably show either measure.",
+          questions: [
+            {
+              id: "metric",
+              kind: "single_choice",
+              prompt: "Which metric should the chart use?",
+              required: true,
+              options: [
+                { value: "revenue", label: "Revenue", recommended: true },
+                { value: "orders", label: "Orders" },
+              ],
+            },
+          ],
+        },
+      }),
+    );
     codexEvent({
       type: "item.completed",
       item: {
@@ -149,6 +156,82 @@ async function main() {
         id: "message-questionnaire",
         type: "agent_message",
         text: `Continuing with ${selected}.`,
+      },
+    });
+    codexEvent({ type: "turn.completed" });
+    return;
+  }
+
+  if (editConnectionTurn) {
+    codexEvent({
+      type: "item.started",
+      item: {
+        id: "call-connection",
+        type: "mcp_tool_call",
+        server: "renart",
+        tool: "request_connection_access",
+        status: "in_progress",
+      },
+    });
+    const result = await withMCP(async (request) => {
+      const approval = await request("tools/call", {
+        name: "request_connection_access",
+        arguments: {
+          title: "Create a notebook source connection",
+          description: "I need a small isolated DuckDB source to inspect data for this notebook.",
+          connection_name: "agent-source",
+          connection_type: "duckdb",
+          capabilities: ["discover", "sample_query"],
+        },
+      });
+      codexEvent({
+        type: "item.completed",
+        item: {
+          id: "call-connection",
+          type: "mcp_tool_call",
+          server: "renart",
+          tool: "request_connection_access",
+          status: "completed",
+        },
+      });
+      codexEvent({
+        type: "item.started",
+        item: {
+          id: "call-sample",
+          type: "mcp_tool_call",
+          server: "renart",
+          tool: "query_connection_sample",
+          status: "in_progress",
+        },
+      });
+      const sample = await request("tools/call", {
+        name: "query_connection_sample",
+        arguments: {
+          connection_name: "agent-source",
+          query: "select 42 as answer",
+          limit: 5,
+        },
+      });
+      return { approval, sample };
+    });
+    codexEvent({
+      type: "item.completed",
+      item: {
+        id: "call-sample",
+        type: "mcp_tool_call",
+        server: "renart",
+        tool: "query_connection_sample",
+        status: "completed",
+      },
+    });
+    const connection = result.approval?.structuredContent?.connection?.name ?? "unknown";
+    const answer = result.sample?.structuredContent?.rows?.[0]?.answer ?? "unknown";
+    codexEvent({
+      type: "item.completed",
+      item: {
+        id: "message-connection",
+        type: "agent_message",
+        text: `Connected to ${connection} and previewed ${answer} without receiving credentials.`,
       },
     });
     codexEvent({ type: "turn.completed" });
