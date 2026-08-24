@@ -470,7 +470,15 @@ test.describe("app notebooks live", () => {
     liveApp,
     page,
   }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("renart-notebook-autorecompute", "off");
+    });
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Dataset Controls");
+    const disableAutoRecompute = await page.request.put(
+      `${liveApp.baseURL}/api/notebooks/${notebook.id}/settings`,
+      { data: { auto_recompute: false, environment: "default" } },
+    );
+    expect(disableAutoRecompute.ok()).toBe(true);
     const source = notebook.cells[0];
     await setCell(
       page.request,
@@ -495,7 +503,7 @@ test.describe("app notebooks live", () => {
     const control = page.getByRole("combobox", { name: "Region", exact: true });
     await expect(control).toBeDisabled();
     const controlBlock = page.getByRole("region", { name: "Control: Region" });
-    await expect(controlBlock.getByRole("button", { name: "Load options" })).toBeEnabled();
+    await expect(controlBlock.getByRole("button", { name: "Load options" })).toBeDisabled();
 
     const optionsResponse = page.waitForResponse(
       (response) =>
@@ -503,7 +511,20 @@ test.describe("app notebooks live", () => {
         response.ok(),
       { timeout: 15000 },
     );
-    await controlBlock.getByRole("button", { name: "Load options" }).click();
+    const runResponse = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/notebooks/${notebook.id}/run`) && response.ok(),
+      { timeout: 30000 },
+    );
+    await page.getByRole("button", { name: "Run all" }).click();
+    const runPayload = (await (await runResponse).json()) as {
+      results: Array<{ cell_id: string; status: string }>;
+    };
+    expect(runPayload.results).toContainEqual(
+      expect.objectContaining({ cell_id: source.cell_id, status: "ok" }),
+    );
+
+    // A new successful producer result streams over SSE and refreshes its
+    // dataset-backed controls without a second user action.
     const response = await optionsResponse;
     const payload = (await response.json()) as {
       result: { columns: string[]; rows: unknown[][]; total_rows: number; truncated?: boolean };
