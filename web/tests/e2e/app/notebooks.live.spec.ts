@@ -669,6 +669,13 @@ test.describe("app notebooks live", () => {
     await expect(page.getByText("Copied", { exact: true })).toBeVisible();
     await cell52.press("Escape");
     await expect(table.locator('td[aria-selected="true"]')).toHaveCount(0);
+    await cell52.click();
+    await page.keyboard.press("Control+a");
+    await expect(page.getByRole("button", { name: "Copy selected cells" })).toContainText(
+      "Copy 100",
+    );
+    await page.keyboard.press("Escape");
+    await expect(table.locator('td[aria-selected="true"]')).toHaveCount(0);
 
     const performanceButton = page
       .locator(`[data-notebook-cell-id="${cellId}"]`)

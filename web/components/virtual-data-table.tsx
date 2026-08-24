@@ -676,6 +676,12 @@ function TableCellContent({
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
   onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => void;
 }) {
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  useEffect(() => {
+    if (!selected) setDetailOpen(false);
+  }, [selected]);
+
   const trigger = (
     <button
       aria-label={`${column}, row ${coordinate.row + 1}: ${cell.value}`}
@@ -700,10 +706,13 @@ function TableCellContent({
     </button>
   );
 
-  if (!selected) return trigger;
-
   return (
-    <HoverCard closeDelay={80} openDelay={350}>
+    <HoverCard
+      closeDelay={80}
+      open={selected && detailOpen}
+      openDelay={350}
+      onOpenChange={(open) => setDetailOpen(selected && open)}
+    >
       <HoverCardTrigger asChild>{trigger}</HoverCardTrigger>
       <HoverCardContent
         align="start"
