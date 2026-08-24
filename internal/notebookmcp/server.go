@@ -45,6 +45,14 @@ type Policy struct {
 	ReadOnly              bool
 	NoRuns                bool
 	RequireSourceApproval bool
+	NativeTurnToken       string
+	NativeInteractions    NativeInteractionBackend
+}
+
+// NativeInteractionBackend is implemented only by the client for the owning
+// Renart web process. The public workspace MCP server never receives one.
+type NativeInteractionBackend interface {
+	RequestNotebookAgentQuestionnaire(context.Context, string, string, service.NotebookAgentQuestionnaireRequest) (service.NotebookAgentInteractionResult, error)
 }
 
 // New constructs a single-workspace notebook MCP server.
@@ -93,6 +101,18 @@ func (s *Server) registerTools() {
 	mcp.AddTool(s.mcp, readTool("get_notebook_result_schema", "Get the last observed schema and completeness for one notebook cell."), s.getResultSchema)
 	mcp.AddTool(s.mcp, readTool("get_notebook_result_sample", "Get at most 50 rows and 64 KiB from a previously produced notebook result."), s.getResultSample)
 	mcp.AddTool(s.mcp, readTool("list_notebook_sources", "List credential-free source definitions, schemas, and snapshot provenance."), s.listSources)
+	if s.policy.NativeInteractions != nil && s.policy.NativeTurnToken != "" && s.policy.NotebookID != "" {
+		mcp.AddTool(
+			s.mcp,
+			changeTool(
+				"ask_user",
+				"Pause this native notebook-agent turn for one to three genuinely necessary user questions. Use single_choice, multiple_choice, or short text prompts; inspect the notebook and catalog first instead of asking questions that Renart tools can answer.",
+				false,
+				false,
+			),
+			s.askUser,
+		)
+	}
 
 	if !s.policy.ReadOnly {
 		mcp.AddTool(s.mcp, prepareChangeSetTool(), s.prepareChangeSet)
@@ -106,6 +126,20 @@ func (s *Server) registerTools() {
 		mcp.AddTool(s.mcp, changeTool("cancel_notebook_run", "Cancel the selected asynchronous notebook run.", false, true), s.cancelRun)
 		mcp.AddTool(s.mcp, readTool("get_notebook_run_status", "Get bounded status and result summaries for an MCP-started notebook run."), s.getRunStatus)
 	}
+}
+
+func (s *Server) askUser(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	input service.NotebookAgentQuestionnaireRequest,
+) (*mcp.CallToolResult, service.NotebookAgentInteractionResult, error) {
+	result, err := s.policy.NativeInteractions.RequestNotebookAgentQuestionnaire(
+		ctx,
+		s.policy.NotebookID,
+		s.policy.NativeTurnToken,
+		input,
+	)
+	return nil, result, err
 }
 
 func prepareChangeSetTool() *mcp.Tool {

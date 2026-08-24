@@ -236,6 +236,16 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 }
 
 func (c *Client) postJSON(ctx context.Context, path string, input, out any) error {
+	return c.postJSONHeaders(ctx, path, input, out, nil)
+}
+
+func (c *Client) postJSONHeaders(
+	ctx context.Context,
+	path string,
+	input,
+	out any,
+	headers map[string]string,
+) error {
 	body, err := json.Marshal(input)
 	if err != nil {
 		return err
@@ -247,6 +257,9 @@ func (c *Client) postJSON(ctx context.Context, path string, input, out any) erro
 	c.authorize(req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

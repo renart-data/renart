@@ -1,29 +1,190 @@
-#!/bin/sh
+#!/usr/bin/env node
 
-case "$*" in
-  *--notebook*) ;;
-  *)
-    printf '%s\n' 'missing scoped notebook argument' >&2
-    exit 2
-    ;;
-esac
+const { spawn } = require("node:child_process");
+const readline = require("node:readline");
 
-case "$*" in
-  *--read-only*--no-runs*) ;;
-  *)
-    printf '%s\n' 'ask mode did not restrict MCP capabilities' >&2
-    exit 2
-    ;;
-esac
+function fail(message) {
+  process.stderr.write(`${message}\n`);
+  process.exit(2);
+}
 
-# Consume the prompt from stdin so the fixture exercises the production
-# transport contract without putting user content in process arguments.
-while IFS= read -r _line; do :; done
+const joinedArguments = process.argv.slice(2).join(" ");
+if (!joinedArguments.includes("--notebook")) {
+  fail("missing scoped notebook argument");
+}
+if (!joinedArguments.includes("--read-only") || !joinedArguments.includes("--no-runs")) {
+  fail("ask mode did not restrict MCP capabilities");
+}
 
-printf '%s\n' '{"type":"thread.started","thread_id":"fake-notebook-thread"}'
-printf '%s\n' '{"type":"turn.started"}'
-printf '%s\n' '{"type":"item.started","item":{"id":"call-1","type":"mcp_tool_call","server":"renart","tool":"get_notebook_outline","status":"in_progress"}}'
-sleep 0.2
-printf '%s\n' '{"type":"item.completed","item":{"id":"call-1","type":"mcp_tool_call","server":"renart","tool":"get_notebook_outline","status":"completed"}}'
-printf '%s\n' '{"type":"item.completed","item":{"id":"message-1","type":"agent_message","text":"This notebook has one SQL cell and is ready to explore."}}'
-printf '%s\n' '{"type":"turn.completed"}'
+function codexConfigValue(name) {
+  const prefix = `${name}=`;
+  const value = process.argv.slice(2).find((argument) => argument.startsWith(prefix));
+  if (!value) {
+    fail(`missing Codex config ${name}`);
+  }
+  try {
+    return JSON.parse(value.slice(prefix.length));
+  } catch (error) {
+    fail(`invalid Codex config ${name}: ${error.message}`);
+  }
+}
+
+async function readPrompt() {
+  let prompt = "";
+  for await (const chunk of process.stdin) {
+    prompt += chunk;
+  }
+  return prompt;
+}
+
+function codexEvent(event) {
+  process.stdout.write(`${JSON.stringify(event)}\n`);
+}
+
+async function askQuestionnaireThroughMCP() {
+  const command = codexConfigValue("mcp_servers.renart.command");
+  const args = codexConfigValue("mcp_servers.renart.args");
+  const child = spawn(command, args, {
+    env: process.env,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stderr.pipe(process.stderr);
+  const pending = new Map();
+  let nextID = 1;
+  const lines = readline.createInterface({ input: child.stdout });
+  lines.on("line", (line) => {
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch (error) {
+      fail(`invalid MCP response: ${error.message}`);
+    }
+    if (message.id !== undefined && pending.has(message.id)) {
+      const { resolve, reject } = pending.get(message.id);
+      pending.delete(message.id);
+      if (message.error) {
+        reject(new Error(message.error.message ?? JSON.stringify(message.error)));
+      } else {
+        resolve(message.result);
+      }
+    }
+  });
+  const request = (method, params) =>
+    new Promise((resolve, reject) => {
+      const id = nextID++;
+      pending.set(id, { resolve, reject });
+      child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    });
+  const notify = (method, params = {}) => {
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
+  };
+
+  const stopChild = () => child.kill("SIGTERM");
+  process.once("SIGTERM", stopChild);
+  process.once("SIGINT", stopChild);
+  try {
+    await request("initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "renart-e2e-agent", version: "1" },
+    });
+    notify("notifications/initialized");
+    return await request("tools/call", {
+      name: "ask_user",
+      arguments: {
+        title: "Choose a metric",
+        description: "The requested chart could reasonably show either measure.",
+        questions: [
+          {
+            id: "metric",
+            kind: "single_choice",
+            prompt: "Which metric should the chart use?",
+            required: true,
+            options: [
+              { value: "revenue", label: "Revenue", recommended: true },
+              { value: "orders", label: "Orders" },
+            ],
+          },
+        ],
+      },
+    });
+  } finally {
+    child.stdin.end();
+    process.removeListener("SIGTERM", stopChild);
+    process.removeListener("SIGINT", stopChild);
+  }
+}
+
+async function main() {
+  const prompt = await readPrompt();
+  codexEvent({ type: "thread.started", thread_id: "fake-notebook-thread" });
+  codexEvent({ type: "turn.started" });
+  if (prompt.includes("Ask me which metric")) {
+    codexEvent({
+      type: "item.started",
+      item: {
+        id: "call-questionnaire",
+        type: "mcp_tool_call",
+        server: "renart",
+        tool: "ask_user",
+        status: "in_progress",
+      },
+    });
+    const result = await askQuestionnaireThroughMCP();
+    codexEvent({
+      type: "item.completed",
+      item: {
+        id: "call-questionnaire",
+        type: "mcp_tool_call",
+        server: "renart",
+        tool: "ask_user",
+        status: "completed",
+      },
+    });
+    const structured = result?.structuredContent ?? {};
+    const selected = structured.answers?.[0]?.values?.[0] ?? structured.status ?? "unknown";
+    codexEvent({
+      type: "item.completed",
+      item: {
+        id: "message-questionnaire",
+        type: "agent_message",
+        text: `Continuing with ${selected}.`,
+      },
+    });
+    codexEvent({ type: "turn.completed" });
+    return;
+  }
+
+  codexEvent({
+    type: "item.started",
+    item: {
+      id: "call-1",
+      type: "mcp_tool_call",
+      server: "renart",
+      tool: "get_notebook_outline",
+      status: "in_progress",
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  codexEvent({
+    type: "item.completed",
+    item: {
+      id: "call-1",
+      type: "mcp_tool_call",
+      server: "renart",
+      tool: "get_notebook_outline",
+      status: "completed",
+    },
+  });
+  codexEvent({
+    type: "item.completed",
+    item: {
+      id: "message-1",
+      type: "agent_message",
+      text: "This notebook has one SQL cell and is ready to explore.",
+    },
+  });
+  codexEvent({ type: "turn.completed" });
+}
+
+main().catch((error) => fail(error.stack ?? error.message));

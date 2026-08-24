@@ -54,11 +54,18 @@ func MCP() *cli.Command {
 			// Suppress SDK internals here; command failures still return through the
 			// CLI and are printed to stderr, while stdout remains protocol-only.
 			logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.Level(100)}))
+			nativeTurnToken := strings.TrimSpace(os.Getenv("RENART_NOTEBOOK_AGENT_TURN_TOKEN"))
+			var nativeInteractions notebookmcp.NativeInteractionBackend
+			if nativeTurnToken != "" {
+				nativeInteractions, _ = backend.(notebookmcp.NativeInteractionBackend)
+			}
 			server := notebookmcp.New(ctx, backend, buildVersion, logger, notebookmcp.Policy{
 				NotebookID:            command.String("notebook"),
 				ReadOnly:              command.Bool("read-only"),
 				NoRuns:                command.Bool("no-runs"),
 				RequireSourceApproval: true,
+				NativeTurnToken:       nativeTurnToken,
+				NativeInteractions:    nativeInteractions,
 			})
 			if err := server.Protocol().Run(ctx, &mcp.StdioTransport{}); err != nil && ctx.Err() == nil && !normalMCPClientClose(err) {
 				return fmt.Errorf("serve notebook MCP over stdio: %w", err)
@@ -142,6 +149,15 @@ func (b clientNotebookBackend) Run(ctx context.Context, id string, request servi
 
 func (b clientNotebookBackend) Cancel(ctx context.Context, id string) error {
 	return b.client.CancelNotebookRun(ctx, id)
+}
+
+func (b clientNotebookBackend) RequestNotebookAgentQuestionnaire(
+	ctx context.Context,
+	notebookID string,
+	turnToken string,
+	request service.NotebookAgentQuestionnaireRequest,
+) (service.NotebookAgentInteractionResult, error) {
+	return b.client.RequestNotebookAgentQuestionnaire(ctx, notebookID, turnToken, request)
 }
 
 type embeddedNotebookBackend struct{ server *webServer }

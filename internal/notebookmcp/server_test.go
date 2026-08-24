@@ -31,6 +31,31 @@ type fakeBackend struct {
 	cancels   int
 }
 
+type nativeInteractionBackend struct {
+	*fakeBackend
+	notebookID string
+	turnToken  string
+	request    service.NotebookAgentQuestionnaireRequest
+}
+
+func (f *nativeInteractionBackend) RequestNotebookAgentQuestionnaire(
+	_ context.Context,
+	notebookID string,
+	turnToken string,
+	request service.NotebookAgentQuestionnaireRequest,
+) (service.NotebookAgentInteractionResult, error) {
+	f.notebookID = notebookID
+	f.turnToken = turnToken
+	f.request = request
+	return service.NotebookAgentInteractionResult{
+		Status: "answered",
+		Answers: []service.NotebookAgentQuestionAnswer{{
+			QuestionID: "metric",
+			Values:     []string{"revenue"},
+		}},
+	}, nil
+}
+
 func (f *fakeBackend) Workspace(context.Context) (model.WorkspaceState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -238,6 +263,52 @@ func TestNativeAgentPolicyScopesNotebookAndCapabilities(t *testing.T) {
 	})
 	if !strings.Contains(errorText, "outside this agent session") {
 		t.Fatalf("unexpected cross-notebook error: %s", errorText)
+	}
+}
+
+func TestNativeInteractionToolRequiresPrivateTurnBinding(t *testing.T) {
+	backend := &nativeInteractionBackend{fakeBackend: fixtureBackend()}
+	fixture := connectTestServerWithPolicy(t, backend, Policy{
+		NotebookID:         "notebook_opaque",
+		ReadOnly:           true,
+		NoRuns:             true,
+		NativeTurnToken:    "opaque-turn-token",
+		NativeInteractions: backend,
+	})
+	defer fixture.close()
+
+	listed, err := fixture.client.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(listed.Tools), 10; got != want {
+		t.Fatalf("native tool count = %d, want %d", got, want)
+	}
+	var found bool
+	for _, tool := range listed.Tools {
+		if tool.Name == "ask_user" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("native agent policy did not expose ask_user")
+	}
+
+	result := callTool[service.NotebookAgentInteractionResult](t, fixture.client, "ask_user", map[string]any{
+		"title": "Choose a metric",
+		"questions": []map[string]any{{
+			"id": "metric", "kind": "single_choice", "prompt": "Which metric?", "required": true,
+			"options": []map[string]any{
+				{"value": "revenue", "label": "Revenue"},
+				{"value": "orders", "label": "Orders"},
+			},
+		}},
+	})
+	if result.Status != "answered" || result.Answers[0].Values[0] != "revenue" {
+		t.Fatalf("unexpected native interaction result: %+v", result)
+	}
+	if backend.notebookID != "notebook_opaque" || backend.turnToken != "opaque-turn-token" || backend.request.Title != "Choose a metric" {
+		t.Fatalf("native interaction binding was not forwarded: %+v", backend)
 	}
 }
 

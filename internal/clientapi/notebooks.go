@@ -76,3 +76,25 @@ func (c *Client) CancelNotebookRun(ctx context.Context, notebookID string) error
 	var result map[string]string
 	return c.postJSON(ctx, "/notebooks/"+url.PathEscape(notebookID)+"/cancel", map[string]any{}, &result)
 }
+
+// RequestNotebookAgentQuestionnaire blocks a native notebook MCP tool until
+// the owning browser answers or cancels the turn. The turn token is scoped to
+// this one interaction channel and is not part of the JSON payload.
+func (c *Client) RequestNotebookAgentQuestionnaire(
+	ctx context.Context,
+	notebookID string,
+	turnToken string,
+	request service.NotebookAgentQuestionnaireRequest,
+) (service.NotebookAgentInteractionResult, error) {
+	var envelope struct {
+		Result service.NotebookAgentInteractionResult `json:"result"`
+	}
+	err := c.postJSONHeaders(
+		ctx,
+		"/notebooks/"+url.PathEscape(notebookID)+"/agent/native/questionnaire",
+		request,
+		&envelope,
+		map[string]string{"X-Renart-Agent-Turn-Token": turnToken},
+	)
+	return envelope.Result, err
+}

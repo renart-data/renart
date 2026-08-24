@@ -94,4 +94,43 @@ test.describe("notebook agent chat live", () => {
       page.getByText("This notebook has one SQL cell and is ready to explore."),
     ).toBeVisible();
   });
+
+  test("pauses a native turn for a questionnaire and resumes with the answer", async ({
+    page,
+    liveApp,
+  }) => {
+    const created = await page.request.post(`${liveApp.baseURL}/api/notebooks`, {
+      data: { title: "Questionnaire workspace" },
+    });
+    expect(created.ok()).toBe(true);
+    const payload = (await created.json()) as { notebook: { id: string } };
+
+    await page.goto(`${liveApp.baseURL}/notebooks/${payload.notebook.id}`);
+    await openNotebookAssistant(page);
+
+    const composer = page.getByPlaceholder("Ask about this notebook…");
+    await composer.fill("Ask me which metric the chart should use.");
+    await composer.press("Enter");
+
+    const questionnaire = page.getByTestId("notebook-agent-questionnaire");
+    await expect(questionnaire.getByText("Choose a metric", { exact: true })).toBeVisible();
+    await expect(questionnaire.getByText("Which metric should the chart use?")).toBeVisible();
+    await expect(composer).toBeDisabled();
+
+    await page.goto(`${liveApp.baseURL}/notebooks`);
+    await page.getByText("Questionnaire workspace", { exact: true }).click();
+    await openNotebookAssistant(page);
+    await expect(questionnaire.getByText("Choose a metric", { exact: true })).toBeVisible();
+
+    await questionnaire.getByRole("radio", { name: /Revenue/ }).check();
+    const answerResponse = page.waitForResponse(
+      (response) => response.url().includes("/agent/interactions/") && response.ok(),
+    );
+    await questionnaire.getByRole("button", { name: "Send answer" }).click();
+    await answerResponse;
+
+    await expect(page.getByText("You answered", { exact: true })).toBeVisible();
+    await expect(page.getByText("Continuing with revenue.", { exact: true })).toBeVisible();
+    await expect(composer).toBeEnabled();
+  });
 });
