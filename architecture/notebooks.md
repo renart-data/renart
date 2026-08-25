@@ -261,6 +261,10 @@ option resolver, typed value field, draggable type palette, and contextual
 inspector across notebook and presentation hosts. A notebook keeps each typed
 definition under `parameters:` and places it in document order with a
 `control: <parameter-id>` block. This avoids duplicating runtime declarations.
+Interacting with a live value field never opens its definition inspector; users
+open settings from the card chrome or its explicit settings action. This keeps
+touch and pointer adjustment independent from authoring, including at layouts
+where the inspector occupies a right-side panel.
 Legacy/unplaced parameters render as individual control cells ahead of the
 ordered document until they are migrated; there is no separate top-level
 control strip. Presentation files retain `filters:` for their binding contract.
@@ -322,14 +326,20 @@ and semantics apply in notebooks, dashboards, reports, and audience viewers.
 
 Notebook Markdown is visual-first: a shared Tiptap editor parses the authored
 Markdown, serializes edits back to Markdown, and keeps an explicit source mode
-for exact repair. Markdown, SQL, source, and visualization blocks use a quiet
-document treatment when idle; their boundary and contextual controls become
-visible on hover, focus, or selection. The Add rail uses code-native previews
-for SQL, Python, text, controls, and visualization types instead of generic
-glyphs. Contextual visualization settings use a compact four-column chart
-picker so the Add rail remains visually distinct. Dragging targets only the
-small insertion gaps between blocks; the whole notebook never becomes a drop
-surface.
+for exact repair. SQL, source, control, and visualization blocks keep a
+transparent document treatment with a persistent boundary; Markdown remains
+borderless. Selection is communicated by the boundary instead of a tinted card
+background. Code and source headers keep only status, name, run, and overflow
+actions at rest; type, connection, import, row-count, performance, and other
+contextual metadata fade and collapse into place when selected. SQL and Python
+editors use transparent Monaco themes without overview-ruler markers. The Add
+rail and the inline insertion selector use aligned, recognizable previews for
+every SQL, Python, text, control, and visualization type, sharing the SQL and
+Python treatment with the Build asset-creation chooser. The selector expands in
+place for control and visualization types. Contextual visualization settings
+use a compact four-column chart picker so the Add rail remains visually
+distinct. Dragging targets only the small insertion gaps between blocks; the
+whole notebook never becomes a drop surface.
 
 Notebook authoring uses the same responsive rail primitive as presentations.
 Its **Outline**, **Data**, **Add**, and **AI** tabs replace separate header and
@@ -574,7 +584,9 @@ inspect and structured table visualizations: click/drag/Shift extends a range,
 Ctrl/Cmd toggles cells, arrows move the active cell, and Ctrl/Cmd+C copies the
 selection as TSV plus HTML. A full-value popover is available only for the
 active selected cell, never on hover. Selection is keyed by logical row/column
-coordinates so virtualization does not discard it.
+coordinates so virtualization does not discard it. On narrow or coarse-pointer
+devices, a compact selection toolbar exposes directional range adjustment,
+select-all, copy, and clear actions without requiring keyboard modifiers.
 
 Local SQL previews append `count(*) over ()` to the bounded query and remove the
 final bookkeeping column by position, so exact row count and preview require one
@@ -583,9 +595,9 @@ local-only performance observations: request setup/total/runtime-sync, batch and
 session-open duration, cell materialization/preview/metadata-write duration,
 notebook DuckDB file/WAL bytes, transferred snapshot or Python Parquet bytes,
 and time until a Python wrapper starts. The browser adds its preview render
-duration and mounted-row count. These measurements are shown in the result's
-**Performance** hover card, are never authored into the notebook, and are not
-sent to an external telemetry service. Restart restoration can recompute session
+duration and mounted-row count. These measurements are shown in the selected
+result's **Performance** hover card, are never authored into the notebook, and
+are not sent to an external telemetry service. Restart restoration can recompute session
 size, source transfer size, and preview query time; ephemeral request, Python
 startup, and materialization observations are intentionally absent after
 restart.

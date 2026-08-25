@@ -3,6 +3,8 @@
 import type { AssetCreationKind } from "@/lib/asset-creation-profile";
 import { cn } from "@/lib/utils";
 
+import { CodeTypeGlyph } from "./code-type-glyph";
+
 export function AssetTypePreview({
   type,
   className,
@@ -10,6 +12,20 @@ export function AssetTypePreview({
   type: AssetCreationKind;
   className?: string;
 }) {
+  if (type === "sql" || type === "python") {
+    return (
+      <div
+        aria-hidden="true"
+        className={cn(
+          "flex h-11 w-full max-w-20 items-center justify-center rounded-lg border bg-primary/5 text-primary",
+          className,
+        )}
+      >
+        <CodeTypeGlyph type={type} className="size-6" />
+      </div>
+    );
+  }
+
   return (
     <svg
       viewBox="0 0 72 42"
@@ -18,34 +34,11 @@ export function AssetTypePreview({
       fill="none"
     >
       <rect x="7" y="5" width="58" height="32" rx="4" className="fill-primary/5 stroke-border" />
-      {type === "sql" ? <SQLAssetGlyph /> : null}
-      {type === "python" ? <PythonAssetGlyph /> : null}
       {type === "api" ? <APIAssetGlyph /> : null}
       {type === "seed" ? <SeedAssetGlyph /> : null}
       {type === "sensor" ? <SensorAssetGlyph /> : null}
       {type === "load" ? <LoadAssetGlyph /> : null}
     </svg>
-  );
-}
-
-function SQLAssetGlyph() {
-  return (
-    <g strokeLinecap="round">
-      <path d="M14 14h15" className="stroke-current" strokeWidth="3" />
-      <path d="M34 14h23M14 21h9" className="stroke-primary/45" strokeWidth="2" />
-      <path d="M28 21h30M20 28h33" className="stroke-current" strokeWidth="2" />
-    </g>
-  );
-}
-
-function PythonAssetGlyph() {
-  return (
-    <g strokeLinecap="round">
-      <path d="M14 14h11" className="stroke-current" strokeWidth="3" />
-      <path d="M30 14h24M19 21h23" className="stroke-primary/45" strokeWidth="2" />
-      <path d="M24 28h33" className="stroke-current" strokeWidth="2" />
-      <circle cx="16" cy="28" r="2" className="fill-current" />
-    </g>
   );
 }
 

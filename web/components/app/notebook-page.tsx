@@ -8,6 +8,7 @@ import {
   BookOpen,
   Check,
   ChevronRight,
+  CornerDownRight,
   Database,
   Download,
   FileInput,
@@ -22,11 +23,11 @@ import {
   Play,
   Plus,
   RotateCw,
-  SlidersHorizontal,
   Square,
   Trash2,
+  X,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AnsiOutput } from "@/components/ansi-output";
 import { ConnectionSelect } from "@/components/app/connection-select";
@@ -62,9 +63,6 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -72,6 +70,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
@@ -89,6 +89,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   createNotebookControl,
   createNotebookCellAt,
@@ -151,12 +152,23 @@ import {
 } from "@/components/virtual-data-table";
 
 import { hasAuthoringDragItem, readAuthoringDragItem } from "./authoring-drag";
-import { CHART_TYPE_OPTIONS, ChartTypePicker, type ChartType } from "./chart-type-picker";
-import { ControlTypePicker } from "./control-type-picker";
+import {
+  CHART_TYPE_OPTIONS,
+  ChartTypePicker,
+  ChartTypePreview,
+  type ChartType,
+} from "./chart-type-picker";
+import { ControlTypePicker, ControlTypePreview } from "./control-type-picker";
 import { DocumentAuthoringSidebar, type DocumentAuthoringTab } from "./document-authoring-sidebar";
 import { MissingPythonDepsBanner } from "./missing-python-deps";
 import { NotebookAgentChat } from "./notebook-agent-panel";
-import { NotebookBlockTypePicker } from "./notebook-block-type-picker";
+import {
+  NotebookBlockTypeGlyph,
+  NotebookBlockTypePicker,
+  NotebookBlockTypePreview,
+  NOTEBOOK_BLOCK_TYPE_OPTIONS,
+  type NotebookBlockType,
+} from "./notebook-block-type-picker";
 import { NotebookControlBlock } from "./notebook-control-block";
 import type { AuthoredControlDataset } from "./authored-control";
 import { MarkdownEditor } from "./markdown-editor";
@@ -179,9 +191,38 @@ const NOTEBOOK_CELL_JUMP_HIGHLIGHT_MS = 1600;
 const NOTEBOOK_BLOCK_ENTER_ANIMATION =
   "animate-in fade-in-0 slide-in-from-bottom-2 duration-300 motion-reduce:animate-none";
 const NOTEBOOK_BLOCK_CARD_CLASS =
-  "group/notebook-block border-transparent bg-transparent shadow-none transition-colors hover:border-border hover:bg-card hover:shadow-sm focus-within:border-primary/35 focus-within:bg-card focus-within:shadow-sm";
+  "group/notebook-block border-border/70 bg-transparent shadow-none transition-colors hover:border-border focus-within:border-primary/35";
 const NOTEBOOK_BLOCK_HEADER_CLASS =
-  "border-transparent bg-transparent transition-colors group-hover/notebook-block:border-border group-hover/notebook-block:bg-muted/20 group-focus-within/notebook-block:border-border group-focus-within/notebook-block:bg-muted/20";
+  "min-h-8 border-border/70 bg-transparent px-2 py-1 transition-colors";
+
+function NotebookSelectedControls({
+  selected,
+  children,
+  className,
+  expandedClassName = "max-w-[64rem]",
+}: {
+  selected: boolean;
+  children: ReactNode;
+  className?: string;
+  expandedClassName?: string;
+}) {
+  return (
+    <div
+      aria-hidden={!selected}
+      data-notebook-selected-controls
+      inert={selected ? undefined : true}
+      className={cn(
+        "flex min-w-0 shrink items-center gap-2 overflow-hidden whitespace-nowrap transition-[max-width,opacity,visibility] duration-200 ease-out motion-reduce:transition-none",
+        className,
+        selected
+          ? cn("visible opacity-100", expandedClassName)
+          : "invisible pointer-events-none max-w-0 opacity-0",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
 
 type PendingNotebookBlockKind = "sql" | "python" | "markdown" | "visualization" | "control";
 type NotebookBlockPlacement = Required<Pick<NotebookBlockPosition, "position">> & {
@@ -1978,6 +2019,16 @@ function NotebookInsertionPoint({
   onInsert: (kind: PendingNotebookBlockKind, options?: NotebookBlockCreateOptions) => void;
 }) {
   const [dropActive, setDropActive] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerCategory, setPickerCategory] = useState<"control" | "visualization" | null>(null);
+  const closePicker = () => {
+    setPickerOpen(false);
+    setPickerCategory(null);
+  };
+  const insert = (kind: PendingNotebookBlockKind, options?: NotebookBlockCreateOptions) => {
+    closePicker();
+    onInsert(kind, options);
+  };
   if (pendingKind) {
     return (
       <div className="py-1.5">
@@ -2029,8 +2080,14 @@ function NotebookInsertionPoint({
           dropActive && "opacity-100",
         )}
       />
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+      <Popover
+        open={pickerOpen}
+        onOpenChange={(open) => {
+          setPickerOpen(open);
+          if (!open) setPickerCategory(null);
+        }}
+      >
+        <PopoverTrigger asChild>
           <Button
             type="button"
             size="icon-xs"
@@ -2044,50 +2101,117 @@ function NotebookInsertionPoint({
           >
             <Plus />
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="center" className="w-44">
-          <DropdownMenuItem onSelect={() => onInsert("sql")}>
-            <Database /> SQL cell
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onInsert("python")}>
-            <FileInput /> Python cell
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onInsert("markdown")}>
-            <BookOpen /> Text
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <SlidersHorizontal /> Control
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-40">
-              {AUTHORED_CONTROL_TYPES.map((type) => (
-                <DropdownMenuItem
-                  key={type}
-                  onSelect={() => onInsert("control", { controlType: type })}
-                >
-                  {AUTHORED_CONTROL_TYPE_LABELS[type]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <SlidersHorizontal /> Visualization
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-40">
-              {CHART_TYPE_OPTIONS.map((option) => (
-                <DropdownMenuItem
+        </PopoverTrigger>
+        <PopoverContent
+          align="center"
+          data-testid="notebook-insert-picker"
+          className="w-[min(32rem,calc(100vw-2rem))] gap-1.5 p-1.5"
+        >
+          <div className="flex min-w-0 items-stretch">
+            <ToggleGroup
+              type="single"
+              value=""
+              aria-label="Cell type"
+              className="min-w-0 flex-1"
+              onValueChange={(value) => {
+                if (value) insert(value as NotebookBlockType);
+              }}
+            >
+              {NOTEBOOK_BLOCK_TYPE_OPTIONS.map((option) => (
+                <ToggleGroupItem
                   key={option.value}
-                  onSelect={() => onInsert("visualization", { visualizationType: option.value })}
+                  value={option.value}
+                  aria-label={option.label}
+                  className="h-14 min-w-16 flex-1 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
                 >
-                  {option.label}
-                </DropdownMenuItem>
+                  <NotebookBlockTypePreview type={option.value} className="h-6 max-w-10" />
+                  <span>{option.label}</span>
+                </ToggleGroupItem>
               ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            </ToggleGroup>
+            <Separator orientation="vertical" className="mx-1.5" />
+            <Button
+              type="button"
+              variant={pickerCategory === "control" ? "secondary" : "ghost"}
+              aria-expanded={pickerCategory === "control"}
+              className="h-14 min-w-16 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
+              onClick={() =>
+                setPickerCategory((current) => (current === "control" ? null : "control"))
+              }
+            >
+              <ControlTypePreview type="slider" className="h-6 max-w-10" />
+              Control
+            </Button>
+            <Button
+              type="button"
+              variant={pickerCategory === "visualization" ? "secondary" : "ghost"}
+              aria-expanded={pickerCategory === "visualization"}
+              className="h-14 min-w-16 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
+              onClick={() =>
+                setPickerCategory((current) =>
+                  current === "visualization" ? null : "visualization",
+                )
+              }
+            >
+              <ChartTypePreview type="line" className="h-6 max-w-10" />
+              Chart
+            </Button>
+            <Separator orientation="vertical" className="mx-1.5" />
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Close cell type selector"
+              className="my-auto"
+              onClick={closePicker}
+            >
+              <X />
+            </Button>
+          </div>
+          {pickerCategory ? (
+            <div className="border-t pt-1.5">
+              <ToggleGroup
+                type="single"
+                value=""
+                aria-label={pickerCategory === "control" ? "Control type" : "Chart type"}
+                className="grid w-full grid-cols-4"
+                onValueChange={(value) => {
+                  if (!value) return;
+                  if (pickerCategory === "control") {
+                    insert("control", { controlType: value as AuthoredControlType });
+                  } else {
+                    insert("visualization", { visualizationType: value as ChartType });
+                  }
+                }}
+              >
+                {pickerCategory === "control"
+                  ? AUTHORED_CONTROL_TYPES.map((value) => (
+                      <ToggleGroupItem
+                        key={value}
+                        value={value}
+                        aria-label={AUTHORED_CONTROL_TYPE_LABELS[value]}
+                        className="h-12 min-w-0 flex-col gap-0.5 px-1 py-1 text-[10px] font-normal"
+                      >
+                        <ControlTypePreview type={value} className="h-6 max-w-10" />
+                        <span className="truncate">{AUTHORED_CONTROL_TYPE_LABELS[value]}</span>
+                      </ToggleGroupItem>
+                    ))
+                  : CHART_TYPE_OPTIONS.map((option) => (
+                      <ToggleGroupItem
+                        key={option.value}
+                        value={option.value}
+                        aria-label={option.label}
+                        className="h-12 min-w-0 flex-col gap-0.5 px-1 py-1 text-[10px] font-normal"
+                      >
+                        <ChartTypePreview type={option.value} className="h-6 max-w-10" />
+                        <span className="truncate">{option.label}</span>
+                      </ToggleGroupItem>
+                    ))}
+              </ToggleGroup>
+            </div>
+          ) : null}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -2714,12 +2838,77 @@ function NotebookPerformanceDetails({
   );
 }
 
+function NotebookCellNameBadge({
+  name,
+  draft,
+  editing,
+  onDraftChange,
+  onEdit,
+  onCommit,
+  onCancel,
+}: {
+  name: string;
+  draft: string;
+  editing: boolean;
+  onDraftChange: (value: string) => void;
+  onEdit: () => void;
+  onCommit: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      data-testid="notebook-cell-name-badge"
+      className="flex min-h-7 items-center gap-1.5 pt-1.5 text-muted-foreground"
+    >
+      <CornerDownRight className="size-3.5 shrink-0" aria-hidden="true" />
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          spellCheck={false}
+          aria-label={`Rename cell ${name}`}
+          onChange={(event) => onDraftChange(event.target.value)}
+          onBlur={onCommit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onCommit();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              onCancel();
+            }
+          }}
+          className="h-5 w-40 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-0 font-mono text-[10px] text-emerald-700 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 dark:text-emerald-300"
+        />
+      ) : (
+        <Badge
+          asChild
+          variant="outline"
+          className="h-5 border-emerald-500/35 bg-emerald-500/10 px-0 font-mono font-normal text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+        >
+          <button
+            type="button"
+            className="px-2"
+            aria-label={`Rename cell ${name}`}
+            title="Rename cell"
+            onClick={onEdit}
+          >
+            {name}
+          </button>
+        </Badge>
+      )}
+    </div>
+  );
+}
+
 function NotebookResultPreview({
   cellName,
   result,
+  selected,
 }: {
   cellName: string;
   result: NotebookCellRunResult;
+  selected: boolean;
 }) {
   const [renderMeasurement, setRenderMeasurement] = useState<VirtualTableRenderMeasurement>();
   const rows = useMemo(
@@ -2739,7 +2928,11 @@ function NotebookResultPreview({
   const truncated = result.total_rows > rowsShown;
 
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div
+      data-testid="notebook-result-preview"
+      className="isolate overflow-clip rounded-lg border bg-background"
+      style={{ clipPath: "inset(0 round var(--radius-lg))" }}
+    >
       <VirtualDataTable
         ariaLabel={`${cellName} result preview`}
         columnKeys={columnKeys}
@@ -2757,7 +2950,13 @@ function NotebookResultPreview({
             ? `showing ${rowsShown.toLocaleString()} of ${result.total_rows.toLocaleString()} rows`
             : `${rowsShown.toLocaleString()} rows`}
         </span>
-        <NotebookPerformanceDetails result={result} renderMeasurement={renderMeasurement} />
+        <NotebookSelectedControls
+          selected={selected}
+          className="ml-auto shrink-0"
+          expandedClassName="max-w-28"
+        >
+          <NotebookPerformanceDetails result={result} renderMeasurement={renderMeasurement} />
+        </NotebookSelectedControls>
       </div>
     </div>
   );
@@ -2823,8 +3022,8 @@ function NotebookSourceCard({
     <AppPanel
       className={cn(
         NOTEBOOK_BLOCK_CARD_CLASS,
-        "border-l-2 border-l-cyan-500/55 hover:bg-cyan-500/[0.025]",
-        selected && "border-primary/45 bg-card shadow-sm ring-1 ring-primary/15",
+        "border-l-2 border-l-cyan-500/55",
+        selected && "border-primary/45 ring-1 ring-primary/15",
       )}
     >
       <DelimitedCardHeader
@@ -2856,27 +3055,35 @@ function NotebookSourceCard({
             {cell.name}
           </button>
         )}
-        <Badge variant="secondary" className="font-mono text-[10px]">
-          {source.kind === "http" ? <Globe2 /> : <FileInput />}
-          {source.connection ? "object" : source.kind}
-        </Badge>
-        <Badge variant="outline" className="text-[10px]">
-          {source.snapshot.mode === "sample"
-            ? `sample ${source.snapshot.row_limit?.toLocaleString() ?? ""}`
-            : "complete snapshot"}
-        </Badge>
-        {requiresImportReview ? (
-          <Badge
-            variant="outline"
-            className="border-amber-500/35 bg-amber-500/10 text-[10px] text-amber-800 dark:text-amber-200"
-          >
-            <AlertTriangle />
-            Review required
+        <NotebookSelectedControls selected={selected}>
+          <Badge variant="secondary" className="font-mono text-[10px]">
+            {source.kind === "http" ? <Globe2 /> : <FileInput />}
+            {source.connection ? "object" : source.kind}
           </Badge>
-        ) : null}
-        <span className="ml-auto text-[11px] text-muted-foreground">
-          {running ? "refreshing…" : result?.status === "ok" ? `${result.duration_ms} ms` : null}
-        </span>
+          <Badge variant="outline" className="text-[10px]">
+            {source.snapshot.mode === "sample"
+              ? `sample ${source.snapshot.row_limit?.toLocaleString() ?? ""}`
+              : "complete snapshot"}
+          </Badge>
+          {requiresImportReview ? (
+            <Badge
+              variant="outline"
+              className="border-amber-500/35 bg-amber-500/10 text-[10px] text-amber-800 dark:text-amber-200"
+            >
+              <AlertTriangle />
+              Review required
+            </Badge>
+          ) : null}
+        </NotebookSelectedControls>
+        <NotebookSelectedControls
+          selected={selected}
+          className="ml-auto shrink-0 text-[11px] text-muted-foreground"
+          expandedClassName="max-w-40"
+        >
+          <span>
+            {running ? "refreshing…" : result?.status === "ok" ? `${result.duration_ms} ms` : null}
+          </span>
+        </NotebookSelectedControls>
         {running ? (
           <Button variant="ghost" size="icon-sm" onClick={onCancel} title="Stop refresh">
             <Square className="size-3.5 fill-current" />
@@ -2988,7 +3195,7 @@ function NotebookSourceCard({
           </div>
         ) : null}
         {result?.status === "ok" && result.columns.length > 0 ? (
-          <NotebookResultPreview cellName={cell.name} result={result} />
+          <NotebookResultPreview cellName={cell.name} result={result} selected={selected} />
         ) : null}
       </DelimitedCardContent>
     </AppPanel>
@@ -3166,156 +3373,146 @@ function NotebookCellCard({
     <AppPanel
       className={cn(
         NOTEBOOK_BLOCK_CARD_CLASS,
-        sourceConnection && "border-l-2 border-l-primary/50 hover:bg-primary/[0.02]",
-        selected && "border-primary/45 bg-card shadow-sm ring-1 ring-primary/15",
+        sourceConnection && "border-l-2 border-l-primary/50",
+        selected && "border-primary/45 ring-1 ring-primary/15",
       )}
     >
       <DelimitedCardHeader
         className={cn(NOTEBOOK_BLOCK_HEADER_CLASS, showStale && "notebook-stale-hatch")}
       >
         <span className={cn("size-2 rounded-full", statusDotClass(result, showStale))} />
-        {renaming ? (
-          <input
-            autoFocus
-            value={nameDraft}
-            spellCheck={false}
-            onChange={(event) => setNameDraft(event.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                commitRename();
-              } else if (event.key === "Escape") {
-                event.preventDefault();
-                setNameDraft(cell.name);
-                setRenaming(false);
-              }
-            }}
-            className="w-40 rounded border bg-background px-1.5 py-0.5 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        ) : (
-          <button
-            type="button"
-            className="rounded font-mono text-sm font-medium hover:bg-muted"
-            title="Rename cell (F2)"
-            onClick={() => setRenaming(true)}
-          >
-            {cell.name}
-          </button>
-        )}
-        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-          {isPythonCell ? "python" : "sql"}
+        <span
+          className="max-w-40 truncate font-mono text-[11px] text-muted-foreground"
+          title={cell.name}
+        >
+          {cell.name}
         </span>
-        {!isPythonCell && queryConnections.length > 0 ? (
-          <ConnectionSelect
-            value={sourceConnection || "__local__"}
-            groups={[
-              {
-                label: "Execution context",
-                options: [
-                  {
-                    value: "__local__",
-                    label: "Local notebook DuckDB",
-                    connectionType: "duckdb",
-                    detail: "Notebook session",
-                  },
-                  ...(sourceConnection &&
-                  !queryConnections.some((connection) => connection.name === sourceConnection)
-                    ? [
-                        {
-                          value: sourceConnection,
-                          label: sourceConnection,
-                          badge: "unavailable",
-                          badgeVariant: "destructive" as const,
-                        },
-                      ]
-                    : []),
-                  ...queryConnections.map((connection) => ({
-                    value: connection.name,
-                    label: connection.name,
-                    connectionType: connection.connection_type,
-                    detail: connection.dialect,
-                  })),
-                ],
-              },
-            ]}
-            disabled={busy || sourceChanging}
-            loading={sourceChanging}
-            onValueChange={(value) => {
-              const connection = value === "__local__" ? undefined : value;
-              setSourceChanging(true);
-              void onConfigureSource({
-                connection,
-                snapshot_mode: connection ? snapshotMode : undefined,
-                row_limit: connection && snapshotMode === "sample" ? snapshotRowLimit : undefined,
-              }).finally(() => setSourceChanging(false));
-            }}
-            size="sm"
-            ariaLabel="Source connection"
-            className="max-w-52"
-            contentAlign="start"
-          />
-        ) : null}
-        {sourceConnection ? (
-          <Select
-            value={snapshotMode}
-            disabled={busy || sourceChanging}
-            onValueChange={(value: "full" | "sample") => {
-              setSourceChanging(true);
-              void onConfigureSource({
-                connection: sourceConnection,
-                snapshot_mode: value,
-                row_limit: value === "sample" ? snapshotRowLimit : undefined,
-              }).finally(() => setSourceChanging(false));
-            }}
-          >
-            <SelectTrigger size="sm" aria-label="Snapshot mode">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-              <SelectItem value="full">Full snapshot</SelectItem>
-              <SelectItem value="sample">
-                Sample {snapshotRowLimit.toLocaleString()} rows
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        ) : null}
-        {result?.materialized === "table" ? (
-          <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
-            table
-          </span>
-        ) : null}
-        {result?.imports?.map((imported) => (
-          <span
-            key={imported.ref}
-            title={`imported ${imported.imported_at}${imported.complete ? "" : " · truncated"}`}
-            className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-          >
-            {imported.ref}
-            {imported.complete ? "" : " ⚠"}
-          </span>
-        ))}
-        {!result?.snapshot && result?.sampled ? (
-          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-200">
-            derived from sample
-          </span>
-        ) : null}
-        {requiresImportReview ? (
+        <NotebookSelectedControls selected={selected}>
           <Badge
-            variant="outline"
-            className="border-amber-500/35 bg-amber-500/10 text-[10px] text-amber-800 dark:text-amber-200"
+            variant="ghost"
+            size="xs"
+            aria-label={isPythonCell ? "Python cell" : "SQL cell"}
+            className="font-mono text-muted-foreground"
           >
-            <AlertTriangle />
-            Review required
+            <NotebookBlockTypeGlyph type={isPythonCell ? "python" : "sql"} />
           </Badge>
-        ) : null}
-        <span className="ml-auto text-[11px] text-muted-foreground">
-          {running
-            ? "running…"
-            : result?.status === "ok"
-              ? `${result.total_rows} rows · ${result.duration_ms} ms`
-              : null}
-        </span>
+          {!isPythonCell && queryConnections.length > 0 ? (
+            <ConnectionSelect
+              value={sourceConnection || "__local__"}
+              groups={[
+                {
+                  label: "Execution context",
+                  options: [
+                    {
+                      value: "__local__",
+                      label: "Local notebook DuckDB",
+                      connectionType: "duckdb",
+                      detail: "Notebook session",
+                    },
+                    ...(sourceConnection &&
+                    !queryConnections.some((connection) => connection.name === sourceConnection)
+                      ? [
+                          {
+                            value: sourceConnection,
+                            label: sourceConnection,
+                            badge: "unavailable",
+                            badgeVariant: "destructive" as const,
+                          },
+                        ]
+                      : []),
+                    ...queryConnections.map((connection) => ({
+                      value: connection.name,
+                      label: connection.name,
+                      connectionType: connection.connection_type,
+                      detail: connection.dialect,
+                    })),
+                  ],
+                },
+              ]}
+              disabled={busy || sourceChanging}
+              loading={sourceChanging}
+              onValueChange={(value) => {
+                const connection = value === "__local__" ? undefined : value;
+                setSourceChanging(true);
+                void onConfigureSource({
+                  connection,
+                  snapshot_mode: connection ? snapshotMode : undefined,
+                  row_limit: connection && snapshotMode === "sample" ? snapshotRowLimit : undefined,
+                }).finally(() => setSourceChanging(false));
+              }}
+              size="sm"
+              ariaLabel="Source connection"
+              className="max-w-52"
+              contentAlign="start"
+            />
+          ) : null}
+          {sourceConnection ? (
+            <Select
+              value={snapshotMode}
+              disabled={busy || sourceChanging}
+              onValueChange={(value: "full" | "sample") => {
+                setSourceChanging(true);
+                void onConfigureSource({
+                  connection: sourceConnection,
+                  snapshot_mode: value,
+                  row_limit: value === "sample" ? snapshotRowLimit : undefined,
+                }).finally(() => setSourceChanging(false));
+              }}
+            >
+              <SelectTrigger size="sm" aria-label="Snapshot mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectItem value="full">Full snapshot</SelectItem>
+                <SelectItem value="sample">
+                  Sample {snapshotRowLimit.toLocaleString()} rows
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          ) : null}
+          {result?.materialized === "table" ? (
+            <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
+              table
+            </span>
+          ) : null}
+          {result?.imports?.map((imported) => (
+            <span
+              key={imported.ref}
+              title={`imported ${imported.imported_at}${imported.complete ? "" : " · truncated"}`}
+              className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+            >
+              {imported.ref}
+              {imported.complete ? "" : " ⚠"}
+            </span>
+          ))}
+          {!result?.snapshot && result?.sampled ? (
+            <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-200">
+              derived from sample
+            </span>
+          ) : null}
+          {requiresImportReview ? (
+            <Badge
+              variant="outline"
+              className="border-amber-500/35 bg-amber-500/10 text-[10px] text-amber-800 dark:text-amber-200"
+            >
+              <AlertTriangle />
+              Review required
+            </Badge>
+          ) : null}
+        </NotebookSelectedControls>
+        <NotebookSelectedControls
+          selected={selected}
+          className="ml-auto shrink-0 text-[11px] text-muted-foreground"
+          expandedClassName="max-w-48"
+        >
+          <span>
+            {running
+              ? "running…"
+              : result?.status === "ok"
+                ? `${result.total_rows} rows · ${result.duration_ms} ms`
+                : null}
+          </span>
+        </NotebookSelectedControls>
         {running ? (
           <Button
             variant="ghost"
@@ -3378,14 +3575,16 @@ function NotebookCellCard({
           </DropdownMenuContent>
         </DropdownMenu>
       </DelimitedCardHeader>
-      <DelimitedCardContent className="space-y-3">
+      <DelimitedCardContent className="flex flex-col">
         {result?.snapshot ? (
-          <NotebookSnapshotSummary
-            snapshot={result.snapshot}
-            stale={showStale}
-            fallbackConnection={sourceConnection}
-            label={`${cell.name} snapshot details`}
-          />
+          <div className="mb-3">
+            <NotebookSnapshotSummary
+              snapshot={result.snapshot}
+              stale={showStale}
+              fallbackConnection={sourceConnection}
+              label={`${cell.name} snapshot details`}
+            />
+          </div>
         ) : null}
         <NotebookCellMonaco
           cell={cell}
@@ -3399,9 +3598,16 @@ function NotebookCellCard({
           onGoToCell={onGoToCell}
           parameters={parameters}
         />
-        <MissingPythonDepsBanner missingImports={missingDeps} onAddDependency={onAddDependency} />
+        {missingDeps.length > 0 ? (
+          <div className="mt-3">
+            <MissingPythonDepsBanner
+              missingImports={missingDeps}
+              onAddDependency={onAddDependency}
+            />
+          </div>
+        ) : null}
         {result?.status === "error" ? (
-          <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 text-red-800 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-200">
+          <div className="mt-3 overflow-hidden rounded-lg border border-red-200 bg-red-50 text-red-800 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-200">
             <AnsiOutput
               output={result.error}
               className="max-h-72 overflow-auto px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words"
@@ -3409,15 +3615,17 @@ function NotebookCellCard({
           </div>
         ) : null}
         {result?.status === "blocked" ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
             {result.error}
           </div>
         ) : null}
         {result?.logs ? (
-          <NotebookCellLogs logs={result.logs} isError={result.status === "error"} />
+          <div className="mt-3">
+            <NotebookCellLogs logs={result.logs} isError={result.status === "error"} />
+          </div>
         ) : null}
         {vizDiagnostics.length > 0 ? (
-          <div className="space-y-1">
+          <div className="mt-3 space-y-1">
             {vizDiagnostics.map((diagnostic, index) => (
               <div
                 key={index}
@@ -3435,7 +3643,7 @@ function NotebookCellCard({
         ) : null}
         {result?.status === "ok" && result.columns.length > 0 ? (
           result.viz ? (
-            <div className="space-y-2">
+            <div className="mt-3 space-y-2">
               <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                 <span>
                   Legacy <span className="font-mono">@viz</span> preview
@@ -3457,9 +3665,21 @@ function NotebookCellCard({
               <NotebookVizRenderer result={result} />
             </div>
           ) : (
-            <NotebookResultPreview cellName={cell.name} result={result} />
+            <NotebookResultPreview cellName={cell.name} result={result} selected={selected} />
           )
         ) : null}
+        <NotebookCellNameBadge
+          name={cell.name}
+          draft={nameDraft}
+          editing={renaming}
+          onDraftChange={setNameDraft}
+          onEdit={() => setRenaming(true)}
+          onCommit={commitRename}
+          onCancel={() => {
+            setNameDraft(cell.name);
+            setRenaming(false);
+          }}
+        />
       </DelimitedCardContent>
     </AppPanel>
   );
@@ -3916,12 +4136,7 @@ function MarkdownBlockCard({
   };
 
   return (
-    <section
-      className={cn(
-        "group/markdown-block relative rounded-xl border border-transparent transition-colors hover:border-border focus-within:border-primary/35",
-        selected && "border-primary/45 bg-card shadow-sm ring-1 ring-primary/15",
-      )}
-    >
+    <section className="group/markdown-block relative rounded-xl bg-transparent">
       <MarkdownEditor
         value={draft}
         selected={selected}

@@ -60,6 +60,10 @@ function resultCell(card: Locator, column: string, row: number, value: string) {
   });
 }
 
+function notebookCell(page: Page, cellId: string) {
+  return page.locator(`[data-notebook-cell-id="${cellId}"]`);
+}
+
 async function replaceEditorContent(page: Page, card: Locator, content: string) {
   // Click the rendered code line, not Monaco's outer shell (whose center can
   // be blank) or its intentionally zero-width native input proxy.
@@ -81,9 +85,7 @@ test.describe("notebook auto-recompute", () => {
     await expect(page.getByText("AutoSelf").first()).toBeVisible({ timeout: 15000 });
 
     // The cell auto-computes from the API save; wait for the baseline.
-    const srcCard = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "src", exact: true }) });
+    const srcCard = notebookCell(page, srcCell);
     await expect(resultCell(srcCard, "n", 1, "111")).toBeVisible({
       timeout: 20000,
     });
@@ -117,9 +119,7 @@ test.describe("notebook auto-recompute", () => {
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     await expect(page.getByText("AutoUnion").first()).toBeVisible({ timeout: 15000 });
-    const card = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "u", exact: true }) });
+    const card = notebookCell(page, unionCell);
     await expect(resultCell(card, "n", 1, "111")).toBeVisible({
       timeout: 20000,
     });
@@ -170,9 +170,7 @@ test.describe("notebook auto-recompute", () => {
     // Edit the upstream cell in the editor (which marks base + doubled stale)
     // and then click away. No run button is pressed — the server recomputes the
     // chain and streams the new results back over SSE.
-    const baseCard = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "base", exact: true }) });
+    const baseCard = notebookCell(page, baseCell);
     await replaceEditorContent(page, baseCard, "select 21 as amount");
     await page.getByText("Auto").first().click(); // blur the editor → save → stale
 
@@ -210,9 +208,7 @@ test.describe("notebook auto-recompute", () => {
     // Edit the upstream and keep the caret in the editor — no blur, no run
     // button. The debounced auto-commit saves the draft on its own, which marks
     // the cells stale and lets auto-recompute pick up the chain.
-    const baseCard = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "base", exact: true }) });
+    const baseCard = notebookCell(page, baseCell);
     await replaceEditorContent(page, baseCard, "select 21 as amount");
 
     // The downstream recomputes to 42 without the editor ever losing focus.
@@ -250,9 +246,7 @@ test.describe("notebook auto-recompute", () => {
     // `amount`. The downstream must NOT be recomputed: once `base` reruns and
     // the server re-validates `doubled` against the new schema, the broken column
     // reference is detected and the downstream is held back, not run into failure.
-    const baseCard = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "base", exact: true }) });
+    const baseCard = notebookCell(page, baseCell);
     await replaceEditorContent(page, baseCard, "select 100 as renamed");
     await page.getByText("AutoBreak").first().click(); // blur → save → stale
 
@@ -269,9 +263,7 @@ test.describe("notebook auto-recompute", () => {
     // The stale visual is shown only on the cell that genuinely won't refresh on
     // its own: `doubled` (broken) gets the hatched header; `base`, which
     // auto-recomputed, does not.
-    const doubledHeader = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "doubled", exact: true }) })
+    const doubledHeader = notebookCell(page, doubledCell)
       .locator('[data-slot="delimited-card-header"]')
       .first();
     const baseHeader = baseCard.locator('[data-slot="delimited-card-header"]').first();
@@ -291,9 +283,7 @@ test.describe("notebook auto-recompute", () => {
     await expect(page.getByText("10", { exact: true }).first()).toBeVisible({ timeout: 20000 });
 
     // Replace the body with SQL the parser rejects.
-    const baseCard = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "base", exact: true }) });
+    const baseCard = notebookCell(page, baseCell);
     await replaceEditorContent(page, baseCard, "select fr0m where");
     await page.getByText("AutoErr").first().click(); // blur → save → stale
 

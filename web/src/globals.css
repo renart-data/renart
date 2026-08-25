@@ -614,3 +614,13 @@ body > .parameter-hints-widget {
 .font-monaco {
   font-family: Menlo, Monaco, "Courier New", monospace;
 }
+
+.mobile-data-grid-selection-controls {
+  display: none;
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .mobile-data-grid-selection-controls {
+    display: flex;
+  }
+}

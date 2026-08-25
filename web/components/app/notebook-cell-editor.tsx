@@ -42,6 +42,9 @@ const NOTEBOOK_EDITOR_MAX_HEIGHT = 800;
 const NOTEBOOK_EDITOR_AUTO_MAX_HEIGHT =
   NOTEBOOK_EDITOR_AUTO_MAX_LINES * NOTEBOOK_EDITOR_LINE_HEIGHT + NOTEBOOK_EDITOR_VERTICAL_PADDING;
 const NOTEBOOK_EDITOR_OPTIONS: MonacoNS.editor.IStandaloneEditorConstructionOptions = {
+  hideCursorInOverviewRuler: true,
+  overviewRulerBorder: false,
+  overviewRulerLanes: 0,
   scrollBeyondLastLine: false,
   scrollbar: { alwaysConsumeMouseWheel: false },
 };
@@ -156,6 +159,8 @@ export function NotebookCellMonaco({
   parameters?: NotebookParameter[];
 }) {
   const { monacoTheme } = useWorkspaceTheme();
+  const notebookMonacoTheme =
+    monacoTheme === "bruin-vs-dark" ? "bruin-notebook-vs-dark" : "bruin-notebook-vs";
   const [monacoInstance, setMonacoInstance] = useState<Monaco | null>(null);
   const [editorInstance, setEditorInstance] =
     useState<MonacoNS.editor.IStandaloneCodeEditor | null>(null);
@@ -402,7 +407,7 @@ export function NotebookCellMonaco({
   };
 
   return (
-    <div className="overflow-hidden">
+    <div data-slot="notebook-cell-editor-shell" className="overflow-hidden bg-transparent">
       <div data-slot="notebook-cell-editor" style={{ height: editorHeight }}>
         <AssetCodeEditor
           asset={cell}
@@ -416,7 +421,7 @@ export function NotebookCellMonaco({
           isSqlAsset={!isPython}
           formatShortcutLabel="⌘ + ⇧ + I"
           mobile={false}
-          monacoTheme={monacoTheme}
+          monacoTheme={notebookMonacoTheme}
           onChange={(next) => {
             const nextValue = next ?? "";
             if (applyingExternalValueRef.current) {
@@ -441,7 +446,7 @@ export function NotebookCellMonaco({
         aria-valuenow={Math.round(editorHeight)}
         aria-valuetext={`${Math.round(editorHeight)} pixels high`}
         title="Drag or use arrow keys to resize; double-click or press Enter to fit content"
-        className="group flex h-3 touch-none cursor-row-resize select-none items-center justify-center border-t bg-muted/20 text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        className="group flex h-3 touch-none cursor-row-resize select-none items-center justify-center bg-transparent text-muted-foreground outline-none transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:bg-muted/30 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         onPointerDown={handleResizePointerDown}
         onPointerMove={handleResizePointerMove}
         onPointerUp={finishResize}

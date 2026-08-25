@@ -1,6 +1,16 @@
 "use client";
 
-import { Check, Copy, Loader2 } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Check,
+  Copy,
+  Loader2,
+  Maximize2,
+  X,
+} from "lucide-react";
 import {
   KeyboardEvent,
   PointerEvent,
@@ -255,6 +265,30 @@ export function VirtualDataTable({
     });
   };
 
+  const adjustSelection = (movement: { row: number; column: number }) => {
+    const bounds = { rows: rows.length, columns: fallbackColumns.length };
+    const current = selectionRef.current.active
+      ? selectionRef.current
+      : selectDataGridCell(selectionRef.current, { row: 0, column: 0 });
+    const next = moveDataGridSelection(current, movement, bounds, true);
+    selectionRef.current = next;
+    setSelection(next);
+  };
+
+  const selectAllCells = () => {
+    const next = selectAllDataGridCells({
+      rows: rows.length,
+      columns: fallbackColumns.length,
+    });
+    selectionRef.current = next;
+    setSelection(next);
+  };
+
+  const clearSelection = () => {
+    selectionRef.current = EMPTY_DATA_GRID_SELECTION;
+    setSelection(EMPTY_DATA_GRID_SELECTION);
+  };
+
   const handleCellPointerDown = (event: PointerEvent<HTMLButtonElement>, cell: DataGridCell) => {
     if (event.button !== 0) return;
     const mode = event.shiftKey ? "extend" : event.metaKey || event.ctrlKey ? "toggle" : "replace";
@@ -467,6 +501,85 @@ export function VirtualDataTable({
                 : "Copy"}
           </span>
         </Button>
+      ) : null}
+
+      {selection.selected.size > 0 ? (
+        <div
+          aria-label="Table selection controls"
+          className="mobile-data-grid-selection-controls absolute bottom-2 right-2 z-30 items-center gap-0.5 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur"
+          data-testid="mobile-table-selection-controls"
+          role="toolbar"
+        >
+          <span
+            className="px-1.5 text-[10px] tabular-nums text-muted-foreground"
+            aria-live="polite"
+          >
+            {selection.selected.size} selected
+          </span>
+          <Button
+            aria-label="Adjust selection up"
+            onClick={() => adjustSelection({ row: -1, column: 0 })}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <ArrowUp />
+          </Button>
+          <Button
+            aria-label="Adjust selection down"
+            onClick={() => adjustSelection({ row: 1, column: 0 })}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <ArrowDown />
+          </Button>
+          <Button
+            aria-label="Adjust selection left"
+            onClick={() => adjustSelection({ row: 0, column: -1 })}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <ArrowLeft />
+          </Button>
+          <Button
+            aria-label="Adjust selection right"
+            onClick={() => adjustSelection({ row: 0, column: 1 })}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <ArrowRight />
+          </Button>
+          <Button
+            aria-label="Select all cells"
+            onClick={selectAllCells}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <Maximize2 />
+          </Button>
+          <Button
+            aria-label="Copy selection"
+            onClick={() => void copyTable(true)}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            {copied ? <Check /> : <Copy />}
+          </Button>
+          <Button
+            aria-label="Clear selection"
+            onClick={clearSelection}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <X />
+          </Button>
+        </div>
       ) : null}
 
       {loading ? (

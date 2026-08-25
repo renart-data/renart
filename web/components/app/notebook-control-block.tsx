@@ -145,80 +145,83 @@ export function NotebookControlBlock({
         tabIndex={0}
         aria-label={`Control: ${title}`}
         className={cn(
-          "group/notebook-control rounded-xl border border-transparent bg-transparent px-3 py-3 outline-none transition-colors hover:border-sky-500/25 hover:bg-sky-500/[0.025] focus-within:border-sky-500/25",
-          selected && "border-sky-500/35 bg-sky-500/[0.035] ring-1 ring-sky-500/15",
+          "group/notebook-control rounded-xl border border-border/70 bg-transparent px-3 py-3 outline-none transition-colors hover:border-sky-500/25 focus-within:border-sky-500/25",
+          selected && "border-sky-500/35 ring-1 ring-sky-500/15",
         )}
         onClick={onSelect}
         onFocus={(event) => {
           if (event.target === event.currentTarget) onSelect();
         }}
       >
-        <div className="flex min-w-0 flex-wrap items-end gap-3">
-          <AuthoredControlValueField
-            control={control}
-            value={value}
-            options={runtimeOptions}
-            idScope={`notebook-control-block-${control.id}`}
-            className="min-w-48 flex-1"
-            onChange={onValueChange}
-          />
-          {datasetBacked ? (
-            <div className="mb-0.5 ml-auto flex shrink-0 items-center gap-1.5">
-              {optionsStale ? (
-                <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300">
-                  <AlertTriangle className="size-3" /> Run source
-                </span>
-              ) : optionResult ? (
-                <Badge variant="outline" className="font-normal">
-                  {runtimeOptions?.length ?? 0} option{runtimeOptions?.length === 1 ? "" : "s"}
-                  {optionResult.truncated ? " · capped" : ""}
-                </Badge>
-              ) : null}
+        <div className="flex min-w-0 flex-col gap-2">
+          <div
+            className="min-w-0"
+            data-testid="notebook-control-value"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <AuthoredControlValueField
+              control={control}
+              value={value}
+              options={runtimeOptions}
+              idScope={`notebook-control-block-${control.id}`}
+              className="w-full min-w-0"
+              onChange={onValueChange}
+            />
+          </div>
+          <div className="flex min-w-0 items-center justify-end gap-1.5">
+            {datasetBacked ? (
+              <>
+                {optionsStale ? (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-300">
+                    <AlertTriangle className="size-3" /> Run source
+                  </span>
+                ) : optionResult ? (
+                  <Badge variant="outline" className="font-normal">
+                    {runtimeOptions?.length ?? 0} option{runtimeOptions?.length === 1 ? "" : "s"}
+                    {optionResult.truncated ? " · capped" : ""}
+                  </Badge>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy || optionsLoading || optionsStale}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRefreshOptions();
+                  }}
+                >
+                  {optionsLoading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                  {optionResult ? "Refresh" : "Load options"}
+                </Button>
+              </>
+            ) : null}
+            <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover/notebook-control:opacity-100 group-focus-within/notebook-control:opacity-100">
               <Button
-                size="sm"
+                size="icon-sm"
                 variant="ghost"
-                disabled={busy || optionsLoading || optionsStale}
+                aria-label={`Edit control ${title}`}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onRefreshOptions();
+                  onSelect();
                 }}
               >
-                {optionsLoading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                {optionResult ? "Refresh" : "Load options"}
+                <SlidersHorizontal />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                disabled={busy || deleting}
+                aria-label={`Delete control ${title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (busy || deleting) return;
+                  setDeleting(true);
+                  void onDelete().finally(() => setDeleting(false));
+                }}
+              >
+                {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
               </Button>
             </div>
-          ) : null}
-          <div
-            className={cn(
-              "mb-0.5 flex shrink-0 items-center opacity-0 transition-opacity group-hover/notebook-control:opacity-100 group-focus-within/notebook-control:opacity-100",
-              !datasetBacked && "ml-auto",
-            )}
-          >
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label={`Edit control ${title}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onSelect();
-              }}
-            >
-              <SlidersHorizontal />
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              disabled={busy || deleting}
-              aria-label={`Delete control ${title}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                if (busy || deleting) return;
-                setDeleting(true);
-                void onDelete().finally(() => setDeleting(false));
-              }}
-            >
-              {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
-            </Button>
           </div>
         </div>
       </section>
