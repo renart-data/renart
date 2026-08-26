@@ -188,9 +188,7 @@ export function useJinjaIntellisense(
               ),
               options: {
                 inlineClassName:
-                  span.type === "expression"
-                    ? "bruin-jinja-expression"
-                    : "bruin-jinja-statement",
+                  span.type === "expression" ? "bruin-jinja-expression" : "bruin-jinja-statement",
                 after: afterContent
                   ? {
                       content:
