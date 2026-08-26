@@ -86,8 +86,10 @@ compound transaction is shared by multi-block UI actions and MCP rather than
 introducing a second state system. The notebook's shared **Add** rail exposes
 SQL, Python, Markdown, every typed control, and all visualization types from any
 scroll position. Clicking a rail item appends it; quiet insertion points between
-blocks accept the same items from a menu or drag operation. Both paths use the
-same positional semantic operations. Insertion anchors are durable raw
+blocks accept the same items from a menu or drag operation. Their add buttons
+stay visible on narrow and non-hover layouts, where hover-only discovery is
+unavailable. Both paths use the same positional semantic operations. Insertion
+anchors are durable raw
 cell/block IDs, while prefixed React keys remain UI-only.
 
 ## 3. Run graph and execution roles
@@ -305,6 +307,10 @@ receives the typed map through `renart.context.vars`. Warehouse SQL, local SQL,
 file/object URIs, HTTP requests, Python, and auto-recompute all receive one
 validated runtime snapshot per run.
 
+Monaco Jinja previews include the route-local typed value snapshot in each
+render request. Ghost text therefore follows control edits immediately instead
+of waiting for the debounced runtime-settings write to reach the server.
+
 ## 8. Structured visualizations
 
 A visualization block references one data-producing block and owns a versioned
@@ -326,10 +332,11 @@ and semantics apply in notebooks, dashboards, reports, and audience viewers.
 
 Notebook Markdown is visual-first: a shared Tiptap editor parses the authored
 Markdown, serializes edits back to Markdown, and keeps an explicit source mode
-for exact repair. SQL, source, control, and visualization blocks keep a
-transparent document treatment with a persistent boundary; Markdown remains
-borderless. Selection is communicated by the boundary instead of a tinted card
-background. Code and source headers keep only status, name, run, and overflow
+for exact repair. SQL, source, and control blocks keep a transparent document
+treatment with a persistent boundary; visualization blocks keep an opaque card
+surface so charts remain visually contained, and Markdown remains borderless.
+Selection is communicated by the boundary instead of a tinted card background.
+Code and source headers keep only status, name, run, and overflow
 actions at rest; type, connection, import, row-count, performance, and other
 contextual metadata fade and collapse into place when selected. SQL and Python
 editors use transparent Monaco themes without overview-ruler markers. The Add
@@ -579,6 +586,10 @@ to fixed-row windowing above fifty loaded rows: only the viewport plus a small
 overscan is mounted, spacer rows retain the complete scroll geometry, and ARIA
 row counts/indexes retain the logical table position. Notebook cells show every
 row in the server's bounded preview instead of applying a second frontend cap.
+Each result table has a compact disclosure row and can be collapsed without
+discarding its result. Captured Python stdout remains collapsed by default; its
+disclosure is selection-only contextual UI and collapses out of the document
+flow when its cell is not selected.
 That table also owns the spreadsheet-style selection contract shared by asset
 inspect and structured table visualizations: click/drag/Shift extends a range,
 Ctrl/Cmd toggles cells, arrows move the active cell, and Ctrl/Cmd+C copies the

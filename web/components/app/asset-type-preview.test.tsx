@@ -16,5 +16,7 @@ describe("AssetTypePreview", () => {
 
     expect(markup).toContain('data-code-type-glyph="python"');
     expect(markup).toContain("<svg");
+    expect(markup).toContain('fill="none"');
+    expect(markup).toContain('stroke="currentColor"');
   });
 });

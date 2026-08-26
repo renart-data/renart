@@ -814,6 +814,7 @@ function TableCellContent({
       onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
       onPointerEnter={onPointerEnter}
+      onPointerLeave={() => setDetailOpen(false)}
     >
       {cell.value}
     </button>

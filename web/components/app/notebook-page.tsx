@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DelimitedCardContent,
   DelimitedCardHeader,
@@ -220,6 +221,31 @@ function NotebookSelectedControls({
       )}
     >
       {children}
+    </div>
+  );
+}
+
+function NotebookSelectedContent({
+  selected,
+  children,
+  testId,
+}: {
+  selected: boolean;
+  children: ReactNode;
+  testId?: string;
+}) {
+  return (
+    <div
+      aria-hidden={!selected}
+      data-notebook-selected-content
+      data-testid={testId}
+      inert={selected ? undefined : true}
+      className={cn(
+        "grid transition-[grid-template-rows,opacity,visibility] duration-200 ease-out motion-reduce:transition-none",
+        selected ? "visible grid-rows-[1fr] opacity-100" : "invisible grid-rows-[0fr] opacity-0",
+      )}
+    >
+      <div className="min-h-0 overflow-hidden">{children}</div>
     </div>
   );
 }
@@ -1420,7 +1446,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         <ScrollArea
           data-testid="notebook-scroll-area"
           className="min-h-0 min-w-0 flex-1"
-          viewportClassName="px-3 pb-24"
+          viewportClassName="px-3 pb-24 [&>div]:!block [&>div]:w-full"
           viewportRef={notebookViewportRef}
           onViewportScroll={(event) => {
             const nextScrolled = event.currentTarget.scrollTop > 0;
@@ -1429,7 +1455,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         >
           <div
             data-testid="notebook-canvas"
-            className="mx-auto flex min-h-full max-w-5xl flex-col rounded-xl"
+            className="mx-auto flex min-h-full w-full min-w-0 max-w-5xl flex-col rounded-xl"
           >
             {unplacedControls.map((control) => renderNotebookControl(control))}
             <NotebookInsertionPoint
@@ -1504,6 +1530,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                           dependencies={dependencies}
                           installedModules={installedModules}
                           parameters={notebook.parameters ?? []}
+                          parameterValues={parameterValues}
                           onAddDependency={(pkg) =>
                             updateDependencies(addDependency(dependencies, pkg))
                           }
@@ -1577,7 +1604,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                   data-notebook-visualization-id={block.id}
                   data-notebook-block-entering={entering || undefined}
                   data-notebook-block-selected={selectedBlockID === blockKey || undefined}
-                  className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+                  className={cn("w-full min-w-0", entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
                 >
                   <NotebookVisualizationBlockCard
                     notebookId={notebookId}
@@ -2095,7 +2122,7 @@ function NotebookInsertionPoint({
             disabled={disabled}
             aria-label="Insert notebook block here"
             className={cn(
-              "relative z-10 rounded-full bg-background opacity-0 shadow-xs transition-opacity group-hover/notebook-insert:opacity-100 group-focus-within/notebook-insert:opacity-100",
+              "relative z-10 rounded-full bg-background opacity-100 shadow-xs transition-opacity lg:opacity-0 lg:group-hover/notebook-insert:opacity-100 lg:group-focus-within/notebook-insert:opacity-100 [@media(hover:none)]:opacity-100",
               dropActive && "opacity-100",
             )}
           >
@@ -2104,15 +2131,17 @@ function NotebookInsertionPoint({
         </PopoverTrigger>
         <PopoverContent
           align="center"
+          sideOffset={-12}
           data-testid="notebook-insert-picker"
-          className="w-[min(32rem,calc(100vw-2rem))] gap-1.5 p-1.5"
+          className="w-[min(32rem,calc(100vw-2rem))] gap-1.5 p-1.5 data-[side=bottom]:-translate-y-1/2 data-[side=top]:translate-y-1/2"
         >
-          <div className="flex min-w-0 items-stretch">
+          <div className="grid min-w-0 grid-cols-[repeat(3,minmax(0,1fr))_auto_repeat(2,minmax(0,1fr))_auto_auto] items-stretch">
             <ToggleGroup
               type="single"
+              spacing={0}
               value=""
               aria-label="Cell type"
-              className="min-w-0 flex-1"
+              className="contents"
               onValueChange={(value) => {
                 if (value) insert(value as NotebookBlockType);
               }}
@@ -2122,7 +2151,7 @@ function NotebookInsertionPoint({
                   key={option.value}
                   value={option.value}
                   aria-label={option.label}
-                  className="h-14 min-w-16 flex-1 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
+                  className="h-14 min-w-0 basis-0 flex-1 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
                 >
                   <NotebookBlockTypePreview type={option.value} className="h-6 max-w-10" />
                   <span>{option.label}</span>
@@ -2134,7 +2163,7 @@ function NotebookInsertionPoint({
               type="button"
               variant={pickerCategory === "control" ? "secondary" : "ghost"}
               aria-expanded={pickerCategory === "control"}
-              className="h-14 min-w-16 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
+              className="h-14 min-w-0 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
               onClick={() =>
                 setPickerCategory((current) => (current === "control" ? null : "control"))
               }
@@ -2146,7 +2175,7 @@ function NotebookInsertionPoint({
               type="button"
               variant={pickerCategory === "visualization" ? "secondary" : "ghost"}
               aria-expanded={pickerCategory === "visualization"}
-              className="h-14 min-w-16 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
+              className="h-14 min-w-0 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
               onClick={() =>
                 setPickerCategory((current) =>
                   current === "visualization" ? null : "visualization",
@@ -2910,6 +2939,7 @@ function NotebookResultPreview({
   result: NotebookCellRunResult;
   selected: boolean;
 }) {
+  const [open, setOpen] = useState(true);
   const [renderMeasurement, setRenderMeasurement] = useState<VirtualTableRenderMeasurement>();
   const rows = useMemo(
     () =>
@@ -2926,30 +2956,53 @@ function NotebookResultPreview({
 
   const rowsShown = result.rows.length;
   const truncated = result.total_rows > rowsShown;
+  const rowSummary = truncated
+    ? `showing ${rowsShown.toLocaleString()} of ${result.total_rows.toLocaleString()} rows`
+    : `${rowsShown.toLocaleString()} rows`;
 
   return (
-    <div
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
       data-testid="notebook-result-preview"
       className="isolate overflow-clip rounded-lg border bg-background"
       style={{ clipPath: "inset(0 round var(--radius-lg))" }}
     >
-      <VirtualDataTable
-        ariaLabel={`${cellName} result preview`}
-        columnKeys={columnKeys}
-        columns={result.columns}
-        frameless
-        height={288}
-        onRenderMeasured={setRenderMeasurement}
-        rows={rows}
-        scrollKey={`notebook:${result.cell_id}:preview`}
-        viewportClassName="max-h-72"
-      />
-      <div className="flex min-h-8 items-center justify-between gap-2 border-t bg-muted/30 px-2 text-[11px] text-muted-foreground">
-        <span>
-          {truncated
-            ? `showing ${rowsShown.toLocaleString()} of ${result.total_rows.toLocaleString()} rows`
-            : `${rowsShown.toLocaleString()} rows`}
-        </span>
+      <CollapsibleContent>
+        <VirtualDataTable
+          ariaLabel={`${cellName} result preview`}
+          columnKeys={columnKeys}
+          columns={result.columns}
+          frameless
+          height={288}
+          onRenderMeasured={setRenderMeasurement}
+          rows={rows}
+          scrollKey={`notebook:${result.cell_id}:preview`}
+          viewportClassName="max-h-72"
+        />
+      </CollapsibleContent>
+      <div
+        className={cn(
+          "flex min-h-8 items-center gap-2 bg-muted/30 px-2 text-[11px] text-muted-foreground",
+          open && "border-t",
+        )}
+      >
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="-ml-1 shrink-0"
+            aria-label={`${open ? "Collapse" : "Expand"} ${cellName} result table`}
+          >
+            <ChevronRight
+              data-icon="inline-start"
+              className={cn("transition-transform", open && "rotate-90")}
+            />
+            Result
+          </Button>
+        </CollapsibleTrigger>
+        <span>{rowSummary}</span>
         <NotebookSelectedControls
           selected={selected}
           className="ml-auto shrink-0"
@@ -2958,7 +3011,7 @@ function NotebookResultPreview({
           <NotebookPerformanceDetails result={result} renderMeasurement={renderMeasurement} />
         </NotebookSelectedControls>
       </div>
-    </div>
+    </Collapsible>
   );
 }
 
@@ -3209,6 +3262,7 @@ function NotebookCellCard({
   dependencies,
   installedModules,
   parameters,
+  parameterValues,
   onAddDependency,
   resultColumnsByCell,
   result,
@@ -3237,6 +3291,7 @@ function NotebookCellCard({
   dependencies: string[];
   installedModules: string[];
   parameters: NonNullable<WebNotebook["parameters"]>;
+  parameterValues: Record<string, unknown>;
   onAddDependency: (pkg: string) => void;
   resultColumnsByCell: Map<string, string[]>;
   result?: NotebookCellRunResult;
@@ -3381,12 +3436,16 @@ function NotebookCellCard({
         className={cn(NOTEBOOK_BLOCK_HEADER_CLASS, showStale && "notebook-stale-hatch")}
       >
         <span className={cn("size-2 rounded-full", statusDotClass(result, showStale))} />
-        <span
-          className="max-w-40 truncate font-mono text-[11px] text-muted-foreground"
+        <button
+          type="button"
+          data-testid="notebook-cell-header-name"
+          aria-label={`Rename cell ${cell.name}`}
+          className="max-w-40 truncate rounded-sm font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           title={cell.name}
+          onClick={() => setRenaming(true)}
         >
           {cell.name}
-        </span>
+        </button>
         <NotebookSelectedControls selected={selected}>
           <Badge
             variant="ghost"
@@ -3597,6 +3656,7 @@ function NotebookCellCard({
           onGoToAsset={onGoToAsset}
           onGoToCell={onGoToCell}
           parameters={parameters}
+          parameterValues={parameterValues}
         />
         {missingDeps.length > 0 ? (
           <div className="mt-3">
@@ -3620,9 +3680,11 @@ function NotebookCellCard({
           </div>
         ) : null}
         {result?.logs ? (
-          <div className="mt-3">
-            <NotebookCellLogs logs={result.logs} isError={result.status === "error"} />
-          </div>
+          <NotebookSelectedContent selected={selected} testId="notebook-cell-logs-disclosure">
+            <div data-testid="notebook-cell-logs-spacing" className="py-1.5">
+              <NotebookCellLogs logs={result.logs} isError={result.status === "error"} />
+            </div>
+          </NotebookSelectedContent>
         ) : null}
         {vizDiagnostics.length > 0 ? (
           <div className="mt-3 space-y-1">
@@ -3695,17 +3757,27 @@ function NotebookCellLogs({ logs, isError }: { logs: string; isError: boolean })
   }, [logs, isError]);
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-muted/30">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-        Output
-      </button>
-      {open ? (
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="overflow-hidden rounded-lg border bg-muted/30"
+    >
+      <CollapsibleTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start rounded-none"
+          aria-label="Output"
+        >
+          <ChevronRight
+            data-icon="inline-start"
+            className={cn("transition-transform", open && "rotate-90")}
+          />
+          Output
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
         <ScrollArea viewportClassName="max-h-72" className="border-t">
           <div data-testid="cell-logs">
             <AnsiOutput
@@ -3714,8 +3786,8 @@ function NotebookCellLogs({ logs, isError }: { logs: string; isError: boolean })
             />
           </div>
         </ScrollArea>
-      ) : null}
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 

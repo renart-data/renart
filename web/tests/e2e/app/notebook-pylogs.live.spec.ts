@@ -74,13 +74,25 @@ test.describe("notebook python logs", () => {
     expect(result.status, `run error: ${result.error ?? ""}`).toBe("ok");
     expect(result.logs ?? "").toContain("notebook stdout marker");
 
-    // The Output section is present and collapsed by default (success run): the
-    // log body is not rendered until expanded (the marker also appears in the
-    // editor source, so scope the assertion to the log pre).
-    const toggle = page.getByRole("button", { name: "Output" });
+    // Stdout is contextual cell UI: an unselected cell contributes no visible
+    // disclosure or one-sided spacing to the document. Selecting the editor
+    // fades the disclosure in, still collapsed by default for a successful run.
+    const cellBlock = page.locator(`[data-notebook-cell-id="${cell}"]`);
+    const disclosure = cellBlock.getByTestId("notebook-cell-logs-disclosure");
+    const toggle = cellBlock.getByRole("button", { name: "Output" });
+    await expect(toggle).toBeHidden();
+    expect(await disclosure.evaluate((element) => element.getBoundingClientRect().height)).toBe(0);
+
+    await cellBlock.locator('[data-slot="notebook-cell-editor-shell"]').click();
     await expect(toggle).toBeVisible({ timeout: 15000 });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(page.getByTestId("cell-logs")).toHaveCount(0);
+    expect(
+      await cellBlock.getByTestId("notebook-cell-logs-spacing").evaluate((element) => {
+        const style = getComputedStyle(element);
+        return style.paddingTop === style.paddingBottom;
+      }),
+    ).toBe(true);
 
     // Expanding reveals the captured stdout.
     await toggle.click();

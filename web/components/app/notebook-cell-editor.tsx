@@ -41,6 +41,7 @@ const NOTEBOOK_EDITOR_MIN_HEIGHT =
 const NOTEBOOK_EDITOR_MAX_HEIGHT = 800;
 const NOTEBOOK_EDITOR_AUTO_MAX_HEIGHT =
   NOTEBOOK_EDITOR_AUTO_MAX_LINES * NOTEBOOK_EDITOR_LINE_HEIGHT + NOTEBOOK_EDITOR_VERTICAL_PADDING;
+const EMPTY_NOTEBOOK_PARAMETER_VALUES: Record<string, unknown> = {};
 const NOTEBOOK_EDITOR_OPTIONS: MonacoNS.editor.IStandaloneEditorConstructionOptions = {
   hideCursorInOverviewRuler: true,
   overviewRulerBorder: false,
@@ -146,6 +147,7 @@ export function NotebookCellMonaco({
   onGoToAsset,
   onGoToCell,
   parameters = [],
+  parameterValues = EMPTY_NOTEBOOK_PARAMETER_VALUES,
 }: {
   cell: WebAsset;
   value: string;
@@ -157,6 +159,7 @@ export function NotebookCellMonaco({
   onGoToAsset?: (pipelineId: string, assetId: string) => void;
   onGoToCell?: (cellId: string) => void;
   parameters?: NotebookParameter[];
+  parameterValues?: Record<string, unknown>;
 }) {
   const { monacoTheme } = useWorkspaceTheme();
   const notebookMonacoTheme =
@@ -189,20 +192,32 @@ export function NotebookCellMonaco({
   useSQLLSP(sqlMonaco, sqlEditor, cell, value, schemaTables, onGoToAsset, onGoToCell, {
     includeNotebookRuntimeColumns: true,
   });
-  useJinjaIntellisense(sqlMonaco, sqlEditor, cell, value, undefined, {
-    parameter: parameters.map((parameter) => ({
-      name: parameter.id,
-      type: parameter.type,
-      default_value: parameter.default,
-      description: parameter.label,
-    })),
-    parameters: parameters.map((parameter) => ({
-      name: parameter.id,
-      type: parameter.type,
-      default_value: parameter.default,
-      description: parameter.label,
-    })),
-  });
+  useJinjaIntellisense(
+    sqlMonaco,
+    sqlEditor,
+    cell,
+    value,
+    undefined,
+    {
+      parameter: parameters.map((parameter) => ({
+        name: parameter.id,
+        type: parameter.type,
+        default_value: Object.prototype.hasOwnProperty.call(parameterValues, parameter.id)
+          ? parameterValues[parameter.id]
+          : parameter.default,
+        description: parameter.label,
+      })),
+      parameters: parameters.map((parameter) => ({
+        name: parameter.id,
+        type: parameter.type,
+        default_value: Object.prototype.hasOwnProperty.call(parameterValues, parameter.id)
+          ? parameterValues[parameter.id]
+          : parameter.default,
+        description: parameter.label,
+      })),
+    },
+    parameterValues,
+  );
 
   // Python intellisense (ty: diagnostics, completion, hover, signature, goto,
   // format) is the mirror of the SQL hooks for Python cells; null monaco/editor
