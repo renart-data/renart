@@ -15,7 +15,6 @@ the original.
 | [dbt-assets.md](dbt-assets.md) | evaluation — enabling renart intelligence on existing dbt projects |
 | [distributed-freshness-log.md](distributed-freshness-log.md) | investigated proposal — opt-in append-only warehouse receipt journals for recovery and trusted cross-installation freshness |
 | [execution-parallelism.md](execution-parallelism.md) | core + native DuckDB concurrency implemented — operator audits and wait telemetry remain |
-| [golyglot-values-validation-rollout.md](golyglot-values-validation-rollout.md) | upstream fix prepared — publish Golyglot prerelease, bump Renart, and verify the notebook seed query |
 | [materialization-reach.md](materialization-reach.md) | proposed reach — guided advanced SQL modes, coverage timeline, Python pre-run diagnostic |
 | [materialization-target-lifecycle.md](materialization-target-lifecycle.md) | runtime target safety implemented for DuckDB/Postgres/Snowflake/BigQuery/Databricks — rename/orphan workflow pending asset-name/path independence |
 | [notebook-platform.md](notebook-platform.md) | core platform implemented — focused release evidence for transfer fidelity, restart/concurrency, performance, accessibility, and authenticated agent-client corpus remains |

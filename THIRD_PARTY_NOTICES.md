@@ -187,7 +187,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/ProtonMail/go-crypto | v1.3.0 | [license](third_party/licenses/2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067.txt) |
 | github.com/ProtonMail/gopenpgp/v3 | v3.3.0 | [license](third_party/licenses/503bdcb689e2033376caa35eb66f170920221e96706da77be941804bc4f36422.txt) |
 | github.com/remyoudompheng/bigfft | v0.0.0-20230129092748-24d4a6f8daec | [license](third_party/licenses/dd26a7abddd02e2d0aba97805b31f248ef7835d9e10da289b22e3b8ab78b324d.txt) |
-| github.com/renart-data/golyglot | v0.1.0-alpha.4 | [license](third_party/licenses/3a611f35963a65b984b2ea4e7b53c697cd47dea0628bd8189e8bfa5b4f9cedef.txt) |
+| github.com/renart-data/golyglot | v0.1.0-alpha.5 | [license](third_party/licenses/3a611f35963a65b984b2ea4e7b53c697cd47dea0628bd8189e8bfa5b4f9cedef.txt) |
 | github.com/riverqueue/river | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
 | github.com/riverqueue/river/riverdriver | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
 | github.com/riverqueue/river/riverdriver/riversqlite | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |

@@ -602,6 +602,8 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/renart-data/golyglot v0.1.0-alpha.4 h1:aWbTXw07bvRJ/4iN6OQqcgBIpu19nNGgJ31LjzYBImg=
 github.com/renart-data/golyglot v0.1.0-alpha.4/go.mod h1:5YWmXa0Pp9pCNio5wv3Z+eT1xMyq/CC7ql2W4nTZMqs=
+github.com/renart-data/golyglot v0.1.0-alpha.5 h1:rbAOla0iMgNtzV8V2eGBtNFQvbOTad4A/22S0IN382Y=
+github.com/renart-data/golyglot v0.1.0-alpha.5/go.mod h1:5YWmXa0Pp9pCNio5wv3Z+eT1xMyq/CC7ql2W4nTZMqs=
 github.com/riverqueue/river v0.40.0 h1:4dynKqqU1P22iPmwWDfDj/YZXnuUTZysXXF3wNHekNw=
 github.com/riverqueue/river v0.40.0/go.mod h1:auvB4kHqM97tnshEQxzy2E7aFvJFhl010NB6N29DXXc=
 github.com/riverqueue/river/riverdriver v0.40.0 h1:QjBHHh+kaxgUgK9tPumrfx7W14vhAHLIt+0dK40ikI8=
