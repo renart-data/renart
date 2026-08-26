@@ -7,14 +7,15 @@ import {
   ArrowUpFromLine,
   BookOpen,
   Check,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   CornerDownRight,
   Database,
   Download,
   FileInput,
   Gauge,
   Globe2,
-  ListTree,
   Loader2,
   MoreHorizontal,
   Package,
@@ -163,6 +164,7 @@ import { ControlTypePicker, ControlTypePreview } from "./control-type-picker";
 import { DocumentAuthoringSidebar, type DocumentAuthoringTab } from "./document-authoring-sidebar";
 import { MissingPythonDepsBanner } from "./missing-python-deps";
 import { NotebookAgentChat } from "./notebook-agent-panel";
+import { NotebookFlowPanel, NotebookOutlinePanel } from "./notebook-navigation-panel";
 import {
   NotebookBlockTypeGlyph,
   NotebookBlockTypePicker,
@@ -444,6 +446,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const [selectedBlockID, setSelectedBlockID] = useState<string | null>(null);
   const [selectedVisualizationID, setSelectedVisualizationID] = useState<string | null>(null);
   const [selectedControlID, setSelectedControlID] = useState<string | null>(null);
+  const [collapsedCellIds, setCollapsedCellIds] = useState<Set<string>>(new Set());
   const [visualizationInspectorOpen, setVisualizationInspectorOpen] = useState(false);
   const [visualizationInspectorTarget, setVisualizationInspectorTarget] =
     useState<HTMLDivElement | null>(null);
@@ -494,6 +497,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     setSelectedBlockID(null);
     setSelectedVisualizationID(null);
     setSelectedControlID(null);
+    setCollapsedCellIds(new Set());
     setVisualizationInspectorOpen(false);
     setVisualizationInspectorTarget(null);
     setParameterValues({});
@@ -1022,6 +1026,12 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     [navigate],
   );
   const goToCell = useCallback((cellId: string) => {
+    setCollapsedCellIds((current) => {
+      if (!current.has(cellId)) return current;
+      const next = new Set(current);
+      next.delete(cellId);
+      return next;
+    });
     const target = document.querySelector<HTMLElement>(`[data-notebook-cell-id="${cellId}"]`);
     if (!target) {
       return;
@@ -1137,6 +1147,9 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const placedControlIDs = new Set(
     notebook.blocks.map((block) => block.control).filter((id): id is string => Boolean(id)),
   );
+  const codeCellIds = notebook.cells
+    .filter((cell) => !cell.notebook_source && Boolean(cell.cell_id))
+    .map((cell) => cell.cell_id!);
   const unplacedControls = (notebook.parameters ?? []).filter(
     (parameter) => !placedControlIDs.has(parameter.id),
   );
@@ -1211,6 +1224,9 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       notebook={notebook}
       notebookId={notebookId}
       results={results}
+      selectedBlockKey={selectedBlockID}
+      staleCellIds={staleCells}
+      runningCellIds={runningCells}
       activeTab={toolsTab}
       agentRunning={agentRunning}
       addingBlock={pendingBlock !== null}
@@ -1327,6 +1343,20 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
+                    {codeCellIds.length > 0 ? (
+                      <>
+                        <DropdownMenuItem
+                          onSelect={() => setCollapsedCellIds(new Set(codeCellIds))}
+                        >
+                          <ChevronUp />
+                          Collapse all code cells
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setCollapsedCellIds(new Set())}>
+                          <ChevronDown />
+                          Expand all code cells
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
                     <DropdownMenuItem
                       disabled={busy}
                       onSelect={() =>
@@ -1540,6 +1570,15 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                           running={runningCells.has(block.cell)}
                           busy={busy}
                           selected={selectedBlockID === blockKey}
+                          collapsed={collapsedCellIds.has(block.cell)}
+                          onCollapsedChange={(collapsed) => {
+                            setCollapsedCellIds((current) => {
+                              const next = new Set(current);
+                              if (collapsed) next.add(block.cell ?? "");
+                              else next.delete(block.cell ?? "");
+                              return next;
+                            });
+                          }}
                           onRun={() =>
                             void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
                           }
@@ -1770,6 +1809,9 @@ function NotebookAuthoringSidebar({
   notebook,
   notebookId,
   results,
+  selectedBlockKey,
+  staleCellIds,
+  runningCellIds,
   activeTab,
   agentRunning,
   addingBlock,
@@ -1783,6 +1825,9 @@ function NotebookAuthoringSidebar({
   notebook: WebNotebook;
   notebookId: string;
   results: Record<string, NotebookCellRunResult>;
+  selectedBlockKey: string | null;
+  staleCellIds: Set<string>;
+  runningCellIds: Set<string>;
   activeTab: string;
   agentRunning: boolean;
   addingBlock: boolean;
@@ -1793,21 +1838,28 @@ function NotebookAuthoringSidebar({
   onAddBlock: (kind: PendingNotebookBlockKind, options?: NotebookBlockCreateOptions) => void;
   onClose?: () => void;
 }) {
-  const cells = new Map(
-    notebook.cells
-      .filter((cell): cell is WebAsset & { cell_id: string } => Boolean(cell.cell_id))
-      .map((cell) => [cell.cell_id, cell]),
-  );
   const tabs: DocumentAuthoringTab[] = [
     {
       value: "outline",
       label: "Outline",
       content: (
-        <NotebookOutline
-          blocks={notebook.blocks}
-          cells={cells}
-          parameters={notebook.parameters ?? []}
-          onSelect={onSelectBlock}
+        <NotebookOutlinePanel
+          notebook={notebook}
+          selectedBlockKey={selectedBlockKey}
+          onSelectBlock={onSelectBlock}
+        />
+      ),
+    },
+    {
+      value: "flow",
+      label: "Flow",
+      content: (
+        <NotebookFlowPanel
+          notebook={notebook}
+          selectedBlockKey={selectedBlockKey}
+          staleCellIds={staleCellIds}
+          runningCellIds={runningCellIds}
+          onSelectBlock={onSelectBlock}
         />
       ),
     },
@@ -1865,63 +1917,6 @@ function NotebookAuthoringSidebar({
       defaultValue="outline"
       onValueChange={onTabChange}
     />
-  );
-}
-
-function NotebookOutline({
-  blocks,
-  cells,
-  parameters,
-  onSelect,
-}: {
-  blocks: WebNotebookBlock[];
-  cells: Map<string, WebAsset>;
-  parameters: NotebookParameter[];
-  onSelect: (block: WebNotebookBlock) => void;
-}) {
-  const placedControlIDs = new Set(
-    blocks.map((block) => block.control).filter((id): id is string => Boolean(id)),
-  );
-  const outlineBlocks: WebNotebookBlock[] = [
-    ...parameters
-      .filter((parameter) => !placedControlIDs.has(parameter.id))
-      .map((parameter) => ({ control: parameter.id })),
-    ...blocks,
-  ];
-  return (
-    <div className="flex flex-col gap-1 p-2">
-      {outlineBlocks.map((block, index) => {
-        const cell = block.cell ? cells.get(block.cell) : undefined;
-        const type = cell
-          ? cell.notebook_source
-            ? "Source"
-            : usesPythonSource(cell)
-              ? "Python"
-              : "SQL"
-          : block.visualization
-            ? "Chart"
-            : block.control
-              ? "Control"
-              : "Text";
-        const title = block.control
-          ? (parameters.find((parameter) => parameter.id === block.control)?.label ?? block.control)
-          : notebookBlockTitle(block, cell, index);
-        return (
-          <button
-            key={block.id || block.cell || `block-${index}`}
-            type="button"
-            className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-accent"
-            onClick={() => onSelect(block)}
-          >
-            <ListTree className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium">{title}</span>
-            <span className="shrink-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
-              {type}
-            </span>
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -2243,20 +2238,6 @@ function NotebookInsertionPoint({
       </Popover>
     </div>
   );
-}
-
-function notebookBlockTitle(block: WebNotebookBlock, cell: WebAsset | undefined, index: number) {
-  if (cell) return cell.name;
-  if (block.control) return block.control;
-  if (block.visualization) {
-    const title = block.visualization.definition?.title;
-    return typeof title === "string" && title.trim() ? title : "Visualization";
-  }
-  const firstLine = block.markdown
-    ?.split("\n", 1)[0]
-    ?.replace(/^#+\s*/, "")
-    .trim();
-  return firstLine || `Text ${index + 1}`;
 }
 
 function PendingNotebookBlock({ kind }: { kind: PendingNotebookBlockKind }) {
@@ -3270,6 +3251,8 @@ function NotebookCellCard({
   running,
   busy,
   selected,
+  collapsed,
+  onCollapsedChange,
   onRun,
   onCancel,
   onRunFromHere,
@@ -3299,6 +3282,8 @@ function NotebookCellCard({
   running: boolean;
   busy: boolean;
   selected: boolean;
+  collapsed: boolean;
+  onCollapsedChange: (collapsed: boolean) => void;
   onRun: () => void;
   onCancel: () => void;
   onRunFromHere: () => void;
@@ -3572,6 +3557,18 @@ function NotebookCellCard({
                 : null}
           </span>
         </NotebookSelectedControls>
+        <NotebookSelectedControls selected={selected} expandedClassName="max-w-10">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`${collapsed ? "Expand" : "Collapse"} ${cell.name} code cell`}
+            title={collapsed ? "Expand code cell" : "Collapse code cell"}
+            onClick={() => onCollapsedChange(!collapsed)}
+          >
+            <ChevronRight className={cn("transition-transform", !collapsed && "rotate-90")} />
+          </Button>
+        </NotebookSelectedControls>
         {running ? (
           <Button
             variant="ghost"
@@ -3608,6 +3605,10 @@ function NotebookCellCard({
               <Pencil className="size-4" />
               Rename cell
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onCollapsedChange(!collapsed)}>
+              {collapsed ? <ChevronDown /> : <ChevronUp />}
+              {collapsed ? "Expand code cell" : "Collapse code cell"}
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={onPromote}>
               <ArrowUpFromLine className="size-4" />
               Promote to pipeline
@@ -3634,7 +3635,10 @@ function NotebookCellCard({
           </DropdownMenuContent>
         </DropdownMenu>
       </DelimitedCardHeader>
-      <DelimitedCardContent className="flex flex-col">
+      <DelimitedCardContent
+        aria-hidden={collapsed || undefined}
+        className={cn("flex flex-col", collapsed && "hidden")}
+      >
         {result?.snapshot ? (
           <div className="mb-3">
             <NotebookSnapshotSummary

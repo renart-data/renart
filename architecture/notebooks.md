@@ -349,12 +349,18 @@ distinct. Dragging targets only the small insertion gaps between blocks; the
 whole notebook never becomes a drop surface.
 
 Notebook authoring uses the same responsive rail primitive as presentations.
-Its **Outline**, **Data**, **Add**, and **AI** tabs replace separate header and
-agent-panel entry points: Outline navigates durable blocks, Data summarizes
-results and opens source import, Add owns block/chart creation, and AI embeds
-the notebook-scoped conversation. The rail remains visible on wide screens and
-moves into one left Sheet on narrower screens so the notebook canvas stays the
-primary surface.
+Its **Outline**, **Flow**, **Data**, **Add**, and **AI** tabs replace separate
+header and agent-panel entry points. Outline searches names, code, Markdown,
+controls, visualization definitions, connections, external references, and
+known columns without a server round trip, while preserving document order and
+jumping to the selected durable block. Flow projects the notebook's existing
+cell upstreams, visualization/control sources, unresolved external references,
+and runtime state into a cycle-safe dependency list. Selecting a node traces
+its transitive ancestors and descendants and jumps to the same block. Data
+summarizes results and opens source import, Add owns block/chart creation, and
+AI embeds the notebook-scoped conversation. The rail remains visible on wide
+screens and moves into one left Sheet on narrower screens so the notebook
+canvas stays the primary surface.
 
 The Add data dialog is a presenter over a focused source controller. A pure
 reducer owns its warehouse/file/HTTP form transitions, table discovery state,
@@ -590,6 +596,10 @@ Each result table has a compact disclosure row and can be collapsed without
 discarding its result. Captured Python stdout remains collapsed by default; its
 disclosure is selection-only contextual UI and collapses out of the document
 flow when its cell is not selected.
+SQL and Python card bodies can also be folded individually or as a group. This
+is route-local display state rather than authored notebook state. A folded
+Monaco editor stays mounted so a local draft is retained, and navigation from
+the Outline, Flow, or code definitions unfolds the target before scrolling.
 That table also owns the spreadsheet-style selection contract shared by asset
 inspect and structured table visualizations: click/drag/Shift extends a range,
 Ctrl/Cmd toggles cells, arrows move the active cell, and Ctrl/Cmd+C copies the

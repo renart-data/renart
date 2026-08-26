@@ -116,7 +116,7 @@ async function createNotebookControl(
   expect(applyResponse.ok()).toBe(true);
 }
 
-async function openNotebookToolsTab(page: Page, name: "Outline" | "Data" | "Add" | "AI") {
+async function openNotebookToolsTab(page: Page, name: "Outline" | "Flow" | "Data" | "Add" | "AI") {
   if ((page.viewportSize()?.width ?? 0) < 1280) {
     await page.getByRole("button", { name: "Notebook tools" }).click();
   }
@@ -595,6 +595,27 @@ test.describe("app notebooks live", () => {
     await expect(page.getByText("40", { exact: true }).first()).toBeVisible({
       timeout: timeoutForRetry(test.info(), 15000),
     });
+
+    // Notebook navigation searches the whole document and exposes its existing
+    // dependency metadata without changing authored files.
+    await openNotebookToolsTab(page, "Outline");
+    const outline = page.getByTestId("notebook-outline-panel");
+    await outline.getByLabel("Search notebook").fill("amount * 2");
+    const doubledOutlineEntry = outline.getByRole("button").filter({ hasText: "doubled" });
+    await expect(outline.getByText(/matching blocks?$/)).toBeVisible();
+    await expect(doubledOutlineEntry).toBeVisible();
+    await doubledOutlineEntry.click();
+
+    const doubledBlock = page.locator(`[data-notebook-cell-id="${doubledCell}"]`);
+    const doubledContent = doubledBlock.locator('[data-slot="delimited-card-content"]');
+    await doubledBlock.getByRole("button", { name: "Collapse doubled code cell" }).click();
+    await expect(doubledContent).toBeHidden();
+
+    await openNotebookToolsTab(page, "Flow");
+    const flow = page.getByTestId("notebook-flow-panel");
+    await expect(flow.getByRole("button", { name: "base, Upstream" })).toBeVisible();
+    await flow.getByRole("button", { name: "doubled, Selected" }).click();
+    await expect(doubledContent).toBeVisible();
   });
 
   test("virtualizes large result previews and exposes local performance", async ({
