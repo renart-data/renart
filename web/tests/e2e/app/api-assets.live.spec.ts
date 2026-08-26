@@ -3,6 +3,8 @@ import { createServer, type Server } from "node:http";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { extractParametersText } from "@/lib/api-parameters-yaml";
+
 import { liveTest as test, timeoutForRetry } from "../live-app-fixture";
 
 type WorkspaceResponse = {
@@ -417,8 +419,6 @@ parameters:
       await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${apiAssetId}/code`);
       const editor = page.locator(".monaco-editor").first();
       await expect(editor).toBeVisible({ timeout: 15000 });
-      await setEditorContentAtYamlField(page, assetContent, "next_url_path", "pag");
-
       const suggestionsResponse = page.waitForResponse(
         (response) =>
           response.url().includes("/api/api-assets/openapi-suggestions") &&
@@ -426,6 +426,7 @@ parameters:
           response.ok(),
         { timeout: 15000 },
       );
+      await setEditorContentAtYamlField(page, assetContent, "next_url_path", "pag");
       await page.keyboard.press("ControlOrMeta+Space");
       const response = await suggestionsResponse;
       const body = (await response.json()) as {
@@ -835,6 +836,7 @@ async function setEditorContentAtYamlField(
   fieldName: string,
   cursorAfter?: string,
 ) {
+  const parametersText = extractParametersText(content) || content;
   await page.waitForFunction(
     () => {
       const monaco = (window as typeof window & { monaco?: any }).monaco;
@@ -870,7 +872,7 @@ async function setEditorContentAtYamlField(
       editor.focus();
       editor.setPosition({ lineNumber, column });
     },
-    { content, cursorAfter, fieldName },
+    { content: parametersText, cursorAfter, fieldName },
   );
 }
 
