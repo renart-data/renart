@@ -16,22 +16,22 @@ importers:
         version: 10.1.0
     devDependencies:
       '@types/node':
-        specifier: ^26.1.1
-        version: 26.1.1
+        specifier: ^26.3.0
+        version: 26.3.0
       '@types/vscode':
-        specifier: ^1.125.0
-        version: 1.125.0
+        specifier: ^1.134.0
+        version: 1.134.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
 
 packages:
 
-  '@types/node@26.1.1':
-    resolution: {integrity: sha512-nxAkRSVkN1Y0JC1W8ky/fTfkGsMmcrRsbx+3XoZE+rMOX71kLYTV7fLXpqud1GpbpP5TuffXFqfX7fH2GgZREw==}
+  '@types/node@26.3.0':
+    resolution: {integrity: sha512-L3fgrnchriRC2ExBflb8j4uZZURHZfQsmQeyVzhjcHW4kkwVyo8/0h1B2MVzMTrYUJYu6G7EWs14hW/L9putqw==}
 
-  '@types/vscode@1.125.0':
-    resolution: {integrity: sha512-0icm/ZQAaism87P0ekHqi4/Ju9du+Tm0RUW+y7vqRsxY2cY0FNRX1nAnaW7nT6npPt2tfHiheZ55Zm9UhqonFA==}
+  '@types/vscode@1.134.0':
+    resolution: {integrity: sha512-NDEu0hg4sF7+vvFsADsktqUJ6f80LHSZvVK2Ovo1XiQ0/VHck1O3zst+ZZyVA/uvz6vo6LcuoqU2q48YMqOwWw==}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
@@ -197,11 +197,11 @@ packages:
 
 snapshots:
 
-  '@types/node@26.1.1':
+  '@types/node@26.3.0':
     dependencies:
       undici-types: 8.3.0
 
-  '@types/vscode@1.125.0': {}
+  '@types/vscode@1.134.0': {}
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true

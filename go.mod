@@ -13,7 +13,7 @@ require (
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/google/jsonschema-go v0.4.3
-	github.com/mattn/go-isatty v0.0.22
+	github.com/mattn/go-isatty v0.0.24
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pkg/errors v0.9.1
