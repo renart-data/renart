@@ -179,3 +179,5 @@ web/test-results/
 renart-gui
 /.release/
 docs/.pnpm-store/
+.pnpm-store
+marketing/
