@@ -147,7 +147,12 @@ not underscore-flattened route hacks.
   the route, later selections
   preserve the explicit code/split/canvas layout. A DAG that fits at the default
   zoom is horizontally centered on initial render, while a wider DAG keeps its layout
-  origin so it remains predictable to pan. Layer-band layout assigns acyclic
+  origin so it remains predictable to pan. Selection, hover, and lineage-highlight
+  updates reuse the topology's computed layout and prefix-group geometry so opening
+  another asset does not put graph layout work in Monaco's display path. The selected
+  card highlight and route reconciliation are deferred renders: the local selection
+  lets Monaco paint the newly selected repository content first, then the URL and
+  canvas catch up. Layer-band layout assigns acyclic
   prefix dependencies complete horizontal blocks: every asset in an upstream
   prefix stays left of every asset in its downstream prefix, while dependency
   depth still orders assets inside each block. Independent prefixes may share
@@ -659,7 +664,10 @@ than hand-rolled `div` shells.
 - [lib/sql-schema.ts](../web/lib/sql-schema.ts): schema context for SQL
   intellisense. It scopes tables using only the effective connection resolved by
   the backend; it never guesses a connection from an asset type or selects an
-  arbitrary same-platform connection.
+  arbitrary same-platform connection. The suggestion catalog indexes remote
+  table names per connection before enriching workspace schemas; switching
+  assets therefore scales with catalog size rather than comparing every table
+  with every other table.
 - [lib/api-asset-templates.ts](../web/lib/api-asset-templates.ts): the four
   pattern-focused HTTP API starters used by the New asset dialog. The default
   starter accepts the user's OpenAPI URL rather than embedding a demo service;

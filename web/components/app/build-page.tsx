@@ -42,6 +42,7 @@ import {
   ReactNode,
   createContext,
   lazy,
+  startTransition,
   Suspense,
   useCallback,
   useContext,
@@ -1327,7 +1328,10 @@ export function AppBuildPage({
   };
   const selectAsset = (assetId: string) => {
     pickAsset(assetId);
-    onAssetSelect?.(assetId);
+    // The local selection can swap Monaco immediately. Route reconciliation
+    // (including the canvas highlight and URL) is non-urgent and must not hold
+    // that paint behind the rest of the Build view.
+    startTransition(() => onAssetSelect?.(assetId));
   };
   const reviewFailedCheck = (assetId: string) => {
     const target = displayedPipelineAssets.find((asset) => asset.id === assetId);

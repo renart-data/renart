@@ -91,6 +91,28 @@ test.describe("app build actions live", () => {
       })
       .toBe(true);
 
+    await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
+      timeout: 15000,
+    });
+    const ordersNode = splitFlow.locator(
+      `[data-testid="lineage-asset"][data-asset-id="${ordersAssetId}"]`,
+    );
+    await ordersNode.click();
+    await expect(page.locator(".view-lines").first()).toContainText("order_id", {
+      timeout: 15000,
+    });
+    await expect(page).toHaveURL(
+      new RegExp(`/pipelines/${pipelineId}/assets/${ordersAssetId}/split(?:[?].*)?$`),
+    );
+
+    await selectedNode.click();
+    await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
+      timeout: 15000,
+    });
+    await expect(page).toHaveURL(
+      new RegExp(`/pipelines/${pipelineId}/assets/${customersAssetId}/split(?:[?].*)?$`),
+    );
+
     await page.getByRole("link", { name: "Canvas view" }).click();
     await expect(page).toHaveURL(
       new RegExp(`/pipelines/${pipelineId}/assets/${customersAssetId}/canvas(?:[?].*)?$`),
