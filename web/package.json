@@ -44,7 +44,7 @@
     "react-dom": "19.2.7",
     "react-grid-layout": "^2.2.4",
     "react-markdown": "^10.1.0",
-    "react-resizable-panels": "^4.12.1",
+    "react-resizable-panels": "^4.12.2",
     "reactflow": "^11.11.4",
     "recharts": "3.9.2",
     "tailwind-merge": "^3.6.0",
