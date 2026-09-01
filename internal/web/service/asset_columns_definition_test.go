@@ -11,7 +11,9 @@ import (
 	"sync"
 	"testing"
 
+	duck "github.com/bruin-data/bruin/pkg/duckdb"
 	"github.com/bruin-data/bruin/pkg/pipeline"
+	"github.com/bruin-data/bruin/pkg/query"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,6 +82,61 @@ select customer_id, upper(customer_name) as shout from analytics.customers
 	assert.Equal(t, "INTEGER", byName["customer_id"])
 	// computed column gets a type from Golyglot's semantic analysis
 	assert.Equal(t, "VARCHAR", byName["shout"])
+}
+
+func TestInferAssetColumnsFromPartitionedParquetGlob(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	pipelineRoot := filepath.Join(workspaceRoot, "analytics")
+	assetsRoot := filepath.Join(pipelineRoot, "assets")
+	partitionDir := filepath.Join(workspaceRoot, "my_directory", "day=2026-09-01")
+	require.NoError(t, os.MkdirAll(assetsRoot, 0o755))
+	require.NoError(t, os.MkdirAll(partitionDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(pipelineRoot, "pipeline.yml"), []byte(strings.TrimSpace(`
+name: analytics
+schedule: daily
+start_date: "2024-01-01"
+default_connections:
+  duckdb: duckdb-default
+`)+"\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "partitioned.sql"), []byte(strings.TrimSpace(`
+/* @bruin
+name: analytics.partitioned
+type: duckdb.sql
+materialization:
+  type: view
+@bruin */
+
+SELECT
+  *
+FROM "./my_directory/day=*/example.parquet"
+`)+"\n"), 0o644))
+
+	parquetPath := filepath.Join(partitionDir, "example.parquet")
+	client, err := duck.NewClient(duck.Config{Path: ""})
+	require.NoError(t, err)
+	t.Cleanup(client.Close)
+	escapedPath := strings.ReplaceAll(filepath.ToSlash(parquetPath), "'", "''")
+	require.NoError(t, client.RunQueryWithoutResult(t.Context(), &query.Query{
+		Query: "copy (select 1::integer as id, 'Ada'::varchar as name) to '" + escapedPath + "' (format parquet)",
+	}))
+
+	service := NewAssetService(AssetDependencies{
+		WorkspaceRoot:                workspaceRoot,
+		ResolveAssetByID:             newAssetTestResolver(workspaceRoot).ResolveAssetByID,
+		SuppressWatcher:              func(string) {},
+		PushWorkspaceUpdateImmediate: func(context.Context, string, string) {},
+	})
+	columns, apiErr := service.InferAssetColumnsFromDefinition(
+		context.Background(), EncodeID("analytics/assets/partitioned.sql"),
+	)
+	require.Nil(t, apiErr)
+	byName := make(map[string]string, len(columns))
+	for _, column := range columns {
+		byName[column.Name] = column.Type
+	}
+	assert.Equal(t, "DATE", byName["day"])
+	assert.Equal(t, "INTEGER", byName["id"])
+	assert.Equal(t, "VARCHAR", byName["name"])
 }
 
 func TestInferAPIAssetColumnsFromOpenAPIDefinition(t *testing.T) {

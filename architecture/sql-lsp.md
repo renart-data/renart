@@ -186,8 +186,11 @@ coordinator's `WorkspaceState` rather than the filesystem:
 - DuckDB documents get a request-local graph layer for direct local-file
   relations such as `"./data.parquet"`. Renart resolves relative paths from the
   workspace, asks DuckDB for the zero-row result schema, and caches columns by
-  file size and modification time. A missing or temporarily invalid file keeps
-  valid DuckDB relation syntax without becoming an unknown-table error.
+  the matched files' paths, sizes, and modification times. Partitioned glob
+  relations such as `"./events/day=*/data.parquet"` are inspected as one DuckDB
+  relation, including Hive partition columns, and invalidate the cache when any
+  matched file changes. A missing or temporarily invalid file keeps valid
+  DuckDB relation syntax without becoming an unknown-table error.
 - No parser artifact is downloaded or initialized lazily. The first request
   runs the same native engine as every later request.
 
@@ -291,6 +294,13 @@ arithmetic against known operand widths. This corrects narrow literal-led
 annotations such as `range * 2` from `INTEGER` to the `BIGINT` produced by
 DuckDB's `range()` relation without overriding unresolved or non-integer
 expressions.
+
+The explicit **refresh columns from definition** action may also add that local
+DuckDB file layer before running the same canonical inference. This action is
+filesystem-gated and user-initiated, so `SELECT *` over a local Parquet/CSV
+file or partition glob can become a committed column contract without making
+the revision-cached workspace graph depend on ambient files. Disabling
+filesystem access keeps this enrichment unavailable.
 
 Non-SQL definition schemas enter that same snapshot through the schema-evidence
 provider registry and its central asset-kind policy. Explicit columns are

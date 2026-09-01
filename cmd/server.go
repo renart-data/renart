@@ -305,8 +305,9 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		ConnectionTypeFor: func(connectionName string) string {
 			return server.currentState().Connections[connectionName]
 		},
-		SelectedEnvironment: func() string { return server.currentState().SelectedEnvironment },
-		CurrentState:        func() service.WorkspaceState { return server.currentState() },
+		SelectedEnvironment:     func() string { return server.currentState().SelectedEnvironment },
+		CurrentState:            func() service.WorkspaceState { return server.currentState() },
+		DisableFilesystemAccess: cfg.disableFilesystemAccess,
 		MaterializedSchemaFresh: func(ctx context.Context, assetID, assetName, environment string) (bool, error) {
 			if server.stalenessSvc == nil {
 				return false, nil

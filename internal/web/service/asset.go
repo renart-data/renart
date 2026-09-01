@@ -235,6 +235,7 @@ type AssetDependencies struct {
 	ConnectionTypeFor                          func(string) string
 	SelectedEnvironment                        func() string
 	CurrentState                               func() WorkspaceState
+	DisableFilesystemAccess                    bool
 	// MaterializedSchemaFresh reports whether the selected asset's current
 	// materialized output was produced from its current source fingerprint. It
 	// is optional; schema reconciliation fails closed to advisory trust when the
