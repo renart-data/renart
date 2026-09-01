@@ -1080,11 +1080,17 @@ current-settings action; a stale exact request fails with
 `409 exact_reexecution_unavailable` rather than silently changing behavior.
 
 Before applying either Renart or River migrations, `Store` runs SQLite's
-`quick_check` against the shared state database. A failed check aborts startup
-with the exact database path and instructions to preserve the database, WAL,
-and shared-memory files for recovery. Renart never treats corruption as an
-empty database: the file also contains schedules, deployments, run history,
-and freshness state that must not be silently discarded.
+`quick_check` against the shared state database unless the same database was
+closed cleanly, has not changed since, has no pending WAL, and the embedded
+Renart and River migration set is unchanged. A clean close records those facts
+in an adjacent runtime-only integrity stamp, which is invalidated before the
+database opens. Missing, stale, or malformed stamps and unclean exits therefore
+fall back to the full check, while routine restarts do not rescan every database
+page. A failed check aborts startup with the exact database path and
+instructions to preserve the database, WAL, and shared-memory files for
+recovery. Renart never treats corruption as an empty database: the file also
+contains schedules, deployments, run history, and freshness state that must not
+be silently discarded.
 
 HTTP API assets use a native streaming extractor followed by Sling for the
 warehouse write. The target DuckDB lease is acquired after extraction and held

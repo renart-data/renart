@@ -492,6 +492,7 @@ func TestOpenStoreRejectsCorruptDatabaseBeforeMigrations(t *testing.T) {
 	_, writeErr := file.WriteAt(make([]byte, pageSize), (rootPage-1)*pageSize)
 	require.NoError(t, writeErr)
 	require.NoError(t, file.Close())
+	require.False(t, matchesIntegrityStamp(path), "a database changed after clean close must be checked again")
 
 	corruptStore, err := OpenStore(path)
 	if corruptStore != nil {
@@ -501,6 +502,25 @@ func TestOpenStoreRejectsCorruptDatabaseBeforeMigrations(t *testing.T) {
 	assert.ErrorIs(t, err, ErrStateDatabaseIntegrity)
 	assert.ErrorContains(t, err, path)
 	assert.ErrorContains(t, err, "back up state.db, state.db-wal, and state.db-shm")
+}
+
+func TestOpenStoreTracksCleanAndActiveDatabaseState(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "state.db")
+	store, err := OpenStore(path)
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+	require.FileExists(t, integrityStampPath(path))
+	require.True(t, matchesIntegrityStamp(path))
+
+	store, err = OpenStore(path)
+	require.NoError(t, err)
+	require.NoFileExists(t, integrityStampPath(path), "an open database must not retain a clean-close stamp")
+	require.NoError(t, store.Close())
+	require.True(t, matchesIntegrityStamp(path))
+
+	require.NoError(t, os.WriteFile(path+"-wal", []byte("pending writes"), 0o600))
+	require.False(t, matchesIntegrityStamp(path), "a non-empty WAL must force an integrity check")
 }
 
 func TestStoreCreatesRunsLogsAndWatermarks(t *testing.T) {

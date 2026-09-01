@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
 	"encoding/json"
@@ -9,7 +10,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -30,7 +33,19 @@ var schedulerMigrations embed.FS
 type Store struct {
 	db      *sql.DB
 	queries *storedb.Queries
+	path    string
 }
+
+const integrityStampVersion = 1
+
+type integrityStamp struct {
+	Version              int    `json:"version"`
+	MigrationFingerprint string `json:"migration_fingerprint"`
+	Size                 int64  `json:"size"`
+	ModifiedUnixNano     int64  `json:"modified_unix_nano"`
+}
+
+var integrityMigrationFingerprint = currentIntegrityMigrationFingerprint()
 
 // ErrStateDatabaseIntegrity marks a state database that cannot be trusted.
 // Callers must preserve it for recovery rather than silently recreating it:
@@ -44,6 +59,10 @@ func OpenStore(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
+	cleanClose := matchesIntegrityStamp(path)
+	if err := os.Remove(integrityStampPath(path)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("invalidate state database integrity stamp: %w", err)
+	}
 	db, err := sql.Open(
 		"sqlite",
 		path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)&_time_format=sqlite&_timezone=UTC",
@@ -52,15 +71,17 @@ func OpenStore(path string) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	store := &Store{db: db, queries: storedb.New(db)}
-	if err := verifyStateDatabaseIntegrity(context.Background(), db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf(
-			"%w for %q: %v; stop Renart and back up state.db, state.db-wal, and state.db-shm before recovery",
-			ErrStateDatabaseIntegrity,
-			path,
-			err,
-		)
+	store := &Store{db: db, queries: storedb.New(db), path: path}
+	if !cleanClose {
+		if err := verifyStateDatabaseIntegrity(context.Background(), db); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf(
+				"%w for %q: %v; stop Renart and back up state.db, state.db-wal, and state.db-shm before recovery",
+				ErrStateDatabaseIntegrity,
+				path,
+				err,
+			)
+		}
 	}
 	if err := reconcileActiveRunSlotMigration(context.Background(), db); err != nil {
 		_ = db.Close()
@@ -249,7 +270,140 @@ func (s *Store) Close() error {
 	if s == nil || s.db == nil {
 		return nil
 	}
-	return s.db.Close()
+	if err := s.db.Close(); err != nil {
+		return err
+	}
+	if err := writeIntegrityStamp(s.path); err != nil {
+		return fmt.Errorf("record clean state database close: %w", err)
+	}
+	return nil
+}
+
+func integrityStampPath(path string) string {
+	return path + ".integrity"
+}
+
+func matchesIntegrityStamp(path string) bool {
+	data, err := os.ReadFile(integrityStampPath(path))
+	if err != nil {
+		return false
+	}
+	var stamp integrityStamp
+	if err := json.Unmarshal(data, &stamp); err != nil ||
+		stamp.Version != integrityStampVersion ||
+		stamp.MigrationFingerprint != integrityMigrationFingerprint {
+		return false
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	if walInfo, walErr := os.Stat(path + "-wal"); walErr == nil {
+		if walInfo.Size() > 0 {
+			return false
+		}
+	} else if !errors.Is(walErr, os.ErrNotExist) {
+		return false
+	}
+	return info.Size() == stamp.Size && info.ModTime().UnixNano() == stamp.ModifiedUnixNano
+}
+
+func writeIntegrityStamp(path string) error {
+	if strings.TrimSpace(path) == "" {
+		return nil
+	}
+	if walInfo, err := os.Stat(path + "-wal"); err == nil {
+		// Another SQLite connection can keep a live WAL after this Store closes.
+		// In that case the next opener must verify the database instead of
+		// trusting a clean-close stamp from only one of its writers.
+		if walInfo.Size() > 0 {
+			_ = os.Remove(integrityStampPath(path))
+			return nil
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	stamp := integrityStamp{
+		Version:              integrityStampVersion,
+		MigrationFingerprint: integrityMigrationFingerprint,
+		Size:                 info.Size(),
+		ModifiedUnixNano:     info.ModTime().UnixNano(),
+	}
+	data, err := json.Marshal(stamp)
+	if err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(integrityStampPath(path))+"-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	keepTemp := true
+	defer func() {
+		_ = temp.Close()
+		if keepTemp {
+			_ = os.Remove(tempPath)
+		}
+	}()
+	if err := temp.Chmod(0o600); err != nil {
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, integrityStampPath(path)); err != nil {
+		return err
+	}
+	keepTemp = false
+	return nil
+}
+
+func currentIntegrityMigrationFingerprint() string {
+	hash := sha256.New()
+	entries, err := fs.ReadDir(schedulerMigrations, "storedb/migrations")
+	if err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			data, readErr := schedulerMigrations.ReadFile(path.Join("storedb/migrations", entry.Name()))
+			if readErr != nil {
+				continue
+			}
+			_, _ = hash.Write([]byte(entry.Name()))
+			_, _ = hash.Write([]byte{0})
+			_, _ = hash.Write(data)
+			_, _ = hash.Write([]byte{0})
+		}
+	}
+	if buildInfo, ok := debug.ReadBuildInfo(); ok {
+		for _, dependency := range buildInfo.Deps {
+			if dependency.Path != "github.com/riverqueue/river" {
+				continue
+			}
+			_, _ = hash.Write([]byte(dependency.Path))
+			_, _ = hash.Write([]byte{0})
+			_, _ = hash.Write([]byte(dependency.Version))
+			if dependency.Replace != nil {
+				_, _ = hash.Write([]byte{0})
+				_, _ = hash.Write([]byte(dependency.Replace.Path))
+				_, _ = hash.Write([]byte{0})
+				_, _ = hash.Write([]byte(dependency.Replace.Version))
+			}
+			break
+		}
+	}
+	return fmt.Sprintf("%x", hash.Sum(nil))
 }
 
 func (s *Store) migrate(ctx context.Context) error {
