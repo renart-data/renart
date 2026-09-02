@@ -135,7 +135,12 @@ workspace files and execute user-authored pipeline code, `renart web` rejects
 non-loopback hosts unless the operator explicitly supplies
 `--unsafe-allow-remote`. That override logs and prints a warning; it does not
 add remote authentication and is intended only behind a trusted access layer.
-The `standalone` server always binds to loopback. Renart commands do not install
+The browser listener is bound and starts accepting connections before project
+recovery and the initial workspace parse. A startup gate holds those requests
+until the project router is fully initialized, so a large state-database check
+does not delay port discovery without exposing partially wired services. The
+browser and project discovery file are enabled only after that gate opens. The
+`standalone` server always binds to loopback. Renart commands do not install
 Bruin's command telemetry hooks, so the application itself sends no usage
 telemetry.
 

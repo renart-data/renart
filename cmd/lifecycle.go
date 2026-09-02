@@ -4,10 +4,41 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"sync"
 
 	"go.uber.org/zap"
 )
+
+// startupGate lets the HTTP server accept connections as soon as its listener
+// is bound without exposing routes backed by a partially initialized project.
+// Requests that arrive during startup wait for activation, preserving the
+// existing contract that a request made after the listening line eventually
+// reaches the real application rather than receiving a transient error.
+type startupGate struct {
+	ready    chan struct{}
+	handler  http.Handler
+	activate sync.Once
+}
+
+func newStartupGate() *startupGate {
+	return &startupGate{ready: make(chan struct{})}
+}
+
+func (g *startupGate) Activate(handler http.Handler) {
+	g.activate.Do(func() {
+		g.handler = handler
+		close(g.ready)
+	})
+}
+
+func (g *startupGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	select {
+	case <-g.ready:
+		g.handler.ServeHTTP(w, r)
+	case <-r.Context().Done():
+	}
+}
 
 const renartASCII = ` ____  _____ _   _    _    ____ _____
 |  _ \| ____| \ | |  / \  |  _ \_   _|

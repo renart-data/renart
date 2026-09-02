@@ -3,14 +3,67 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 )
+
+func TestStartupGateHoldsRequestsUntilApplicationIsReady(t *testing.T) {
+	t.Parallel()
+	gate := newStartupGate()
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/workspace", nil)
+	done := make(chan struct{})
+	go func() {
+		gate.ServeHTTP(response, request)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		t.Fatal("request passed through before the application was ready")
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	gate.Activate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/workspace", r.URL.Path)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("request remained blocked after the application became ready")
+	}
+	assert.Equal(t, http.StatusNoContent, response.Code)
+}
+
+func TestStartupGateReleasesCancelledRequests(t *testing.T) {
+	t.Parallel()
+	gate := newStartupGate()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+
+	done := make(chan struct{})
+	go func() {
+		gate.ServeHTTP(httptest.NewRecorder(), request)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("cancelled startup request remained blocked")
+	}
+}
 
 func TestPrintRenartWelcome(t *testing.T) {
 	t.Parallel()

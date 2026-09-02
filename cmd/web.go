@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -155,6 +157,72 @@ func Web() *cli.Command {
 				fmt.Fprintf(os.Stderr, "WARNING: --unsafe-allow-remote exposes Renart without remote authentication; reachable clients may edit files and run code.\n")
 			}
 
+			port := c.Int("port")
+			tlsCert := strings.TrimSpace(c.String("tls-cert"))
+			tlsKey := strings.TrimSpace(c.String("tls-key"))
+			if (tlsCert == "") != (tlsKey == "") {
+				return fmt.Errorf("--tls-cert and --tls-key must be provided together")
+			}
+			if tlsCert != "" {
+				if _, err := tls.LoadX509KeyPair(tlsCert, tlsKey); err != nil {
+					return fmt.Errorf("failed to load TLS certificate and key: %w", err)
+				}
+			}
+
+			listener, address, err := listenWithDefaultPortFallback(host, port)
+			if err != nil {
+				return err
+			}
+			defer listener.Close()
+
+			startup := newStartupGate()
+			httpCtx, cancelHTTP := context.WithCancel(ctx)
+			httpServer := newHTTPServer(httpCtx, address, startup)
+			if tlsCert != "" {
+				if err := http2.ConfigureServer(httpServer, &http2.Server{}); err != nil {
+					cancelHTTP()
+					return fmt.Errorf("failed to configure HTTP/2: %w", err)
+				}
+			}
+			shutdownHTTP := func() error {
+				cancelHTTP()
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				return httpServer.Shutdown(shutdownCtx)
+			}
+			defer func() { _ = shutdownHTTP() }()
+
+			serveDone := make(chan error, 1)
+			go func() {
+				var serveErr error
+				if tlsCert != "" {
+					serveErr = httpServer.ServeTLS(listener, tlsCert, tlsKey)
+				} else {
+					serveErr = httpServer.Serve(listener)
+				}
+				if errors.Is(serveErr, http.ErrServerClosed) {
+					serveErr = nil
+				}
+				serveDone <- serveErr
+			}()
+
+			scheme := "http"
+			if tlsCert != "" {
+				scheme = "https"
+			}
+			detail := ""
+			if tlsCert != "" {
+				detail = " (HTTP/2 enabled)"
+			}
+			printRenartWelcome(c.Writer, scheme+"://"+address, detail)
+
+			stopShutdownObserver := startGracefulShutdown(ctx, stop, logger, func() {
+				if err := shutdownHTTP(); err != nil {
+					logger.Warn("HTTP server did not stop gracefully", zap.Error(err))
+				}
+			})
+			defer stopShutdownObserver()
+
 			defaultRuntime, err := newProjectRuntime(ctx, logger, cfg)
 			if err != nil {
 				return err
@@ -169,58 +237,15 @@ func Web() *cli.Command {
 
 			sessionToken := newSessionToken()
 			router := buildRootRouter(manager, defaultRuntime, sessionToken)
-
-			port := c.Int("port")
-			tlsCert := strings.TrimSpace(c.String("tls-cert"))
-			tlsKey := strings.TrimSpace(c.String("tls-key"))
-			if (tlsCert == "") != (tlsKey == "") {
-				return fmt.Errorf("--tls-cert and --tls-key must be provided together")
-			}
-
-			listener, address, err := listenWithDefaultPortFallback(host, port)
-			if err != nil {
-				return err
-			}
-			defer listener.Close()
-
-			httpServer := newHTTPServer(ctx, address, router)
-			if tlsCert != "" {
-				if err := http2.ConfigureServer(httpServer, &http2.Server{}); err != nil {
-					return fmt.Errorf("failed to configure HTTP/2: %w", err)
-				}
-			}
-
-			scheme := "http"
-			if tlsCert != "" {
-				scheme = "https"
-			}
-			detail := ""
-			if tlsCert != "" {
-				detail = " (HTTP/2 enabled)"
-			}
-			printRenartWelcome(c.Writer, scheme+"://"+address, detail)
 			manager.EnableDiscovery(scheme+"://"+loopbackAddress(address), sessionToken)
 			defer manager.DisableDiscovery()
+			startup.Activate(router)
 
 			if !c.Bool("no-open") {
 				go openBrowserWhenReachable(ctx, scheme+"://"+address, address)
 			}
 
-			stopShutdownObserver := startGracefulShutdown(ctx, stop, logger, func() {
-				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if err := httpServer.Shutdown(shutdownCtx); err != nil {
-					logger.Warn("HTTP server did not stop gracefully", zap.Error(err))
-				}
-			})
-			defer stopShutdownObserver()
-
-			if tlsCert != "" {
-				err = httpServer.ServeTLS(listener, tlsCert, tlsKey)
-			} else {
-				err = httpServer.Serve(listener)
-			}
-			if err != nil && err != http.ErrServerClosed {
+			if err := <-serveDone; err != nil {
 				return err
 			}
 
