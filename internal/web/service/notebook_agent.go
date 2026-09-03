@@ -10,8 +10,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"renart/internal/web/model"
 )
 
 const (
@@ -81,17 +83,18 @@ type NotebookAgentActivity struct {
 // in-memory chat. Every SSE publish carries the full bounded snapshot so a
 // dropped intermediate event cannot corrupt the browser's transcript.
 type NotebookAgentSnapshot struct {
-	Type       string                  `json:"type"`
-	NotebookID string                  `json:"notebook_id"`
-	Revision   int64                   `json:"revision"`
-	Status     string                  `json:"status"`
-	Provider   string                  `json:"provider,omitempty"`
-	Mode       NotebookAgentMode       `json:"mode,omitempty"`
-	Messages   []NotebookAgentMessage  `json:"messages"`
-	Activities []NotebookAgentActivity `json:"activities"`
-	Error      string                  `json:"error,omitempty"`
-	StartedAt  string                  `json:"started_at,omitempty"`
-	FinishedAt string                  `json:"finished_at,omitempty"`
+	Type        string                    `json:"type"`
+	NotebookID  string                    `json:"notebook_id"`
+	Revision    int64                     `json:"revision"`
+	Status      string                    `json:"status"`
+	Provider    string                    `json:"provider,omitempty"`
+	Mode        NotebookAgentMode         `json:"mode,omitempty"`
+	Messages    []NotebookAgentMessage    `json:"messages"`
+	Activities  []NotebookAgentActivity   `json:"activities"`
+	Interaction *NotebookAgentInteraction `json:"interaction,omitempty"`
+	Error       string                    `json:"error,omitempty"`
+	StartedAt   string                    `json:"started_at,omitempty"`
+	FinishedAt  string                    `json:"finished_at,omitempty"`
 }
 
 type NotebookAgentState struct {
@@ -127,6 +130,7 @@ type NotebookAgentProviderRunRequest struct {
 	RunDir           string
 	WorkspaceRoot    string
 	RenartExecutable string
+	TurnToken        string
 }
 
 type NotebookAgentProviderRunResult struct {
@@ -134,23 +138,31 @@ type NotebookAgentProviderRunResult struct {
 }
 
 type NotebookAgentDependencies struct {
-	WorkspaceRoot     string
-	RenartExecutable  string
-	ValidateNotebook  func(notebookID string) *APIError
-	ResolveReferences func(notebookID string, references []NotebookAgentReferenceRequest) ([]NotebookAgentReference, *APIError)
-	PublishEvent      func(payload any)
-	LookPath          func(file string) (string, error)
-	RunProvider       func(context.Context, NotebookAgentProviderRunRequest, func(NotebookAgentStreamEvent)) (NotebookAgentProviderRunResult, error)
-	Now               func() time.Time
-	NewID             func() string
+	WorkspaceRoot      string
+	RenartExecutable   string
+	ValidateNotebook   func(notebookID string) *APIError
+	ResolveReferences  func(notebookID string, references []NotebookAgentReferenceRequest) ([]NotebookAgentReference, *APIError)
+	CurrentState       func() model.WorkspaceState
+	DiscoverDatabases  func(context.Context, string, string) (SQLDatabaseDiscoveryResult, *APIError)
+	DiscoverTables     func(context.Context, string, string, string) (SQLTableDiscoveryResult, *APIError)
+	DiscoverColumns    func(context.Context, string, string, string) (SQLTableColumnsResult, int)
+	RunConnectionQuery func(context.Context, string, string, string) ([]string, []map[string]any, error)
+	PublishEvent       func(payload any)
+	LookPath           func(file string) (string, error)
+	RunProvider        func(context.Context, NotebookAgentProviderRunRequest, func(NotebookAgentStreamEvent)) (NotebookAgentProviderRunResult, error)
+	Now                func() time.Time
+	NewID              func() string
 }
 
 type notebookAgentConversation struct {
-	snapshot   NotebookAgentSnapshot
-	cancel     context.CancelFunc
-	activeTurn string
-	sessions   map[string]string
-	runDirs    map[string]string
+	snapshot           NotebookAgentSnapshot
+	cancel             context.CancelFunc
+	activeTurn         string
+	activeToken        string
+	pendingInteraction *notebookAgentPendingInteraction
+	connectionGrants   map[string]NotebookAgentConnectionGrant
+	sessions           map[string]string
+	runDirs            map[string]string
 }
 
 // NotebookAgentService owns local agent process lifecycles and bounded chat
@@ -262,6 +274,7 @@ func (s *NotebookAgentService) StartTurn(notebookID string, request StartNoteboo
 
 	now := s.deps.Now().UTC()
 	turnID := s.deps.NewID()
+	turnToken := s.deps.NewID()
 	s.mu.Lock()
 	conversation := s.conversationLocked(notebookID)
 	if conversation.snapshot.Status == "running" || conversation.snapshot.Status == "cancelling" {
@@ -290,12 +303,15 @@ func (s *NotebookAgentService) StartTurn(notebookID string, request StartNoteboo
 	turnCtx, cancel := context.WithTimeout(s.ctx, notebookAgentTurnTimeout)
 	conversation.cancel = cancel
 	conversation.activeTurn = turnID
+	conversation.activeToken = turnToken
+	conversation.connectionGrants = make(map[string]NotebookAgentConnectionGrant)
 	conversation.snapshot.Status = "running"
 	conversation.snapshot.Provider = provider
 	conversation.snapshot.Mode = mode
 	conversation.snapshot.Error = ""
 	conversation.snapshot.StartedAt = now.Format(time.RFC3339Nano)
 	conversation.snapshot.FinishedAt = ""
+	conversation.snapshot.Interaction = nil
 	conversation.snapshot.Messages = append(conversation.snapshot.Messages, NotebookAgentMessage{
 		ID: s.deps.NewID(), TurnID: turnID, Role: "user", Content: message, References: references,
 		Status: "complete", CreatedAt: now.Format(time.RFC3339Nano),
@@ -316,6 +332,7 @@ func (s *NotebookAgentService) StartTurn(notebookID string, request StartNoteboo
 			ProviderBinary: providerInfo.Path,
 			SessionID:      sessionID, RunDir: runDir, WorkspaceRoot: s.deps.WorkspaceRoot,
 			RenartExecutable: s.deps.RenartExecutable,
+			TurnToken:        turnToken,
 		})
 	}()
 	return snapshot, nil
@@ -334,6 +351,8 @@ func (s *NotebookAgentService) Cancel(notebookID string) (NotebookAgentSnapshot,
 		return snapshot, nil
 	}
 	conversation.snapshot.Status = "cancelling"
+	s.cancelPendingInteractionLocked(conversation, "cancelled")
+	conversation.connectionGrants = make(map[string]NotebookAgentConnectionGrant)
 	conversation.snapshot.Revision++
 	cancel := conversation.cancel
 	snapshot := cloneNotebookAgentSnapshot(conversation.snapshot)
@@ -380,6 +399,7 @@ func (s *NotebookAgentService) Close() {
 	s.mu.Lock()
 	runDirs := []string{}
 	for _, conversation := range s.items {
+		s.cancelPendingInteractionLocked(conversation, "cancelled")
 		if conversation.cancel != nil {
 			conversation.cancel()
 		}
@@ -416,8 +436,11 @@ func (s *NotebookAgentService) runTurn(
 	if strings.TrimSpace(result.SessionID) != "" && err == nil {
 		conversation.sessions[runKey] = strings.TrimSpace(result.SessionID)
 	}
+	s.cancelPendingInteractionLocked(conversation, "cancelled")
 	conversation.cancel = nil
 	conversation.activeTurn = ""
+	conversation.activeToken = ""
+	conversation.connectionGrants = make(map[string]NotebookAgentConnectionGrant)
 	conversation.snapshot.FinishedAt = now
 	switch {
 	case errors.Is(ctx.Err(), context.Canceled):
@@ -578,8 +601,9 @@ func newNotebookAgentConversation(notebookID string) *notebookAgentConversation 
 			Type: notebookAgentEventType, NotebookID: notebookID, Status: "idle",
 			Messages: []NotebookAgentMessage{}, Activities: []NotebookAgentActivity{},
 		},
-		sessions: make(map[string]string),
-		runDirs:  make(map[string]string),
+		sessions:         make(map[string]string),
+		runDirs:          make(map[string]string),
+		connectionGrants: make(map[string]NotebookAgentConnectionGrant),
 	}
 }
 
@@ -595,6 +619,37 @@ func cloneNotebookAgentSnapshot(snapshot NotebookAgentSnapshot) NotebookAgentSna
 	}
 	clone.Activities = make([]NotebookAgentActivity, len(snapshot.Activities))
 	copy(clone.Activities, snapshot.Activities)
+	if snapshot.Interaction != nil {
+		interaction := *snapshot.Interaction
+		interaction.Questions = cloneNotebookAgentQuestions(snapshot.Interaction.Questions)
+		interaction.Answers = append(
+			[]NotebookAgentQuestionAnswer(nil),
+			snapshot.Interaction.Answers...,
+		)
+		for index := range interaction.Answers {
+			interaction.Answers[index].Values = append(
+				[]string(nil),
+				snapshot.Interaction.Answers[index].Values...,
+			)
+		}
+		if snapshot.Interaction.ConnectionRequest != nil {
+			request := *snapshot.Interaction.ConnectionRequest
+			request.Capabilities = append(
+				[]NotebookAgentConnectionCapability(nil),
+				snapshot.Interaction.ConnectionRequest.Capabilities...,
+			)
+			interaction.ConnectionRequest = &request
+		}
+		if snapshot.Interaction.Connection != nil {
+			connection := *snapshot.Interaction.Connection
+			connection.Capabilities = append(
+				[]NotebookAgentConnectionCapability(nil),
+				snapshot.Interaction.Connection.Capabilities...,
+			)
+			interaction.Connection = &connection
+		}
+		clone.Interaction = &interaction
+	}
 	return clone
 }
 
@@ -616,10 +671,18 @@ func truncateNotebookAgentText(value string, limit int) string {
 	if len(value) <= limit {
 		return value
 	}
-	if limit <= 1 {
-		return value[:limit]
+	if limit <= 0 {
+		return ""
 	}
-	return value[:limit-1] + "…"
+	const ellipsis = "…"
+	if limit < len(ellipsis) {
+		return strings.Repeat(".", limit)
+	}
+	cut := limit - len(ellipsis)
+	for cut > 0 && !utf8.RuneStart(value[cut]) {
+		cut--
+	}
+	return value[:cut] + ellipsis
 }
 
 func findNotebookAgentProvider(providers []NotebookAgentProvider, id string) (NotebookAgentProvider, bool) {
@@ -636,9 +699,9 @@ func notebookAgentRunKey(provider string, mode NotebookAgentMode) string {
 }
 
 func buildNotebookAgentPrompt(notebookID string, mode NotebookAgentMode, messages []NotebookAgentMessage, resumed bool) string {
-	capability := "Inspect the selected notebook and answer the user's question. You may search the credential-free workspace catalog when broader metadata context is relevant. Do not prepare or apply changes and do not run cells."
+	capability := "Inspect the selected notebook and answer the user's question. You may search the credential-free workspace catalog when broader metadata context is relevant. Use ask_user only for genuinely missing user intent after inspection. Do not prepare or apply changes and do not run cells."
 	if mode == NotebookAgentModeEdit {
-		capability = "Complete the requested notebook task end to end. Inspect first and search the workspace catalog when the task needs existing data. When choosing among catalog sources, compare their descriptions, tags, direct lineage, and declared materialization policy: prefer retained append, merge, or replay-safe window history for historical analysis, and do not mistake a truncate-and-replace shortlist or current view for history. Prepare and validate semantic changes, then apply them. Follow the prepare tool's dotted operation-kind enum exactly (for example visualization.create or cell.sql.refactor); never probe guessed operation names or batch speculative retries. Prefer cell.sql.refactor over replacing a whole SQL cell when the requested change is a supported relation rename, column qualification, or relation alias edit; it preserves every untouched source byte. For visualizations, follow the typed prepare-tool schema exactly: this is Renart's definition grammar, not Vega, and uses version 1, encoding (singular), and array-valued y encodings. A catalog match may include a suggested sample source recipe: use that recipe through cell.create, and do not widen it to a full snapshot unless the user explicitly asks. A newly added non-DuckDB source can be configured by the agent, but its first import or explicit refresh must be reviewed and run by the user in Renart. If a tool fails, use its returned valid values before one corrected retry. Run only the cells needed to verify the result, and report what changed or what awaits source approval."
+		capability = "Complete the requested notebook task end to end. Inspect first and search the workspace catalog when the task needs existing data. Use ask_user only for genuinely missing user intent after inspection, never as a substitute for reading the notebook or catalog. If the needed relation is not in the catalog, call list_query_connections and then request_connection_access for the appropriate connection in this same turn; never merely tell the user in prose to configure a connection, never end the turn while required access is missing, and never ask for credentials. request_connection_access is the only supported UI handoff: it blocks until the user approves or creates a connection and then resumes this tool call. After approval, use bounded catalog discovery and read-only sample queries, then add the returned sample-source recipe through cell.create. When choosing among sources, compare their descriptions, tags, direct lineage, and declared materialization policy: prefer retained append, merge, or replay-safe window history for historical analysis, and do not mistake a truncate-and-replace shortlist or current view for history. Prepare and validate semantic changes, then apply them. Follow the prepare tool's dotted operation-kind enum exactly (for example visualization.create or cell.sql.refactor); never probe guessed operation names or batch speculative retries. Prefer cell.sql.refactor over replacing a whole SQL cell when the requested change is a supported relation rename, column qualification, or relation alias edit; it preserves every untouched source byte. For visualizations, follow the typed prepare-tool schema exactly: this is Renart's definition grammar, not Vega, and uses version 1, encoding (singular), and array-valued y encodings. A newly added non-DuckDB source must stay a bounded sample unless the user explicitly asks for a full snapshot, and its first import or explicit refresh must be reviewed and run by the user in Renart. If a tool fails, use its returned valid values before one corrected retry. Run only the cells needed to verify the result, and report what changed or what awaits source approval."
 	}
 	var history strings.Builder
 	start := 0
@@ -714,6 +777,16 @@ func notebookAgentActivityTitle(event NotebookAgentStreamEvent) string {
 		return "Inspecting result rows"
 	case "list_notebook_sources":
 		return "Inspecting notebook sources"
+	case "ask_user":
+		return "Waiting for your answer"
+	case "request_connection_access":
+		return "Waiting for connection approval"
+	case "list_query_connections":
+		return "Finding available connections"
+	case "discover_connection_catalog":
+		return "Browsing an approved connection"
+	case "query_connection_sample":
+		return "Previewing approved source data"
 	case "prepare_notebook_change_set":
 		return "Preparing notebook changes"
 	case "validate_notebook_change_set":

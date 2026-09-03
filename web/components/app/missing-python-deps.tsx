@@ -1,9 +1,10 @@
 "use client";
 
-import { Loader2, Package, Plus } from "lucide-react";
+import { Lightbulb, Loader2, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { searchPythonPackages, type PythonPackage } from "@/lib/api-python-packages";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 /**
- * Amber banner listing Python imports that are not yet declared as
+ * Helpful suggestion listing Python imports that are not yet declared as
  * dependencies, each offering a one-click "add to deps" via a PyPI lookup.
  * Shared between the notebook cell editor and the pipeline asset editor so both
  * use the exact same missing-dependency hint and installation affordance.
@@ -29,13 +30,20 @@ export function MissingPythonDepsBanner({
     return null;
   }
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
-      <Package className="size-3.5 shrink-0" />
-      <span>Imported but not in dependencies:</span>
-      {missingImports.map((importName) => (
-        <MissingImportSuggestion key={importName} importName={importName} onAdd={onAddDependency} />
-      ))}
-    </div>
+    <Alert role="status" data-testid="python-dependency-suggestion">
+      <Lightbulb />
+      <AlertTitle>Dependency suggestion</AlertTitle>
+      <AlertDescription className="flex flex-wrap items-center gap-1.5">
+        <span>Add imported packages so this code runs reliably elsewhere:</span>
+        {missingImports.map((importName) => (
+          <MissingImportSuggestion
+            key={importName}
+            importName={importName}
+            onAdd={onAddDependency}
+          />
+        ))}
+      </AlertDescription>
+    </Alert>
   );
 }
 
@@ -80,14 +88,9 @@ function MissingImportSuggestion({
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button
-          size="xs"
-          variant="outline"
-          className="h-6 border-amber-300 bg-white/60 font-mono text-amber-900 hover:bg-white dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-100 dark:hover:bg-amber-500/25"
-          title={`Find a PyPI package for "${importName}"`}
-        >
-          <Plus className="size-3" />
-          {importName}
+        <Button size="xs" variant="outline" title={`Find a PyPI package for "${importName}"`}>
+          <Plus data-icon="inline-start" />
+          <span className="font-mono">{importName}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-80">

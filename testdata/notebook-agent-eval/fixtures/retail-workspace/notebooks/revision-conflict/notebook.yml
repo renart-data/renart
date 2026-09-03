@@ -1,0 +1,5 @@
+version: 2
+id: 5468bb31-c66e-4fd0-a53c-6961f5a91135
+title: Concurrent notebook edit
+blocks:
+  - cell: conflict_totals

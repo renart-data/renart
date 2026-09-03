@@ -1,0 +1,5 @@
+version: 2
+id: f018c7b0-6338-43bc-9a77-c51956510231
+title: Sales trend chart
+blocks:
+  - cell: trend_data

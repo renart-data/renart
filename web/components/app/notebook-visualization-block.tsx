@@ -4,7 +4,6 @@ import type { Monaco } from "@monaco-editor/react";
 import type * as MonacoNS from "monaco-editor";
 import {
   Check,
-  CircleDot,
   Loader2,
   Plus,
   Save,
@@ -379,59 +378,71 @@ export function NotebookVisualizationBlockCard({
       >
         <AppPanel
           className={cn(
-            "group/notebook-block border-transparent bg-transparent shadow-none transition-colors hover:border-violet-500/25 hover:bg-violet-500/[0.025] hover:shadow-sm focus-within:border-violet-500/25 focus-within:bg-card focus-within:shadow-sm",
-            selected &&
-              "border-violet-500/35 bg-violet-500/[0.035] shadow-sm ring-1 ring-violet-500/15",
+            "group/notebook-block border-border/70 bg-card shadow-none transition-colors hover:border-violet-500/25 focus-within:border-violet-500/25",
+            selected && "border-violet-500/35 ring-1 ring-violet-500/15",
           )}
         >
-          <DelimitedCardHeader className="border-transparent bg-transparent transition-colors group-hover/notebook-block:border-border group-hover/notebook-block:bg-muted/20 group-focus-within/notebook-block:border-border group-focus-within/notebook-block:bg-muted/20">
-            <CircleDot className="size-3.5 text-violet-500" />
+          <DelimitedCardHeader className="min-h-8 border-border/70 bg-transparent px-2 py-1 transition-colors">
             <DelimitedCardTitle className="truncate">{title}</DelimitedCardTitle>
-            <Badge variant="outline" className="font-normal">
-              {previewDefinition.type}
-            </Badge>
-            {dirty ? (
-              <span
-                className="size-1.5 shrink-0 rounded-full bg-amber-500"
-                aria-label="Unsaved draft"
-              />
-            ) : null}
-            <span className="ml-auto truncate text-[11px] text-muted-foreground">
-              from <span className="font-mono">{cellName(cells, source)}</span>
-            </span>
-            {checking ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : null}
-            {check?.findings.length ? (
-              <Badge
-                variant="outline"
-                className="border-amber-500/30 font-normal text-amber-700 dark:text-amber-300"
-              >
-                <TriangleAlert /> {check.findings.length}
+            <div
+              aria-hidden={!selected}
+              data-notebook-selected-controls
+              inert={selected ? undefined : true}
+              className={cn(
+                "ml-auto flex min-w-0 shrink items-center gap-2 overflow-hidden whitespace-nowrap transition-[max-width,opacity,visibility] duration-200 ease-out motion-reduce:transition-none",
+                selected
+                  ? "visible max-w-[48rem] opacity-100"
+                  : "invisible pointer-events-none max-w-0 opacity-0",
+              )}
+            >
+              <Badge variant="outline" className="font-normal">
+                {previewDefinition.type}
               </Badge>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Edit visualization ${title}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onSelect();
-              }}
-            >
-              <SlidersHorizontal />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              disabled={busy || deleting}
-              aria-label="Delete visualization"
-              onClick={(event) => {
-                event.stopPropagation();
-                setDeleting(true);
-                void onDelete().finally(() => setDeleting(false));
-              }}
-            >
-              {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
-            </Button>
+              {dirty ? (
+                <span
+                  className="size-1.5 shrink-0 rounded-full bg-amber-500"
+                  aria-label="Unsaved draft"
+                />
+              ) : null}
+              <span className="truncate text-[11px] text-muted-foreground">
+                from <span className="font-mono">{cellName(cells, source)}</span>
+              </span>
+              {checking ? (
+                <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+              ) : null}
+              {check?.findings.length ? (
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/30 font-normal text-amber-700 dark:text-amber-300"
+                >
+                  <TriangleAlert /> {check.findings.length}
+                </Badge>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Edit visualization ${title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelect();
+                }}
+              >
+                <SlidersHorizontal />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                disabled={busy || deleting}
+                aria-label="Delete visualization"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setDeleting(true);
+                  void onDelete().finally(() => setDeleting(false));
+                }}
+              >
+                {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+              </Button>
+            </div>
           </DelimitedCardHeader>
           <DelimitedCardContent>
             {sourceResult?.status === "ok" &&

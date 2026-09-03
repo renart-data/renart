@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -10,7 +9,6 @@ import {
 } from "lucide-react";
 import { ComponentType, Fragment, ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   DelimitedCard,
@@ -90,37 +88,6 @@ export function SectionCard({
       </DelimitedCardHeader>
       <DelimitedCardContent>{children}</DelimitedCardContent>
     </DelimitedCard>
-  );
-}
-
-export function NavLinkButton({
-  to,
-  icon: Icon,
-  label,
-}: {
-  to: string;
-  icon: ComponentType<{ className?: string }>;
-  label: string;
-}) {
-  return (
-    <Button
-      asChild
-      size="sm"
-      variant="ghost"
-      className="relative h-12 rounded-none px-3 text-zinc-400 hover:bg-transparent hover:text-zinc-200 data-[state=open]:bg-transparent"
-    >
-      <Link
-        to={to}
-        activeOptions={{ exact: to === "/" }}
-        activeProps={{
-          className:
-            "text-white after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary",
-        }}
-      >
-        <Icon className="size-3.5" />
-        <span>{label}</span>
-      </Link>
-    </Button>
   );
 }
 

@@ -9,5 +9,11 @@ export const Route = createFileRoute("/_shell/catalog")({
 
 function AppCatalogRoute() {
   const search = Route.useSearch();
-  return <AppCatalogPage selectedAssetId={search.asset} />;
+  const navigate = Route.useNavigate();
+  return (
+    <AppCatalogPage
+      selectedAssetId={search.asset}
+      onAssetSelect={(asset) => navigate({ search: { ...search, asset }, replace: true })}
+    />
+  );
 }

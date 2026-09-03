@@ -76,3 +76,104 @@ func (c *Client) CancelNotebookRun(ctx context.Context, notebookID string) error
 	var result map[string]string
 	return c.postJSON(ctx, "/notebooks/"+url.PathEscape(notebookID)+"/cancel", map[string]any{}, &result)
 }
+
+// RequestNotebookAgentQuestionnaire blocks a native notebook MCP tool until
+// the owning browser answers or cancels the turn. The turn token is scoped to
+// this one interaction channel and is not part of the JSON payload.
+func (c *Client) RequestNotebookAgentQuestionnaire(
+	ctx context.Context,
+	notebookID string,
+	turnToken string,
+	request service.NotebookAgentQuestionnaireRequest,
+) (service.NotebookAgentInteractionResult, error) {
+	var envelope struct {
+		Result service.NotebookAgentInteractionResult `json:"result"`
+	}
+	err := c.postJSONHeaders(
+		ctx,
+		"/notebooks/"+url.PathEscape(notebookID)+"/agent/native/questionnaire",
+		request,
+		&envelope,
+		notebookAgentTurnHeaders(turnToken),
+	)
+	return envelope.Result, err
+}
+
+func (c *Client) RequestNotebookAgentConnectionAccess(
+	ctx context.Context,
+	notebookID string,
+	turnToken string,
+	request service.NotebookAgentConnectionAccessRequest,
+) (service.NotebookAgentInteractionResult, error) {
+	var envelope struct {
+		Result service.NotebookAgentInteractionResult `json:"result"`
+	}
+	err := c.postJSONHeaders(
+		ctx,
+		"/notebooks/"+url.PathEscape(notebookID)+"/agent/native/connections/request",
+		request,
+		&envelope,
+		notebookAgentTurnHeaders(turnToken),
+	)
+	return envelope.Result, err
+}
+
+func (c *Client) ListNotebookAgentQueryConnections(
+	ctx context.Context,
+	notebookID string,
+	turnToken string,
+) (service.NotebookAgentConnectionListResult, error) {
+	var envelope struct {
+		Result service.NotebookAgentConnectionListResult `json:"result"`
+	}
+	err := c.postJSONHeaders(
+		ctx,
+		"/notebooks/"+url.PathEscape(notebookID)+"/agent/native/connections/list",
+		struct{}{},
+		&envelope,
+		notebookAgentTurnHeaders(turnToken),
+	)
+	return envelope.Result, err
+}
+
+func (c *Client) DiscoverNotebookAgentConnectionCatalog(
+	ctx context.Context,
+	notebookID string,
+	turnToken string,
+	request service.NotebookAgentConnectionCatalogRequest,
+) (service.NotebookAgentConnectionCatalogResult, error) {
+	var envelope struct {
+		Result service.NotebookAgentConnectionCatalogResult `json:"result"`
+	}
+	err := c.postJSONHeaders(
+		ctx,
+		"/notebooks/"+url.PathEscape(notebookID)+"/agent/native/connections/discover",
+		request,
+		&envelope,
+		notebookAgentTurnHeaders(turnToken),
+	)
+	return envelope.Result, err
+}
+
+func (c *Client) QueryNotebookAgentConnectionSample(
+	ctx context.Context,
+	notebookID string,
+	turnToken string,
+	request service.NotebookAgentConnectionSampleRequest,
+) (service.NotebookAgentConnectionSampleResult, error) {
+	var envelope struct {
+		Result service.NotebookAgentConnectionSampleResult `json:"result"`
+	}
+	err := c.postJSONHeaders(
+		ctx,
+		"/notebooks/"+url.PathEscape(notebookID)+"/agent/native/connections/query",
+		request,
+		&envelope,
+		notebookAgentTurnHeaders(turnToken),
+	)
+	return envelope.Result, err
+}
+
+func notebookAgentTurnHeaders(turnToken string) map[string]string {
+	return map[string]string{"X-Renart-Agent-Turn-Token": turnToken}
+}

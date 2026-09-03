@@ -45,6 +45,18 @@ type Policy struct {
 	ReadOnly              bool
 	NoRuns                bool
 	RequireSourceApproval bool
+	NativeTurnToken       string
+	NativeInteractions    NativeInteractionBackend
+}
+
+// NativeInteractionBackend is implemented only by the client for the owning
+// Renart web process. The public workspace MCP server never receives one.
+type NativeInteractionBackend interface {
+	RequestNotebookAgentQuestionnaire(context.Context, string, string, service.NotebookAgentQuestionnaireRequest) (service.NotebookAgentInteractionResult, error)
+	RequestNotebookAgentConnectionAccess(context.Context, string, string, service.NotebookAgentConnectionAccessRequest) (service.NotebookAgentInteractionResult, error)
+	ListNotebookAgentQueryConnections(context.Context, string, string) (service.NotebookAgentConnectionListResult, error)
+	DiscoverNotebookAgentConnectionCatalog(context.Context, string, string, service.NotebookAgentConnectionCatalogRequest) (service.NotebookAgentConnectionCatalogResult, error)
+	QueryNotebookAgentConnectionSample(context.Context, string, string, service.NotebookAgentConnectionSampleRequest) (service.NotebookAgentConnectionSampleResult, error)
 }
 
 // New constructs a single-workspace notebook MCP server.
@@ -93,6 +105,42 @@ func (s *Server) registerTools() {
 	mcp.AddTool(s.mcp, readTool("get_notebook_result_schema", "Get the last observed schema and completeness for one notebook cell."), s.getResultSchema)
 	mcp.AddTool(s.mcp, readTool("get_notebook_result_sample", "Get at most 50 rows and 64 KiB from a previously produced notebook result."), s.getResultSample)
 	mcp.AddTool(s.mcp, readTool("list_notebook_sources", "List credential-free source definitions, schemas, and snapshot provenance."), s.listSources)
+	if s.policy.NativeInteractions != nil && s.policy.NativeTurnToken != "" && s.policy.NotebookID != "" {
+		mcp.AddTool(
+			s.mcp,
+			changeTool(
+				"ask_user",
+				"Pause this native notebook-agent turn for one to three genuinely necessary user questions. Use single_choice, multiple_choice, or short text prompts; inspect the notebook and catalog first instead of asking questions that Renart tools can answer.",
+				false,
+				false,
+			),
+			s.askUser,
+		)
+		if !s.policy.ReadOnly {
+			mcp.AddTool(
+				s.mcp,
+				changeTool(
+					"request_connection_access",
+					"Required handoff whenever notebook work needs a query connection that is not already granted. Pause this turn while the user approves an existing connection or creates one, then resume with only its safe name/type/capabilities. Do not replace this call with prose asking the user to configure access. Never ask for or receive credentials. DuckDB is approved automatically; other grants last only for this Edit turn.",
+					false,
+					false,
+				),
+				s.requestConnectionAccess,
+			)
+			mcp.AddTool(s.mcp, openReadTool(
+				"list_query_connections",
+				"List configured query-capable connections and whether this Edit turn may use each one. Names and types are returned; credentials are never exposed.",
+			), s.listQueryConnections)
+			mcp.AddTool(s.mcp, openReadTool(
+				"discover_connection_catalog",
+				"Discover at most 200 databases, tables, or columns on an approved connection. Call request_connection_access first for non-DuckDB connections.",
+			), s.discoverConnectionCatalog)
+			mcp.AddTool(s.mcp, openReadTool(
+				"query_connection_sample",
+				"Run one bounded, read-only SELECT on an approved connection and return at most 100 rows and 128 KiB. The result includes a reviewed sample-source recipe for cell.create; credentials are never exposed.",
+			), s.queryConnectionSample)
+		}
+	}
 
 	if !s.policy.ReadOnly {
 		mcp.AddTool(s.mcp, prepareChangeSetTool(), s.prepareChangeSet)
@@ -106,6 +154,64 @@ func (s *Server) registerTools() {
 		mcp.AddTool(s.mcp, changeTool("cancel_notebook_run", "Cancel the selected asynchronous notebook run.", false, true), s.cancelRun)
 		mcp.AddTool(s.mcp, readTool("get_notebook_run_status", "Get bounded status and result summaries for an MCP-started notebook run."), s.getRunStatus)
 	}
+}
+
+func (s *Server) requestConnectionAccess(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	input service.NotebookAgentConnectionAccessRequest,
+) (*mcp.CallToolResult, service.NotebookAgentInteractionResult, error) {
+	result, err := s.policy.NativeInteractions.RequestNotebookAgentConnectionAccess(
+		ctx, s.policy.NotebookID, s.policy.NativeTurnToken, input,
+	)
+	return nil, result, err
+}
+
+func (s *Server) listQueryConnections(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	_ EmptyInput,
+) (*mcp.CallToolResult, service.NotebookAgentConnectionListResult, error) {
+	result, err := s.policy.NativeInteractions.ListNotebookAgentQueryConnections(
+		ctx, s.policy.NotebookID, s.policy.NativeTurnToken,
+	)
+	return nil, result, err
+}
+
+func (s *Server) discoverConnectionCatalog(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	input service.NotebookAgentConnectionCatalogRequest,
+) (*mcp.CallToolResult, service.NotebookAgentConnectionCatalogResult, error) {
+	result, err := s.policy.NativeInteractions.DiscoverNotebookAgentConnectionCatalog(
+		ctx, s.policy.NotebookID, s.policy.NativeTurnToken, input,
+	)
+	return nil, result, err
+}
+
+func (s *Server) queryConnectionSample(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	input service.NotebookAgentConnectionSampleRequest,
+) (*mcp.CallToolResult, service.NotebookAgentConnectionSampleResult, error) {
+	result, err := s.policy.NativeInteractions.QueryNotebookAgentConnectionSample(
+		ctx, s.policy.NotebookID, s.policy.NativeTurnToken, input,
+	)
+	return nil, result, err
+}
+
+func (s *Server) askUser(
+	ctx context.Context,
+	_ *mcp.CallToolRequest,
+	input service.NotebookAgentQuestionnaireRequest,
+) (*mcp.CallToolResult, service.NotebookAgentInteractionResult, error) {
+	result, err := s.policy.NativeInteractions.RequestNotebookAgentQuestionnaire(
+		ctx,
+		s.policy.NotebookID,
+		s.policy.NativeTurnToken,
+		input,
+	)
+	return nil, result, err
 }
 
 func prepareChangeSetTool() *mcp.Tool {
@@ -201,6 +307,14 @@ func readTool(name, description string) *mcp.Tool {
 	return &mcp.Tool{
 		Name: name, Description: description,
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &closed},
+	}
+}
+
+func openReadTool(name, description string) *mcp.Tool {
+	open := true
+	return &mcp.Tool{
+		Name: name, Description: description,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &open},
 	}
 }
 

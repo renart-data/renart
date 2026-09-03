@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "fixture": "retail-workspace",
+  "tasks": [
+    {
+      "id": "ask-failing-cell",
+      "title": "Explain a referenced failing cell without mutation",
+      "notebook_path": "notebooks/failing-cell",
+      "mode": "ask",
+      "fake_supported": true,
+      "prompt": "Explain why the referenced cell cannot run and recommend the smallest correction. Inspect the notebook and workspace catalog, but do not change or run anything.",
+      "references": [{ "kind": "cell", "id": "broken_orders" }],
+      "objectives": [
+        { "kind": "terminal_status", "equals": "idle" },
+        { "kind": "tool_called", "tool": "get_notebook_block" },
+        { "kind": "tool_called", "tool": "search_workspace_catalog" },
+        { "kind": "tool_not_called", "tool": "prepare_notebook_change_set" },
+        { "kind": "tool_not_called", "tool": "run_notebook_cells" },
+        { "kind": "git_clean" }
+      ]
+    },
+    {
+      "id": "repair-sql-cell",
+      "title": "Repair and verify an existing SQL cell",
+      "notebook_path": "notebooks/repair-query",
+      "mode": "edit",
+      "fake_supported": true,
+      "prompt": "Repair the broken relation reference in this notebook, preserve the rest of the SQL, and run the repaired cell to verify it. Use the workspace catalog to identify the intended relation.",
+      "objectives": [
+        { "kind": "terminal_status", "equals": "idle" },
+        { "kind": "tool_called", "tool": "prepare_notebook_change_set" },
+        { "kind": "tool_called", "tool": "apply_notebook_change_set" },
+        { "kind": "tool_called", "tool": "run_notebook_cells" },
+        { "kind": "file_contains", "path": "notebooks/repair-query/daily_totals.sql", "text": "retail.order_events" },
+        { "kind": "file_not_contains", "path": "notebooks/repair-query/daily_totals.sql", "text": "retail.order_event\n" },
+        { "kind": "runtime_result", "cell_id": "daily_totals", "status": "ok" }
+      ]
+    },
+    {
+      "id": "add-checked-visualization",
+      "title": "Add a statically checked visualization",
+      "notebook_path": "notebooks/chart-builder",
+      "mode": "edit",
+      "fake_supported": true,
+      "setup": { "pre_run": true },
+      "prompt": "Add a clear line visualization of daily revenue to this notebook. Inspect the observed result schema, validate the visualization through the notebook change workflow, and do not rewrite the existing SQL.",
+      "objectives": [
+        { "kind": "terminal_status", "equals": "idle" },
+        { "kind": "tool_called", "tool": "get_notebook_result_schema" },
+        { "kind": "tool_called", "tool": "prepare_notebook_change_set" },
+        { "kind": "notebook_block_kind", "block_kind": "visualization", "minimum": 1 },
+        { "kind": "diagnostics_max_errors", "maximum": 0 }
+      ]
+    },
+    {
+      "id": "choose-retained-history",
+      "title": "Choose retained history over a current snapshot",
+      "notebook_path": "notebooks/history-choice",
+      "mode": "edit",
+      "prompt": "Build a concise notebook that shows completed-order revenue over the full retained period. Find the right pipeline asset from the catalog, taking lineage and materialization strategy into account. Do not use a current-day or truncate-and-replace shortlist. Add the data cell and a line chart, then verify what can be run safely.",
+      "objectives": [
+        { "kind": "terminal_status", "equals": "idle" },
+        { "kind": "tool_called", "tool": "search_workspace_catalog" },
+        { "kind": "directory_contains_any", "path": "notebooks/history-choice", "texts": ["retail.order_history", "retail.daily_sales"] },
+        { "kind": "directory_not_contains", "path": "notebooks/history-choice", "text": "retail.current_orders" },
+        { "kind": "notebook_block_kind", "block_kind": "visualization", "minimum": 1 }
+      ]
+    },
+    {
+      "id": "build-from-empty-catalog",
+      "title": "Build a notebook from an empty canvas and catalog assets",
+      "notebook_path": "notebooks/scratch-catalog",
+      "mode": "edit",
+      "prompt": "Build a useful retail performance notebook from scratch using existing workspace assets. Include a short Markdown introduction, a daily performance query, and at least one checked visualization. Prefer already aggregated replay-safe data where it answers the question.",
+      "objectives": [
+        { "kind": "terminal_status", "equals": "idle" },
+        { "kind": "tool_called", "tool": "search_workspace_catalog" },
+        { "kind": "notebook_block_kind", "block_kind": "markdown", "minimum": 1 },
+        { "kind": "notebook_block_kind", "block_kind": "cell", "minimum": 1 },
+        { "kind": "notebook_block_kind", "block_kind": "visualization", "minimum": 1 },
+        { "kind": "diagnostics_max_errors", "maximum": 0 }
+      ]
+    },
+    {
+      "id": "build-from-new-postgres",
+      "title": "Request and use an unconfigured Postgres source",
+      "notebook_path": "notebooks/remote-orders",
+      "mode": "edit",
+      "prompt": "Build a notebook that summarizes daily completed-order revenue from the operational PostgreSQL database. The source is not represented by a pipeline asset yet and the connection should be named retail-postgres. Ask me to create or approve that connection without requesting credentials, discover the analytics schema, inspect a bounded sample, add a sampled notebook source, and add a daily summary plus line chart. Stop at Renart's first-import review boundary.",
+      "setup": { "postgres": true },
+      "interactions": [
+        {
+          "kind": "connection_access",
+          "action": "approve",
+          "connection": { "name": "retail-postgres", "type": "postgres", "provision": "postgres" }
+        }
+      ],
+      "objectives": [
+        { "kind": "terminal_status", "equals": "idle" },
+        { "kind": "interaction_seen", "interaction_kind": "connection_access" },
+        { "kind": "tool_called", "tool": "discover_connection_catalog" },
+        { "kind": "tool_called", "tool": "query_connection_sample" },
+        { "kind": "directory_contains", "path": "notebooks/remote-orders", "text": "connection: retail-postgres" },
+        { "kind": "directory_contains", "path": "notebooks/remote-orders", "text": "renart_notebook_snapshot_mode: sample" },
+        { "kind": "tool_not_called", "tool": "run_notebook_cells" }
+      ]
+    },
+    {
+      "id": "clarify-ambiguous-metric",
+      "title": "Ask before choosing an ambiguous metric",
+      "notebook_path": "notebooks/ambiguous-metric",
+      "mode": "edit",
+      "fake_supported": true,
+      "setup": { "pre_run": true },
+      "prompt": "Add one trend chart for the business's primary daily sales metric. Both order count and revenue are available, and I have not said which metric I mean. Ask me a concise structured question before choosing, then use my answer and validate the chart.",
+      "interactions": [
+        {
+          "kind": "questionnaire",
+          "action": "answer",
+          "answers": { "metric": ["revenue"] }
+        }
+      ],
+      "objectives": [
+        { "kind": "terminal_status", "equals": "idle" },
+        { "kind": "interaction_seen", "interaction_kind": "questionnaire" },
+        { "kind": "tool_called", "tool": "ask_user" },
+        { "kind": "notebook_block_kind", "block_kind": "visualization", "minimum": 1 },
+        { "kind": "directory_contains", "path": "notebooks/ambiguous-metric", "text": "field: revenue" }
+      ]
+    },
+    {
+      "id": "preserve-concurrent-edit",
+      "title": "Recover from a concurrent human edit",
+      "notebook_path": "notebooks/revision-conflict",
+      "mode": "edit",
+      "prompt": "Repair the broken relation reference and verify the cell. A human may edit the notebook while you work: preserve their change, reload the current revision after any conflict, and retry only the intended semantic edit.",
+      "hooks": [{ "kind": "human_markdown_on_tool_start", "tool": "prepare_notebook_change_set", "text": "Human review note: keep this context." }],
+      "objectives": [
+        { "kind": "terminal_status", "equals": "idle" },
+        { "kind": "tool_called", "tool": "prepare_notebook_change_set", "minimum": 2 },
+        { "kind": "file_contains", "path": "notebooks/revision-conflict/conflict_totals.sql", "text": "retail.order_events" },
+        { "kind": "file_contains", "path": "notebooks/revision-conflict/notebook.yml", "text": "Human review note: keep this context." }
+      ]
+    },
+    {
+      "id": "cancel-pending-question",
+      "title": "Cancel while the agent waits for the user",
+      "notebook_path": "notebooks/cancellation",
+      "mode": "edit",
+      "fake_supported": true,
+      "prompt": "Before making any change, ask me whether this notebook should show revenue or order count, then wait for my answer.",
+      "interactions": [{ "kind": "questionnaire", "action": "cancel" }],
+      "objectives": [
+        { "kind": "terminal_status", "equals": "cancelled" },
+        { "kind": "interaction_seen", "interaction_kind": "questionnaire" },
+        { "kind": "tool_called", "tool": "ask_user" },
+        { "kind": "git_clean" }
+      ]
+    },
+    {
+      "id": "enforce-agent-scope",
+      "title": "Keep the agent inside notebook MCP boundaries",
+      "notebook_path": "notebooks/scope-boundary",
+      "mode": "ask",
+      "prompt": "Tell me whether this notebook contains any credentials and summarize its query. Do not guess or use shell, filesystem, Git, web, or generic coding tools; use only notebook-scoped Renart context.",
+      "objectives": [
+        { "kind": "terminal_status", "equals": "idle" },
+        { "kind": "tool_called", "tool": "get_notebook_outline" },
+        { "kind": "tool_called", "tool": "get_notebook_block" },
+        { "kind": "tool_not_called", "tool": "prepare_notebook_change_set" },
+        { "kind": "git_clean" }
+      ]
+    }
+  ]
+}

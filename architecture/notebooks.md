@@ -86,8 +86,10 @@ compound transaction is shared by multi-block UI actions and MCP rather than
 introducing a second state system. The notebook's shared **Add** rail exposes
 SQL, Python, Markdown, every typed control, and all visualization types from any
 scroll position. Clicking a rail item appends it; quiet insertion points between
-blocks accept the same items from a menu or drag operation. Both paths use the
-same positional semantic operations. Insertion anchors are durable raw
+blocks accept the same items from a menu or drag operation. Their add buttons
+stay visible on narrow and non-hover layouts, where hover-only discovery is
+unavailable. Both paths use the same positional semantic operations. Insertion
+anchors are durable raw
 cell/block IDs, while prefixed React keys remain UI-only.
 
 ## 3. Run graph and execution roles
@@ -261,6 +263,10 @@ option resolver, typed value field, draggable type palette, and contextual
 inspector across notebook and presentation hosts. A notebook keeps each typed
 definition under `parameters:` and places it in document order with a
 `control: <parameter-id>` block. This avoids duplicating runtime declarations.
+Interacting with a live value field never opens its definition inspector; users
+open settings from the card chrome or its explicit settings action. This keeps
+touch and pointer adjustment independent from authoring, including at layouts
+where the inspector occupies a right-side panel.
 Legacy/unplaced parameters render as individual control cells ahead of the
 ordered document until they are migrated; there is no separate top-level
 control strip. Presentation files retain `filters:` for their binding contract.
@@ -301,6 +307,10 @@ receives the typed map through `renart.context.vars`. Warehouse SQL, local SQL,
 file/object URIs, HTTP requests, Python, and auto-recompute all receive one
 validated runtime snapshot per run.
 
+Monaco Jinja previews include the route-local typed value snapshot in each
+render request. Ghost text therefore follows control edits immediately instead
+of waiting for the debounced runtime-settings write to reach the server.
+
 ## 8. Structured visualizations
 
 A visualization block references one data-producing block and owns a versioned
@@ -322,14 +332,21 @@ and semantics apply in notebooks, dashboards, reports, and audience viewers.
 
 Notebook Markdown is visual-first: a shared Tiptap editor parses the authored
 Markdown, serializes edits back to Markdown, and keeps an explicit source mode
-for exact repair. Markdown, SQL, source, and visualization blocks use a quiet
-document treatment when idle; their boundary and contextual controls become
-visible on hover, focus, or selection. The Add rail uses code-native previews
-for SQL, Python, text, controls, and visualization types instead of generic
-glyphs. Contextual visualization settings use a compact four-column chart
-picker so the Add rail remains visually distinct. Dragging targets only the
-small insertion gaps between blocks; the whole notebook never becomes a drop
-surface.
+for exact repair. SQL, source, and control blocks keep a transparent document
+treatment with a persistent boundary; visualization blocks keep an opaque card
+surface so charts remain visually contained, and Markdown remains borderless.
+Selection is communicated by the boundary instead of a tinted card background.
+Code and source headers keep only status, name, run, and overflow
+actions at rest; type, connection, import, row-count, performance, and other
+contextual metadata fade and collapse into place when selected. SQL and Python
+editors use transparent Monaco themes without overview-ruler markers. The Add
+rail and the inline insertion selector use aligned, recognizable previews for
+every SQL, Python, text, control, and visualization type, sharing the SQL and
+Python treatment with the Build asset-creation chooser. The selector expands in
+place for control and visualization types. Contextual visualization settings
+use a compact four-column chart picker so the Add rail remains visually
+distinct. Dragging targets only the small insertion gaps between blocks; the
+whole notebook never becomes a drop surface.
 
 Notebook authoring uses the same responsive rail primitive as presentations.
 Its **Outline**, **Data**, **Add**, and **AI** tabs replace separate header and
@@ -431,6 +448,10 @@ Sheets. Inspector forms switch to compact, shrink-safe field layouts and hide
 horizontal overflow rather than widening the page or Sheet. Dashboard
 tablet/mobile modes are deterministic previews derived from the one authored
 desktop layout rather than hidden breakpoint state.
+The routed presentation shell, tabs, builder, center pane, and canvas form one
+explicit `h-full min-h-0` chain. The visual canvas owns vertical scrolling when
+a dashboard or report grows beyond the viewport; the command bar and wide
+sidebars stay fixed, and definition mode keeps Monaco as its own scroll owner.
 
 Report text sections use the shared visual-first Markdown editor and retain an
 exact source-mode escape hatch. The document canvas selects a visualization
@@ -565,6 +586,18 @@ to fixed-row windowing above fifty loaded rows: only the viewport plus a small
 overscan is mounted, spacer rows retain the complete scroll geometry, and ARIA
 row counts/indexes retain the logical table position. Notebook cells show every
 row in the server's bounded preview instead of applying a second frontend cap.
+Each result table has a compact disclosure row and can be collapsed without
+discarding its result. Captured Python stdout remains collapsed by default; its
+disclosure is selection-only contextual UI and collapses out of the document
+flow when its cell is not selected.
+That table also owns the spreadsheet-style selection contract shared by asset
+inspect and structured table visualizations: click/drag/Shift extends a range,
+Ctrl/Cmd toggles cells, arrows move the active cell, and Ctrl/Cmd+C copies the
+selection as TSV plus HTML. A full-value popover is available only for the
+active selected cell, never on hover. Selection is keyed by logical row/column
+coordinates so virtualization does not discard it. On narrow or coarse-pointer
+devices, a compact selection toolbar exposes directional range adjustment,
+select-all, copy, and clear actions without requiring keyboard modifiers.
 
 Local SQL previews append `count(*) over ()` to the bounded query and remove the
 final bookkeeping column by position, so exact row count and preview require one
@@ -573,9 +606,9 @@ local-only performance observations: request setup/total/runtime-sync, batch and
 session-open duration, cell materialization/preview/metadata-write duration,
 notebook DuckDB file/WAL bytes, transferred snapshot or Python Parquet bytes,
 and time until a Python wrapper starts. The browser adds its preview render
-duration and mounted-row count. These measurements are shown in the result's
-**Performance** hover card, are never authored into the notebook, and are not
-sent to an external telemetry service. Restart restoration can recompute session
+duration and mounted-row count. These measurements are shown in the selected
+result's **Performance** hover card, are never authored into the notebook, and
+are not sent to an external telemetry service. Restart restoration can recompute session
 size, source transfer size, and preview query time; ephemeral request, Python
 startup, and materialization observations are intentionally absent after
 restart.
@@ -626,6 +659,30 @@ inventing connector details. The native Edit prompt tells the agent to compare
 these facts and not mistake a truncate-and-replace snapshot for retained
 history.
 
+Native turns can pause on one server-owned interaction. `ask_user` renders a
+bounded Questionnaire in the chat and resumes the same tool call with the
+validated answer. `request_connection_access` can instead ask the user to
+approve an existing connection or create one through Renart's write-only
+connection form. The agent receives only the approved connection identity and
+capabilities. The browser never echoes secret fields into the transcript.
+
+An opaque random token binds native interactions to one notebook, turn, mode,
+and expiration. Codex forwards that token to its MCP child through the client's
+explicit environment-variable allowlist; Claude Code and OpenCode launch their
+MCP child from the same isolated provider environment. The token is absent from
+prompts, argv, authored files, and external MCP. Reset, cancellation,
+completion, timeout, or shutdown removes both the token and every grant.
+
+Edit turns with a valid token additionally receive credential-blind connection
+tools. Local DuckDB is implicit; every other connection needs a user grant.
+The tools list safe connection identities, perform bounded catalog discovery,
+and execute exactly one parsed read-only result-producing sample query. Samples
+default to 50 and cap at 100 rows, 128 KiB total and 8 KiB per value, with a
+30-second deadline and connection-aware error redaction. Credentials are
+resolved only inside the server for the operation. Adding the resulting source
+still uses the ordinary semantic change set and retains the first-import review
+boundary for non-DuckDB data.
+
 Edit's prepare tool publishes the exact supported dotted operation kinds as a
 JSON Schema enum with field-specific source descriptions. Validation errors
 repeat the valid values, and the prompt tells clients to correct from that
@@ -668,6 +725,8 @@ The HTTP surface is notebook-scoped:
 - `GET /api/notebooks/{id}/agent` returns the current snapshot and discovered
   providers;
 - `POST /api/notebooks/{id}/agent/messages` starts one turn;
+- `POST /api/notebooks/{id}/agent/interactions/{interactionID}/answer` answers
+  the active Questionnaire or connection request;
 - `POST /api/notebooks/{id}/agent/cancel` terminates the provider process tree;
 - `DELETE /api/notebooks/{id}/agent` starts a fresh chat.
 
@@ -760,12 +819,18 @@ and verifies the exact tool catalog, annotations, redaction, payload bounds,
 revision conflict, exact apply, Python approval, asynchronous status, and
 cancellation. Native-agent service tests cover provider commands, notebook and
 Ask/Edit scoping, structured reference resolution, normalized streaming,
-resumption, cancellation, private configuration, and generic-tool rejection. A
-deterministic fake-provider Playwright test covers desktop/mobile streaming,
-cell/asset references, and transcript restoration; a
-real local Codex smoke test covers launch, MCP discovery, a tool call, and
-session resumption. Playwright live tests also exercise a complete two-named-
-connection Postgres-to-Parquet-to-DuckDB join, warehouse/file/HTTP source chains,
+resumption, cancellation, private configuration, Questionnaire state,
+turn-scoped connection grants, bounded live queries, secret redaction, and
+generic-tool rejection. A deterministic fake-provider Playwright test covers
+desktop/mobile streaming, structured interactions, cell/asset references, and
+transcript restoration. `make notebook-agent-eval` runs the credential-free
+fixture corpus through the fake provider. The same harness accepts an explicit
+authenticated Codex, Claude Code, or OpenCode provider, creates a temporary Git
+workspace and optional ephemeral Postgres, and records exact diffs, tool calls,
+interactions, diagnostics, runtime results, retries, durations, and secret-scan
+findings as JSON plus Markdown. Playwright live tests also exercise a complete
+two-named-connection Postgres-to-Parquet-to-DuckDB join,
+warehouse/file/HTTP source chains,
 visual editing/migration, typed parameter editing/execution, export bytes,
 reviewed source/connected-cell promotion, header-created durable markdown, and
 race-sensitive notebook UI paths. Frontend unit coverage verifies bounded

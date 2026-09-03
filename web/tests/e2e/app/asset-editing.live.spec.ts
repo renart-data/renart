@@ -108,6 +108,15 @@ async function openAssetProperties(page: Page): Promise<Locator> {
   return inspector;
 }
 
+async function selectAssetPropertiesTab(
+  properties: Locator,
+  tab: "General" | "Lineage" | "Columns" | "Checks",
+): Promise<void> {
+  const trigger = properties.getByRole("tab", { name: tab, exact: true });
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-selected", "true");
+}
+
 async function openColumnEditor(properties: Locator, columnName: string): Promise<Locator> {
   const trigger = properties.getByRole("button", { name: `Edit column ${columnName}` });
   const editor = trigger.locator('xpath=ancestor::*[@data-slot="collapsible"]');
@@ -477,8 +486,6 @@ select customer_id from analytics.customers
       timeout: 15000,
     });
     await expect(properties.getByRole("heading", { name: "Materialization" })).toBeVisible();
-    await expect(properties.getByRole("heading", { name: "Dependencies" })).toBeVisible();
-    await expect(properties.getByRole("heading", { name: "Columns" })).toBeVisible();
 
     const identity = properties.getByRole("heading", { name: "Identity" }).locator("../..");
     await expect(identity.getByRole("textbox", { name: "Type", exact: true })).toHaveValue(
@@ -530,6 +537,8 @@ select customer_id from analytics.customers
     expect(withCommaTag.tags).toContain("finance, north");
 
     // Add a manual dependency via the Dependencies card.
+    await selectAssetPropertiesTab(properties, "Lineage");
+    await expect(properties.getByRole("heading", { name: "Dependencies" })).toBeVisible();
     const txResponse = page.waitForResponse(
       (r) => r.url().includes(`/api/assets/${customersAssetId}/transactions`) && r.ok(),
       { timeout: 15000 },
@@ -619,6 +628,7 @@ select customer_id from analytics.customers
         ?.findings.some((finding) => finding.message.includes("primary-key")),
     ).toBe(true);
 
+    await selectAssetPropertiesTab(properties, "Columns");
     const customerIDEditor = await openColumnEditor(properties, "customer_id");
     const customerIDPrimaryKey = customerIDEditor.getByRole("checkbox", {
       name: "Primary key",
@@ -673,6 +683,7 @@ select customer_id from analytics.customers
 
     await expect(properties.getByRole("button", { name: "YAML", exact: true })).toHaveCount(0);
     await expect(properties.getByRole("button", { name: "Form", exact: true })).toHaveCount(0);
+    await selectAssetPropertiesTab(properties, "General");
     await expect(
       identity
         .getByRole("textbox", { name: "Name" })
@@ -689,6 +700,7 @@ select customer_id from analytics.customers
     );
     await expect(identity.getByRole("combobox", { name: "Type" })).toHaveCount(0);
 
+    await selectAssetPropertiesTab(properties, "Columns");
     const unsetResponse = page.waitForResponse(
       (response) =>
         response.url().includes(`/api/assets/${customersAssetId}/columns`) &&
@@ -868,11 +880,13 @@ materialization:
       "analytics.orders_load",
       (asset) => (asset.columns ?? []).length === 2,
     );
+    await selectAssetPropertiesTab(properties, "Columns");
     const idColumnEditor = await openColumnEditor(properties, "id");
     await expect(idColumnEditor.getByRole("checkbox", { name: "Primary key" })).toBeVisible({
       timeout: 15000,
     });
 
+    await selectAssetPropertiesTab(properties, "General");
     const updateKeyResponse = page.waitForResponse(
       (response) =>
         response.url().includes(`/api/pipelines/${pipelineId}/assets/${loadAssetId}`) &&
@@ -1232,6 +1246,7 @@ from range(1, 2, 1)
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
     const properties = await openAssetProperties(page);
+    await selectAssetPropertiesTab(properties, "Columns");
     const columnsCard = properties.getByRole("heading", { name: "Columns" }).locator("../..");
 
     await columnsCard.getByRole("textbox", { name: "Add column" }).fill("manual_note");
@@ -1284,6 +1299,7 @@ from range(1, 2, 1)
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
     const properties = await openAssetProperties(page);
+    await selectAssetPropertiesTab(properties, "Columns");
     const columnsCard = properties.getByRole("heading", { name: "Columns" }).locator("../..");
     const columnTrigger = columnsCard.getByRole("button", { name: "Edit column customer_id" });
 
@@ -1339,6 +1355,7 @@ from range(1, 2, 1)
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
     const properties = await openAssetProperties(page);
+    await selectAssetPropertiesTab(properties, "Columns");
     const columnsCard = properties.getByRole("heading", { name: "Columns" }).locator("../..");
     await expect(columnsCard.getByRole("checkbox", { name: "Current table" })).toBeVisible();
 
@@ -1475,6 +1492,7 @@ from range(1, 2, 1)
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
     const properties = await openAssetProperties(page);
 
+    await selectAssetPropertiesTab(properties, "Checks");
     const card = properties.locator("section").filter({ hasText: "Quality checks" });
     await expect(card.getByRole("heading", { name: "Quality checks" })).toBeVisible({
       timeout: 15000,
@@ -1570,6 +1588,7 @@ from range(1, 2, 1)
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
     const properties = await openAssetProperties(page);
+    await selectAssetPropertiesTab(properties, "Checks");
     const customChecks = properties.getByTestId("asset-custom-checks");
 
     const initialDiagnostics = page.waitForResponse(

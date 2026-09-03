@@ -55,6 +55,12 @@ func runLocalNotebookAgentProvider(
 	}
 	command.Dir = request.RunDir
 	command.Env = isolatedNotebookAgentEnvironment(command.Env, request.RunDir)
+	if strings.TrimSpace(request.TurnToken) != "" {
+		command.Env = append(
+			command.Env,
+			"RENART_NOTEBOOK_AGENT_TURN_TOKEN="+strings.TrimSpace(request.TurnToken),
+		)
+	}
 	command.Stdin = strings.NewReader(request.Prompt)
 	configureCommandProcessTree(command)
 	stdout, err := command.StdoutPipe()
@@ -185,6 +191,11 @@ func codexNotebookAgentCommand(ctx context.Context, binary string, request Noteb
 		"-c", `mcp_servers.renart.default_tools_approval_mode="approve"`,
 		"-c", `mcp_servers.renart.tool_timeout_sec=1800`,
 	}
+	if strings.TrimSpace(request.TurnToken) != "" {
+		common = append(common,
+			"-c", `mcp_servers.renart.env_vars=["RENART_NOTEBOOK_AGENT_TURN_TOKEN"]`,
+		)
+	}
 	args := []string{"exec"}
 	if strings.TrimSpace(request.SessionID) == "" {
 		args = append(args, common...)
@@ -210,8 +221,8 @@ func claudeNotebookAgentCommand(ctx context.Context, binary string, request Note
 	if err := writePrivateJSON(configPath, config); err != nil {
 		return nil, fmt.Errorf("write Claude MCP configuration: %w", err)
 	}
-	allowed := make([]string, 0, len(notebookAgentMCPToolNames(request.Mode)))
-	for _, tool := range notebookAgentMCPToolNames(request.Mode) {
+	allowed := make([]string, 0, len(notebookAgentMCPToolNames(request.Mode, request.TurnToken != "")))
+	for _, tool := range notebookAgentMCPToolNames(request.Mode, request.TurnToken != "") {
 		allowed = append(allowed, "mcp__renart__"+tool)
 	}
 	args := []string{
@@ -279,11 +290,20 @@ func openCodeNotebookAgentCommand(ctx context.Context, binary string, request No
 	return command, nil
 }
 
-func notebookAgentMCPToolNames(mode NotebookAgentMode) []string {
+func notebookAgentMCPToolNames(mode NotebookAgentMode, native bool) []string {
 	tools := []string{
 		"search_workspace_catalog", "list_notebooks", "get_notebook_outline", "get_notebook_block",
 		"get_notebook_graph", "get_notebook_diagnostics", "get_notebook_result_schema",
 		"get_notebook_result_sample", "list_notebook_sources",
+	}
+	if native {
+		tools = append(tools, "ask_user")
+		if mode == NotebookAgentModeEdit {
+			tools = append(tools,
+				"request_connection_access", "list_query_connections",
+				"discover_connection_catalog", "query_connection_sample",
+			)
+		}
 	}
 	if mode == NotebookAgentModeEdit {
 		tools = append(tools,
@@ -322,7 +342,8 @@ func isolatedNotebookAgentEnvironment(current []string, runDir string) []string 
 			continue
 		}
 		switch strings.ToUpper(key) {
-		case "PWD", "OLDPWD", "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE":
+		case "PWD", "OLDPWD", "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
+			"RENART_NOTEBOOK_AGENT_TURN_TOKEN":
 			continue
 		}
 		result = append(result, entry)

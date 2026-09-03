@@ -3,6 +3,8 @@ import { createServer, type Server } from "node:http";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { extractParametersText } from "@/lib/api-parameters-yaml";
+
 import { liveTest as test, timeoutForRetry } from "../live-app-fixture";
 
 type WorkspaceResponse = {
@@ -363,28 +365,12 @@ parameters:
       await expect(editor).toBeVisible({ timeout: 15000 });
       await setEditorContentAtYamlField(page, assetContent, "records_path", "fea");
 
-      const suggestionsResponse = page.waitForResponse(
-        (response) =>
-          response.url().includes("/api/api-assets/openapi-suggestions") &&
-          response.url().includes("request_url=") &&
-          response.ok(),
-        { timeout: 15000 },
-      );
       await page.keyboard.press("ControlOrMeta+Space");
-      const response = await suggestionsResponse;
-      const body = (await response.json()) as {
-        records_paths?: Array<{ path: string; detail?: string }>;
-      };
-      expect(body.records_paths).toContainEqual(
-        expect.objectContaining({
-          detail: expect.stringContaining("array of objects"),
-          path: "features",
-        }),
-      );
 
       const suggestWidget = page.locator(".suggest-widget.visible").first();
       await expect(suggestWidget).toBeVisible({ timeout: 15000 });
       await expect(suggestWidget.getByText("features", { exact: true })).toBeVisible();
+      await expect(suggestWidget.getByText(/array of objects/)).toBeVisible();
     } finally {
       await new Promise<void>((resolve) => specServer.server.close(() => resolve()));
     }
@@ -417,8 +403,6 @@ parameters:
       await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${apiAssetId}/code`);
       const editor = page.locator(".monaco-editor").first();
       await expect(editor).toBeVisible({ timeout: 15000 });
-      await setEditorContentAtYamlField(page, assetContent, "next_url_path", "pag");
-
       const suggestionsResponse = page.waitForResponse(
         (response) =>
           response.url().includes("/api/api-assets/openapi-suggestions") &&
@@ -426,6 +410,7 @@ parameters:
           response.ok(),
         { timeout: 15000 },
       );
+      await setEditorContentAtYamlField(page, assetContent, "next_url_path", "pag");
       await page.keyboard.press("ControlOrMeta+Space");
       const response = await suggestionsResponse;
       const body = (await response.json()) as {
@@ -619,7 +604,7 @@ parameters:
       apiServer.pageRequests.length = 0;
 
       const done = await materializeAsset(page, liveApp.baseURL, paginatedAPIAssetId);
-      expect(done.status).toBe("ok");
+      expect(done.status, done.output || done.error).toBe("ok");
       expect(done.output).toContain("Fetched 2 records from API asset analytics.paginated_api");
       expect(apiServer.pageRequests).toEqual(["1", "2"]);
 
@@ -669,7 +654,7 @@ parameters:
       await waitForWorkspaceAsset(page, liveApp.baseURL, postAPIAssetId);
 
       const done = await materializeAsset(page, liveApp.baseURL, postAPIAssetId);
-      expect(done.status).toBe("ok");
+      expect(done.status, done.output || done.error).toBe("ok");
       expect(done.output).toContain("Fetched 1 records from API asset analytics.post_api");
       expect(apiServer.postBodies).toEqual([{ query: "Ada" }]);
       expect(apiServer.authHeaders).toEqual(["secret-token"]);
@@ -835,6 +820,7 @@ async function setEditorContentAtYamlField(
   fieldName: string,
   cursorAfter?: string,
 ) {
+  const parametersText = extractParametersText(content) || content;
   await page.waitForFunction(
     () => {
       const monaco = (window as typeof window & { monaco?: any }).monaco;
@@ -870,7 +856,7 @@ async function setEditorContentAtYamlField(
       editor.focus();
       editor.setPosition({ lineNumber, column });
     },
-    { content, cursorAfter, fieldName },
+    { content: parametersText, cursorAfter, fieldName },
   );
 }
 

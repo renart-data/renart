@@ -58,6 +58,38 @@ func configureNotebookServices(ctx context.Context, server *webServer, cfg serve
 			}
 			return service.ResolveNotebookAgentReferences(notebook, server.currentState(), references)
 		},
+		CurrentState: func() service.WorkspaceState { return server.currentState() },
+		DiscoverDatabases: func(ctx context.Context, connection, environment string) (service.SQLDatabaseDiscoveryResult, *service.APIError) {
+			return server.sqlSvc.Databases(
+				secretstore.WithPurpose(ctx, secretstore.PurposeNotebookQuery),
+				connection,
+				environment,
+			)
+		},
+		DiscoverTables: func(ctx context.Context, connection, database, environment string) (service.SQLTableDiscoveryResult, *service.APIError) {
+			return server.sqlSvc.Tables(
+				secretstore.WithPurpose(ctx, secretstore.PurposeNotebookQuery),
+				connection,
+				database,
+				environment,
+			)
+		},
+		DiscoverColumns: func(ctx context.Context, connection, table, environment string) (service.SQLTableColumnsResult, int) {
+			return server.sqlSvc.TableColumns(
+				secretstore.WithPurpose(ctx, secretstore.PurposeNotebookQuery),
+				connection,
+				table,
+				environment,
+			)
+		},
+		RunConnectionQuery: func(ctx context.Context, connection, environment, query string) ([]string, []map[string]any, error) {
+			return server.executionSvc.RunConnectionQueryForEnvironment(
+				secretstore.WithPurpose(ctx, secretstore.PurposeNotebookQuery),
+				connection,
+				environment,
+				query,
+			)
+		},
 		PublishEvent: func(payload any) { server.hub.PublishImmediate(payload) },
 	})
 }

@@ -76,6 +76,8 @@ import type { WorkspaceConfigConnection, WorkspaceConfigEnvironment } from "@/li
 import { cn } from "@/lib/utils";
 
 import { IntegrationBadge, PageHeader, AppPage } from "./app-primitives";
+import { AppContextSidebarFrame } from "./workbench/workbench-context-sidebar";
+import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
 
 const emptyPolicy: EnvironmentPolicy = {
   protected: false,
@@ -206,32 +208,71 @@ function SettingsShell({
     to: string;
   }>;
 }) {
+  const { navigation } = useWorkbench();
+  const workbenchEnabled = Boolean(navigation?.workbench);
+  const activeSection = sections.find(
+    (section) =>
+      section.id === (navigation?.tool === "project-settings" ? "general" : navigation?.tool),
+  );
+
   return (
     <AppPage>
-      <PageHeader title={title} subtitle={subtitle} />
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 px-3 pb-3 md:grid-cols-[16rem_minmax(0,1fr)]">
-        <aside className="hidden min-h-0 md:block">
-          <div className="sticky top-0 flex flex-col gap-1">
-            <div className="px-2 pb-2 text-xs font-medium text-muted-foreground">{eyebrow}</div>
-            {sections.map((section) => (
-              <SettingsSideLink key={section.id} section={section} />
-            ))}
-          </div>
-        </aside>
-        <div className="min-h-0 min-w-0 overflow-hidden">
-          <ScrollArea
-            className="mb-3 md:hidden"
-            horizontalScrollBarClassName="hidden"
-            viewportClassName="w-full"
+      {workbenchEnabled ? (
+        <WorkbenchPortal slot="context">
+          <AppContextSidebarFrame
+            title={activeSection?.label ?? title}
+            subtitle={activeSection ? eyebrow : subtitle}
           >
-            <div className="flex gap-2 pb-1">
+            <div className="flex flex-col gap-1 p-2">
+              <p className="px-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Project configuration
+              </p>
               {sections.map((section) => (
-                <SettingsPillLink key={section.id} section={section} />
+                <SettingsSideLink key={section.id} section={section} />
               ))}
             </div>
-          </ScrollArea>
-          <ScrollArea className="h-full min-h-0" viewportClassName="[&>div]:!block [&>div]:w-full">
-            <div className="mx-auto w-full min-w-0 max-w-4xl">
+          </AppContextSidebarFrame>
+        </WorkbenchPortal>
+      ) : (
+        <PageHeader title={title} subtitle={subtitle} />
+      )}
+      <div
+        className={cn(
+          "min-h-0 min-w-0 flex-1 overflow-hidden",
+          !workbenchEnabled &&
+            "grid grid-cols-1 gap-3 px-3 pb-3 md:grid-cols-[16rem_minmax(0,1fr)]",
+        )}
+      >
+        {!workbenchEnabled ? (
+          <aside className="hidden min-h-0 md:block">
+            <div className="sticky top-0 flex flex-col gap-1">
+              <div className="px-2 pb-2 text-xs font-medium text-muted-foreground">{eyebrow}</div>
+              {sections.map((section) => (
+                <SettingsSideLink key={section.id} section={section} />
+              ))}
+            </div>
+          </aside>
+        ) : null}
+        <div className="h-full min-h-0 min-w-0 overflow-hidden">
+          {!workbenchEnabled ? (
+            <ScrollArea
+              className="mb-3 md:hidden"
+              horizontalScrollBarClassName="hidden"
+              viewportClassName="w-full"
+            >
+              <div className="flex gap-2 pb-1">
+                {sections.map((section) => (
+                  <SettingsPillLink key={section.id} section={section} />
+                ))}
+              </div>
+            </ScrollArea>
+          ) : null}
+          <ScrollArea
+            data-testid="project-settings-scroll"
+            className="h-full min-h-0"
+            viewportClassName="[&>div]:!block [&>div]:w-full"
+          >
+            <div className={cn("mx-auto w-full min-w-0 max-w-4xl", workbenchEnabled && "p-3")}>
               <Outlet />
             </div>
           </ScrollArea>

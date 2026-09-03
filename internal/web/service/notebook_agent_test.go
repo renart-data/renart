@@ -176,6 +176,106 @@ func TestNotebookAgentServiceCancelsProcessAndResetsChat(t *testing.T) {
 	}
 }
 
+func TestNotebookAgentQuestionnaireBlocksAndResumesNativeTurn(t *testing.T) {
+	t.Parallel()
+
+	var agent *NotebookAgentService
+	providerResult := make(chan NotebookAgentInteractionResult, 1)
+	agent = NewNotebookAgentService(context.Background(), NotebookAgentDependencies{
+		LookPath: func(file string) (string, error) {
+			if file == "codex" {
+				return "/usr/bin/codex", nil
+			}
+			return "", errors.New("missing")
+		},
+		RunProvider: func(ctx context.Context, request NotebookAgentProviderRunRequest, emit func(NotebookAgentStreamEvent)) (NotebookAgentProviderRunResult, error) {
+			if request.TurnToken == "" {
+				return NotebookAgentProviderRunResult{}, errors.New("missing turn token")
+			}
+			result, apiErr := agent.RequestQuestionnaire(
+				ctx,
+				request.NotebookID,
+				request.TurnToken,
+				NotebookAgentQuestionnaireRequest{
+					Title: "Choose a metric",
+					Questions: []NotebookAgentQuestion{{
+						ID: "metric", Kind: NotebookAgentQuestionSingle,
+						Prompt: "Which metric should the chart use?", Required: true,
+						Options: []NotebookAgentQuestionOption{
+							{Value: "revenue", Label: "Revenue", Recommended: true},
+							{Value: "orders", Label: "Orders"},
+						},
+					}},
+				},
+			)
+			if apiErr != nil {
+				return NotebookAgentProviderRunResult{}, apiErr
+			}
+			providerResult <- result
+			emit(NotebookAgentStreamEvent{Kind: "text", Text: "Using the selected metric."})
+			return NotebookAgentProviderRunResult{}, nil
+		},
+	})
+	t.Cleanup(agent.Close)
+
+	if _, apiErr := agent.StartTurn("notebook-one", StartNotebookAgentTurnRequest{
+		Provider: "codex", Mode: NotebookAgentModeEdit, Message: "Add a useful chart",
+	}); apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	pending := waitForNotebookAgentState(t, agent, "notebook-one", func(snapshot NotebookAgentSnapshot) bool {
+		return snapshot.Interaction != nil && snapshot.Interaction.Status == "pending"
+	})
+	if pending.Interaction.Title != "Choose a metric" || len(pending.Interaction.Questions) != 1 {
+		t.Fatalf("unexpected pending interaction: %+v", pending.Interaction)
+	}
+	if _, apiErr := agent.RequestQuestionnaire(
+		context.Background(),
+		"notebook-one",
+		"wrong-token",
+		NotebookAgentQuestionnaireRequest{Title: "No", Questions: []NotebookAgentQuestion{{ID: "q", Kind: NotebookAgentQuestionText, Prompt: "No"}}},
+	); apiErr == nil || apiErr.Code != "notebook_agent_turn_token_invalid" {
+		t.Fatalf("invalid token error = %+v", apiErr)
+	}
+	if _, apiErr := agent.AnswerInteraction(
+		"notebook-one",
+		pending.Interaction.ID,
+		AnswerNotebookAgentInteractionRequest{Answers: []NotebookAgentQuestionAnswer{{
+			QuestionID: "metric", Values: []string{"missing"},
+		}}},
+	); apiErr == nil || apiErr.Code != "notebook_agent_interaction_answer_invalid" {
+		t.Fatalf("invalid answer error = %+v", apiErr)
+	}
+	answered, apiErr := agent.AnswerInteraction(
+		"notebook-one",
+		pending.Interaction.ID,
+		AnswerNotebookAgentInteractionRequest{Answers: []NotebookAgentQuestionAnswer{{
+			QuestionID: "metric", Values: []string{"revenue"},
+		}}},
+	)
+	if apiErr != nil {
+		t.Fatal(apiErr)
+	}
+	if answered.Interaction == nil || answered.Interaction.Status != "answered" {
+		t.Fatalf("answer was not recorded: %+v", answered.Interaction)
+	}
+
+	select {
+	case result := <-providerResult:
+		if result.Status != "answered" || len(result.Answers) != 1 || result.Answers[0].Values[0] != "revenue" {
+			t.Fatalf("provider received unexpected result: %+v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("provider did not resume after the answer")
+	}
+	completed := waitForNotebookAgentState(t, agent, "notebook-one", func(snapshot NotebookAgentSnapshot) bool {
+		return snapshot.Status == "idle"
+	})
+	if completed.Interaction == nil || completed.Interaction.Status != "answered" {
+		t.Fatalf("completed snapshot lost the interaction: %+v", completed.Interaction)
+	}
+}
+
 func TestNotebookAgentEditPromptForbidsOperationNameProbing(t *testing.T) {
 	prompt := buildNotebookAgentPrompt("notebook-one", NotebookAgentModeEdit, []NotebookAgentMessage{{
 		Role: "user", Content: "Add a line chart",
@@ -228,6 +328,7 @@ func TestNotebookAgentProviderCommandsOnlyExposeScopedMCP(t *testing.T) {
 	base := NotebookAgentProviderRunRequest{
 		Mode: NotebookAgentModeAsk, NotebookID: "notebook-one", RunDir: runDir,
 		WorkspaceRoot: "/workspace", RenartExecutable: "/usr/bin/renart",
+		TurnToken: "opaque-turn-token",
 	}
 
 	codex := base
@@ -237,10 +338,16 @@ func TestNotebookAgentProviderCommandsOnlyExposeScopedMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(command.Args, " ")
-	for _, expected := range []string{"--ignore-user-config", `sandbox_mode="read-only"`, "--notebook", "--read-only", "--no-runs"} {
+	for _, expected := range []string{
+		"--ignore-user-config", `sandbox_mode="read-only"`, "--notebook", "--read-only", "--no-runs",
+		`mcp_servers.renart.env_vars=["RENART_NOTEBOOK_AGENT_TURN_TOKEN"]`,
+	} {
 		if !strings.Contains(joined, expected) {
 			t.Errorf("Codex command misses %q: %s", expected, joined)
 		}
+	}
+	if strings.Contains(joined, base.TurnToken) {
+		t.Fatalf("opaque turn token leaked into Codex argv: %s", joined)
 	}
 	if strings.Contains(joined, "current request") {
 		t.Fatalf("prompt leaked into Codex argv: %s", joined)

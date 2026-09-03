@@ -1,0 +1,5 @@
+version: 2
+id: 4e055218-2b20-433e-891b-960769be3ae4
+title: Ambiguous sales metric
+blocks:
+  - cell: metric_data

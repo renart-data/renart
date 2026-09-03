@@ -115,7 +115,7 @@ func quotedCellID(cellID string) string {
 // extractFrontmatter locates the embedded Bruin frontmatter block and
 // parses its YAML. openerLine is the zero-based index of the line holding
 // the opening @bruin marker. ok is false when no block exists.
-func extractFrontmatter(content string) (values map[string]any, openerLine int, ok bool) {
+func extractFrontmatter(content string) (values map[string]yaml.Node, openerLine int, ok bool) {
 	lines := strings.Split(content, "\n")
 	opener := -1
 	closer := -1
@@ -135,22 +135,28 @@ func extractFrontmatter(content string) (values map[string]any, openerLine int, 
 	}
 
 	body := strings.Join(lines[opener+1:closer], "\n")
-	values = map[string]any{}
+	values = map[string]yaml.Node{}
 	if err := yaml.Unmarshal([]byte(body), &values); err != nil {
 		return nil, 0, false
 	}
 	return values, opener, true
 }
 
-func frontmatterString(values map[string]any, key string) string {
+func frontmatterString(values map[string]yaml.Node, key string) string {
 	if values == nil {
 		return ""
 	}
 	if raw, ok := values[key]; ok {
-		if s, ok := raw.(string); ok {
-			return strings.TrimSpace(s)
+		// Keep the authored scalar spelling instead of decoding through any.
+		// A hexadecimal cell ID such as 4101e095 is a valid YAML float token;
+		// decoding it generically would turn the durable ID into 4.101e+98.
+		if raw.Kind == yaml.ScalarNode {
+			return strings.TrimSpace(raw.Value)
 		}
-		return strings.TrimSpace(fmt.Sprintf("%v", raw))
+		var decoded any
+		if err := raw.Decode(&decoded); err == nil {
+			return strings.TrimSpace(fmt.Sprintf("%v", decoded))
+		}
 	}
 	return ""
 }

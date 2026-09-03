@@ -1,0 +1,5 @@
+version: 2
+id: 18fa5498-18c1-4f6c-8788-a956fc9f9778
+title: Cancellation behavior
+blocks:
+  - cell: cancellation_data

@@ -162,7 +162,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/manifoldco/promptui | v0.9.0 | [license](third_party/licenses/05a3af14dd6f2e357727c4d445660072be70b11e7c27b9dc735c9de4bb65ddcb.txt) |
 | github.com/Masterminds/semver/v3 | v3.4.0 | [license](third_party/licenses/2db9097f7b3750c1c9426996d21fe443d339131fb758c2167d2d5fabe8e6cbf9.txt) |
 | github.com/mattn/go-colorable | v0.1.14 | [license](third_party/licenses/88a2379b3ca34bf5c57127aff9dcb802bbb60ece0805cdbda65b3bd115f971d9.txt) |
-| github.com/mattn/go-isatty | v0.0.21 | [license](third_party/licenses/08eab1118c80885fa1fa6a6dd7303f65a379fcb3733e063d20d1bbc2c76e6fa1.txt) |
+| github.com/mattn/go-isatty | v0.0.24 | [license](third_party/licenses/08eab1118c80885fa1fa6a6dd7303f65a379fcb3733e063d20d1bbc2c76e6fa1.txt) |
 | github.com/mattn/go-runewidth | v0.0.20 | [license](third_party/licenses/88a2379b3ca34bf5c57127aff9dcb802bbb60ece0805cdbda65b3bd115f971d9.txt) |
 | github.com/mfridman/interpolate | v0.0.2 | [license](third_party/licenses/21408182c12c98d402fa38a8b678560dc63fd6bada5a0017722883e4b79e6620.txt) |
 | github.com/microsoft/go-mssqldb | v1.10.0 | [license](third_party/licenses/7d0793489653bfe020de7ea32047bad266f5e2e204ba12025d5300f39555addc.txt) |
@@ -187,7 +187,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/ProtonMail/go-crypto | v1.3.0 | [license](third_party/licenses/2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067.txt) |
 | github.com/ProtonMail/gopenpgp/v3 | v3.3.0 | [license](third_party/licenses/503bdcb689e2033376caa35eb66f170920221e96706da77be941804bc4f36422.txt) |
 | github.com/remyoudompheng/bigfft | v0.0.0-20230129092748-24d4a6f8daec | [license](third_party/licenses/dd26a7abddd02e2d0aba97805b31f248ef7835d9e10da289b22e3b8ab78b324d.txt) |
-| github.com/renart-data/golyglot | v0.1.0-alpha.4 | [license](third_party/licenses/3a611f35963a65b984b2ea4e7b53c697cd47dea0628bd8189e8bfa5b4f9cedef.txt) |
+| github.com/renart-data/golyglot | v0.1.0-alpha.5 | [license](third_party/licenses/3a611f35963a65b984b2ea4e7b53c697cd47dea0628bd8189e8bfa5b4f9cedef.txt) |
 | github.com/riverqueue/river | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
 | github.com/riverqueue/river/riverdriver | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
 | github.com/riverqueue/river/riverdriver/riversqlite | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
@@ -386,40 +386,40 @@ CI verifies that the checked-in inventory is current.
 | @standard-schema/spec | 1.1.0 | MIT | [license](third_party/licenses/6c19f173cf807e59ad48df621b2840bd2e2d7194d948d3cb1766f17b63335030.txt) |
 | @standard-schema/utils | 0.3.0 | MIT | [license](third_party/licenses/13dc70601979b9f8bb3f3c080e7b0aa67f947c852f3fcc5f5a97e45870f52353.txt) |
 | @tanstack/history | 1.162.0 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
-| @tanstack/react-router | 1.170.17 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
+| @tanstack/react-router | 1.170.18 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
 | @tanstack/react-store | 0.9.3 | MIT | [license](third_party/licenses/cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7.txt) |
-| @tanstack/router-core | 1.171.14 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
+| @tanstack/router-core | 1.171.15 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
 | @tanstack/store | 0.9.3 | MIT | [license](third_party/licenses/cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7.txt) |
-| @tiptap/core | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-blockquote | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-bold | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-bubble-menu | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-bullet-list | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-code | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-code-block | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-document | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-dropcursor | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-floating-menu | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-gapcursor | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-hard-break | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-heading | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-horizontal-rule | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-italic | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-link | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-list | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-list-item | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-list-keymap | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-ordered-list | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-paragraph | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-strike | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-table | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-text | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-underline | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extensions | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/markdown | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/pm | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/react | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/starter-kit | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/core | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-blockquote | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-bold | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-bubble-menu | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-bullet-list | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-code | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-code-block | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-document | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-dropcursor | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-floating-menu | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-gapcursor | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-hard-break | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-heading | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-horizontal-rule | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-italic | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-link | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-list | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-list-item | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-list-keymap | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-ordered-list | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-paragraph | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-strike | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-table | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-text | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-underline | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extensions | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/markdown | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/pm | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/react | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/starter-kit | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
 | @types/d3 | 7.4.3 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @types/d3-array | 3.2.2 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @types/d3-axis | 3.0.6 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
@@ -467,9 +467,9 @@ CI verifies that the checked-in inventory is current.
 | ansi-to-html | 0.7.2 | MIT | [license](third_party/licenses/f76b01518da28afcbd249c6aa4c03c6ff08cdefb40db4d6d9b5929627980cb9c.txt) |
 | aria-hidden | 1.2.6 | MIT | [license](third_party/licenses/30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9.txt) |
 | bail | 2.0.2 | MIT | [license](third_party/licenses/63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf.txt) |
-| baseline-browser-mapping | 2.10.42 | Apache-2.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
-| browserslist | 4.28.5 | MIT | [license](third_party/licenses/21c2679a63d7699c0e644409e2f17d0adbc7a965003feb06b3ff4b833d21f722.txt) |
-| caniuse-lite | 1.0.30001803 | CC-BY-4.0 | [license](third_party/licenses/7e7170e3cebf88a9f60c7b8421418323c09304da1af4d5e90f4da1dc1c8a2661.txt) |
+| baseline-browser-mapping | 2.11.20 | Apache-2.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
+| browserslist | 4.28.8 | MIT | [license](third_party/licenses/21c2679a63d7699c0e644409e2f17d0adbc7a965003feb06b3ff4b833d21f722.txt) |
+| caniuse-lite | 1.0.30001810 | CC-BY-4.0 | [license](third_party/licenses/7e7170e3cebf88a9f60c7b8421418323c09304da1af4d5e90f4da1dc1c8a2661.txt) |
 | ccount | 2.0.1 | MIT | [license](third_party/licenses/63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf.txt) |
 | character-entities | 2.0.2 | MIT | [license](third_party/licenses/63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf.txt) |
 | character-entities-html4 | 2.1.0 | MIT | [license](third_party/licenses/63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf.txt) |
@@ -506,7 +506,7 @@ CI verifies that the checked-in inventory is current.
 | detect-node-es | 1.1.0 | MIT | [license](third_party/licenses/54b32293ea560d22cd9b62af9b2cda1a030d910a48c6601d227c5ff2338d95f8.txt) |
 | devlop | 1.1.0 | MIT | [license](third_party/licenses/6f296a5eccc1dc96714bb94ebaa9cac25b0a1467d74cc5263ac4d0646ab01f62.txt) |
 | dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
-| electron-to-chromium | 1.5.389 | ISC | [license](third_party/licenses/25ba5c59dad3e0dd8f9540beaa0f0a86a10e3aec35af5fdc8e88c5f6a5c0d8c6.txt) |
+| electron-to-chromium | 1.5.419 | ISC | [license](third_party/licenses/25ba5c59dad3e0dd8f9540beaa0f0a86a10e3aec35af5fdc8e88c5f6a5c0d8c6.txt) |
 | entities | 2.2.0 | BSD-2-Clause | [license](third_party/licenses/cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164.txt) |
 | es-toolkit | 1.49.0 | MIT | [license](third_party/licenses/51f3674294d988d89dbebd31273baaeb3c697a15482d9699b14d1fded2e132a7.txt) |
 | escalade | 3.2.0 | MIT | [license](third_party/licenses/9a9edad7baae52622bddf3c15b2ef8a33d2c89f2d25408ad13e8a7481c6b0c97.txt) |
@@ -527,8 +527,8 @@ CI verifies that the checked-in inventory is current.
 | is-decimal | 2.0.1 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
 | is-hexadecimal | 2.0.1 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
 | is-plain-obj | 4.1.0 | MIT | [license](third_party/licenses/5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3.txt) |
-| isbot | 5.2.0 | Unlicense | [license](third_party/licenses/472f8bb212250d2b07f2484f2bee03d65eec36a52902b80244e2e52f1990b090.txt) |
-| jotai | 2.20.1 | MIT | [license](third_party/licenses/0530d5d58026f4bb73367d195946f6a516a648ea62dd8b84763318f64d3cb3e2.txt) |
+| isbot | 5.2.2 | Unlicense | [license](third_party/licenses/472f8bb212250d2b07f2484f2bee03d65eec36a52902b80244e2e52f1990b090.txt) |
+| jotai | 2.20.2 | MIT | [license](third_party/licenses/0530d5d58026f4bb73367d195946f6a516a648ea62dd8b84763318f64d3cb3e2.txt) |
 | js-tokens | 4.0.0 | MIT | [license](third_party/licenses/2213d91c606205c71eb051a199478cdc2adde945893404d7f1421436dd6d5cc1.txt) |
 | jsesc | 3.1.0 | MIT | [license](third_party/licenses/483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a.txt) |
 | json5 | 2.2.3 | MIT | [license](third_party/licenses/53e59feb13058722d977c699eb0407c7bce2f93c949b681bbd2ff31698535927.txt) |
@@ -569,7 +569,7 @@ CI verifies that the checked-in inventory is current.
 | micromark-util-types | 2.0.2 | MIT | [license](third_party/licenses/dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb.txt) |
 | monaco-editor | 0.56.0 | MIT | [license](third_party/licenses/33e4ff1a06ef62ba21788ea162564ee8165269a24a9ce6ef301837447eab0ac6.txt) |
 | ms | 2.1.3 | MIT | [license](third_party/licenses/1662fae9b5314d11cf51284e2dcd1f006a354f7343f08712a730fcff9a359801.txt) |
-| node-releases | 2.0.51 | MIT | [license](third_party/licenses/3706296ed611888111ceccc1dff4712844dea4bde0b185c82d718c3b69895abe.txt) |
+| node-releases | 2.0.54 | MIT | [license](third_party/licenses/3706296ed611888111ceccc1dff4712844dea4bde0b185c82d718c3b69895abe.txt) |
 | object-assign | 4.1.1 | MIT | [license](third_party/licenses/6fb9754611c20f6649f68805e8c990e83261f29316e29de9e6cedae607b8634c.txt) |
 | orderedmap | 2.1.1 | MIT | [license](third_party/licenses/869c30f368eb08735e779027b9f4bc9fea2f39624351856aebe42741f0bc0884.txt) |
 | parse-entities | 4.0.2 | MIT | [license](third_party/licenses/5d0698266086f217bb11ea0499d33453e401fe479fb9126ad04e625e63d3557b.txt) |
@@ -600,7 +600,7 @@ CI verifies that the checked-in inventory is current.
 | react-remove-scroll | 2.7.2 | MIT | [license](third_party/licenses/30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9.txt) |
 | react-remove-scroll-bar | 2.3.8 | MIT | [license](third_party/licenses/a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84.txt) |
 | react-resizable | 3.2.0 | MIT | [license](third_party/licenses/dfbf6bbccb9fe67c1cf0d7721605ab81b2f2adce68ee4becf02292d899d0001c.txt) |
-| react-resizable-panels | 4.12.1 | MIT | [license](third_party/licenses/a8f1e0280bf14adcf5d017547db85eb5c3bac0feb1690ca98650874002eaa8ea.txt) |
+| react-resizable-panels | 4.12.2 | MIT | [license](third_party/licenses/a8f1e0280bf14adcf5d017547db85eb5c3bac0feb1690ca98650874002eaa8ea.txt) |
 | react-style-singleton | 2.2.3 | MIT | [license](third_party/licenses/30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9.txt) |
 | reactflow | 11.11.4 | MIT | [license](third_party/licenses/9f495bcaa7577b0aa3853402d6d7748987c754d3af9170a5bab1f325a90fc1ae.txt) |
 | recharts | 3.9.2 | MIT | [license](third_party/licenses/e65e92a0a65f60ce02250fabb81a3211a77289c2ca097b209b4a3e3448ca6f91.txt) |
@@ -613,8 +613,8 @@ CI verifies that the checked-in inventory is current.
 | rope-sequence | 1.3.4 | MIT | [license](third_party/licenses/530424aebdd0e73f53238d1f89df250057bc8d8ce090cf5954197fadce5bf226.txt) |
 | scheduler | 0.27.0 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
 | semver | 6.3.1 | ISC | [license](third_party/licenses/4ec3d4c66cd87f5c8d8ad911b10f99bf27cb00cdfcff82621956e379186b016b.txt) |
-| seroval | 1.5.5 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
-| seroval-plugins | 1.5.5 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
+| seroval | 1.6.4 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
+| seroval-plugins | 1.6.4 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
 | space-separated-tokens | 2.0.2 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
 | state-local | 1.0.7 | MIT | [license](third_party/licenses/3154651e339acde2858130fb40566eb80ced1b03508c57fcb52bb709ab0a0cea.txt) |
 | stringify-entities | 4.0.4 | MIT | [license](third_party/licenses/9f084fac69d8cf1e6ce983ba5a3499c7695ed74a26ec625c38f0fd19fddd5e10.txt) |
@@ -632,7 +632,7 @@ CI verifies that the checked-in inventory is current.
 | unist-util-stringify-position | 4.0.0 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
 | unist-util-visit | 5.1.0 | MIT | [license](third_party/licenses/63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf.txt) |
 | unist-util-visit-parents | 6.0.2 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
-| update-browserslist-db | 1.2.3 | MIT | [license](third_party/licenses/c414dde36704bd9c8a76c7aa2921b19270ff9abeb478ea0050250d16cf29b0f6.txt) |
+| update-browserslist-db | 1.3.2 | MIT | [license](third_party/licenses/9877e90da14aa8c931a1f9d07cc2a20ce119106e5dab1ebb41af865266d0cd2a.txt) |
 | use-callback-ref | 1.3.3 | MIT | [license](third_party/licenses/30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9.txt) |
 | use-sidecar | 1.1.3 | MIT | [license](third_party/licenses/30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9.txt) |
 | use-sync-external-store | 1.6.0 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |

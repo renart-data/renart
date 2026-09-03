@@ -338,6 +338,47 @@ func (s *ConfigService) LoadReadOnly() (*config.Config, string, error) {
 	return cfg, s.configPath, nil
 }
 
+// ConnectionSummaries returns only connection names and types for one
+// environment. It deliberately avoids resolving or exposing connection values,
+// making it suitable for discovery UIs such as the Data Browser.
+func (s *ConfigService) ConnectionSummaries(environment string) (string, map[string]string, error) {
+	cfg, _, err := s.LoadReadOnly()
+	if err != nil {
+		return "", nil, err
+	}
+
+	resolvedEnvironment := strings.TrimSpace(environment)
+	if resolvedEnvironment == "" {
+		resolvedEnvironment = strings.TrimSpace(cfg.SelectedEnvironmentName)
+	}
+	if resolvedEnvironment == "" {
+		resolvedEnvironment = strings.TrimSpace(cfg.DefaultEnvironmentName)
+	}
+	if resolvedEnvironment == "" {
+		environments := cfg.GetEnvironmentNames()
+		sort.Strings(environments)
+		if len(environments) > 0 {
+			resolvedEnvironment = environments[0]
+		}
+	}
+	if resolvedEnvironment == "" {
+		return "", map[string]string{}, nil
+	}
+	if err := cfg.SelectEnvironment(resolvedEnvironment); err != nil {
+		return "", nil, err
+	}
+	if cfg.SelectedEnvironment == nil || cfg.SelectedEnvironment.Connections == nil {
+		return resolvedEnvironment, map[string]string{}, nil
+	}
+
+	connections := cfg.SelectedEnvironment.Connections.ConnectionsSummaryList()
+	result := make(map[string]string, len(connections))
+	for name, connectionType := range connections {
+		result[name] = connectionType
+	}
+	return resolvedEnvironment, result, nil
+}
+
 func (s *ConfigService) Persist(cfg *config.Config) (string, error) {
 	if err := afero.NewOsFs().MkdirAll(filepath.Dir(s.configPath), 0o755); err != nil {
 		return "", err

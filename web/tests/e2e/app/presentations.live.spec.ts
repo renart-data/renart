@@ -54,12 +54,121 @@ async function dragWithDataTransfer(page: Page, source: Locator, target: Locator
   }
 }
 
+function builderToolsDialog(page: Page, kind: "dashboard" | "report") {
+  return page.getByRole("dialog", {
+    name:
+      kind === "dashboard"
+        ? /^(Builder tools|Dashboards navigation)$/
+        : /^(Report outline|Reports navigation)$/,
+  });
+}
+
+function tallDashboardDefinition() {
+  const visualizations = Array.from(
+    { length: 12 },
+    (_, index) => `  - id: rows_${index + 1}
+    dataset: values
+    definition:
+      version: 1
+      type: table
+      title: Result ${index + 1}`,
+  ).join("\n");
+  const layout = Array.from(
+    { length: 12 },
+    (_, index) => `  - visualization: rows_${index + 1}
+    x: 0
+    y: ${index * 4}
+    width: 12
+    height: 4`,
+  ).join("\n");
+  return `version: 1
+id: tall_dashboard
+title: Tall dashboard
+datasets:
+  values:
+    connection: duckdb-default
+    query: |
+      SELECT 1 AS value
+    columns:
+      - name: value
+        type: integer
+visualizations:
+${visualizations}
+layout:
+${layout}
+`;
+}
+
+function tallReportDefinition() {
+  const sections = Array.from(
+    { length: 30 },
+    (_, index) => `  - id: section_${index + 1}
+    title: Section ${index + 1}
+    markdown: This is a deliberately tall report section used to verify internal scrolling.`,
+  ).join("\n");
+  return `version: 1
+id: tall_report
+title: Tall report
+sections:
+${sections}
+`;
+}
+
 test.describe("app presentations live", () => {
   test.use({ fixtureName: "basic-workspace" });
 
+  test("keeps tall dashboard and report builders scrollable", async ({ liveApp, page }) => {
+    for (const kind of ["dashboard", "report"] as const) {
+      const createResponse = await page.request.post(`${liveApp.baseURL}/api/presentations`, {
+        data: { kind, title: `Tall ${kind}` },
+      });
+      expect(createResponse.ok()).toBe(true);
+      const created = (await createResponse.json()) as PresentationEnvelope;
+      const presentationId = created.document.artifact.workspace_id;
+      const definition = kind === "dashboard" ? tallDashboardDefinition() : tallReportDefinition();
+      const updateResponse = await page.request.put(
+        `${liveApp.baseURL}/api/presentations/${presentationId}`,
+        {
+          data: {
+            expected_revision: created.document.artifact.revision,
+            content: definition,
+          },
+        },
+      );
+      expect(updateResponse.ok()).toBe(true);
+
+      await page.goto(
+        `${liveApp.baseURL}/${kind === "dashboard" ? "dashboards" : "reports"}/${presentationId}`,
+      );
+      const viewport = page
+        .getByTestId("presentation-builder-scroll")
+        .locator('[data-slot="scroll-area-viewport"]');
+      await expect(viewport).toBeVisible({ timeout: 15000 });
+      await expect
+        .poll(() =>
+          viewport.evaluate((element) => ({
+            clientHeight: element.clientHeight,
+            scrollHeight: element.scrollHeight,
+          })),
+        )
+        .toMatchObject({ clientHeight: expect.any(Number), scrollHeight: expect.any(Number) });
+      await expect
+        .poll(() =>
+          viewport.evaluate((element) => element.scrollHeight > element.clientHeight + 200),
+        )
+        .toBe(true);
+      await viewport.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+        element.dispatchEvent(new Event("scroll", { bubbles: true }));
+      });
+      await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+      await expect(page.getByRole("button", { name: "Save", exact: true })).toBeVisible();
+    }
+  });
+
   test("creates and visually edits a Git-native dashboard", async ({ liveApp, page }) => {
     await page.goto(`${liveApp.baseURL}/dashboards`);
-    await expect(page.getByRole("heading", { name: "Dashboards" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Dashboards", level: 1 })).toBeVisible();
 
     await page.getByRole("button", { name: "New dashboard" }).first().click();
     const dialog = page.getByRole("dialog");
@@ -80,7 +189,7 @@ test.describe("app presentations live", () => {
     if (narrowBuilder) {
       await page.getByRole("button", { name: "Open builder tools" }).click();
       await page
-        .getByRole("dialog", { name: "Builder tools" })
+        .getByRole("dialog", { name: /^(Builder tools|Dashboards navigation)$/ })
         .getByRole("button", { name: "Add dataset", exact: true })
         .click();
       const inspector = page.getByRole("dialog", { name: "Inspector" });
@@ -88,7 +197,7 @@ test.describe("app presentations live", () => {
       await expectInspectorToFit(page);
       await inspector.getByRole("button", { name: "Close" }).click();
       await page.getByRole("button", { name: "Open builder tools" }).click();
-      const builderTools = page.getByRole("dialog", { name: "Builder tools" });
+      const builderTools = builderToolsDialog(page, "dashboard");
       await builderTools.getByRole("tab", { name: "Add", exact: true }).click();
       await builderTools.getByRole("button", { name: "Add visualization", exact: true }).click();
     } else {
@@ -120,7 +229,7 @@ test.describe("app presentations live", () => {
     if (narrowBuilder) await visualizationInspector.getByRole("button", { name: "Close" }).click();
     if (narrowBuilder) {
       await page.getByRole("button", { name: "Open builder tools" }).click();
-      const builderTools = page.getByRole("dialog", { name: "Builder tools" });
+      const builderTools = builderToolsDialog(page, "dashboard");
       await builderTools.getByRole("tab", { name: "Add" }).click();
       await builderTools.getByRole("button", { name: "Add control", exact: true }).click();
     } else {
@@ -233,7 +342,7 @@ test.describe("app presentations live", () => {
     if (narrowBuilder) {
       await page.getByRole("button", { name: "Open builder tools" }).click();
       await page
-        .getByRole("dialog", { name: "Builder tools" })
+        .getByRole("dialog", { name: /^(Builder tools|Dashboards navigation)$/ })
         .getByRole("button", { name: "Add dataset", exact: true })
         .click();
     } else {
@@ -571,6 +680,11 @@ layout:
     await page.getByLabel("Section title").fill("Executive summary");
     const markdown = page.getByLabel("Section markdown");
     await expect(markdown).toHaveAttribute("contenteditable", "true");
+    await expect(markdown).toHaveAttribute("spellcheck", "false");
+    await markdown.focus();
+    await expect(markdown).toHaveAttribute("spellcheck", "true");
+    await page.getByLabel("Section title").focus();
+    await expect(markdown).toHaveAttribute("spellcheck", "false");
     await markdown.fill("");
     await markdown.type("Revenue remained ");
     await markdown.press("Control+b");
@@ -587,14 +701,14 @@ layout:
 
     if (narrowBuilder) {
       await page.getByRole("button", { name: "Open builder tools" }).click();
-      const tools = page.getByRole("dialog", { name: "Report outline" });
+      const tools = builderToolsDialog(page, "report");
       await tools.getByRole("tab", { name: "Data" }).click();
       await tools.getByRole("button", { name: "Add dataset", exact: true }).click();
       const inspector = page.getByRole("dialog", { name: "Inspector" });
       await expect(inspector.getByLabel("Dataset ID")).toHaveValue("dataset");
       await inspector.getByRole("button", { name: "Close" }).click();
       await page.getByRole("button", { name: "Open builder tools" }).click();
-      const addTools = page.getByRole("dialog", { name: "Report outline" });
+      const addTools = builderToolsDialog(page, "report");
       await addTools.getByRole("tab", { name: "Add", exact: true }).click();
       await addTools.getByRole("button", { name: "Add visualization", exact: true }).click();
     } else {

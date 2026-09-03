@@ -1,0 +1,5 @@
+version: 2
+id: 71c3a07f-cdb8-4c77-8741-e72db2e528be
+title: Repair daily totals
+blocks:
+  - cell: daily_totals

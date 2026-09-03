@@ -50,6 +50,8 @@ cmd/web.go     route registration + a thin webServer adapter
   ├── internal/web/presentation               → visualization contracts,
   │                                             Git document lifecycle, and
   │                                             read-only presentation runtime
+  ├── internal/web/databrowser                → revision-bound warehouse/local
+  │                                             discovery and bounded preview
   ├── internal/web/service/assetmeta          → see asset-editing.md
   ├── internal/web/{sqlintelligence, pyintelligence, sqlformat,
   │                freshness, profiling, static}
@@ -70,6 +72,17 @@ adapters for workspace schema inference and resolving an asset-backed dataset
 to its environment-specific physical relation. Those adapters are assembled by
 `cmd/server_presentation.go`, keeping their secret-purpose and execution wiring
 out of the central server constructor.
+
+`internal/web/databrowser` is a read-only discovery boundary assembled in
+`cmd/server_data_browser.go` from the existing configuration and SQL services. Its API
+exposes only connection names, types, capabilities, revision-bound object
+references, and display metadata—never connection values. Warehouse hierarchy
+requests reuse the shared SQL discovery adapters. Local-file discovery accepts
+only supported tabular formats below visible project paths and rechecks path
+containment, symlinks, hidden/generated directories, and format at every object
+or preview request. Preview SQL is constructed and quoted by the backend from
+the resolved object reference, capped at 200 rows, and never accepted from the
+browser as arbitrary SQL.
 
 The execution boundary lives in `internal/web/execution`. It owns the shared
 render, reviewed-plan, resource, private run, target-snapshot, and time-window

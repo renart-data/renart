@@ -50,6 +50,8 @@ import { useWorkspaceTheme } from "@/hooks/use-workspace-theme";
 import { AppPage, PageHeader } from "./app-primitives";
 import { DocumentAuthoringCommandBar, DocumentAuthoringShell } from "./document-authoring-shell";
 import { PresentationBuilder } from "./presentation-builder/presentation-builder";
+import { PresentationLibrarySidebar } from "./presentation-library-sidebar";
+import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
 
 const MonacoEditor = lazy(async () => {
   const module = await loadMonacoEditorModule();
@@ -75,7 +77,7 @@ const presentationMeta = {
 
 export function AppPresentationsLayout() {
   return (
-    <div className="h-full min-h-0 bg-muted/40">
+    <div className="flex h-full min-h-0 flex-col bg-muted/40">
       <Outlet />
     </div>
   );
@@ -84,6 +86,8 @@ export function AppPresentationsLayout() {
 export function AppPresentationsIndexPage({ kind }: { kind: PresentationKind }) {
   const workspace = useAtomValue(workspaceAtom);
   const navigate = useNavigate();
+  const { navigation } = useWorkbench();
+  const workbenchEnabled = Boolean(navigation?.workbench);
   const [createOpen, setCreateOpen] = useState(false);
   const items = (workspace?.presentations ?? []).filter((item) => item.kind === kind);
   const meta = presentationMeta[kind];
@@ -91,46 +95,64 @@ export function AppPresentationsIndexPage({ kind }: { kind: PresentationKind }) 
 
   return (
     <AppPage>
-      <PageHeader
-        title={meta.plural}
-        subtitle={meta.description}
-        actions={
-          <>
-            <Button asChild size="icon-sm" variant="ghost" className="sm:hidden">
-              <Link
-                to={kind === "dashboard" ? "/reports" : "/dashboards"}
-                aria-label={kind === "dashboard" ? "Open reports" : "Open dashboards"}
-              >
-                {kind === "dashboard" ? (
-                  <FileText data-icon="inline-start" />
-                ) : (
-                  <LayoutDashboard data-icon="inline-start" />
-                )}
-              </Link>
-            </Button>
-            <div className="hidden items-center gap-1 sm:flex" aria-label="Presentation type">
-              <Button asChild size="sm" variant={kind === "dashboard" ? "secondary" : "ghost"}>
-                <Link to="/dashboards">
-                  <LayoutDashboard data-icon="inline-start" />
-                  Dashboards
+      {workbenchEnabled ? (
+        <WorkbenchPortal slot="context">
+          <PresentationLibrarySidebar kind={kind} onCreate={() => setCreateOpen(true)} />
+        </WorkbenchPortal>
+      ) : (
+        <PageHeader
+          title={meta.plural}
+          subtitle={meta.description}
+          actions={
+            <>
+              <Button asChild size="icon-sm" variant="ghost" className="sm:hidden">
+                <Link
+                  to={kind === "dashboard" ? "/reports" : "/dashboards"}
+                  aria-label={kind === "dashboard" ? "Open reports" : "Open dashboards"}
+                >
+                  {kind === "dashboard" ? (
+                    <FileText data-icon="inline-start" />
+                  ) : (
+                    <LayoutDashboard data-icon="inline-start" />
+                  )}
                 </Link>
               </Button>
-              <Button asChild size="sm" variant={kind === "report" ? "secondary" : "ghost"}>
-                <Link to="/reports">
-                  <FileText data-icon="inline-start" />
-                  Reports
-                </Link>
+              <div className="hidden items-center gap-1 sm:flex" aria-label="Presentation type">
+                <Button asChild size="sm" variant={kind === "dashboard" ? "secondary" : "ghost"}>
+                  <Link to="/dashboards">
+                    <LayoutDashboard data-icon="inline-start" />
+                    Dashboards
+                  </Link>
+                </Button>
+                <Button asChild size="sm" variant={kind === "report" ? "secondary" : "ghost"}>
+                  <Link to="/reports">
+                    <FileText data-icon="inline-start" />
+                    Reports
+                  </Link>
+                </Button>
+              </div>
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <Plus data-icon="inline-start" />
+                New {meta.singular}
               </Button>
-            </div>
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus data-icon="inline-start" />
-              New {meta.singular}
-            </Button>
-          </>
-        }
-      />
+            </>
+          }
+        />
+      )}
       <ScrollArea className="min-h-0 flex-1 px-3 pb-3">
         <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col py-6">
+          {workbenchEnabled ? (
+            <div className="mb-4 flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <h1 className="text-base font-semibold tracking-tight">{meta.plural}</h1>
+                <p className="text-xs text-muted-foreground">{meta.description}</p>
+              </div>
+              <Button size="sm" className="md:hidden" onClick={() => setCreateOpen(true)}>
+                <Plus data-icon="inline-start" />
+                New {meta.singular}
+              </Button>
+            </div>
+          ) : null}
           {items.length === 0 ? (
             <div className="m-auto w-full max-w-md rounded-xl border border-dashed bg-background p-8 text-center">
               <Icon className="mx-auto mb-3 size-8 text-muted-foreground" />
@@ -502,9 +524,9 @@ export function AppPresentationLivePage({
         <Tabs
           value={mode}
           onValueChange={(value) => setMode(value as "visual" | "definition")}
-          className="min-h-0 flex-1 gap-0"
+          className="h-full min-h-0 flex-1 gap-0 overflow-hidden"
         >
-          <TabsContent value="visual" className="min-h-0 overflow-hidden">
+          <TabsContent value="visual" className="h-full min-h-0 overflow-hidden">
             <PresentationBuilder
               presentationId={presentationId}
               artifact={visualDraft}
@@ -517,7 +539,7 @@ export function AppPresentationLivePage({
               onChange={setVisualDraft}
             />
           </TabsContent>
-          <TabsContent value="definition" className="min-h-0 overflow-hidden">
+          <TabsContent value="definition" className="h-full min-h-0 overflow-hidden">
             <DocumentAuthoringShell
               commandBar={
                 <DocumentAuthoringCommandBar

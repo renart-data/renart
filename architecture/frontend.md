@@ -49,7 +49,7 @@ File-based routes under [src/routes](../web/src/routes):
 - [__root.tsx](../web/src/routes/__root.tsx) → [_shell.tsx](../web/src/routes/_shell.tsx),
   a pathless layout route that renders the app shell.
 - Pages live under [src/routes/_shell](../web/src/routes/_shell): the build IDE at
-  `/pipelines/$pipelineId/...`, plus `catalog`, `notebooks`, `dashboards`,
+  `/pipelines/$pipelineId/...`, plus `data`, `catalog`, `notebooks`, `dashboards`,
   `reports`, `runs`, `schedules`, and `project` (settings). `/` waits for the
   workspace, then redirects to the
   first pipeline's canvas — or to `/welcome` when the workspace has no
@@ -96,8 +96,13 @@ not underscore-flattened route hacks.
 ### App shell + primary views
 
 - [components/app/app-shell.tsx](../web/components/app/app-shell.tsx) (`AppShell`):
-  top nav (Build / Catalog / Notebooks / Present / Runs / Schedules, from
-  [app-data.ts](../web/components/app/app-data.ts)), the
+  the global header exposes only the three product modes **Build**, **Run**, and
+  **Explore**, defined together with their destinations and route ownership in
+  [app-navigation-model.ts](../web/components/app/app-navigation-model.ts). The
+  deepest matched TanStack route selects the mode, rail tool, contextual
+  sidebar, and mobile label; nested destinations therefore keep their parent
+  mode visibly active without pathname checks in page components. The shell
+  also owns the
   [project switcher](../web/components/app/project-switcher.tsx), including the
   persisted Light / Dark / System appearance selector, the
   [command palette](../web/components/app/app-command-palette.tsx), and the routed
@@ -114,11 +119,54 @@ not underscore-flattened route hacks.
   remain one review unit but render one inline diff per changed cell/file. Each
   file or notebook row makes its complete non-action area the diff target, so
   the path, icon, and status behave as one control rather than as separate
-  click hotspots. The mobile navigation keeps a fixed 3.5rem content row and
-  adds the device safe-area inset outside that row, so Android/iOS system UI
-  cannot compress or push its icons out of alignment.
+  click hotspots.
+
+  Below the header,
+  [components/app/workbench/](../web/components/app/workbench) renders one
+  rounded desktop surface containing the narrow mode-aware rail and its
+  collapsible contextual sidebar. The main page surface and optional right
+  inspector use the same bounded height and small shell gap. Rail state is
+  disposable, project-scoped session state: selecting an inactive tool opens
+  its context, selecting it again collapses the wide sidebar. Stateful pages
+  keep ownership of their editors, canvases, result models, and forms; they
+  contribute existing contextual navigation and inspectors through named React
+  portals rather than lifting domain state into `AppShell` or keeping hidden
+  pages mounted. On mobile, Build, Run, and Explore remain the only three bottom
+  destinations. The desktop rail becomes a horizontally scrollable shadcn
+  `Tabs` strip directly below the global header; selecting a contextual tab
+  opens one Sheet that contains only that tool's hierarchy. Direct destinations
+  navigate in place, and selecting the active contextual tab toggles its Sheet.
+  The fixed 3.5rem bottom row keeps the device safe-area inset outside the row
+  so Android/iOS system UI cannot compress or displace its icons.
+
+- [components/app/data-browser/](../web/components/app/data-browser): one shared
+  controller powers both the `/data` workbench route and Build's in-place Data
+  Browser. In Build, selecting the rail or mobile tab swaps only the contextual
+  sidebar, so the active editor/canvas remains mounted; selecting a table or file
+  opens its schema and bounded preview in a dialog. Direct `/data` navigation
+  retains the full detail workspace. It loads configured
+  query-capable connections as credential-free summaries and navigates their
+  databases, schemas, and objects lazily through the server Data Browser API.
+  **Project files** is a first-class source on desktop and mobile; it lists only
+  visible supported tabular files inside the project root. Selecting an object
+  describes its columns, while rows remain unloaded until the explicit bounded
+  Preview action. The connection shortcuts are split into query warehouses and
+  Load-supported file systems (currently S3, GCS, and SFTP) from the server's
+  advertised connection types. Preview results reuse `VirtualDataTable`, including its
+  keyboard selection and copy behavior. Connection setup reuses
+  `WorkspaceConnectionDialog` with a preselected type and returns to the newly
+  created source without putting credentials in Data Browser state.
+
 - [components/app/build-page.tsx](../web/components/app/build-page.tsx): the primary
-  IDE — the interactive lineage canvas
+  IDE. Its pipeline-only project explorer and asset metadata inspector occupy the
+  shared Workbench slots; Ad-hoc Query and Notebooks are accessed from their
+  dedicated rail/mobile tabs instead of being duplicated in the pipeline tree.
+  The editor/canvas/result controller remains page-owned. A
+  single rounded command surface contains project-scoped document tabs and
+  compact Code/Split/Canvas plus run/deploy actions. Asset files, Ad-hoc Query,
+  and notebooks participate in that document model without mounting inactive
+  Monaco or notebook runtimes. The central work area retains the interactive
+  lineage canvas
   ([lineage-canvas.tsx](../web/components/app/lineage-canvas.tsx), React Flow)
   beside the asset editor. Bare asset URLs default to this split view; ad-hoc
   queries preserve code/split layout and add the editor beside a canvas-only
@@ -301,10 +349,16 @@ not underscore-flattened route hacks.
   response associates the run ID with the Build result, then reconciled with
   the canonical stored log; this also covers runs that finish before the trigger
   response arrives.
+
 - [components/app/asset-editor.tsx](../web/components/app/asset-editor.tsx): the
   Monaco editor plus guided metadata cards
   ([asset-guided-cards.tsx](../web/components/app/asset-guided-cards.tsx)); the
-  metadata inspector currently keeps its raw YAML view hidden. It wires intellisense through
+  metadata inspector currently keeps its raw YAML view hidden. The guided
+  surface is divided into **General**, **Lineage**, **Columns**, and **Checks**
+  tabs (with Columns and Checks omitted for assets that cannot produce a
+  relation). Failed quality-check focus opens the matching tab automatically;
+  changing assets resets the default to General. All tabs remain views over the
+  same semantic transaction APIs rather than independent drafts. It wires intellisense through
   [use-asset-monaco.ts](../web/hooks/use-asset-monaco.ts). Load, seed, and
   non-query sensor assets replace Monaco with compact YAML-like parameter
   editors in the same main pane. Query sensors project `parameters.query` into
@@ -346,6 +400,7 @@ not underscore-flattened route hacks.
   Each saved column is scan-first: its collapsed row summarizes name, type,
   description, key status, and provenance, then expands into labeled type,
   description, merge, and removal controls without leaving the card.
+
 - The Build view's **New pipeline** dialog loads the backend template catalog
   and presents the blank option plus feature-focused runnable starters in the
   same compact catalog used by onboarding. Category headings organize one
@@ -419,6 +474,18 @@ not underscore-flattened route hacks.
   bundled Simple Icons Iconify set; local glyphs cover file storage and engines
   without a matching mark. Icon data is compiled into the web bundle and never
   fetched from a third-party API at runtime.
+- Bounded analytical results share `VirtualDataTable` across notebook outputs,
+  asset inspect, and table visualizations in notebooks, dashboards, and reports.
+  Its controlled-capable logical-coordinate selection model survives virtual
+  row mounting, supports pointer ranges and keyboard navigation/toggling, and
+  copies selected cells as TSV and HTML. Hover alone never expands a value;
+  only the active selected cell can open its complete content. Tables whose
+  row-action semantics do not fit this spreadsheet contract remain separate.
+- Dashboard/report authoring keeps one explicit shrink-safe height chain from
+  the routed page through the tabs and builder. The visual canvas ScrollArea
+  owns overflow for tall content while the command bar and desktop sidebars
+  remain fixed; definition Monaco and audience viewers retain their own scroll
+  owners.
 - Other pages: [catalog-page.tsx](../web/components/app/catalog-page.tsx),
   [notebook-page.tsx](../web/components/app/notebook-page.tsx),
   [runs-page.tsx](../web/components/app/runs-page.tsx),
@@ -512,7 +579,7 @@ not underscore-flattened route hacks.
   Schedule rows keep cadence, timezone, last-run result, deployment, catch-up,
   and runtime-window context in a wrapping metadata area rather than one
   truncated status line. Timeline and actions have dedicated columns: `Run
-  pinned #N` is the primary action, reviewed deployment repair/update is
+pinned #N` is the primary action, reviewed deployment repair/update is
   secondary, and edit/archive are in the row's overflow menu. The edit dialog
   keeps pipeline/environment identity fixed, edits the version-controlled
   cadence and lifecycle fields, and defaults to preserving server-private
@@ -534,7 +601,7 @@ not underscore-flattened route hacks.
   that the project file must be re-added instead of presenting a nonfunctional
   Restore action. A due interval waiting for planning or the pipeline slot is
   exposed as `Run waiting`; after a failed/cancelled attempt it becomes `Retry
-  waiting`. Its tooltip shows only the retained interval, and a dedicated
+waiting`. Its tooltip shows only the retained interval, and a dedicated
   `schedule.occurrence` SSE event refreshes the schedule response without
   polling or exposing the private occurrence key. `Run pinned #N` calls the
   row-owned endpoint, so the browser never has to resend private values.

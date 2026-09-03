@@ -4,6 +4,29 @@ import { liveTest as test } from "../live-app-fixture";
 
 test.use({ isolateUserConfig: true });
 
+test("keeps the project settings page scrollable", async ({ page, liveApp }) => {
+  await page.goto(`${liveApp.baseURL}/project/general`);
+
+  const viewport = page
+    .getByTestId("project-settings-scroll")
+    .locator(':scope > [data-slot="scroll-area-viewport"]');
+  await expect(viewport).toBeVisible();
+
+  const scrollMetrics = await viewport.evaluate((element) => {
+    const start = element.scrollTop;
+    element.scrollTop = element.scrollHeight;
+    return {
+      start,
+      end: element.scrollTop,
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    };
+  });
+
+  expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
+  expect(scrollMetrics.end).toBeGreaterThan(scrollMetrics.start);
+});
+
 test("sets up the encrypted vault and offers it for connection credentials", async ({
   page,
   liveApp,

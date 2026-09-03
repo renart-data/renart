@@ -54,6 +54,9 @@ export function normalizeConnectionType(connectionType?: string | null) {
     vitess: "mysql",
     google_cloud_storage: "gcs",
     local_file: "file",
+    local_files: "file",
+    "local file": "file",
+    "local files": "file",
   };
   return aliases[normalized] ?? (normalized || "default");
 }
@@ -74,6 +77,7 @@ export function friendlyConnectionType(connectionType?: string | null) {
     postgres: "PostgreSQL",
     redshift: "Redshift",
     s3: "Amazon S3",
+    sftp: "SFTP",
     snowflake: "Snowflake",
     sqlite: "SQLite",
     starrocks: "StarRocks",

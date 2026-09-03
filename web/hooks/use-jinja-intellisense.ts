@@ -60,6 +60,7 @@ export function useJinjaIntellisense(
   content: string,
   onGoToVariable?: (variableName: string) => void,
   namespaces?: Record<string, JinjaRenderResponse["variables"]>,
+  parameterValues?: Record<string, unknown>,
 ) {
   const [renderResult, setRenderResult] = useState<JinjaRenderResponse | null>(null);
   const selectedExecutionTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
@@ -130,6 +131,7 @@ export function useJinjaIntellisense(
           assetId,
           content,
           timeWindow: selectedExecutionTimeWindow,
+          parameterValues,
           signal: controller.signal,
         });
         if (!controller.signal.aborted) {
@@ -146,49 +148,61 @@ export function useJinjaIntellisense(
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [assetId, content, selectedExecutionTimeWindow, supportsJinjaPreview]);
+  }, [assetId, content, parameterValues, selectedExecutionTimeWindow, supportsJinjaPreview]);
 
   useEffect(() => {
     if (!editor || !monaco || !supportsJinjaPreview) return;
 
     let decorations: string[] = [];
+    let updatingDecorations = false;
     const update = () => {
-      const model = editor.getModel();
-      if (!model) return;
-      const position = editor.getPosition();
-      const cursorOffset = position ? model.getOffsetAt(position) : -1;
-      const spans = parseJinjaSpans(model.getValue());
-      const renderSpans = renderResultRef.current?.spans ?? [];
+      if (updatingDecorations) return;
+      updatingDecorations = true;
+      try {
+        const model = editor.getModel();
+        if (!model) return;
+        const position = editor.getPosition();
+        const cursorOffset = position ? model.getOffsetAt(position) : -1;
+        const spans = parseJinjaSpans(model.getValue());
+        const renderSpans = renderResultRef.current?.spans ?? [];
 
-      decorations = editor.deltaDecorations(
-        decorations,
-        spans.map((span) => {
-          const inside = cursorOffset >= span.startOffset && cursorOffset <= span.endOffset;
-          const rendered = renderSpans.find(
-            (candidate) =>
-              candidate.start_line === span.startLine &&
-              candidate.start_column === span.startColumn,
-          );
-          const afterContent =
-            !inside && span.type === "expression" && rendered?.rendered_text
-              ? `  → ${rendered.rendered_text}`
-              : "";
-          return {
-            range: new monaco.Range(span.startLine, span.startColumn, span.endLine, span.endColumn),
-            options: {
-              inlineClassName:
-                span.type === "expression" ? "bruin-jinja-expression" : "bruin-jinja-statement",
-              after: afterContent
-                ? {
-                    content:
-                      afterContent.length > 80 ? `${afterContent.slice(0, 77)}...` : afterContent,
-                    inlineClassName: "bruin-jinja-rendered-ghost",
-                  }
-                : undefined,
-            },
-          };
-        }),
-      );
+        decorations = editor.deltaDecorations(
+          decorations,
+          spans.map((span) => {
+            const inside = cursorOffset >= span.startOffset && cursorOffset <= span.endOffset;
+            const rendered = renderSpans.find(
+              (candidate) =>
+                candidate.start_line === span.startLine &&
+                candidate.start_column === span.startColumn,
+            );
+            const afterContent =
+              !inside && span.type === "expression" && rendered?.rendered_text
+                ? `  → ${rendered.rendered_text}`
+                : "";
+            return {
+              range: new monaco.Range(
+                span.startLine,
+                span.startColumn,
+                span.endLine,
+                span.endColumn,
+              ),
+              options: {
+                inlineClassName:
+                  span.type === "expression" ? "bruin-jinja-expression" : "bruin-jinja-statement",
+                after: afterContent
+                  ? {
+                      content:
+                        afterContent.length > 80 ? `${afterContent.slice(0, 77)}...` : afterContent,
+                      inlineClassName: "bruin-jinja-rendered-ghost",
+                    }
+                  : undefined,
+              },
+            };
+          }),
+        );
+      } finally {
+        updatingDecorations = false;
+      }
     };
 
     update();

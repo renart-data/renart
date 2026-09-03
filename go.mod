@@ -17,7 +17,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pkg/errors v0.9.1
-	github.com/renart-data/golyglot v0.1.0-alpha.4
+	github.com/renart-data/golyglot v0.1.0-alpha.5
 	github.com/riverqueue/river v0.40.0
 	github.com/riverqueue/river/riverdriver/riversqlite v0.40.0
 	github.com/riverqueue/river/rivertype v0.40.0

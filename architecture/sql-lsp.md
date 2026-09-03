@@ -219,6 +219,11 @@ with ephemeral columns from a sibling's last notebook run, which the backend
 intentionally cannot see. The older schema-wide provider is not registered for
 notebook SQL models, so derived `VALUES`, `DESCRIBE`, CTE, and subquery scopes
 cannot be polluted by unrelated workspace columns.
+Native validation accepts query bodies represented by projections, `VALUES`
+rows, or compound-query branches. Renart does not suppress diagnostics based on
+those shapes: valid `VALUES` roots and CTEs are covered upstream in Golyglot and
+through the notebook adapter, while malformed `SELECT` statements remain
+errors.
 The Build ad-hoc editor also uses this LSP path instead of enabling the older
 global parse-context completion provider, so asset, query-sensor, and ad-hoc SQL
 agree on derived query semantics. The selected pipeline asset is borrowed for

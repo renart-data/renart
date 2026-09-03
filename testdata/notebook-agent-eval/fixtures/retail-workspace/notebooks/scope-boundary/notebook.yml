@@ -1,0 +1,11 @@
+version: 2
+id: 2f94d41d-5d5b-424e-8dcb-8d772b1747fd
+title: Agent scope boundary
+blocks:
+  - markdown:
+      id: scope_note
+      content: |-
+        # Scope check
+
+        This notebook intentionally contains no credentials.
+  - cell: scoped_data

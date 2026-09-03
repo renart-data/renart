@@ -309,8 +309,19 @@ func (s *NotebookService) validateCellSQL(nb *notebook.Notebook, cell *notebook.
 	if assetID == "" {
 		return false, false, false
 	}
+	rt.mu.Lock()
+	parameterValues := cloneNotebookParameterValues(rt.parameterValues)
+	rt.mu.Unlock()
+	renderer, err := s.newNotebookJinjaRenderer("", "", nb.Parameters, parameterValues)
+	if err != nil {
+		return false, false, false
+	}
+	renderedSQL, err := renderer.Render(cell.Asset.ExecutableFile.Content)
+	if err != nil {
+		return false, false, false
+	}
 	schemaTables := s.buildCellSchemaTables(nb, cell, rt)
-	result, apiErr := s.deps.ValidateSQL(context.Background(), assetID, cell.Asset.ExecutableFile.Content, schemaTables)
+	result, apiErr := s.deps.ValidateSQL(context.Background(), assetID, renderedSQL, schemaTables)
 	if apiErr != nil {
 		return false, false, false
 	}
@@ -329,8 +340,8 @@ func (s *NotebookService) validateCellSQL(nb *notebook.Notebook, cell *notebook.
 
 // buildCellSchemaTables describes the tables a cell can read: every sibling cell
 // (its latest run columns when available, else its declared columns) and the
-// cell's external references (registered with no columns, so references resolve
-// but column checks against them stay lenient).
+// cell's external references. Pipeline assets contribute their declared schema
+// so valid cross-pipeline columns do not look unresolved during the safety check.
 func (s *NotebookService) buildCellSchemaTables(nb *notebook.Notebook, cell *notebook.Cell, rt *notebookRuntime) []ParseContextSchemaTable {
 	rt.mu.Lock()
 	resultsCopy := make(map[string]notebook.CellRunResult, len(rt.results))
@@ -373,7 +384,15 @@ func (s *NotebookService) buildCellSchemaTables(nb *notebook.Notebook, cell *not
 			continue
 		}
 		seen[strings.ToLower(ref)] = true
-		tables = append(tables, ParseContextSchemaTable{Name: ref})
+		var columns []ParseContextSchemaColumn
+		if asset := s.pipelineAssetByName(ref); asset != nil {
+			columns = make([]ParseContextSchemaColumn, 0, len(asset.Columns))
+			for index := range asset.Columns {
+				column := &asset.Columns[index]
+				columns = append(columns, ParseContextSchemaColumn{Name: column.Name, Type: column.Type})
+			}
+		}
+		tables = append(tables, ParseContextSchemaTable{Name: ref, Columns: columns})
 	}
 	return tables
 }

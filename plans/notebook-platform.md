@@ -31,7 +31,8 @@ set out to establish:
   command bar;
 - notebook-scoped native Ask/Edit chat plus external MCP, semantic references,
   bounded catalog search, reviewed change sets, execution policy, cancellation,
-  and deterministic fake-provider/protocol coverage;
+  structured questions, turn-scoped credential-blind connection access, and a
+  scored fake/authenticated provider evaluation corpus;
 - reviewed source/transform promotion into ordinary pipeline assets.
 
 The executor boundary is intentionally role-specific. `NotebookBlockExecutor`
@@ -109,6 +110,21 @@ result, duration, and any retry. Current evidence includes a complete Codex
 tool-call/resumption smoke and Claude Code/OpenCode transport health; do not
 claim the latter two as model-driven acceptance until an authenticated corpus
 run succeeds.
+
+`make notebook-agent-eval` runs the deterministic credential-free slice. For a
+local authenticated client, build Renart first and run, for example:
+
+```bash
+node scripts/notebook-agent-eval.mjs --provider codex --all --binary ./renart
+```
+
+The harness copies its fixture into a temporary Git repository, creates an
+ephemeral Postgres only for the remote-source case, and writes JSON/Markdown
+evidence under `.tmp/`. It never commits or pushes. On 2026-08-24, Codex CLI
+0.149.0 was exercised against Ask, SQL repair, checked visualization, empty
+catalog, retained-history choice, Questionnaire, remote Postgres approval,
+revision conflict, and scope-boundary tasks. This is local release evidence,
+not a promise about every provider/model version.
 
 ### 2.4 Accessibility and responsive acceptance
 

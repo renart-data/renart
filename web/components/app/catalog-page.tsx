@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
-import { Filter, Loader2, RotateCw, Search } from "lucide-react";
+import { ChevronRight, Filter, Loader2, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,9 @@ import {
 import { kindMeta } from "./app-data";
 import { AppLineageCanvas, type AppLineageCanvasAsset } from "./lineage-canvas";
 import type { AppLineageLayoutEdge } from "@/lib/app-lineage-layout";
-import { PageHeader, AppPage, AppPanel } from "./app-primitives";
+import { AppContextSidebarFrame } from "./workbench/workbench-context-sidebar";
+import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
+import { cn } from "@/lib/utils";
 
 function catalogAssetsForPipeline(pipeline: WebPipeline): AppLineageCanvasAsset[] {
   return pipeline.assets.map((asset) => catalogAssetFromWorkspace(asset, pipeline));
@@ -64,9 +66,16 @@ export function normalizeAppCatalogSearch(search: Record<string, unknown>): AppC
   };
 }
 
-export function AppCatalogPage({ selectedAssetId }: { selectedAssetId?: string } = {}) {
+export function AppCatalogPage({
+  selectedAssetId,
+  onAssetSelect,
+}: {
+  selectedAssetId?: string;
+  onAssetSelect?: (assetId?: string) => void;
+} = {}) {
   const workspace = useAtomValue(workspaceAtom);
   const navigate = useNavigate();
+  const { setMobileNavigationOpen } = useWorkbench();
   const assetResults = useAssetResults();
   const [query, setQuery] = useState("");
   const [hiddenKinds, setHiddenKinds] = useState<Set<AssetKind>>(() => new Set());
@@ -202,75 +211,118 @@ export function AppCatalogPage({ selectedAssetId }: { selectedAssetId?: string }
   };
 
   const filterActive = hiddenKinds.size > 0;
+  const selectCatalogAsset = (assetId: string) => {
+    onAssetSelect?.(assetId);
+    setMobileNavigationOpen(false);
+  };
 
   return (
-    <AppPage>
-      <PageHeader
-        title="Catalog"
-        subtitle="Explore asset lineage across data_platform"
-        actions={
-          <Button variant="outline" size="sm">
-            <RotateCw className="size-3.5" />
-            Reload
-          </Button>
-        }
-      />
-      <div className="flex items-center gap-2 px-3 pb-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant={filterActive ? "default" : "outline"} size="sm">
-              <Filter className="size-3.5" />
-              Filter
-              {filterActive
-                ? ` (${availableKinds.length - hiddenKinds.size}/${availableKinds.length})`
-                : ""}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-44">
-            <DropdownMenuLabel>Asset type</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {availableKinds.map((kind) => (
-              <DropdownMenuCheckboxItem
-                key={kind}
-                checked={!hiddenKinds.has(kind)}
-                onCheckedChange={() => toggleKind(kind)}
-                onSelect={(event) => event.preventDefault()}
-              >
-                {kindMeta[kind]?.label ?? kind}
-              </DropdownMenuCheckboxItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-8"
-            placeholder="Filter assets by name...  (ex: revenue_daily)"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
-      </div>
-      <div className="min-h-0 flex-1 px-3 pb-3">
-        <AppPanel className="h-full">
-          {workspace ? (
-            <AppLineageCanvas
-              assets={filteredAssets}
-              links={filteredLinks}
-              selectedAssetId={selectedAssetId}
-              focusAssetId={selectedAssetId}
-              onRunAsset={runAsset}
-              onDeleteAsset={removeAsset}
-              onGoToAsset={openInBuild}
-              goToLabel="Open in build"
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+    <div className="h-full min-h-0 bg-background">
+      <WorkbenchPortal slot="context">
+        <AppContextSidebarFrame
+          title="Catalog"
+          subtitle={`${catalogAssets.length} assets across ${workspace?.pipelines.length ?? 0} pipelines`}
+          actions={
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant={filterActive ? "secondary" : "ghost"}
+                  size="icon-sm"
+                  aria-label="Filter asset types"
+                >
+                  <Filter />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel>Asset type</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {availableKinds.map((kind) => (
+                  <DropdownMenuCheckboxItem
+                    key={kind}
+                    checked={!hiddenKinds.has(kind)}
+                    onCheckedChange={() => toggleKind(kind)}
+                    onSelect={(event) => event.preventDefault()}
+                  >
+                    {kindMeta[kind]?.label ?? kind}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          }
+        >
+          <div className="space-y-3 p-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                aria-label="Filter catalog assets"
+                className="h-8 pl-8 text-xs"
+                placeholder="Filter assets..."
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
             </div>
-          )}
-        </AppPanel>
-      </div>
-    </AppPage>
+            {staleness.error ? (
+              <p className="rounded-md bg-destructive/10 px-2 py-1.5 text-[10px] text-destructive">
+                {staleness.error} Cached catalog metadata remains visible.
+              </p>
+            ) : null}
+            <div className="space-y-3">
+              {(workspace?.pipelines ?? []).map((pipeline) => {
+                const pipelineAssets = filteredAssets.filter(
+                  (asset) => asset.pipelineId === pipeline.id,
+                );
+                if (pipelineAssets.length === 0) return null;
+                return (
+                  <section key={pipeline.id}>
+                    <div className="flex items-center gap-2 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <span className="min-w-0 flex-1 truncate">{pipeline.name}</span>
+                      <span className="font-mono">{pipelineAssets.length}</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      {pipelineAssets.map((asset) => {
+                        const Icon = kindMeta[asset.kind].icon;
+                        return (
+                          <button
+                            key={asset.id}
+                            type="button"
+                            className={cn(
+                              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted",
+                              selectedAssetId === asset.id && "bg-primary/10 text-primary",
+                            )}
+                            onClick={() => selectCatalogAsset(asset.id)}
+                          >
+                            <Icon className="size-3.5 shrink-0" />
+                            <span className="min-w-0 flex-1 truncate font-mono">{asset.name}</span>
+                            <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          </div>
+        </AppContextSidebarFrame>
+      </WorkbenchPortal>
+
+      {workspace ? (
+        <AppLineageCanvas
+          assets={filteredAssets}
+          links={filteredLinks}
+          selectedAssetId={selectedAssetId}
+          focusAssetId={selectedAssetId}
+          onAssetSelect={selectCatalogAsset}
+          onRunAsset={runAsset}
+          onDeleteAsset={removeAsset}
+          onGoToAsset={openInBuild}
+          goToLabel="Open in build"
+        />
+      ) : (
+        <div className="flex h-full items-center justify-center">
+          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        </div>
+      )}
+    </div>
   );
 }

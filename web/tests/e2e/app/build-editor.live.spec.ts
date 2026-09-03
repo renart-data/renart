@@ -22,6 +22,105 @@ const customerStatsAssetId = Buffer.from("analytics/assets/analytics/customer_st
 test.describe("app build editor live", () => {
   test.use({ fixtureName: "configured-workspace" });
 
+  test("opens the Data Browser in place and previews selected files in a dialog", async ({
+    liveApp,
+    page,
+  }, testInfo) => {
+    await writeFile(
+      join(liveApp.workspaceDir, "browser-sample.csv"),
+      "id,name\n1,Ada\n2,Grace\n",
+      "utf8",
+    );
+    const buildURL = `${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`;
+    await page.goto(buildURL);
+
+    const isMobile = testInfo.project.name.includes("mobile");
+    const dataBrowserTool = isMobile
+      ? page.getByRole("tab", { name: "Data", exact: true })
+      : page.getByRole("button", { name: "Data Browser", exact: true });
+    await expect(dataBrowserTool).toBeVisible({ timeout: 15000 });
+    await dataBrowserTool.click();
+
+    await expect(page).toHaveURL(buildURL);
+    await expect(page.getByRole("heading", { name: "Data Browser", exact: true })).toBeVisible();
+    await expect(page.locator(".monaco-editor").first()).toBeVisible();
+    await expect(page.getByText("Add a file system", { exact: true })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "SFTP", exact: true })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "FTP", exact: true })).toHaveCount(0);
+
+    await page.getByRole("button", { name: /Project files/ }).click();
+    const sidebarTransition = page.locator('[data-slot="workbench-context-transition"]');
+    await expect(sidebarTransition).toHaveAttribute("data-direction", "forward");
+    await expect(sidebarTransition).toHaveClass(/slide-in-from-right-2/);
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(sidebarTransition).toHaveAttribute("data-direction", "back");
+    await expect(sidebarTransition).toHaveClass(/slide-in-from-left-2/);
+
+    await page.getByRole("button", { name: /Project files/ }).click();
+    await page.getByRole("button", { name: /browser-sample\.csv/ }).click();
+
+    const detail = page.getByRole("dialog", { name: "Data object details" });
+    await expect(detail).toBeVisible();
+    await expect(detail.getByRole("heading", { name: "browser-sample.csv" })).toBeVisible();
+    await expect(detail.getByRole("tab", { name: /Columns/ })).toContainText("2");
+    await expect(page).toHaveURL(buildURL);
+  });
+
+  test("uses either the responsive properties drawer or the persistent inspector", async ({
+    liveApp,
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name.includes("mobile"), "This checks desktop breakpoints.");
+
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/split`);
+
+    const propertiesButton = page.getByRole("button", { name: "Asset properties" });
+    await expect(propertiesButton).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole("button", { name: "Render saved asset" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Inspect", exact: true })).toHaveCount(0);
+    const resultsTabs = page
+      .getByRole("tab", { name: "Inspect", exact: true })
+      .locator("xpath=ancestor::*[@data-slot='tabs'][1]");
+    await expect
+      .poll(() => resultsTabs.evaluate((element) => getComputedStyle(element).gap))
+      .toBe("0px");
+    await expect(page.getByRole("complementary", { name: "Inspector" })).toBeHidden();
+    await propertiesButton.click();
+    const propertiesDrawer = page.getByRole("dialog", { name: "Asset properties" });
+    await expect(propertiesDrawer).toBeVisible();
+    await propertiesDrawer.getByRole("button", { name: "Close" }).click();
+
+    await page.setViewportSize({ width: 1280, height: 768 });
+    await expect(propertiesButton).toBeHidden();
+    await expect(page.getByRole("complementary", { name: "Inspector" })).toBeVisible();
+  });
+
+  test("keeps mobile Explorer actions clear of the Sheet close button", async ({
+    liveApp,
+    page,
+  }, testInfo) => {
+    test.skip(!testInfo.project.name.includes("mobile"), "This checks the mobile Sheet header.");
+
+    await page.setViewportSize({ width: 482, height: 768 });
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/split`);
+    await page.getByRole("tab", { name: "Resources", exact: true }).click();
+
+    const drawer = page.getByRole("dialog", { name: "Build navigation" });
+    const closeButton = drawer.getByRole("button", { name: "Close" });
+    const newPipelineButton = drawer.getByRole("button", { name: "New pipeline" });
+    await expect(closeButton).toBeVisible();
+    await expect(newPipelineButton).toBeVisible();
+    const closeBox = await closeButton.boundingBox();
+    const newPipelineBox = await newPipelineButton.boundingBox();
+    expect(closeBox).not.toBeNull();
+    expect(newPipelineBox).not.toBeNull();
+    expect(
+      Math.min(closeBox!.x + closeBox!.width, newPipelineBox!.x + newPipelineBox!.width) -
+        Math.max(closeBox!.x, newPipelineBox!.x),
+    ).toBeLessThanOrEqual(0);
+  });
+
   test("edits an asset in Monaco and persists the change", async ({ liveApp, page }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
 
@@ -163,7 +262,10 @@ select customer_id, customer_name from analytics.customers
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole("button", { name: "Pipeline settings" }).click();
+    await page
+      .getByRole("complementary", { name: "build tools" })
+      .getByRole("button", { name: "Pipeline settings", exact: true })
+      .click();
     const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
     await expect(dialog).toBeVisible({ timeout: 15000 });
     const settingsSidebar = dialog.getByRole("tablist", {
@@ -229,7 +331,10 @@ select customer_id, customer_name from analytics.customers
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
-    await page.getByRole("button", { name: "Pipeline settings" }).click();
+    await page
+      .getByRole("complementary", { name: "build tools" })
+      .getByRole("button", { name: "Pipeline settings", exact: true })
+      .click();
 
     const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
     await dialog.getByRole("tab", { name: "Connections" }).click();
@@ -272,7 +377,10 @@ select customer_id, customer_name from analytics.customers
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
-    await page.getByRole("button", { name: "Pipeline settings" }).click();
+    await page
+      .getByRole("complementary", { name: "build tools" })
+      .getByRole("button", { name: "Pipeline settings", exact: true })
+      .click();
 
     const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
     await expect(dialog).toBeVisible({ timeout: 15000 });
@@ -346,8 +454,7 @@ select customer_id, customer_name from analytics.customers
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
-    await page.getByRole("button", { name: "Open explorer" }).click();
-    await page.getByRole("button", { name: "Pipeline settings" }).click();
+    await page.getByRole("tab", { name: "Pipeline", exact: true }).click();
 
     const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
     await expect(dialog).toBeVisible({ timeout: 15000 });
@@ -366,7 +473,10 @@ select customer_id, customer_name from analytics.customers
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
-    await page.getByRole("button", { name: "Pipeline settings" }).click();
+    await page
+      .getByRole("complementary", { name: "build tools" })
+      .getByRole("button", { name: "Pipeline settings", exact: true })
+      .click();
 
     const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
     await expect(dialog.getByRole("tab", { name: "Schedule", exact: true })).toHaveCount(0);
@@ -389,7 +499,10 @@ select customer_id, customer_name from analytics.customers
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
-    await page.getByRole("button", { name: "Pipeline settings" }).click();
+    await page
+      .getByRole("complementary", { name: "build tools" })
+      .getByRole("button", { name: "Pipeline settings", exact: true })
+      .click();
 
     const dialog = page.getByRole("dialog", { name: /Pipeline settings/ });
     await dialog.getByRole("textbox", { name: "Owner" }).fill("data@example.com");

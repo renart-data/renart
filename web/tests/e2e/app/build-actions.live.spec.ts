@@ -123,7 +123,74 @@ test.describe("app build actions live", () => {
     );
   });
 
-  test("materialize and inspect buttons run the real asset", async ({ liveApp, page }) => {
+  test("keeps asset, ad-hoc, and notebook documents in the workbench tab strip", async ({
+    liveApp,
+    page,
+  }) => {
+    const mobile = test.info().project.name.includes("mobile");
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/canvas`);
+
+    const documents = page.getByRole("tablist", { name: "Open authoring documents" });
+    await expect(documents.getByRole("tab", { name: "customers.sql" })).toBeVisible({
+      timeout: 15000,
+    });
+
+    if (mobile) {
+      await page
+        .getByRole("tablist", { name: "build tools" })
+        .getByRole("tab", { name: "Query", exact: true })
+        .click();
+    } else {
+      const rail = page.getByRole("complementary", { name: "build tools" });
+      await rail.getByRole("button", { name: "Ad-hoc query", exact: true }).click();
+    }
+
+    await expect(documents.getByRole("tab", { name: "Ad-hoc query" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(page.getByTestId("adhoc-editor-workspace")).toBeVisible();
+    await expect(page.locator(".react-flow")).toHaveCount(0);
+
+    const notebookResponse = await page.request.post(`${liveApp.baseURL}/api/notebooks`, {
+      data: { title: "Workbench notes" },
+    });
+    expect(notebookResponse.ok()).toBe(true);
+    const notebookId = ((await notebookResponse.json()) as { notebook: { id: string } }).notebook
+      .id;
+    await page.goto(`${liveApp.baseURL}/notebooks/${notebookId}`);
+    await expect(documents.getByRole("tab", { name: "Workbench notes" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+      { timeout: 15000 },
+    );
+    await expect(documents.getByRole("tab", { name: "customers.sql" })).toBeVisible();
+    await expect(documents.getByRole("tab", { name: "Ad-hoc query" })).toBeVisible();
+
+    await documents.getByRole("tab", { name: "customers.sql" }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/pipelines/${pipelineId}/assets/${customersAssetId}/code(?:[?].*)?$`),
+    );
+    await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
+      timeout: 15000,
+    });
+
+    if (!mobile) {
+      const rail = page.getByRole("complementary", { name: "build tools" });
+      const adHocTool = rail.getByRole("button", { name: "Ad-hoc query", exact: true });
+      await adHocTool.click();
+      await expect(documents.getByRole("tab", { name: "Ad-hoc query" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await adHocTool.click();
+      await expect(page.getByRole("complementary", { name: "Build navigation" })).toHaveCount(0);
+      await adHocTool.click();
+      await expect(page.getByRole("complementary", { name: "Build navigation" })).toBeVisible();
+    }
+  });
+
+  test("materialize action and inspect panel run the real asset", async ({ liveApp, page }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
       timeout: 15000,
@@ -161,8 +228,8 @@ test.describe("app build actions live", () => {
         response.url().includes(`/api/assets/${customersAssetId}/inspect`) && response.ok(),
       { timeout: 30000 },
     );
-    await page.getByRole("button", { name: "Inspect", exact: true }).click();
     await inspectResponse;
+    await page.getByRole("tab", { name: "Inspect", exact: true }).click();
 
     await expect(page.getByText("Ada").first()).toBeVisible({ timeout: 15000 });
 
@@ -256,7 +323,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
         response.url().includes(`/api/pipelines/${pipelineId}/assets/render`) && response.ok(),
       { timeout: 30000 },
     );
-    await page.getByRole("button", { name: "Render saved asset", exact: true }).click();
+    await page.getByRole("tab", { name: "Render", exact: true }).click();
     const response = await renderResponse;
     expect(response.request().postDataJSON()).toMatchObject({
       asset_name: "analytics.customers",
@@ -1095,12 +1162,9 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     liveApp,
     page,
   }) => {
-    // Asserts the explorer entry and the top-bar "Ad-hoc" link highlight in
-    // tandem; both are desktop chrome (the explorer is a drawer on mobile and the
-    // top-bar link is hidden below lg).
     test.skip(
       test.info().project.name.includes("mobile"),
-      "Explorer + top-bar ad-hoc affordances are desktop-only.",
+      "The Workbench rail ad-hoc affordance is desktop-only.",
     );
 
     await writeFile(
@@ -1133,47 +1197,55 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(page.locator(".react-flow").first()).toBeVisible({ timeout: 15000 });
 
     // Filtering narrows the current pipeline's assets and can be cleared.
-    const filter = page.getByRole("textbox", { name: "Filter assets" });
+    const buildNavigation = page.getByRole("complementary", { name: "Build navigation" });
+    const filter = buildNavigation.getByRole("textbox", { name: "Filter assets" });
     await filter.fill("orders");
-    await expect(page.getByRole("button", { name: /orders\.sql/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /customers\.sql/ })).toHaveCount(0);
+    await expect(buildNavigation.getByRole("button", { name: /orders\.sql/ })).toBeVisible();
+    await expect(buildNavigation.getByRole("button", { name: /customers\.sql/ })).toHaveCount(0);
     await filter.fill("no-such-asset");
-    await expect(page.getByText("No matching assets.")).toBeVisible();
-    await page.getByRole("button", { name: "Clear asset filter" }).click();
-    await expect(page.getByRole("button", { name: /customers\.sql/ })).toBeVisible();
+    await expect(buildNavigation.getByText("No matching assets.")).toBeVisible();
+    await buildNavigation.getByRole("button", { name: "Clear asset filter" }).click();
+    await expect(buildNavigation.getByRole("button", { name: /customers\.sql/ })).toBeVisible();
 
-    // Opening ad hoc from a split view keeps the split layout.
-    await page.getByRole("button", { name: "Ad-hoc query" }).click();
+    // Opening ad hoc from the Workbench rail preserves its asset context in the
+    // URL while the dedicated scratch document replaces the asset editor/canvas.
+    const adHocTool = page
+      .getByRole("complementary", { name: "build tools" })
+      .getByRole("button", { name: "Ad-hoc query", exact: true });
+    await adHocTool.click();
     await expect(page).toHaveURL(
       new RegExp(
         `/pipelines/${pipelineId}/assets/${customersAssetId}/split[?].*editor=adhoc(?:&|$)`,
       ),
     );
 
-    const canvasCustomer = page
-      .locator(`[data-testid="lineage-asset"][data-asset-id="${customersAssetId}"]`)
-      .locator('[data-slot="asset-node"]');
-    const selectedBorderClass = /(?:^|\s)border-primary(?:\s|$)/;
-    await expect(canvasCustomer).not.toHaveClass(selectedBorderClass);
-
     const scratchWorkspace = page.getByTestId("adhoc-editor-workspace");
     await expect(scratchWorkspace).toHaveClass(/bg-primary\/5/);
+    await expect(page.locator(".react-flow")).toHaveCount(0);
+    await expect(
+      page
+        .getByRole("tablist", { name: "Open authoring documents" })
+        .getByRole("tab", { name: "Ad-hoc query" }),
+    ).toHaveAttribute("aria-selected", "true");
 
     const editor = page.locator(".monaco-editor").first();
     await expect(editor).toBeVisible({ timeout: 15000 });
     await expect(page.getByText("Ad-hoc query").first()).toBeVisible();
 
-    // Both the explorer entry and the top-bar button highlight the ad hoc mode.
-    await expect(page.locator("button", { hasText: "Ad-hoc query" }).first()).toHaveClass(
-      /ring-primary/,
-    );
-    await expect(page.getByRole("link", { name: "Ad-hoc" }).first()).toHaveClass(/ring-primary/);
+    await expect(adHocTool).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      buildNavigation.getByRole("button", { name: "Ad-hoc query", exact: true }),
+    ).toHaveCount(0);
 
     // Selecting even the same context asset leaves scratch mode and restores
     // the repository-backed asset editor and canvas selection.
-    await page.getByRole("button", { name: /customers\.sql/ }).click();
+    await buildNavigation.getByRole("button", { name: /customers\.sql/ }).click();
     await expect.poll(() => new URL(page.url()).searchParams.get("editor")).toBe("asset");
     await expect(scratchWorkspace).toHaveCount(0);
+    const canvasCustomer = page
+      .locator(`[data-testid="lineage-asset"][data-asset-id="${customersAssetId}"]`)
+      .locator('[data-slot="asset-node"]');
+    const selectedBorderClass = /(?:^|\s)border-primary(?:\s|$)/;
     await expect(canvasCustomer).toHaveClass(selectedBorderClass);
 
     // Conversely, the Query result tab owns the scratch editor and opens it
@@ -1182,7 +1254,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect.poll(() => new URL(page.url()).searchParams.get("result")).toBe("query");
     await expect.poll(() => new URL(page.url()).searchParams.get("editor")).toBe("adhoc");
     await expect(scratchWorkspace).toBeVisible();
-    await expect(canvasCustomer).not.toHaveClass(selectedBorderClass);
+    await expect(page.locator(".react-flow")).toHaveCount(0);
 
     const connectionSelect = page.getByRole("combobox", { name: "Ad-hoc connection" });
     await expect(connectionSelect).toContainText("duckdb-default");
@@ -1315,11 +1387,14 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
   test("converts an ad hoc query to an asset and a notebook cell", async ({ liveApp, page }) => {
     test.skip(
       test.info().project.name.includes("mobile"),
-      "The desktop Build header exposes the ad-hoc conversion actions.",
+      "The desktop Workbench rail exposes the ad-hoc conversion actions.",
     );
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
-    await page.getByRole("button", { name: "Ad-hoc query" }).click();
+    const adHocTool = page
+      .getByRole("complementary", { name: "build tools" })
+      .getByRole("button", { name: "Ad-hoc query", exact: true });
+    await adHocTool.click();
     const editor = page.locator(".monaco-editor").first();
     await expect(editor).toBeVisible({ timeout: 15000 });
     const query = "select 42 as converted_marker";
@@ -1357,7 +1432,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     expect(convertedAsset?.type).toBe("duckdb.sql");
     expect(convertedAsset?.explicit_connection).toBe("duckdb-default");
 
-    await page.getByRole("button", { name: "Ad-hoc query" }).click();
+    await adHocTool.click();
     await expect(page.locator(".view-lines").first()).toContainText("converted_marker", {
       timeout: 15000,
     });
@@ -1377,17 +1452,21 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     });
   });
 
-  test("ad hoc mode adds a split editor to canvas and preserves full-size code", async ({
+  test("ad hoc document preserves the asset route and full-size code", async ({
     liveApp,
     page,
   }) => {
     test.skip(
       test.info().project.name.includes("mobile"),
-      "The top-bar ad-hoc affordance is hidden below lg.",
+      "This route-preservation assertion targets the desktop Workbench rail.",
     );
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/canvas`);
-    await page.getByRole("link", { name: "Ad-hoc" }).click();
+    const adHocTool = page
+      .getByRole("complementary", { name: "build tools" })
+      .getByRole("button", { name: "Ad-hoc query", exact: true });
+    await expect(adHocTool).toHaveAttribute("aria-pressed", "false");
+    await adHocTool.click();
     await expect(page).toHaveURL(
       new RegExp(
         `/pipelines/${pipelineId}/assets/${customersAssetId}/split[?].*editor=adhoc(?:&|$)`,
@@ -1395,7 +1474,8 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     );
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
-    await page.getByRole("link", { name: "Ad-hoc" }).click();
+    await expect(adHocTool).toHaveAttribute("aria-pressed", "false");
+    await adHocTool.click();
     await expect(page).toHaveURL(
       new RegExp(
         `/pipelines/${pipelineId}/assets/${customersAssetId}/code[?].*editor=adhoc(?:&|$)`,

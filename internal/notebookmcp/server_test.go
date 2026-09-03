@@ -31,6 +31,88 @@ type fakeBackend struct {
 	cancels   int
 }
 
+type nativeInteractionBackend struct {
+	*fakeBackend
+	notebookID        string
+	turnToken         string
+	request           service.NotebookAgentQuestionnaireRequest
+	connectionRequest service.NotebookAgentConnectionAccessRequest
+}
+
+func (f *nativeInteractionBackend) RequestNotebookAgentConnectionAccess(
+	_ context.Context,
+	notebookID string,
+	turnToken string,
+	request service.NotebookAgentConnectionAccessRequest,
+) (service.NotebookAgentInteractionResult, error) {
+	f.notebookID = notebookID
+	f.turnToken = turnToken
+	f.connectionRequest = request
+	return service.NotebookAgentInteractionResult{
+		Status: "answered",
+		Connection: &service.NotebookAgentQueryConnection{
+			Name: "postgres-analytics", ConnectionType: "postgres", Granted: true,
+		},
+	}, nil
+}
+
+func (f *nativeInteractionBackend) ListNotebookAgentQueryConnections(
+	_ context.Context,
+	notebookID string,
+	turnToken string,
+) (service.NotebookAgentConnectionListResult, error) {
+	f.notebookID = notebookID
+	f.turnToken = turnToken
+	return service.NotebookAgentConnectionListResult{Connections: []service.NotebookAgentQueryConnection{{
+		Name: "postgres-analytics", ConnectionType: "postgres", Granted: true,
+	}}}, nil
+}
+
+func (f *nativeInteractionBackend) DiscoverNotebookAgentConnectionCatalog(
+	_ context.Context,
+	notebookID string,
+	turnToken string,
+	request service.NotebookAgentConnectionCatalogRequest,
+) (service.NotebookAgentConnectionCatalogResult, error) {
+	f.notebookID = notebookID
+	f.turnToken = turnToken
+	return service.NotebookAgentConnectionCatalogResult{
+		Level: request.Level, Databases: []string{"analytics"},
+	}, nil
+}
+
+func (f *nativeInteractionBackend) QueryNotebookAgentConnectionSample(
+	_ context.Context,
+	notebookID string,
+	turnToken string,
+	request service.NotebookAgentConnectionSampleRequest,
+) (service.NotebookAgentConnectionSampleResult, error) {
+	f.notebookID = notebookID
+	f.turnToken = turnToken
+	return service.NotebookAgentConnectionSampleResult{
+		Columns: []string{"orders"}, Rows: []map[string]any{{"orders": 42}},
+		SuggestedSource: service.NotebookAgentSourceRecipe{Content: request.Query},
+	}, nil
+}
+
+func (f *nativeInteractionBackend) RequestNotebookAgentQuestionnaire(
+	_ context.Context,
+	notebookID string,
+	turnToken string,
+	request service.NotebookAgentQuestionnaireRequest,
+) (service.NotebookAgentInteractionResult, error) {
+	f.notebookID = notebookID
+	f.turnToken = turnToken
+	f.request = request
+	return service.NotebookAgentInteractionResult{
+		Status: "answered",
+		Answers: []service.NotebookAgentQuestionAnswer{{
+			QuestionID: "metric",
+			Values:     []string{"revenue"},
+		}},
+	}, nil
+}
+
 func (f *fakeBackend) Workspace(context.Context) (model.WorkspaceState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -238,6 +320,94 @@ func TestNativeAgentPolicyScopesNotebookAndCapabilities(t *testing.T) {
 	})
 	if !strings.Contains(errorText, "outside this agent session") {
 		t.Fatalf("unexpected cross-notebook error: %s", errorText)
+	}
+}
+
+func TestNativeInteractionToolRequiresPrivateTurnBinding(t *testing.T) {
+	backend := &nativeInteractionBackend{fakeBackend: fixtureBackend()}
+	fixture := connectTestServerWithPolicy(t, backend, Policy{
+		NotebookID:         "notebook_opaque",
+		ReadOnly:           true,
+		NoRuns:             true,
+		NativeTurnToken:    "opaque-turn-token",
+		NativeInteractions: backend,
+	})
+	defer fixture.close()
+
+	listed, err := fixture.client.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(listed.Tools), 10; got != want {
+		t.Fatalf("native tool count = %d, want %d", got, want)
+	}
+	var found bool
+	for _, tool := range listed.Tools {
+		if tool.Name == "ask_user" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("native agent policy did not expose ask_user")
+	}
+
+	result := callTool[service.NotebookAgentInteractionResult](t, fixture.client, "ask_user", map[string]any{
+		"title": "Choose a metric",
+		"questions": []map[string]any{{
+			"id": "metric", "kind": "single_choice", "prompt": "Which metric?", "required": true,
+			"options": []map[string]any{
+				{"value": "revenue", "label": "Revenue"},
+				{"value": "orders", "label": "Orders"},
+			},
+		}},
+	})
+	if result.Status != "answered" || result.Answers[0].Values[0] != "revenue" {
+		t.Fatalf("unexpected native interaction result: %+v", result)
+	}
+	if backend.notebookID != "notebook_opaque" || backend.turnToken != "opaque-turn-token" || backend.request.Title != "Choose a metric" {
+		t.Fatalf("native interaction binding was not forwarded: %+v", backend)
+	}
+}
+
+func TestNativeEditPolicyExposesCredentialBlindConnectionTools(t *testing.T) {
+	backend := &nativeInteractionBackend{fakeBackend: fixtureBackend()}
+	fixture := connectTestServerWithPolicy(t, backend, Policy{
+		NotebookID:         "notebook_opaque",
+		NoRuns:             true,
+		NativeTurnToken:    "opaque-turn-token",
+		NativeInteractions: backend,
+	})
+	defer fixture.close()
+
+	listed, err := fixture.client.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(listed.Tools), 18; got != want {
+		t.Fatalf("native Edit tool count = %d, want %d", got, want)
+	}
+	for _, name := range []string{
+		"request_connection_access", "list_query_connections",
+		"discover_connection_catalog", "query_connection_sample",
+	} {
+		findTool(t, listed.Tools, name)
+	}
+
+	approval := callTool[service.NotebookAgentInteractionResult](t, fixture.client, "request_connection_access", map[string]any{
+		"title": "Use analytics", "connection_type": "postgres",
+	})
+	if approval.Connection == nil || approval.Connection.Name != "postgres-analytics" {
+		t.Fatalf("unexpected connection approval: %+v", approval)
+	}
+	if backend.notebookID != "notebook_opaque" || backend.turnToken != "opaque-turn-token" || backend.connectionRequest.ConnectionType != "postgres" {
+		t.Fatalf("native connection binding was not forwarded: %+v", backend)
+	}
+
+	sample := callTool[service.NotebookAgentConnectionSampleResult](t, fixture.client, "query_connection_sample", map[string]any{
+		"connection_name": "postgres-analytics", "query": "select count(*) as orders from public.orders",
+	})
+	if len(sample.Rows) != 1 || sample.Rows[0]["orders"] != float64(42) {
+		t.Fatalf("unexpected connection sample: %+v", sample)
 	}
 }
 

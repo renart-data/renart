@@ -1,0 +1,11 @@
+version: 2
+id: 93b6285e-0251-481d-9f24-80e51d81d055
+title: Failing order analysis
+blocks:
+  - markdown:
+      id: failing_intro
+      content: |-
+        # Order analysis
+
+        This draft should summarize completed order revenue.
+  - cell: broken_orders

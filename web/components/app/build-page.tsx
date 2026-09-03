@@ -78,11 +78,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  DelimitedCardContent,
-  DelimitedCardHeader,
-  DelimitedCardTitle,
-} from "@/components/ui/delimited-card";
+import { DelimitedCardContent, DelimitedCardHeader } from "@/components/ui/delimited-card";
 import { Input } from "@/components/ui/input";
 import {
   InputGroup,
@@ -164,6 +160,15 @@ import { ApiParametersEditor } from "./api-parameters-editor";
 import { AssetGuidedCards, type QualityCheckFocus } from "./asset-guided-cards";
 import { NewAssetDialog, NewFolderDialog, NewPipelineDialog } from "./build-create-dialogs";
 import { ConnectionSelect } from "./connection-select";
+import {
+  appAssetViewPath,
+  appBuildViewFromPath,
+  appResultTabs,
+  type AppBuildSearch,
+  type AppBuildView,
+  type AppEditorMode,
+  type AppResultTab,
+} from "./build-route-model";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { SqlPreview } from "./sql-preview";
 import { LoadParametersEditor } from "./load-parameters-editor";
@@ -177,10 +182,18 @@ import {
   assetNameParts,
   type AppLineageCanvasAsset,
 } from "./lineage-canvas";
-import { NewNotebookDialog } from "./new-notebook-dialog";
 import type { PipelineSettingsSection } from "./pipeline-settings-dialog";
 import { TypeCheckPanel } from "./type-check-panel";
 import { ExternalRelationImportDialog } from "./external-relation-import-dialog";
+import {
+  buildAssetDocumentKey,
+  buildDocumentKey,
+  documentAfterClose,
+  type BuildDocument,
+  useBuildDocuments,
+} from "./workbench/build-document-state";
+import { BuildDocumentTabs } from "./workbench/build-document-tabs";
+import { WorkbenchPortal, WorkbenchToolAction, useWorkbench } from "./workbench/workbench-slots";
 import {
   AppPage,
   AppPanel,
@@ -196,29 +209,11 @@ const PipelineSettingsDialog = lazy(async () => {
   const module = await import("./pipeline-settings-dialog");
   return { default: module.PipelineSettingsDialog };
 });
-
-export type AppBuildView = "canvas" | "split" | "code";
-export type AppResultTab = "inspect" | "render" | "materialize" | "query" | "typecheck";
-export type AppEditorMode = "asset" | "adhoc";
-
-export type AppBuildSearch = {
-  result?: AppResultTab;
-  editor?: AppEditorMode;
-};
-
-const resultTabs: AppResultTab[] = ["inspect", "render", "materialize", "query", "typecheck"];
-const editorModes: AppEditorMode[] = ["asset", "adhoc"];
-
-export function normalizeAppBuildSearch(search: Record<string, unknown>): AppBuildSearch {
-  return {
-    result: resultTabs.includes(search.result as AppResultTab)
-      ? (search.result as AppResultTab)
-      : undefined,
-    editor: editorModes.includes(search.editor as AppEditorMode)
-      ? (search.editor as AppEditorMode)
-      : undefined,
-  };
-}
+const DataBrowserSidebar = lazy(async () => {
+  const module = await import("./data-browser/data-browser");
+  return { default: module.AppDataBrowserSidebar };
+});
+const resultTabs = appResultTabs;
 
 function PipelineSettingsLoadingDialog() {
   return (
@@ -241,6 +236,20 @@ function PipelineSettingsLoadingDialog() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function DataBrowserSidebarLoading() {
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-card">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3 pr-12 md:pr-3">
+        <Database className="size-4 text-primary" />
+        <h2 className="min-w-0 truncate text-xs font-semibold">Data Browser</h2>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
+        <Spinner /> Loading data sources…
+      </div>
+    </div>
   );
 }
 
@@ -449,6 +458,16 @@ export function AppBuildPage({
 }) {
   const workspace = useAtomValue(workspaceAtom);
   const catalogReady = useAtomValue(sqlCatalogReadyEventAtom);
+  const {
+    navigation: workbenchNavigation,
+    session: workbenchSession,
+    dispatch: workbenchDispatch,
+    mobileNavigationOpen,
+    setMobileNavigationOpen,
+  } = useWorkbench();
+  const workbenchEnabled = Boolean(workbenchNavigation?.workbench);
+  const activeWorkbenchTool = workbenchSession.modes.build.activeTool;
+  const isMobileWorkbench = useIsMobile();
   const navigate = useNavigate();
   const location = useLocation();
   const view = appBuildViewFromPath(location.pathname);
@@ -823,6 +842,37 @@ export function AppBuildPage({
   const selectedAsset =
     displayedPipelineAssets.find((asset) => asset.id === effectiveSelectedAssetId) ??
     displayedPipelineAssets[0];
+  const availableBuildAssetKeys = useMemo(
+    () =>
+      new Set(
+        (workspace?.pipelines ?? []).flatMap((pipeline) =>
+          pipeline.assets.map((asset) => buildAssetDocumentKey(pipeline.id, asset.id)),
+        ),
+      ),
+    [workspace?.pipelines],
+  );
+  const availableNotebookIds = useMemo(
+    () => new Set((workspace?.notebooks ?? []).map((notebook) => notebook.id)),
+    [workspace?.notebooks],
+  );
+  const activeBuildDocument = useMemo<BuildDocument | null>(() => {
+    if (editorMode === "adhoc" && selectedAsset) {
+      return {
+        kind: "adhoc",
+        pipelineId,
+        contextAssetId: selectedAsset.id,
+      };
+    }
+    return selectedAssetId ? { kind: "asset", pipelineId, assetId: selectedAssetId } : null;
+  }, [editorMode, pipelineId, selectedAsset, selectedAssetId]);
+  const { documents: buildDocuments, closeDocument: removeBuildDocument } = useBuildDocuments({
+    projectId: workbenchSession.projectId,
+    activeDocument: activeBuildDocument,
+    availableAssetKeys: availableBuildAssetKeys,
+    availableNotebookIds,
+    resourcesReady: Boolean(workspace),
+  });
+  const [documentSaveError, setDocumentSaveError] = useState<string | null>(null);
   const selectedWorkspaceAsset = selectedAsset?.workspaceAsset;
   const selectedAssetSavedIntentContent = selectedWorkspaceAsset
     ? (editorDraft[selectedWorkspaceAsset.id] ?? selectedWorkspaceAsset.content)
@@ -898,11 +948,21 @@ export function AppBuildPage({
     PipelineSettingsSection | undefined
   >(undefined);
   const [pipelineSettingsVariable, setPipelineSettingsVariable] = useState<string | undefined>();
+  const afterMobileNavigationCloses = (action: () => void) => {
+    if (workbenchEnabled && mobileNavigationOpen) {
+      setMobileNavigationOpen(false);
+      window.setTimeout(action, 220);
+      return;
+    }
+    action();
+  };
   const openPipelineSettings = (section?: PipelineSettingsSection, variableName?: string) => {
-    setExplorerOpen(false);
-    setPipelineSettingsSection(section);
-    setPipelineSettingsVariable(variableName);
-    setPipelineSettingsOpen(true);
+    afterMobileNavigationCloses(() => {
+      setExplorerOpen(false);
+      setPipelineSettingsSection(section);
+      setPipelineSettingsVariable(variableName);
+      setPipelineSettingsOpen(true);
+    });
   };
   const openJinjaVariable = (variableName: string) =>
     openPipelineSettings("variables", variableName);
@@ -1328,6 +1388,10 @@ export function AppBuildPage({
   };
   const selectAsset = (assetId: string) => {
     pickAsset(assetId);
+    if (workbenchEnabled) {
+      workbenchDispatch({ type: "tool-selected", mode: "build", tool: "resources" });
+      setMobileNavigationOpen(false);
+    }
     // The local selection can swap Monaco immediately. Route reconciliation
     // (including the canvas highlight and URL) is non-urgent and must not hold
     // that paint behind the rest of the Build view.
@@ -1384,6 +1448,14 @@ export function AppBuildPage({
   // when it does not. Clicking again toggles back to the current asset.
   const openAdhoc = () => {
     setExplorerOpen(false);
+    if (workbenchEnabled) {
+      workbenchDispatch({
+        type: "tool-selected",
+        mode: "build",
+        tool: editorMode === "adhoc" ? "resources" : "ad-hoc",
+      });
+      setMobileNavigationOpen(false);
+    }
     if (editorMode === "adhoc") {
       void navigate({
         to: appAssetViewPath(view),
@@ -1403,11 +1475,13 @@ export function AppBuildPage({
     });
   };
   const openNewAsset = () => {
-    setDownstreamSource(null);
-    setNewAssetPrefix(null);
-    setNewAssetInitialExecutableContent(null);
-    setNewAssetInitialConnection(null);
-    setNewAssetOpen(true);
+    afterMobileNavigationCloses(() => {
+      setDownstreamSource(null);
+      setNewAssetPrefix(null);
+      setNewAssetInitialExecutableContent(null);
+      setNewAssetInitialConnection(null);
+      setNewAssetOpen(true);
+    });
   };
   // Canvas right-click entry point: seeds the dialog's name suggestion with
   // the prefix group the click landed in.
@@ -1436,6 +1510,77 @@ export function AppBuildPage({
     setNewAssetInitialExecutableContent(adhocQuery);
     setNewAssetInitialConnection(adhocConnection?.name ?? null);
     setNewAssetOpen(true);
+  };
+
+  const navigateToBuildDocument = async (document: BuildDocument | null) => {
+    setDocumentSaveError(null);
+    if (!document) {
+      await navigate({
+        to: "/pipelines/$pipelineId/canvas",
+        params: { pipelineId },
+        search: {
+          ...buildSearch,
+          result: buildSearch.result === "query" ? "inspect" : buildSearch.result,
+          editor: "asset",
+        },
+      });
+      return;
+    }
+    if (document.kind === "notebook") {
+      await navigate({
+        to: "/notebooks/$notebookId",
+        params: { notebookId: document.notebookId },
+      });
+      return;
+    }
+    if (document.kind === "adhoc") {
+      await navigate({
+        to: appAssetViewPath(view === "canvas" ? "split" : view),
+        params: {
+          pipelineId: document.pipelineId,
+          assetId: document.contextAssetId,
+        },
+        search: { ...buildSearch, editor: "adhoc" },
+      });
+      return;
+    }
+    await navigate({
+      to: appAssetViewPath(view),
+      params: { pipelineId: document.pipelineId, assetId: document.assetId },
+      search: {
+        ...buildSearch,
+        result: buildSearch.result === "query" ? "inspect" : buildSearch.result,
+        editor: "asset",
+      },
+    });
+  };
+
+  const selectBuildDocument = async (document: BuildDocument) => {
+    const activeKey = activeBuildDocument ? buildDocumentKey(activeBuildDocument) : null;
+    if (buildDocumentKey(document) === activeKey) return;
+    try {
+      await awaitWorkspaceSaves();
+      await navigateToBuildDocument(document);
+    } catch (error) {
+      setDocumentSaveError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const closeBuildDocument = async (document: BuildDocument) => {
+    const key = buildDocumentKey(document);
+    const activeKey = activeBuildDocument ? buildDocumentKey(activeBuildDocument) : null;
+    if (key !== activeKey) {
+      removeBuildDocument(key);
+      return;
+    }
+    try {
+      await awaitWorkspaceSaves();
+      const next = documentAfterClose(buildDocuments, key);
+      await navigateToBuildDocument(next);
+      removeBuildDocument(key);
+    } catch (error) {
+      setDocumentSaveError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   if (!workspace) {
@@ -1569,43 +1714,102 @@ export function AppBuildPage({
 
   return (
     <BuildContext.Provider value={buildContext}>
+      {workbenchEnabled ? (
+        <>
+          <WorkbenchToolAction
+            tool="resources"
+            action={() => {
+              if (editorMode === "adhoc") openAdhoc();
+            }}
+          />
+          <WorkbenchToolAction tool="ad-hoc" action={openAdhoc} />
+          <WorkbenchToolAction
+            tool="data"
+            action={() => {
+              if (isMobileWorkbench) {
+                window.setTimeout(() => setMobileNavigationOpen(true), 0);
+              }
+            }}
+          />
+          <WorkbenchToolAction tool="pipeline-settings" action={() => openPipelineSettings()} />
+        </>
+      ) : null}
+      {workbenchEnabled ? (
+        <WorkbenchPortal slot="context">
+          <div className="flex h-full min-h-0 flex-col">
+            {activeWorkbenchTool === "data" ? (
+              <Suspense fallback={<DataBrowserSidebarLoading />}>
+                <DataBrowserSidebar />
+              </Suspense>
+            ) : (
+              <Explorer
+                pipelineId={pipelineId}
+                selectedAssetId={effectiveSelectedAssetId}
+                buildSearch={buildSearch}
+                onAssetSelect={selectAsset}
+                onNewAsset={openNewAsset}
+                onNewPipeline={() => afterMobileNavigationCloses(() => setNewPipelineOpen(true))}
+                onNewFolder={() => afterMobileNavigationCloses(() => setNewFolderOpen(true))}
+                onPipelineSettings={() => openPipelineSettings()}
+              />
+            )}
+          </div>
+        </WorkbenchPortal>
+      ) : null}
+      {workbenchEnabled && !inspectorCollapsed ? (
+        <WorkbenchPortal slot="inspector">
+          <Inspector
+            asset={selectedAsset}
+            onGoToAsset={goToAsset}
+            focusedCheck={
+              focusedQualityCheck?.assetId === selectedAsset.id ? focusedQualityCheck : undefined
+            }
+          />
+        </WorkbenchPortal>
+      ) : null}
       <AppPage>
-        <BuildTopBar
-          pipelineId={pipelineId}
-          pipelineLabel={activePipeline?.name ?? pipelineId}
-          selectedAsset={selectedAsset}
-          selectedAssetId={effectiveSelectedAssetId}
-          assetCrumbLoading={!selectedAsset.workspaceAsset}
-          resultTab={resultTab}
-          editorMode={editorMode}
-          currentView={view}
-          onOpenExplorer={() => setExplorerOpen(true)}
-          onOpenInspector={() => setInspectorOpen(true)}
-          explorerCollapsed={explorerCollapsed}
-          inspectorCollapsed={inspectorCollapsed}
-          onToggleExplorer={toggleExplorerCollapsed}
-          onToggleInspector={toggleInspectorCollapsed}
-          onReviewRun={() => {
-            setPipelinePlanInitialSelection(null);
-            setPipelinePlanOpen(true);
-          }}
-          onReviewDeploy={() => setDeploymentPlanOpen(true)}
-          deployState={deployState}
-          runSourceLabel={pipelineRunSourceLabel.replace(/^Run /, "")}
-          runDisabled={!activePipeline}
-          runTitle="Review the saved source, readiness checks, and rendered operations before running"
-        />
+        {!workbenchEnabled ? (
+          <BuildTopBar
+            pipelineId={pipelineId}
+            pipelineLabel={activePipeline?.name ?? pipelineId}
+            selectedAsset={selectedAsset}
+            selectedAssetId={effectiveSelectedAssetId}
+            assetCrumbLoading={!selectedAsset.workspaceAsset}
+            resultTab={resultTab}
+            editorMode={editorMode}
+            currentView={view}
+            onOpenExplorer={() => setExplorerOpen(true)}
+            onOpenInspector={() => setInspectorOpen(true)}
+            explorerCollapsed={explorerCollapsed}
+            inspectorCollapsed={inspectorCollapsed}
+            onToggleExplorer={toggleExplorerCollapsed}
+            onToggleInspector={toggleInspectorCollapsed}
+            onReviewRun={() => {
+              setPipelinePlanInitialSelection(null);
+              setPipelinePlanOpen(true);
+            }}
+            onReviewDeploy={() => setDeploymentPlanOpen(true)}
+            deployState={deployState}
+            runSourceLabel={pipelineRunSourceLabel.replace(/^Run /, "")}
+            runDisabled={!activePipeline}
+            runTitle="Review the saved source, readiness checks, and rendered operations before running"
+          />
+        ) : null}
         <div
-          className={cn("grid min-h-0 flex-1 grid-cols-1 gap-3 px-3 pb-3", sidePanelGridColsClass)}
+          className={cn(
+            "min-h-0 flex-1",
+            workbenchEnabled
+              ? "flex"
+              : cn("grid grid-cols-1 gap-3 px-3 pb-3", sidePanelGridColsClass),
+          )}
         >
-          {!explorerCollapsed ? (
+          {!workbenchEnabled && !explorerCollapsed ? (
             <AppPanel className="hidden min-h-0 xl:flex xl:flex-col">
               <Explorer
                 pipelineId={pipelineId}
                 selectedAssetId={effectiveSelectedAssetId}
                 buildSearch={buildSearch}
                 onAssetSelect={selectAsset}
-                onAdhoc={openAdhoc}
                 onNewAsset={openNewAsset}
                 onNewPipeline={() => setNewPipelineOpen(true)}
                 onNewFolder={() => setNewFolderOpen(true)}
@@ -1614,13 +1818,44 @@ export function AppBuildPage({
             </AppPanel>
           ) : null}
 
-          <PanelGroup orientation="vertical" className="h-full min-h-0">
+          <PanelGroup orientation="vertical" className="h-full min-h-0 min-w-0 flex-1">
             <Panel minSize="120px" className="min-h-0">
-              <AppPanel className="relative flex h-full min-h-0 overflow-hidden">
-                <DelimitedCardContent className="h-full min-h-0 flex-1 p-0">
+              <AppPanel className="relative flex h-full min-h-0 flex-col overflow-hidden">
+                {workbenchEnabled ? (
+                  <BuildTopBar
+                    pipelineId={pipelineId}
+                    pipelineLabel={activePipeline?.name ?? pipelineId}
+                    selectedAsset={selectedAsset}
+                    selectedAssetId={effectiveSelectedAssetId}
+                    assetCrumbLoading={!selectedAsset.workspaceAsset}
+                    resultTab={resultTab}
+                    editorMode={editorMode}
+                    currentView={view}
+                    onOpenExplorer={() => setMobileNavigationOpen(true)}
+                    onOpenInspector={() => setInspectorOpen(true)}
+                    inspectorCollapsed={inspectorCollapsed}
+                    onToggleInspector={toggleInspectorCollapsed}
+                    onReviewRun={() => {
+                      setPipelinePlanInitialSelection(null);
+                      setPipelinePlanOpen(true);
+                    }}
+                    onReviewDeploy={() => setDeploymentPlanOpen(true)}
+                    deployState={deployState}
+                    runSourceLabel={pipelineRunSourceLabel.replace(/^Run /, "")}
+                    runDisabled={!activePipeline}
+                    runTitle="Review the saved source, readiness checks, and rendered operations before running"
+                    workbench
+                    documents={buildDocuments}
+                    activeDocument={activeBuildDocument}
+                    documentSaveError={documentSaveError}
+                    onSelectDocument={(document) => void selectBuildDocument(document)}
+                    onCloseDocument={(document) => void closeBuildDocument(document)}
+                  />
+                ) : null}
+                <DelimitedCardContent className="min-h-0 flex-1 p-0">
                   <Outlet />
                 </DelimitedCardContent>
-                {view !== "code" ? (
+                {view !== "code" && !workbenchEnabled ? (
                   <FloatingViewSwitcher
                     pipelineId={pipelineId}
                     selectedAssetId={effectiveSelectedAssetId}
@@ -1677,7 +1912,7 @@ export function AppBuildPage({
             </Panel>
           </PanelGroup>
 
-          {!inspectorCollapsed ? (
+          {!workbenchEnabled && !inspectorCollapsed ? (
             <AppPanel className="hidden min-h-0 xl:flex xl:flex-col">
               <Inspector
                 asset={selectedAsset}
@@ -1692,22 +1927,23 @@ export function AppBuildPage({
           ) : null}
         </div>
 
-        <Sheet open={explorerOpen} onOpenChange={setExplorerOpen}>
-          <SheetContent side="left" className="w-80 gap-0 p-0 sm:max-w-80">
-            <SheetTitle className="sr-only">Explorer</SheetTitle>
-            <Explorer
-              pipelineId={pipelineId}
-              selectedAssetId={effectiveSelectedAssetId}
-              buildSearch={buildSearch}
-              onAssetSelect={selectAsset}
-              onAdhoc={openAdhoc}
-              onNewAsset={openNewAsset}
-              onNewPipeline={() => setNewPipelineOpen(true)}
-              onNewFolder={() => setNewFolderOpen(true)}
-              onPipelineSettings={() => openPipelineSettings()}
-            />
-          </SheetContent>
-        </Sheet>
+        {!workbenchEnabled ? (
+          <Sheet open={explorerOpen} onOpenChange={setExplorerOpen}>
+            <SheetContent side="left" className="w-80 gap-0 p-0 sm:max-w-80">
+              <SheetTitle className="sr-only">Explorer</SheetTitle>
+              <Explorer
+                pipelineId={pipelineId}
+                selectedAssetId={effectiveSelectedAssetId}
+                buildSearch={buildSearch}
+                onAssetSelect={selectAsset}
+                onNewAsset={openNewAsset}
+                onNewPipeline={() => setNewPipelineOpen(true)}
+                onNewFolder={() => setNewFolderOpen(true)}
+                onPipelineSettings={() => openPipelineSettings()}
+              />
+            </SheetContent>
+          </Sheet>
+        ) : null}
         <Sheet open={inspectorOpen} onOpenChange={setInspectorOpen}>
           <SheetContent side="right" className="w-[22rem] gap-0 p-0 sm:max-w-[22rem]">
             <SheetTitle className="sr-only">Asset properties</SheetTitle>
@@ -1997,6 +2233,12 @@ function BuildTopBar({
   runSourceLabel,
   runDisabled = false,
   runTitle,
+  workbench = false,
+  documents = [],
+  activeDocument = null,
+  documentSaveError,
+  onSelectDocument,
+  onCloseDocument,
 }: {
   pipelineId: string;
   pipelineLabel: string;
@@ -2018,8 +2260,87 @@ function BuildTopBar({
   runSourceLabel?: string;
   runDisabled?: boolean;
   runTitle?: string;
+  workbench?: boolean;
+  documents?: readonly BuildDocument[];
+  activeDocument?: BuildDocument | null;
+  documentSaveError?: string | null;
+  onSelectDocument?: (document: BuildDocument) => void;
+  onCloseDocument?: (document: BuildDocument) => void;
 }) {
   const search: AppBuildSearch = { result: resultTab, editor: editorMode };
+
+  if (workbench) {
+    return (
+      <div className="flex h-11 min-w-0 shrink-0 items-center gap-1.5 overflow-hidden border-b bg-background px-2">
+        <BuildDocumentTabs
+          documents={documents}
+          activeDocument={activeDocument}
+          emptyLabel={pipelineLabel}
+          onSelectDocument={onSelectDocument}
+          onCloseDocument={onCloseDocument}
+        />
+        {documentSaveError ? (
+          <span
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-destructive"
+            title={`Could not save the active document: ${documentSaveError}`}
+            aria-label={`Could not save the active document: ${documentSaveError}`}
+          >
+            <AlertTriangle className="size-3.5" />
+          </span>
+        ) : null}
+        <BuildActiveDocumentActions asset={selectedAsset} editorMode={editorMode} />
+        {editorMode === "asset" ? (
+          <div className="hidden shrink-0 items-center rounded-lg bg-muted p-0.5 sm:flex">
+            <BuildViewButtonGroup
+              pipelineId={pipelineId}
+              selectedAssetId={selectedAssetId}
+              currentView={currentView}
+              search={search}
+            />
+          </div>
+        ) : null}
+        {deployState ? (
+          <DeployButton deployState={deployState} onReview={onReviewDeploy} compact />
+        ) : null}
+        <Button
+          size="sm"
+          onClick={onReviewRun}
+          disabled={runDisabled}
+          title={runTitle}
+          aria-label={`Review run${runSourceLabel ? ` from ${runSourceLabel}` : ""}`}
+        >
+          <Play data-icon="inline-start" />
+          <span className="hidden lg:inline">Review run</span>
+          {runSourceLabel ? <span className="sr-only"> from {runSourceLabel}</span> : null}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="hidden xl:inline-flex"
+          onClick={onToggleInspector}
+          aria-pressed={!inspectorCollapsed}
+          title={inspectorCollapsed ? "Show properties" : "Hide properties"}
+          aria-label={inspectorCollapsed ? "Show properties" : "Hide properties"}
+        >
+          {inspectorCollapsed ? (
+            <PanelRightOpen className="size-3.5" />
+          ) : (
+            <PanelRightClose className="size-3.5" />
+          )}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="xl:hidden"
+          onClick={onOpenInspector}
+          title="Asset properties"
+          aria-label="Asset properties"
+        >
+          <PanelRight className="size-3.5" />
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-12 shrink-0 items-center gap-2 px-3">
@@ -2091,7 +2412,13 @@ function BuildTopBar({
         </Link>
       </Button>
       {deployState ? <DeployButton deployState={deployState} onReview={onReviewDeploy} /> : null}
-      <Button size="sm" onClick={onReviewRun} disabled={runDisabled} title={runTitle}>
+      <Button
+        size="sm"
+        onClick={onReviewRun}
+        disabled={runDisabled}
+        title={runTitle}
+        aria-label={`Review run${runSourceLabel ? ` from ${runSourceLabel}` : ""}`}
+      >
         <Play data-icon="inline-start" /> Review run
         {runSourceLabel ? <span className="sr-only"> from {runSourceLabel}</span> : null}
       </Button>
@@ -2120,6 +2447,130 @@ function BuildTopBar({
       >
         <PanelRight className="size-3.5" />
       </Button>
+    </div>
+  );
+}
+
+function BuildActiveDocumentActions({
+  asset,
+  editorMode,
+}: {
+  asset: BuildAsset;
+  editorMode: AppEditorMode;
+}) {
+  const {
+    adhocContextAsset,
+    adhocConnections,
+    adhocConnection,
+    setAdhocConnection,
+    adhocLoading,
+    runAdhocQuery,
+    convertAdhocToAsset,
+    convertAdhocToNotebook,
+    materializeSelectedAsset,
+    fullRefreshSelectedAsset,
+    backfillSelectedAsset,
+    inspectSelectedAsset,
+    renderSelectedAsset,
+    materializeLoading,
+    inspectLoading,
+    renderLoading,
+    renderBlockedReason,
+    executionBlocked,
+    executionBlockedReason,
+  } = useBuildContext();
+
+  if (editorMode === "adhoc") {
+    return (
+      <div className="flex shrink-0 items-center gap-1">
+        <ConnectionSelect
+          value={adhocConnection?.name}
+          groups={[
+            {
+              label: "Query connection",
+              options: adhocConnections.map((connection) => ({
+                value: connection.name,
+                label: connection.name,
+                connectionType: connection.connection_type,
+                detail: connection.dialect,
+              })),
+            },
+          ]}
+          onValueChange={setAdhocConnection}
+          disabled={adhocLoading || adhocConnections.length === 0}
+          size="sm"
+          className="hidden min-w-28 max-w-40 md:flex"
+          ariaLabel="Ad-hoc connection"
+          placeholder="Connection"
+        />
+        <Button
+          variant="outline"
+          size="icon-sm"
+          onClick={convertAdhocToNotebook}
+          disabled={!adhocContextAsset || !adhocConnection}
+          aria-label="Convert to notebook cell"
+          title="Convert to notebook cell"
+        >
+          <BookOpen className="size-3.5" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon-sm"
+          onClick={convertAdhocToAsset}
+          disabled={!adhocContextAsset || !adhocConnection}
+          aria-label="Convert to asset"
+          title="Convert to asset"
+        >
+          <FilePlus2 className="size-3.5" />
+        </Button>
+        <Button
+          size="icon-sm"
+          onClick={runAdhocQuery}
+          disabled={adhocLoading || !adhocContextAsset || !adhocConnection}
+          aria-label="Run"
+          title="Run (⌘ + ↵)"
+        >
+          {adhocLoading ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Play className="size-3.5" />
+          )}
+        </Button>
+      </div>
+    );
+  }
+
+  const actionLabel =
+    asset.kind === "source"
+      ? "Validate"
+      : asset.kind === "sensor"
+        ? "Check now"
+        : asset.kind === "ingestr" || asset.kind === "load"
+          ? "Run"
+          : "Materialize";
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <EditorActionButtons
+        actionLabel={actionLabel}
+        showLabels={false}
+        showInspect={false}
+        showRender={false}
+        onRun={materializeSelectedAsset}
+        onFullRefresh={
+          asset.workspaceAsset?.supports_full_refresh ? fullRefreshSelectedAsset : undefined
+        }
+        onBackfill={asset.staleness?.backfill_safe ? backfillSelectedAsset : undefined}
+        onInspect={inspectSelectedAsset}
+        onRender={renderSelectedAsset}
+        runDisabled={materializeLoading || executionBlocked || !asset.workspaceAsset}
+        runBlockedReason={executionBlocked ? executionBlockedReason : undefined}
+        runLoading={materializeLoading}
+        inspectDisabled={inspectLoading || !asset.workspaceAsset}
+        inspectLoading={inspectLoading}
+        renderDisabled={renderLoading || !asset.workspaceAsset}
+        renderLoading={renderLoading}
+        renderBlockedReason={renderBlockedReason}
+      />
     </div>
   );
 }
@@ -2234,24 +2685,11 @@ function ViewLink({
   );
 }
 
-export function appAssetViewPath(view: AppBuildView) {
-  if (view === "split") return "/pipelines/$pipelineId/assets/$assetId/split" as const;
-  if (view === "code") return "/pipelines/$pipelineId/assets/$assetId/code" as const;
-  return "/pipelines/$pipelineId/assets/$assetId/canvas" as const;
-}
-
-export function appBuildViewFromPath(pathname: string): AppBuildView {
-  if (pathname.endsWith("/split")) return "split";
-  if (pathname.endsWith("/code")) return "code";
-  return "canvas";
-}
-
 function Explorer({
   pipelineId,
   selectedAssetId,
   buildSearch,
   onAssetSelect,
-  onAdhoc,
   onNewAsset,
   onNewPipeline,
   onNewFolder,
@@ -2261,7 +2699,6 @@ function Explorer({
   selectedAssetId: string;
   buildSearch: AppBuildSearch;
   onAssetSelect: (assetId: string) => void;
-  onAdhoc: () => void;
   onNewAsset: () => void;
   onNewPipeline: () => void;
   onNewFolder: () => void;
@@ -2269,10 +2706,7 @@ function Explorer({
 }) {
   const workspace = useAtomValue(workspaceAtom);
   const { pipelineAssets } = useBuildContext();
-  const adhocActive = buildSearch.editor === "adhoc";
   const pipelineItems = workspace?.pipelines ?? [];
-  const notebookItems = workspace?.notebooks ?? [];
-  const [newNotebookOpen, setNewNotebookOpen] = useState(false);
   const [assetFilter, setAssetFilter] = useState("");
   const normalizedAssetFilter = assetFilter.trim().toLowerCase();
   const filteredAssets = useMemo(() => {
@@ -2307,9 +2741,12 @@ function Explorer({
 
   return (
     <>
-      <DelimitedCardHeader>
+      <div
+        data-slot="workbench-context-header"
+        className="flex h-10 shrink-0 items-center gap-2 border-b px-3 pr-12 md:pr-3"
+      >
         <Database className="size-4 text-primary" />
-        <DelimitedCardTitle>Explorer</DelimitedCardTitle>
+        <h2 className="min-w-0 truncate text-xs font-semibold">Explorer</h2>
         <Button
           size="icon-sm"
           variant="ghost"
@@ -2320,7 +2757,7 @@ function Explorer({
         >
           <Plus data-icon="inline-start" />
         </Button>
-      </DelimitedCardHeader>
+      </div>
       <div className="border-b p-2">
         <InputGroup className="bg-background">
           <InputGroupAddon>
@@ -2414,7 +2851,7 @@ function Explorer({
                               <AssetButton
                                 key={asset.id}
                                 asset={asset}
-                                selected={!adhocActive && selectedAssetId === asset.id}
+                                selected={selectedAssetId === asset.id}
                                 onSelect={() => onAssetSelect(asset.id)}
                               />
                             ))}
@@ -2426,20 +2863,6 @@ function Explorer({
                         </div>
                       )}
                       <div className="mt-1 border-t pt-1">
-                        <button
-                          className={cn(
-                            "flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left font-mono text-xs hover:bg-muted",
-                            adhocActive
-                              ? "bg-primary/10 text-foreground ring-1 ring-primary/20"
-                              : "text-muted-foreground",
-                          )}
-                          onClick={onAdhoc}
-                        >
-                          <Terminal
-                            className={cn("size-3.5", adhocActive ? "text-primary" : null)}
-                          />{" "}
-                          Ad-hoc query
-                        </button>
                         <button
                           className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left font-mono text-xs text-muted-foreground hover:bg-muted"
                           onClick={onPipelineSettings}
@@ -2453,34 +2876,8 @@ function Explorer({
               );
             })}
           </ExplorerSection>
-
-          <ExplorerSection label="Notebooks" icon={BookOpen} count={notebookItems.length}>
-            {notebookItems.length > 0 ? (
-              notebookItems.map((notebook) => (
-                <Link
-                  key={notebook.id}
-                  to="/notebooks/$notebookId"
-                  params={{ notebookId: notebook.id }}
-                  className="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left font-mono text-xs text-muted-foreground hover:bg-muted"
-                  activeProps={{ className: "bg-muted text-foreground" }}
-                >
-                  <BookOpen className="size-3.5 text-primary" />
-                  <span className="truncate">{notebook.title || notebook.path || notebook.id}</span>
-                </Link>
-              ))
-            ) : (
-              <div className="px-2 py-1 text-xs text-muted-foreground">No notebooks yet.</div>
-            )}
-          </ExplorerSection>
-          <button
-            onClick={() => setNewNotebookOpen(true)}
-            className="mt-1 flex h-8 w-full items-center gap-2 rounded-md border border-dashed px-2 text-left text-xs text-muted-foreground hover:bg-muted disabled:opacity-50"
-          >
-            <Plus className="size-3.5" /> New notebook
-          </button>
         </div>
       </ScrollArea>
-      <NewNotebookDialog open={newNotebookOpen} onOpenChange={setNewNotebookOpen} />
     </>
   );
 }
@@ -2604,16 +3001,22 @@ function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) =>
 }
 
 export function AppBuildCanvasView() {
-  const { selectAsset } = useBuildContext();
+  const { selectedAsset, selectAsset, editorMode } = useBuildContext();
+  if (editorMode === "adhoc") {
+    return <EditorWorkspace asset={selectedAsset} adhoc />;
+  }
   return <PipelineCanvas onAssetSelect={selectAsset} />;
 }
 
 export function AppBuildSplitView() {
   const { selectedAsset, selectAsset, editorMode } = useBuildContext();
+  if (editorMode === "adhoc") {
+    return <EditorWorkspace asset={selectedAsset} adhoc />;
+  }
   return (
     <PanelGroup orientation="horizontal" className="h-full min-h-0 min-w-0">
       <Panel defaultSize={50} minSize={28} className="min-w-0">
-        <EditorWorkspace asset={selectedAsset} adhoc={editorMode === "adhoc"} />
+        <EditorWorkspace asset={selectedAsset} adhoc={false} />
       </Panel>
       <PanelResizeHandle className="w-px bg-border" />
       <Panel defaultSize={50} minSize={28} className="min-w-0">
@@ -2650,6 +3053,8 @@ function EditorWorkspace({ asset, adhoc }: { asset: BuildAsset; adhoc: boolean }
     executionBlocked,
     executionBlockedReason,
   } = useBuildContext();
+  const { navigation } = useWorkbench();
+  const inWorkbench = Boolean(navigation?.workbench);
   const isMobile = useIsMobile();
   const editorOnly = view === "code";
   const showActionLabels = editorOnly && !isMobile;
@@ -2673,50 +3078,52 @@ function EditorWorkspace({ asset, adhoc }: { asset: BuildAsset; adhoc: boolean }
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <EditorFilenameHeader filename={filename}>
-        <EditorActionButtons
-          actionLabel={actionLabel}
-          showLabels={showActionLabels}
-          showInspect={asset.kind !== "source"}
-          showRender={renderableAsset}
-          onRun={materializeSelectedAsset}
-          onFullRefresh={
-            asset.workspaceAsset?.supports_full_refresh ? fullRefreshSelectedAsset : undefined
-          }
-          onBackfill={asset.staleness?.backfill_safe ? backfillSelectedAsset : undefined}
-          onInspect={inspectSelectedAsset}
-          onRender={renderSelectedAsset}
-          runDisabled={materializeLoading || executionBlocked || !asset.workspaceAsset}
-          runBlockedReason={executionBlocked ? executionBlockedReason : undefined}
-          runLoading={materializeLoading}
-          inspectDisabled={inspectLoading || !asset.workspaceAsset}
-          inspectLoading={inspectLoading}
-          renderDisabled={renderLoading || !asset.workspaceAsset}
-          renderLoading={renderLoading}
-          renderBlockedReason={renderBlockedReason}
-        />
-        {asset.workspaceAsset ? (
-          <Button
-            variant="ghost"
-            size="xs"
-            className="text-muted-foreground xl:hidden"
-            onClick={openInspector}
-            title="Asset properties"
-            aria-label="Asset properties"
-          >
-            <PanelRight className="size-3.5" />
-            {showActionLabels ? <span className="ml-1">Properties</span> : null}
-          </Button>
-        ) : null}
-        {editorOnly ? (
-          <BuildViewButtonGroup
-            pipelineId={pipelineId}
-            selectedAssetId={selectedAssetId}
-            currentView={view}
-            search={buildSearch}
+      {!inWorkbench ? (
+        <EditorFilenameHeader filename={filename}>
+          <EditorActionButtons
+            actionLabel={actionLabel}
+            showLabels={showActionLabels}
+            showInspect={asset.kind !== "source"}
+            showRender={renderableAsset}
+            onRun={materializeSelectedAsset}
+            onFullRefresh={
+              asset.workspaceAsset?.supports_full_refresh ? fullRefreshSelectedAsset : undefined
+            }
+            onBackfill={asset.staleness?.backfill_safe ? backfillSelectedAsset : undefined}
+            onInspect={inspectSelectedAsset}
+            onRender={renderSelectedAsset}
+            runDisabled={materializeLoading || executionBlocked || !asset.workspaceAsset}
+            runBlockedReason={executionBlocked ? executionBlockedReason : undefined}
+            runLoading={materializeLoading}
+            inspectDisabled={inspectLoading || !asset.workspaceAsset}
+            inspectLoading={inspectLoading}
+            renderDisabled={renderLoading || !asset.workspaceAsset}
+            renderLoading={renderLoading}
+            renderBlockedReason={renderBlockedReason}
           />
-        ) : null}
-      </EditorFilenameHeader>
+          {asset.workspaceAsset ? (
+            <Button
+              variant="ghost"
+              size="xs"
+              className="text-muted-foreground xl:hidden"
+              onClick={openInspector}
+              title="Asset properties"
+              aria-label="Asset properties"
+            >
+              <PanelRight className="size-3.5" />
+              {showActionLabels ? <span className="ml-1">Properties</span> : null}
+            </Button>
+          ) : null}
+          {editorOnly ? (
+            <BuildViewButtonGroup
+              pipelineId={pipelineId}
+              selectedAssetId={selectedAssetId}
+              currentView={view}
+              search={buildSearch}
+            />
+          ) : null}
+        </EditorFilenameHeader>
+      ) : null}
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           {asset.workspaceAsset?.parse_error ? (
@@ -2943,81 +3350,85 @@ function AdhocEditor({ showActionLabels }: { showActionLabels: boolean }) {
     convertAdhocToNotebook,
     goToAsset,
   } = useBuildContext();
+  const { navigation } = useWorkbench();
+  const inWorkbench = Boolean(navigation?.workbench);
   return (
     <div
       className="relative flex h-full min-h-0 flex-col bg-primary/5 ring-1 ring-inset ring-primary/20"
       data-testid="adhoc-editor-workspace"
     >
-      <EditorFilenameHeader filename="Ad-hoc query" className="border-primary/20 bg-primary/10">
-        <ConnectionSelect
-          value={adhocConnection?.name}
-          groups={[
-            {
-              label: "Query connection",
-              options: adhocConnections.map((connection) => ({
-                value: connection.name,
-                label: connection.name,
-                connectionType: connection.connection_type,
-                detail: connection.dialect,
-              })),
-            },
-          ]}
-          onValueChange={setAdhocConnection}
-          disabled={adhocLoading || adhocConnections.length === 0}
-          size="sm"
-          className="min-w-32 max-w-48"
-          ariaLabel="Ad-hoc connection"
-          placeholder="Connection"
-        />
-        <Button
-          variant="outline"
-          size={showActionLabels ? "sm" : "icon-sm"}
-          onClick={convertAdhocToNotebook}
-          disabled={!adhocContextAsset || !adhocConnection}
-          aria-label="Convert to notebook cell"
-          title="Convert to notebook cell"
-        >
-          <BookOpen className="size-3.5" />
-          {showActionLabels ? "Notebook cell" : <span className="sr-only">Notebook cell</span>}
-        </Button>
-        <Button
-          variant="outline"
-          size={showActionLabels ? "sm" : "icon-sm"}
-          onClick={convertAdhocToAsset}
-          disabled={!adhocContextAsset || !adhocConnection}
-          aria-label="Convert to asset"
-          title="Convert to asset"
-        >
-          <FilePlus2 className="size-3.5" />
-          {showActionLabels ? "Asset" : <span className="sr-only">Asset</span>}
-        </Button>
-        <Button
-          size={showActionLabels ? "sm" : "icon-sm"}
-          onClick={runAdhocQuery}
-          disabled={adhocLoading || !adhocContextAsset || !adhocConnection}
-          aria-label="Run"
-          title="Run (⌘ + ↵)"
-        >
-          <Play className="size-3.5" />
-          {showActionLabels ? (
-            adhocLoading ? (
-              "Running..."
-            ) : (
-              "Run"
-            )
-          ) : (
-            <span className="sr-only">Run</span>
-          )}
-        </Button>
-        {view === "code" ? (
-          <BuildViewButtonGroup
-            pipelineId={pipelineId}
-            selectedAssetId={selectedAssetId}
-            currentView={view}
-            search={buildSearch}
+      {!inWorkbench ? (
+        <EditorFilenameHeader filename="Ad-hoc query" className="border-primary/20 bg-primary/10">
+          <ConnectionSelect
+            value={adhocConnection?.name}
+            groups={[
+              {
+                label: "Query connection",
+                options: adhocConnections.map((connection) => ({
+                  value: connection.name,
+                  label: connection.name,
+                  connectionType: connection.connection_type,
+                  detail: connection.dialect,
+                })),
+              },
+            ]}
+            onValueChange={setAdhocConnection}
+            disabled={adhocLoading || adhocConnections.length === 0}
+            size="sm"
+            className="min-w-32 max-w-48"
+            ariaLabel="Ad-hoc connection"
+            placeholder="Connection"
           />
-        ) : null}
-      </EditorFilenameHeader>
+          <Button
+            variant="outline"
+            size={showActionLabels ? "sm" : "icon-sm"}
+            onClick={convertAdhocToNotebook}
+            disabled={!adhocContextAsset || !adhocConnection}
+            aria-label="Convert to notebook cell"
+            title="Convert to notebook cell"
+          >
+            <BookOpen className="size-3.5" />
+            {showActionLabels ? "Notebook cell" : <span className="sr-only">Notebook cell</span>}
+          </Button>
+          <Button
+            variant="outline"
+            size={showActionLabels ? "sm" : "icon-sm"}
+            onClick={convertAdhocToAsset}
+            disabled={!adhocContextAsset || !adhocConnection}
+            aria-label="Convert to asset"
+            title="Convert to asset"
+          >
+            <FilePlus2 className="size-3.5" />
+            {showActionLabels ? "Asset" : <span className="sr-only">Asset</span>}
+          </Button>
+          <Button
+            size={showActionLabels ? "sm" : "icon-sm"}
+            onClick={runAdhocQuery}
+            disabled={adhocLoading || !adhocContextAsset || !adhocConnection}
+            aria-label="Run"
+            title="Run (⌘ + ↵)"
+          >
+            <Play className="size-3.5" />
+            {showActionLabels ? (
+              adhocLoading ? (
+                "Running..."
+              ) : (
+                "Run"
+              )
+            ) : (
+              <span className="sr-only">Run</span>
+            )}
+          </Button>
+          {view === "code" ? (
+            <BuildViewButtonGroup
+              pipelineId={pipelineId}
+              selectedAssetId={selectedAssetId}
+              currentView={view}
+              search={buildSearch}
+            />
+          ) : null}
+        </EditorFilenameHeader>
+      ) : null}
       {adhocContextAsset && adhocConnection ? (
         <AppAdhocEditor
           pipelineId={pipelineId}
@@ -3101,7 +3512,7 @@ function ResultsPanel({
         onValueChange={(value) => {
           if (resultTabs.includes(value as AppResultTab)) onTabChange(value as AppResultTab);
         }}
-        className="flex h-full min-h-0 flex-col"
+        className="flex h-full min-h-0 flex-col gap-0"
       >
         <DelimitedCardHeader className="min-h-9 gap-1 bg-muted py-1">
           <ScrollArea
@@ -3396,9 +3807,11 @@ function Inspector({
 function DeployButton({
   deployState,
   onReview,
+  compact = false,
 }: {
   deployState: PipelineDeployState;
   onReview: () => void;
+  compact?: boolean;
 }) {
   const { status, loading, error, deploying, refresh, driftedFileCount } = deployState;
   if (!status) {
@@ -3406,14 +3819,17 @@ function DeployButton({
     if (error) {
       return (
         <Button variant="outline" size="sm" onClick={() => void refresh()} title={error}>
-          <RefreshCw data-icon="inline-start" /> Retry deployment status
+          <RefreshCw data-icon="inline-start" />
+          <span className={cn(compact && "hidden lg:inline")}>Retry deployment status</span>
+          {compact ? <span className="sr-only lg:hidden">Retry deployment status</span> : null}
         </Button>
       );
     }
     return (
       <Button variant="ghost" size="sm" disabled title="Resolving deployment status">
         <Spinner data-icon="inline-start" />
-        Deployment…
+        <span className={cn(compact && "hidden lg:inline")}>Deployment…</span>
+        {compact ? <span className="sr-only lg:hidden">Deployment…</span> : null}
       </Button>
     );
   }
@@ -3422,7 +3838,9 @@ function DeployButton({
     const currentDeployment = deploymentLabel(status.ordinal, status.version_id);
     return (
       <Button variant="ghost" size="sm" disabled title={`${currentDeployment} is current`}>
-        <Package className="size-3.5 text-emerald-600" /> Deployed
+        <Package className="size-3.5 text-emerald-600" />
+        <span className={cn(compact && "hidden lg:inline")}>Deployed</span>
+        {compact ? <span className="sr-only lg:hidden">Deployed</span> : null}
       </Button>
     );
   }
@@ -3455,7 +3873,10 @@ function DeployButton({
             : undefined,
         )}
       />
-      {deploying ? "Deploying…" : label}
+      <span className={cn(compact && "hidden lg:inline")}>{deploying ? "Deploying…" : label}</span>
+      {compact ? (
+        <span className="sr-only lg:hidden">{deploying ? "Deploying…" : label}</span>
+      ) : null}
     </Button>
   );
 }

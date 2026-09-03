@@ -61,11 +61,20 @@ test.describe("app scheduler pages live", () => {
     });
     await page.goto(`${liveApp.baseURL}/schedules`);
 
-    await expect(page.getByRole("heading", { name: "Schedules" })).toBeVisible();
-    await expect(page.getByText("analytics", { exact: true })).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText("daily", { exact: true })).toBeVisible();
+    const isMobile = (page.viewportSize()?.width ?? 1024) < 768;
+    if (isMobile) {
+      await expect(page.getByText("Schedule timeline", { exact: true })).toBeVisible();
+      await page.getByRole("tab", { name: "Schedules", exact: true }).click();
+    }
+    await expect(page.getByRole("heading", { name: "Schedules", exact: true })).toBeVisible();
+    const scheduleRow = page.getByTestId("schedule-row").filter({ hasText: "analytics" }).first();
+    await expect(scheduleRow).toBeVisible({ timeout: 15000 });
+    await expect(scheduleRow.getByTestId("schedule-cadence")).toContainText("daily");
 
     await page.getByRole("button", { name: "New schedule" }).click();
+    if (isMobile) {
+      await expect(page.getByRole("dialog", { name: "Schedules navigation" })).toBeHidden();
+    }
     const newScheduleDialog = page.getByRole("dialog", { name: "New schedule" });
     await expect(newScheduleDialog).toBeVisible();
     await expect(newScheduleDialog.getByTestId("new-schedule-scroll-area")).toBeVisible();
@@ -79,16 +88,10 @@ test.describe("app scheduler pages live", () => {
     }
     await newScheduleDialog.getByRole("button", { name: "Close" }).click();
 
-    const scheduleRow = page.getByTestId("schedule-row").filter({ hasText: "analytics" }).first();
     const metadata = scheduleRow.getByTestId("schedule-metadata");
-    await expect(metadata).toContainText("Schedule");
-    await expect(metadata).toContainText("Timezone");
-    await expect(metadata).toContainText("Last run");
-    await expect(metadata).toContainText("Deployment");
-    await expect(scheduleRow.getByTestId("schedule-run-window-context")).toContainText(
-      "Skip missed runs",
-    );
-    await expect(metadata).toContainText("Pinned pipeline schedule");
+    await expect(scheduleRow.getByTestId("schedule-cadence")).toContainText("UTC");
+    await expect(scheduleRow.getByTestId("schedule-last-run")).toContainText("Not run yet");
+    await expect(scheduleRow.getByTestId("schedule-deployment")).toContainText("Not pinned");
     expect(
       await metadata.locator("[data-schedule-meta-value]").evaluateAll((elements) =>
         elements.every((element) => {
@@ -100,9 +103,16 @@ test.describe("app scheduler pages live", () => {
     await expect(scheduleRow.getByText("Needs deployment", { exact: true })).toBeVisible();
     const waitingBadge = scheduleRow.getByText("Waiting for prerequisites", { exact: true });
     await expect(waitingBadge).toBeVisible();
-    await waitingBadge.focus();
-    await expect(page.getByRole("tooltip")).toContainText("producer coverage is incomplete");
-    await expect(page.getByRole("tooltip")).toContainText("holds no run slot");
+    if (isMobile) {
+      await expect(waitingBadge).toHaveAttribute(
+        "aria-label",
+        /producer coverage is incomplete.*holds no run slot/,
+      );
+    } else {
+      await waitingBadge.focus();
+      await expect(page.getByRole("tooltip")).toContainText("producer coverage is incomplete");
+      await expect(page.getByRole("tooltip")).toContainText("holds no run slot");
+    }
     const actions = scheduleRow.getByTestId("schedule-actions");
     await expect(actions.getByRole("button", { name: "Review deployment" })).toBeVisible();
     await expect(actions.getByRole("button", { name: "Run pinned" })).toBeDisabled();
@@ -112,7 +122,7 @@ test.describe("app scheduler pages live", () => {
     await page.keyboard.press("Escape");
   });
 
-  test("navigates deployment history and the actual run timeline as schedule subroutes", async ({
+  test("navigates deployment history and the shared projected and actual run overview", async ({
     liveApp,
     page,
     request,
@@ -124,10 +134,22 @@ test.describe("app scheduler pages live", () => {
     expect(deployed.ok()).toBe(true);
 
     await page.goto(`${liveApp.baseURL}/schedules`);
-    await page.getByRole("link", { name: "Deployments", exact: true }).click();
+    const isMobile = (page.viewportSize()?.width ?? 1024) < 768;
+    if (isMobile) {
+      await page.getByRole("tab", { name: "Deployments", exact: true }).click();
+      const navigation = page.getByRole("dialog", { name: "Deployments navigation" });
+      await expect(navigation).toBeVisible();
+      await navigation.getByRole("button", { name: "Close" }).click();
+    } else {
+      await page.getByRole("link", { name: "Deployments", exact: true }).click();
+    }
     await expect(page).toHaveURL(/\/schedules\/deployments$/);
-    await expect(page.getByRole("heading", { name: "Deployments" })).toBeVisible();
-    await expect(page.getByText("analytics", { exact: true })).toBeVisible();
+    if (isMobile) {
+      await expect(page.getByText("Immutable deployment history", { exact: true })).toBeVisible();
+    } else {
+      await expect(page.getByRole("heading", { name: "Deployments", exact: true })).toBeVisible();
+    }
+    await expect(page.getByRole("cell", { name: "analytics", exact: true }).first()).toBeVisible();
     await expect(page.getByText(/Deployment #\d+/).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Review", exact: true }).first()).toBeVisible();
 
@@ -157,11 +179,30 @@ test.describe("app scheduler pages live", () => {
         }),
       });
     });
-    await page.getByRole("link", { name: "Run timeline", exact: true }).click();
-    await expect(page).toHaveURL(/\/schedules\/timeline$/);
-    await expect(page.getByRole("heading", { name: "Run timeline" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "analytics", exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Open analytics run/ })).toBeVisible();
+    if (isMobile) {
+      await page.getByRole("tab", { name: "Overview", exact: true }).click();
+      const navigation = page.getByRole("dialog", { name: "Run overview navigation" });
+      await expect(navigation).toBeVisible();
+      await navigation.getByRole("button", { name: "Close" }).click();
+    } else {
+      await page.getByRole("link", { name: "Run overview", exact: true }).click();
+    }
+    await expect(page).toHaveURL(/\/run$/);
+    if (isMobile) {
+      await expect(page.getByText("Projected and actual runs", { exact: true })).toBeVisible();
+    } else {
+      await expect(page.getByRole("heading", { name: "Run overview", exact: true })).toBeVisible();
+    }
+    const timeline = page.getByTestId("run-overview-timeline");
+    await expect(timeline).toContainText("analytics");
+    const actualRun = timeline.getByRole("link", {
+      name: /Open success analytics run lasting 30s/,
+    });
+    await expect(actualRun).toBeVisible();
+    await expect(actualRun).toHaveAttribute("data-run-status", "success");
+    const runBounds = await actualRun.boundingBox();
+    expect(runBounds).not.toBeNull();
+    expect(runBounds!.width).toBeGreaterThanOrEqual(12);
   });
 
   test("deploys and pins a schedule that has no previous deployment", async ({
@@ -403,8 +444,15 @@ test.describe("app scheduler pages live", () => {
     await expect(
       page.getByText("Schedules are managed by another Renart process", { exact: true }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "New schedule" })).toBeDisabled();
-    await expect(page.getByText("Read-only", { exact: true })).toBeVisible();
+    const isMobile = (page.viewportSize()?.width ?? 1024) < 768;
+    if (isMobile) {
+      await page.getByRole("tab", { name: "Schedules", exact: true }).click();
+    }
+    const scheduleNavigation = isMobile
+      ? page.getByRole("dialog", { name: "Schedules navigation" })
+      : page.getByRole("complementary", { name: "Schedules navigation" });
+    await expect(scheduleNavigation.getByRole("button", { name: "New schedule" })).toBeDisabled();
+    await expect(scheduleNavigation.getByText("Read-only here", { exact: true })).toBeVisible();
   });
 
   test("shows and updates a schedule pinned to an older deployment", async ({
@@ -730,9 +778,7 @@ test.describe("app scheduler pages live", () => {
     await expect(page.getByRole("button", { name: "Review repair" })).toBeEnabled();
     const scheduleRow = page.getByTestId("schedule-row").filter({ hasText: "analytics" }).first();
     await expect(scheduleRow.getByRole("button", { name: /Run pinned/ })).toBeDisabled();
-    await expect(scheduleRow.getByTestId("schedule-metadata")).toContainText(
-      "Pinned pipeline schedule",
-    );
+    await expect(scheduleRow.getByTestId("schedule-deployment")).toContainText(/Deployment #\d+/);
   });
 
   test("shows triggered runs in the runs list", async ({ liveApp, page, request }) => {
@@ -740,7 +786,7 @@ test.describe("app scheduler pages live", () => {
 
     await page.goto(`${liveApp.baseURL}/runs`);
 
-    await expect(page.getByRole("heading", { name: "Runs" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Run ID" })).toBeVisible();
     await expect(page.getByText(runId, { exact: true })).toBeVisible({ timeout: 15000 });
     await expect(page.getByText("analytics", { exact: true }).first()).toBeVisible();
   });

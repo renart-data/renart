@@ -9,10 +9,14 @@ import {
   Check,
   ChevronRight,
   ChevronsUpDown,
+  Columns3,
+  GitBranch,
   KeyRound,
   Plus,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
@@ -78,6 +82,7 @@ import {
 } from "@/lib/artifact-column-impact";
 import { classifyDependencies, columnStatus, parseAssetProvenance } from "@/lib/asset-provenance";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getAssetColumnRefreshMode, isSeedAssetType, isSqlAssetType } from "@/lib/asset-types";
 import { cn } from "@/lib/utils";
 import { WebAsset, WebColumn } from "@/lib/types";
@@ -95,6 +100,7 @@ import { AssetDependencyPicker } from "./asset-dependency-picker";
  * the asset API, and the workspace SSE stream refreshes the asset prop.
  */
 export type QualityCheckFocus = FailedQualityCheck & { token: number };
+type AssetMetadataTab = "general" | "lineage" | "columns" | "checks";
 
 export function AssetGuidedCards({
   asset,
@@ -112,31 +118,103 @@ export function AssetGuidedCards({
   const supportsColumns =
     (asset.column_inference_sources?.length ?? 0) > 0 ||
     getAssetColumnRefreshMode(asset.type, asset.parameters) !== "none";
+  const [activeTab, setActiveTab] = useState<AssetMetadataTab>(focusedCheck ? "checks" : "general");
   const [localFocus, setLocalFocus] = useState<QualityCheckFocus | null>(null);
   useEffect(() => setLocalFocus(null), [focusedCheck?.token]);
+  const focusedCheckToken = focusedCheck?.token;
+  useEffect(() => {
+    setActiveTab(focusedCheckToken === undefined ? "general" : "checks");
+  }, [asset.id, focusedCheckToken]);
   const activeFocus = localFocus ?? focusedCheck;
+  const dependencyCount = asset.dependencies?.length ?? asset.upstreams?.length ?? 0;
+  const columnCount = asset.columns?.length ?? 0;
+  const checkCount =
+    (asset.custom_checks?.length ?? 0) +
+    (asset.columns ?? []).reduce((count, column) => count + (column.checks?.length ?? 0), 0);
+
   return (
-    <ScrollArea className="min-h-0 w-full flex-1">
-      <div className="divide-y px-3">
-        <IdentityCard asset={asset} pipelineId={pipelineId} />
-        <MaterializationCard asset={asset} pipelineId={pipelineId} />
-        {isSqlAssetType(asset.type) ? (
-          <GuidedCard title="SQL hooks">
-            <AssetHooks asset={asset} />
-          </GuidedCard>
-        ) : null}
-        <DependenciesCard asset={asset} onGoToAsset={onGoToAsset} />
-        {supportsColumns ? <ColumnsCard asset={asset} /> : null}
-        {supportsColumns ? (
-          <QualityChecksCard
-            asset={asset}
-            quality={quality}
-            focusedCheck={activeFocus}
-            onFocusCheck={(check) => setLocalFocus({ ...check, token: Date.now() })}
-          />
-        ) : null}
+    <Tabs
+      value={activeTab}
+      onValueChange={(value) => setActiveTab(value as AssetMetadataTab)}
+      className="min-h-0 w-full flex-1 gap-0"
+    >
+      <div className="shrink-0 border-b px-2 py-1.5">
+        <TabsList
+          aria-label="Asset property sections"
+          className={cn("grid w-full", supportsColumns ? "grid-cols-4" : "grid-cols-2")}
+        >
+          <MetadataTab value="general" label="General" icon={SlidersHorizontal} />
+          <MetadataTab value="lineage" label="Lineage" icon={GitBranch} count={dependencyCount} />
+          {supportsColumns ? (
+            <MetadataTab value="columns" label="Columns" icon={Columns3} count={columnCount} />
+          ) : null}
+          {supportsColumns ? (
+            <MetadataTab value="checks" label="Checks" icon={ShieldCheck} count={checkCount} />
+          ) : null}
+        </TabsList>
       </div>
-    </ScrollArea>
+      <ScrollArea className="min-h-0 w-full flex-1">
+        <TabsContent value="general" forceMount className="m-0 data-[state=inactive]:hidden">
+          <div className="divide-y px-3">
+            <IdentityCard asset={asset} pipelineId={pipelineId} />
+            <MaterializationCard asset={asset} pipelineId={pipelineId} />
+            {isSqlAssetType(asset.type) ? (
+              <GuidedCard title="SQL hooks">
+                <AssetHooks asset={asset} />
+              </GuidedCard>
+            ) : null}
+          </div>
+        </TabsContent>
+        <TabsContent value="lineage" forceMount className="m-0 data-[state=inactive]:hidden">
+          <div className="px-3">
+            <DependenciesCard asset={asset} onGoToAsset={onGoToAsset} />
+          </div>
+        </TabsContent>
+        {supportsColumns ? (
+          <TabsContent value="columns" forceMount className="m-0 data-[state=inactive]:hidden">
+            <div className="px-3">
+              <ColumnsCard asset={asset} />
+            </div>
+          </TabsContent>
+        ) : null}
+        {supportsColumns ? (
+          <TabsContent value="checks" forceMount className="m-0 data-[state=inactive]:hidden">
+            <div className="px-3">
+              <QualityChecksCard
+                asset={asset}
+                quality={quality}
+                focusedCheck={activeFocus}
+                onFocusCheck={(check) => setLocalFocus({ ...check, token: Date.now() })}
+              />
+            </div>
+          </TabsContent>
+        ) : null}
+      </ScrollArea>
+    </Tabs>
+  );
+}
+
+function MetadataTab({
+  value,
+  label,
+  icon: Icon,
+  count,
+}: {
+  value: AssetMetadataTab;
+  label: string;
+  icon: typeof SlidersHorizontal;
+  count?: number;
+}) {
+  return (
+    <TabsTrigger
+      value={value}
+      aria-label={label}
+      title={typeof count === "number" ? `${label} (${count})` : label}
+      className="min-w-0 gap-1 px-1 text-[11px]"
+    >
+      <Icon className="size-3.5" />
+      <span className="truncate">{label}</span>
+    </TabsTrigger>
   );
 }
 

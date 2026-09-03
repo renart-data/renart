@@ -203,6 +203,7 @@ test.describe("cross-pipeline dependencies live", () => {
     );
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15_000 });
     const properties = await openAssetProperties(page);
+    await properties.getByRole("tab", { name: "Lineage", exact: true }).click();
 
     const dependencyInput = properties.getByRole("combobox", { name: "Add dependency" });
     await dependencyInput.fill("raw.orders");
@@ -358,6 +359,7 @@ test.describe("cross-pipeline dependencies live", () => {
       `${liveApp.baseURL}/pipelines/${consumerPipelineID}/assets/${consumerAssetID}/code`,
     );
     properties = await openAssetProperties(page);
+    await properties.getByRole("tab", { name: "Lineage", exact: true }).click();
     await expect(properties.getByText("Ignored", { exact: true })).toBeVisible();
     const dependencyInput = properties.getByRole("combobox", { name: "Add dependency" });
     await dependencyInput.fill("raw.orders");

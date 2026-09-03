@@ -186,8 +186,15 @@ changed atomically after the dependency is added.
   Seeds can also be pasted as CSV, TSV, JSON, JSON Lines, or plain text. Auto
   detection remains an explicit, overridable format choice; TSV and text are
   normalized to CSV while JSON and JSON Lines keep their native formats.
+
 - **Guided cards** (`asset-guided-cards.tsx`), rendered in the inspector
-  sidebar next to the SQL editor: identity, materialization, dependencies
+  sidebar next to the SQL editor, are grouped into four task-oriented tabs:
+  **General** (identity, materialization, and SQL hooks), **Lineage**
+  (dependencies), **Columns**, and **Checks**. Columns and Checks are omitted
+  for non-relation assets, and a failed-check deep link selects the Checks tab
+  before focusing the exact row. Switching tabs never creates a second draft or
+  source of truth; every field still uses the same semantic transactions.
+  The underlying editors cover dependencies
   (inferred / manual / ignored, with ignore/restore/remove actions), a column
   workbench (status markers for inferred/manual/stale/type-overridden,
   checks, descriptions, and direct manual-column creation), custom SQL checks,

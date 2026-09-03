@@ -58,6 +58,8 @@ import { awaitWorkspaceSaves } from "@/lib/workspace-save-barrier";
 import { deploymentLabel } from "@/lib/deployment-label";
 
 import { PageHeader, AppPage, AppPanel, SimpleTable, StatusPill } from "./app-primitives";
+import { AppContextSidebarFrame } from "./workbench/workbench-context-sidebar";
+import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
 
 const runTabsTriggerClass = "flex-none";
 const runStatuses = ["all", "queued", "running", "success", "failed", "cancelled"] as const;
@@ -118,6 +120,7 @@ export function AppRunsPage({
   const page = Math.min(requestedPage, pages);
   const visibleRuns = runs;
   const updateSearch = (next: AppRunsSearch) => onSearchChange?.({ ...search, ...next });
+  const { setMobileNavigationOpen } = useWorkbench();
 
   useEffect(() => {
     if (requestedPage > pages) {
@@ -126,42 +129,21 @@ export function AppRunsPage({
   }, [pages, requestedPage]);
 
   return (
-    <AppPage>
-      <PageHeader
-        title="Runs"
-        subtitle="Local pipeline run history from .renart/state.db"
-        actions={
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="relative h-8 w-56 shrink-0 rounded-md border bg-background sm:w-72">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={q}
-                onChange={(event) => updateSearch({ q: event.target.value || undefined, page: 1 })}
-                placeholder="Search runs..."
-                className="h-full border-0 bg-transparent pl-8 pr-14 text-xs shadow-none focus-visible:ring-0"
-              />
-              {loading ? (
-                <Loader2
-                  aria-label="Loading runs"
-                  className="pointer-events-none absolute right-8 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground"
-                />
-              ) : null}
-              {q ? (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="absolute right-1 top-1/2 -translate-y-1/2"
-                  onClick={() => updateSearch({ q: undefined, page: 1 })}
-                >
-                  <X className="size-3.5" />
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        }
-      />
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <WorkbenchPortal slot="context">
+        <RunNavigationSidebar
+          runs={visibleRuns}
+          total={runsTotal}
+          loading={loading}
+          q={q}
+          status={status}
+          search={search}
+          onSearchChange={updateSearch}
+          onNavigate={() => setMobileNavigationOpen(false)}
+        />
+      </WorkbenchPortal>
       {runsError ? (
-        <div className="px-3 pb-2">
+        <div className="p-2 pb-0">
           <Alert variant="destructive">
             <AlertTriangle />
             <AlertTitle>Runs could not be refreshed</AlertTitle>
@@ -175,21 +157,8 @@ export function AppRunsPage({
           </Alert>
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2">
-        {runStatuses.map((item) => (
-          <Button
-            key={item}
-            variant={status === item ? "secondary" : "outline"}
-            size="xs"
-            className="capitalize"
-            onClick={() => updateSearch({ status: item === "all" ? undefined : item, page: 1 })}
-          >
-            {item}
-          </Button>
-        ))}
-      </div>
-      <div className="min-h-0 flex-1 px-3 pb-3">
-        <AppPanel className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-auto">
           <SimpleTable
             columns={[
               "Status",
@@ -228,38 +197,158 @@ export function AppRunsPage({
               </Button>,
             ])}
           />
-          <div className="flex h-11 items-center gap-3 border-t px-3 text-xs text-muted-foreground">
-            <span>
-              {runsTotal === 0
-                ? "0 runs"
-                : `${runsOffset + 1}-${runsOffset + visibleRuns.length} of ${runsTotal}`}
-            </span>
-            <div className="flex-1" />
-            <Button
-              variant="outline"
-              size="xs"
-              disabled={page <= 1}
-              onClick={() => updateSearch({ page: page - 1 })}
-            >
-              <ChevronLeft className="size-3" />
-              Prev
-            </Button>
-            <span className="font-mono">
-              {page} / {pages}
-            </span>
-            <Button
-              variant="outline"
-              size="xs"
-              disabled={page >= pages}
-              onClick={() => updateSearch({ page: page + 1 })}
-            >
-              Next
-              <ChevronRight className="size-3" />
-            </Button>
-          </div>
-        </AppPanel>
+        </div>
+        <div className="flex h-11 shrink-0 items-center gap-3 border-t px-3 text-xs text-muted-foreground">
+          <span>
+            {runsTotal === 0
+              ? "0 runs"
+              : `${runsOffset + 1}-${runsOffset + visibleRuns.length} of ${runsTotal}`}
+          </span>
+          <div className="flex-1" />
+          <Button
+            variant="outline"
+            size="xs"
+            disabled={page <= 1}
+            onClick={() => updateSearch({ page: page - 1 })}
+          >
+            <ChevronLeft className="size-3" />
+            Prev
+          </Button>
+          <span className="font-mono">
+            {page} / {pages}
+          </span>
+          <Button
+            variant="outline"
+            size="xs"
+            disabled={page >= pages}
+            onClick={() => updateSearch({ page: page + 1 })}
+          >
+            Next
+            <ChevronRight className="size-3" />
+          </Button>
+        </div>
       </div>
-    </AppPage>
+    </div>
+  );
+}
+
+function RunNavigationSidebar({
+  runs,
+  total,
+  loading,
+  q,
+  status,
+  search,
+  selectedRunId,
+  onSearchChange,
+  onNavigate,
+}: {
+  runs: PipelineRun[];
+  total: number;
+  loading: boolean;
+  q?: string;
+  status?: (typeof runStatuses)[number];
+  search: AppRunsSearch;
+  selectedRunId?: string;
+  onSearchChange?: (next: AppRunsSearch) => void;
+  onNavigate?: () => void;
+}) {
+  const activeStatus = status ?? "all";
+  return (
+    <AppContextSidebarFrame
+      title="Runs"
+      subtitle={`${total} recorded execution${total === 1 ? "" : "s"}`}
+    >
+      <div className="space-y-3 p-2">
+        {onSearchChange ? (
+          <>
+            <div className="relative h-8 rounded-md border bg-background">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                aria-label="Search runs"
+                value={q ?? ""}
+                onChange={(event) =>
+                  onSearchChange({ q: event.target.value || undefined, page: 1 })
+                }
+                placeholder="Search runs..."
+                className="h-full border-0 bg-transparent pl-8 pr-8 text-xs shadow-none focus-visible:ring-0"
+              />
+              {loading ? (
+                <Loader2
+                  aria-label="Loading runs"
+                  className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground"
+                />
+              ) : q ? (
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="absolute right-1 top-1/2 -translate-y-1/2"
+                  aria-label="Clear run search"
+                  onClick={() => onSearchChange({ q: undefined, page: 1 })}
+                >
+                  <X />
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {runStatuses.map((item) => (
+                <Button
+                  key={item}
+                  variant={activeStatus === item ? "secondary" : "ghost"}
+                  size="xs"
+                  className="h-6 capitalize"
+                  onClick={() =>
+                    onSearchChange({ status: item === "all" ? undefined : item, page: 1 })
+                  }
+                >
+                  {item}
+                </Button>
+              ))}
+            </div>
+          </>
+        ) : null}
+        <div>
+          <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {onSearchChange ? "Current page" : "Recent runs"}
+          </p>
+          <div className="space-y-0.5">
+            {runs.slice(0, 12).map((run) => (
+              <Link
+                key={run.id}
+                to="/runs/$runId"
+                params={{ runId: run.id }}
+                search={search}
+                className={cn(
+                  "flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted",
+                  selectedRunId === run.id && "bg-primary/10 text-primary",
+                )}
+                onClick={onNavigate}
+              >
+                <span
+                  className={cn(
+                    "size-2 shrink-0 rounded-full bg-muted-foreground",
+                    run.status === "success" && "bg-emerald-500",
+                    run.status === "failed" && "bg-red-500",
+                    run.status === "running" && "bg-blue-500",
+                    run.status === "queued" && "bg-amber-500",
+                  )}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-mono">{run.pipeline}</span>
+                  <span className="block truncate text-[9px] text-muted-foreground">
+                    {formatSchedulerDate(run.started_at)} · {formatRunDuration(run)}
+                  </span>
+                </span>
+                <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
+              </Link>
+            ))}
+            {!loading && runs.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-muted-foreground">No runs match this view.</p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </AppContextSidebarFrame>
   );
 }
 
@@ -273,6 +362,9 @@ export function AppRunDetailPage({
   const navigate = useNavigate();
   const workspace = useAtomValue(workspaceAtom);
   const {
+    runs: recentRuns,
+    runsTotal,
+    loading: runsLoading,
     selectedRun,
     logs,
     steps,
@@ -290,6 +382,7 @@ export function AppRunDetailPage({
   } = usePipelineRuns({
     selectedRunId: runId,
   });
+  const { setMobileNavigationOpen } = useWorkbench();
   const run = selectedRun;
   const [rerunError, setRerunError] = useState<{
     message: string;
@@ -407,36 +500,54 @@ export function AppRunDetailPage({
       setCancelError(cause instanceof Error ? cause.message : "The run could not be stopped.");
     }
   };
+  const runSidebar = (
+    <WorkbenchPortal slot="context">
+      <RunNavigationSidebar
+        runs={recentRuns}
+        total={runsTotal}
+        loading={runsLoading}
+        search={search}
+        selectedRunId={runId}
+        onNavigate={() => setMobileNavigationOpen(false)}
+      />
+    </WorkbenchPortal>
+  );
 
   if (!run) {
     if (runDetailError) {
       return (
-        <AppPage>
-          <PageHeader title={`Run ${runId}`} subtitle="Run details could not be loaded" />
-          <div className="px-3 pb-3">
-            <Alert variant="destructive">
-              <AlertTriangle />
-              <AlertTitle>Run details unavailable</AlertTitle>
-              <AlertDescription className="flex items-center justify-between gap-3">
-                <span>{runDetailError}</span>
-                <Button variant="outline" size="sm" onClick={() => void selectRun(runId)}>
-                  <RotateCw />
-                  Retry
-                </Button>
-              </AlertDescription>
-            </Alert>
-          </div>
-        </AppPage>
+        <>
+          {runSidebar}
+          <AppPage>
+            <PageHeader title={`Run ${runId}`} subtitle="Run details could not be loaded" />
+            <div className="px-3 pb-3">
+              <Alert variant="destructive">
+                <AlertTriangle />
+                <AlertTitle>Run details unavailable</AlertTitle>
+                <AlertDescription className="flex items-center justify-between gap-3">
+                  <span>{runDetailError}</span>
+                  <Button variant="outline" size="sm" onClick={() => void selectRun(runId)}>
+                    <RotateCw />
+                    Retry
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            </div>
+          </AppPage>
+        </>
       );
     }
     return (
-      <AppPage>
-        <PageHeader
-          title="Run"
-          subtitle="Loading run details"
-          actions={<Loader2 className="size-4 animate-spin text-muted-foreground" />}
-        />
-      </AppPage>
+      <>
+        {runSidebar}
+        <AppPage>
+          <PageHeader
+            title="Run"
+            subtitle="Loading run details"
+            actions={<Loader2 className="size-4 animate-spin text-muted-foreground" />}
+          />
+        </AppPage>
+      </>
     );
   }
 
@@ -477,225 +588,235 @@ export function AppRunDetailPage({
     (Boolean(run.cancellable) || cancellationRequested);
 
   return (
-    <AppPage>
-      <PageHeader
-        title={`Run ${run.id}`}
-        subtitle={`Run of ${run.pipeline} · ${runEnvironmentLabel} · ${sourceLabel} · ${plan ? `${units.length} execution units` : `${steps.length || "unknown"} assets`} · ${formatRunDuration(run)}`}
-        actions={
-          <div className="flex items-center gap-2">
-            <Button asChild variant="ghost" size="icon-sm">
-              <Link to="/runs" search={search}>
-                <ArrowLeft className="size-4" />
-              </Link>
-            </Button>
-            <StatusPill status={run.status} />
-            {showAbortAction ? (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setCancelDialogOpen(true)}
-                disabled={cancellingRunId === run.id || cancellationRequested}
-                aria-busy={cancellingRunId === run.id}
-              >
-                {cancellingRunId === run.id || cancellationRequested ? (
-                  <Loader2 data-icon="inline-start" className="animate-spin" />
-                ) : (
-                  <CircleStop data-icon="inline-start" />
-                )}
-                {cancellationRequested ? "Stopping" : "Abort run"}
+    <>
+      {runSidebar}
+      <AppPage>
+        <PageHeader
+          title={`Run ${run.id}`}
+          subtitle={`Run of ${run.pipeline} · ${runEnvironmentLabel} · ${sourceLabel} · ${plan ? `${units.length} execution units` : `${steps.length || "unknown"} assets`} · ${formatRunDuration(run)}`}
+          actions={
+            <div className="flex items-center gap-2">
+              <Button asChild variant="ghost" size="icon-sm">
+                <Link to="/runs" search={search}>
+                  <ArrowLeft className="size-4" />
+                </Link>
               </Button>
-            ) : null}
-            <Tooltip>
-              <TooltipTrigger asChild>
+              <StatusPill status={run.status} />
+              {showAbortAction ? (
                 <Button
+                  variant="destructive"
                   size="sm"
-                  onClick={() => void runAgain()}
-                  disabled={busyPipeline === run.pipeline_id || rerunUnavailable}
-                  aria-busy={busyPipeline === run.pipeline_id}
-                  aria-label={rerunButtonLabel}
-                  aria-describedby="run-again-context"
+                  onClick={() => setCancelDialogOpen(true)}
+                  disabled={cancellingRunId === run.id || cancellationRequested}
+                  aria-busy={cancellingRunId === run.id}
                 >
-                  {busyPipeline === run.pipeline_id ? (
+                  {cancellingRunId === run.id || cancellationRequested ? (
                     <Loader2 data-icon="inline-start" className="animate-spin" />
                   ) : (
-                    <RotateCw data-icon="inline-start" />
+                    <CircleStop data-icon="inline-start" />
                   )}
-                  <span className="hidden xl:inline">{rerunButtonLabel}</span>
-                  <span className="xl:hidden">{compactRerunButtonLabel}</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-sm">{rerunDescription}</TooltipContent>
-            </Tooltip>
-          </div>
-        }
-      />
-      <div
-        id="run-again-context"
-        className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pb-2 text-xs text-muted-foreground"
-        data-testid="run-again-context"
-      >
-        <span>
-          {exactReplayAvailable ? "Replay source" : "Run source"}{" "}
-          <span className="font-medium text-foreground">{rerunSourceLabel}</span>
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>
-          Environment <span className="font-medium text-foreground">{rerunEnvironmentLabel}</span>
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>{hasRecordedWindow ? `Recorded window ${rerunWindowLabel}` : rerunWindowLabel}</span>
-        <span aria-hidden="true">·</span>
-        <span>
-          Mode{" "}
-          <span className="font-medium text-foreground">
-            {exactReplayAvailable
-              ? `exact ${humanizePlanValue(reexecution?.selection || plan?.selection.mode || "plan").toLowerCase()} plan · ${exactUnitCount} ${exactUnitCount === 1 ? "unit" : "units"}`
-              : "current settings"}
-          </span>
-        </span>
-      </div>
-      {rerunError ? (
-        <div className="px-3 pb-2">
-          <Alert variant="destructive">
-            <AlertTriangle />
-            <AlertTitle>{rerunError.title ?? "Could not start rerun"}</AlertTitle>
-            <AlertDescription className="flex flex-wrap items-center gap-2">
-              <span>{rerunError.message}</span>
-              {rerunError.linkedRunId ? (
-                <Button asChild variant="outline" size="xs">
-                  <Link
-                    to="/runs/$runId"
-                    params={{ runId: rerunError.linkedRunId }}
-                    search={search}
-                  >
-                    {rerunError.linkLabel ?? "Open run"}
-                  </Link>
+                  {cancellationRequested ? "Stopping" : "Abort run"}
                 </Button>
               ) : null}
-            </AlertDescription>
-          </Alert>
-        </div>
-      ) : null}
-      {cancelError ? (
-        <div className="px-3 pb-2">
-          <Alert variant="destructive">
-            <AlertTriangle />
-            <AlertTitle>Could not stop run</AlertTitle>
-            <AlertDescription>{cancelError}</AlertDescription>
-          </Alert>
-        </div>
-      ) : null}
-      {runDetailError ? (
-        <div className="px-3 pb-2">
-          <Alert variant="destructive">
-            <AlertTriangle />
-            <AlertTitle>Run details could not be refreshed</AlertTitle>
-            <AlertDescription className="flex items-center justify-between gap-3">
-              <span>{runDetailError} Showing the last successfully loaded details.</span>
-              <Button variant="outline" size="xs" onClick={() => void selectRun(runId)}>
-                <RotateCw />
-                Retry
-              </Button>
-            </AlertDescription>
-          </Alert>
-        </div>
-      ) : null}
-      <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3">
-        <RunTimelinePanel
-          run={run}
-          steps={steps}
-          highlightedAsset={highlightedAsset}
-          onHoveredAssetChange={setHoveredAsset}
-          scrollRequest={scrollRequest}
-          onActivateAsset={(asset) => scrollToRunAsset(asset, "events")}
-        />
-        <AppPanel className="min-h-0 flex-1 overflow-hidden">
-          <Tabs
-            value={runDetailTab}
-            onValueChange={setRunDetailTab}
-            className="flex h-full min-h-0 flex-col gap-0 overflow-hidden"
-          >
-            <div className="border-b px-2 py-1">
-              <ScrollArea
-                className="min-w-0"
-                horizontalScrollBarClassName="hidden"
-                viewportClassName="w-full"
-              >
-                <TabsList className="w-max max-w-none">
-                  <TabsTrigger value="events" className={runTabsTriggerClass}>
-                    <Play />
-                    Events
-                  </TabsTrigger>
-                  {plan ? (
-                    <TabsTrigger value="plan" className={runTabsTriggerClass}>
-                      <ListTree />
-                      Plan
-                    </TabsTrigger>
-                  ) : null}
-                  <TabsTrigger value="output" className={runTabsTriggerClass}>
-                    <Terminal />
-                    Output
-                  </TabsTrigger>
-                </TabsList>
-              </ScrollArea>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="sm"
+                    onClick={() => void runAgain()}
+                    disabled={busyPipeline === run.pipeline_id || rerunUnavailable}
+                    aria-busy={busyPipeline === run.pipeline_id}
+                    aria-label={rerunButtonLabel}
+                    aria-describedby="run-again-context"
+                  >
+                    {busyPipeline === run.pipeline_id ? (
+                      <Loader2 data-icon="inline-start" className="animate-spin" />
+                    ) : (
+                      <RotateCw data-icon="inline-start" />
+                    )}
+                    <span className="hidden xl:inline">{rerunButtonLabel}</span>
+                    <span className="xl:hidden">{compactRerunButtonLabel}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-sm">{rerunDescription}</TooltipContent>
+              </Tooltip>
             </div>
-            <TabsContent
-              value="events"
-              className="m-0 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
+          }
+        />
+        <div
+          id="run-again-context"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pb-2 text-xs text-muted-foreground"
+          data-testid="run-again-context"
+        >
+          <span>
+            {exactReplayAvailable ? "Replay source" : "Run source"}{" "}
+            <span className="font-medium text-foreground">{rerunSourceLabel}</span>
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            Environment <span className="font-medium text-foreground">{rerunEnvironmentLabel}</span>
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            {hasRecordedWindow ? `Recorded window ${rerunWindowLabel}` : rerunWindowLabel}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            Mode{" "}
+            <span className="font-medium text-foreground">
+              {exactReplayAvailable
+                ? `exact ${humanizePlanValue(reexecution?.selection || plan?.selection.mode || "plan").toLowerCase()} plan · ${exactUnitCount} ${exactUnitCount === 1 ? "unit" : "units"}`
+                : "current settings"}
+            </span>
+          </span>
+        </div>
+        {rerunError ? (
+          <div className="px-3 pb-2">
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>{rerunError.title ?? "Could not start rerun"}</AlertTitle>
+              <AlertDescription className="flex flex-wrap items-center gap-2">
+                <span>{rerunError.message}</span>
+                {rerunError.linkedRunId ? (
+                  <Button asChild variant="outline" size="xs">
+                    <Link
+                      to="/runs/$runId"
+                      params={{ runId: rerunError.linkedRunId }}
+                      search={search}
+                    >
+                      {rerunError.linkLabel ?? "Open run"}
+                    </Link>
+                  </Button>
+                ) : null}
+              </AlertDescription>
+            </Alert>
+          </div>
+        ) : null}
+        {cancelError ? (
+          <div className="px-3 pb-2">
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>Could not stop run</AlertTitle>
+              <AlertDescription>{cancelError}</AlertDescription>
+            </Alert>
+          </div>
+        ) : null}
+        {runDetailError ? (
+          <div className="px-3 pb-2">
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertTitle>Run details could not be refreshed</AlertTitle>
+              <AlertDescription className="flex items-center justify-between gap-3">
+                <span>{runDetailError} Showing the last successfully loaded details.</span>
+                <Button variant="outline" size="xs" onClick={() => void selectRun(runId)}>
+                  <RotateCw />
+                  Retry
+                </Button>
+              </AlertDescription>
+            </Alert>
+          </div>
+        ) : null}
+        <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3">
+          <RunTimelinePanel
+            run={run}
+            steps={steps}
+            highlightedAsset={highlightedAsset}
+            onHoveredAssetChange={setHoveredAsset}
+            scrollRequest={scrollRequest}
+            onActivateAsset={(asset) => scrollToRunAsset(asset, "events")}
+          />
+          <AppPanel className="min-h-0 flex-1 overflow-hidden">
+            <Tabs
+              value={runDetailTab}
+              onValueChange={setRunDetailTab}
+              className="flex h-full min-h-0 flex-col gap-0 overflow-hidden"
             >
-              <RunEventsTable
-                run={run}
-                steps={steps}
-                loading={loadingRunId === run.id}
-                assetIdsByName={assetIdsByName}
-                highlightedAsset={highlightedAsset}
-                onHoveredAssetChange={setHoveredAsset}
-                scrollRequest={scrollRequest}
-                onActivateAsset={(asset) => scrollToRunAsset(asset, "timeline")}
-              />
-            </TabsContent>
-            {plan ? (
+              <div className="border-b px-2 py-1">
+                <ScrollArea
+                  className="min-w-0"
+                  horizontalScrollBarClassName="hidden"
+                  viewportClassName="w-full"
+                >
+                  <TabsList className="w-max max-w-none">
+                    <TabsTrigger value="events" className={runTabsTriggerClass}>
+                      <Play />
+                      Events
+                    </TabsTrigger>
+                    {plan ? (
+                      <TabsTrigger value="plan" className={runTabsTriggerClass}>
+                        <ListTree />
+                        Plan
+                      </TabsTrigger>
+                    ) : null}
+                    <TabsTrigger value="output" className={runTabsTriggerClass}>
+                      <Terminal />
+                      Output
+                    </TabsTrigger>
+                  </TabsList>
+                </ScrollArea>
+              </div>
               <TabsContent
-                value="plan"
+                value="events"
                 className="m-0 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
               >
-                <RunPlanPanel run={run} plan={plan} units={units} assetIdsByName={assetIdsByName} />
+                <RunEventsTable
+                  run={run}
+                  steps={steps}
+                  loading={loadingRunId === run.id}
+                  assetIdsByName={assetIdsByName}
+                  highlightedAsset={highlightedAsset}
+                  onHoveredAssetChange={setHoveredAsset}
+                  scrollRequest={scrollRequest}
+                  onActivateAsset={(asset) => scrollToRunAsset(asset, "timeline")}
+                />
               </TabsContent>
-            ) : null}
-            <TabsContent
-              value="output"
-              className="m-0 min-h-0 flex-1 overflow-hidden bg-zinc-950 data-[state=inactive]:hidden"
-            >
-              <RunTerminalOutput runId={run.id} output={output} />
-            </TabsContent>
-          </Tabs>
-        </AppPanel>
-      </div>
-      <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Abort this run?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {run.status === "queued"
-                ? "The queued execution will be cancelled before any work starts."
-                : "Renart will stop the active executor and preserve the completed events and output recorded so far."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={cancellingRunId === run.id}>
-              Keep running
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={cancellingRunId === run.id}
-              onClick={() => void abortRun()}
-            >
-              Abort run
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </AppPage>
+              {plan ? (
+                <TabsContent
+                  value="plan"
+                  className="m-0 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
+                >
+                  <RunPlanPanel
+                    run={run}
+                    plan={plan}
+                    units={units}
+                    assetIdsByName={assetIdsByName}
+                  />
+                </TabsContent>
+              ) : null}
+              <TabsContent
+                value="output"
+                className="m-0 min-h-0 flex-1 overflow-hidden bg-zinc-950 data-[state=inactive]:hidden"
+              >
+                <RunTerminalOutput runId={run.id} output={output} />
+              </TabsContent>
+            </Tabs>
+          </AppPanel>
+        </div>
+        <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Abort this run?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {run.status === "queued"
+                  ? "The queued execution will be cancelled before any work starts."
+                  : "Renart will stop the active executor and preserve the completed events and output recorded so far."}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={cancellingRunId === run.id}>
+                Keep running
+              </AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                disabled={cancellingRunId === run.id}
+                onClick={() => void abortRun()}
+              >
+                Abort run
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </AppPage>
+    </>
   );
 }
 

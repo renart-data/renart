@@ -223,6 +223,63 @@ export type NotebookAgentActivity = {
   finished_at?: string;
 };
 
+export type NotebookAgentQuestionOption = {
+  value: string;
+  label: string;
+  description?: string;
+  recommended?: boolean;
+};
+
+export type NotebookAgentQuestion = {
+  id: string;
+  kind: "single_choice" | "multiple_choice" | "text";
+  prompt: string;
+  description?: string;
+  required?: boolean;
+  options?: NotebookAgentQuestionOption[];
+};
+
+export type NotebookAgentQuestionAnswer = {
+  question_id: string;
+  values?: string[];
+  text?: string;
+};
+
+export type NotebookAgentConnectionCapability = "discover" | "sample_query";
+
+export type NotebookAgentConnectionAccessRequest = {
+  title: string;
+  description?: string;
+  connection_name?: string;
+  connection_type?: string;
+  capabilities?: NotebookAgentConnectionCapability[];
+};
+
+export type NotebookAgentQueryConnection = {
+  name: string;
+  connection_type: string;
+  asset_type: string;
+  dialect: string;
+  environment: string;
+  capabilities: NotebookAgentConnectionCapability[];
+  granted: boolean;
+};
+
+export type NotebookAgentInteraction = {
+  id: string;
+  turn_id: string;
+  kind: "questionnaire" | "connection_access";
+  status: "pending" | "answered" | "declined" | "cancelled";
+  title: string;
+  description?: string;
+  questions?: NotebookAgentQuestion[];
+  answers?: NotebookAgentQuestionAnswer[];
+  connection_request?: NotebookAgentConnectionAccessRequest;
+  connection?: NotebookAgentQueryConnection;
+  created_at: string;
+  finished_at?: string;
+};
+
 export type NotebookAgentSnapshot = {
   type: "notebook.agent";
   notebook_id: string;
@@ -232,6 +289,7 @@ export type NotebookAgentSnapshot = {
   mode?: NotebookAgentMode;
   messages: NotebookAgentMessage[];
   activities: NotebookAgentActivity[];
+  interaction?: NotebookAgentInteraction;
   error?: string;
   started_at?: string;
   finished_at?: string;
@@ -279,6 +337,26 @@ export async function resetNotebookAgent(notebookId: string) {
     status: "ok";
     conversation: NotebookAgentSnapshot;
   }>(`/api/notebooks/${notebookId}/agent`, { method: "DELETE" });
+  return payload.conversation;
+}
+
+export async function answerNotebookAgentInteraction(
+  notebookId: string,
+  interactionId: string,
+  input: {
+    answers?: NotebookAgentQuestionAnswer[];
+    connection_name?: string;
+    declined?: boolean;
+  },
+) {
+  const payload = await fetchJSONWithBody<{
+    status: "ok";
+    conversation: NotebookAgentSnapshot;
+  }>(
+    `/api/notebooks/${notebookId}/agent/interactions/${encodeURIComponent(interactionId)}/answer`,
+    "POST",
+    input,
+  );
   return payload.conversation;
 }
 

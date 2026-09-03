@@ -3,13 +3,15 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   AtSign,
+  ArrowUp,
   Bot,
   Check,
   CircleAlert,
   Database,
   FileCode,
+  Plug,
   RotateCcw,
-  Send,
+  ShieldCheck,
   Square,
   UserRound,
   X,
@@ -18,6 +20,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { ConnectionSelect, type ConnectionSelectGroup } from "@/components/app/connection-select";
+import { WorkspaceConnectionDialog } from "@/components/app/workspace-connection-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,6 +64,23 @@ import {
 } from "@/components/ui/message-scroller";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
+  Questionnaire,
+  QuestionnaireActions,
+  QuestionnaireChoice,
+  QuestionnaireChoiceDescription,
+  QuestionnaireChoices,
+  QuestionnaireDescription,
+  QuestionnaireError,
+  QuestionnaireInput,
+  QuestionnaireItem,
+  QuestionnaireNext,
+  QuestionnairePrevious,
+  QuestionnaireProgress,
+  QuestionnaireSkip,
+  QuestionnaireSubmit,
+  QuestionnaireTitle,
+} from "@/components/ui/questionnaire";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -69,18 +90,23 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  answerNotebookAgentInteraction,
   cancelNotebookAgentTurn,
   getNotebookAgent,
   type NotebookAgentActivity,
+  type NotebookAgentInteraction,
   type NotebookAgentMessage,
   type NotebookAgentMode,
   type NotebookAgentProvider,
+  type NotebookAgentQuestionAnswer,
   type NotebookAgentReference,
   resetNotebookAgent,
   startNotebookAgentTurn,
 } from "@/lib/api-notebooks";
+import { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
 import { mergeNotebookAgentEvent, notebookAgentEventsAtom } from "@/lib/atoms/domains/results";
 import { workspaceAtom, workspaceReconnectSequenceAtom } from "@/lib/atoms/domains/workspace";
+import { friendlyConnectionType, normalizeConnectionType } from "./connection-type-icon";
 import type { WorkspaceState } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -88,6 +114,7 @@ type NotebookAgentTurn = {
   user: NotebookAgentMessage;
   assistant?: NotebookAgentMessage;
   activities: NotebookAgentActivity[];
+  interaction?: NotebookAgentInteraction;
 };
 
 type NotebookAgentReferenceCandidate = NotebookAgentReference & {
@@ -115,6 +142,7 @@ export function NotebookAgentChat({
   const [referencePickerOpen, setReferencePickerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [requestBusy, setRequestBusy] = useState(false);
+  const [interactionBusy, setInteractionBusy] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -164,8 +192,13 @@ export function NotebookAgentChat({
   }, [conversation?.mode, conversation?.provider, conversation?.status]);
 
   const turns = useMemo(
-    () => buildNotebookAgentTurns(conversation?.messages ?? [], conversation?.activities ?? []),
-    [conversation?.activities, conversation?.messages],
+    () =>
+      buildNotebookAgentTurns(
+        conversation?.messages ?? [],
+        conversation?.activities ?? [],
+        conversation?.interaction,
+      ),
+    [conversation?.activities, conversation?.interaction, conversation?.messages],
   );
   const running = conversation?.status === "running" || conversation?.status === "cancelling";
   const selectedProvider = providers.find((candidate) => candidate.id === provider);
@@ -233,6 +266,22 @@ export function NotebookAgentChat({
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setRequestBusy(false);
+    }
+  };
+
+  const answerInteraction = async (
+    interaction: NotebookAgentInteraction,
+    input: Parameters<typeof answerNotebookAgentInteraction>[2],
+  ) => {
+    if (interactionBusy || interaction.status !== "pending") return;
+    setError("");
+    setInteractionBusy(true);
+    try {
+      applyConversation(await answerNotebookAgentInteraction(notebookId, interaction.id, input));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setInteractionBusy(false);
     }
   };
 
@@ -345,7 +394,12 @@ export function NotebookAgentChat({
               <MessageScrollerViewport>
                 <MessageScrollerContent className="gap-5 px-3 py-4">
                   {turns.map((turn) => (
-                    <NotebookAgentTurnView key={turn.user.turn_id} turn={turn} />
+                    <NotebookAgentTurnView
+                      key={turn.user.turn_id}
+                      turn={turn}
+                      interactionBusy={interactionBusy}
+                      onAnswerInteraction={answerInteraction}
+                    />
                   ))}
                 </MessageScrollerContent>
               </MessageScrollerViewport>
@@ -404,7 +458,9 @@ export function NotebookAgentChat({
                   ? "Ask about this notebook…"
                   : "Describe what to change in this notebook…"
               }
-              disabled={!selectedProvider?.available}
+              disabled={
+                !selectedProvider?.available || conversation?.interaction?.status === "pending"
+              }
               className="max-h-44 min-h-16"
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -454,6 +510,7 @@ export function NotebookAgentChat({
                   type="button"
                   variant="outline"
                   size="sm"
+                  className="ml-auto"
                   disabled={requestBusy || conversation?.status === "cancelling"}
                   onClick={() => void stop()}
                 >
@@ -468,15 +525,13 @@ export function NotebookAgentChat({
                 <InputGroupButton
                   type="submit"
                   variant="default"
-                  size="icon-sm"
+                  size="icon-xs"
+                  className="ml-auto shrink-0 rounded-full"
+                  aria-label="Send message"
                   title="Send message"
                   disabled={!draft.trim() || requestBusy || !selectedProvider?.available}
                 >
-                  {requestBusy ? (
-                    <Spinner aria-label="Starting agent" />
-                  ) : (
-                    <Send data-icon="inline-start" />
-                  )}
+                  {requestBusy ? <Spinner aria-label="Starting agent" /> : <ArrowUp />}
                   <span className="sr-only">Send message</span>
                 </InputGroupButton>
               )}
@@ -488,7 +543,18 @@ export function NotebookAgentChat({
   );
 }
 
-function NotebookAgentTurnView({ turn }: { turn: NotebookAgentTurn }) {
+function NotebookAgentTurnView({
+  turn,
+  interactionBusy,
+  onAnswerInteraction,
+}: {
+  turn: NotebookAgentTurn;
+  interactionBusy: boolean;
+  onAnswerInteraction: (
+    interaction: NotebookAgentInteraction,
+    input: Parameters<typeof answerNotebookAgentInteraction>[2],
+  ) => void | Promise<void>;
+}) {
   return (
     <div className="flex min-w-0 flex-col gap-3">
       <MessageScrollerItem messageId={turn.user.id} scrollAnchor>
@@ -503,6 +569,15 @@ function NotebookAgentTurnView({ turn }: { turn: NotebookAgentTurn }) {
           </div>
         </MessageScrollerItem>
       ) : null}
+      {turn.interaction ? (
+        <MessageScrollerItem messageId={turn.interaction.id}>
+          <NotebookAgentInteractionView
+            interaction={turn.interaction}
+            busy={interactionBusy}
+            onAnswer={(input) => onAnswerInteraction(turn.interaction!, input)}
+          />
+        </MessageScrollerItem>
+      ) : null}
       {turn.assistant ? (
         <MessageScrollerItem messageId={turn.assistant.id}>
           <AgentMessage message={turn.assistant} />
@@ -510,6 +585,382 @@ function NotebookAgentTurnView({ turn }: { turn: NotebookAgentTurn }) {
       ) : null}
     </div>
   );
+}
+
+function NotebookAgentInteractionView({
+  interaction,
+  busy,
+  onAnswer,
+}: {
+  interaction: NotebookAgentInteraction;
+  busy: boolean;
+  onAnswer: (input: Parameters<typeof answerNotebookAgentInteraction>[2]) => void | Promise<void>;
+}) {
+  if (interaction.status !== "pending") {
+    const answerSummary = summarizeInteractionAnswers(interaction);
+    return (
+      <div
+        data-testid="notebook-agent-interaction-summary"
+        className="ml-9 rounded-xl border bg-muted/25 px-3 py-2.5"
+      >
+        <div className="flex items-center gap-2 text-xs font-medium">
+          {interaction.status === "answered" ? (
+            <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+          ) : (
+            <Square className="size-3.5 text-muted-foreground" />
+          )}
+          {interaction.status === "answered"
+            ? interaction.kind === "connection_access"
+              ? "Connection approved"
+              : "You answered"
+            : interaction.status === "declined"
+              ? "You declined"
+              : "Question cancelled"}
+        </div>
+        {answerSummary ? (
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{answerSummary}</p>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (interaction.kind === "connection_access") {
+    return (
+      <NotebookAgentConnectionAccessView
+        interaction={interaction}
+        busy={busy}
+        onAnswer={onAnswer}
+      />
+    );
+  }
+
+  const questions = interaction.questions ?? [];
+
+  const items = questions.map((question) => ({
+    name: question.id,
+    required: question.required,
+    choices: question.options?.map((option) => ({ value: option.value })),
+  }));
+  return (
+    <div
+      data-testid="notebook-agent-questionnaire"
+      className="ml-9 rounded-xl border bg-card px-3 py-3 shadow-sm"
+    >
+      <div className="mb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-pretty">{interaction.title}</p>
+            {interaction.description ? (
+              <p className="mt-1 text-xs/relaxed text-pretty text-muted-foreground">
+                {interaction.description}
+              </p>
+            ) : null}
+          </div>
+          <Badge variant="outline" className="shrink-0">
+            Agent question
+          </Badge>
+        </div>
+      </div>
+      <Questionnaire
+        defaultItem={questions[0]?.id}
+        items={items}
+        shortcuts="letters"
+        aria-label={interaction.title}
+        onSubmit={(event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          const answers: NotebookAgentQuestionAnswer[] = [];
+          questions.forEach((question) => {
+            if (question.kind === "text") {
+              const text = String(data.get(question.id) ?? "").trim();
+              if (text) {
+                answers.push({ question_id: question.id, text });
+              }
+              return;
+            }
+            const values = data.getAll(question.id).map(String);
+            if (values.length > 0) {
+              answers.push({ question_id: question.id, values });
+            }
+          });
+          void onAnswer({ answers });
+        }}
+      >
+        {questions.length > 1 ? <QuestionnaireProgress /> : null}
+        {questions.map((question) => (
+          <QuestionnaireItem
+            key={question.id}
+            name={question.id}
+            multiple={question.kind === "multiple_choice"}
+            required={question.required}
+            disabled={busy}
+          >
+            <QuestionnaireTitle>{question.prompt}</QuestionnaireTitle>
+            {question.description ? (
+              <QuestionnaireDescription>{question.description}</QuestionnaireDescription>
+            ) : null}
+            {question.kind === "text" ? (
+              <QuestionnaireInput
+                aria-label={question.prompt}
+                maxLength={2 << 10}
+                placeholder="Type your answer…"
+              />
+            ) : (
+              <QuestionnaireChoices>
+                {(question.options ?? []).map((option) => (
+                  <QuestionnaireChoice key={option.value} value={option.value}>
+                    <span className="flex min-w-0 items-center gap-2 font-medium">
+                      <span className="truncate">{option.label}</span>
+                      {option.recommended ? (
+                        <Badge variant="secondary" className="shrink-0 text-[9px]">
+                          Recommended
+                        </Badge>
+                      ) : null}
+                    </span>
+                    {option.description ? (
+                      <QuestionnaireChoiceDescription>
+                        {option.description}
+                      </QuestionnaireChoiceDescription>
+                    ) : null}
+                  </QuestionnaireChoice>
+                ))}
+              </QuestionnaireChoices>
+            )}
+            <QuestionnaireError />
+          </QuestionnaireItem>
+        ))}
+        <QuestionnaireActions>
+          <QuestionnairePrevious size="sm" />
+          <QuestionnaireSkip size="sm" />
+          <QuestionnaireNext size="sm" />
+          <QuestionnaireSubmit size="sm">
+            {busy ? <Spinner aria-label="Sending answer" /> : null}
+            Send answer
+          </QuestionnaireSubmit>
+        </QuestionnaireActions>
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          className="self-start text-muted-foreground"
+          disabled={busy}
+          onClick={() => void onAnswer({ declined: true })}
+        >
+          Decline question
+        </Button>
+      </Questionnaire>
+    </div>
+  );
+}
+
+function NotebookAgentConnectionAccessView({
+  interaction,
+  busy,
+  onAnswer,
+}: {
+  interaction: NotebookAgentInteraction;
+  busy: boolean;
+  onAnswer: (input: Parameters<typeof answerNotebookAgentInteraction>[2]) => void | Promise<void>;
+}) {
+  const workspace = useAtomValue(workspaceAtom);
+  const settings = useWorkspaceSettingsData();
+  const request = interaction.connection_request;
+  const requestedName = request?.connection_name?.trim() ?? "";
+  const requestedType = normalizeConnectionType(request?.connection_type);
+  const [selectedConnection, setSelectedConnection] = useState("");
+  const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
+
+  const compatibleConnections = useMemo(() => {
+    const configured = workspace?.query_connections ?? [];
+    return configured.filter((connection) => {
+      if (requestedName && connection.name.toLowerCase() !== requestedName.toLowerCase()) {
+        return false;
+      }
+      if (request?.connection_type) {
+        return normalizeConnectionType(connection.connection_type) === requestedType;
+      }
+      return true;
+    });
+  }, [request?.connection_type, requestedName, requestedType, workspace?.query_connections]);
+
+  useEffect(() => {
+    if (compatibleConnections.some((connection) => connection.name === selectedConnection)) return;
+    setSelectedConnection(compatibleConnections[0]?.name ?? "");
+  }, [compatibleConnections, selectedConnection]);
+
+  const groups = useMemo<ConnectionSelectGroup[]>(
+    () => [
+      {
+        label: "Configured in this environment",
+        options: compatibleConnections.map((connection) => ({
+          value: connection.name,
+          label: connection.name,
+          connectionType: connection.connection_type,
+          detail: `${friendlyConnectionType(connection.connection_type)} · read-only for this turn`,
+          badge: connection.name === requestedName ? "Requested" : undefined,
+          badgeVariant: "secondary",
+        })),
+      },
+    ],
+    [compatibleConnections, requestedName],
+  );
+  const availableConnectionTypes = useMemo(
+    () =>
+      (settings.workspaceConfig?.connection_types ?? []).filter(
+        (connectionType) =>
+          connectionType.category === "warehouse" &&
+          (!request?.connection_type ||
+            normalizeConnectionType(connectionType.type_name) === requestedType),
+      ),
+    [request?.connection_type, requestedType, settings.workspaceConfig?.connection_types],
+  );
+  const environment =
+    workspace?.selected_environment || settings.fallbackConfigEnvironment || "default";
+  const capabilities = request?.capabilities?.length
+    ? request.capabilities
+    : (["discover", "sample_query"] as const);
+
+  return (
+    <div
+      data-testid="notebook-agent-connection-access"
+      className="ml-9 rounded-xl border bg-card px-3 py-3 shadow-sm"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-pretty">
+            {request?.title || interaction.title || "Approve a data connection"}
+          </p>
+          <p className="mt-1 text-xs/relaxed text-pretty text-muted-foreground">
+            {request?.description ||
+              "The agent needs warehouse metadata or a small data sample to continue."}
+          </p>
+        </div>
+        <Badge variant="outline" className="shrink-0">
+          <ShieldCheck data-icon="inline-start" />
+          Your approval
+        </Badge>
+      </div>
+
+      <div className="mt-3 rounded-lg border bg-muted/20 p-2.5">
+        <div className="flex items-start gap-2">
+          <Plug className="mt-0.5 size-4 shrink-0 text-primary" />
+          <div className="min-w-0 text-[11px]/relaxed text-muted-foreground">
+            <p>
+              Renart keeps credentials write-only. The agent receives only connection names, bounded
+              catalog results, and up to 100 read-only sample rows. Approval expires when this Edit
+              turn ends.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {capabilities.map((capability) => (
+                <Badge key={capability} variant="secondary" size="xs">
+                  {capability === "sample_query" ? "Sample queries" : "Browse catalog"}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-1.5">
+        <label className="text-[11px] font-medium" htmlFor={`agent-connection-${interaction.id}`}>
+          Connection
+        </label>
+        {compatibleConnections.length > 0 ? (
+          <ConnectionSelect
+            id={`agent-connection-${interaction.id}`}
+            value={selectedConnection}
+            groups={groups}
+            contentAlign="start"
+            className="w-full"
+            disabled={busy}
+            onValueChange={setSelectedConnection}
+          />
+        ) : (
+          <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+            {requestedName ? (
+              <>
+                Connection <span className="font-mono text-foreground">{requestedName}</span> is not
+                configured in {environment}.
+              </>
+            ) : request?.connection_type ? (
+              <>No {friendlyConnectionType(request.connection_type)} connection is configured.</>
+            ) : (
+              <>No compatible query connection is configured.</>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => void onAnswer({ declined: true })}
+        >
+          Decline
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={
+            busy || settings.workspaceConfigLoading || availableConnectionTypes.length === 0
+          }
+          onClick={() => setConnectionDialogOpen(true)}
+        >
+          <Plug data-icon="inline-start" />
+          New connection
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy || !selectedConnection}
+          onClick={() => void onAnswer({ connection_name: selectedConnection })}
+        >
+          {busy ? <Spinner data-icon="inline-start" /> : <Check data-icon="inline-start" />}
+          Approve for this turn
+        </Button>
+      </div>
+
+      <WorkspaceConnectionDialog
+        open={connectionDialogOpen}
+        onOpenChange={setConnectionDialogOpen}
+        environment={environment}
+        connectionTypes={availableConnectionTypes}
+        requestedConnectionType={request?.connection_type}
+        requestedConnectionName={requestedName || undefined}
+        onCreated={async (connectionName) => {
+          await onAnswer({ connection_name: connectionName });
+        }}
+      />
+    </div>
+  );
+}
+
+function summarizeInteractionAnswers(interaction: NotebookAgentInteraction): string {
+  if (interaction.kind === "connection_access") {
+    return interaction.connection
+      ? `${interaction.connection.name} · ${friendlyConnectionType(interaction.connection.connection_type)} · approved for this Edit turn`
+      : "";
+  }
+  const questions = new Map(
+    (interaction.questions ?? []).map((question) => [question.id, question]),
+  );
+  return (interaction.answers ?? [])
+    .map((answer) => {
+      const question = questions.get(answer.question_id);
+      if (answer.text) return `${question?.prompt ?? answer.question_id}: ${answer.text}`;
+      const labels = (answer.values ?? []).map(
+        (value) => question?.options?.find((option) => option.value === value)?.label ?? value,
+      );
+      return labels.length > 0
+        ? `${question?.prompt ?? answer.question_id}: ${labels.join(", ")}`
+        : "";
+    })
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function AgentMessage({ message }: { message: NotebookAgentMessage }) {
@@ -736,6 +1187,7 @@ function AgentActivity({ activity }: { activity: NotebookAgentActivity }) {
 function buildNotebookAgentTurns(
   messages: NotebookAgentMessage[],
   activities: NotebookAgentActivity[],
+  interaction?: NotebookAgentInteraction,
 ): NotebookAgentTurn[] {
   const byTurn = new Map<string, NotebookAgentTurn>();
   const order: string[] = [];
@@ -751,6 +1203,10 @@ function buildNotebookAgentTurns(
   }
   for (const activity of activities) {
     byTurn.get(activity.turn_id)?.activities.push(activity);
+  }
+  if (interaction) {
+    const turn = byTurn.get(interaction.turn_id);
+    if (turn) turn.interaction = interaction;
   }
   return order
     .map((turnId) => byTurn.get(turnId))

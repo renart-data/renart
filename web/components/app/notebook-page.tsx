@@ -8,6 +8,7 @@ import {
   BookOpen,
   Check,
   ChevronRight,
+  CornerDownRight,
   Database,
   Download,
   FileInput,
@@ -22,11 +23,11 @@ import {
   Play,
   Plus,
   RotateCw,
-  SlidersHorizontal,
   Square,
   Trash2,
+  X,
 } from "lucide-react";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AnsiOutput } from "@/components/ansi-output";
 import { ConnectionSelect } from "@/components/app/connection-select";
@@ -42,6 +43,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   DelimitedCardContent,
   DelimitedCardHeader,
@@ -62,9 +64,6 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -72,6 +71,8 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
@@ -89,6 +90,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   createNotebookControl,
   createNotebookCellAt,
@@ -151,12 +153,23 @@ import {
 } from "@/components/virtual-data-table";
 
 import { hasAuthoringDragItem, readAuthoringDragItem } from "./authoring-drag";
-import { CHART_TYPE_OPTIONS, ChartTypePicker, type ChartType } from "./chart-type-picker";
-import { ControlTypePicker } from "./control-type-picker";
+import {
+  CHART_TYPE_OPTIONS,
+  ChartTypePicker,
+  ChartTypePreview,
+  type ChartType,
+} from "./chart-type-picker";
+import { ControlTypePicker, ControlTypePreview } from "./control-type-picker";
 import { DocumentAuthoringSidebar, type DocumentAuthoringTab } from "./document-authoring-sidebar";
 import { MissingPythonDepsBanner } from "./missing-python-deps";
 import { NotebookAgentChat } from "./notebook-agent-panel";
-import { NotebookBlockTypePicker } from "./notebook-block-type-picker";
+import {
+  NotebookBlockTypeGlyph,
+  NotebookBlockTypePicker,
+  NotebookBlockTypePreview,
+  NOTEBOOK_BLOCK_TYPE_OPTIONS,
+  type NotebookBlockType,
+} from "./notebook-block-type-picker";
 import { NotebookControlBlock } from "./notebook-control-block";
 import type { AuthoredControlDataset } from "./authored-control";
 import { MarkdownEditor } from "./markdown-editor";
@@ -167,6 +180,17 @@ import { NotebookVisualizationBlockCard } from "./notebook-visualization-block";
 import { NotebookParametersDialog } from "./notebook-parameters-dialog";
 import { LoadStreamPicker } from "./load-stream-picker";
 import { PageHeader, AppPage, AppPanel } from "./app-primitives";
+import { appAssetViewPath } from "./build-route-model";
+import { AppContextSidebarFrame } from "./workbench/workbench-context-sidebar";
+import {
+  buildAssetDocumentKey,
+  buildDocumentKey,
+  documentAfterClose,
+  type BuildDocument,
+  useBuildDocuments,
+} from "./workbench/build-document-state";
+import { BuildDocumentTabs } from "./workbench/build-document-tabs";
+import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
 import {
   semanticTypeForPhysicalType,
   visualizationSuggestionForType,
@@ -179,9 +203,63 @@ const NOTEBOOK_CELL_JUMP_HIGHLIGHT_MS = 1600;
 const NOTEBOOK_BLOCK_ENTER_ANIMATION =
   "animate-in fade-in-0 slide-in-from-bottom-2 duration-300 motion-reduce:animate-none";
 const NOTEBOOK_BLOCK_CARD_CLASS =
-  "group/notebook-block border-transparent bg-transparent shadow-none transition-colors hover:border-border hover:bg-card hover:shadow-sm focus-within:border-border focus-within:bg-card focus-within:shadow-sm";
+  "group/notebook-block border-border/70 bg-transparent shadow-none transition-colors hover:border-border focus-within:border-primary/35";
 const NOTEBOOK_BLOCK_HEADER_CLASS =
-  "border-transparent bg-transparent transition-colors group-hover/notebook-block:border-border group-hover/notebook-block:bg-muted/20 group-focus-within/notebook-block:border-border group-focus-within/notebook-block:bg-muted/20";
+  "min-h-8 border-border/70 bg-transparent px-2 py-1 transition-colors";
+
+function NotebookSelectedControls({
+  selected,
+  children,
+  className,
+  expandedClassName = "max-w-[64rem]",
+}: {
+  selected: boolean;
+  children: ReactNode;
+  className?: string;
+  expandedClassName?: string;
+}) {
+  return (
+    <div
+      aria-hidden={!selected}
+      data-notebook-selected-controls
+      inert={selected ? undefined : true}
+      className={cn(
+        "flex min-w-0 shrink items-center gap-2 overflow-hidden whitespace-nowrap transition-[max-width,opacity,visibility] duration-200 ease-out motion-reduce:transition-none",
+        className,
+        selected
+          ? cn("visible opacity-100", expandedClassName)
+          : "invisible pointer-events-none max-w-0 opacity-0",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function NotebookSelectedContent({
+  selected,
+  children,
+  testId,
+}: {
+  selected: boolean;
+  children: ReactNode;
+  testId?: string;
+}) {
+  return (
+    <div
+      aria-hidden={!selected}
+      data-notebook-selected-content
+      data-testid={testId}
+      inert={selected ? undefined : true}
+      className={cn(
+        "grid transition-[grid-template-rows,opacity,visibility] duration-200 ease-out motion-reduce:transition-none",
+        selected ? "visible grid-rows-[1fr] opacity-100" : "invisible grid-rows-[0fr] opacity-0",
+      )}
+    >
+      <div className="min-h-0 overflow-hidden">{children}</div>
+    </div>
+  );
+}
 
 type PendingNotebookBlockKind = "sql" | "python" | "markdown" | "visualization" | "control";
 type NotebookBlockPlacement = Required<Pick<NotebookBlockPosition, "position">> & {
@@ -246,20 +324,34 @@ function notebookPlacementKey(placement: NotebookBlockPlacement): string {
 export function AppNotebooksIndexPage() {
   const workspace = useAtomValue(workspaceAtom);
   const navigate = useNavigate();
+  const { navigation } = useWorkbench();
+  const workbenchEnabled = Boolean(navigation?.workbench);
   const notebooks = workspace?.notebooks ?? [];
   const [newNotebookOpen, setNewNotebookOpen] = useState(false);
 
   return (
     <AppPage>
-      <PageHeader
-        title="Notebooks"
-        actions={
-          <Button size="sm" onClick={() => setNewNotebookOpen(true)}>
-            <Plus className="size-3.5" />
-            New notebook
-          </Button>
-        }
-      />
+      {workbenchEnabled ? (
+        <WorkbenchPortal slot="context">
+          <NotebookLibrarySidebar
+            notebooks={notebooks}
+            onSelect={(id) =>
+              void navigate({ to: "/notebooks/$notebookId", params: { notebookId: id } })
+            }
+            onCreate={() => setNewNotebookOpen(true)}
+          />
+        </WorkbenchPortal>
+      ) : (
+        <PageHeader
+          title="Notebooks"
+          actions={
+            <Button size="sm" onClick={() => setNewNotebookOpen(true)}>
+              <Plus className="size-3.5" />
+              New notebook
+            </Button>
+          }
+        />
+      )}
       <div className="min-h-0 flex-1 overflow-auto px-3 pb-3">
         {/* my-auto centers the (usually short) content vertically; long lists
             grow past the viewport and scroll normally. */}
@@ -331,6 +423,55 @@ export function AppNotebooksIndexPage() {
   );
 }
 
+function NotebookLibrarySidebar({
+  notebooks,
+  onSelect,
+  onCreate,
+}: {
+  notebooks: readonly WebNotebook[];
+  onSelect: (notebookId: string) => void;
+  onCreate: () => void;
+}) {
+  return (
+    <AppContextSidebarFrame
+      title="Notebooks"
+      actions={
+        <Button variant="ghost" size="icon-sm" aria-label="New notebook" onClick={onCreate}>
+          <Plus />
+        </Button>
+      }
+    >
+      <div className="flex flex-col gap-1 p-2">
+        {notebooks.length === 0 ? (
+          <div className="rounded-lg border border-dashed px-3 py-6 text-center text-xs text-muted-foreground">
+            No notebooks yet
+          </div>
+        ) : (
+          notebooks.map((notebook) => (
+            <button
+              key={notebook.id}
+              type="button"
+              className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent"
+              onClick={() => onSelect(notebook.id)}
+            >
+              <BookOpen className="size-3.5 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium">{notebook.title}</span>
+                <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                  {notebook.path}
+                </span>
+              </span>
+              {notebook.problems?.length ? (
+                <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
+              ) : null}
+            </button>
+          ))
+        )}
+      </div>
+    </AppContextSidebarFrame>
+  );
+}
+
 export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const workspace = useAtomValue(workspaceAtom);
   const notebookRuntimeEvent = useAtomValue(notebookRuntimeEventsAtom)[notebookId] ?? null;
@@ -340,6 +481,37 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
   const selectedExecutionTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
   const navigate = useNavigate();
+  const {
+    navigation: workbenchNavigation,
+    session: workbenchSession,
+    setMobileNavigationOpen,
+  } = useWorkbench();
+  const workbenchEnabled = Boolean(workbenchNavigation?.workbench);
+  const availableBuildAssetKeys = useMemo(
+    () =>
+      new Set(
+        (workspace?.pipelines ?? []).flatMap((pipeline) =>
+          pipeline.assets.map((asset) => buildAssetDocumentKey(pipeline.id, asset.id)),
+        ),
+      ),
+    [workspace?.pipelines],
+  );
+  const availableNotebookIds = useMemo(
+    () => new Set((workspace?.notebooks ?? []).map((candidate) => candidate.id)),
+    [workspace?.notebooks],
+  );
+  const activeBuildDocument = useMemo<BuildDocument>(
+    () => ({ kind: "notebook", notebookId }),
+    [notebookId],
+  );
+  const { documents: buildDocuments, closeDocument: removeBuildDocument } = useBuildDocuments({
+    projectId: workbenchSession.projectId,
+    activeDocument: activeBuildDocument,
+    availableAssetKeys: availableBuildAssetKeys,
+    availableNotebookIds,
+    resourcesReady: Boolean(workspace),
+  });
+  const [documentNavigationError, setDocumentNavigationError] = useState<string | null>(null);
 
   const stateNotebook = useMemo(
     () => workspace?.notebooks?.find((candidate) => candidate.id === notebookId) ?? null,
@@ -374,6 +546,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const [promoting, setPromoting] = useState<WebAsset | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolsTab, setToolsTab] = useState("outline");
+  const [selectedBlockID, setSelectedBlockID] = useState<string | null>(null);
   const [selectedVisualizationID, setSelectedVisualizationID] = useState<string | null>(null);
   const [selectedControlID, setSelectedControlID] = useState<string | null>(null);
   const [visualizationInspectorOpen, setVisualizationInspectorOpen] = useState(false);
@@ -423,6 +596,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     setParametersOpen(false);
     setToolsOpen(false);
     setToolsTab("outline");
+    setSelectedBlockID(null);
     setSelectedVisualizationID(null);
     setSelectedControlID(null);
     setVisualizationInspectorOpen(false);
@@ -468,6 +642,15 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     setSelectedControlID(null);
     setVisualizationInspectorOpen(false);
   }, [notebook, selectedControlID]);
+
+  useEffect(() => {
+    if (!selectedBlockID || !notebook) return;
+    const exists =
+      notebook.blocks.some((block, index) => notebookBlockKey(block, index) === selectedBlockID) ||
+      (selectedBlockID.startsWith("control:") &&
+        notebook.parameters?.some((parameter) => `control:${parameter.id}` === selectedBlockID));
+    if (!exists) setSelectedBlockID(null);
+  }, [notebook, selectedBlockID]);
 
   useEffect(() => {
     if (wideNotebookTools) setVisualizationInspectorOpen(false);
@@ -571,6 +754,75 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     onParameterValues: setParameterValues,
     onError: setActionError,
   });
+
+  const navigateToBuildDocument = useCallback(
+    async (document: BuildDocument | null) => {
+      setDocumentNavigationError(null);
+      if (!document) {
+        await navigate({ to: "/notebooks" });
+        return;
+      }
+      if (document.kind === "notebook") {
+        await navigate({
+          to: "/notebooks/$notebookId",
+          params: { notebookId: document.notebookId },
+        });
+        return;
+      }
+      if (document.kind === "adhoc") {
+        await navigate({
+          to: appAssetViewPath("code"),
+          params: { pipelineId: document.pipelineId, assetId: document.contextAssetId },
+          search: { result: "inspect", editor: "adhoc" },
+        });
+        return;
+      }
+      await navigate({
+        to: appAssetViewPath("code"),
+        params: { pipelineId: document.pipelineId, assetId: document.assetId },
+        search: { result: "inspect", editor: "asset" },
+      });
+    },
+    [navigate],
+  );
+
+  const selectBuildDocument = useCallback(
+    async (document: BuildDocument) => {
+      if (buildDocumentKey(document) === buildDocumentKey(activeBuildDocument)) return;
+      try {
+        await flushPendingSaves();
+        await navigateToBuildDocument(document);
+      } catch (error) {
+        setDocumentNavigationError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [activeBuildDocument, flushPendingSaves, navigateToBuildDocument],
+  );
+
+  const closeBuildDocument = useCallback(
+    async (document: BuildDocument) => {
+      const key = buildDocumentKey(document);
+      if (key !== buildDocumentKey(activeBuildDocument)) {
+        removeBuildDocument(key);
+        return;
+      }
+      try {
+        await flushPendingSaves();
+        const next = documentAfterClose(buildDocuments, key);
+        await navigateToBuildDocument(next);
+        removeBuildDocument(key);
+      } catch (error) {
+        setDocumentNavigationError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [
+      activeBuildDocument,
+      buildDocuments,
+      flushPendingSaves,
+      navigateToBuildDocument,
+      removeBuildDocument,
+    ],
+  );
 
   // Each cell's last successful run columns, so a cell that reads from a sibling
   // gets that sibling's real output columns for intellisense and parse-context.
@@ -691,6 +943,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
 
   const selectVisualization = useCallback(
     (visualizationID: string) => {
+      setSelectedBlockID(`block:${visualizationID}`);
       setSelectedVisualizationID(visualizationID);
       setSelectedControlID(null);
       if (!wideNotebookTools) setVisualizationInspectorOpen(true);
@@ -700,6 +953,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
 
   const selectControl = useCallback(
     (controlID: string) => {
+      setSelectedBlockID(`control:${controlID}`);
       setSelectedControlID(controlID);
       setSelectedVisualizationID(null);
       if (!wideNotebookTools) setVisualizationInspectorOpen(true);
@@ -707,15 +961,23 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     [wideNotebookTools],
   );
 
+  const selectContentBlock = useCallback((blockID: string) => {
+    setSelectedBlockID(blockID);
+    setSelectedVisualizationID(null);
+    setSelectedControlID(null);
+    setVisualizationInspectorOpen(false);
+  }, []);
+
   const confirmDeleteCell = useCallback(async () => {
     if (!cellToDelete || deletingCell) {
       return;
     }
     setDeletingCell(true);
     await mutateWithResult(() => deleteNotebookCell(notebookId, cellToDelete.id));
+    if (selectedBlockID === `cell:${cellToDelete.id}`) setSelectedBlockID(null);
     setDeletingCell(false);
     setCellToDelete(null);
-  }, [cellToDelete, deletingCell, mutateWithResult, notebookId]);
+  }, [cellToDelete, deletingCell, mutateWithResult, notebookId, selectedBlockID]);
 
   const createNotebookBlock = useCallback(
     async (kind: PendingNotebookBlockKind, options: NotebookBlockCreateOptions = {}) => {
@@ -926,12 +1188,9 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   // cells scroll into view within this notebook.
   const goToAsset = useCallback(
     (pipelineId: string, assetId: string) => {
-      void navigate({
-        to: "/pipelines/$pipelineId/assets/$assetId/canvas",
-        params: { pipelineId, assetId },
-      });
+      void selectBuildDocument({ kind: "asset", pipelineId, assetId });
     },
-    [navigate],
+    [selectBuildDocument],
   );
   const goToCell = useCallback((cellId: string) => {
     const target = document.querySelector<HTMLElement>(`[data-notebook-cell-id="${cellId}"]`);
@@ -967,9 +1226,8 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       } else if (block.control) {
         selectControl(block.control);
       } else {
-        setSelectedVisualizationID(null);
-        setSelectedControlID(null);
-        setVisualizationInspectorOpen(false);
+        const blockIndex = Math.max(notebook?.blocks.indexOf(block) ?? 0, 0);
+        selectContentBlock(notebookBlockKey(block, blockIndex));
       }
       if (block.cell) {
         goToCell(block.cell);
@@ -984,9 +1242,21 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
           block: "center",
         });
       }
-      if (!wideNotebookTools) setToolsOpen(false);
+      if (!wideNotebookTools) {
+        if (workbenchEnabled) setMobileNavigationOpen(false);
+        else setToolsOpen(false);
+      }
     },
-    [goToCell, selectControl, selectVisualization, wideNotebookTools],
+    [
+      goToCell,
+      notebook?.blocks,
+      selectContentBlock,
+      selectControl,
+      selectVisualization,
+      setMobileNavigationOpen,
+      wideNotebookTools,
+      workbenchEnabled,
+    ],
   );
 
   const pipelines = workspace?.pipelines ?? [];
@@ -1061,6 +1331,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         key={`control:${control.id}`}
         data-notebook-control-id={control.id}
         data-notebook-block-entering={entering || undefined}
+        data-notebook-block-selected={selectedBlockID === `control:${control.id}` || undefined}
         className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
       >
         <NotebookControlBlock
@@ -1075,6 +1346,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
           inspectorTarget={visualizationInspectorTarget}
           onSelect={() => selectControl(control.id)}
           onCloseInspector={() => {
+            setSelectedBlockID(null);
             setSelectedControlID(null);
             setVisualizationInspectorOpen(false);
           }}
@@ -1093,12 +1365,14 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                 parameterValuesRef.current = next;
                 return next;
               });
+              setSelectedBlockID(`control:${nextControl.id}`);
               setSelectedControlID(nextControl.id);
             }
             return true;
           }}
           onDelete={async () => {
             await mutateWithResult(() => deleteNotebookControl(notebookId, control.id));
+            setSelectedBlockID(null);
             setSelectedControlID(null);
             setVisualizationInspectorOpen(false);
           }}
@@ -1133,148 +1407,192 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       onClose={onClose}
     />
   );
+  const notebookActions = (
+    <div className="flex shrink-0 items-center gap-1.5">
+      {staleCount > 0 ? (
+        <div className="flex items-center gap-1">
+          <Badge
+            variant="outline"
+            className="hidden border-amber-500/30 bg-amber-500/10 text-amber-700 sm:inline-flex dark:text-amber-200"
+          >
+            <AlertTriangle className="size-3" />
+            {staleCount} stale
+          </Badge>
+          <Button
+            size="sm"
+            variant="outline"
+            aria-label="Recompute"
+            disabled={busy}
+            onClick={() => void runRequest({ cells: manualStaleCells }, manualStaleCells)}
+          >
+            <RotateCw className="size-3.5" />
+            <span className="hidden lg:inline">Recompute</span>
+          </Button>
+        </div>
+      ) : null}
+      {!workbenchEnabled ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="xl:hidden"
+          aria-label="Notebook tools"
+          onClick={() => setToolsOpen(true)}
+        >
+          <PanelLeft data-icon="inline-start" />
+          <span className="hidden sm:inline">Tools</span>
+          {agentRunning ? (
+            <span
+              aria-label="Agent is working"
+              className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse"
+            />
+          ) : null}
+        </Button>
+      ) : null}
+      {hasPythonCell ? (
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label="Dependencies"
+          onClick={() => setDepsOpen(true)}
+        >
+          <Package className="size-3.5" />
+          <span className="hidden lg:inline">Dependencies</span>
+        </Button>
+      ) : null}
+      {busy || runningCells.size > 0 ? (
+        <Button
+          size="sm"
+          variant="outline"
+          aria-label={stopping ? "Stopping" : "Stop"}
+          disabled={stopping}
+          onClick={cancelRun}
+        >
+          {stopping ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Square className="size-3.5 fill-current" />
+          )}
+          <span className={cn(workbenchEnabled && "hidden lg:inline")}>
+            {stopping ? "Stopping…" : "Stop"}
+          </span>
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          aria-label="Run all"
+          disabled={allCellIds.length === 0}
+          onClick={() => void runRequest({ all: true }, allCellIds)}
+        >
+          <Play className="size-3.5" />
+          <span className={cn(workbenchEnabled && "hidden lg:inline")}>Run all</span>
+        </Button>
+      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="icon-sm" aria-label="Notebook actions">
+            <MoreHorizontal className="size-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuGroup>
+            <DropdownMenuCheckboxItem
+              checked={autoRecompute}
+              onCheckedChange={(checked) => setAutoRecompute(checked === true)}
+              onSelect={(event) => event.preventDefault()}
+            >
+              Auto-recompute stale cells
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              disabled={busy}
+              onSelect={() => void runRequest({ all: true, refresh_imports: true }, allCellIds)}
+            >
+              <RotateCw />
+              Refresh sources and run all
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void resetSession()}>
+              <Database />
+              Reset session (delete local DB)
+            </DropdownMenuItem>
+            {notebook.manifest_version < 2 ? (
+              <DropdownMenuItem
+                onSelect={() =>
+                  void mutate(() => upgradeNotebookManifest(notebookId, notebook.revision))
+                }
+              >
+                <ArrowUpFromLine />
+                Upgrade notebook format
+              </DropdownMenuItem>
+            ) : null}
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => {
+                if (!window.confirm(`Delete notebook "${notebook.title}" and its files?`)) return;
+                void deleteNotebook(notebookId)
+                  .then(() => navigate({ to: "/" }))
+                  .catch((error) => setActionError(String(error)));
+              }}
+            >
+              <Trash2 />
+              Delete notebook
+            </DropdownMenuItem>
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
 
   return (
     <AppPage>
+      {workbenchEnabled ? (
+        <WorkbenchPortal slot="context">
+          <div className="flex h-full min-h-0 flex-col">
+            {renderNotebookTools(() => setMobileNavigationOpen(false))}
+          </div>
+        </WorkbenchPortal>
+      ) : null}
+      {workbenchEnabled && (selectedVisualizationID || selectedControlID) ? (
+        <WorkbenchPortal slot="inspector">
+          <ScrollArea className="h-full">
+            <div ref={setVisualizationInspectorTarget} />
+          </ScrollArea>
+        </WorkbenchPortal>
+      ) : null}
       <div
         className={cn("relative z-10 shrink-0 transition-shadow", notebookScrolled && "shadow-sm")}
       >
-        <PageHeader
-          title={notebook.title}
-          subtitle={`Notebook · ${notebook.path} · runs in a local DuckDB session`}
-          actions={
-            <div className="flex items-center gap-2">
-              {staleCount > 0 ? (
-                <div className="flex items-center gap-1">
-                  <Badge
-                    variant="outline"
-                    className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200"
-                  >
-                    <AlertTriangle className="size-3" />
-                    {staleCount} stale
-                  </Badge>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    aria-label="Recompute"
-                    disabled={busy}
-                    onClick={() => void runRequest({ cells: manualStaleCells }, manualStaleCells)}
-                  >
-                    <RotateCw className="size-3.5" />
-                    <span className="hidden sm:inline">Recompute</span>
-                  </Button>
-                </div>
-              ) : null}
-              <Button
-                variant="outline"
-                size="sm"
-                className="xl:hidden"
-                aria-label="Notebook tools"
-                onClick={() => setToolsOpen(true)}
+        {workbenchEnabled ? (
+          <div className="flex h-11 min-w-0 items-center gap-1.5 overflow-hidden border-b bg-background px-2">
+            <BuildDocumentTabs
+              documents={buildDocuments}
+              activeDocument={activeBuildDocument}
+              emptyLabel={notebook.title}
+              onSelectDocument={(document) => void selectBuildDocument(document)}
+              onCloseDocument={(document) => void closeBuildDocument(document)}
+            />
+            {documentNavigationError ? (
+              <span
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-destructive"
+                title={`Could not switch documents: ${documentNavigationError}`}
+                aria-label={`Could not switch documents: ${documentNavigationError}`}
               >
-                <PanelLeft data-icon="inline-start" />
-                <span className="hidden sm:inline">Tools</span>
-                {agentRunning ? (
-                  <span
-                    aria-label="Agent is working"
-                    className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse"
-                  />
-                ) : null}
-              </Button>
-              {hasPythonCell ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label="Dependencies"
-                  onClick={() => setDepsOpen(true)}
-                >
-                  <Package className="size-3.5" />
-                  <span className="hidden sm:inline">Dependencies</span>
-                </Button>
-              ) : null}
-              {busy || runningCells.size > 0 ? (
-                <Button size="sm" variant="outline" disabled={stopping} onClick={cancelRun}>
-                  {stopping ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Square className="size-3.5 fill-current" />
-                  )}
-                  {stopping ? "Stopping…" : "Stop"}
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  disabled={allCellIds.length === 0}
-                  onClick={() => void runRequest({ all: true }, allCellIds)}
-                >
-                  <Play className="size-3.5" />
-                  Run all
-                </Button>
-              )}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon-sm">
-                    <MoreHorizontal className="size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                  <DropdownMenuGroup>
-                    <DropdownMenuCheckboxItem
-                      checked={autoRecompute}
-                      onCheckedChange={(checked) => setAutoRecompute(checked === true)}
-                      onSelect={(event) => event.preventDefault()}
-                    >
-                      Auto-recompute stale cells
-                    </DropdownMenuCheckboxItem>
-                  </DropdownMenuGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem
-                      disabled={busy}
-                      onSelect={() =>
-                        void runRequest({ all: true, refresh_imports: true }, allCellIds)
-                      }
-                    >
-                      <RotateCw />
-                      Refresh sources and run all
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => void resetSession()}>
-                      <Database />
-                      Reset session (delete local DB)
-                    </DropdownMenuItem>
-                    {notebook.manifest_version < 2 ? (
-                      <DropdownMenuItem
-                        onSelect={() =>
-                          void mutate(() => upgradeNotebookManifest(notebookId, notebook.revision))
-                        }
-                      >
-                        <ArrowUpFromLine />
-                        Upgrade notebook format
-                      </DropdownMenuItem>
-                    ) : null}
-                  </DropdownMenuGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onSelect={() => {
-                        if (!window.confirm(`Delete notebook "${notebook.title}" and its files?`)) {
-                          return;
-                        }
-                        void deleteNotebook(notebookId)
-                          .then(() => navigate({ to: "/" }))
-                          .catch((error) => setActionError(String(error)));
-                      }}
-                    >
-                      <Trash2 />
-                      Delete notebook
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          }
-        />
+                <AlertTriangle className="size-3.5" />
+              </span>
+            ) : null}
+            {notebookActions}
+          </div>
+        ) : (
+          <PageHeader
+            title={notebook.title}
+            subtitle={`Notebook · ${notebook.path} · runs in a local DuckDB session`}
+            actions={notebookActions}
+          />
+        )}
       </div>
 
       <NotebookDependenciesDialog
@@ -1340,7 +1658,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         </div>
       ) : null}
       <div className="flex min-h-0 min-w-0 flex-1">
-        {wideNotebookTools ? (
+        {wideNotebookTools && !workbenchEnabled ? (
           <aside className="w-[clamp(18rem,23vw,27rem)] min-w-0 shrink-0 border-r bg-background">
             {renderNotebookTools()}
           </aside>
@@ -1348,7 +1666,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         <ScrollArea
           data-testid="notebook-scroll-area"
           className="min-h-0 min-w-0 flex-1"
-          viewportClassName="px-3 pb-24"
+          viewportClassName="px-3 pb-24 [&>div]:!block [&>div]:w-full"
           viewportRef={notebookViewportRef}
           onViewportScroll={(event) => {
             const nextScrolled = event.currentTarget.scrollTop > 0;
@@ -1357,7 +1675,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         >
           <div
             data-testid="notebook-canvas"
-            className="mx-auto flex min-h-full max-w-5xl flex-col rounded-xl"
+            className="mx-auto flex min-h-full w-full min-w-0 max-w-5xl flex-col rounded-xl"
           >
             {unplacedControls.map((control) => renderNotebookControl(control))}
             <NotebookInsertionPoint
@@ -1394,7 +1712,10 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                       data-notebook-cell-jump-highlight={
                         jumpHighlightedCellId === block.cell || undefined
                       }
+                      data-notebook-block-selected={selectedBlockID === blockKey || undefined}
                       className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+                      onPointerDown={() => selectContentBlock(blockKey)}
+                      onFocusCapture={() => selectContentBlock(blockKey)}
                     >
                       {cell.notebook_source ? (
                         <NotebookSourceCard
@@ -1405,6 +1726,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                           stale={staleCells.has(block.cell)}
                           running={runningCells.has(block.cell)}
                           busy={busy}
+                          selected={selectedBlockID === blockKey}
                           onRun={() =>
                             void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
                           }
@@ -1428,6 +1750,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                           dependencies={dependencies}
                           installedModules={installedModules}
                           parameters={notebook.parameters ?? []}
+                          parameterValues={parameterValues}
                           onAddDependency={(pkg) =>
                             updateDependencies(addDependency(dependencies, pkg))
                           }
@@ -1436,6 +1759,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                           stale={staleCells.has(block.cell)}
                           running={runningCells.has(block.cell)}
                           busy={busy}
+                          selected={selectedBlockID === blockKey}
                           onRun={() =>
                             void runRequest({ cells: [block.cell ?? ""] }, [block.cell ?? ""])
                           }
@@ -1499,7 +1823,8 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                   data-notebook-block-id={block.id}
                   data-notebook-visualization-id={block.id}
                   data-notebook-block-entering={entering || undefined}
-                  className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+                  data-notebook-block-selected={selectedBlockID === blockKey || undefined}
+                  className={cn("w-full min-w-0", entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
                 >
                   <NotebookVisualizationBlockCard
                     notebookId={notebookId}
@@ -1512,6 +1837,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                     inspectorTarget={visualizationInspectorTarget}
                     onSelect={() => selectVisualization(block.id ?? "")}
                     onCloseInspector={() => {
+                      setSelectedBlockID(null);
                       setSelectedVisualizationID(null);
                       setVisualizationInspectorOpen(false);
                     }}
@@ -1529,6 +1855,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                       await flushPendingSaves();
                       await mutateWithResult(() => deleteNotebookBlock(notebookId, block.id ?? ""));
                       if (selectedVisualizationID === block.id) {
+                        setSelectedBlockID(null);
                         setSelectedVisualizationID(null);
                         setVisualizationInspectorOpen(false);
                       }
@@ -1541,10 +1868,14 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                   data-notebook-block-id={block.id || undefined}
                   data-notebook-markdown-index={index}
                   data-notebook-block-entering={entering || undefined}
+                  data-notebook-block-selected={selectedBlockID === blockKey || undefined}
                   className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
+                  onPointerDown={() => selectContentBlock(blockKey)}
+                  onFocusCapture={() => selectContentBlock(blockKey)}
                 >
                   <MarkdownBlockCard
                     markdown={block.markdown ?? ""}
+                    selected={selectedBlockID === blockKey}
                     onSave={async (markdown) => {
                       if (!block.id) {
                         const blocks: WebNotebookBlock[] = notebook.blocks.map(
@@ -1562,6 +1893,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                       );
                     }}
                     onDelete={() => {
+                      if (selectedBlockID === blockKey) setSelectedBlockID(null);
                       if (!block.id) {
                         const blocks = notebook.blocks.filter(
                           (_, candidateIndex) => candidateIndex !== index,
@@ -1607,7 +1939,9 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
             ) : null}
           </div>
         </ScrollArea>
-        {wideNotebookTools && (selectedVisualizationID || selectedControlID) ? (
+        {wideNotebookTools &&
+        !workbenchEnabled &&
+        (selectedVisualizationID || selectedControlID) ? (
           <aside className="w-[clamp(20rem,24vw,26rem)] min-w-0 shrink-0 overflow-hidden border-l bg-background">
             <ScrollArea className="h-full">
               <div ref={setVisualizationInspectorTarget} />
@@ -1617,17 +1951,21 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       </div>
       {!wideNotebookTools ? (
         <>
-          <Sheet open={toolsOpen} onOpenChange={setToolsOpen}>
-            <SheetContent side="left" className="w-[min(28rem,94vw)] max-w-full p-0">
-              <SheetHeader className="sr-only">
-                <SheetTitle>Notebook tools</SheetTitle>
-                <SheetDescription>Outline, data, blocks, and notebook assistant.</SheetDescription>
-              </SheetHeader>
-              <div className="min-h-0 flex-1">
-                {toolsOpen ? renderNotebookTools(() => setToolsOpen(false)) : null}
-              </div>
-            </SheetContent>
-          </Sheet>
+          {!workbenchEnabled ? (
+            <Sheet open={toolsOpen} onOpenChange={setToolsOpen}>
+              <SheetContent side="left" className="w-[min(28rem,94vw)] max-w-full p-0">
+                <SheetHeader className="sr-only">
+                  <SheetTitle>Notebook tools</SheetTitle>
+                  <SheetDescription>
+                    Outline, data, blocks, and notebook assistant.
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="min-h-0 flex-1">
+                  {toolsOpen ? renderNotebookTools(() => setToolsOpen(false)) : null}
+                </div>
+              </SheetContent>
+            </Sheet>
+          ) : null}
           <Sheet
             open={
               Boolean(selectedVisualizationID || selectedControlID) && visualizationInspectorOpen
@@ -1934,6 +2272,16 @@ function NotebookInsertionPoint({
   onInsert: (kind: PendingNotebookBlockKind, options?: NotebookBlockCreateOptions) => void;
 }) {
   const [dropActive, setDropActive] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerCategory, setPickerCategory] = useState<"control" | "visualization" | null>(null);
+  const closePicker = () => {
+    setPickerOpen(false);
+    setPickerCategory(null);
+  };
+  const insert = (kind: PendingNotebookBlockKind, options?: NotebookBlockCreateOptions) => {
+    closePicker();
+    onInsert(kind, options);
+  };
   if (pendingKind) {
     return (
       <div className="py-1.5">
@@ -1985,8 +2333,14 @@ function NotebookInsertionPoint({
           dropActive && "opacity-100",
         )}
       />
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
+      <Popover
+        open={pickerOpen}
+        onOpenChange={(open) => {
+          setPickerOpen(open);
+          if (!open) setPickerCategory(null);
+        }}
+      >
+        <PopoverTrigger asChild>
           <Button
             type="button"
             size="icon-xs"
@@ -1994,56 +2348,125 @@ function NotebookInsertionPoint({
             disabled={disabled}
             aria-label="Insert notebook block here"
             className={cn(
-              "relative z-10 rounded-full bg-background opacity-0 shadow-xs transition-opacity group-hover/notebook-insert:opacity-100 group-focus-within/notebook-insert:opacity-100",
+              "relative z-10 rounded-full bg-background opacity-100 shadow-xs transition-opacity lg:opacity-0 lg:group-hover/notebook-insert:opacity-100 lg:group-focus-within/notebook-insert:opacity-100 [@media(hover:none)]:opacity-100",
               dropActive && "opacity-100",
             )}
           >
             <Plus />
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="center" className="w-44">
-          <DropdownMenuItem onSelect={() => onInsert("sql")}>
-            <Database /> SQL cell
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onInsert("python")}>
-            <FileInput /> Python cell
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => onInsert("markdown")}>
-            <BookOpen /> Text
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <SlidersHorizontal /> Control
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-40">
-              {AUTHORED_CONTROL_TYPES.map((type) => (
-                <DropdownMenuItem
-                  key={type}
-                  onSelect={() => onInsert("control", { controlType: type })}
-                >
-                  {AUTHORED_CONTROL_TYPE_LABELS[type]}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <SlidersHorizontal /> Visualization
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-40">
-              {CHART_TYPE_OPTIONS.map((option) => (
-                <DropdownMenuItem
+        </PopoverTrigger>
+        <PopoverContent
+          align="center"
+          sideOffset={-12}
+          data-testid="notebook-insert-picker"
+          className="w-[min(32rem,calc(100vw-2rem))] gap-1.5 p-1.5 data-[side=bottom]:-translate-y-1/2 data-[side=top]:translate-y-1/2"
+        >
+          <div className="grid min-w-0 grid-cols-[repeat(3,minmax(0,1fr))_auto_repeat(2,minmax(0,1fr))_auto_auto] items-stretch">
+            <ToggleGroup
+              type="single"
+              spacing={0}
+              value=""
+              aria-label="Cell type"
+              className="contents"
+              onValueChange={(value) => {
+                if (value) insert(value as NotebookBlockType);
+              }}
+            >
+              {NOTEBOOK_BLOCK_TYPE_OPTIONS.map((option) => (
+                <ToggleGroupItem
                   key={option.value}
-                  onSelect={() => onInsert("visualization", { visualizationType: option.value })}
+                  value={option.value}
+                  aria-label={option.label}
+                  className="h-14 min-w-0 basis-0 flex-1 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
                 >
-                  {option.label}
-                </DropdownMenuItem>
+                  <NotebookBlockTypePreview type={option.value} className="h-6 max-w-10" />
+                  <span>{option.label}</span>
+                </ToggleGroupItem>
               ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            </ToggleGroup>
+            <Separator orientation="vertical" className="mx-1.5" />
+            <Button
+              type="button"
+              variant={pickerCategory === "control" ? "secondary" : "ghost"}
+              aria-expanded={pickerCategory === "control"}
+              className="h-14 min-w-0 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
+              onClick={() =>
+                setPickerCategory((current) => (current === "control" ? null : "control"))
+              }
+            >
+              <ControlTypePreview type="slider" className="h-6 max-w-10" />
+              Control
+            </Button>
+            <Button
+              type="button"
+              variant={pickerCategory === "visualization" ? "secondary" : "ghost"}
+              aria-expanded={pickerCategory === "visualization"}
+              className="h-14 min-w-0 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
+              onClick={() =>
+                setPickerCategory((current) =>
+                  current === "visualization" ? null : "visualization",
+                )
+              }
+            >
+              <ChartTypePreview type="line" className="h-6 max-w-10" />
+              Chart
+            </Button>
+            <Separator orientation="vertical" className="mx-1.5" />
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Close cell type selector"
+              className="my-auto"
+              onClick={closePicker}
+            >
+              <X />
+            </Button>
+          </div>
+          {pickerCategory ? (
+            <div className="border-t pt-1.5">
+              <ToggleGroup
+                type="single"
+                value=""
+                aria-label={pickerCategory === "control" ? "Control type" : "Chart type"}
+                className="grid w-full grid-cols-4"
+                onValueChange={(value) => {
+                  if (!value) return;
+                  if (pickerCategory === "control") {
+                    insert("control", { controlType: value as AuthoredControlType });
+                  } else {
+                    insert("visualization", { visualizationType: value as ChartType });
+                  }
+                }}
+              >
+                {pickerCategory === "control"
+                  ? AUTHORED_CONTROL_TYPES.map((value) => (
+                      <ToggleGroupItem
+                        key={value}
+                        value={value}
+                        aria-label={AUTHORED_CONTROL_TYPE_LABELS[value]}
+                        className="h-12 min-w-0 flex-col gap-0.5 px-1 py-1 text-[10px] font-normal"
+                      >
+                        <ControlTypePreview type={value} className="h-6 max-w-10" />
+                        <span className="truncate">{AUTHORED_CONTROL_TYPE_LABELS[value]}</span>
+                      </ToggleGroupItem>
+                    ))
+                  : CHART_TYPE_OPTIONS.map((option) => (
+                      <ToggleGroupItem
+                        key={option.value}
+                        value={option.value}
+                        aria-label={option.label}
+                        className="h-12 min-w-0 flex-col gap-0.5 px-1 py-1 text-[10px] font-normal"
+                      >
+                        <ChartTypePreview type={option.value} className="h-6 max-w-10" />
+                        <span className="truncate">{option.label}</span>
+                      </ToggleGroupItem>
+                    ))}
+              </ToggleGroup>
+            </div>
+          ) : null}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -2670,13 +3093,79 @@ function NotebookPerformanceDetails({
   );
 }
 
+function NotebookCellNameBadge({
+  name,
+  draft,
+  editing,
+  onDraftChange,
+  onEdit,
+  onCommit,
+  onCancel,
+}: {
+  name: string;
+  draft: string;
+  editing: boolean;
+  onDraftChange: (value: string) => void;
+  onEdit: () => void;
+  onCommit: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      data-testid="notebook-cell-name-badge"
+      className="flex min-h-7 items-center gap-1.5 pt-1.5 text-muted-foreground"
+    >
+      <CornerDownRight className="size-3.5 shrink-0" aria-hidden="true" />
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          spellCheck={false}
+          aria-label={`Rename cell ${name}`}
+          onChange={(event) => onDraftChange(event.target.value)}
+          onBlur={onCommit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onCommit();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              onCancel();
+            }
+          }}
+          className="h-5 w-40 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-0 font-mono text-[10px] text-emerald-700 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30 dark:text-emerald-300"
+        />
+      ) : (
+        <Badge
+          asChild
+          variant="outline"
+          className="h-5 border-emerald-500/35 bg-emerald-500/10 px-0 font-mono font-normal text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+        >
+          <button
+            type="button"
+            className="px-2"
+            aria-label={`Rename cell ${name}`}
+            title="Rename cell"
+            onClick={onEdit}
+          >
+            {name}
+          </button>
+        </Badge>
+      )}
+    </div>
+  );
+}
+
 function NotebookResultPreview({
   cellName,
   result,
+  selected,
 }: {
   cellName: string;
   result: NotebookCellRunResult;
+  selected: boolean;
 }) {
+  const [open, setOpen] = useState(true);
   const [renderMeasurement, setRenderMeasurement] = useState<VirtualTableRenderMeasurement>();
   const rows = useMemo(
     () =>
@@ -2693,29 +3182,62 @@ function NotebookResultPreview({
 
   const rowsShown = result.rows.length;
   const truncated = result.total_rows > rowsShown;
+  const rowSummary = truncated
+    ? `showing ${rowsShown.toLocaleString()} of ${result.total_rows.toLocaleString()} rows`
+    : `${rowsShown.toLocaleString()} rows`;
 
   return (
-    <div className="overflow-hidden rounded-lg border">
-      <VirtualDataTable
-        ariaLabel={`${cellName} result preview`}
-        columnKeys={columnKeys}
-        columns={result.columns}
-        frameless
-        height={288}
-        onRenderMeasured={setRenderMeasurement}
-        rows={rows}
-        scrollKey={`notebook:${result.cell_id}:preview`}
-        viewportClassName="max-h-72"
-      />
-      <div className="flex min-h-8 items-center justify-between gap-2 border-t bg-muted/30 px-2 text-[11px] text-muted-foreground">
-        <span>
-          {truncated
-            ? `showing ${rowsShown.toLocaleString()} of ${result.total_rows.toLocaleString()} rows`
-            : `${rowsShown.toLocaleString()} rows`}
-        </span>
-        <NotebookPerformanceDetails result={result} renderMeasurement={renderMeasurement} />
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      data-testid="notebook-result-preview"
+      className="isolate overflow-clip rounded-lg border bg-background"
+      style={{ clipPath: "inset(0 round var(--radius-lg))" }}
+    >
+      <CollapsibleContent>
+        <VirtualDataTable
+          ariaLabel={`${cellName} result preview`}
+          columnKeys={columnKeys}
+          columns={result.columns}
+          frameless
+          height={288}
+          onRenderMeasured={setRenderMeasurement}
+          rows={rows}
+          scrollKey={`notebook:${result.cell_id}:preview`}
+          viewportClassName="max-h-72"
+        />
+      </CollapsibleContent>
+      <div
+        className={cn(
+          "flex min-h-8 items-center gap-2 bg-muted/30 px-2 text-[11px] text-muted-foreground",
+          open && "border-t",
+        )}
+      >
+        <CollapsibleTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="-ml-1 shrink-0"
+            aria-label={`${open ? "Collapse" : "Expand"} ${cellName} result table`}
+          >
+            <ChevronRight
+              data-icon="inline-start"
+              className={cn("transition-transform", open && "rotate-90")}
+            />
+            Result
+          </Button>
+        </CollapsibleTrigger>
+        <span>{rowSummary}</span>
+        <NotebookSelectedControls
+          selected={selected}
+          className="ml-auto shrink-0"
+          expandedClassName="max-w-28"
+        >
+          <NotebookPerformanceDetails result={result} renderMeasurement={renderMeasurement} />
+        </NotebookSelectedControls>
       </div>
-    </div>
+    </Collapsible>
   );
 }
 
@@ -2733,6 +3255,7 @@ function NotebookSourceCard({
   stale,
   running,
   busy,
+  selected,
   onRun,
   onCancel,
   onRunFromHere,
@@ -2747,6 +3270,7 @@ function NotebookSourceCard({
   stale: boolean;
   running: boolean;
   busy: boolean;
+  selected: boolean;
   onRun: () => void;
   onCancel: () => void;
   onRunFromHere: () => void;
@@ -2777,7 +3301,8 @@ function NotebookSourceCard({
     <AppPanel
       className={cn(
         NOTEBOOK_BLOCK_CARD_CLASS,
-        "border-l-2 border-l-cyan-500/55 hover:bg-cyan-500/[0.025]",
+        "border-l-2 border-l-cyan-500/55",
+        selected && "border-primary/45 ring-1 ring-primary/15",
       )}
     >
       <DelimitedCardHeader
@@ -2809,27 +3334,35 @@ function NotebookSourceCard({
             {cell.name}
           </button>
         )}
-        <Badge variant="secondary" className="font-mono text-[10px]">
-          {source.kind === "http" ? <Globe2 /> : <FileInput />}
-          {source.connection ? "object" : source.kind}
-        </Badge>
-        <Badge variant="outline" className="text-[10px]">
-          {source.snapshot.mode === "sample"
-            ? `sample ${source.snapshot.row_limit?.toLocaleString() ?? ""}`
-            : "complete snapshot"}
-        </Badge>
-        {requiresImportReview ? (
-          <Badge
-            variant="outline"
-            className="border-amber-500/35 bg-amber-500/10 text-[10px] text-amber-800 dark:text-amber-200"
-          >
-            <AlertTriangle />
-            Review required
+        <NotebookSelectedControls selected={selected}>
+          <Badge variant="secondary" className="font-mono text-[10px]">
+            {source.kind === "http" ? <Globe2 /> : <FileInput />}
+            {source.connection ? "object" : source.kind}
           </Badge>
-        ) : null}
-        <span className="ml-auto text-[11px] text-muted-foreground">
-          {running ? "refreshing…" : result?.status === "ok" ? `${result.duration_ms} ms` : null}
-        </span>
+          <Badge variant="outline" className="text-[10px]">
+            {source.snapshot.mode === "sample"
+              ? `sample ${source.snapshot.row_limit?.toLocaleString() ?? ""}`
+              : "complete snapshot"}
+          </Badge>
+          {requiresImportReview ? (
+            <Badge
+              variant="outline"
+              className="border-amber-500/35 bg-amber-500/10 text-[10px] text-amber-800 dark:text-amber-200"
+            >
+              <AlertTriangle />
+              Review required
+            </Badge>
+          ) : null}
+        </NotebookSelectedControls>
+        <NotebookSelectedControls
+          selected={selected}
+          className="ml-auto shrink-0 text-[11px] text-muted-foreground"
+          expandedClassName="max-w-40"
+        >
+          <span>
+            {running ? "refreshing…" : result?.status === "ok" ? `${result.duration_ms} ms` : null}
+          </span>
+        </NotebookSelectedControls>
         {running ? (
           <Button variant="ghost" size="icon-sm" onClick={onCancel} title="Stop refresh">
             <Square className="size-3.5 fill-current" />
@@ -2941,7 +3474,7 @@ function NotebookSourceCard({
           </div>
         ) : null}
         {result?.status === "ok" && result.columns.length > 0 ? (
-          <NotebookResultPreview cellName={cell.name} result={result} />
+          <NotebookResultPreview cellName={cell.name} result={result} selected={selected} />
         ) : null}
       </DelimitedCardContent>
     </AppPanel>
@@ -2955,12 +3488,14 @@ function NotebookCellCard({
   dependencies,
   installedModules,
   parameters,
+  parameterValues,
   onAddDependency,
   resultColumnsByCell,
   result,
   stale,
   running,
   busy,
+  selected,
   onRun,
   onCancel,
   onRunFromHere,
@@ -2982,12 +3517,14 @@ function NotebookCellCard({
   dependencies: string[];
   installedModules: string[];
   parameters: NonNullable<WebNotebook["parameters"]>;
+  parameterValues: Record<string, unknown>;
   onAddDependency: (pkg: string) => void;
   resultColumnsByCell: Map<string, string[]>;
   result?: NotebookCellRunResult;
   stale: boolean;
   running: boolean;
   busy: boolean;
+  selected: boolean;
   onRun: () => void;
   onCancel: () => void;
   onRunFromHere: () => void;
@@ -3117,155 +3654,150 @@ function NotebookCellCard({
     <AppPanel
       className={cn(
         NOTEBOOK_BLOCK_CARD_CLASS,
-        sourceConnection && "border-l-2 border-l-primary/50 hover:bg-primary/[0.02]",
+        sourceConnection && "border-l-2 border-l-primary/50",
+        selected && "border-primary/45 ring-1 ring-primary/15",
       )}
     >
       <DelimitedCardHeader
         className={cn(NOTEBOOK_BLOCK_HEADER_CLASS, showStale && "notebook-stale-hatch")}
       >
         <span className={cn("size-2 rounded-full", statusDotClass(result, showStale))} />
-        {renaming ? (
-          <input
-            autoFocus
-            value={nameDraft}
-            spellCheck={false}
-            onChange={(event) => setNameDraft(event.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                commitRename();
-              } else if (event.key === "Escape") {
-                event.preventDefault();
-                setNameDraft(cell.name);
-                setRenaming(false);
-              }
-            }}
-            className="w-40 rounded border bg-background px-1.5 py-0.5 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-        ) : (
-          <button
-            type="button"
-            className="rounded font-mono text-sm font-medium hover:bg-muted"
-            title="Rename cell (F2)"
-            onClick={() => setRenaming(true)}
-          >
-            {cell.name}
-          </button>
-        )}
-        <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-          {isPythonCell ? "python" : "sql"}
-        </span>
-        {!isPythonCell && queryConnections.length > 0 ? (
-          <ConnectionSelect
-            value={sourceConnection || "__local__"}
-            groups={[
-              {
-                label: "Execution context",
-                options: [
-                  {
-                    value: "__local__",
-                    label: "Local notebook DuckDB",
-                    connectionType: "duckdb",
-                    detail: "Notebook session",
-                  },
-                  ...(sourceConnection &&
-                  !queryConnections.some((connection) => connection.name === sourceConnection)
-                    ? [
-                        {
-                          value: sourceConnection,
-                          label: sourceConnection,
-                          badge: "unavailable",
-                          badgeVariant: "destructive" as const,
-                        },
-                      ]
-                    : []),
-                  ...queryConnections.map((connection) => ({
-                    value: connection.name,
-                    label: connection.name,
-                    connectionType: connection.connection_type,
-                    detail: connection.dialect,
-                  })),
-                ],
-              },
-            ]}
-            disabled={busy || sourceChanging}
-            loading={sourceChanging}
-            onValueChange={(value) => {
-              const connection = value === "__local__" ? undefined : value;
-              setSourceChanging(true);
-              void onConfigureSource({
-                connection,
-                snapshot_mode: connection ? snapshotMode : undefined,
-                row_limit: connection && snapshotMode === "sample" ? snapshotRowLimit : undefined,
-              }).finally(() => setSourceChanging(false));
-            }}
-            size="sm"
-            ariaLabel="Source connection"
-            className="max-w-52"
-            contentAlign="start"
-          />
-        ) : null}
-        {sourceConnection ? (
-          <Select
-            value={snapshotMode}
-            disabled={busy || sourceChanging}
-            onValueChange={(value: "full" | "sample") => {
-              setSourceChanging(true);
-              void onConfigureSource({
-                connection: sourceConnection,
-                snapshot_mode: value,
-                row_limit: value === "sample" ? snapshotRowLimit : undefined,
-              }).finally(() => setSourceChanging(false));
-            }}
-          >
-            <SelectTrigger size="sm" aria-label="Snapshot mode">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-              <SelectItem value="full">Full snapshot</SelectItem>
-              <SelectItem value="sample">
-                Sample {snapshotRowLimit.toLocaleString()} rows
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        ) : null}
-        {result?.materialized === "table" ? (
-          <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
-            table
-          </span>
-        ) : null}
-        {result?.imports?.map((imported) => (
-          <span
-            key={imported.ref}
-            title={`imported ${imported.imported_at}${imported.complete ? "" : " · truncated"}`}
-            className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-          >
-            {imported.ref}
-            {imported.complete ? "" : " ⚠"}
-          </span>
-        ))}
-        {!result?.snapshot && result?.sampled ? (
-          <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-200">
-            derived from sample
-          </span>
-        ) : null}
-        {requiresImportReview ? (
+        <button
+          type="button"
+          data-testid="notebook-cell-header-name"
+          aria-label={`Rename cell ${cell.name}`}
+          className="max-w-40 truncate rounded-sm font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          title={cell.name}
+          onClick={() => setRenaming(true)}
+        >
+          {cell.name}
+        </button>
+        <NotebookSelectedControls selected={selected}>
           <Badge
-            variant="outline"
-            className="border-amber-500/35 bg-amber-500/10 text-[10px] text-amber-800 dark:text-amber-200"
+            variant="ghost"
+            size="xs"
+            aria-label={isPythonCell ? "Python cell" : "SQL cell"}
+            className="font-mono text-muted-foreground"
           >
-            <AlertTriangle />
-            Review required
+            <NotebookBlockTypeGlyph type={isPythonCell ? "python" : "sql"} />
           </Badge>
-        ) : null}
-        <span className="ml-auto text-[11px] text-muted-foreground">
-          {running
-            ? "running…"
-            : result?.status === "ok"
-              ? `${result.total_rows} rows · ${result.duration_ms} ms`
-              : null}
-        </span>
+          {!isPythonCell && queryConnections.length > 0 ? (
+            <ConnectionSelect
+              value={sourceConnection || "__local__"}
+              groups={[
+                {
+                  label: "Execution context",
+                  options: [
+                    {
+                      value: "__local__",
+                      label: "Local notebook DuckDB",
+                      connectionType: "duckdb",
+                      detail: "Notebook session",
+                    },
+                    ...(sourceConnection &&
+                    !queryConnections.some((connection) => connection.name === sourceConnection)
+                      ? [
+                          {
+                            value: sourceConnection,
+                            label: sourceConnection,
+                            badge: "unavailable",
+                            badgeVariant: "destructive" as const,
+                          },
+                        ]
+                      : []),
+                    ...queryConnections.map((connection) => ({
+                      value: connection.name,
+                      label: connection.name,
+                      connectionType: connection.connection_type,
+                      detail: connection.dialect,
+                    })),
+                  ],
+                },
+              ]}
+              disabled={busy || sourceChanging}
+              loading={sourceChanging}
+              onValueChange={(value) => {
+                const connection = value === "__local__" ? undefined : value;
+                setSourceChanging(true);
+                void onConfigureSource({
+                  connection,
+                  snapshot_mode: connection ? snapshotMode : undefined,
+                  row_limit: connection && snapshotMode === "sample" ? snapshotRowLimit : undefined,
+                }).finally(() => setSourceChanging(false));
+              }}
+              size="sm"
+              ariaLabel="Source connection"
+              className="max-w-52"
+              contentAlign="start"
+            />
+          ) : null}
+          {sourceConnection ? (
+            <Select
+              value={snapshotMode}
+              disabled={busy || sourceChanging}
+              onValueChange={(value: "full" | "sample") => {
+                setSourceChanging(true);
+                void onConfigureSource({
+                  connection: sourceConnection,
+                  snapshot_mode: value,
+                  row_limit: value === "sample" ? snapshotRowLimit : undefined,
+                }).finally(() => setSourceChanging(false));
+              }}
+            >
+              <SelectTrigger size="sm" aria-label="Snapshot mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectItem value="full">Full snapshot</SelectItem>
+                <SelectItem value="sample">
+                  Sample {snapshotRowLimit.toLocaleString()} rows
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          ) : null}
+          {result?.materialized === "table" ? (
+            <span className="rounded bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700 dark:bg-sky-500/15 dark:text-sky-300">
+              table
+            </span>
+          ) : null}
+          {result?.imports?.map((imported) => (
+            <span
+              key={imported.ref}
+              title={`imported ${imported.imported_at}${imported.complete ? "" : " · truncated"}`}
+              className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+            >
+              {imported.ref}
+              {imported.complete ? "" : " ⚠"}
+            </span>
+          ))}
+          {!result?.snapshot && result?.sampled ? (
+            <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-200">
+              derived from sample
+            </span>
+          ) : null}
+          {requiresImportReview ? (
+            <Badge
+              variant="outline"
+              className="border-amber-500/35 bg-amber-500/10 text-[10px] text-amber-800 dark:text-amber-200"
+            >
+              <AlertTriangle />
+              Review required
+            </Badge>
+          ) : null}
+        </NotebookSelectedControls>
+        <NotebookSelectedControls
+          selected={selected}
+          className="ml-auto shrink-0 text-[11px] text-muted-foreground"
+          expandedClassName="max-w-48"
+        >
+          <span>
+            {running
+              ? "running…"
+              : result?.status === "ok"
+                ? `${result.total_rows} rows · ${result.duration_ms} ms`
+                : null}
+          </span>
+        </NotebookSelectedControls>
         {running ? (
           <Button
             variant="ghost"
@@ -3328,14 +3860,16 @@ function NotebookCellCard({
           </DropdownMenuContent>
         </DropdownMenu>
       </DelimitedCardHeader>
-      <DelimitedCardContent className="space-y-3">
+      <DelimitedCardContent className="flex flex-col">
         {result?.snapshot ? (
-          <NotebookSnapshotSummary
-            snapshot={result.snapshot}
-            stale={showStale}
-            fallbackConnection={sourceConnection}
-            label={`${cell.name} snapshot details`}
-          />
+          <div className="mb-3">
+            <NotebookSnapshotSummary
+              snapshot={result.snapshot}
+              stale={showStale}
+              fallbackConnection={sourceConnection}
+              label={`${cell.name} snapshot details`}
+            />
+          </div>
         ) : null}
         <NotebookCellMonaco
           cell={cell}
@@ -3348,10 +3882,18 @@ function NotebookCellCard({
           onGoToAsset={onGoToAsset}
           onGoToCell={onGoToCell}
           parameters={parameters}
+          parameterValues={parameterValues}
         />
-        <MissingPythonDepsBanner missingImports={missingDeps} onAddDependency={onAddDependency} />
+        {missingDeps.length > 0 ? (
+          <div className="mt-3">
+            <MissingPythonDepsBanner
+              missingImports={missingDeps}
+              onAddDependency={onAddDependency}
+            />
+          </div>
+        ) : null}
         {result?.status === "error" ? (
-          <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 text-red-800 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-200">
+          <div className="mt-3 overflow-hidden rounded-lg border border-red-200 bg-red-50 text-red-800 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-200">
             <AnsiOutput
               output={result.error}
               className="max-h-72 overflow-auto px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words"
@@ -3359,15 +3901,19 @@ function NotebookCellCard({
           </div>
         ) : null}
         {result?.status === "blocked" ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/25 dark:bg-amber-500/10 dark:text-amber-200">
             {result.error}
           </div>
         ) : null}
         {result?.logs ? (
-          <NotebookCellLogs logs={result.logs} isError={result.status === "error"} />
+          <NotebookSelectedContent selected={selected} testId="notebook-cell-logs-disclosure">
+            <div data-testid="notebook-cell-logs-spacing" className="py-1.5">
+              <NotebookCellLogs logs={result.logs} isError={result.status === "error"} />
+            </div>
+          </NotebookSelectedContent>
         ) : null}
         {vizDiagnostics.length > 0 ? (
-          <div className="space-y-1">
+          <div className="mt-3 space-y-1">
             {vizDiagnostics.map((diagnostic, index) => (
               <div
                 key={index}
@@ -3385,7 +3931,7 @@ function NotebookCellCard({
         ) : null}
         {result?.status === "ok" && result.columns.length > 0 ? (
           result.viz ? (
-            <div className="space-y-2">
+            <div className="mt-3 space-y-2">
               <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                 <span>
                   Legacy <span className="font-mono">@viz</span> preview
@@ -3407,9 +3953,21 @@ function NotebookCellCard({
               <NotebookVizRenderer result={result} />
             </div>
           ) : (
-            <NotebookResultPreview cellName={cell.name} result={result} />
+            <NotebookResultPreview cellName={cell.name} result={result} selected={selected} />
           )
         ) : null}
+        <NotebookCellNameBadge
+          name={cell.name}
+          draft={nameDraft}
+          editing={renaming}
+          onDraftChange={setNameDraft}
+          onEdit={() => setRenaming(true)}
+          onCommit={commitRename}
+          onCancel={() => {
+            setNameDraft(cell.name);
+            setRenaming(false);
+          }}
+        />
       </DelimitedCardContent>
     </AppPanel>
   );
@@ -3425,17 +3983,27 @@ function NotebookCellLogs({ logs, isError }: { logs: string; isError: boolean })
   }, [logs, isError]);
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-muted/30">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ChevronRight className={cn("size-3.5 transition-transform", open && "rotate-90")} />
-        Output
-      </button>
-      {open ? (
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="overflow-hidden rounded-lg border bg-muted/30"
+    >
+      <CollapsibleTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start rounded-none"
+          aria-label="Output"
+        >
+          <ChevronRight
+            data-icon="inline-start"
+            className={cn("transition-transform", open && "rotate-90")}
+          />
+          Output
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
         <ScrollArea viewportClassName="max-h-72" className="border-t">
           <div data-testid="cell-logs">
             <AnsiOutput
@@ -3444,8 +4012,8 @@ function NotebookCellLogs({ logs, isError }: { logs: string; isError: boolean })
             />
           </div>
         </ScrollArea>
-      ) : null}
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
@@ -3836,10 +4404,12 @@ function PromoteCellDialog({
 
 function MarkdownBlockCard({
   markdown,
+  selected,
   onSave,
   onDelete,
 }: {
   markdown: string;
+  selected: boolean;
   onSave: (markdown: string) => Promise<boolean>;
   onDelete: () => void;
 }) {
@@ -3864,9 +4434,10 @@ function MarkdownBlockCard({
   };
 
   return (
-    <section className="group/markdown-block relative rounded-xl border border-transparent transition-colors hover:border-border focus-within:border-primary/30">
+    <section className="group/markdown-block relative rounded-xl bg-transparent">
       <MarkdownEditor
         value={draft}
+        selected={selected}
         ariaLabel="Markdown cell"
         placeholder="Write a note…"
         className="border-0 hover:border-transparent focus-within:border-transparent"

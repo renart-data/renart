@@ -3,6 +3,7 @@ import { useAtomValue } from "jotai";
 import {
   AlertTriangle,
   ArchiveRestore,
+  ChevronRight,
   CircleCheck,
   Clock,
   Loader2,
@@ -62,20 +63,22 @@ import {
 import { workspaceAtom } from "@/lib/atoms/domains/workspace";
 import type { PipelineRun } from "@/lib/types";
 import { deploymentLabel } from "@/lib/deployment-label";
+import { cn } from "@/lib/utils";
+import {
+  scheduleExpectedSlots as expectedSlots,
+  scheduleTimelineAxis as timelineAxis,
+  scheduleTimelineBuckets as buckets,
+  scheduleTimelineLeft as timelineLeft,
+  scheduleTimelineWindow as timelineWindow,
+  type ScheduleTimelineDensity as TimelineDensity,
+  type ScheduleTimelineInput as TimelineSchedule,
+  type ScheduleTimelineTick as TimelineTick,
+  type ScheduleTimelineWindow as TimelineWindow,
+} from "@/lib/schedule-timeline-model";
 
-import { PageHeader, AppPage, AppPanel } from "./app-primitives";
 import { PipelinePlanSheet } from "./pipeline-plan-sheet";
-
-const buckets = ["1hr", "6hr", "12hr", "24hr"] as const;
-
-// TimelineSchedule is the slice of a schedule the timeline rendering needs;
-// both legacy single-env and per-environment rows satisfy it.
-type TimelineSchedule = {
-  schedule: string;
-  timezone: string;
-  enabled: boolean;
-  next_run_at?: string;
-};
+import { AppContextSidebarFrame } from "./workbench/workbench-context-sidebar";
+import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
 
 export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string }) {
   const { runs, runsError, refreshRuns } = usePipelineRuns();
@@ -102,34 +105,108 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
     );
   });
   const schedulerRefreshError = runsError;
+  const { mobileNavigationOpen, setMobileNavigationOpen } = useWorkbench();
+
+  const openNewSchedule = () => {
+    if (!mobileNavigationOpen) {
+      setNewScheduleOpen(true);
+      return;
+    }
+    setMobileNavigationOpen(false);
+    setTimeout(() => setNewScheduleOpen(true), 220);
+  };
 
   useEffect(() => {
     setQuery(initialQuery);
   }, [initialQuery]);
 
   return (
-    <AppPage>
-      <PageHeader
-        title="Schedules"
-        subtitle="One schedule per pipeline and environment; scheduled runs execute the pinned deployed snapshot"
-        actions={
-          envSchedules.loading ? (
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
-              Loading
-            </span>
-          ) : envSchedules.canMutate ? (
-            <Badge variant="secondary">
-              <CircleCheck className="size-3" />
-              Scheduler active here
-            </Badge>
-          ) : (
-            <Badge variant="outline">Read-only</Badge>
-          )
-        }
-      />
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <WorkbenchPortal slot="context">
+        <AppContextSidebarFrame
+          title="Schedules"
+          subtitle={`${envSchedules.schedules.length} active binding${envSchedules.schedules.length === 1 ? "" : "s"}`}
+          actions={
+            <Button
+              size="xs"
+              disabled={!envSchedules.canMutate}
+              title={!envSchedules.canMutate ? envSchedules.ownershipReason : undefined}
+              aria-label="New schedule"
+              onClick={openNewSchedule}
+            >
+              <Plus />
+              New
+            </Button>
+          }
+        >
+          <div className="space-y-3 p-2">
+            <div className="relative h-8 rounded-md border bg-background">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                aria-label="Filter schedules"
+                className="h-full border-0 bg-transparent pl-8 text-xs shadow-none focus-visible:ring-0"
+                placeholder="Filter schedules..."
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2 px-2 text-[10px] text-muted-foreground">
+              {envSchedules.loading ? (
+                <>
+                  <Loader2 className="size-3 animate-spin" /> Loading schedules
+                </>
+              ) : envSchedules.canMutate ? (
+                <>
+                  <CircleCheck className="size-3 text-emerald-500" /> Scheduler active here
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="size-3 text-amber-500" /> Read-only here
+                </>
+              )}
+            </div>
+            <section>
+              <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Schedule bindings
+              </p>
+              <div className="space-y-0.5">
+                {envSchedules.schedules.map((schedule) => {
+                  const pipelineLabel = schedule.pipeline_name || schedule.pipeline_uuid;
+                  return (
+                    <button
+                      key={envScheduleKey(schedule)}
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-muted"
+                      onClick={() => {
+                        setQuery(pipelineLabel);
+                        setMobileNavigationOpen(false);
+                      }}
+                    >
+                      <span
+                        className={`size-2 shrink-0 rounded-full ${schedule.status === "active" ? "bg-emerald-500" : "bg-muted-foreground"}`}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-mono">{pipelineLabel}</span>
+                        <span className="block truncate text-[9px] text-muted-foreground">
+                          {schedule.environment} · {schedule.cron}
+                        </span>
+                      </span>
+                      <ChevronRight className="size-3 shrink-0 text-muted-foreground" />
+                    </button>
+                  );
+                })}
+                {!envSchedules.loading && envSchedules.schedules.length === 0 ? (
+                  <p className="px-2 py-3 text-xs text-muted-foreground">
+                    No schedules configured.
+                  </p>
+                ) : null}
+              </div>
+            </section>
+          </div>
+        </AppContextSidebarFrame>
+      </WorkbenchPortal>
       {!envSchedules.loading && !envSchedules.canMutate ? (
-        <div className="px-3 pb-2">
+        <div className="p-2 pb-0">
           <Alert
             variant={envSchedules.ownership?.state === "unavailable" ? "destructive" : "default"}
           >
@@ -147,7 +224,7 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
         </div>
       ) : null}
       {schedulerRefreshError ? (
-        <div className="px-3 pb-2">
+        <div className="p-2 pb-0">
           <Alert variant="destructive">
             <AlertTriangle />
             <AlertTitle>Scheduler activity could not be refreshed</AlertTitle>
@@ -163,26 +240,15 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
           </Alert>
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2 px-3 pb-2">
-        <div className="relative min-w-0 flex-1 md:max-w-sm">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            aria-label="Filter schedules"
-            className="pl-8"
-            placeholder="Filter schedules..."
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-medium">
+            {query ? `Filtered by ${query}` : "Schedule timeline"}
+          </p>
+          <p className="truncate text-[9px] text-muted-foreground">
+            Desired bindings execute their pinned deployment
+          </p>
         </div>
-        <Button
-          size="sm"
-          disabled={!envSchedules.canMutate}
-          title={!envSchedules.canMutate ? envSchedules.ownershipReason : undefined}
-          onClick={() => setNewScheduleOpen(true)}
-        >
-          <Plus data-icon="inline-start" />
-          New schedule
-        </Button>
         <ToggleGroup
           type="single"
           variant="outline"
@@ -190,7 +256,7 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
           spacing={0}
           value={bucket}
           aria-label="Timeline range"
-          className="ml-auto hidden md:flex"
+          className="ml-auto"
           onValueChange={(value) => {
             if (buckets.includes(value as (typeof buckets)[number])) {
               setBucket(value as (typeof buckets)[number]);
@@ -204,65 +270,63 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
           ))}
         </ToggleGroup>
       </div>
-      <div className="min-h-0 flex-1 px-3 pb-3">
-        <AppPanel className="h-full overflow-auto">
-          <TooltipProvider>
-            <div className="min-w-[1040px]">
-              <div className="sticky top-0 z-10 grid h-9 grid-cols-[22rem_minmax(20rem,1fr)_21rem] items-center border-b bg-card text-[11px] font-semibold uppercase text-muted-foreground">
-                <div className="px-3">Schedule</div>
-                <TimelineAxis axis={axis} />
-                <div className="px-3 text-right">Actions</div>
-              </div>
-              {envSchedules.loading && filteredSchedules.length === 0 ? (
-                <div className="flex h-24 items-center gap-2 px-3 text-sm text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  Loading schedules...
-                </div>
-              ) : null}
-              {!envSchedules.loading && filteredSchedules.length === 0 ? (
-                <div className="px-3 py-8 text-sm text-muted-foreground">
-                  No schedules yet. Use “New schedule” to run a pipeline in an environment.
-                </div>
-              ) : null}
-              {filteredSchedules.map((schedule) => (
-                <EnvScheduleRow
-                  key={envScheduleKey(schedule)}
-                  schedule={schedule}
-                  window={window}
-                  axis={axis}
-                  busy={envSchedules.busyKey === envScheduleKey(schedule)}
-                  canMutate={envSchedules.canMutate}
-                  ownershipReason={envSchedules.ownershipReason}
-                  activeRun={runs.find(
-                    (run) =>
-                      run.pipeline_id === schedule.pipeline_id &&
-                      run.environment === schedule.environment &&
-                      (run.status === "queued" || run.status === "running"),
-                  )}
-                  onSetStatus={(status) => envSchedules.setStatus(schedule, status)}
-                  onArchive={() => envSchedules.archive(schedule)}
-                  onEdit={() => setEditingSchedule(schedule)}
-                  onReviewDeployment={() => {
-                    if (!schedule.pipeline_id) return;
-                    setDeploymentReview({
-                      pipelineId: schedule.pipeline_id,
-                      pipelineName: schedule.pipeline_name || schedule.pipeline_uuid,
-                      environment: schedule.environment,
-                    });
-                  }}
-                />
-              ))}
-              {envSchedules.archived.length > 0 ? (
-                <ArchivedSection
-                  archived={envSchedules.archived}
-                  canMutate={envSchedules.canMutate}
-                  ownershipReason={envSchedules.ownershipReason}
-                  onRestore={(schedule) => void envSchedules.setStatus(schedule, "active")}
-                />
-              ) : null}
+      <div className="min-h-0 flex-1 overflow-auto">
+        <TooltipProvider>
+          <div className="min-w-[1040px]">
+            <div className="sticky top-0 z-10 grid h-9 grid-cols-[19rem_minmax(24rem,1fr)_16rem] items-center border-b bg-background text-[11px] font-semibold uppercase text-muted-foreground">
+              <div className="px-3">Schedule</div>
+              <TimelineAxis axis={axis} />
+              <div className="px-3 text-right">Actions</div>
             </div>
-          </TooltipProvider>
-        </AppPanel>
+            {envSchedules.loading && filteredSchedules.length === 0 ? (
+              <div className="flex h-24 items-center gap-2 px-3 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Loading schedules...
+              </div>
+            ) : null}
+            {!envSchedules.loading && filteredSchedules.length === 0 ? (
+              <div className="px-3 py-8 text-sm text-muted-foreground">
+                No schedules yet. Use “New schedule” to run a pipeline in an environment.
+              </div>
+            ) : null}
+            {filteredSchedules.map((schedule) => (
+              <EnvScheduleRow
+                key={envScheduleKey(schedule)}
+                schedule={schedule}
+                window={window}
+                axis={axis}
+                busy={envSchedules.busyKey === envScheduleKey(schedule)}
+                canMutate={envSchedules.canMutate}
+                ownershipReason={envSchedules.ownershipReason}
+                activeRun={runs.find(
+                  (run) =>
+                    run.pipeline_id === schedule.pipeline_id &&
+                    run.environment === schedule.environment &&
+                    (run.status === "queued" || run.status === "running"),
+                )}
+                onSetStatus={(status) => envSchedules.setStatus(schedule, status)}
+                onArchive={() => envSchedules.archive(schedule)}
+                onEdit={() => setEditingSchedule(schedule)}
+                onReviewDeployment={() => {
+                  if (!schedule.pipeline_id) return;
+                  setDeploymentReview({
+                    pipelineId: schedule.pipeline_id,
+                    pipelineName: schedule.pipeline_name || schedule.pipeline_uuid,
+                    environment: schedule.environment,
+                  });
+                }}
+              />
+            ))}
+            {envSchedules.archived.length > 0 ? (
+              <ArchivedSection
+                archived={envSchedules.archived}
+                canMutate={envSchedules.canMutate}
+                ownershipReason={envSchedules.ownershipReason}
+                onRestore={(schedule) => void envSchedules.setStatus(schedule, "active")}
+              />
+            ) : null}
+          </div>
+        </TooltipProvider>
       </div>
       <NewEnvScheduleDialog
         open={newScheduleOpen}
@@ -302,7 +366,7 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
         }}
         onSchedulesChanged={envSchedules.refresh}
       />
-    </AppPage>
+    </div>
   );
 }
 
@@ -428,12 +492,12 @@ function EnvScheduleRow({
   };
   return (
     <div
-      className="grid min-h-[5.5rem] grid-cols-[22rem_minmax(20rem,1fr)_21rem] border-b hover:bg-muted/40"
+      className="grid min-h-[4.75rem] grid-cols-[19rem_minmax(24rem,1fr)_16rem] border-b hover:bg-muted/40"
       data-testid="schedule-row"
       data-pipeline={pipelineLabel}
       data-environment={schedule.environment}
     >
-      <div className="flex min-w-0 items-start gap-3 px-3 py-2.5">
+      <div className="flex min-w-0 items-start gap-2.5 px-3 py-2">
         <Switch
           className="mt-0.5"
           checked={configuredEnabled}
@@ -453,19 +517,28 @@ function EnvScheduleRow({
             </Badge>
           </div>
           <dl
-            className="mt-1.5 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground"
+            className="mt-1 flex min-w-0 flex-wrap gap-x-2.5 gap-y-0.5 text-[10px] text-muted-foreground"
             data-testid="schedule-metadata"
           >
-            <ScheduleMetadata label="Schedule" testId="schedule-cadence">
-              <span className="break-all font-mono text-foreground">{schedule.cron}</span>
+            <ScheduleMetadata label="" testId="schedule-cadence">
+              <span className="break-all font-mono text-foreground">
+                {schedule.cron} · {schedule.timezone || "UTC"}
+              </span>
             </ScheduleMetadata>
-            <ScheduleMetadata label="Timezone">
-              <span className="break-words text-foreground">{schedule.timezone || "UTC"}</span>
+            <ScheduleMetadata label="" testId="schedule-last-run">
+              <span className="inline-flex items-center gap-1 break-words text-foreground">
+                <span
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full bg-muted-foreground",
+                    schedule.last_run?.status === "success" && "bg-emerald-500",
+                    schedule.last_run?.status === "failed" && "bg-red-500",
+                    schedule.last_run?.status === "running" && "bg-blue-500",
+                  )}
+                />
+                {lastRunLabel}
+              </span>
             </ScheduleMetadata>
-            <ScheduleMetadata label="Last run" testId="schedule-last-run">
-              <span className="break-words text-foreground">{lastRunLabel}</span>
-            </ScheduleMetadata>
-            <ScheduleMetadata label="Deployment" testId="schedule-deployment">
+            <ScheduleMetadata label="" testId="schedule-deployment">
               {pinnedVersion ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -484,19 +557,6 @@ function EnvScheduleRow({
               ) : (
                 <span className="text-foreground">Not pinned</span>
               )}
-            </ScheduleMetadata>
-            <ScheduleMetadata label="Catch-up" testId="schedule-run-window-context">
-              <span className="break-words text-foreground">
-                {catchupPolicyLabel(schedule.catchup_policy)}
-              </span>
-            </ScheduleMetadata>
-            <ScheduleMetadata label="Window">
-              <span className="break-words text-foreground">Pinned pipeline schedule</span>
-            </ScheduleMetadata>
-            <ScheduleMetadata label="Definition">
-              <span className="break-words text-foreground">
-                {schedule.declaration_managed ? ".renart/schedules.yml" : "Local legacy schedule"}
-              </span>
             </ScheduleMetadata>
           </dl>
           {sourceBlockReason ||
@@ -524,10 +584,24 @@ function EnvScheduleRow({
                   </TooltipContent>
                 </Tooltip>
               ) : null}
+              {schedule.catchup_policy !== "skip" ? (
+                <Badge variant="outline" size="xs" data-testid="schedule-run-window-context">
+                  {catchupPolicyLabel(schedule.catchup_policy)}
+                </Badge>
+              ) : null}
               {deferredOccurrence ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Badge variant="outline" size="xs" tabIndex={0}>
+                    <Badge
+                      variant="outline"
+                      size="xs"
+                      tabIndex={0}
+                      aria-label={
+                        waitingForPrerequisites
+                          ? `Waiting for prerequisites. ${deferredOccurrence.prerequisite_reason ?? "A cross-pipeline producer is not ready."} The scheduled interval holds no run slot.`
+                          : undefined
+                      }
+                    >
                       {waitingForPrerequisites ? <AlertTriangle /> : <Clock />}
                       {waitingForPrerequisites
                         ? "Waiting for prerequisites"
@@ -595,7 +669,10 @@ function EnvScheduleRow({
           ) : null}
         </div>
       </div>
-      <div className="relative min-h-[5.5rem] border-x bg-muted/20" data-testid="schedule-timeline">
+      <div
+        className="relative min-h-[4.75rem] border-x bg-muted/20"
+        data-testid="schedule-timeline"
+      >
         <TimelineGrid axis={axis} />
         {slots.map((slot, index) => (
           <Tooltip key={`${slot.at}-${slot.kind}-${index}`}>
@@ -626,7 +703,7 @@ function EnvScheduleRow({
         {nowLeft !== null ? <NowMarker left={nowLeft} /> : null}
       </div>
       <div
-        className="flex min-w-0 flex-col items-end justify-center gap-1.5 px-3 py-2.5"
+        className="flex min-w-0 flex-col items-end justify-center gap-1 px-2 py-2"
         data-testid="schedule-actions"
       >
         {actionError ? (
@@ -718,15 +795,17 @@ function ScheduleMetadata({
   testId,
   children,
 }: {
-  label: string;
+  label?: string;
   testId?: string;
   children: ReactNode;
 }) {
   return (
     <div className="flex min-w-0 items-baseline gap-1 whitespace-normal" data-testid={testId}>
-      <dt className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </dt>
+      {label ? (
+        <dt className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </dt>
+      ) : null}
       <dd className="min-w-0 whitespace-normal" data-schedule-meta-value>
         {children}
       </dd>
@@ -1462,21 +1541,6 @@ function NewEnvScheduleDialog({
   );
 }
 
-type TimelineWindow = {
-  start: number;
-  end: number;
-  bucket: (typeof buckets)[number];
-  density: TimelineDensity;
-};
-
-type TimelineTick = {
-  key: string;
-  label: string;
-  left: number;
-};
-
-type TimelineDensity = "compact" | "regular";
-
 function useTimelineTickDensity() {
   const [density, setDensity] = useState<TimelineDensity>("regular");
 
@@ -1489,64 +1553,6 @@ function useTimelineTickDensity() {
   }, []);
 
   return density;
-}
-
-function bucketHours(bucket: (typeof buckets)[number]) {
-  return {
-    "1hr": 1,
-    "6hr": 6,
-    "12hr": 12,
-    "24hr": 24,
-  }[bucket];
-}
-
-function timelineWindow(
-  bucket: (typeof buckets)[number],
-  density: TimelineDensity,
-): TimelineWindow {
-  const stepMs = tickStepMs(bucket, density);
-  const now = Date.now();
-  const bucketMs = bucketHours(bucket) * 60 * 60 * 1000;
-  const start = floorTime(now - bucketMs / 4, stepMs);
-  const end = floorTime(now, stepMs) + bucketMs;
-  return { start, end, bucket, density };
-}
-
-function timelineAxis(window: TimelineWindow): TimelineTick[] {
-  const stepMs = tickStepMs(window.bucket, window.density);
-  const formatter = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
-  const ticks: TimelineTick[] = [];
-  for (let time = window.start; time <= window.end + 1; time += stepMs) {
-    ticks.push({
-      key: `${window.bucket}-${time}`,
-      label: formatter.format(new Date(time)),
-      left: ((time - window.start) / (window.end - window.start)) * 100,
-    });
-  }
-  return ticks;
-}
-
-function tickStepMs(bucket: (typeof buckets)[number], density: TimelineDensity) {
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  if (density === "compact") {
-    return {
-      "1hr": 30 * minute,
-      "6hr": 2 * hour,
-      "12hr": 4 * hour,
-      "24hr": 6 * hour,
-    }[bucket];
-  }
-  return {
-    "1hr": 15 * minute,
-    "6hr": hour,
-    "12hr": 2 * hour,
-    "24hr": 4 * hour,
-  }[bucket];
-}
-
-function floorTime(value: number, stepMs: number) {
-  return Math.floor(value / stepMs) * stepMs;
 }
 
 function TimelineAxis({ axis }: { axis: TimelineTick[] }) {
@@ -1610,238 +1616,4 @@ function slotClassName(
     : phase === "past"
       ? "absolute top-1/2 h-8 -translate-y-1/2 rounded-sm border border-amber-500/45 bg-amber-500/15"
       : "absolute top-1/2 h-8 -translate-y-1/2 rounded-sm border border-primary/40 bg-primary/15";
-}
-
-function expectedSlots(schedule: TimelineSchedule, window: TimelineWindow) {
-  const now = Date.now();
-  const persistedNext = schedule.next_run_at ? new Date(schedule.next_run_at).getTime() : null;
-  const normalized = normalizeSchedule(schedule.schedule);
-  const parsed = parseStandardCron(normalized);
-  const slots: Array<{
-    at: string;
-    left: number;
-    width: number;
-    kind: "persisted" | "projected";
-    phase: "past" | "future";
-  }> = [];
-  const addSlot = (time: number, kind: "persisted" | "projected") => {
-    const left = timelineLeft(time, window);
-    if (left === null) return;
-    slots.push({
-      at: new Date(time).toISOString(),
-      left,
-      width: window.bucket === "1hr" ? 2.5 : 1.4,
-      kind,
-      phase: time < now ? "past" : "future",
-    });
-  };
-
-  if (persistedNext && Number.isFinite(persistedNext)) {
-    addSlot(persistedNext, "persisted");
-  }
-  if (!parsed) {
-    return slots;
-  }
-  for (let time = floorTime(window.start, 60 * 1000); time <= window.end; time += 60 * 1000) {
-    if (!cronMatches(parsed, time, schedule.timezone)) {
-      continue;
-    }
-    if (persistedNext && Math.abs(time - persistedNext) < 60 * 1000) {
-      continue;
-    }
-    addSlot(time, "projected");
-  }
-  return slots;
-}
-
-function timelineLeft(time: number, window: TimelineWindow) {
-  if (time < window.start || time > window.end) return null;
-  return ((time - window.start) / (window.end - window.start)) * 100;
-}
-
-type CronField = {
-  values: Set<number>;
-  wildcard: boolean;
-};
-
-type ParsedCron = {
-  minute: CronField;
-  hour: CronField;
-  dayOfMonth: CronField;
-  month: CronField;
-  dayOfWeek: CronField;
-};
-
-function normalizeSchedule(schedule: string) {
-  const normalized = schedule.trim().toLowerCase();
-  if (
-    !normalized ||
-    normalized === "daily" ||
-    normalized === "@daily" ||
-    normalized === "@midnight"
-  )
-    return "0 0 * * *";
-  if (normalized === "hourly" || normalized === "@hourly") return "0 * * * *";
-  if (normalized === "weekly" || normalized === "@weekly") return "0 0 * * 0";
-  if (normalized === "monthly" || normalized === "@monthly") return "0 0 1 * *";
-  if (
-    normalized === "yearly" ||
-    normalized === "annually" ||
-    normalized === "@yearly" ||
-    normalized === "@annually"
-  )
-    return "0 0 1 1 *";
-  return normalized;
-}
-
-function parseStandardCron(schedule: string): ParsedCron | null {
-  const fields = schedule.trim().split(/\s+/);
-  if (fields.length !== 5) {
-    return null;
-  }
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
-  const parsed = {
-    minute: parseCronField(minute, 0, 59),
-    hour: parseCronField(hour, 0, 23),
-    dayOfMonth: parseCronField(dayOfMonth, 1, 31),
-    month: parseCronField(month, 1, 12, monthNames),
-    dayOfWeek: parseCronField(dayOfWeek, 0, 7, dayNames),
-  };
-  if (!parsed.minute || !parsed.hour || !parsed.dayOfMonth || !parsed.month || !parsed.dayOfWeek) {
-    return null;
-  }
-  return parsed as ParsedCron;
-}
-
-const monthNames: Record<string, number> = {
-  jan: 1,
-  feb: 2,
-  mar: 3,
-  apr: 4,
-  may: 5,
-  jun: 6,
-  jul: 7,
-  aug: 8,
-  sep: 9,
-  oct: 10,
-  nov: 11,
-  dec: 12,
-};
-
-const dayNames: Record<string, number> = {
-  sun: 0,
-  mon: 1,
-  tue: 2,
-  wed: 3,
-  thu: 4,
-  fri: 5,
-  sat: 6,
-};
-
-function parseCronField(
-  value: string,
-  min: number,
-  max: number,
-  aliases: Record<string, number> = {},
-) {
-  const values = new Set<number>();
-  let wildcard = false;
-  for (const rawPart of value.split(",")) {
-    const [rangePartRaw, stepPart] = rawPart.split("/");
-    const rangePart = rangePartRaw.trim().toLowerCase();
-    const step = stepPart ? Number(stepPart) : 1;
-    if (!Number.isInteger(step) || step <= 0) {
-      return null;
-    }
-    const rangeValues = cronRange(rangePart, min, max, aliases);
-    if (!rangeValues) {
-      return null;
-    }
-    wildcard ||= rangeValues.wildcard;
-    for (let current = rangeValues.start; current <= rangeValues.end; current += step) {
-      values.add(current);
-      if (max === 7 && current === 7) {
-        values.add(0);
-      }
-    }
-  }
-  return { values, wildcard };
-}
-
-function cronRange(value: string, min: number, max: number, aliases: Record<string, number>) {
-  if (value === "*" || value === "?") {
-    return { start: min, end: max, wildcard: true };
-  }
-  const [startRaw, endRaw] = value.split("-");
-  const start = cronNumber(startRaw, aliases);
-  const end = cronNumber(endRaw ?? startRaw, aliases);
-  if (
-    !Number.isInteger(start) ||
-    !Number.isInteger(end) ||
-    start < min ||
-    end > max ||
-    start > end
-  ) {
-    return null;
-  }
-  return { start, end, wildcard: false };
-}
-
-function cronNumber(value: string, aliases: Record<string, number>) {
-  const normalized = value.trim().toLowerCase();
-  return aliases[normalized] ?? Number(normalized);
-}
-
-function cronMatches(parsed: ParsedCron, time: number, timezone: string | undefined) {
-  const parts = zonedDateParts(new Date(time), timezone);
-  if (!parts) {
-    return false;
-  }
-  const dayOfWeekMatches =
-    parsed.dayOfWeek.values.has(parts.dayOfWeek) ||
-    (parts.dayOfWeek === 0 && parsed.dayOfWeek.values.has(7));
-  const dayMatches =
-    parsed.dayOfMonth.wildcard || parsed.dayOfWeek.wildcard
-      ? parsed.dayOfMonth.values.has(parts.dayOfMonth) && dayOfWeekMatches
-      : parsed.dayOfMonth.values.has(parts.dayOfMonth) || dayOfWeekMatches;
-  return (
-    parsed.minute.values.has(parts.minute) &&
-    parsed.hour.values.has(parts.hour) &&
-    dayMatches &&
-    parsed.month.values.has(parts.month)
-  );
-}
-
-function zonedDateParts(date: Date, timezone: string | undefined) {
-  try {
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: timezone || "UTC",
-      year: "numeric",
-      month: "numeric",
-      day: "numeric",
-      hour: "numeric",
-      minute: "numeric",
-      hour12: false,
-    });
-    const values = Object.fromEntries(
-      formatter.formatToParts(date).map((part) => [part.type, part.value]),
-    );
-    const year = Number(values.year);
-    const month = Number(values.month);
-    const dayOfMonth = Number(values.day);
-    const hour = Number(values.hour) % 24;
-    const minute = Number(values.minute);
-    if (![year, month, dayOfMonth, hour, minute].every(Number.isFinite)) {
-      return null;
-    }
-    return {
-      month,
-      dayOfMonth,
-      dayOfWeek: new Date(Date.UTC(year, month - 1, dayOfMonth)).getUTCDay(),
-      hour,
-      minute,
-    };
-  } catch {
-    return null;
-  }
 }

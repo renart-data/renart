@@ -41,6 +41,41 @@ async function setSql(
   ).toBe(true);
 }
 
+async function setAutoRecompute(
+  request: APIRequestContext,
+  baseURL: string,
+  notebookId: string,
+  enabled: boolean,
+) {
+  const response = await request.put(`${baseURL}/api/notebooks/${notebookId}/settings`, {
+    data: { auto_recompute: enabled },
+  });
+  expect(response.ok()).toBe(true);
+}
+
+function resultCell(card: Locator, column: string, row: number, value: string) {
+  return card.getByRole("button", {
+    name: `${column}, row ${row}: ${value}`,
+    exact: true,
+  });
+}
+
+function notebookCell(page: Page, cellId: string) {
+  return page.locator(`[data-notebook-cell-id="${cellId}"]`);
+}
+
+async function expectNotebookStaleCount(page: Page, count: number) {
+  const badge = page.getByText(`${count} stale`, { exact: true });
+  await expect(badge).toHaveCount(1, { timeout: 15000 });
+  if ((page.viewportSize()?.width ?? 1280) >= 640) {
+    await expect(badge).toBeVisible();
+  }
+}
+
+async function expectNoNotebookStaleCount(page: Page) {
+  await expect(page.getByText(/\d+ stale/)).toHaveCount(0, { timeout: 15000 });
+}
+
 async function replaceEditorContent(page: Page, card: Locator, content: string) {
   // Click the rendered code line, not Monaco's outer shell (whose center can
   // be blank) or its intentionally zero-width native input proxy.
@@ -62,10 +97,8 @@ test.describe("notebook auto-recompute", () => {
     await expect(page.getByText("AutoSelf").first()).toBeVisible({ timeout: 15000 });
 
     // The cell auto-computes from the API save; wait for the baseline.
-    const srcCard = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "src", exact: true }) });
-    await expect(srcCard.getByRole("cell", { name: "111", exact: true })).toBeVisible({
+    const srcCard = notebookCell(page, srcCell);
+    await expect(resultCell(srcCard, "n", 1, "111")).toBeVisible({
       timeout: 20000,
     });
 
@@ -74,10 +107,10 @@ test.describe("notebook auto-recompute", () => {
     await replaceEditorContent(page, srcCard, "select 222 as n");
     await page.getByText("AutoSelf").first().click(); // blur → save → recompute
 
-    await expect(srcCard.getByRole("cell", { name: "222", exact: true })).toBeVisible({
+    await expect(resultCell(srcCard, "n", 1, "222")).toBeVisible({
       timeout: 20000,
     });
-    await expect(srcCard.getByRole("cell", { name: "111", exact: true })).toBeHidden({
+    await expect(resultCell(srcCard, "n", 1, "111")).toBeHidden({
       timeout: 20000,
     });
   });
@@ -98,26 +131,24 @@ test.describe("notebook auto-recompute", () => {
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     await expect(page.getByText("AutoUnion").first()).toBeVisible({ timeout: 15000 });
-    const card = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "u", exact: true }) });
-    await expect(card.getByRole("cell", { name: "111", exact: true })).toBeVisible({
+    const card = notebookCell(page, unionCell);
+    await expect(resultCell(card, "n", 1, "111")).toBeVisible({
       timeout: 20000,
     });
     await replaceEditorContent(page, card, "select 333 as n union all select 444");
     await page.getByText("AutoUnion").first().click(); // blur → save → recompute
 
-    await expect(card.getByRole("cell", { name: "333", exact: true })).toBeVisible({
+    await expect(resultCell(card, "n", 1, "333")).toBeVisible({
       timeout: 20000,
     });
-    await expect(card.getByRole("cell", { name: "444", exact: true })).toBeVisible({
+    await expect(resultCell(card, "n", 2, "444")).toBeVisible({
       timeout: 20000,
     });
-    await expect(card.getByRole("cell", { name: "111", exact: true })).toBeHidden({
+    await expect(resultCell(card, "n", 1, "111")).toBeHidden({
       timeout: 20000,
     });
     // It is not flagged stale — auto-recompute handled it.
-    await expect(page.getByText(/\d+ stale/)).toBeHidden({ timeout: 15000 });
+    await expectNoNotebookStaleCount(page);
   });
 
   test("editing an upstream auto-recomputes clean SELECT descendants", async ({
@@ -126,6 +157,10 @@ test.describe("notebook auto-recompute", () => {
   }) => {
     const { request } = page;
     const notebook = await createNotebook(request, liveApp.baseURL, "Auto");
+    // Author the whole graph before starting its initial recompute. Under CI
+    // load, letting the base cell run while the dependent is still being added
+    // can leave the setup waiting on an intermediate result.
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, false);
     const baseCell = await addCell(request, liveApp.baseURL, notebook.id, "base");
     await setSql(request, liveApp.baseURL, notebook.id, baseCell, "select 10 as amount");
     const doubledCell = await addCell(request, liveApp.baseURL, notebook.id, "doubled");
@@ -136,6 +171,7 @@ test.describe("notebook auto-recompute", () => {
       doubledCell,
       "select amount * 2 as doubled from base",
     );
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, true);
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     await expect(page.getByText("Auto").first()).toBeVisible({ timeout: 15000 });
@@ -146,16 +182,14 @@ test.describe("notebook auto-recompute", () => {
     // Edit the upstream cell in the editor (which marks base + doubled stale)
     // and then click away. No run button is pressed — the server recomputes the
     // chain and streams the new results back over SSE.
-    const baseCard = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "base", exact: true }) });
+    const baseCard = notebookCell(page, baseCell);
     await replaceEditorContent(page, baseCard, "select 21 as amount");
     await page.getByText("Auto").first().click(); // blur the editor → save → stale
 
     // The downstream cell recomputes on its own: doubled becomes 42.
     await expect(page.getByText("42", { exact: true }).first()).toBeVisible({ timeout: 20000 });
     // And the stale banner clears once everything is recomputed.
-    await expect(page.getByText(/\d+ stale/)).toBeHidden({ timeout: 15000 });
+    await expectNoNotebookStaleCount(page);
   });
 
   test("typing into an upstream auto-recomputes without leaving the editor", async ({
@@ -164,6 +198,7 @@ test.describe("notebook auto-recompute", () => {
   }) => {
     const { request } = page;
     const notebook = await createNotebook(request, liveApp.baseURL, "AutoType");
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, false);
     const baseCell = await addCell(request, liveApp.baseURL, notebook.id, "base");
     await setSql(request, liveApp.baseURL, notebook.id, baseCell, "select 10 as amount");
     const doubledCell = await addCell(request, liveApp.baseURL, notebook.id, "doubled");
@@ -174,6 +209,7 @@ test.describe("notebook auto-recompute", () => {
       doubledCell,
       "select amount * 2 as doubled from base",
     );
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, true);
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     await expect(page.getByText("AutoType").first()).toBeVisible({ timeout: 15000 });
@@ -184,14 +220,12 @@ test.describe("notebook auto-recompute", () => {
     // Edit the upstream and keep the caret in the editor — no blur, no run
     // button. The debounced auto-commit saves the draft on its own, which marks
     // the cells stale and lets auto-recompute pick up the chain.
-    const baseCard = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "base", exact: true }) });
+    const baseCard = notebookCell(page, baseCell);
     await replaceEditorContent(page, baseCard, "select 21 as amount");
 
     // The downstream recomputes to 42 without the editor ever losing focus.
     await expect(page.getByText("42", { exact: true }).first()).toBeVisible({ timeout: 20000 });
-    await expect(page.getByText(/\d+ stale/)).toBeHidden({ timeout: 15000 });
+    await expectNoNotebookStaleCount(page);
   });
 
   test("a breaking upstream column rename does not auto-recompute the downstream", async ({
@@ -200,6 +234,7 @@ test.describe("notebook auto-recompute", () => {
   }) => {
     const { request } = page;
     const notebook = await createNotebook(request, liveApp.baseURL, "AutoBreak");
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, false);
     const baseCell = await addCell(request, liveApp.baseURL, notebook.id, "base");
     await setSql(request, liveApp.baseURL, notebook.id, baseCell, "select 10 as amount");
     const doubledCell = await addCell(request, liveApp.baseURL, notebook.id, "doubled");
@@ -210,6 +245,7 @@ test.describe("notebook auto-recompute", () => {
       doubledCell,
       "select amount * 2 as doubled from base",
     );
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, true);
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     await expect(page.getByText("AutoBreak").first()).toBeVisible({ timeout: 15000 });
@@ -222,9 +258,7 @@ test.describe("notebook auto-recompute", () => {
     // `amount`. The downstream must NOT be recomputed: once `base` reruns and
     // the server re-validates `doubled` against the new schema, the broken column
     // reference is detected and the downstream is held back, not run into failure.
-    const baseCard = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "base", exact: true }) });
+    const baseCard = notebookCell(page, baseCell);
     await replaceEditorContent(page, baseCard, "select 100 as renamed");
     await page.getByText("AutoBreak").first().click(); // blur → save → stale
 
@@ -235,15 +269,13 @@ test.describe("notebook auto-recompute", () => {
 
     // The downstream was never recomputed: it stays stale, still showing its old
     // output (20), and never an error from running the broken column reference.
-    await expect(page.getByText(/\d+ stale/)).toBeVisible({ timeout: 15000 });
+    await expectNotebookStaleCount(page, 1);
     await expect(page.getByText("20", { exact: true }).first()).toBeVisible();
 
     // The stale visual is shown only on the cell that genuinely won't refresh on
     // its own: `doubled` (broken) gets the hatched header; `base`, which
     // auto-recomputed, does not.
-    const doubledHeader = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "doubled", exact: true }) })
+    const doubledHeader = notebookCell(page, doubledCell)
       .locator('[data-slot="delimited-card-header"]')
       .first();
     const baseHeader = baseCard.locator('[data-slot="delimited-card-header"]').first();
@@ -263,15 +295,13 @@ test.describe("notebook auto-recompute", () => {
     await expect(page.getByText("10", { exact: true }).first()).toBeVisible({ timeout: 20000 });
 
     // Replace the body with SQL the parser rejects.
-    const baseCard = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "base", exact: true }) });
+    const baseCard = notebookCell(page, baseCell);
     await replaceEditorContent(page, baseCard, "select fr0m where");
     await page.getByText("AutoErr").first().click(); // blur → save → stale
 
     // The cell stays stale and keeps the hatched header (the server won't
     // auto-run an errored SELECT), and its old output (10) is unchanged.
-    await expect(page.getByText(/\d+ stale/)).toBeVisible({ timeout: 15000 });
+    await expectNotebookStaleCount(page, 1);
     const baseHeader = baseCard.locator('[data-slot="delimited-card-header"]').first();
     await expect(baseHeader).toHaveClass(/notebook-stale-hatch/, { timeout: 15000 });
     await page.waitForTimeout(3000);

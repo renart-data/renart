@@ -351,6 +351,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		NewConnectionManager: server.newConnectionManager,
 		RunConnectionQuery:   server.executionSvc.RunConnectionQueryForEnvironment,
 	})
+	configureDataBrowserService(server, absRoot)
 	remoteCatalog := service.NewRemoteCatalogCache(service.RemoteCatalogDependencies{
 		DiscoverDatabases: func(ctx context.Context, connection, environment string) ([]string, error) {
 			result, apiErr := server.sqlSvc.Databases(ctx, connection, environment)

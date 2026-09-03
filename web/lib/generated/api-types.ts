@@ -426,6 +426,94 @@ export type CreateProjectResponse = {
   git_initialized: boolean;
 };
 
+export type DataBrowserCapabilities = {
+  list_namespaces: boolean;
+  list_objects: boolean;
+  describe_columns: boolean;
+  preview_rows: boolean;
+  query: boolean;
+};
+
+export type DataBrowserChildrenResponse = {
+  status: string;
+  connection_id: string;
+  parent_id?: string;
+  revision: string;
+  nodes: DataBrowserNode[];
+  truncated?: boolean;
+};
+
+export type DataBrowserConnection = {
+  id: string;
+  name: string;
+  type: string;
+  environment: string;
+  revision: string;
+  source_kind: string;
+  discovery_status: string;
+  capabilities: DataBrowserCapabilities;
+};
+
+export type DataBrowserConnectionsResponse = {
+  status: string;
+  environment: string;
+  revision: string;
+  connections: DataBrowserConnection[];
+};
+
+export type DataBrowserNode = {
+  id: string;
+  parent_id?: string;
+  node_type: string;
+  label: string;
+  namespace_kind?: string;
+  object_kind?: string;
+  has_children: boolean;
+  reference_text?: string;
+  format?: string;
+  size_bytes?: number;
+  modified_at?: string;
+};
+
+export type DataBrowserObject = {
+  id: string;
+  connection_id: string;
+  connection_name: string;
+  connection_type: string;
+  environment: string;
+  revision: string;
+  namespace: string[];
+  name: string;
+  kind: string;
+  reference_text: string;
+  format?: string;
+  size_bytes?: number;
+  modified_at?: string;
+  columns: SQLColumn[];
+  capabilities: DataBrowserCapabilities;
+  warning?: string;
+};
+
+export type DataBrowserObjectResponse = {
+  status: string;
+  object: DataBrowserObject;
+};
+
+export type DataBrowserPreviewRequest = {
+  object_id: string;
+  environment?: string;
+  limit?: number;
+};
+
+export type DataBrowserPreviewResponse = {
+  status: string;
+  object_id: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  truncated?: boolean;
+  elapsed_ms: number;
+};
+
 export type EnvironmentPolicy = {
   protected: boolean;
   deployed_only: boolean;

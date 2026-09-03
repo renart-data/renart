@@ -133,7 +133,7 @@ test.describe("seed and sensor assets live", () => {
         response.url().includes(`/api/pipelines/${pipelineId}/assets/render`) && response.ok(),
       { timeout: 30000 },
     );
-    await page.getByRole("button", { name: "Render saved asset", exact: true }).click();
+    await page.getByRole("tab", { name: "Render", exact: true }).click();
     const seedRenderPayload = (await (await seedRenderResponse).json()) as {
       stages: Array<{ content?: string; fidelity: string }>;
     };
@@ -149,6 +149,7 @@ test.describe("seed and sensor assets live", () => {
     expect(executionRequests).toEqual([]);
 
     const seedProperties = await openAssetProperties(page);
+    await seedProperties.getByRole("tab", { name: "Columns", exact: true }).click();
     const seedColumns = seedProperties.locator("section").filter({ hasText: "Columns" }).first();
     await expect(seedColumns.getByRole("heading", { name: "Columns" })).toBeVisible({
       timeout: 15000,

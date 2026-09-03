@@ -44,6 +44,7 @@ export function MarkdownEditor({
   const onBlurRef = useRef(onBlur);
   const syncingRef = useRef(false);
   const [sourceMode, setSourceMode] = useState(false);
+  const [sourceFocused, setSourceFocused] = useState(false);
   onChangeRef.current = onChange;
   onBlurRef.current = onBlur;
 
@@ -61,6 +62,7 @@ export function MarkdownEditor({
     editorProps: {
       attributes: {
         "aria-label": ariaLabel,
+        spellcheck: "false",
         class: cn(
           "prose prose-sm min-h-20 max-w-none px-3 py-3 text-sm leading-6 text-foreground outline-none dark:prose-invert [&_h1]:mb-2 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold [&_p]:my-2 [&_table]:w-full [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:bg-muted/40 [&_th]:px-2 [&_th]:py-1",
           markdownContentClassName,
@@ -72,7 +74,13 @@ export function MarkdownEditor({
         onChangeRef.current(nextEditor.getMarkdown());
       }
     },
-    onBlur: () => onBlurRef.current?.(),
+    onFocus: ({ editor: nextEditor }) => {
+      nextEditor.view.dom.setAttribute("spellcheck", "true");
+    },
+    onBlur: ({ editor: nextEditor }) => {
+      nextEditor.view.dom.setAttribute("spellcheck", "false");
+      onBlurRef.current?.();
+    },
   });
 
   useEffect(() => {
@@ -179,12 +187,17 @@ export function MarkdownEditor({
       {sourceMode ? (
         <textarea
           aria-label="Markdown source"
+          spellCheck={sourceFocused}
           value={value}
           placeholder={placeholder}
           rows={Math.min(Math.max(value.split("\n").length, 5), 20)}
           className="min-h-28 w-full resize-y border-0 bg-transparent px-3 py-3 font-mono text-xs leading-5 outline-none"
           onChange={(event) => onChange(event.target.value)}
-          onBlur={onBlur}
+          onFocus={() => setSourceFocused(true)}
+          onBlur={() => {
+            setSourceFocused(false);
+            onBlur?.();
+          }}
         />
       ) : (
         <div className="relative">

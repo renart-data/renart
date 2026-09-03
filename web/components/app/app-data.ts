@@ -1,17 +1,11 @@
 import {
   ArrowLeftRight,
   Box,
-  BookOpen,
   Braces,
-  Calendar,
   ClipboardCheck,
   Cloud,
   Cpu,
   FileCode,
-  Hammer,
-  LayoutDashboard,
-  Network,
-  Play,
   Radar,
   Sprout,
   Table2,
@@ -33,15 +27,6 @@ export const integrations: Record<string, string> = {
   Load: "#14b8a6",
   Test: "#16a34a",
 };
-
-export const navItems = [
-  { to: "/", label: "Build", icon: Hammer },
-  { to: "/catalog", label: "Catalog", icon: Network },
-  { to: "/notebooks", label: "Notebooks", icon: BookOpen },
-  { to: "/dashboards", label: "Present", icon: LayoutDashboard },
-  { to: "/runs", label: "Runs", icon: Play },
-  { to: "/schedules", label: "Schedules", icon: Calendar },
-] as const;
 
 export const kindMeta = {
   sql: { label: "SQL asset", icon: FileCode, ext: ".sql", description: "Transform with a SELECT" },

@@ -37,6 +37,18 @@ Use the **@** control in the composer to attach notebook cells or workspace
 assets to a message. References are sent as stable semantic identities rather
 than pasted file paths, so the agent can inspect the exact object you mean.
 
+If the task has a genuine product choice, the agent can pause and show a short
+questionnaire in the conversation. Answer it there and the same turn continues;
+you do not need to restate the task. Stopping or starting a new chat also
+cancels a pending question.
+
+An Edit turn can also ask for read-only access to a configured data connection.
+You can approve an existing connection or create one in the normal Renart
+connection form. Credentials remain inside Renart: the agent receives only the
+connection name and can perform bounded catalog discovery and sample queries
+for that turn. Access ends with the turn. DuckDB notebook data does not require
+this extra approval.
+
 When an agent adds a source from DuckDB, Renart can run it through the same
 local read-only path as a manually added source. A newly added source on another
 warehouse remains pending until you review and run its first import in the UI;

@@ -31,7 +31,9 @@ import { authoredControlOptions } from "@/lib/authored-controls";
 import { markdownContentClassName } from "@/lib/markdown-content";
 import { cn } from "@/lib/utils";
 
+import { PresentationLibrarySidebar } from "./presentation-library-sidebar";
 import type { PresentationKind } from "./presentation-page";
+import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
 
 type FilterValues = Record<string, unknown>;
 
@@ -48,6 +50,8 @@ export function AppPresentationViewerPage({
   const selectedEnvironment = workspace?.selected_environment || "default";
   const navigate = useNavigate();
   const location = useLocation();
+  const { navigation } = useWorkbench();
+  const workbenchEnabled = Boolean(navigation?.workbench);
   const [document, setDocument] = useState<PresentationDocument | null>(null);
   const [filterValues, setFilterValues] = useState<FilterValues>({});
   const [results, setResults] = useState<Record<string, PresentationDatasetResult>>({});
@@ -220,51 +224,54 @@ export function AppPresentationViewerPage({
   const meta = kind === "dashboard" ? "Dashboards" : "Reports";
   const kindMismatch = document && document.artifact.kind !== kind;
   const allVisualizationIDs = (document?.artifact.visualizations ?? []).map((item) => item.id);
+  const viewerActions = (
+    <>
+      <Button asChild variant="ghost" size="sm">
+        <Link to={kind === "dashboard" ? "/dashboards" : "/reports"}>
+          <ArrowLeft />
+          {meta}
+        </Link>
+      </Button>
+      {document ? (
+        <Button asChild variant="outline" size="sm">
+          <Link
+            to={kind === "dashboard" ? "/dashboards/$presentationId" : "/reports/$presentationId"}
+            params={{ presentationId }}
+          >
+            <Pencil /> Edit
+          </Link>
+        </Button>
+      ) : null}
+      <Button
+        size="sm"
+        disabled={!document || loadingIDs.size > 0}
+        onClick={() =>
+          document && void execute(document.artifact, filterValues, allVisualizationIDs, true)
+        }
+      >
+        {loadingIDs.size > 0 ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+        Refresh
+      </Button>
+    </>
+  );
 
   return (
     <AppPage>
-      <PageHeader
-        title={document?.artifact.title ?? `Loading ${kind}…`}
-        subtitle={
-          document
-            ? `${document.artifact.path} · ${selectedEnvironment}`
-            : "Rendered from the Git-tracked definition"
-        }
-        actions={
-          <>
-            <Button asChild variant="ghost" size="sm">
-              <Link to={kind === "dashboard" ? "/dashboards" : "/reports"}>
-                <ArrowLeft />
-                {meta}
-              </Link>
-            </Button>
-            {document ? (
-              <Button asChild variant="outline" size="sm">
-                <Link
-                  to={
-                    kind === "dashboard"
-                      ? "/dashboards/$presentationId"
-                      : "/reports/$presentationId"
-                  }
-                  params={{ presentationId }}
-                >
-                  <Pencil /> Edit
-                </Link>
-              </Button>
-            ) : null}
-            <Button
-              size="sm"
-              disabled={!document || loadingIDs.size > 0}
-              onClick={() =>
-                document && void execute(document.artifact, filterValues, allVisualizationIDs, true)
-              }
-            >
-              {loadingIDs.size > 0 ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-              Refresh
-            </Button>
-          </>
-        }
-      />
+      {workbenchEnabled ? (
+        <WorkbenchPortal slot="context">
+          <PresentationLibrarySidebar kind={kind} activePresentationId={presentationId} />
+        </WorkbenchPortal>
+      ) : (
+        <PageHeader
+          title={document?.artifact.title ?? `Loading ${kind}…`}
+          subtitle={
+            document
+              ? `${document.artifact.path} · ${selectedEnvironment}`
+              : "Rendered from the Git-tracked definition"
+          }
+          actions={viewerActions}
+        />
+      )}
 
       {loading && !document ? (
         <PresentationViewerSkeleton />
@@ -279,20 +286,34 @@ export function AppPresentationViewerPage({
       ) : document ? (
         <ScrollArea className="min-h-0 flex-1">
           <div className="mx-auto w-full max-w-7xl space-y-4 p-4 sm:p-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary" className="gap-1 font-normal">
-                <Eye className="size-3" /> Live view
-              </Badge>
-              {document.artifact.problems?.length ? (
-                <Badge variant="outline" className="border-amber-500/30 text-amber-700">
-                  <AlertTriangle /> {document.artifact.problems.length} definition problem
-                  {document.artifact.problems.length === 1 ? "" : "s"}
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="gap-1 font-normal text-emerald-700">
-                  <Check className="size-3" /> Definition checked
-                </Badge>
-              )}
+            <div className="flex flex-wrap items-start gap-2">
+              <div className="min-w-0 flex-1">
+                {workbenchEnabled ? (
+                  <h1 className="truncate text-lg font-semibold tracking-tight">
+                    {document.artifact.title}
+                  </h1>
+                ) : null}
+                <div
+                  className={cn("flex flex-wrap items-center gap-2", workbenchEnabled && "mt-1")}
+                >
+                  <Badge variant="secondary" className="gap-1 font-normal">
+                    <Eye className="size-3" /> Live view
+                  </Badge>
+                  {document.artifact.problems?.length ? (
+                    <Badge variant="outline" className="border-amber-500/30 text-amber-700">
+                      <AlertTriangle /> {document.artifact.problems.length} definition problem
+                      {document.artifact.problems.length === 1 ? "" : "s"}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="gap-1 font-normal text-emerald-700">
+                      <Check className="size-3" /> Definition checked
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              {workbenchEnabled ? (
+                <div className="flex shrink-0 items-center gap-1">{viewerActions}</div>
+              ) : null}
             </div>
 
             {(document.artifact.filters ?? []).length > 0 ? (

@@ -1,4 +1,4 @@
-import { Link, Outlet, useLocation, useParams } from "@tanstack/react-router";
+import { Link, Outlet, useLocation, useMatches, useParams } from "@tanstack/react-router";
 import {
   BookOpen,
   Boxes,
@@ -48,14 +48,21 @@ import {
 import { findExecutionTimeOption, getExecutionTimeOptions } from "@/lib/execution-time";
 import type { SourceControlChange, WebNotebook } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { getPinnedProjectId } from "@/lib/project-context";
 
 import { ProjectSwitcher } from "./project-switcher";
 import { AppCommandPalette } from "./app-command-palette";
-import { navItems } from "./app-data";
-import { NavLinkButton } from "./app-primitives";
+import {
+  appNavigationModes,
+  modeForAppPath,
+  navigationForAppRouteMatches,
+} from "./app-navigation-model";
 import { LocalVaultControl } from "./local-vault-control";
 import { ServerOfflineOverlay } from "./server-offline-overlay";
 import { SourceControlDiffViewer } from "./source-control-diff-viewer";
+import { AppWorkbenchLayout } from "./workbench/workbench-layout";
+import { AppWorkbenchMobileToolTabs } from "./workbench/workbench-mobile-tool-tabs";
+import { WorkbenchProvider } from "./workbench/workbench-slots";
 
 // Stage/unstage row actions reveal on hover on pointer devices, but touch
 // devices have no hover state — so always show them where hover isn't
@@ -67,77 +74,138 @@ export function AppShell() {
   useWorkspaceSync();
   useWorkspaceTheme();
   const sourceControl = useSourceControl();
+  const location = useLocation();
+  const matchedRouteNavigation = useMatches({
+    select: (matches) => navigationForAppRouteMatches(matches),
+  });
+  const routeNavigation = useMemo(() => {
+    if (!matchedRouteNavigation || matchedRouteNavigation.mode !== "build") {
+      return matchedRouteNavigation;
+    }
+    const search = location.search as { editor?: unknown };
+    if (search.editor !== "adhoc") return matchedRouteNavigation;
+    return {
+      ...matchedRouteNavigation,
+      tool: "ad-hoc" as const,
+    };
+  }, [location.search, matchedRouteNavigation]);
+  const activeMode = routeNavigation
+    ? { id: routeNavigation.mode }
+    : modeForAppPath(location.pathname);
+  const { workspaceConfig } = useWorkspaceSettingsData();
+  const projectId = getPinnedProjectId() ?? workspaceConfig?.project_id ?? "default";
 
   return (
-    // h-dvh (not h-screen): 100vh is the *largest* mobile viewport, so the
-    // bottom nav slides out of sight while the browser chrome is visible.
-    <div className="flex h-dvh min-h-0 flex-col bg-muted/40 text-foreground">
-      <ServerOfflineOverlay />
-      <header className="flex h-12 shrink-0 items-center border-b border-zinc-800 bg-zinc-950 px-2 text-zinc-100 sm:px-3">
-        <Link to="/" className="flex items-center gap-2 pr-2 sm:pr-3">
-          <img src="/icons/icon.svg" alt="" aria-hidden className="size-7 rounded-lg" />
-          <span className="hidden font-semibold tracking-tight sm:inline">renart</span>
-        </Link>
+    <WorkbenchProvider navigation={routeNavigation} projectId={projectId}>
+      {/* h-dvh (not h-screen): 100vh is the *largest* mobile viewport, so the
+          bottom nav slides out of sight while the browser chrome is visible. */}
+      <div
+        className="flex h-dvh min-h-0 flex-col bg-muted/40 text-foreground"
+        data-app-mode={activeMode?.id}
+        data-workbench-route={routeNavigation?.workbench ? "migrated" : "legacy"}
+      >
+        <ServerOfflineOverlay />
+        <AppHeader sourceControl={sourceControl} activeMode={activeMode?.id ?? null} />
+        <AppWorkbenchMobileToolTabs />
 
-        <ProjectSwitcher />
+        <main className="min-h-0 flex-1 overflow-hidden">
+          <AppWorkbenchLayout>
+            <Outlet />
+          </AppWorkbenchLayout>
+        </main>
 
-        <nav className="ml-2 hidden items-center md:flex">
-          {navItems.map((item) => (
-            <NavLinkButton key={item.to} {...item} />
+        <nav
+          aria-label="Primary navigation"
+          className="grid h-[calc(3.5rem+env(safe-area-inset-bottom))] shrink-0 grid-cols-3 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
+        >
+          {appNavigationModes.map((mode) => (
+            <Link
+              key={mode.id}
+              to={mode.to}
+              aria-current={activeMode?.id === mode.id ? "page" : undefined}
+              className={cn(
+                "flex flex-col items-center justify-center gap-0.5 text-[10px] text-muted-foreground",
+                activeMode?.id === mode.id && "text-primary",
+              )}
+            >
+              <mode.icon className="size-4" />
+              {mode.label}
+            </Link>
           ))}
         </nav>
+      </div>
+    </WorkbenchProvider>
+  );
+}
 
-        <div className="flex-1" />
+function AppHeader({
+  sourceControl,
+  activeMode,
+}: {
+  sourceControl: ReturnType<typeof useSourceControl>;
+  activeMode: "build" | "run" | "explore" | null;
+}) {
+  return (
+    <header className="flex h-12 shrink-0 items-center border-b border-zinc-800 bg-zinc-950 px-2 text-zinc-100 sm:px-3">
+      <Link to="/" className="flex items-center gap-2 pr-2 sm:pr-3">
+        <img src="/icons/icon.svg" alt="" aria-hidden className="size-7 rounded-lg" />
+        <span className="hidden font-semibold tracking-tight sm:inline">renart</span>
+      </Link>
 
-        <AppExecutionSelector />
-        <LocalVaultControl />
+      <ProjectSwitcher />
 
-        <Sheet>
-          <SheetTrigger asChild>
-            <Button
-              aria-label="Source control"
-              variant="ghost"
-              size="sm"
-              className="h-8 px-2 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-            >
-              <GitBranch className="size-4" />
-              <span className="hidden max-w-32 truncate sm:inline">
-                {sourceControl.repository?.branch || "git"}
-              </span>
-              {sourceControl.repository && sourceControl.repository.changes.length > 0 ? (
-                <span className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-400">
-                  {sourceControl.repository.changes.length}
-                </span>
-              ) : null}
-            </Button>
-          </SheetTrigger>
-          <GitSheet sourceControl={sourceControl} />
-        </Sheet>
-        <AppCommandPalette />
-      </header>
-
-      <main className="min-h-0 flex-1 overflow-hidden">
-        <Outlet />
-      </main>
-
-      <nav
-        aria-label="Primary navigation"
-        className="grid h-[calc(3.5rem+env(safe-area-inset-bottom))] shrink-0 grid-cols-6 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
-      >
-        {navItems.map((item) => (
-          <Link
-            key={item.to}
-            to={item.to}
-            activeOptions={{ exact: item.to === "/" }}
-            activeProps={{ className: "text-primary" }}
-            className="flex flex-col items-center justify-center gap-0.5 text-[10px] text-muted-foreground"
+      <nav className="ml-2 hidden items-center md:flex">
+        {appNavigationModes.map((mode) => (
+          <Button
+            key={mode.id}
+            asChild
+            size="sm"
+            variant="ghost"
+            className="relative h-12 rounded-none px-3 text-zinc-400 hover:bg-transparent hover:text-zinc-200 data-[state=open]:bg-transparent"
           >
-            <item.icon className="size-4" />
-            {item.label}
-          </Link>
+            <Link
+              to={mode.to}
+              aria-current={activeMode === mode.id ? "page" : undefined}
+              className={cn(
+                activeMode === mode.id &&
+                  "text-white after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 after:rounded-full after:bg-primary",
+              )}
+            >
+              <mode.icon className="size-3.5" />
+              <span>{mode.label}</span>
+            </Link>
+          </Button>
         ))}
       </nav>
-    </div>
+
+      <div className="flex-1" />
+
+      <AppExecutionSelector />
+      <LocalVaultControl />
+
+      <Sheet>
+        <SheetTrigger asChild>
+          <Button
+            aria-label="Source control"
+            variant="ghost"
+            size="sm"
+            className="h-8 px-2 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+          >
+            <GitBranch className="size-4" />
+            <span className="hidden max-w-32 truncate sm:inline">
+              {sourceControl.repository?.branch || "git"}
+            </span>
+            {sourceControl.repository && sourceControl.repository.changes.length > 0 ? (
+              <span className="rounded bg-zinc-800 px-1 text-[10px] text-zinc-400">
+                {sourceControl.repository.changes.length}
+              </span>
+            ) : null}
+          </Button>
+        </SheetTrigger>
+        <GitSheet sourceControl={sourceControl} />
+      </Sheet>
+      <AppCommandPalette />
+    </header>
   );
 }
 

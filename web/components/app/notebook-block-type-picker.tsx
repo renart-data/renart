@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { writeAuthoringDragItem } from "./authoring-drag";
+import { CodeTypeGlyph } from "./code-type-glyph";
 
 export const NOTEBOOK_BLOCK_TYPE_OPTIONS = [
   { value: "sql", label: "SQL" },
@@ -63,46 +64,24 @@ export function NotebookBlockTypePreview({
   className?: string;
 }) {
   return (
-    <svg
-      viewBox="0 0 72 42"
+    <div
       aria-hidden="true"
-      className={cn("size-auto h-11 w-full max-w-20 text-primary", className)}
-      fill="none"
+      className={cn(
+        "flex h-11 w-full max-w-20 items-center justify-center text-primary",
+        className,
+      )}
     >
-      <rect x="7" y="5" width="58" height="32" rx="4" className="fill-primary/5 stroke-border" />
-      {type === "sql" ? <SQLPreview /> : null}
-      {type === "python" ? <PythonPreview /> : null}
-      {type === "markdown" ? <TextPreview /> : null}
-    </svg>
+      <NotebookBlockTypeGlyph type={type} className="size-6" />
+    </div>
   );
 }
 
-function SQLPreview() {
-  return (
-    <g strokeLinecap="round">
-      <path d="M14 14H28" className="stroke-current" strokeWidth="3" />
-      <path d="M33 14H53M14 21H22" className="stroke-primary/45" strokeWidth="2" />
-      <path d="M26 21H58M20 28H49" className="stroke-current" strokeWidth="2" />
-    </g>
-  );
-}
-
-function PythonPreview() {
-  return (
-    <g strokeLinecap="round">
-      <path d="M14 14H25" className="stroke-current" strokeWidth="3" />
-      <path d="M30 14H54M19 21H42" className="stroke-primary/45" strokeWidth="2" />
-      <path d="M24 28H57" className="stroke-current" strokeWidth="2" />
-      <circle cx="16" cy="28" r="2" className="fill-current" />
-    </g>
-  );
-}
-
-function TextPreview() {
-  return (
-    <g strokeLinecap="round">
-      <path d="M14 15H39" className="stroke-current" strokeWidth="4" />
-      <path d="M14 23H57M14 29H48" className="stroke-primary/45" strokeWidth="2" />
-    </g>
-  );
+export function NotebookBlockTypeGlyph({
+  type,
+  className,
+}: {
+  type: NotebookBlockType;
+  className?: string;
+}) {
+  return <CodeTypeGlyph type={type === "markdown" ? "text" : type} className={className} />;
 }

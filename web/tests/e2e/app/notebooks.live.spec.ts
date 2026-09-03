@@ -118,7 +118,7 @@ async function createNotebookControl(
 
 async function openNotebookToolsTab(page: Page, name: "Outline" | "Data" | "Add" | "AI") {
   if ((page.viewportSize()?.width ?? 0) < 1280) {
-    await page.getByRole("button", { name: "Notebook tools" }).click();
+    await page.getByRole("tab", { name: "Notebooks", exact: true }).click();
   }
   await page.getByRole("tab", { name, exact: true }).click();
 }
@@ -398,10 +398,12 @@ test.describe("app notebooks live", () => {
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     const narrowNotebook = (page.viewportSize()?.width ?? 1280) < 1280;
     if (narrowNotebook) {
-      await page.getByRole("button", { name: "Notebook tools" }).click();
+      await page.getByRole("tab", { name: "Notebooks", exact: true }).click();
     }
     const tools = narrowNotebook
-      ? page.getByRole("dialog", { name: "Notebook tools" }).getByLabel("Notebook authoring tools")
+      ? page
+          .getByRole("dialog", { name: "Notebooks navigation" })
+          .getByLabel("Notebook authoring tools")
       : page.getByLabel("Notebook authoring tools");
     await tools.getByRole("tab", { name: "Add" }).click();
     await tools.getByRole("button", { name: "Manage controls" }).click();
@@ -470,7 +472,15 @@ test.describe("app notebooks live", () => {
     liveApp,
     page,
   }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("renart-notebook-autorecompute", "off");
+    });
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Dataset Controls");
+    const disableAutoRecompute = await page.request.put(
+      `${liveApp.baseURL}/api/notebooks/${notebook.id}/settings`,
+      { data: { auto_recompute: false, environment: "default" } },
+    );
+    expect(disableAutoRecompute.ok()).toBe(true);
     const source = notebook.cells[0];
     await setCell(
       page.request,
@@ -495,7 +505,7 @@ test.describe("app notebooks live", () => {
     const control = page.getByRole("combobox", { name: "Region", exact: true });
     await expect(control).toBeDisabled();
     const controlBlock = page.getByRole("region", { name: "Control: Region" });
-    await expect(controlBlock.getByRole("button", { name: "Load options" })).toBeEnabled();
+    await expect(controlBlock.getByRole("button", { name: "Load options" })).toBeDisabled();
 
     const optionsResponse = page.waitForResponse(
       (response) =>
@@ -503,7 +513,20 @@ test.describe("app notebooks live", () => {
         response.ok(),
       { timeout: 15000 },
     );
-    await controlBlock.getByRole("button", { name: "Load options" }).click();
+    const runResponse = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/notebooks/${notebook.id}/run`) && response.ok(),
+      { timeout: 30000 },
+    );
+    await page.getByRole("button", { name: "Run all" }).click();
+    const runPayload = (await (await runResponse).json()) as {
+      results: Array<{ cell_id: string; status: string }>;
+    };
+    expect(runPayload.results).toContainEqual(
+      expect.objectContaining({ cell_id: source.cell_id, status: "ok" }),
+    );
+
+    // A new successful producer result streams over SSE and refreshes its
+    // dataset-backed controls without a second user action.
     const response = await optionsResponse;
     const payload = (await response.json()) as {
       result: { columns: string[]; rows: unknown[][]; total_rows: number; truncated?: boolean };
@@ -632,11 +655,80 @@ test.describe("app notebooks live", () => {
     expect(result.performance?.runtime_sync_ms).toBeGreaterThanOrEqual(0);
     expect(result.performance?.session_bytes).toBeGreaterThan(0);
 
-    const table = page.getByRole("table", { name: "many_rows result preview" });
+    const table = page.getByRole("grid", { name: "many_rows result preview" });
     await expect(table).toHaveAttribute("aria-rowcount", "101");
     await expect(table.locator("tbody")).toHaveAttribute("data-virtualized", "true");
     await expect(table.locator("[data-row-index]")).toHaveCount(17);
     await expect(page.getByText("showing 100 of 1,000 rows", { exact: true })).toBeVisible();
+
+    const cell = page.locator(`[data-notebook-cell-id="${cellId}"]`);
+    const card = cell.locator(':scope > [data-slot="delimited-card"]');
+    const cardHeader = card.locator('[data-slot="delimited-card-header"]');
+    const editorShell = cell.locator('[data-slot="notebook-cell-editor-shell"]');
+    const resizeHandle = cell.getByRole("separator", { name: "Resize many_rows cell" });
+    const resultPreview = cell.getByTestId("notebook-result-preview");
+    const collapseResult = cell.getByRole("button", {
+      name: "Collapse many_rows result table",
+    });
+    const nameBadge = cell.getByTestId("notebook-cell-name-badge");
+    const headerName = cell.getByTestId("notebook-cell-header-name");
+    const performanceButton = cell.locator(
+      'button[aria-label="Show local performance measurements"]',
+    );
+
+    await expect(nameBadge.getByRole("button", { name: "Rename cell many_rows" })).toBeVisible();
+    await expect(headerName).toBeVisible();
+    await expect(cell.getByLabel("SQL cell")).toBeHidden();
+    await expect(cell.getByText(/1000 rows · \d+ ms/)).toBeHidden();
+    await expect(performanceButton).toBeHidden();
+    expect(
+      await card.evaluate((element) => ({
+        background: getComputedStyle(element).backgroundColor,
+        borderWidth: getComputedStyle(element).borderTopWidth,
+      })),
+    ).toEqual({ background: "rgba(0, 0, 0, 0)", borderWidth: "1px" });
+    expect(
+      await cardHeader.evaluate((element) => element.getBoundingClientRect().height),
+    ).toBeLessThanOrEqual(36);
+    expect(
+      await cell
+        .locator(".monaco-editor")
+        .evaluate((element) => getComputedStyle(element).backgroundColor),
+    ).toBe("rgba(0, 0, 0, 0)");
+    expect(await resultPreview.evaluate((element) => getComputedStyle(element).clipPath)).not.toBe(
+      "none",
+    );
+    const editorResultEdges = await Promise.all([
+      resizeHandle.evaluate((element) => element.getBoundingClientRect().bottom),
+      resultPreview.evaluate((element) => element.getBoundingClientRect().top),
+    ]);
+    expect(Math.abs(editorResultEdges[0] - editorResultEdges[1])).toBeLessThanOrEqual(1);
+    expect(await resizeHandle.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe(
+      "0px",
+    );
+
+    const expandedResultHeight = await resultPreview.evaluate(
+      (element) => element.getBoundingClientRect().height,
+    );
+    await collapseResult.click();
+    await expect(table).toBeHidden();
+    const expandResult = cell.getByRole("button", { name: "Expand many_rows result table" });
+    await expect(expandResult).toHaveAttribute("aria-expanded", "false");
+    expect(
+      await resultPreview.evaluate((element) => element.getBoundingClientRect().height),
+    ).toBeLessThan(expandedResultHeight);
+    await expandResult.click();
+    await expect(table).toBeVisible();
+
+    await editorShell.click();
+    await expect(cell.getByLabel("SQL cell")).toBeVisible();
+    await expect(cell.getByText(/1000 rows · \d+ ms/)).toBeVisible();
+    await nameBadge.getByRole("button", { name: "Rename cell many_rows" }).click();
+    await expect(nameBadge.getByRole("textbox", { name: "Rename cell many_rows" })).toBeVisible();
+    await nameBadge.getByRole("textbox", { name: "Rename cell many_rows" }).press("Escape");
+    await headerName.click();
+    await expect(nameBadge.getByRole("textbox", { name: "Rename cell many_rows" })).toBeVisible();
+    await nameBadge.getByRole("textbox", { name: "Rename cell many_rows" }).press("Escape");
 
     await table.evaluate((element) => {
       const viewport = element.closest('[data-slot="scroll-area-viewport"]');
@@ -647,11 +739,47 @@ test.describe("app notebooks live", () => {
     await expect(table.locator('[data-row-index="50"]')).toBeAttached();
     expect(await table.locator("[data-row-index]").count()).toBeLessThan(30);
 
-    const performanceButton = page
-      .locator(`[data-notebook-cell-id="${cellId}"]`)
-      .getByRole("button", {
-        name: "Show local performance measurements",
-      });
+    const cell50 = table.locator('[data-grid-row-index="50"][data-grid-column-index="0"]');
+    const cell51 = table.locator('[data-grid-row-index="51"][data-grid-column-index="0"]');
+    const cell52 = table.locator('[data-grid-row-index="52"][data-grid-column-index="0"]');
+    await cell50.click();
+    await expect(cell50.locator("..")).toHaveAttribute("aria-selected", "true");
+    if (test.info().project.name.includes("mobile")) {
+      const selectionControls = page.getByTestId("mobile-table-selection-controls");
+      await expect(selectionControls).toBeVisible();
+      await selectionControls.getByRole("button", { name: "Adjust selection down" }).click();
+      await expect(table.locator('td[aria-selected="true"]')).toHaveCount(2);
+      await selectionControls.getByRole("button", { name: "Adjust selection up" }).click();
+      await expect(table.locator('td[aria-selected="true"]')).toHaveCount(1);
+      await selectionControls.getByRole("button", { name: "Clear selection" }).click();
+      await expect(table.locator('td[aria-selected="true"]')).toHaveCount(0);
+      await cell50.click();
+    } else {
+      await cell51.hover();
+      await page.waitForTimeout(150);
+      await expect(page.locator('[data-slot="hover-card-content"]')).toBeHidden();
+      await cell50.hover();
+      await expect(page.locator('[data-slot="hover-card-content"]')).toBeVisible();
+    }
+
+    await cell52.click({ modifiers: ["Shift"] });
+    await expect(table.locator('td[aria-selected="true"]')).toHaveCount(3);
+    await cell52.press("Shift+ArrowDown");
+    await expect(table.locator('td[aria-selected="true"]')).toHaveCount(4);
+    await cell51.click({ modifiers: ["Control"] });
+    await expect(table.locator('td[aria-selected="true"]')).toHaveCount(3);
+    await cell52.press("Control+c");
+    await expect(page.getByText("Copied", { exact: true })).toBeVisible();
+    await cell52.press("Escape");
+    await expect(table.locator('td[aria-selected="true"]')).toHaveCount(0);
+    await cell52.click();
+    await page.keyboard.press("Control+a");
+    await expect(page.getByRole("button", { name: "Copy selected cells" })).toContainText(
+      "Copy 100",
+    );
+    await page.keyboard.press("Escape");
+    await expect(table.locator('td[aria-selected="true"]')).toHaveCount(0);
+
     await expect(performanceButton).toBeVisible();
     if (!test.info().project.name.includes("mobile")) {
       await performanceButton.hover();
@@ -728,7 +856,7 @@ test.describe("app notebooks live", () => {
       sourcePayload.results[0].snapshot!.imported_at,
     );
     await expect(
-      sourceCard.getByRole("table", { name: `${source!.name} result preview` }),
+      sourceCard.getByRole("grid", { name: `${source!.name} result preview` }),
     ).toBeVisible();
 
     const totalCell = await addCell(page.request, liveApp.baseURL, notebook.id, "file_total");
@@ -1161,7 +1289,7 @@ test.describe("app notebooks live", () => {
       )
       .toContain("SELECT\n");
 
-    await cell.getByRole("button", { name: "format_queue", exact: true }).click();
+    await page.getByText("Format Queue", { exact: true }).first().click();
     expect((await saveResponse).status()).toBe(200);
 
     await expect
@@ -1265,6 +1393,15 @@ test.describe("app notebooks live", () => {
     const viewport = page
       .getByTestId("notebook-scroll-area")
       .locator(':scope > [data-slot="scroll-area-viewport"]');
+    const insertionButton = page
+      .getByRole("button", { name: "Insert notebook block here" })
+      .first();
+    await expect(insertionButton).toBeAttached();
+    if (test.info().project.name.includes("mobile")) {
+      await expect
+        .poll(() => insertionButton.evaluate((element) => getComputedStyle(element).opacity))
+        .toBe("1");
+    }
     await openNotebookToolsTab(page, "Add");
     const addSQLCell = page.getByTitle("Drag SQL between notebook blocks, or click to add");
     await addSQLCell.scrollIntoViewIfNeeded();
@@ -1307,9 +1444,7 @@ test.describe("app notebooks live", () => {
       await expect(pending).toBeVisible();
       await expect(pending).toHaveAttribute("data-notebook-block-pending", "sql");
       await expect(pending).toHaveClass(/animate-in/);
-      await expect(
-        page.getByRole("button", { name: "Insert notebook block here" }).first(),
-      ).toBeDisabled();
+      await expect(insertionButton).toBeDisabled();
       await expect
         .poll(() =>
           viewport.evaluate(
@@ -1352,7 +1487,10 @@ test.describe("app notebooks live", () => {
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Markdown Creation");
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
-    await expect(page.getByText("Markdown Creation").first()).toBeVisible({ timeout: 15000 });
+    const notebookTab = page
+      .getByRole("tablist", { name: "Open authoring documents" })
+      .getByRole("tab", { name: "Markdown Creation", exact: true });
+    await expect(notebookTab).toBeVisible({ timeout: 15000 });
 
     await openNotebookToolsTab(page, "Add");
     const applyResponse = page.waitForResponse(
@@ -1366,6 +1504,13 @@ test.describe("app notebooks live", () => {
 
     const editor = page.getByLabel("Markdown cell");
     await expect(editor).toHaveAttribute("contenteditable", "true");
+    await expect(editor).toHaveAttribute("spellcheck", "false");
+    await editor.focus();
+    await expect(editor).toHaveAttribute("spellcheck", "true");
+    await expect(page.locator("[data-notebook-markdown-index]").last()).toHaveAttribute(
+      "data-notebook-block-selected",
+      "true",
+    );
     await editor.fill("A ");
     await page.getByRole("button", { name: "Bold", exact: true }).click();
     await editor.pressSequentially("visual");
@@ -1378,8 +1523,9 @@ test.describe("app notebooks live", () => {
         response.request().method() === "POST",
       { timeout: 15000 },
     );
-    await page.getByRole("heading", { name: "Markdown Creation" }).first().click();
+    await notebookTab.click();
     expect((await saveResponse).ok()).toBe(true);
+    await expect(editor).toHaveAttribute("spellcheck", "false");
 
     const response = await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}`);
     expect(response.ok()).toBe(true);
@@ -1391,9 +1537,7 @@ test.describe("app notebooks live", () => {
     ).toBe(true);
 
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Markdown Creation" }).first()).toBeVisible({
-      timeout: 15000,
-    });
+    await expect(notebookTab).toBeVisible({ timeout: 15000 });
     await expect(page.getByLabel("Markdown cell")).toContainText("A visual note");
     await expect(page.getByText("Write a note…", { exact: true })).toBeHidden();
 
@@ -1798,6 +1942,22 @@ test.describe("app notebooks live", () => {
       `[data-notebook-visualization-id="${visualization.id}"]`,
     );
     await expect(visualizationCard).toBeVisible({ timeout: 15000 });
+    await expect(visualizationCard.locator(".recharts-responsive-container")).toBeVisible({
+      timeout: 15000,
+    });
+    const notebookViewport = page
+      .getByTestId("notebook-scroll-area")
+      .locator(':scope > [data-slot="scroll-area-viewport"]');
+    const notebookWidth = await notebookViewport.evaluate((element) => ({
+      client: element.clientWidth,
+      scroll: element.scrollWidth,
+    }));
+    expect(notebookWidth.scroll).toBeLessThanOrEqual(notebookWidth.client + 1);
+    expect(
+      await visualizationCard
+        .locator('[data-slot="delimited-card"]')
+        .evaluate((element) => getComputedStyle(element).backgroundColor),
+    ).not.toBe("rgba(0, 0, 0, 0)");
     const visualizationInspector = page.getByTestId("notebook-visualization-inspector");
     await expect(visualizationInspector).toBeVisible({ timeout: 15000 });
     const inspectorWidth = await visualizationInspector.evaluate((element) => ({
@@ -1849,9 +2009,15 @@ test.describe("app notebooks live", () => {
     await applySeen;
     await visualizationInspector.getByRole("button", { name: "Close inspector" }).click();
     await expect(visualizationCard.getByText("Monthly revenue", { exact: true })).toBeVisible();
-    await visualizationCard
-      .getByRole("button", { name: "Edit visualization Monthly revenue" })
-      .click();
+    const editVisualization = visualizationCard.getByRole("button", {
+      name: "Edit visualization Monthly revenue",
+    });
+    await expect(editVisualization).toBeHidden();
+    await visualizationCard.getByRole("region", { name: "Visualization: Monthly revenue" }).click();
+    if ((page.viewportSize()?.width ?? 0) >= 1280) {
+      await expect(editVisualization).toBeVisible();
+      await editVisualization.click();
+    }
     await expect(visualizationInspector).toBeVisible();
     await visualizationInspector.getByRole("button", { name: "Close inspector" }).click();
 
@@ -1892,6 +2058,7 @@ test.describe("app notebooks live", () => {
     );
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Ordered Controls");
     const firstCell = notebook.cells[0].cell_id;
+    const firstCellName = notebook.cells[0].name;
     const secondCell = await addCell(page.request, liveApp.baseURL, notebook.id, "second");
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
@@ -1918,17 +2085,148 @@ test.describe("app notebooks live", () => {
       control?.control,
       secondCell,
     ]);
-    await expect(page.getByTestId("notebook-control-inspector")).toBeVisible();
+    const controlInspector = page.getByTestId("notebook-control-inspector");
+    await expect(controlInspector).toBeVisible();
+    await controlInspector.getByRole("button", { name: "Close inspector" }).click();
+    await expect(controlInspector).toBeHidden();
+    const renderedControl = page.locator(`[data-notebook-control-id="${control?.control}"]`);
+    await setCell(
+      page.request,
+      liveApp.baseURL,
+      notebook.id,
+      firstCell,
+      `select {{ parameter.${control?.control} }} as slider_value`,
+    );
+    await setCell(
+      page.request,
+      liveApp.baseURL,
+      notebook.id,
+      secondCell,
+      `select slider_value from ${firstCellName}`,
+    );
+    const initialRun = await page.request.post(
+      `${liveApp.baseURL}/api/notebooks/${notebook.id}/run`,
+      { data: { all: true } },
+    );
+    expect(initialRun.ok()).toBe(true);
+    await page.reload();
+    const jinjaGhost = page
+      .locator(`[data-notebook-cell-id="${firstCell}"] .bruin-jinja-rendered-ghost`)
+      .first();
+    await expect(jinjaGhost).toContainText("50", { timeout: 15000 });
+    const runtimeBefore = (await (
+      await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}/runtime`)
+    ).json()) as {
+      results?: Record<string, { rows?: unknown[][] }>;
+    };
+    expect(Number(runtimeBefore.results?.[firstCell]?.rows?.[0]?.[0])).toBe(50);
+    expect(Number(runtimeBefore.results?.[secondCell]?.rows?.[0]?.[0])).toBe(50);
+    const livePreview = page.waitForResponse(
+      (response) => {
+        if (!response.url().includes("/render-jinja") || response.request().method() !== "POST") {
+          return false;
+        }
+        const body = response.request().postDataJSON() as {
+          parameter_values?: Record<string, unknown>;
+        };
+        return body.parameter_values?.[control?.control ?? ""] === 51 && response.ok();
+      },
+      { timeout: 15000 },
+    );
+    const parameterSaved = page.waitForResponse(
+      (response) => {
+        if (
+          !response.url().endsWith(`/api/notebooks/${notebook.id}/settings`) ||
+          response.request().method() !== "PUT"
+        ) {
+          return false;
+        }
+        const body = response.request().postDataJSON() as {
+          parameter_values?: Record<string, unknown>;
+        };
+        return body.parameter_values?.[control?.control ?? ""] === 51 && response.ok();
+      },
+      { timeout: 15000 },
+    );
+    await renderedControl.getByRole("slider").press("ArrowRight");
+    await Promise.all([livePreview, parameterSaved]);
+    await expect(jinjaGhost).toContainText("51", { timeout: 15000 });
+    await expect
+      .poll(
+        async () => {
+          const runtime = (await (
+            await page.request.get(`${liveApp.baseURL}/api/notebooks/${notebook.id}/runtime`)
+          ).json()) as {
+            stale?: string[];
+            running?: string[];
+            results?: Record<string, { rows?: unknown[][] }>;
+          };
+          const first = runtime.results?.[firstCell];
+          const second = runtime.results?.[secondCell];
+          return {
+            firstValue: Number(first?.rows?.[0]?.[0]),
+            secondValue: Number(second?.rows?.[0]?.[0]),
+            stale: (runtime.stale ?? []).filter((cellID) =>
+              [firstCell, secondCell].includes(cellID),
+            ),
+            running: (runtime.running ?? []).filter((cellID) =>
+              [firstCell, secondCell].includes(cellID),
+            ),
+          };
+        },
+        { timeout: 20000 },
+      )
+      .toEqual({ firstValue: 51, secondValue: 51, stale: [], running: [] });
+    await expect(controlInspector).toBeHidden();
 
     const afterControlInsertion = page.locator(
       `[data-notebook-insertion-point="after:control:${control?.control}"]`,
     );
     await afterControlInsertion.getByRole("button", { name: "Insert notebook block here" }).click();
+    const insertionPicker = page.getByTestId("notebook-insert-picker");
+    await expect(insertionPicker).toBeVisible();
+    const sqlChoice = insertionPicker.locator('[aria-label="SQL"]');
+    const pythonChoice = insertionPicker.locator('[aria-label="Python"]');
+    const textChoice = insertionPicker.locator('[aria-label="Text"]');
+    await expect(sqlChoice).toBeVisible();
+    await expect(pythonChoice).toBeVisible();
+    const pickerWidths = await Promise.all(
+      [
+        sqlChoice,
+        pythonChoice,
+        textChoice,
+        insertionPicker.getByRole("button", { name: "Control", exact: true }),
+        insertionPicker.getByRole("button", { name: "Chart", exact: true }),
+      ].map((choice) => choice.evaluate((element) => element.getBoundingClientRect().width)),
+    );
+    expect(Math.max(...pickerWidths) - Math.min(...pickerWidths)).toBeLessThanOrEqual(1);
+    const insertionBox = await afterControlInsertion.evaluate((element) =>
+      element.getBoundingClientRect(),
+    );
+    const pickerBox = await insertionPicker.evaluate((element) => element.getBoundingClientRect());
+    expect(
+      Math.abs(pickerBox.top + pickerBox.height / 2 - (insertionBox.top + insertionBox.height / 2)),
+    ).toBeLessThanOrEqual(2);
+    const sqlPreview = sqlChoice.locator("[aria-hidden=true]").first();
+    const chartPreview = insertionPicker
+      .getByRole("button", { name: "Chart", exact: true })
+      .locator("svg")
+      .first();
+    expect(
+      Math.abs(
+        (await sqlPreview.evaluate((element) => element.getBoundingClientRect().height)) -
+          (await chartPreview.evaluate((element) => element.getBoundingClientRect().height)),
+      ),
+    ).toBeLessThanOrEqual(1);
+    await insertionPicker.getByRole("button", { name: "Control", exact: true }).click();
+    await expect(insertionPicker.locator('[aria-label="Slider"] svg')).toBeVisible();
+    await insertionPicker.getByRole("button", { name: "Chart", exact: true }).click();
+    await expect(insertionPicker.locator('[aria-label="Line"] svg')).toBeVisible();
     const textApply = page.waitForResponse(
       (response) =>
         response.url().includes(`/api/notebooks/${notebook.id}/changes/apply`) && response.ok(),
     );
-    await page.getByRole("menuitem", { name: "Text", exact: true }).click();
+    await textChoice.click();
     await textApply;
 
     const afterText = (await (
@@ -1943,6 +2241,13 @@ test.describe("app notebooks live", () => {
         response.url().includes(`/api/notebooks/${notebook.id}/changes/apply`) && response.ok(),
     );
     const controlCell = page.locator(`[data-notebook-control-id="${control?.control}"]`);
+    const controlWidths = await Promise.all([
+      controlCell.evaluate((element) => element.getBoundingClientRect().width),
+      controlCell
+        .locator('[data-slot="slider"]')
+        .evaluate((element) => element.getBoundingClientRect().width),
+    ]);
+    expect(controlWidths[1]).toBeGreaterThanOrEqual(controlWidths[0] - 26);
     await controlCell.hover();
     await controlCell.getByRole("button", { name: /Delete control/ }).click();
     await deleteControl;
@@ -2021,7 +2326,11 @@ test.describe("app notebooks live", () => {
     await expect(page.getByText("Deps").first()).toBeVisible({ timeout: 15000 });
 
     // The cell imports `requests`, which is not declared → a suggestion appears.
-    await expect(page.getByText("Imported but not in dependencies:")).toBeVisible({
+    const dependencySuggestion = page.getByTestId("python-dependency-suggestion");
+    await expect(dependencySuggestion).toHaveAttribute("role", "status");
+    await expect(
+      dependencySuggestion.getByText("Dependency suggestion", { exact: true }),
+    ).toBeVisible({
       timeout: 15000,
     });
     const importButton = page.getByRole("button", { name: "requests" });
@@ -2042,7 +2351,7 @@ test.describe("app notebooks live", () => {
     await candidate.click();
     await addSaved;
     expect(await getDependencies(request, liveApp.baseURL, notebook.id)).toContain("requests");
-    await expect(page.getByText("Imported but not in dependencies:")).toBeHidden({
+    await expect(dependencySuggestion).toBeHidden({
       timeout: 15000,
     });
 
@@ -2103,7 +2412,7 @@ test.describe("app notebooks live", () => {
     await expect(page.getByText("Resolve").first()).toBeVisible({ timeout: 15000 });
 
     // The unresolved import is flagged; the installed one (import≠package) is not.
-    await expect(page.getByText("Imported but not in dependencies:")).toBeVisible({
+    await expect(page.getByText("Dependency suggestion", { exact: true })).toBeVisible({
       timeout: 15000,
     });
     await expect(page.getByRole("button", { name: "totally_made_up_pkg" })).toBeVisible();
@@ -2170,9 +2479,7 @@ test.describe("app notebooks live", () => {
     await expect(page.getByText("Promote Chain").first()).toBeVisible({ timeout: 15000 });
 
     // Open the base cell's actions menu and start a promotion.
-    const baseCard = page
-      .locator('[data-slot="delimited-card"]')
-      .filter({ has: page.getByRole("button", { name: "base", exact: true }) });
+    const baseCard = page.locator(`[data-notebook-cell-id="${baseCell}"]`);
     await baseCard.getByRole("button", { name: "Cell actions" }).click();
     await page.getByRole("menuitem", { name: "Promote to pipeline" }).click();
 

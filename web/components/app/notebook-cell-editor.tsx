@@ -41,7 +41,11 @@ const NOTEBOOK_EDITOR_MIN_HEIGHT =
 const NOTEBOOK_EDITOR_MAX_HEIGHT = 800;
 const NOTEBOOK_EDITOR_AUTO_MAX_HEIGHT =
   NOTEBOOK_EDITOR_AUTO_MAX_LINES * NOTEBOOK_EDITOR_LINE_HEIGHT + NOTEBOOK_EDITOR_VERTICAL_PADDING;
+const EMPTY_NOTEBOOK_PARAMETER_VALUES: Record<string, unknown> = {};
 const NOTEBOOK_EDITOR_OPTIONS: MonacoNS.editor.IStandaloneEditorConstructionOptions = {
+  hideCursorInOverviewRuler: true,
+  overviewRulerBorder: false,
+  overviewRulerLanes: 0,
   scrollBeyondLastLine: false,
   scrollbar: { alwaysConsumeMouseWheel: false },
 };
@@ -143,6 +147,7 @@ export function NotebookCellMonaco({
   onGoToAsset,
   onGoToCell,
   parameters = [],
+  parameterValues = EMPTY_NOTEBOOK_PARAMETER_VALUES,
 }: {
   cell: WebAsset;
   value: string;
@@ -154,8 +159,11 @@ export function NotebookCellMonaco({
   onGoToAsset?: (pipelineId: string, assetId: string) => void;
   onGoToCell?: (cellId: string) => void;
   parameters?: NotebookParameter[];
+  parameterValues?: Record<string, unknown>;
 }) {
   const { monacoTheme } = useWorkspaceTheme();
+  const notebookMonacoTheme =
+    monacoTheme === "bruin-vs-dark" ? "bruin-notebook-vs-dark" : "bruin-notebook-vs";
   const [monacoInstance, setMonacoInstance] = useState<Monaco | null>(null);
   const [editorInstance, setEditorInstance] =
     useState<MonacoNS.editor.IStandaloneCodeEditor | null>(null);
@@ -184,20 +192,32 @@ export function NotebookCellMonaco({
   useSQLLSP(sqlMonaco, sqlEditor, cell, value, schemaTables, onGoToAsset, onGoToCell, {
     includeNotebookRuntimeColumns: true,
   });
-  useJinjaIntellisense(sqlMonaco, sqlEditor, cell, value, undefined, {
-    parameter: parameters.map((parameter) => ({
-      name: parameter.id,
-      type: parameter.type,
-      default_value: parameter.default,
-      description: parameter.label,
-    })),
-    parameters: parameters.map((parameter) => ({
-      name: parameter.id,
-      type: parameter.type,
-      default_value: parameter.default,
-      description: parameter.label,
-    })),
-  });
+  useJinjaIntellisense(
+    sqlMonaco,
+    sqlEditor,
+    cell,
+    value,
+    undefined,
+    {
+      parameter: parameters.map((parameter) => ({
+        name: parameter.id,
+        type: parameter.type,
+        default_value: Object.prototype.hasOwnProperty.call(parameterValues, parameter.id)
+          ? parameterValues[parameter.id]
+          : parameter.default,
+        description: parameter.label,
+      })),
+      parameters: parameters.map((parameter) => ({
+        name: parameter.id,
+        type: parameter.type,
+        default_value: Object.prototype.hasOwnProperty.call(parameterValues, parameter.id)
+          ? parameterValues[parameter.id]
+          : parameter.default,
+        description: parameter.label,
+      })),
+    },
+    parameterValues,
+  );
 
   // Python intellisense (ty: diagnostics, completion, hover, signature, goto,
   // format) is the mirror of the SQL hooks for Python cells; null monaco/editor
@@ -402,7 +422,7 @@ export function NotebookCellMonaco({
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border">
+    <div data-slot="notebook-cell-editor-shell" className="overflow-hidden bg-transparent">
       <div data-slot="notebook-cell-editor" style={{ height: editorHeight }}>
         <AssetCodeEditor
           asset={cell}
@@ -416,7 +436,7 @@ export function NotebookCellMonaco({
           isSqlAsset={!isPython}
           formatShortcutLabel="⌘ + ⇧ + I"
           mobile={false}
-          monacoTheme={monacoTheme}
+          monacoTheme={notebookMonacoTheme}
           onChange={(next) => {
             const nextValue = next ?? "";
             if (applyingExternalValueRef.current) {
@@ -441,7 +461,7 @@ export function NotebookCellMonaco({
         aria-valuenow={Math.round(editorHeight)}
         aria-valuetext={`${Math.round(editorHeight)} pixels high`}
         title="Drag or use arrow keys to resize; double-click or press Enter to fit content"
-        className="group flex h-3 touch-none cursor-row-resize select-none items-center justify-center border-t bg-muted/20 text-muted-foreground outline-none transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:bg-muted/50 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        className="group flex h-3 touch-none cursor-row-resize select-none items-center justify-center bg-transparent text-muted-foreground outline-none transition-colors hover:bg-muted/30 hover:text-foreground focus-visible:bg-muted/30 focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         onPointerDown={handleResizePointerDown}
         onPointerMove={handleResizePointerMove}
         onPointerUp={finishResize}

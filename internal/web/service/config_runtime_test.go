@@ -101,6 +101,35 @@ environments:
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
+func TestConfigServiceConnectionSummariesReturnsNamesAndTypesOnly(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, ".bruin.yml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`
+default_environment: default
+environments:
+  default:
+    connections:
+      duckdb:
+        - name: duckdb-default
+          path: warehouse.duckdb
+      postgres:
+        - name: analytics
+          host: db.internal
+          port: 5432
+          database: warehouse
+          username: renart
+          password: must-not-leak
+`), 0o600))
+
+	environment, connections, err := NewConfigService(root, configPath).ConnectionSummaries("")
+	require.NoError(t, err)
+	assert.Equal(t, "default", environment)
+	assert.Equal(t, map[string]string{
+		"analytics":      "postgres",
+		"duckdb-default": "duckdb",
+	}, connections)
+}
+
 func TestApplySelectedEnvironmentRefreshRestriction(t *testing.T) {
 	t.Parallel()
 

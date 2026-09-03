@@ -26,6 +26,7 @@ import (
 	webapi "renart/internal/web/api"
 	"renart/internal/web/bus"
 	"renart/internal/web/completion"
+	"renart/internal/web/databrowser"
 	"renart/internal/web/dependencygraph"
 	"renart/internal/web/events"
 	"renart/internal/web/fingerprint"
@@ -62,6 +63,7 @@ type webServer struct {
 	executionSvc      *service.ExecutionService
 	assetSvc          *service.AssetService
 	sqlSvc            *service.SQLService
+	dataBrowserSvc    *databrowser.Service
 	loadSvc           *service.LoadService
 	suggestionsSvc    *service.SuggestionsService
 	parseContextSvc   *service.ParseContextService
@@ -371,6 +373,7 @@ func (s *webServer) registerRoutes(router chi.Router) {
 	webhttpapi.RegisterAssetColumnRoutes(router, &webhttpapi.AssetColumnsAPI{Service: s.assetSvc})
 	webhttpapi.RegisterPipelineExecutionRoutes(router, &webhttpapi.PipelineExecutionAPI{Service: s.executionSvc})
 	webhttpapi.RegisterSQLRoutes(router, &webhttpapi.SQLAPI{Service: s.sqlSvc})
+	webhttpapi.RegisterDataBrowserRoutes(router, &webhttpapi.DataBrowserAPI{Service: s.dataBrowserSvc})
 	webhttpapi.RegisterLoadRoutes(router, &webhttpapi.LoadAPI{Service: s.loadSvc})
 	webhttpapi.RegisterSuggestionRoutes(router, &webhttpapi.SuggestionsAPI{Service: s.suggestionsSvc})
 	webhttpapi.RegisterParseContextRoutes(router, &webhttpapi.ParseContextAPI{Service: s.parseContextSvc})

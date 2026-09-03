@@ -34,6 +34,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   previewPresentation,
   type PresentationArtifact,
@@ -56,6 +57,7 @@ import type { ChartType } from "../chart-type-picker";
 import { DocumentAuthoringCommandBar, DocumentAuthoringShell } from "../document-authoring-shell";
 import { datasetColumns, nextID, workspaceAssetChoices } from "../presentation-visual-editor";
 import { initialFilterValues } from "../presentation-viewer";
+import { WorkbenchPortal, useWorkbench } from "../workbench/workbench-slots";
 import { AddVisualizationDialog } from "./add-visualization-dialog";
 import { AddFilterDialog } from "./add-filter-dialog";
 import { DashboardCanvas } from "./dashboard-canvas";
@@ -121,6 +123,9 @@ export function PresentationBuilder({
   const [previewError, setPreviewError] = useState("");
   const [previewStale, setPreviewStale] = useState(true);
   const [pendingFindingPath, setPendingFindingPath] = useState<string | null>(null);
+  const { navigation: workbenchNavigation, setMobileNavigationOpen } = useWorkbench();
+  const workbenchEnabled = Boolean(workbenchNavigation?.workbench);
+  const isMobile = useIsMobile();
   const wideBuilder = useWideBuilder();
   const selectedEnvironment = workspace?.selected_environment || "default";
   const assetChoices = useMemo(() => workspaceAssetChoices(workspace), [workspace]);
@@ -275,10 +280,10 @@ export function PresentationBuilder({
   useEffect(() => () => previewAbort.current?.abort(), []);
 
   useEffect(() => {
-    if (!wideBuilder) return;
+    if (!wideBuilder && !(workbenchEnabled && !isMobile)) return;
     setDataOpen(false);
     setInspectorOpen(false);
-  }, [wideBuilder]);
+  }, [isMobile, wideBuilder, workbenchEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -308,9 +313,13 @@ export function PresentationBuilder({
     (next: PresentationArtifact, options?: { coalesceKey?: string }) => replace(next, options),
     [replace],
   );
-  const showInspector = () => {
-    if (wideBuilder) return;
+  const closeDataPane = () => {
     setDataOpen(false);
+    if (workbenchEnabled && isMobile) setMobileNavigationOpen(false);
+  };
+  const showInspector = () => {
+    if (wideBuilder || (workbenchEnabled && !isMobile)) return;
+    closeDataPane();
     setInspectorOpen(true);
   };
 
@@ -355,7 +364,7 @@ export function PresentationBuilder({
 
   const openAddFilter = () => {
     if (!wideBuilder) {
-      setDataOpen(false);
+      closeDataPane();
       setInspectorOpen(false);
     }
     setAddFilterOpen(true);
@@ -363,7 +372,7 @@ export function PresentationBuilder({
 
   const openAddVisualization = (nextPreferredType?: string, reportIndex?: number) => {
     if (!wideBuilder) {
-      setDataOpen(false);
+      closeDataPane();
       setInspectorOpen(false);
     }
     setPreferredType(nextPreferredType);
@@ -591,8 +600,8 @@ export function PresentationBuilder({
     const target = presentationFindingTarget(artifact, finding);
     setSelection(target.selection);
     setPendingFindingPath(target.path);
-    if (!wideBuilder) {
-      setDataOpen(false);
+    if (!wideBuilder && (!workbenchEnabled || isMobile)) {
+      closeDataPane();
       setInspectorOpen(true);
     }
   };
@@ -604,8 +613,8 @@ export function PresentationBuilder({
       selection={selection}
       onSelect={(next) => {
         setSelection(next);
-        if (!wideBuilder) {
-          setDataOpen(false);
+        if (!wideBuilder && (!workbenchEnabled || isMobile)) {
+          closeDataPane();
           if (next.kind === "dataset") setInspectorOpen(true);
         }
       }}
@@ -639,9 +648,12 @@ export function PresentationBuilder({
           <Button
             size="icon-sm"
             variant="ghost"
-            className="xl:hidden"
+            className={workbenchEnabled ? "md:hidden" : "xl:hidden"}
             aria-label="Open builder tools"
-            onClick={() => setDataOpen(true)}
+            onClick={() => {
+              if (workbenchEnabled) setMobileNavigationOpen(true);
+              else setDataOpen(true);
+            }}
           >
             <PanelLeft data-icon="inline-start" />
           </Button>
@@ -759,7 +771,7 @@ export function PresentationBuilder({
           <Button
             size="icon-sm"
             variant="ghost"
-            className="xl:hidden"
+            className={workbenchEnabled ? "md:hidden" : "xl:hidden"}
             aria-label="Open inspector"
             onClick={() => setInspectorOpen(true)}
           >
@@ -772,14 +784,22 @@ export function PresentationBuilder({
   );
 
   return (
-    <div data-testid="presentation-builder" className="h-full min-h-0">
+    <div data-testid="presentation-builder" className="h-full min-h-0 overflow-hidden">
+      {workbenchEnabled ? (
+        <>
+          <WorkbenchPortal slot="context">{renderSidebar()}</WorkbenchPortal>
+          <WorkbenchPortal slot="inspector">
+            <ScrollArea className="h-full">{renderInspector()}</ScrollArea>
+          </WorkbenchPortal>
+        </>
+      ) : null}
       <DocumentAuthoringShell commandBar={commandBar} banner={banner} className="bg-muted/30">
-        <div className="flex min-h-0 flex-1">
-          {wideBuilder ? (
+        <div className="flex h-full min-h-0 flex-1 overflow-hidden">
+          {!workbenchEnabled && wideBuilder ? (
             <aside className="w-60 shrink-0 border-r bg-background">{renderSidebar()}</aside>
           ) : null}
-          <main className="min-w-0 flex-1">
-            <ScrollArea className="h-full">
+          <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            <ScrollArea data-testid="presentation-builder-scroll" className="h-full min-h-0">
               <div
                 className="min-h-full p-3 sm:p-5"
                 style={{
@@ -893,7 +913,7 @@ export function PresentationBuilder({
               </div>
             </ScrollArea>
           </main>
-          {wideBuilder ? (
+          {!workbenchEnabled && wideBuilder ? (
             <aside className="w-[clamp(22rem,25vw,28rem)] min-w-0 shrink-0 overflow-hidden border-l bg-background">
               <ScrollArea className="h-full">{renderInspector()}</ScrollArea>
             </aside>
@@ -902,33 +922,39 @@ export function PresentationBuilder({
       </DocumentAuthoringShell>
       {!wideBuilder ? (
         <>
-          <Sheet open={dataOpen} onOpenChange={setDataOpen}>
-            <SheetContent side="left" className="w-[min(22rem,90vw)] p-0">
-              <SheetHeader className="border-b p-4">
-                <SheetTitle>
-                  {artifact.kind === "report" ? "Report outline" : "Builder tools"}
-                </SheetTitle>
-                <SheetDescription>
-                  Add components and manage presentation datasets.
-                </SheetDescription>
-              </SheetHeader>
-              <div className="min-h-0 flex-1">{dataOpen ? renderSidebar() : null}</div>
-            </SheetContent>
-          </Sheet>
-          <Sheet open={inspectorOpen} onOpenChange={setInspectorOpen}>
-            <SheetContent
-              side="right"
-              className="w-[min(26rem,92vw)] max-w-full overflow-hidden p-0"
-            >
-              <SheetHeader className="border-b p-4">
-                <SheetTitle>Inspector</SheetTitle>
-                <SheetDescription>Edit only the selected presentation component.</SheetDescription>
-              </SheetHeader>
-              <ScrollArea className="min-h-0 flex-1">
-                {inspectorOpen ? renderInspector() : null}
-              </ScrollArea>
-            </SheetContent>
-          </Sheet>
+          {!workbenchEnabled ? (
+            <Sheet open={dataOpen} onOpenChange={setDataOpen}>
+              <SheetContent side="left" className="w-[min(22rem,90vw)] p-0">
+                <SheetHeader className="border-b p-4">
+                  <SheetTitle>
+                    {artifact.kind === "report" ? "Report outline" : "Builder tools"}
+                  </SheetTitle>
+                  <SheetDescription>
+                    Add components and manage presentation datasets.
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="min-h-0 flex-1">{dataOpen ? renderSidebar() : null}</div>
+              </SheetContent>
+            </Sheet>
+          ) : null}
+          {!workbenchEnabled || isMobile ? (
+            <Sheet open={inspectorOpen} onOpenChange={setInspectorOpen}>
+              <SheetContent
+                side="right"
+                className="w-[min(26rem,92vw)] max-w-full overflow-hidden p-0"
+              >
+                <SheetHeader className="border-b p-4">
+                  <SheetTitle>Inspector</SheetTitle>
+                  <SheetDescription>
+                    Edit only the selected presentation component.
+                  </SheetDescription>
+                </SheetHeader>
+                <ScrollArea className="min-h-0 flex-1">
+                  {inspectorOpen ? renderInspector() : null}
+                </ScrollArea>
+              </SheetContent>
+            </Sheet>
+          ) : null}
         </>
       ) : null}
       <AddVisualizationDialog
