@@ -28,6 +28,7 @@ the original.
 | [python-cross-connection-policy.md](python-cross-connection-policy.md)                       | proposal — opt-in per-environment connection scopes for Python SDK queries                                                                                                   |
 | [questions.md](questions.md)                                                                 | open questions for the maintainer                                                                                                                                            |
 | [workspace-command-handoff.md](workspace-command-handoff.md)                                 | focused follow-up — launcher handoff, remaining stateful CLI delegation, and eventual legacy-job retirement                                                                  |
+| [semantic-deployment-impact.md](semantic-deployment-impact.md) | first warning-only vertical slice implemented — component-level behavior facts, exact cross-pipeline worlds, compatibility policy, and history remain |
 
 Recently folded away (git history keeps them): `docs-alpha.md` and
 `landing-page.md` → `architecture/docs.md`; `notebook-intellisense.md` →

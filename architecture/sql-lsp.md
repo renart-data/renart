@@ -358,6 +358,14 @@ the warnings are asset-scoped at the document header.
 
 Inference runs a **topologically ordered fixpoint** (capped at five rounds):
 
+The deployment planner reuses this filesystem graph and fixpoint for a
+semantic-impact preview. It independently builds the last deployed snapshot
+and candidate working-tree worlds, then compares their normalized SQL-asset
+outputs. This deliberately remains an offline, source-backed analysis: it does
+not execute queries or promote warehouse/runtime observations into the
+deployment contract. A complete unchanged query whose inferred output changes
+is reported as propagated schema impact; incomplete evidence remains explicit.
+
 1. Order the undeclared assets upstream-first (`topoOrderInferenceAssets`,
    Kahn's algorithm over the declared upstreams; cyclic leftovers keep their
    original order).

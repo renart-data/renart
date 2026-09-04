@@ -634,7 +634,7 @@ test.describe("app scheduler pages live", () => {
     await expect(planSheet.getByRole("tablist")).toHaveCount(0);
     await expect(planSheet.getByRole("heading", { name: "Source changes" })).toHaveCount(0);
     await expect(planSheet.getByRole("button", { name: /Deployment details/ })).toBeVisible();
-    await expect(planSheet.getByRole("button", { name: /Execution details/ })).toBeVisible();
+    await expect(planSheet.getByRole("button", { name: /Execution details/ })).toBeHidden();
     await expect(planSheet.getByRole("button", { name: /Update schedules/ })).toHaveCount(0);
     const reviewViewport = planSheet
       .getByTestId("pipeline-plan-scroll")

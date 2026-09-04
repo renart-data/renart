@@ -515,6 +515,20 @@ remains `/api/snapshots/{versionId}/file`; status also reports whether the lates
 snapshot is executable so identical-but-corrupt content can be repaired by a
 new Deploy instead of dead-ending the UI.
 
+Deployment planning additionally performs a read-only semantic comparison with
+the latest deployed snapshot. The planner materializes that exact baseline,
+builds the same filesystem SQL graph and bounded output-schema fixpoint for
+baseline and saved working tree, and compares SQL assets by stable name.
+Byte-level and canonical query fingerprints are separate: presentation
+formatting and ordinary comments are shown as formatting-only, while optimizer
+directive comments remain behavior-bearing. Ordered inferred output contracts
+make an unchanged downstream query visible when an upstream schema change
+propagates into its output type. Unknown schemas and parse failures mark the
+report incomplete instead of claiming equivalence. The report is warning-only,
+contains no SQL text, and its stable digest is part of the reviewed plan
+identity, so confirmation must reproduce the exact semantic evidence displayed
+by the UI. A first deployment has an explicit no-baseline result.
+
 Schedule promotion validates every selected consumer deployment's URI manifest
 against the same-environment producer pins before changing any row. A missing
 producer deployment or changed URI owner rejects the entire compare-and-swap

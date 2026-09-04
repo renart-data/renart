@@ -78,6 +78,12 @@ type PlannerSession interface {
 	Close()
 }
 
+// PlannerSemanticImpact is an optional deployment-review capability. Execution
+// planning adapters need not implement it.
+type PlannerSemanticImpact interface {
+	SemanticImpact(context.Context) SemanticImpactReport
+}
+
 type PlannerDependencies struct {
 	ResolvePipelineUUID func(string) (string, bool)
 	LoadConfiguration   func(string) (PlannerConfiguration, error)
@@ -299,6 +305,13 @@ func (p *Planner) Plan(ctx context.Context, pipelineID string, req PlanRequest) 
 		return Plan{}, apiErr
 	}
 	base.Resources = AggregateMutationResources(base.ExecutionContracts)
+	if purpose == PlanPurposeDeployment {
+		if provider, ok := session.(PlannerSemanticImpact); ok {
+			report := provider.SemanticImpact(ctx)
+			base.SemanticImpact = &report
+			appendSemanticImpactIssues(&base, report)
+		}
+	}
 	if purpose == PlanPurposeExecution && !req.SkipActiveRunCheck {
 		p.appendActiveRunIssue(ctx, &base)
 	}
@@ -314,6 +327,37 @@ func (p *Planner) Plan(ctx context.Context, pipelineID string, req PlanRequest) 
 	}
 	finalizePlan(&base)
 	return base, nil
+}
+
+func appendSemanticImpactIssues(plan *Plan, report SemanticImpactReport) {
+	switch report.Status {
+	case SemanticImpactStatusNoBaseline:
+		return
+	case SemanticImpactStatusAvailable:
+		if !report.Complete {
+			plan.Readiness.Warnings = append(plan.Readiness.Warnings, PlanIssue{
+				Code: "semantic_impact_incomplete", Severity: "warning",
+				Message: "Semantic impact analysis is incomplete; unknown schema facts may hide additional changes.",
+			})
+		}
+		if report.Summary.Warnings > 0 {
+			plan.Readiness.Warnings = append(plan.Readiness.Warnings, PlanIssue{
+				Code: "semantic_impact_detected", Severity: "warning",
+				Message: fmt.Sprintf(
+					"Semantic impact analysis found %d potentially behavior- or schema-affecting asset changes.",
+					report.Summary.Warnings,
+				),
+			})
+		}
+	default:
+		message := strings.TrimSpace(report.Reason)
+		if message == "" {
+			message = "Semantic impact analysis could not compare this deployment with its baseline."
+		}
+		plan.Readiness.Warnings = append(plan.Readiness.Warnings, PlanIssue{
+			Code: "semantic_impact_unavailable", Severity: "warning", Message: message,
+		})
+	}
 }
 
 func newPlanBase(

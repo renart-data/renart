@@ -172,7 +172,7 @@ columns:
 select id from public.accounts
 `,
 	})
-	service := newTestPipelinePlanService(root, &pipelinePlanStalenessStub{}, nil)
+	service := newTestPipelinePlanService(root, &pipelinePlanStalenessStub{}, emptyPipelinePlanSnapshotStore{})
 
 	plan, apiErr := service.Plan(context.Background(), EncodeID("analytics"), PipelinePlanRequest{
 		Purpose:     PipelinePlanPurposeDeployment,

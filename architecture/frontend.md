@@ -265,7 +265,7 @@ not underscore-flattened route hacks.
   review is one linear reading path: readiness issues and code-check findings,
   followed by a shared, initially collapsed Execution details section containing
   the exact ordered asset/window units and their rendered operation/check sequence. The
-  deployment review uses the same section for representative execution.
+  deployment review nests that section inside Deployment details for representative execution.
   Runtime-only Python notices are aggregated across affected assets. The happy
   path is summarized as one readiness result; successful code checks do not
   repeat as a separate section. Run options start collapsed behind a summary;
@@ -278,7 +278,7 @@ not underscore-flattened route hacks.
   competing with the decision. The dialog heading, context, options, and review
   body share one vertical ScrollArea so the scrollbar never changes the width
   between its upper and middle sections; confirmation remains fixed beneath it.
-  Assets with code-check findings retain their expanded messages. Opening
+  In run review, assets with code-check findings retain their expanded messages. Opening
   Execution details lazily
   requests redacted
   stage content and shows compiled queries, generated materialization SQL,
@@ -304,14 +304,34 @@ not underscore-flattened route hacks.
   **Deploy** opens the same dialog in a definition-only deployment mode rather
   than mutating immediately. It reviews the entire saved working tree, keeps
   execution policy/data freshness out of the gate, and follows one linear
-  reading path instead of dividing the decision across tabs: source changes and
-  code checks come first, followed by compact disclosures for deployment
-  contents, runtime checks, plan identities, representative execution, and
-  schedules. Exact added/changed/removed files are collapsible rows whose
+  reading path instead of dividing the decision across tabs. Its compact header
+  names the pipeline, environment, and baseline deployment; execution windows
+  and modes appear only under Deployment details. Changes & impact merges
+  source files, asset-scoped code-check/readiness findings, and backend semantic
+  impact into one collapsible list, including unchanged assets with propagated
+  output-contract changes. Workspace asset IDs map to pipeline-relative paths;
+  unknown/removed asset paths remain separate named rows rather than guessed
+  file associations. Duplicate code-check warnings appear only at their asset,
+  while global blockers stay visible above the list. Missing baselines and
+  unavailable/incomplete semantic coverage remain explicit, never a green
+  safety verdict. SQL comparisons stay read-only; semantic explanations are
+  disclosed at the affected file, with output contracts from the backend, not
+  the playground's curated analyzer or what-if presets.
+  SQL diff views explicitly switch to inline mode below 768px. Source-backed
+  semantic projection ranges and mapped code-check diagnostics get amber/red
+  underlines and compact inline labels; full messages are available on hover.
+  Annotation identities are checked against the displayed file before use
+  (UTF-8 FNV-1a, CRLF-normalized, only a stale-display guard, never a deployment
+  integrity digest). Unmapped/template/wildcard findings remain in the asset
+  explanation instead of guessing positions. Runtime-only Python
+  notices, included assets, runtime checks, source identities, and representative
+  execution live under Deployment details. Exact added/changed/removed files are collapsible rows whose
   deployed/workspace comparison opens directly beneath that file. Each
   comparison uses Monaco's real DiffEditor, including its native
   inserted/deleted line and character highlighting, and the final write remains
-  bound to the reviewed source Merkle. Afterward the schedules disclosure opens
+  bound to the reviewed source Merkle. A comparison is keyed by file, source,
+  and baseline identity; switching files cannot display the previous file's
+  contents while a new request is pending. Afterward the schedules disclosure opens
   and offers an
   unchecked list of older schedule pins; only explicitly selected rows move.
   Type-check does the same; transport/save failures remain visible in the bell
@@ -788,3 +808,6 @@ entry, measures lazy route families after subtracting that initial closure,
 records raw and gzip bytes, and enforces the reviewed limits in
 `bundle-budgets.json`. CI always uploads the generated JSON/Markdown bundle
 report; a budget change is therefore an explicit source diff.
+The deployment-impact review and SQL playground add about 7.2 KiB of initial
+CSS over `v0.5.0` (213.3 → 220.5 KiB with the same toolchain); the reviewed
+initial CSS ceiling is 230,000 bytes. JavaScript budgets remain unchanged.

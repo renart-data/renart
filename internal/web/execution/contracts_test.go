@@ -43,6 +43,24 @@ func TestPlanIdentityIgnoresPresentationOnlyFields(t *testing.T) {
 	require.Equal(t, first, PlanID(plan))
 }
 
+func TestPlanIdentityIncludesSemanticImpactDigest(t *testing.T) {
+	plan := Plan{
+		PipelineUUID: "pipeline-uuid",
+		Source:       RenderSource{Kind: PlanSourceWorkingTree, MerkleRoot: "source"},
+		Context:      PlanContext{Environment: "default"},
+		Selection:    PlanSelection{Mode: PlanSelectionAll},
+		Resources:    PipelineExclusiveResources(),
+		SemanticImpact: &SemanticImpactReport{
+			Version: SemanticImpactVersion,
+			Digest:  "v1:first",
+			Status:  SemanticImpactStatusAvailable,
+		},
+	}
+	first := PlanID(plan)
+	plan.SemanticImpact.Digest = "v1:second"
+	require.NotEqual(t, first, PlanID(plan))
+}
+
 func TestNormalizePlanSelectionRejectsMixedCoordinates(t *testing.T) {
 	_, err := NormalizePlanSelection(PlanSelectionRequest{
 		Mode: PlanSelectionAll, AssetName: "analytics.orders",

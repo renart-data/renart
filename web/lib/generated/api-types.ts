@@ -877,6 +877,7 @@ export type PipelinePlan = {
   context: PipelinePlanContext;
   readiness: PipelinePlanReadiness;
   selection: PipelinePlanSelection;
+  semantic_impact?: PipelinePlanSemanticImpact;
   prerequisites: PipelinePlanPrerequisite[];
   resources: PipelinePlanResources;
   assets: PipelinePlanAsset[];
@@ -1025,6 +1026,7 @@ export type PipelinePlanReviewedIdentity = {
   source: AssetRenderSource;
   context: PipelinePlanContext;
   selection: PipelinePlanSelection;
+  semantic_impact_digest?: string;
   prerequisites?: PipelinePlanPrerequisite[];
   resources: PipelinePlanResources;
   execution_contracts: PipelinePlanExecutionContract[];
@@ -1044,6 +1046,71 @@ export type PipelinePlanSelectionRequest = {
   asset_name?: string;
   scope?: string;
   selector?: string;
+};
+
+export type PipelinePlanSemanticAssetImpact = {
+  name: string;
+  dialect?: string;
+  change: string;
+  source_change: string;
+  origin: string;
+  severity: string;
+  complete: boolean;
+  before_canonical_fingerprint?: string;
+  after_canonical_fingerprint?: string;
+  columns: PipelinePlanSemanticColumnImpact[];
+  before_source?: PipelinePlanSemanticSourceAnchors;
+  after_source?: PipelinePlanSemanticSourceAnchors;
+};
+
+export type PipelinePlanSemanticColumnContract = {
+  name: string;
+  type?: string;
+  nullability?: string;
+};
+
+export type PipelinePlanSemanticColumnImpact = {
+  index: number;
+  before?: PipelinePlanSemanticColumnContract;
+  after?: PipelinePlanSemanticColumnContract;
+  name_changed: boolean;
+  type_changed: boolean;
+  nullability_changed: boolean;
+};
+
+export type PipelinePlanSemanticImpact = {
+  version: string;
+  digest: string;
+  status: string;
+  baseline_version_id?: string;
+  complete: boolean;
+  reason?: string;
+  assets: PipelinePlanSemanticAssetImpact[];
+  summary: PipelinePlanSemanticImpactSummary;
+};
+
+export type PipelinePlanSemanticImpactSummary = {
+  added: number;
+  removed: number;
+  modified: number;
+  formatting_only: number;
+  behavior_changes: number;
+  schema_changes: number;
+  incomplete: number;
+  warnings: number;
+};
+
+export type PipelinePlanSemanticSourceAnchors = {
+  fingerprint: string;
+  query: PipelinePlanSemanticSourceRange;
+  projections: PipelinePlanSemanticSourceRange[];
+};
+
+export type PipelinePlanSemanticSourceRange = {
+  line: number;
+  column: number;
+  end_line: number;
+  end_column: number;
 };
 
 export type PipelinePlanSourceRequest = {
@@ -1422,6 +1489,7 @@ export type TypeCheckFinding = {
   end_column?: number;
   scope?: string;
   confidence?: string;
+  source_fingerprint?: string;
   resolutions?: TypeCheckResolution[];
 };
 

@@ -9,6 +9,7 @@ import {
   pipelinePlanReviewReducer,
   type PipelinePlanReviewState,
 } from "./pipeline-plan-review-model";
+import { canonicalPipelinePlanReviewedIdentity } from "./api-pipeline-plan";
 
 function plan(overrides: Partial<PipelinePlan> = {}): PipelinePlan {
   return {
@@ -57,6 +58,31 @@ function plan(overrides: Partial<PipelinePlan> = {}): PipelinePlan {
 }
 
 describe("pipeline plan review model", () => {
+  it("carries the reviewed semantic impact digest into confirmation", () => {
+    const reviewed = canonicalPipelinePlanReviewedIdentity(
+      plan({
+        semantic_impact: {
+          version: "v1",
+          digest: "v1:semantic",
+          status: "available",
+          complete: true,
+          assets: [],
+          summary: {
+            added: 0,
+            removed: 0,
+            modified: 0,
+            formatting_only: 0,
+            behavior_changes: 0,
+            schema_changes: 0,
+            incomplete: 0,
+            warnings: 0,
+          },
+        },
+      }),
+    );
+    expect(reviewed.semantic_impact_digest).toBe("v1:semantic");
+  });
+
   it("creates a deterministic request for run and deployment review", () => {
     expect(
       createPipelinePlanRequest({

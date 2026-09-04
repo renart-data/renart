@@ -20,6 +20,15 @@ import {
   ReadOnlyRenderedOperationDiff,
   assetRenderStageLabel,
 } from "@/components/app/asset-render-view";
+import { SemanticAssetImpactRow } from "@/components/app/semantic-impact-review";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { deploymentDiffAnnotations } from "@/lib/deployment-diff-annotations";
+import type { DeploymentReviewRow } from "@/lib/deployment-review";
+import {
+  buildDeploymentReview,
+  deploymentRowSummary,
+  deploymentRowTone,
+} from "@/lib/deployment-review";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -306,7 +315,10 @@ export function PipelinePlanSheet({
 
   const loadStageContent = () => {
     if (!plan || stageContentLoaded || contentLoading) return;
-    void fetchPlan(canonicalPipelinePlanRequest(plan, true), true);
+    void fetchPlan(
+      { ...canonicalPipelinePlanRequest(plan, true), purpose: request?.purpose },
+      true,
+    );
   };
 
   const confirm = async () => {
@@ -432,10 +444,20 @@ export function PipelinePlanSheet({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="flex h-[min(92dvh,58rem)] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl xl:max-w-7xl"
+        className={cn(
+          "flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden p-0",
+          intent === "deploy"
+            ? "h-auto sm:max-w-[960px]"
+            : "h-[min(92dvh,58rem)] sm:max-w-6xl xl:max-w-7xl",
+        )}
         data-testid="pipeline-plan-sheet"
       >
-        <ScrollArea className="min-h-0 flex-1" data-testid="pipeline-plan-scroll">
+        <ScrollArea
+          className="min-h-0 flex-1"
+          data-testid="pipeline-plan-scroll"
+          showHorizontalScrollBar={intent !== "deploy"}
+          viewportClassName={intent === "deploy" ? "[&>div]:!block" : undefined}
+        >
           <DialogHeader className="border-b px-5 py-4 pr-12">
             <div className="flex min-w-0 items-center gap-2">
               <DialogTitle className="truncate">
@@ -445,219 +467,229 @@ export function PipelinePlanSheet({
                     ? "Review asset run"
                     : "Review pipeline run"}
               </DialogTitle>
-              {plan ? <PlanStatusBadge status={plan.status} /> : null}
+              {plan && intent !== "deploy" ? <PlanStatusBadge status={plan.status} /> : null}
               {(loading || contentLoading) && plan ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : null}
             </div>
             <DialogDescription>
-              {pipelineName} · saved source preview ·{" "}
-              {intent === "deploy"
-                ? "no data is executed by deployment"
-                : "nothing executes until you confirm"}
+              {intent === "deploy" ? (
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                  <span className="font-medium text-foreground">{pipelineName}</span>
+                  <span>→ {plan?.context.environment || environment || "default"}</span>
+                  <span aria-hidden="true">/</span>
+                  <span>
+                    {!deployStatus
+                      ? "Resolving source…"
+                      : deployStatus.has_snapshot
+                        ? deploymentLabel(deployStatus.ordinal, deployStatus.version_id)
+                        : "First deployment"}{" "}
+                    → saved workspace
+                  </span>
+                </span>
+              ) : (
+                `${pipelineName} · saved source preview · nothing executes until you confirm`
+              )}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="border-b px-5 py-3">
-            <dl
-              className={cn(
-                "grid min-w-0 grid-cols-2 gap-x-6 gap-y-2 text-xs",
-                intent === "run" ? "sm:grid-cols-3" : "sm:grid-cols-4",
-              )}
-            >
-              <PlanContextItem label="Source" value={sourceLabel} />
-              <PlanContextItem
-                label="Environment"
-                value={plan?.context.environment || environment || "default"}
-              />
-              <PlanContextItem
-                label="Window"
-                value={
-                  plan
-                    ? formatPlanWindow(plan.context.start_date, plan.context.end_date)
-                    : timeWindow
-                      ? formatPlanWindow(timeWindow.start, timeWindow.end)
-                      : "Resolving…"
-                }
-              />
-              {intent === "deploy" ? (
-                <PlanContextItem
-                  label="Mode"
-                  value={`${fullRefresh ? "full refresh" : "incremental"} · sensor ${sensorMode}`}
-                />
-              ) : null}
-            </dl>
-            {intent === "run" ? (
-              <Collapsible
-                open={runOptionsOpen}
-                onOpenChange={(nextOpen) =>
-                  dispatchReview({ type: "run_options_changed", open: nextOpen })
-                }
-                className="mt-3 rounded-lg border"
+          {intent === "run" ? (
+            <div className="border-b px-5 py-3">
+              <dl
+                className={cn(
+                  "grid min-w-0 grid-cols-2 gap-x-6 gap-y-2 text-xs",
+                  intent === "run" ? "sm:grid-cols-3" : "sm:grid-cols-4",
+                )}
               >
-                <CollapsibleTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="h-auto w-full justify-start rounded-lg px-3 py-2.5"
-                  >
-                    <ChevronRight
-                      className={cn(
-                        "size-4 shrink-0 transition-transform",
-                        runOptionsOpen && "rotate-90",
-                      )}
-                    />
-                    <span className="font-medium">Run options</span>
-                    <span className="truncate text-xs font-normal text-muted-foreground">
-                      {planSelectionLabel(selectionMode)} · {sensorModeLabel(sensorMode)}
-                      {fullRefresh ? " · full refresh" : ""}
-                    </span>
-                  </Button>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="border-t p-3">
-                  <FieldSet className="gap-3">
-                    <FieldLegend className="sr-only">Run options</FieldLegend>
-                    <FieldGroup className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] sm:items-end">
-                      <Field className="gap-1">
-                        <FieldLabel
-                          htmlFor="pipeline-plan-scope"
-                          className="text-[11px] text-muted-foreground"
-                        >
-                          Scope
-                        </FieldLabel>
-                        <Select
-                          value={selectionMode}
-                          disabled={selectionMode === "asset"}
-                          onValueChange={(value) => {
-                            const mode = value as PlanSelectionMode;
-                            const usesSelector = mode === "selector" || mode === "selector_needed";
-                            const selector = selectorDraft.trim() || appliedSelector || "*";
-                            if (usesSelector) {
-                              dispatchReview({ type: "selector_draft_changed", selector });
-                            }
-                            updateRequest((current) => ({
-                              ...current,
-                              selection: usesSelector ? { mode, selector } : { mode },
-                            }));
-                          }}
-                        >
-                          <SelectTrigger id="pipeline-plan-scope" size="sm" className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              {selectionMode === "asset" ? (
-                                <SelectItem value="asset">Selected asset</SelectItem>
-                              ) : (
-                                <>
-                                  <SelectItem value="all">Entire pipeline</SelectItem>
-                                  <SelectItem value="needed">Needed assets</SelectItem>
-                                  <SelectItem value="selector">Matching selector</SelectItem>
-                                  <SelectItem value="selector_needed">
-                                    Needed matching selector
-                                  </SelectItem>
-                                </>
-                              )}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      <Field className="gap-1">
-                        <FieldLabel
-                          htmlFor="pipeline-plan-sensor"
-                          className="text-[11px] text-muted-foreground"
-                        >
-                          Sensors
-                        </FieldLabel>
-                        <Select
-                          value={sensorMode}
-                          onValueChange={(value) =>
-                            updateRequest((current) => ({
-                              ...current,
-                              sensor_mode: value as SensorMode,
-                            }))
-                          }
-                        >
-                          <SelectTrigger id="pipeline-plan-sensor" size="sm" className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectItem value="once">Check once</SelectItem>
-                              <SelectItem value="wait">Wait</SelectItem>
-                              <SelectItem value="skip">Skip</SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      </Field>
-                      <Field
-                        orientation="horizontal"
-                        className="h-8 w-full self-end rounded-md border px-3 text-xs sm:w-auto"
-                      >
-                        <Switch
-                          id="pipeline-plan-full-refresh"
-                          size="sm"
-                          checked={fullRefresh}
-                          onCheckedChange={(checked) =>
-                            updateRequest((current) => ({ ...current, full_refresh: checked }))
-                          }
-                        />
-                        <FieldLabel htmlFor="pipeline-plan-full-refresh" className="font-normal">
-                          Full refresh
-                        </FieldLabel>
-                      </Field>
-                      {selectorMode ? (
-                        <Field
-                          className="border-t pt-3 sm:col-span-3"
-                          data-invalid={!selectorDraft.trim()}
-                        >
-                          <FieldLabel htmlFor="pipeline-plan-selector">Asset selector</FieldLabel>
-                          <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <Input
-                              id="pipeline-plan-selector"
-                              value={selectorDraft}
-                              onChange={(event) =>
-                                dispatchReview({
-                                  type: "selector_draft_changed",
-                                  selector: event.target.value,
-                                })
+                <PlanContextItem label="Source" value={sourceLabel} />
+                <PlanContextItem
+                  label="Environment"
+                  value={plan?.context.environment || environment || "default"}
+                />
+                <PlanContextItem
+                  label="Window"
+                  value={
+                    plan
+                      ? formatPlanWindow(plan.context.start_date, plan.context.end_date)
+                      : timeWindow
+                        ? formatPlanWindow(timeWindow.start, timeWindow.end)
+                        : "Resolving…"
+                  }
+                />
+              </dl>
+              {intent === "run" ? (
+                <Collapsible
+                  open={runOptionsOpen}
+                  onOpenChange={(nextOpen) =>
+                    dispatchReview({ type: "run_options_changed", open: nextOpen })
+                  }
+                  className="mt-3 rounded-lg border"
+                >
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-auto w-full justify-start rounded-lg px-3 py-2.5"
+                    >
+                      <ChevronRight
+                        className={cn(
+                          "size-4 shrink-0 transition-transform",
+                          runOptionsOpen && "rotate-90",
+                        )}
+                      />
+                      <span className="font-medium">Run options</span>
+                      <span className="truncate text-xs font-normal text-muted-foreground">
+                        {planSelectionLabel(selectionMode)} · {sensorModeLabel(sensorMode)}
+                        {fullRefresh ? " · full refresh" : ""}
+                      </span>
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="border-t p-3">
+                    <FieldSet className="gap-3">
+                      <FieldLegend className="sr-only">Run options</FieldLegend>
+                      <FieldGroup className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] sm:items-end">
+                        <Field className="gap-1">
+                          <FieldLabel
+                            htmlFor="pipeline-plan-scope"
+                            className="text-[11px] text-muted-foreground"
+                          >
+                            Scope
+                          </FieldLabel>
+                          <Select
+                            value={selectionMode}
+                            disabled={selectionMode === "asset"}
+                            onValueChange={(value) => {
+                              const mode = value as PlanSelectionMode;
+                              const usesSelector =
+                                mode === "selector" || mode === "selector_needed";
+                              const selector = selectorDraft.trim() || appliedSelector || "*";
+                              if (usesSelector) {
+                                dispatchReview({ type: "selector_draft_changed", selector });
                               }
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  event.preventDefault();
-                                  applySelector();
-                                }
-                              }}
-                              placeholder="tag:daily,path:assets/marts +analytics.orders"
-                              aria-invalid={!selectorDraft.trim()}
-                              className="min-w-56 flex-1 font-mono"
-                            />
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={applySelector}
-                              disabled={!selectorDraft.trim() || selectorDraftApplied || loading}
-                            >
-                              Apply
-                            </Button>
-                          </div>
-                          <FieldDescription>
-                            {!selectorDraftApplied
-                              ? "Apply the expression to validate it and preview its assets."
-                              : loading
-                                ? "Resolving selector…"
-                                : selectorPlanIsCurrent && plan
-                                  ? `${plan.summary.assets} ${plan.summary.assets === 1 ? "asset" : "assets"} selected. Use spaces for union, commas for intersection, and + for graph expansion.`
-                                  : "Use spaces for union, commas for intersection, and + for graph expansion."}
-                          </FieldDescription>
+                              updateRequest((current) => ({
+                                ...current,
+                                selection: usesSelector ? { mode, selector } : { mode },
+                              }));
+                            }}
+                          >
+                            <SelectTrigger id="pipeline-plan-scope" size="sm" className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {selectionMode === "asset" ? (
+                                  <SelectItem value="asset">Selected asset</SelectItem>
+                                ) : (
+                                  <>
+                                    <SelectItem value="all">Entire pipeline</SelectItem>
+                                    <SelectItem value="needed">Needed assets</SelectItem>
+                                    <SelectItem value="selector">Matching selector</SelectItem>
+                                    <SelectItem value="selector_needed">
+                                      Needed matching selector
+                                    </SelectItem>
+                                  </>
+                                )}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
                         </Field>
-                      ) : null}
-                    </FieldGroup>
-                  </FieldSet>
-                </CollapsibleContent>
-              </Collapsible>
-            ) : null}
-          </div>
+                        <Field className="gap-1">
+                          <FieldLabel
+                            htmlFor="pipeline-plan-sensor"
+                            className="text-[11px] text-muted-foreground"
+                          >
+                            Sensors
+                          </FieldLabel>
+                          <Select
+                            value={sensorMode}
+                            onValueChange={(value) =>
+                              updateRequest((current) => ({
+                                ...current,
+                                sensor_mode: value as SensorMode,
+                              }))
+                            }
+                          >
+                            <SelectTrigger id="pipeline-plan-sensor" size="sm" className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                <SelectItem value="once">Check once</SelectItem>
+                                <SelectItem value="wait">Wait</SelectItem>
+                                <SelectItem value="skip">Skip</SelectItem>
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                        <Field
+                          orientation="horizontal"
+                          className="h-8 w-full self-end rounded-md border px-3 text-xs sm:w-auto"
+                        >
+                          <Switch
+                            id="pipeline-plan-full-refresh"
+                            size="sm"
+                            checked={fullRefresh}
+                            onCheckedChange={(checked) =>
+                              updateRequest((current) => ({ ...current, full_refresh: checked }))
+                            }
+                          />
+                          <FieldLabel htmlFor="pipeline-plan-full-refresh" className="font-normal">
+                            Full refresh
+                          </FieldLabel>
+                        </Field>
+                        {selectorMode ? (
+                          <Field
+                            className="border-t pt-3 sm:col-span-3"
+                            data-invalid={!selectorDraft.trim()}
+                          >
+                            <FieldLabel htmlFor="pipeline-plan-selector">Asset selector</FieldLabel>
+                            <div className="flex min-w-0 flex-wrap items-center gap-2">
+                              <Input
+                                id="pipeline-plan-selector"
+                                value={selectorDraft}
+                                onChange={(event) =>
+                                  dispatchReview({
+                                    type: "selector_draft_changed",
+                                    selector: event.target.value,
+                                  })
+                                }
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    applySelector();
+                                  }
+                                }}
+                                placeholder="tag:daily,path:assets/marts +analytics.orders"
+                                aria-invalid={!selectorDraft.trim()}
+                                className="min-w-56 flex-1 font-mono"
+                              />
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={applySelector}
+                                disabled={!selectorDraft.trim() || selectorDraftApplied || loading}
+                              >
+                                Apply
+                              </Button>
+                            </div>
+                            <FieldDescription>
+                              {!selectorDraftApplied
+                                ? "Apply the expression to validate it and preview its assets."
+                                : loading
+                                  ? "Resolving selector…"
+                                  : selectorPlanIsCurrent && plan
+                                    ? `${plan.summary.assets} ${plan.summary.assets === 1 ? "asset" : "assets"} selected. Use spaces for union, commas for intersection, and + for graph expansion.`
+                                    : "Use spaces for union, commas for intersection, and + for graph expansion."}
+                            </FieldDescription>
+                          </Field>
+                        ) : null}
+                      </FieldGroup>
+                    </FieldSet>
+                  </CollapsibleContent>
+                </Collapsible>
+              ) : null}
+            </div>
+          ) : null}
 
           {plan && intent === "run" ? (
             <RunPlanReview
@@ -768,7 +800,7 @@ export function PipelinePlanSheet({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0 flex-1 text-left text-[11px] text-muted-foreground">
                 {intent === "deploy"
-                  ? "Deployment rechecks the saved source identity. It never deploys an unsaved editor buffer."
+                  ? "Saves definitions only · no data execution"
                   : selectionMode === "needed" || selectionMode === "selector_needed"
                     ? "Confirmation omits work that became fresh, but never adds new work without another review."
                     : plan?.readiness.active_run_id
@@ -928,15 +960,11 @@ function DeployPlanReview({
   onSchedulesOpenChange: (open: boolean) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const deploymentReview = useMemo(() => buildDeploymentReview(plan, status), [plan, status]);
   const schedulesRef = useRef<HTMLDivElement | null>(null);
   const runtimeChecks = plan.assets.flatMap((asset) =>
     asset.renders.flatMap((render) => render.stages.filter((stage) => stage.kind === "check")),
   );
-  const changedFiles = status
-    ? (status.added_files?.length ?? 0) +
-      (status.changed_files?.length ?? 0) +
-      (status.removed_files?.length ?? 0)
-    : null;
 
   useEffect(() => {
     if (!deployment || !schedulesOpen) return;
@@ -947,13 +975,21 @@ function DeployPlanReview({
   }, [deployment, schedulesOpen]);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-5">
-      <PlanIssues title="Blockers" issues={plan.readiness.blockers} destructive />
-      <PlanIssues title="Warnings" issues={plan.readiness.warnings} />
-      <PlanPrerequisites plan={plan} />
+    <div className="flex min-w-0 w-full flex-col" data-testid="deployment-review">
+      {deploymentReview.blockers.length || deploymentReview.warnings.length ? (
+        <div className="space-y-3 px-5 pt-4">
+          <PlanIssues title="Blockers" issues={deploymentReview.blockers} destructive />
+          <PlanIssues title="Warnings" issues={deploymentReview.warnings} />
+        </div>
+      ) : null}
+      {plan.prerequisites.some((item) => item.status !== "ready") ? (
+        <div className="px-5 pt-4">
+          <PlanPrerequisites plan={plan} />
+        </div>
+      ) : null}
 
       {deployment ? (
-        <Alert>
+        <Alert className="mx-5 mt-4 w-auto">
           <CheckCircle2 />
           <AlertTitle>
             {deployment.created ? "Deployment created" : "Deployment already current"}
@@ -964,44 +1000,18 @@ function DeployPlanReview({
             {deployment.snapshot.merkle_root.slice(0, 8)}
           </AlertDescription>
         </Alert>
-      ) : (
-        <PlanReadySummary plan={plan} intent="deploy" />
-      )}
-
-      {changedFiles === null ? (
-        <Skeleton className="h-28" />
-      ) : changedFiles > 0 ? (
-        <section aria-labelledby="pipeline-deploy-source-changes">
-          <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <h3 id="pipeline-deploy-source-changes" className="text-sm font-medium">
-                Source changes
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                {changedFiles} changed {changedFiles === 1 ? "file" : "files"} will be captured.
-              </p>
-            </div>
-            <Badge variant="outline" size="xs">
-              {plan.summary.assets} {plan.summary.assets === 1 ? "asset" : "assets"}
-            </Badge>
-          </div>
-          <DeploymentFileChanges pipelineId={pipelineId} status={status} autoOpenFirst={false} />
-        </section>
       ) : null}
 
-      <PlanCodeReview plan={plan} />
+      {!deployment ? (
+        <DeploymentFileChanges pipelineId={pipelineId} plan={plan} status={status} />
+      ) : null}
 
-      <PlanExecutionReview
-        plan={plan}
-        contentLoading={contentLoading}
-        contentLoaded={contentLoaded}
-        onLoadStageContent={onLoadStageContent}
-        representative
-      />
-
-      <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen} className="rounded-lg border">
+      <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen}>
         <CollapsibleTrigger asChild>
-          <Button variant="ghost" className="h-auto w-full justify-start rounded-lg px-3 py-2.5">
+          <Button
+            variant="ghost"
+            className="h-auto w-full justify-start rounded-none px-5 py-3 text-xs text-muted-foreground"
+          >
             <ChevronRight
               className={cn("size-4 shrink-0 transition-transform", detailsOpen && "rotate-90")}
             />
@@ -1011,11 +1021,38 @@ function DeployPlanReview({
               {runtimeChecks.length > 0
                 ? ` · ${runtimeChecks.length} runtime ${runtimeChecks.length === 1 ? "check" : "checks"}`
                 : ""}
-              {" · identities"}
+              {deploymentReview.notices.length ? " · runtime notices" : ""}
             </span>
           </Button>
         </CollapsibleTrigger>
-        <CollapsibleContent className="flex flex-col gap-5 border-t p-3">
+        <CollapsibleContent className="flex flex-col gap-5 border-t p-5">
+          <p className="text-xs text-muted-foreground">
+            Deployment captures saved definitions, not an unsaved editor buffer. Confirmation
+            rechecks the reviewed source identity. Data execution and schedule promotion are
+            separate actions.
+          </p>
+          <PlanIssues title="Runtime notices" issues={deploymentReview.notices} />
+          <dl className="grid gap-2 text-xs sm:grid-cols-2">
+            <PlanContextItem
+              label="Representative window"
+              value={formatPlanWindow(plan.context.start_date, plan.context.end_date)}
+            />
+            <PlanContextItem
+              label="Representative mode"
+              value={`${plan.context.full_refresh ? "full refresh" : "incremental"} · sensor ${plan.context.sensor_mode}`}
+            />
+          </dl>
+          <PlanExecutionReview
+            plan={plan}
+            contentLoading={contentLoading}
+            contentLoaded={contentLoaded}
+            onLoadStageContent={onLoadStageContent}
+            representative
+          />
+          {plan.prerequisites.length > 0 &&
+          plan.prerequisites.every((item) => item.status === "ready") ? (
+            <PlanPrerequisites plan={plan} />
+          ) : null}
           <section aria-labelledby="pipeline-deployment-assets">
             <h3 id="pipeline-deployment-assets" className="mb-2 text-sm font-medium">
               Included assets
@@ -1784,176 +1821,201 @@ function PlanExecution({
   );
 }
 
-type DeploymentChange = {
-  path: string;
-  label: "Added" | "Changed" | "Removed";
-  variant: "secondary" | "outline" | "destructive";
-};
-
-function DeploymentFileChanges({
+export function DeploymentFileChanges({
   pipelineId,
+  plan,
   status,
-  autoOpenFirst = true,
 }: {
   pipelineId: string;
+  plan: PipelinePlan;
   status: DeployStatus | null;
-  autoOpenFirst?: boolean;
 }) {
-  const changes = useMemo<DeploymentChange[]>(
-    () =>
-      status
-        ? [
-            ...(status.added_files ?? []).map((path) => ({
-              path,
-              label: "Added" as const,
-              variant: "secondary" as const,
-            })),
-            ...(status.changed_files ?? []).map((path) => ({
-              path,
-              label: "Changed" as const,
-              variant: "outline" as const,
-            })),
-            ...(status.removed_files ?? []).map((path) => ({
-              path,
-              label: "Removed" as const,
-              variant: "destructive" as const,
-            })),
-          ]
-        : [],
-    [status],
-  );
-  const [selectedPath, setSelectedPath] = useState("");
-  const [diff, setDiff] = useState<DeploymentFileDiff | null>(null);
-  const [diffLoading, setDiffLoading] = useState(false);
-  const [diffError, setDiffError] = useState<string | null>(null);
+  const review = useMemo(() => buildDeploymentReview(plan, status), [plan, status]);
+  const [selectedKey, setSelectedKey] = useState("");
+  const selectedRow = review.rows.find((row) => row.key === selectedKey);
+  const selectedPath = selectedRow?.path;
+  const identity = `${plan.source.merkle_root}:${status?.version_id ?? "first"}`;
+  const [comparison, setComparison] = useState<{
+    key: string;
+    diff?: DeploymentFileDiff;
+    error?: string;
+  } | null>(null);
+  const comparisonKey = `${identity}:${selectedPath ?? ""}`;
+  const currentComparison = comparison?.key === comparisonKey ? comparison : null;
 
   useEffect(() => {
-    setSelectedPath((current) =>
-      changes.some((change) => change.path === current)
-        ? current
-        : autoOpenFirst
-          ? (changes[0]?.path ?? "")
-          : "",
-    );
-  }, [autoOpenFirst, changes]);
-
-  useEffect(() => {
-    if (!status || !selectedPath) {
-      setDiff(null);
-      setDiffError(null);
-      setDiffLoading(false);
-      return;
-    }
+    if (!selectedPath || !status) return;
     let cancelled = false;
-    setDiffLoading(true);
-    setDiffError(null);
+    setComparison(null);
     getDeploymentFileDiff(pipelineId, selectedPath, status.version_id)
-      .then((nextDiff) => {
-        if (!cancelled) setDiff(nextDiff);
+      .then((diff) => {
+        if (!cancelled) setComparison({ key: comparisonKey, diff });
       })
       .catch((cause: unknown) => {
-        if (cancelled) return;
-        setDiff(null);
-        setDiffError(
-          cause instanceof Error ? cause.message : "Could not load the file comparison.",
-        );
-      })
-      .finally(() => {
-        if (!cancelled) setDiffLoading(false);
+        if (!cancelled)
+          setComparison({
+            key: comparisonKey,
+            error: cause instanceof Error ? cause.message : "Could not load the file comparison.",
+          });
       });
     return () => {
       cancelled = true;
     };
-  }, [pipelineId, selectedPath, status?.source_merkle, status?.version_id]);
+  }, [pipelineId, selectedPath, comparisonKey, status?.version_id]);
 
-  if (!status) {
-    return <Skeleton className="h-40" />;
-  }
-  const groups = [
-    { label: "Added", paths: status.added_files ?? [], variant: "secondary" as const },
-    { label: "Changed", paths: status.changed_files ?? [], variant: "outline" as const },
-    { label: "Removed", paths: status.removed_files ?? [], variant: "destructive" as const },
-  ].filter((group) => group.paths.length > 0);
-
+  const attention = review.rows.filter((row) => deploymentRowTone(row) !== "neutral").length;
+  const impact = plan.semantic_impact;
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <Badge variant="muted" size="xs" title={status.source_merkle}>
-          Saved source {status.source_merkle?.slice(0, 8) || "unavailable"}
-        </Badge>
-        {status.has_snapshot ? (
-          <span>
-            Compared with {deploymentLabel(status.ordinal, status.version_id, "deployment")}
-          </span>
-        ) : (
-          <span>First deployment; every source file is new.</span>
-        )}
+    <section aria-labelledby="pipeline-deploy-source-changes">
+      <div className="flex items-center justify-between gap-3 px-5 py-3">
+        <h3 id="pipeline-deploy-source-changes" className="text-xs font-medium">
+          Changes & impact <span className="ml-1 text-muted-foreground">{review.rows.length}</span>
+        </h3>
+        <span
+          role="status"
+          className={cn(
+            "text-xs",
+            attention ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground",
+          )}
+        >
+          {attention
+            ? `${attention} to review`
+            : plan.status === "blocked"
+              ? "Blocked"
+              : "Source review"}
+        </span>
       </div>
-      {groups.length === 0 ? (
-        <Alert>
-          <CheckCircle2 />
-          <AlertTitle>No source changes</AlertTitle>
-          <AlertDescription>
-            The saved working tree already matches the latest deployment.
-          </AlertDescription>
-        </Alert>
+      {!status ? (
+        <Skeleton className="mx-5 h-24" />
+      ) : review.rows.length === 0 ? (
+        <p className="px-5 pb-4 text-xs text-muted-foreground">
+          No source or reported contract changes.
+        </p>
       ) : (
-        <div className="flex min-w-0 flex-col gap-4">
-          {groups.map((group) => (
-            <section key={group.label} className="flex min-w-0 flex-col gap-2">
-              <h3 className="text-xs font-medium">
-                {group.label} <span className="text-muted-foreground">({group.paths.length})</span>
-              </h3>
-              <div className="divide-y overflow-hidden rounded-md border">
-                {group.paths.map((path) => {
-                  const open = selectedPath === path;
-                  return (
-                    <Collapsible
-                      key={path}
-                      open={open}
-                      onOpenChange={(nextOpen) => setSelectedPath(nextOpen ? path : "")}
+        <div className="divide-y border-y">
+          {review.rows.map((row) => {
+            const open = selectedKey === row.key;
+            const tone = deploymentRowTone(row);
+            return (
+              <Collapsible
+                key={row.key}
+                open={open}
+                onOpenChange={(next) => setSelectedKey(next ? row.key : "")}
+              >
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex w-full min-w-0 items-center gap-2 px-5 py-3 text-left text-xs hover:bg-muted/35 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      open && "bg-muted/25",
+                    )}
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "size-3 shrink-0 text-muted-foreground transition-transform",
+                        open && "rotate-90",
+                      )}
+                    />
+                    <FileCode2 className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span
+                      className="min-w-0 flex-1 truncate font-mono"
+                      title={row.path ?? row.name}
                     >
-                      <CollapsibleTrigger asChild>
-                        <button
-                          type="button"
+                      {row.path ?? row.name}
+                    </span>
+                    <span
+                      className={cn(
+                        "max-w-[45%] truncate text-[11px]",
+                        tone === "error"
+                          ? "text-destructive"
+                          : tone === "warning"
+                            ? "text-amber-700 dark:text-amber-300"
+                            : "text-muted-foreground",
+                      )}
+                      title={deploymentRowSummary(row)}
+                    >
+                      {tone !== "neutral" ? (
+                        <span
+                          aria-hidden="true"
                           className={cn(
-                            "flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-muted/50",
-                            open && "bg-muted",
+                            "mr-1.5 inline-block size-1.5 rounded-full",
+                            tone === "error" ? "bg-destructive" : "bg-warning",
                           )}
-                        >
-                          <ChevronRight
-                            className={cn(
-                              "size-3.5 shrink-0 text-muted-foreground transition-transform",
-                              open && "rotate-90",
-                            )}
-                          />
-                          <Badge variant={group.variant} size="xs">
-                            {group.label}
-                          </Badge>
-                          <span className="min-w-0 flex-1 truncate font-mono" title={path}>
-                            {path}
-                          </span>
-                        </button>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent className="min-w-0 border-t bg-background p-3">
-                        <DeploymentFileDiffPreview
-                          pipelineId={pipelineId}
-                          sourceVersion={status.version_id}
-                          path={path}
-                          diff={open ? diff : null}
-                          loading={open && diffLoading}
-                          error={open ? diffError : null}
                         />
-                      </CollapsibleContent>
-                    </Collapsible>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+                      ) : null}
+                      {deploymentRowSummary(row)}
+                    </span>
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="min-w-0 border-t bg-background">
+                  {row.findings.length ? (
+                    <ul
+                      className="space-y-1 border-b px-5 py-3 text-xs"
+                      aria-label="Asset findings"
+                    >
+                      {row.findings.map((finding, index) => (
+                        <li
+                          key={index}
+                          className={
+                            finding.severity === "error"
+                              ? "text-destructive"
+                              : "text-amber-700 dark:text-amber-300"
+                          }
+                        >
+                          {finding.message}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {row.path && status ? (
+                    <DeploymentFileDiffPreview
+                      pipelineId={pipelineId}
+                      sourceVersion={identity}
+                      path={row.path}
+                      row={row}
+                      diff={open ? (currentComparison?.diff ?? null) : null}
+                      loading={open && !currentComparison}
+                      error={open ? (currentComparison?.error ?? null) : null}
+                    />
+                  ) : (
+                    <p className="px-5 py-3 text-xs text-muted-foreground">
+                      No source path is available for this asset. Its reported impact is shown
+                      below.
+                    </p>
+                  )}
+                  {row.semantic ? (
+                    <details className="group border-t px-5 py-3">
+                      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-xs focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                        <ChevronRight className="size-3 transition-transform group-open:rotate-90" />
+                        Why this matters
+                        <span className="ml-auto text-[11px] text-muted-foreground">
+                          {row.semantic.columns.length
+                            ? `${row.semantic.columns.length} output ${row.semantic.columns.length === 1 ? "change" : "changes"}`
+                            : deploymentRowSummary(row)}
+                        </span>
+                      </summary>
+                      <div className="mt-2">
+                        <SemanticAssetImpactRow asset={row.semantic} />
+                      </div>
+                    </details>
+                  ) : null}
+                </CollapsibleContent>
+              </Collapsible>
+            );
+          })}
         </div>
       )}
-    </div>
+      {impact?.status === "available" && impact.complete ? null : (
+        <p className="px-5 py-3 text-xs text-muted-foreground" role="status">
+          {impact?.status === "no_baseline"
+            ? "First deployment — no semantic baseline yet."
+            : impact?.status === "available"
+              ? "Semantic analysis is incomplete; additional effects may be unknown."
+              : impact?.reason ||
+                "Semantic analysis is unavailable. Review source changes and code checks."}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -1964,6 +2026,7 @@ function DeploymentFileDiffPreview({
   diff,
   loading,
   error,
+  row,
 }: {
   pipelineId: string;
   sourceVersion?: string;
@@ -1971,9 +2034,15 @@ function DeploymentFileDiffPreview({
   diff: DeploymentFileDiff | null;
   loading: boolean;
   error: string | null;
+  row: DeploymentReviewRow;
 }) {
-  if (loading && !diff) {
-    return <Skeleton className="h-80 min-w-0" />;
+  const mobile = useIsMobile();
+  const annotations = useMemo(
+    () => deploymentDiffAnnotations(row, diff?.before ?? "", diff?.after ?? ""),
+    [row, diff],
+  );
+  if (loading) {
+    return <Skeleton className="h-56 min-w-0" />;
   }
   if (error) {
     return (
@@ -2001,8 +2070,12 @@ function DeploymentFileDiffPreview({
   const language = deploymentFileLanguage(path);
   const modelPrefix = `deployment-diff:${pipelineId}:${sourceVersion ?? "first"}:${path}`;
   return (
-    <div className="min-w-0 overflow-hidden rounded-md border" data-testid="deployment-file-diff">
-      <div className="grid grid-cols-2 border-b bg-muted/30 text-xs font-medium">
+    <div
+      className="min-w-0 overflow-hidden rounded-md border"
+      data-testid="deployment-file-diff"
+      data-diff-layout={mobile ? "inline" : "split"}
+    >
+      <div className="grid grid-cols-2 border-b bg-muted/30 text-xs font-medium max-md:hidden">
         <div className="min-w-0 truncate border-r px-3 py-2">
           Current deployment{diff.before_exists ? "" : " · not present"}
         </div>
@@ -2010,12 +2083,18 @@ function DeploymentFileDiffPreview({
           Saved workspace{diff.after_exists ? "" : " · not present"}
         </div>
       </div>
-      <div className="h-80 min-w-0">
+      <div className="border-b bg-muted/30 px-3 py-2 text-xs font-medium md:hidden">
+        Current deployment → Saved workspace
+      </div>
+      <div className="h-56 min-w-0">
         <ReadOnlyRenderedOperationDiff
           original={diff.before_exists ? (diff.before ?? "") : ""}
           modified={diff.after_exists ? (diff.after ?? "") : ""}
           language={language}
           modelKey={modelPrefix}
+          useInlineViewWhenSpaceIsLimited
+          inline={mobile}
+          annotations={annotations}
         />
       </div>
     </div>

@@ -30,6 +30,9 @@ function getDocumentTitle(pathname: string) {
   if (pathname.startsWith("/navigation-lab")) {
     return "Navigation study · renart";
   }
+  if (pathname.startsWith("/semantic-diff")) {
+    return "Semantic Diff · renart";
+  }
 
   if (pathname.startsWith("/dashboards")) {
     return "Dashboards · renart";

@@ -1164,6 +1164,7 @@ func findingFromMappedLSPDiagnostic(sourceText string, unit sqllsp.RenderedSQL, 
 	finding.EndLine = end.Line + 1
 	finding.EndColumn = end.Character + 1
 	finding.Confidence = lowerDiagnosticConfidence(diagnostic.Confidence, confidence)
+	finding.SourceFingerprint = sqlintelligence.SourceAnchorFingerprint(sourceText)
 	return finding
 }
 
@@ -1191,6 +1192,7 @@ func findingFromMappedAuthoringDiagnostic(sourceText string, unit sqllsp.Rendere
 	finding.EndLine = end.Line + 1
 	finding.EndColumn = end.Character + 1
 	finding.Confidence = lowerDiagnosticConfidence(string(diagnostic.Confidence), confidence)
+	finding.SourceFingerprint = sqlintelligence.SourceAnchorFingerprint(sourceText)
 	return finding
 }
 

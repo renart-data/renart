@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WelcomeRouteImport } from './routes/welcome'
+import { Route as SemanticDiffRouteImport } from './routes/semantic-diff'
 import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as NavigationLabRouteRouteImport } from './routes/navigation-lab/route'
 import { Route as RedesignIndexRouteImport } from './routes/redesign.index'
@@ -57,6 +58,11 @@ import { Route as ShellPipelinesPipelineIdAssetsAssetIdCanvasRouteImport } from 
 const WelcomeRoute = WelcomeRouteImport.update({
   id: '/welcome',
   path: '/welcome',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SemanticDiffRoute = SemanticDiffRouteImport.update({
+  id: '/semantic-diff',
+  path: '/semantic-diff',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShellRoute = ShellRouteImport.update({
@@ -297,6 +303,7 @@ const ShellPipelinesPipelineIdAssetsAssetIdCanvasRoute =
 export interface FileRoutesByFullPath {
   '/navigation-lab': typeof NavigationLabRouteRouteWithChildren
   '/': typeof ShellIndexRoute
+  '/semantic-diff': typeof SemanticDiffRoute
   '/welcome': typeof WelcomeRoute
   '/project': typeof ShellProjectRouteRouteWithChildren
   '/runs': typeof ShellRunsRouteRouteWithChildren
@@ -339,6 +346,7 @@ export interface FileRoutesByFullPath {
   '/pipelines/$pipelineId/assets/$assetId/': typeof ShellPipelinesPipelineIdAssetsAssetIdIndexRoute
 }
 export interface FileRoutesByTo {
+  '/semantic-diff': typeof SemanticDiffRoute
   '/welcome': typeof WelcomeRoute
   '/': typeof ShellIndexRoute
   '/catalog': typeof ShellCatalogRoute
@@ -378,6 +386,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/navigation-lab': typeof NavigationLabRouteRouteWithChildren
   '/_shell': typeof ShellRouteWithChildren
+  '/semantic-diff': typeof SemanticDiffRoute
   '/welcome': typeof WelcomeRoute
   '/_shell/_presentations': typeof ShellPresentationsRouteRouteWithChildren
   '/_shell/project': typeof ShellProjectRouteRouteWithChildren
@@ -426,6 +435,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/navigation-lab'
     | '/'
+    | '/semantic-diff'
     | '/welcome'
     | '/project'
     | '/runs'
@@ -468,6 +478,7 @@ export interface FileRouteTypes {
     | '/pipelines/$pipelineId/assets/$assetId/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/semantic-diff'
     | '/welcome'
     | '/'
     | '/catalog'
@@ -506,6 +517,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/navigation-lab'
     | '/_shell'
+    | '/semantic-diff'
     | '/welcome'
     | '/_shell/_presentations'
     | '/_shell/project'
@@ -553,6 +565,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   NavigationLabRouteRoute: typeof NavigationLabRouteRouteWithChildren
   ShellRoute: typeof ShellRouteWithChildren
+  SemanticDiffRoute: typeof SemanticDiffRoute
   WelcomeRoute: typeof WelcomeRoute
   RedesignSplatRoute: typeof RedesignSplatRoute
   RedesignIndexRoute: typeof RedesignIndexRoute
@@ -565,6 +578,13 @@ declare module '@tanstack/react-router' {
       path: '/welcome'
       fullPath: '/welcome'
       preLoaderRoute: typeof WelcomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/semantic-diff': {
+      id: '/semantic-diff'
+      path: '/semantic-diff'
+      fullPath: '/semantic-diff'
+      preLoaderRoute: typeof SemanticDiffRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_shell': {
@@ -1070,6 +1090,7 @@ const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   NavigationLabRouteRoute: NavigationLabRouteRouteWithChildren,
   ShellRoute: ShellRouteWithChildren,
+  SemanticDiffRoute: SemanticDiffRoute,
   WelcomeRoute: WelcomeRoute,
   RedesignSplatRoute: RedesignSplatRoute,
   RedesignIndexRoute: RedesignIndexRoute,

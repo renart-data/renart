@@ -1,6 +1,7 @@
 "use client";
 
 import type { Monaco } from "@monaco-editor/react";
+import type { editor } from "monaco-editor";
 import { AlertTriangle, Check, Copy, FileCode2, GitCompareArrows, ShieldCheck } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -33,6 +34,7 @@ import { listSnapshots, type SnapshotSummary } from "@/lib/api-deploy";
 import { loadMonacoEditorModule } from "@/lib/load-monaco-editor";
 import { defineBruinMonacoThemes } from "@/lib/monaco-theme";
 import { cn } from "@/lib/utils";
+import type { DiffAnnotation } from "@/lib/deployment-diff-annotations";
 
 const MonacoEditor = lazy(async () => {
   const module = await loadMonacoEditorModule();
@@ -649,16 +651,90 @@ export function ReadOnlyRenderedOperationDiff({
   modified,
   language,
   modelKey,
+  useInlineViewWhenSpaceIsLimited = false,
+  inline = false,
+  annotations,
 }: {
   original: string;
   modified: string;
   language: string;
   modelKey: string;
+  useInlineViewWhenSpaceIsLimited?: boolean;
+  inline?: boolean;
+  annotations?: { original: DiffAnnotation[]; modified: DiffAnnotation[] };
 }) {
   const { monacoTheme } = useWorkspaceTheme();
   const beforeMount = useCallback((monaco: Monaco) => defineBruinMonacoThemes(monaco), []);
   const extension = language === "sql" ? "sql" : language === "json" ? "json" : "txt";
   const encodedKey = encodeURIComponent(modelKey);
+  const [mounted, setMounted] = useState<{
+    editor: editor.IStandaloneDiffEditor;
+    monaco: Monaco;
+  } | null>(null);
+  const onMount = useCallback(
+    (editor: editor.IStandaloneDiffEditor, monaco: Monaco) => setMounted({ editor, monaco }),
+    [],
+  );
+
+  useEffect(() => {
+    if (!mounted || !annotations) return;
+    const collections: editor.IEditorDecorationsCollection[] = [];
+    for (const side of ["original", "modified"] as const) {
+      const codeEditor =
+        side === "original"
+          ? mounted.editor.getOriginalEditor()
+          : mounted.editor.getModifiedEditor();
+      const labelledLines = new Set<number>();
+      collections.push(
+        codeEditor.createDecorationsCollection(
+          annotations[side].flatMap((annotation): editor.IModelDeltaDecoration[] => {
+            const { line, column, end_line, end_column } = annotation.range;
+            const showLabel =
+              !labelledLines.has(end_line) &&
+              (side === "modified" ||
+                !annotations.modified.some((other) => other.label === annotation.label));
+            labelledLines.add(end_line);
+            const highlight: editor.IModelDeltaDecoration = {
+              range: new mounted.monaco.Range(line, column, end_line, end_column),
+              options: {
+                inlineClassName: `deployment-diff-${annotation.severity}`,
+                hoverMessage: {
+                  value: annotation.label.replace(/[\\`*_{}[\]()#+.!|>~-]/g, "\\$&"),
+                  isTrusted: false,
+                },
+                stickiness:
+                  mounted.monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+              },
+            };
+            if (!showLabel) return [highlight];
+            // Attach the explanation after SQL, not between an expression and
+            // FROM/WHERE. Keep only one shared label in side-by-side reviews.
+            const endOfLine = codeEditor.getModel()!.getLineMaxColumn(end_line);
+            return [
+              highlight,
+              {
+                range: new mounted.monaco.Range(end_line, endOfLine, end_line, endOfLine),
+                options: {
+                  showIfCollapsed: true,
+                  after: {
+                    content: `  ⚠ ${annotation.label.length > 90 ? `${annotation.label.slice(0, 87)}…` : annotation.label}`,
+                    inlineClassName: "deployment-diff-lens",
+                    inlineClassNameAffectsLetterSpacing: true,
+                    cursorStops: mounted.monaco.editor.InjectedTextCursorStops.None,
+                  },
+                },
+              },
+            ];
+          }),
+        ),
+      );
+    }
+    const first = annotations.modified[0];
+    if (first) mounted.editor.getModifiedEditor().revealLineInCenter(first.range.line);
+    return () => {
+      for (const collection of collections) collection.clear();
+    };
+  }, [mounted, annotations]);
 
   return (
     <Suspense fallback={<RenderCentered loading message="Loading comparison…" />}>
@@ -670,9 +746,11 @@ export function ReadOnlyRenderedOperationDiff({
         modifiedModelPath={`inmemory://renart/render-diff/working-tree/${encodedKey}.${extension}`}
         theme={monacoTheme}
         beforeMount={beforeMount}
+        onMount={onMount}
         options={{
           automaticLayout: true,
           diffCodeLens: false,
+          diffWordWrap: "on",
           domReadOnly: true,
           enableSplitViewResizing: true,
           folding: true,
@@ -684,9 +762,9 @@ export function ReadOnlyRenderedOperationDiff({
           originalEditable: false,
           readOnly: true,
           renderOverviewRuler: false,
-          renderSideBySide: true,
+          renderSideBySide: !inline,
           scrollBeyondLastLine: false,
-          useInlineViewWhenSpaceIsLimited: false,
+          useInlineViewWhenSpaceIsLimited,
           wordWrap: "on",
         }}
       />

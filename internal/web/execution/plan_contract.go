@@ -77,14 +77,15 @@ type PlanConfirmRequest struct {
 
 // renart:web-name PipelinePlanReviewedIdentity
 type ReviewedIdentity struct {
-	PipelineUUID       string              `json:"pipeline_uuid"`
-	Source             RenderSource        `json:"source"`
-	Context            PlanContext         `json:"context"`
-	Selection          PlanSelection       `json:"selection"`
-	Prerequisites      []Prerequisite      `json:"prerequisites,omitempty"`
-	Resources          Resources           `json:"resources"`
-	ExecutionContracts []ExecutionContract `json:"execution_contracts"`
-	ExecutionUnits     []PlanExecutionUnit `json:"execution_units"`
+	PipelineUUID         string              `json:"pipeline_uuid"`
+	Source               RenderSource        `json:"source"`
+	Context              PlanContext         `json:"context"`
+	Selection            PlanSelection       `json:"selection"`
+	SemanticImpactDigest string              `json:"semantic_impact_digest,omitempty"`
+	Prerequisites        []Prerequisite      `json:"prerequisites,omitempty"`
+	Resources            Resources           `json:"resources"`
+	ExecutionContracts   []ExecutionContract `json:"execution_contracts"`
+	ExecutionUnits       []PlanExecutionUnit `json:"execution_units"`
 }
 
 // renart:web-name PipelinePlanContext
@@ -243,19 +244,20 @@ type PlanSummary struct {
 // renart:web
 // renart:web-name PipelinePlan
 type Plan struct {
-	ID                 string              `json:"id"`
-	Status             string              `json:"status"`
-	PipelineID         string              `json:"pipeline_id"`
-	PipelineUUID       string              `json:"pipeline_uuid"`
-	PipelineName       string              `json:"pipeline_name"`
-	Source             RenderSource        `json:"source"`
-	Context            PlanContext         `json:"context"`
-	Readiness          PlanReadiness       `json:"readiness"`
-	Selection          PlanSelection       `json:"selection"`
-	Prerequisites      []Prerequisite      `json:"prerequisites"`
-	Resources          Resources           `json:"resources"`
-	Assets             []PlanAsset         `json:"assets"`
-	ExecutionContracts []ExecutionContract `json:"execution_contracts"`
-	ExecutionUnits     []PlanExecutionUnit `json:"execution_units"`
-	Summary            PlanSummary         `json:"summary"`
+	ID                 string                `json:"id"`
+	Status             string                `json:"status"`
+	PipelineID         string                `json:"pipeline_id"`
+	PipelineUUID       string                `json:"pipeline_uuid"`
+	PipelineName       string                `json:"pipeline_name"`
+	Source             RenderSource          `json:"source"`
+	Context            PlanContext           `json:"context"`
+	Readiness          PlanReadiness         `json:"readiness"`
+	Selection          PlanSelection         `json:"selection"`
+	SemanticImpact     *SemanticImpactReport `json:"semantic_impact,omitempty"`
+	Prerequisites      []Prerequisite        `json:"prerequisites"`
+	Resources          Resources             `json:"resources"`
+	Assets             []PlanAsset           `json:"assets"`
+	ExecutionContracts []ExecutionContract   `json:"execution_contracts"`
+	ExecutionUnits     []PlanExecutionUnit   `json:"execution_units"`
+	Summary            PlanSummary           `json:"summary"`
 }

@@ -10,17 +10,18 @@ import webmodel "renart/internal/web/model"
 // SQL parser, a template-rendering failure, or an asset-source warning).
 // renart:web-name TypeCheckFinding
 type Finding struct {
-	Code        string       `json:"code"`
-	Source      string       `json:"source"`
-	Severity    string       `json:"severity"`
-	Message     string       `json:"message"`
-	Line        int          `json:"line,omitempty"`
-	Column      int          `json:"column,omitempty"`
-	EndLine     int          `json:"end_line,omitempty"`
-	EndColumn   int          `json:"end_column,omitempty"`
-	Scope       string       `json:"scope,omitempty"`
-	Confidence  string       `json:"confidence,omitempty"`
-	Resolutions []Resolution `json:"resolutions,omitempty"`
+	Code              string       `json:"code"`
+	Source            string       `json:"source"`
+	Severity          string       `json:"severity"`
+	Message           string       `json:"message"`
+	Line              int          `json:"line,omitempty"`
+	Column            int          `json:"column,omitempty"`
+	EndLine           int          `json:"end_line,omitempty"`
+	EndColumn         int          `json:"end_column,omitempty"`
+	Scope             string       `json:"scope,omitempty"`
+	Confidence        string       `json:"confidence,omitempty"`
+	SourceFingerprint string       `json:"source_fingerprint,omitempty"`
+	Resolutions       []Resolution `json:"resolutions,omitempty"`
 }
 
 // Resolution is a safe semantic edit Renart can offer for a finding.

@@ -2,7 +2,7 @@
   "version": 1,
   "initial": {
     "maxJavaScriptBytes": 1900000,
-    "maxCssBytes": 220000
+    "maxCssBytes": 230000
   },
   "maxJavaScriptChunkBytes": 800000,
   "families": {

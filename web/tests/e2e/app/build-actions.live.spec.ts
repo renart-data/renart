@@ -1,6 +1,7 @@
 import { expect } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { PipelinePlan } from "../../../lib/generated/api-types";
 
 import { liveTest as test } from "../live-app-fixture";
 
@@ -689,7 +690,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     const planDialog = page.getByTestId("pipeline-plan-sheet");
     await expect(planDialog).toBeVisible();
     await expect(planDialog.getByRole("tablist")).toHaveCount(0);
-    await expect(planDialog.getByRole("heading", { name: "Source changes" })).toBeVisible();
+    await expect(planDialog.getByRole("heading", { name: /^Changes & impact/ })).toBeVisible();
+    await expect(planDialog.getByText("Representative window", { exact: true })).toBeHidden();
+    await expect(planDialog.getByRole("heading", { name: "Code checks", exact: true })).toHaveCount(
+      0,
+    );
 
     const fileDisclosure = planDialog
       .locator('section[aria-labelledby="pipeline-deploy-source-changes"]')
@@ -703,6 +708,13 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(fileDiff).toContainText("Current deployment");
     await expect(fileDiff).toContainText("Saved workspace");
     await expect(fileDiff.locator(".monaco-diff-editor")).toBeVisible({ timeout: 15000 });
+    if ((page.viewportSize()?.width ?? 0) < 768) {
+      await expect(fileDiff.getByTestId("deployment-file-diff")).toHaveAttribute(
+        "data-diff-layout",
+        "inline",
+      );
+      await expect(fileDiff.locator(".monaco-diff-editor")).not.toHaveClass(/side-by-side/);
+    }
     const insertedLine = fileDiff.locator(".monaco-diff-editor .line-insert").first();
     await expect(insertedLine).toBeVisible({ timeout: 15000 });
     await expect
@@ -713,6 +725,110 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
 
     await fileDisclosure.locator('[data-slot="collapsible-trigger"]').click();
     await expect(fileDiff).toBeHidden();
+
+    await planDialog.getByRole("button", { name: /^Deployment details/ }).click();
+    await expect(planDialog.getByText("Representative window", { exact: true })).toBeVisible();
+    await expect(planDialog.getByRole("button", { name: /^Execution details/ })).toBeVisible();
+    await expect(planDialog.getByRole("button", { name: /^Deploy \d+ assets?/ })).toBeVisible();
+    const detailedPlan = page.waitForRequest(
+      (request) =>
+        request.url().endsWith(`/api/pipelines/${pipelineId}/plan`) &&
+        request.postDataJSON()?.include_stage_content === true,
+    );
+    await planDialog.getByRole("button", { name: /^Execution details/ }).click();
+    expect((await detailedPlan).postDataJSON().purpose).toBe("deployment");
+  });
+
+  test("reviews propagated output types on an unchanged SQL file", async ({ liveApp, page }) => {
+    await writeFile(
+      join(liveApp.workspaceDir, "analytics/assets/analytics/revenue.sql"),
+      "/* @bruin\nname: analytics.revenue\ntype: duckdb.sql\nmaterialization:\n  type: view\n@bruin */\nSELECT SUM(total_amount) AS total FROM analytics.orders\n",
+    );
+    await expect
+      .poll(async () => {
+        const workspace = (await (
+          await page.request.get(`${liveApp.baseURL}/api/workspace`)
+        ).json()) as WorkspaceResponse;
+        return workspace.pipelines
+          .flatMap((pipeline) => pipeline.assets)
+          .some((asset) => asset.name === "analytics.revenue");
+      })
+      .toBe(true);
+    const deployed = await page.request.post(
+      `${liveApp.baseURL}/api/pipelines/${pipelineId}/deploy`,
+      { data: {} },
+    );
+    expect(deployed.ok()).toBe(true);
+    await writeFile(
+      join(liveApp.workspaceDir, "analytics/assets/analytics/orders.sql"),
+      "/* @bruin\ntype: duckdb.sql\nmaterialization:\n  type: view\n@bruin */\nSELECT 100 AS order_id, 1 AS customer_id, CAST(42 AS DOUBLE) AS total_amount\n",
+    );
+    // Wait for fixture file discovery before mounting the editor, whose draft
+    // intentionally does not get replaced by an outside write while editing.
+    await expect
+      .poll(async () => {
+        const workspace = (await (
+          await page.request.get(`${liveApp.baseURL}/api/workspace`)
+        ).json()) as WorkspaceResponse;
+        return workspace.pipelines
+          .flatMap((pipeline) => pipeline.assets)
+          .find((asset) => asset.name === "analytics.orders")?.content;
+      })
+      .toContain("DOUBLE");
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${ordersAssetId}/code`);
+    await expect(page.locator(".view-lines").first()).toContainText("DOUBLE", { timeout: 15000 });
+    const planned = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/pipelines/${pipelineId}/plan`) && response.ok(),
+    );
+    await page.getByRole("button", { name: /^Redeploy/ }).click();
+    const report = (await (await planned).json()) as PipelinePlan;
+    const contract = report.semantic_impact?.assets.find(
+      (asset) => asset.name === "analytics.revenue",
+    )?.columns[0];
+    expect(contract?.before?.type).toBeTruthy();
+    expect(contract?.before?.type).not.toBe("DOUBLE");
+    expect(contract?.after?.type).toBe("DOUBLE");
+    const dialog = page.getByTestId("pipeline-plan-sheet");
+    const row = dialog.getByRole("button", {
+      name: /assets\/analytics\/revenue.sql/,
+    });
+    await expect(row).toBeVisible({ timeout: 30000 });
+    await row.click();
+    const diff = dialog.getByTestId("deployment-file-diff");
+    await expect(diff.locator(".monaco-diff-editor")).toBeVisible({ timeout: 15000 });
+    await expect
+      .poll(async () => (await diff.locator(".deployment-diff-warning").allTextContents()).join(""))
+      .toContain("SUM(total_amount)");
+    await expect
+      .poll(async () =>
+        (await diff.locator(".deployment-diff-lens").allTextContents())
+          .join("")
+          .replace(/\s+/g, " "),
+      )
+      .toContain(`${contract?.before?.type} → DOUBLE`);
+    await expect(diff.locator(".deployment-diff-warning").first()).toHaveCSS(
+      "border-bottom-style",
+      "dotted",
+    );
+    if ((page.viewportSize()?.width ?? 0) < 768) {
+      await expect(diff).toHaveAttribute("data-diff-layout", "inline");
+      await expect(diff.locator(".monaco-diff-editor")).not.toHaveClass(/side-by-side/);
+    }
+    await dialog.locator("summary").filter({ hasText: "Why this matters" }).click();
+    await expect(
+      dialog.locator("details").getByText(`total: ${contract?.before?.type}`, { exact: false }),
+    ).toBeVisible();
+    await expect(
+      dialog.locator("details").getByText("total: DOUBLE", { exact: false }),
+    ).toBeVisible();
+    await expect(dialog.getByText("What-if", { exact: false })).toHaveCount(0);
+    const viewport = dialog
+      .getByTestId("pipeline-plan-scroll")
+      .locator('[data-slot="scroll-area-viewport"]');
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollWidth - element.clientWidth))
+      .toBeLessThanOrEqual(1);
+    await page.screenshot({ path: test.info().outputPath("deployment-impact-review.png") });
   });
 
   test("keeps valid sibling previews when an asset definition is incomplete", async ({
