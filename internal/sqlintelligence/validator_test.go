@@ -142,6 +142,9 @@ func TestValidateSQLReportsDeclaredOutputTypeDrift(t *testing.T) {
 	assert.Equal(t, authoringdiag.ScopeAsset, diagnostic.Scope)
 	assert.Equal(t, authoringdiag.ConfidenceHigh, diagnostic.Confidence)
 	assert.Equal(t, `Column "id" is declared as VARCHAR, but the SQL output is inferred as INTEGER.`, diagnostic.Message)
+	require.NotNil(t, diagnostic.Subject)
+	assert.Equal(t, "id", diagnostic.Subject.Column)
+	assert.Equal(t, "type", diagnostic.Subject.Field)
 }
 
 func TestValidateSQLReportsDeclaredOutputNameDrift(t *testing.T) {

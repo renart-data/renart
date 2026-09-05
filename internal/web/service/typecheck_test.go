@@ -15,7 +15,32 @@ import (
 
 	"renart/internal/authoringdiag"
 	"renart/internal/web/model"
+	"renart/internal/web/navigationtarget"
 )
+
+func TestColumnTypeDriftHasExactNavigationTargetWithoutSourceRange(t *testing.T) {
+	parsed, root := writeTypeCheckWorkspace(t, "name: analytics", map[string]string{
+		"orders.sql": `/* @bruin
+name: analytics.orders
+type: duckdb.sql
+columns:
+  - name: total_amount
+    type: VARCHAR
+@bruin */
+select 1 as total_amount`,
+	})
+	report := runTypeCheck(t, parsed, root)
+	asset := findAsset(t, report, "analytics.orders")
+	for _, finding := range asset.Findings {
+		if finding.Code == authoringdiag.CodeDeclaredColumnTypeDrift {
+			require.Equal(t, &navigationtarget.Target{Kind: "asset-column", AssetID: asset.ID, Column: "total_amount", Field: "type"}, finding.Target)
+			require.NotEmpty(t, finding.Target.AssetID)
+			require.Zero(t, finding.Line)
+			return
+		}
+	}
+	t.Fatal("expected a declared column type drift diagnostic")
+}
 
 // writeTypeCheckWorkspace lays out a minimal bruin workspace (a `.git` marker, a
 // `.bruin.yml`, a pipeline.yml, and the given asset files keyed by their path

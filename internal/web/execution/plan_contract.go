@@ -1,6 +1,9 @@
 package execution
 
-import webtypecheck "renart/internal/web/typecheck"
+import (
+	"renart/internal/web/navigationtarget"
+	webtypecheck "renart/internal/web/typecheck"
+)
 
 const (
 	PlanStatusReady   = "ready"
@@ -109,11 +112,13 @@ type PlanContext struct {
 
 // renart:web-name PipelinePlanIssue
 type PlanIssue struct {
-	Code      string `json:"code"`
-	Severity  string `json:"severity"`
-	Message   string `json:"message"`
-	AssetID   string `json:"asset_id,omitempty"`
-	AssetName string `json:"asset_name,omitempty"`
+	DiagnosticCode string                   `json:"diagnostic_code,omitempty"`
+	Target         *navigationtarget.Target `json:"target,omitempty"`
+	Code           string                   `json:"code"`
+	Severity       string                   `json:"severity"`
+	Message        string                   `json:"message"`
+	AssetID        string                   `json:"asset_id,omitempty"`
+	AssetName      string                   `json:"asset_name,omitempty"`
 }
 
 // renart:web-name PipelinePlanReadiness

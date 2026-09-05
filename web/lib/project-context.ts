@@ -3,8 +3,10 @@
 // means the server's default project, reached via the unprefixed /api
 // routes (the migration alias).
 const STORAGE_KEY = "renart.project";
+let runtimePin: string | null | undefined;
 
 export function getPinnedProjectId(): string | null {
+  if (runtimePin !== undefined) return runtimePin;
   if (typeof window === "undefined") return null;
   try {
     return window.sessionStorage.getItem(STORAGE_KEY);
@@ -14,6 +16,7 @@ export function getPinnedProjectId(): string | null {
 }
 
 export function pinProject(projectId: string | null) {
+  runtimePin = projectId;
   if (typeof window === "undefined") return;
   try {
     if (projectId) {
@@ -22,7 +25,7 @@ export function pinProject(projectId: string | null) {
       window.sessionStorage.removeItem(STORAGE_KEY);
     }
   } catch {
-    // Private-mode storage failures degrade to the default project.
+    // The validated runtime scope still works when storage is unavailable.
   }
 }
 

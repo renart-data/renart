@@ -1,6 +1,7 @@
 "use client";
 
 import { Link } from "@tanstack/react-router";
+import { ResourceLink } from "./resource-link";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -152,6 +153,7 @@ export function PipelinePlanSheet({
     runOptionsOpen,
   } = review;
   const [deploySchedulesOpen, setDeploySchedulesOpen] = useState(false);
+  const closingForDetail = useRef(false);
   const [deployStatus, setDeployStatus] = useState<DeployStatus | null>(null);
   const [deployment, setDeployment] = useState<DeployResponse | null>(null);
   const [schedules, setSchedules] = useState<EnvSchedule[]>([]);
@@ -444,6 +446,24 @@ export function PipelinePlanSheet({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        onClickCapture={(event) => {
+          if (
+            event.button === 0 &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.shiftKey &&
+            !event.altKey &&
+            event.target instanceof Element &&
+            event.target.closest('[data-resource-link="true"]')
+          ) {
+            closingForDetail.current = true;
+            onOpenChange(false);
+          }
+        }}
+        onCloseAutoFocus={(event) => {
+          if (closingForDetail.current) event.preventDefault();
+          closingForDetail.current = false;
+        }}
         className={cn(
           "flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-none flex-col gap-0 overflow-hidden p-0",
           intent === "deploy"
@@ -1963,6 +1983,12 @@ export function DeploymentFileChanges({
                           }
                         >
                           {finding.message}
+                          {finding.target ? (
+                            <ResourceLink
+                              target={finding.target}
+                              environment={plan.context.environment}
+                            />
+                          ) : null}
                         </li>
                       ))}
                     </ul>

@@ -944,6 +944,8 @@ export type PipelinePlanExecutionUnit = {
 };
 
 export type PipelinePlanIssue = {
+  diagnostic_code?: string;
+  target?: ResourceTarget;
   code: string;
   severity: string;
   message: string;
@@ -1326,6 +1328,13 @@ export type ReplacePresentationRequest = {
   artifact: PresentationArtifact;
 };
 
+export type ResourceTarget = {
+  kind: string;
+  asset_id: string;
+  column: string;
+  field: string;
+};
+
 export type SQLColumn = {
   name: string;
   type?: string;
@@ -1491,6 +1500,7 @@ export type TypeCheckFinding = {
   confidence?: string;
   source_fingerprint?: string;
   resolutions?: TypeCheckResolution[];
+  target?: ResourceTarget;
 };
 
 export type TypeCheckPresentation = {

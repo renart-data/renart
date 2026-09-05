@@ -400,6 +400,7 @@ func appendCodeCheckIssues(plan *Plan, includePresentations bool) {
 			issue := PlanIssue{
 				Code: "code_check_" + finding.Severity, Severity: finding.Severity,
 				Message: finding.Message, AssetID: assetID, AssetName: asset.Name,
+				DiagnosticCode: finding.Code, Target: finding.Target,
 			}
 			if finding.Severity == "error" {
 				plan.Readiness.Blockers = append(plan.Readiness.Blockers, issue)

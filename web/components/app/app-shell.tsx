@@ -49,6 +49,7 @@ import { findExecutionTimeOption, getExecutionTimeOptions } from "@/lib/executio
 import type { SourceControlChange, WebNotebook } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { getPinnedProjectId } from "@/lib/project-context";
+import { rememberWorkspaceProject } from "@/lib/project-route-bootstrap";
 
 import { ProjectSwitcher } from "./project-switcher";
 import { AppCommandPalette } from "./app-command-palette";
@@ -94,6 +95,9 @@ export function AppShell() {
     : modeForAppPath(location.pathname);
   const { workspaceConfig } = useWorkspaceSettingsData();
   const projectId = getPinnedProjectId() ?? workspaceConfig?.project_id ?? "default";
+  useEffect(() => {
+    if (workspaceConfig?.project_id) rememberWorkspaceProject(workspaceConfig.project_id);
+  }, [workspaceConfig?.project_id]);
 
   return (
     <WorkbenchProvider navigation={routeNavigation} projectId={projectId}>

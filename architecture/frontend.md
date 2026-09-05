@@ -93,6 +93,49 @@ For hierarchical URLs that should not visually nest parent pages, use pathful
 layout routes (`route.tsx` renders `<Outlet />`) with leaf `index.tsx` files —
 not underscore-flattened route hacks.
 
+### Addressable diagnostic details
+
+`resource-navigation.ts` defines the versioned, validated `detail` search
+contract, independent of the primary pathname. The first supported target is
+an asset's declared column type. Its generated `ResourceTarget` comes from the
+Go `navigationtarget` leaf package; SQL intelligence supplies a semantic
+`authoringdiag.Subject`, never a URL and never a column name extracted from
+diagnostic prose. Pipeline type-check and deployment readiness preserve the
+target and original diagnostic code. Other diagnostics are not yet migrated.
+
+`ResourceLink` renders an actual router anchor, preserving the main editor/view
+and including the actual project ID, environment, asset ID and exact declared
+column spelling. Root search middleware retains shared address keys during
+ordinary child-route navigation. Root `beforeLoad` validates an explicit project
+against the process project directory before mounting workspace consumers/SSE;
+invalid projects fail visibly instead of using the default. A validated runtime
+pin also works when session storage is unavailable. Legacy URLs keep their
+session/default scope; the server's workspace identity locks that scope once
+loaded. Cross-project transitions still require a document navigation/new tab.
+
+The Workbench owns one lazy-loaded detail outlet. Desktop details occupy the
+right edge; mobile details use a Sheet. The normal inspector portal host stays
+mounted but hidden and inert while the routed surface is active, preserving its
+local form state without leaving two interactive inspectors. Opening a target
+does not dispatch tool selection or change the primary asset, editor, canvas,
+sidebar width, expansion or scroll state. Only the existing Columns form is
+mounted for the target, not a hidden Build page. Its environment is an explicit
+input, not a write to the global execution environment.
+
+Column identity is exact and must be unique. A removed/renamed/ambiguous target
+shows a notice, never a guessed replacement. A controlled row opens and focuses
+its type input once per navigation entry using a semantic ref; only its own
+scroll viewport moves. The detail outlet performs no metadata edits, schema sync
+or row previews on arrival; the primary route retains its normal loaders.
+Browser Back/Forward restores detail state; explicit Close clears
+the detail with replace, which is also safe for cold external arrivals.
+
+The column form and detail outlet are lazy-loaded. The first navigation slice
+measured 567.3 KiB of incremental pipeline-authoring JavaScript; that family's
+raw-byte budget is 585000 (previously 575000), a 10000-byte feature allowance.
+Initial JS/CSS budgets are unchanged. See the current `dist/bundle-report.md`
+after building for the measured dependency graph.
+
 ### App shell + primary views
 
 - [components/app/app-shell.tsx](../web/components/app/app-shell.tsx) (`AppShell`):

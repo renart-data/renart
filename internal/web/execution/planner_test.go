@@ -10,9 +10,23 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"renart/internal/web/apperror"
+	"renart/internal/web/navigationtarget"
 	"renart/internal/web/staleness"
 	webtypecheck "renart/internal/web/typecheck"
 )
+
+func TestCodeCheckAggregationPreservesNavigationTarget(t *testing.T) {
+	target := &navigationtarget.Target{Kind: "asset-column", AssetID: "workspace-id", Column: "Total", Field: "type"}
+	plan := &Plan{PipelineUUID: "uuid", Readiness: PlanReadiness{CodeChecks: webtypecheck.Report{
+		Assets: []webtypecheck.Asset{{Name: "orders", Findings: []webtypecheck.Finding{{
+			Code: "declared-column-type-drift", Severity: "warning", Message: "translated", Target: target,
+		}}}},
+	}}}
+	appendCodeCheckIssues(plan, false)
+	require.Len(t, plan.Readiness.Warnings, 1)
+	require.Equal(t, target, plan.Readiness.Warnings[0].Target)
+	require.Equal(t, "declared-column-type-drift", plan.Readiness.Warnings[0].DiagnosticCode)
+}
 
 func TestPlannerOwnsReviewedPlanWorkflow(t *testing.T) {
 	asset := &pipeline.Asset{Name: "analytics.orders", Type: pipeline.AssetTypeDuckDBQuery}

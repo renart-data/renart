@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { type Ref, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { useAtomValue } from "jotai";
 import {
@@ -967,10 +967,21 @@ function fallbackColumnInferenceSources(asset: WebAsset): ColumnInferenceSource[
   ];
 }
 
-function ColumnsCard({ asset }: { asset: WebAsset }) {
+export function ColumnsCard({
+  asset,
+  environmentOverride,
+  focusedColumn,
+  focusToken,
+}: {
+  asset: WebAsset;
+  environmentOverride?: string;
+  focusedColumn?: string;
+  focusToken?: string;
+}) {
   const schemaSourceIdPrefix = `${useId()}-schema-source`;
   const manualColumnInputId = `${schemaSourceIdPrefix}-manual-column`;
-  const environment = useAtomValue(selectedEnvironmentAtom);
+  const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
+  const environment = environmentOverride ?? selectedEnvironment;
   const workspace = useAtomValue(workspaceAtom);
   const sources = useMemo(
     () =>
@@ -1236,6 +1247,7 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
               <ColumnRow
                 key={column.name}
                 column={column}
+                focusToken={column.name === focusedColumn ? focusToken : undefined}
                 status={columnStatus(column.name, provenance)}
                 onCommitType={(type) => commitType(column, type)}
                 onCommitDescription={(description) => setDescription(column.name, description)}
@@ -1560,6 +1572,7 @@ function QualityChecksCard({
 
 function ColumnRow({
   column,
+  focusToken,
   status,
   onCommitType,
   onCommitDescription,
@@ -1571,6 +1584,7 @@ function ColumnRow({
   impacts,
 }: {
   column: WebColumn;
+  focusToken?: string;
   status: ReturnType<typeof columnStatus>;
   onCommitType: (type: string) => void;
   onCommitDescription: (description: string) => void;
@@ -1587,11 +1601,32 @@ function ColumnRow({
   const primaryKeyInputId = `${fieldIdPrefix}-primary-key`;
   const updateOnMergeInputId = `${fieldIdPrefix}-update-on-merge`;
   const mergeSQLInputId = `${fieldIdPrefix}-merge-sql`;
+  const [open, setOpen] = useState(Boolean(focusToken));
+  const focusedToken = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (focusToken) setOpen(true);
+  }, [focusToken]);
+  const focusType = useCallback(
+    (input: HTMLInputElement | null) => {
+      if (!input || !focusToken || focusedToken.current === focusToken) return;
+      const frame = requestAnimationFrame(() => {
+        if (!input.isConnected) return;
+        focusedToken.current = focusToken;
+        input.focus({ preventScroll: true });
+        const viewport = input.closest('[data-slot="scroll-area-viewport"]');
+        if (viewport)
+          viewport.scrollTop +=
+            input.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 48;
+      });
+      return () => cancelAnimationFrame(frame);
+    },
+    [focusToken],
+  );
   const affectedArtifactCount = new Set(impacts.map((impact) => artifactRefKey(impact.consumer)))
     .size;
 
   return (
-    <Collapsible className="group/column">
+    <Collapsible className="group/column" open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger asChild>
         <Button
           variant="ghost"
@@ -1662,6 +1697,8 @@ function ColumnRow({
             <FieldLabel htmlFor={typeInputId}>Type</FieldLabel>
             <CommitInput
               id={typeInputId}
+              inputRef={focusType}
+              className={focusToken ? "border-primary ring-2 ring-primary/20" : undefined}
               mono
               value={column.type ?? ""}
               placeholder="Unknown"
@@ -1817,6 +1854,7 @@ function FieldRow({
  */
 function CommitInput({
   id,
+  inputRef,
   value,
   placeholder,
   onCommit,
@@ -1826,6 +1864,7 @@ function CommitInput({
   ariaDescribedBy,
 }: {
   id?: string;
+  inputRef?: Ref<HTMLInputElement>;
   value: string;
   placeholder?: string;
   onCommit: (value: string) => void;
@@ -1840,6 +1879,7 @@ function CommitInput({
   return (
     <Input
       id={id}
+      ref={inputRef}
       className={cn("h-8 text-xs", mono && "font-monaco", className)}
       value={draft}
       placeholder={placeholder}

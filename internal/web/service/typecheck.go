@@ -17,6 +17,7 @@ import (
 	"renart/internal/sqlintelligence"
 	"renart/internal/sqllsp"
 	webmodel "renart/internal/web/model"
+	"renart/internal/web/navigationtarget"
 )
 
 const typeCheckRunID = "renart-type-check"
@@ -541,7 +542,9 @@ func checkAsset(ctx context.Context, pp *pipeline.Pipeline, workspaceRoot string
 			continue
 		}
 		for _, diagnostic := range validation.Diagnostics {
-			ac.Findings = append(ac.Findings, findingFromMappedAuthoringDiagnostic(sourceText, unit, diagnostic))
+			finding := findingFromMappedAuthoringDiagnostic(sourceText, unit, diagnostic)
+			finding.Target = navigationtarget.ForDiagnostic(ac.ID, diagnostic)
+			ac.Findings = append(ac.Findings, finding)
 		}
 	}
 

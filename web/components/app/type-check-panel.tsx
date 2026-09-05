@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { ResourceLink } from "./resource-link";
 import { useState } from "react";
 import {
   AlertTriangle,
@@ -191,7 +192,10 @@ export function TypeCheckPanel({
                           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
                         )}
                         <div className="min-w-0 flex-1">
-                          <p>{finding.message}</p>
+                          <p>
+                            {finding.message}
+                            {finding.target ? <ResourceLink target={finding.target} /> : null}
+                          </p>
                           {finding.resolutions?.length ? (
                             <div className="mt-1.5 flex flex-wrap gap-1.5">
                               {finding.resolutions.map((resolution) => {

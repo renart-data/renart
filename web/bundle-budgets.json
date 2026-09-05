@@ -18,7 +18,7 @@
     },
     "pipeline-authoring": {
       "matches": ["/pipelines/"],
-      "maxJavaScriptBytes": 575000,
+      "maxJavaScriptBytes": 585000,
       "maxCssBytes": 25000
     },
     "schedules-and-runs": {
