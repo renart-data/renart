@@ -8,6 +8,24 @@ import {
 } from "./workbench-session-state";
 
 describe("workbench session state", () => {
+  it("does not switch or reopen an independent Build sidebar when opening an asset", () => {
+    const selected = workbenchSessionReducer(createWorkbenchSessionState("p"), {
+      type: "tool-selected",
+      mode: "build",
+      tool: "data",
+    });
+    const before = workbenchSessionReducer(selected, {
+      type: "active-tool-toggled",
+      mode: "build",
+      tool: "data",
+    });
+    const after = workbenchSessionReducer(before, {
+      type: "route-entered",
+      mode: "build",
+      tool: "resources",
+    });
+    expect(after.modes.build).toEqual(before.modes.build);
+  });
   it("toggles the active tool without forgetting its selection", () => {
     const initial = workbenchSessionReducer(createWorkbenchSessionState("project-a"), {
       type: "route-entered",
@@ -50,7 +68,7 @@ describe("workbench session state", () => {
     expect(withExplore.modes.build.activeTool).toBe("resources");
   });
 
-  it("reconciles persisted tool selection with the route on startup", () => {
+  it("reconciles the editor-dependent tool when restoring a route", () => {
     const persisted = workbenchSessionReducer(createWorkbenchSessionState("project-a"), {
       type: "tool-selected",
       mode: "build",

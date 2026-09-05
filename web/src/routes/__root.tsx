@@ -7,7 +7,7 @@ import { bootstrapProjectRoute } from "@/lib/project-route-bootstrap";
 
 export const Route = createRootRoute({
   validateSearch: normalizeResourceSearch,
-  search: { middlewares: [retainSearchParams(["project", "detail"])] },
+  search: { middlewares: [retainSearchParams(["project"])] },
   beforeLoad: ({ search }) => bootstrapProjectRoute(search.project),
   errorComponent: ({ error }) => (
     <main className="mx-auto max-w-lg p-8">

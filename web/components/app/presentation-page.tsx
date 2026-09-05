@@ -2,7 +2,7 @@
 
 import type { Monaco } from "@monaco-editor/react";
 import type * as MonacoNS from "monaco-editor";
-import { Link, Outlet, useBlocker, useNavigate } from "@tanstack/react-router";
+import { Link, Outlet, useBlocker, useNavigate, useLocation } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import {
   AlertTriangle,
@@ -302,10 +302,24 @@ export function AppPresentationLivePage({
   presentationId: string;
 }) {
   const workspace = useAtomValue(workspaceAtom);
+  const location = useLocation();
+  const linked = (location.search as import("@/lib/resource-navigation").ResourceSearch).detail;
+  const autoPreviewOnArrival = useRef(
+    !linked &&
+      (location.search as { presentation_editor?: string }).presentation_editor !== "definition",
+  );
   const [document, setDocument] = useState<PresentationDocument | null>(null);
   const [visualDraft, setVisualDraft] = useState<PresentationArtifact | null>(null);
   const [definitionDraft, setDefinitionDraft] = useState("");
-  const [mode, setMode] = useState<"visual" | "definition">("visual");
+  const navigate = useNavigate();
+  const mode =
+    (location.search as { presentation_editor?: "visual" | "definition" }).presentation_editor ??
+    "visual";
+  const setMode = (mode: "visual" | "definition") =>
+    void navigate({
+      to: ".",
+      search: (s) => ({ ...s, detail: undefined, presentation_editor: mode }),
+    });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -378,7 +392,20 @@ export function AppPresentationLivePage({
     }
   }, [acceptDocument, definitionDraft, document, mode, presentationId, saving, visualDraft]);
 
-  const shouldBlockNavigation = useCallback(() => dirty, [dirty]);
+  const shouldBlockNavigation = useCallback(
+    ({
+      current,
+      next,
+    }: {
+      current: { pathname: string; search: Record<string, unknown> };
+      next: { pathname: string; search: Record<string, unknown> };
+    }) =>
+      dirty &&
+      (current.pathname !== next.pathname ||
+        (current.search.presentation_editor ?? "visual") !==
+          (next.search.presentation_editor ?? "visual")),
+    [dirty],
+  );
   const navigationBlocker = useBlocker({
     shouldBlockFn: shouldBlockNavigation,
     enableBeforeUnload: dirty,
@@ -532,6 +559,7 @@ export function AppPresentationLivePage({
               artifact={visualDraft}
               workspace={workspace}
               paused={saving}
+              autoPreview={autoPreviewOnArrival.current}
               navigation={renderNavigation()}
               modeControl={renderModeControl()}
               documentActions={renderDocumentActions()}

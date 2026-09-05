@@ -99,11 +99,14 @@ export function workbenchSessionReducer(
 
   const modeState = state.modes[action.mode];
   if (action.type === "route-entered") {
-    const toolChanged = modeState.activeTool !== action.tool;
+    const sharedBuildContext =
+      action.mode === "build" &&
+      ["resources", "ad-hoc"].includes(action.tool) &&
+      modeState.activeTool === "data";
     return updateMode(state, action.mode, {
       ...modeState,
-      activeTool: action.tool,
-      sidebarOpen: toolChanged ? true : modeState.sidebarOpen,
+      activeTool: sharedBuildContext ? modeState.activeTool : action.tool,
+      sidebarOpen: modeState.sidebarOpen,
     });
   }
   if (action.type === "tool-selected") {

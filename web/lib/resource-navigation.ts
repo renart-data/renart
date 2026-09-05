@@ -2,7 +2,7 @@ import type { ResourceTarget } from "./generated/api-types";
 
 export type ColumnTarget = ResourceTarget & {
   kind: "asset-column";
-  field: "type";
+  field: "type" | "description" | "primary_key" | "update_on_merge" | "merge_sql";
   asset_id: string;
   column: string;
 };
@@ -69,7 +69,11 @@ export function parseDetail(value: unknown): ResourceDetail {
   if (
     target.kind === "presentation" &&
     boundedString(target.presentation_id, 4096) &&
-    (target.block_id === undefined || boundedString(target.block_id, 1024))
+    (target.block_id === undefined || boundedString(target.block_id, 1024)) &&
+    (target.section === undefined ||
+      ["artifact", "visualization", "dataset", "filter", "section"].includes(
+        String(target.section),
+      ))
   )
     return {
       ...envelope,
@@ -77,6 +81,7 @@ export function parseDetail(value: unknown): ResourceDetail {
         kind: "presentation",
         presentation_id: target.presentation_id,
         ...(target.block_id ? { block_id: target.block_id as string } : {}),
+        ...(target.section ? { section: target.section as string } : {}),
       },
     };
   if (
@@ -195,7 +200,9 @@ export function parseDetail(value: unknown): ResourceDetail {
   }
   if (
     target.kind !== "asset-column" ||
-    target.field !== "type" ||
+    !["type", "description", "primary_key", "update_on_merge", "merge_sql"].includes(
+      String(target.field),
+    ) ||
     !boundedString(target.asset_id, 4096) ||
     !boundedString(target.column, 1024)
   ) {
@@ -208,7 +215,7 @@ export function parseDetail(value: unknown): ResourceDetail {
       kind: "asset-column",
       asset_id: target.asset_id,
       column: target.column,
-      field: "type",
+      field: target.field as ColumnTarget["field"],
     },
   };
 }
@@ -216,7 +223,7 @@ export function parseDetail(value: unknown): ResourceDetail {
 export function resourceLabel(target: NavigableTarget): string {
   switch (target.kind) {
     case "asset-column":
-      return "Edit type";
+      return `Edit ${target.field.replaceAll("_", " ")}`;
     case "asset-section":
       return target.section === "source" ? "View source" : `Open ${target.section}`;
     case "data-object":
@@ -224,9 +231,9 @@ export function resourceLabel(target: NavigableTarget): string {
     case "connection":
       return "Open connection";
     case "notebook-cell":
-      return "View saved cell";
+      return "Open cell";
     case "presentation":
-      return target.block_id ? "View visualization definition" : "View presentation definition";
+      return target.block_id ? "Open definition" : "Open presentation";
   }
 }
 

@@ -1,4 +1,4 @@
-import { Link, Outlet, useNavigate } from "@tanstack/react-router";
+import { Link, Outlet, useNavigate, useBlocker } from "@tanstack/react-router";
 import {
   Boxes,
   CheckCircle2,
@@ -13,8 +13,18 @@ import {
   Trash2,
   UnlockKeyhole,
 } from "lucide-react";
-import { ComponentType, HTMLAttributes, ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  ComponentType,
+  HTMLAttributes,
+  ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
+import { useResourceNavigation } from "@/hooks/use-resource-navigation";
+import { ResourceLink } from "./resource-link";
 import { WorkspaceConnectionFormFields } from "@/components/workspace-connection-form-fields";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -922,7 +932,23 @@ export function AppProjectConnectionsPage({
     workspaceConfigStatusTone,
     workspaceEnvironmentPolicies,
   } = settings;
-  const [sheetState, setSheetState] = useState<ConnectionSheetState | null>(null);
+  const resource = useResourceNavigation();
+  const linked = resource.detail?.target.kind === "connection" ? resource.detail : undefined;
+  selectedConnection = linked?.target.connection ?? selectedConnection;
+  selectedEnvironment = linked?.environment ?? selectedEnvironment;
+  const [createState, setSheetState] = useState<ConnectionSheetState | null>(null);
+  const matches = normalizedConfigEnvironments.flatMap((e) =>
+    !selectedEnvironment || e.name === selectedEnvironment
+      ? e.connections
+          .filter((c) => c.name === selectedConnection)
+          .map((c) => ({ environment: e.name, connection: c.name }))
+      : [],
+  );
+  const sheetState: ConnectionSheetState | null = selectedConnection
+    ? matches.length === 1
+      ? { mode: "edit", ...matches[0] }
+      : null
+    : createState;
 
   useEffect(() => {
     void loadWorkspaceConfig();
@@ -936,37 +962,22 @@ export function AppProjectConnectionsPage({
     }
   }, [loadWorkspaceEnvironmentPolicy, normalizedConfigEnvironments, workspaceEnvironmentPolicies]);
 
-  useEffect(() => {
-    if (!selectedConnection) return;
-    const preferredEnvironment = normalizedConfigEnvironments.find(
-      (environment) =>
-        environment.name === selectedEnvironment &&
-        environment.connections.some((connection) => connection.name === selectedConnection),
-    );
-    const environment =
-      preferredEnvironment ??
-      normalizedConfigEnvironments.find((item) =>
-        item.connections.some((connection) => connection.name === selectedConnection),
-      );
-    if (!environment) return;
-    setSheetState((current) =>
-      current?.mode === "edit" &&
-      current.environment === environment.name &&
-      current.connection === selectedConnection
-        ? current
-        : { mode: "edit", environment: environment.name, connection: selectedConnection },
-    );
-  }, [normalizedConfigEnvironments, selectedConnection, selectedEnvironment]);
-
   const closeSheet = () => {
     setSheetState(null);
     if (selectedConnection || selectedEnvironment) {
-      void navigate({ to: "/project/connections", search: {}, replace: true });
+      void navigate({
+        to: "/project/connections",
+        search: (s) => ({ ...s, detail: undefined, connection: undefined }),
+        replace: true,
+      });
     }
   };
 
   return (
     <div className="flex min-h-0 flex-col gap-4">
+      {selectedConnection && workspaceConfig && matches.length !== 1 ? (
+        <p role="alert">The linked connection is missing or ambiguous in this environment.</p>
+      ) : null}
       <SettingsStatus message={workspaceConfigStatusMessage} tone={workspaceConfigStatusTone} />
       <SecretBindingsAlert message={workspaceConfig?.secret_bindings_error} />
       {workspaceConfig?.secret_vault ? <LocalVaultCard settings={settings} /> : null}
@@ -1015,13 +1026,7 @@ export function AppProjectConnectionsPage({
                   <ConnectionRow
                     key={connection.name}
                     connection={connection}
-                    onSelect={() =>
-                      setSheetState({
-                        mode: "edit",
-                        environment: environment.name,
-                        connection: connection.name,
-                      })
-                    }
+                    environment={environment.name}
                   />
                 ))}
               </div>
@@ -1029,7 +1034,13 @@ export function AppProjectConnectionsPage({
           </SettingsCard>
         ))
       )}
-      <ConnectionSheet state={sheetState} onClose={closeSheet} settings={settings} />
+      <ConnectionSheet
+        key={sheetState ? JSON.stringify(sheetState) : "closed"}
+        state={sheetState}
+        onClose={closeSheet}
+        settings={settings}
+        focusedField={linked?.target.field}
+      />
     </div>
   );
 }
@@ -1240,16 +1251,16 @@ function LocalVaultCard({ settings }: { settings: ReturnType<typeof useWorkspace
 
 function ConnectionRow({
   connection,
-  onSelect,
+  environment,
 }: {
   connection: WorkspaceConfigConnection;
-  onSelect: () => void;
+  environment: string;
 }) {
   return (
-    <button
-      type="button"
+    <ResourceLink
+      target={{ kind: "connection", connection: connection.name }}
+      environment={environment}
       className="group flex items-center gap-3 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-muted/50"
-      onClick={onSelect}
     >
       <span className="min-w-0 flex-1 truncate font-mono text-sm font-medium">
         {connection.name}
@@ -1259,15 +1270,17 @@ function ConnectionRow({
         <Badge variant="secondary">{connection.load_category}</Badge>
       ) : null}
       <Pencil className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-    </button>
+    </ResourceLink>
   );
 }
 
 function ConnectionSheet({
+  focusedField,
   state,
   onClose,
   settings,
 }: {
+  focusedField?: string;
   state: ConnectionSheetState | null;
   onClose: () => void;
   settings: ReturnType<typeof useWorkspaceSettingsData>;
@@ -1282,7 +1295,38 @@ function ConnectionSheet({
     workspaceConfigStatusMessage,
     workspaceConfigStatusTone,
   } = settings;
+  const resource = useResourceNavigation();
   const mode = state?.mode ?? "edit";
+  const [dirty, setDirty] = useState(false);
+  const acceptingSave = useRef(false);
+  const [snapshot] = useState(normalizedConfigEnvironments);
+  useBlocker({
+    shouldBlockFn: ({ current, next }) => {
+      const a = current.search as { environment?: string; connection?: string };
+      const b = next.search as { environment?: string; connection?: string };
+      if (
+        current.pathname === next.pathname &&
+        a.connection === b.connection &&
+        a.environment === b.environment
+      )
+        return false;
+      return (
+        !acceptingSave.current &&
+        (workspaceConfigBusy || (dirty && !window.confirm("Discard unsaved connection changes?")))
+      );
+    },
+    enableBeforeUnload: dirty,
+  });
+  const guardedClose = () => {
+    if (
+      acceptingSave.current ||
+      (!workspaceConfigBusy && (!dirty || window.confirm("Discard unsaved connection changes?")))
+    ) {
+      setDirty(false);
+      acceptingSave.current = true;
+      onClose();
+    }
+  };
   const ingestrEnabled = useIngestrEnabled(workspaceConfig);
   // Stable identity matters: this array is an effect dependency inside
   // useWorkspaceConnectionForm, and a fresh [] per render loops the effect.
@@ -1317,7 +1361,7 @@ function ConnectionSheet({
   const form = useWorkspaceConnectionForm({
     connectionTypes: connectionTypes,
     defaultEnvironment: workspaceConfig?.default_environment,
-    environments: normalizedConfigEnvironments,
+    environments: snapshot,
     mode,
     onCreateConnection: handleCreateWorkspaceConnection,
     onDeleteConnection: handleDeleteWorkspaceConnection,
@@ -1329,6 +1373,10 @@ function ConnectionSheet({
     selectedEnvironmentName: state?.environment ?? null,
   });
 
+  const changeForm: typeof form.setConnectionForm = (value) => {
+    setDirty(true);
+    form.setConnectionForm(value);
+  };
   const validateConnection = async () => {
     setValidateBusy(true);
     setValidateMessage(null);
@@ -1355,6 +1403,8 @@ function ConnectionSheet({
   const save = async () => {
     try {
       await form.handleSave();
+      acceptingSave.current = true;
+      setDirty(false);
       onClose();
     } catch {
       // Keep the sheet open; the error alert below shows what failed.
@@ -1364,6 +1414,8 @@ function ConnectionSheet({
   const remove = async () => {
     try {
       await form.handleDelete();
+      acceptingSave.current = true;
+      setDirty(false);
       onClose();
     } catch {
       // Keep the sheet open; the error alert below shows what failed.
@@ -1371,7 +1423,7 @@ function ConnectionSheet({
   };
 
   return (
-    <Sheet open={state !== null} onOpenChange={(open) => !open && onClose()}>
+    <Sheet open={state !== null} onOpenChange={(open) => !open && guardedClose()}>
       <SheetContent className="min-h-0 overflow-hidden data-[side=right]:w-full data-[side=right]:max-w-full data-[side=right]:sm:max-w-xl">
         <SheetHeader className="shrink-0 p-4 sm:p-6">
           <SheetTitle className="flex items-center gap-2">
@@ -1388,7 +1440,11 @@ function ConnectionSheet({
           className="min-h-0 flex-1"
           viewportClassName="px-4 pb-4 [&>div]:!block [&>div]:w-full"
         >
-          <div className="grid gap-4">
+          <div className="grid gap-4" onChangeCapture={() => setDirty(true)}>
+            {focusedField &&
+            !form.selectedConnectionType?.fields.some((f) => f.name === focusedField) ? (
+              <p role="alert">The linked field no longer exists.</p>
+            ) : null}
             {workspaceConfigStatusTone === "error" ? (
               <SettingsStatus
                 message={workspaceConfigStatusMessage}
@@ -1397,6 +1453,15 @@ function ConnectionSheet({
             ) : null}
             <SecretBindingsAlert message={workspaceConfig?.secret_bindings_error} />
             <WorkspaceConnectionFormFields
+              focusedField={focusedField}
+              onFieldFocus={(field) => {
+                if (state?.mode === "edit" && field !== focusedField)
+                  void resource.open(
+                    { kind: "connection", connection: state.connection, field },
+                    state.environment,
+                    true,
+                  );
+              }}
               busy={workspaceConfigBusy}
               canValidate={Boolean(
                 form.connectionForm.environmentName &&
@@ -1419,26 +1484,24 @@ function ConnectionSheet({
               validateTone={validateTone}
               showActions={false}
               onEnvironmentChange={(value) =>
-                form.setConnectionForm((current) => ({ ...current, environmentName: value }))
+                changeForm((current) => ({ ...current, environmentName: value }))
               }
               onFieldValueChange={(fieldName, value) =>
-                form.setConnectionForm((current) => ({
+                changeForm((current) => ({
                   ...current,
                   values: { ...current.values, [fieldName]: value },
                 }))
               }
-              onNameChange={(value) =>
-                form.setConnectionForm((current) => ({ ...current, name: value }))
-              }
+              onNameChange={(value) => changeForm((current) => ({ ...current, name: value }))}
               onSecretChange={(fieldName, change) =>
-                form.setConnectionForm((current) => ({
+                changeForm((current) => ({
                   ...current,
                   secretChanges: { ...current.secretChanges, [fieldName]: change },
                 }))
               }
               onSave={() => void save()}
               onTypeChange={(value) =>
-                form.setConnectionForm((current) => ({
+                changeForm((current) => ({
                   ...current,
                   type: value,
                   values: buildConnectionFieldDefaults({

@@ -42,6 +42,7 @@ import type {
 export function WorkspaceConnectionFormFields({
   busy,
   focusedField,
+  onFieldFocus,
   canValidate,
   connectionForm,
   connectionTypes,
@@ -68,6 +69,7 @@ export function WorkspaceConnectionFormFields({
 }: {
   busy: boolean;
   focusedField?: string;
+  onFieldFocus?: (field: string) => void;
   canValidate: boolean;
   connectionForm: ConnectionFormState;
   connectionTypes: WorkspaceConfigConnectionType[];
@@ -100,7 +102,10 @@ export function WorkspaceConnectionFormFields({
       if (!element.isConnected) return;
       const input = element.querySelector<HTMLElement>('input,button,[role="combobox"]');
       input?.focus({ preventScroll: true });
-      element.scrollIntoView({ block: "nearest" });
+      const viewport = element.closest('[data-slot="scroll-area-viewport"]');
+      if (viewport)
+        viewport.scrollTop +=
+          element.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 32;
     });
   };
   return (
@@ -196,6 +201,7 @@ export function WorkspaceConnectionFormFields({
                   key={field.name}
                   ref={focusField(field.name)}
                   data-focused-field={field.name === focusedField || undefined}
+                  onFocusCapture={() => onFieldFocus?.(field.name)}
                   className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
                 >
                   <div className="flex min-w-0 items-center justify-between gap-2 bg-muted/30 px-4 py-2">
@@ -343,6 +349,7 @@ export function WorkspaceConnectionFormFields({
                   key={field.name}
                   ref={focusField(field.name)}
                   data-focused-field={field.name === focusedField || undefined}
+                  onFocusCapture={() => onFieldFocus?.(field.name)}
                   className="flex items-center justify-between gap-4 border-t px-4 py-3 first:border-t-0"
                 >
                   <div>
@@ -366,6 +373,7 @@ export function WorkspaceConnectionFormFields({
                   key={field.name}
                   ref={focusField(field.name)}
                   data-focused-field={field.name === focusedField || undefined}
+                  onFocusCapture={() => onFieldFocus?.(field.name)}
                   className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
                 >
                   <div
@@ -391,6 +399,7 @@ export function WorkspaceConnectionFormFields({
                 key={field.name}
                 ref={focusField(field.name)}
                 data-focused-field={field.name === focusedField || undefined}
+                onFocusCapture={() => onFieldFocus?.(field.name)}
                 className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
               >
                 <div

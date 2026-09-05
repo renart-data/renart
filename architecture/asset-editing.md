@@ -131,12 +131,12 @@ changed atomically after the dependency is added.
 
 ## 6. UI (`web/components/app/`)
 
-Diagnostic links reuse the guided metadata cards in an independent routed
-detail region: exact type/NOT-NULL targets, Columns for aggregate schema drift,
-and verified section fallbacks for dependencies/materialization/source. The
-primary draft and left navigation remain independent. Connection-field details
-reuse the settings form and guard unsaved changes. See
-[diagnostic navigation](diagnostic-navigation.md) for identity and coverage rules.
+Diagnostic links navigate to the actual asset workbench and reveal its existing
+Properties tabs/fields or Monaco source. Normal tab and column-field navigation
+also updates the URL. Only the required view changes: result selection, panel
+collapse and independent sidebar context remain intact. Connection links use the
+normal settings Sheet and guard unsaved changes. See
+[UI navigation](diagnostic-navigation.md) for identity and coverage rules.
 
 - **Asset creation:** the Build view's creation dialog presents SQL, Python,
   HTTP API, Seed, Sensor, and Load as equal-size intent choices. The second axis

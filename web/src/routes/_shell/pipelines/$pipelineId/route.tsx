@@ -40,7 +40,8 @@ function AppPipelineLayoutRoute() {
           params: { pipelineId, assetId },
           search: {
             ...search,
-            result: search.result === "query" ? "inspect" : search.result,
+            detail: undefined,
+            result: search.result,
             editor: "asset",
           },
         })

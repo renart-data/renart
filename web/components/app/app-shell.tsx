@@ -64,6 +64,7 @@ import { SourceControlDiffViewer } from "./source-control-diff-viewer";
 import { AppWorkbenchLayout } from "./workbench/workbench-layout";
 import { AppWorkbenchMobileToolTabs } from "./workbench/workbench-mobile-tool-tabs";
 import { WorkbenchProvider } from "./workbench/workbench-slots";
+import { ResourceNavigation } from "./resource-navigation";
 
 // Stage/unstage row actions reveal on hover on pointer devices, but touch
 // devices have no hover state — so always show them where hover isn't
@@ -111,6 +112,7 @@ export function AppShell() {
         <ServerOfflineOverlay />
         <AppHeader sourceControl={sourceControl} activeMode={activeMode?.id ?? null} />
         <AppWorkbenchMobileToolTabs />
+        <ResourceNavigation />
 
         <main className="min-h-0 flex-1 overflow-hidden">
           <AppWorkbenchLayout>

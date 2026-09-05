@@ -1,14 +1,11 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useAtomValue } from "jotai";
-import { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
-import { selectedEnvironmentAtom } from "@/lib/atoms/workspace";
+import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 import type { ResourceTarget } from "@/lib/generated/api-types";
-import { getPinnedProjectId } from "@/lib/project-context";
-import { detailSearch, parseDetail, resourceLabel } from "@/lib/resource-navigation";
+import { resourceLabel } from "@/lib/resource-navigation";
 
 // Real navigation, not a resolution command. The generated href carries all
-// context required by a fresh tab; ordinary clicks keep the primary route.
+// context required by a fresh tab; ordinary clicks reveal the existing owner UI.
 export function ResourceLink({
   target,
   environment,
@@ -21,24 +18,19 @@ export function ResourceLink({
   className?: string;
 }) {
   const location = useLocation();
-  const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
-  const { workspaceConfig } = useWorkspaceSettingsData();
-  const project = getPinnedProjectId() ?? workspaceConfig?.project_id;
-  if (!target || !project) return null;
-  let detail;
+  const { destination } = useResourceNavigation();
+  let next;
   try {
-    detail = parseDetail({
-      v: 1,
-      environment: environment || selectedEnvironment || workspaceConfig?.default_environment,
-      target,
-    });
+    next = target ? destination(target, environment) : undefined;
   } catch {
     return null;
   }
+  if (!next) return null;
+  const detail = next.search.detail as import("@/lib/resource-navigation").ResourceDetail;
   return (
     <Link
-      to="."
-      search={detailSearch(location.search, project, detail)}
+      to={next.pathname}
+      search={next.search}
       replace={
         JSON.stringify((location.search as { detail?: unknown }).detail) === JSON.stringify(detail)
       }
@@ -52,7 +44,7 @@ export function ResourceLink({
         children
           ? undefined
           : detail.target.kind === "asset-column"
-            ? `Edit type of ${detail.target.column}`
+            ? `${resourceLabel(detail.target)} of ${detail.target.column}`
             : resourceLabel(detail.target)
       }
     >

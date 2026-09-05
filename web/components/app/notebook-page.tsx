@@ -1,5 +1,6 @@
 "use client";
 import { ResourceLink } from "./resource-link";
+import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -474,6 +475,13 @@ function NotebookLibrarySidebar({
 }
 
 export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
+  const resource = useResourceNavigation();
+  const cellElements = useRef(new Map<string, HTMLDivElement>());
+  const linkedCell =
+    resource.detail?.target.kind === "notebook-cell" &&
+    resource.detail.target.notebook_id === notebookId
+      ? resource.detail.target.cell_id
+      : undefined;
   const workspace = useAtomValue(workspaceAtom);
   const notebookRuntimeEvent = useAtomValue(notebookRuntimeEventsAtom)[notebookId] ?? null;
   const notebookAgentEvent = useAtomValue(notebookAgentEventsAtom)[notebookId] ?? null;
@@ -1193,14 +1201,17 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     },
     [selectBuildDocument],
   );
-  const goToCell = useCallback((cellId: string) => {
-    const target = document.querySelector<HTMLElement>(`[data-notebook-cell-id="${cellId}"]`);
+  const revealCell = useCallback((cellId: string) => {
+    const target = cellElements.current.get(cellId);
     if (!target) {
       return;
     }
 
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    target.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+    if (!target.contains(document.activeElement)) target.focus({ preventScroll: true });
+    const viewport = notebookViewportRef.current;
+    if (viewport)
+      viewport.scrollTop +=
+        target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 32;
 
     // Toggle the attribute off for one frame so jumping to the same definition
     // twice restarts the animation instead of leaving an already-finished one.
@@ -1220,6 +1231,15 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       }, NOTEBOOK_CELL_JUMP_HIGHLIGHT_MS);
     });
   }, []);
+  const linkedCellAvailable =
+    notebook?.cells.filter((cell) => cell.cell_id === linkedCell).length === 1;
+  useEffect(() => {
+    if (linkedCell && linkedCellAvailable) revealCell(linkedCell);
+  }, [linkedCell, linkedCellAvailable, revealCell]);
+  const goToCell = (cellId: string) => {
+    void resource.open({ kind: "notebook-cell", notebook_id: notebookId, cell_id: cellId });
+    revealCell(cellId);
+  };
   const goToBlock = useCallback(
     (block: WebNotebookBlock) => {
       if (block.visualization && block.id) {
@@ -1646,6 +1666,11 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         onConfirm={() => void confirmDeleteCell()}
       />
 
+      {linkedCell && !linkedCellAvailable ? (
+        <p role="alert" className="mx-3 mb-2 text-sm text-destructive">
+          The linked notebook cell is missing or ambiguous.
+        </p>
+      ) : null}
       {notebook.problems?.length ? (
         <div className="mx-3 mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-500/25 dark:bg-red-500/10 dark:text-red-200">
           {notebook.problems.map((problem) => (
@@ -1709,6 +1734,11 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                     <div
                       key={block.cell}
                       data-notebook-cell-id={block.cell}
+                      tabIndex={-1}
+                      ref={(node) => {
+                        if (node) cellElements.current.set(block.cell!, node);
+                        else cellElements.current.delete(block.cell!);
+                      }}
                       data-notebook-block-entering={entering || undefined}
                       data-notebook-cell-jump-highlight={
                         jumpHighlightedCellId === block.cell || undefined
@@ -1716,7 +1746,19 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                       data-notebook-block-selected={selectedBlockID === blockKey || undefined}
                       className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
                       onPointerDown={() => selectContentBlock(blockKey)}
-                      onFocusCapture={() => selectContentBlock(blockKey)}
+                      onFocusCapture={() => {
+                        selectContentBlock(blockKey);
+                        if (linkedCell !== block.cell)
+                          void resource.open(
+                            {
+                              kind: "notebook-cell",
+                              notebook_id: notebookId,
+                              cell_id: block.cell!,
+                            },
+                            undefined,
+                            true,
+                          );
+                      }}
                     >
                       {cell.notebook_source ? (
                         <NotebookSourceCard

@@ -22,7 +22,7 @@ const customerStatsAssetId = Buffer.from("analytics/assets/analytics/customer_st
 test.describe("app build editor live", () => {
   test.use({ fixtureName: "configured-workspace" });
 
-  test("opens the Data Browser in place and links selected files into independent details", async ({
+  test("opens the Data Browser in place and links selected files to the existing Data Browser page", async ({
     liveApp,
     page,
   }, testInfo) => {
@@ -63,7 +63,7 @@ test.describe("app build editor live", () => {
     await expect(detail).toBeVisible();
     await expect(detail.getByRole("heading", { name: "browser-sample.csv" })).toBeVisible();
     await expect(detail.getByRole("tab", { name: /Columns/ })).toContainText("2");
-    expect(new URL(page.url()).pathname).toBe(new URL(buildURL).pathname);
+    expect(new URL(page.url()).pathname).toBe("/data");
     expect(new URL(page.url()).searchParams.has("detail")).toBe(true);
   });
 

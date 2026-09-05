@@ -66,7 +66,7 @@ export function WorkbenchProvider({
 
   useEffect(() => {
     setMobileNavigationOpen(false);
-  }, [navigation?.mode]);
+  }, [navigation?.mode, navigation?.sidebar]);
 
   const registerSlot = useCallback((slot: WorkbenchSlotName) => {
     setSlotCounts((current) => ({ ...current, [slot]: current[slot] + 1 }));

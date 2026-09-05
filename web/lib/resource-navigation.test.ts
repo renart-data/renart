@@ -19,6 +19,12 @@ const detail = {
 };
 
 describe("resource navigation", () => {
+  it("addresses every editable column field, not just diagnostic type fixes", () => {
+    for (const field of ["type", "description", "primary_key", "update_on_merge", "merge_sql"])
+      expect(parseDetail({ ...detail, target: { ...detail.target, field } }).target.field).toBe(
+        field,
+      );
+  });
   it("builds a cold-tab href without losing the primary location", () => {
     const url = new URL(
       resourceHref("https://renart.local/pipelines/p?editor=adhoc&result=query", "project", detail),

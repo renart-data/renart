@@ -93,50 +93,29 @@ For hierarchical URLs that should not visually nest parent pages, use pathful
 layout routes (`route.tsx` renders `<Outlet />`) with leaf `index.tsx` files —
 not underscore-flattened route hacks.
 
-### Addressable diagnostic details
+### Addressable UI places
 
-`resource-navigation.ts` defines the versioned, validated `detail` search
-contract, independent of the primary pathname. Supported targets cover asset
-columns/repair sections, connections/fields, data objects/columns, saved notebook
-cells and presentation definitions. The generated `ResourceTarget` comes from the
-Go `navigationtarget` leaf package; SQL intelligence supplies a semantic
-`authoringdiag.Subject`, never a URL and never a column name extracted from
-diagnostic prose. Pipeline type-check and deployment readiness preserve the
-target and original diagnostic code. See [diagnostic navigation](diagnostic-navigation.md)
-for the explicit coverage policy and limitations.
+The existing page routes own their UI. web/lib/ui-navigation.ts maps structured
+targets to those routes and applies only the search changes needed to reveal the
+target. ResourceLink and Monaco hrefs use that same mapping. The v1 detail search
+value is now a locator inside the ordinary owner page, not an auxiliary panel.
+The former ResourceDetailOutlet and duplicate forms/read-only document views
+have been removed. See [UI navigation](diagnostic-navigation.md) for the complete
+contract, state ownership, migration compatibility and remaining coverage.
 
-`ResourceLink` renders an actual router anchor, preserving the main editor/view
-and including the actual project ID, environment, asset ID and exact declared
-column spelling. Root search middleware retains shared address keys during
-ordinary child-route navigation. Root `beforeLoad` validates an explicit project
-against the process project directory before mounting workspace consumers/SSE;
-invalid projects fail visibly instead of using the default. A validated runtime
-pin also works when session storage is unavailable. Legacy URLs keep their
-session/default scope; the server's workspace identity locks that scope once
-loaded. Cross-project transitions still require a document navigation/new tab.
+Asset Properties tabs/fields, Connection fields, Data Browser objects, notebook
+cells and presentation component selection are addressed through this common
+path. Presentation Visual/Definition mode and run tabs/event/timeline targets
+use the existing route search contracts. Normal interactions update those
+addresses too. Required owner/view changes do not reset unrelated result tabs,
+collapsed panels or compatible sidebar selection. Actual asset changes use the
+normal editor lifecycle and existing draft store, not hidden duplicate editors.
 
-The Workbench owns one lazy-loaded detail outlet. Desktop details occupy the
-right edge; mobile details use a Sheet. The normal inspector portal host stays
-mounted but hidden and inert while the routed surface is active, preserving its
-local form state without leaving two interactive inspectors. Opening a target
-does not dispatch tool selection or change the primary asset, editor, canvas,
-sidebar width, expansion or scroll state. Only the relevant form/controller is
-mounted for the target, not a hidden Build page. Its environment is an explicit
-input, not a write to the global execution environment.
-
-Column identity is exact and must be unique. A removed/renamed/ambiguous target
-shows a notice, never a guessed replacement. A controlled row opens and focuses
-its type input once per navigation entry using a semantic ref; only its own
-scroll viewport moves. The detail outlet performs no metadata edits, schema sync
-or row previews on arrival; the primary route retains its normal loaders.
-Browser Back/Forward restores detail state; explicit Close clears
-the detail with replace, which is also safe for cold external arrivals.
-
-The column form and detail outlet are lazy-loaded. The first navigation slice
-measured 567.3 KiB of incremental pipeline-authoring JavaScript; that family's
-raw-byte budget is 585000 (previously 575000), a 10000-byte feature allowance.
-Initial JS/CSS budgets are unchanged. See the current `dist/bundle-report.md`
-after building for the measured dependency graph.
+Root bootstrap validates explicit project scope before workspace consumers/SSE;
+cold tabs work without session storage and explicit scope overrides a stale pin.
+Only project scope is retained across unrelated routes, not an old focus target.
+Missing identities fail visibly. Save, deploy, verify and preview are commands
+and never inferred from a location URL. Bundle gates remain unchanged.
 
 ### App shell + primary views
 
@@ -188,8 +167,8 @@ after building for the measured dependency graph.
   object view powers both the `/data` workbench route and Build's in-place Data
   Browser. In Build, selecting the rail or mobile tab swaps only the contextual
   sidebar, so the active editor/canvas remains mounted; selecting a table or file
-  opens its independently routed schema/preview detail. Direct `/data` navigation
-  renders that same detail as the primary workspace. Navigator state remains
+  navigates to its schema/preview in the existing `/data` page. Direct `/data`
+  navigation renders that same object view as the primary workspace. Navigator state remains
   separate from the addressed object and its preview. It loads configured
   query-capable connections as credential-free summaries and navigates their
   databases, schemas, and objects lazily through the server Data Browser API.
@@ -227,9 +206,10 @@ after building for the measured dependency graph.
   mutation APIs and keep the in-memory draft intact. Ad-hoc mode clears the
   route/global canvas selection while retaining the previous asset only as
   graph/Jinja context. Selecting any asset, including that same asset, restores
-  the repository editor and changes a Query result selection back to Inspect;
-  selecting the Query result tab conversely opens ad-hoc mode (and changes a
-  canvas-only route to split). A lightly tinted workspace/header and dedicated
+  the repository editor without changing the independent result selection;
+  explicitly selecting the Query result tab opens ad-hoc mode (and changes a
+  canvas-only route to split). Restoring a Query-tab URL does not switch the
+  editor. A lightly tinted workspace/header and dedicated
   Monaco background distinguish the scratch document visually without adding
   another explanatory panel. Ad-hoc results keep the
   effective rendered query in a compact disclosure above the table. When the

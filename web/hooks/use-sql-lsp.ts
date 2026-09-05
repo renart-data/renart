@@ -2,7 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
-import { parseDetail, resourceHref } from "@/lib/resource-navigation";
+import { parseDetail } from "@/lib/resource-navigation";
+import { uiResourceHref } from "@/lib/ui-navigation";
 import type * as MonacoNS from "monaco-editor";
 import { useAtomValue } from "jotai";
 
@@ -634,10 +635,11 @@ export function useSQLLSP(
                 return {
                   value: diagnostic.code ?? "Open definition",
                   target: monaco.Uri.parse(
-                    resourceHref(
+                    uiResourceHref(
                       window.location.href,
                       linkProject,
                       parseDetail({ v: 1, environment: linkEnvironment, target }),
+                      providerStateRef.current.workspace ?? undefined,
                     ),
                   ),
                 };

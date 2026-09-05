@@ -158,6 +158,7 @@ import { AppAdhocEditor, useAdhocConnectionSelection, useAdhocQueryDraft } from 
 import { AppAssetEditor } from "./asset-editor";
 import { ApiParametersEditor } from "./api-parameters-editor";
 import { AssetGuidedCards, type QualityCheckFocus } from "./asset-guided-cards";
+import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 import { NewAssetDialog, NewFolderDialog, NewPipelineDialog } from "./build-create-dialogs";
 import { ConnectionSelect } from "./connection-select";
 import {
@@ -468,9 +469,11 @@ export function AppBuildPage({
   const workbenchEnabled = Boolean(workbenchNavigation?.workbench);
   const activeWorkbenchTool = workbenchSession.modes.build.activeTool;
   const isMobileWorkbench = useIsMobile();
+  const narrowProperties = useIsMobile(1280);
   const navigate = useNavigate();
   const location = useLocation();
   const view = appBuildViewFromPath(location.pathname);
+  const resourceNavigation = useResourceNavigation();
   const buildSearch: AppBuildSearch = useMemo(
     () => ({ result: resultTab, editor: editorMode }),
     [editorMode, resultTab],
@@ -839,6 +842,28 @@ export function AppBuildPage({
     toggleInspectorCollapsed,
     setResultsCollapsed,
   } = useBuildSelectionLayout({ routedAssetId: selectedAssetId, firstAssetId });
+  const resourceTarget = resourceNavigation.detail?.target;
+  const propertyTarget =
+    resourceTarget &&
+    (resourceTarget.kind === "asset-column" ||
+      (resourceTarget.kind === "asset-section" && resourceTarget.section !== "source")) &&
+    resourceTarget.asset_id === selectedAssetId
+      ? resourceTarget
+      : undefined;
+  const propertyToken = JSON.stringify(propertyTarget);
+  const hadPropertyTarget = useRef(false);
+  useEffect(() => {
+    if (!propertyToken) {
+      if (hadPropertyTarget.current) setInspectorOpen(false);
+      hadPropertyTarget.current = false;
+      return;
+    }
+    hadPropertyTarget.current = true;
+    if (window.matchMedia("(min-width: 1280px)").matches) setInspectorCollapsed(false);
+    else setInspectorOpen(true);
+    // Reveal only the existing properties surface. Results, editor and sidebar
+    // have their own state and are deliberately not touched here.
+  }, [propertyToken]);
   const selectedAsset =
     displayedPipelineAssets.find((asset) => asset.id === effectiveSelectedAssetId) ??
     displayedPipelineAssets[0];
@@ -1073,19 +1098,7 @@ export function AppBuildPage({
     resultsPanelRef.current?.expand();
   };
 
-  // Keep direct/bookmarked Query-tab URLs consistent with the interaction:
-  // the query results belong to the ad-hoc scratch editor, not an asset file.
-  useEffect(() => {
-    if (resultTab !== "query" || editorMode === "adhoc" || !effectiveSelectedAssetId) {
-      return;
-    }
-    void navigate({
-      to: appAssetViewPath(view === "canvas" ? "split" : view),
-      params: { pipelineId, assetId: effectiveSelectedAssetId },
-      search: { ...buildSearch, result: "query", editor: "adhoc" },
-      replace: true,
-    });
-  }, [buildSearch, editorMode, effectiveSelectedAssetId, navigate, pipelineId, resultTab, view]);
+  // Result selection and repository/scratch editor selection are independent.
   const runTypeCheck = useCallback(
     async (openTab = false) => {
       if (!activePipeline) {
@@ -1388,10 +1401,6 @@ export function AppBuildPage({
   };
   const selectAsset = (assetId: string) => {
     pickAsset(assetId);
-    if (workbenchEnabled) {
-      workbenchDispatch({ type: "tool-selected", mode: "build", tool: "resources" });
-      setMobileNavigationOpen(false);
-    }
     // The local selection can swap Monaco immediately. Route reconciliation
     // (including the canvas highlight and URL) is non-urgent and must not hold
     // that paint behind the rest of the Build view.
@@ -1410,16 +1419,8 @@ export function AppBuildPage({
       setInspectorOpen(true);
     }
   };
-  const goToAsset = (targetPipelineId: string, assetId: string) => {
-    void navigate({
-      to: appAssetViewPath(view),
-      params: { pipelineId: targetPipelineId, assetId },
-      search: {
-        ...buildSearch,
-        result: buildSearch.result === "query" ? "inspect" : buildSearch.result,
-        editor: "asset",
-      },
-    });
+  const goToAsset = (_targetPipelineId: string, assetId: string) => {
+    void resourceNavigation.open({ kind: "asset-section", asset_id: assetId, section: "source" });
   };
   const runAssetById = (assetId: string) => {
     const target = displayedPipelineAssets.find((asset) => asset.id === assetId);
@@ -1462,7 +1463,7 @@ export function AppBuildPage({
         params: { pipelineId, assetId: effectiveSelectedAssetId },
         search: {
           ...buildSearch,
-          result: buildSearch.result === "query" ? "inspect" : buildSearch.result,
+          result: buildSearch.result,
           editor: "asset",
         },
       });
@@ -1520,7 +1521,7 @@ export function AppBuildPage({
         params: { pipelineId },
         search: {
           ...buildSearch,
-          result: buildSearch.result === "query" ? "inspect" : buildSearch.result,
+          result: buildSearch.result,
           editor: "asset",
         },
       });
@@ -1549,7 +1550,7 @@ export function AppBuildPage({
       params: { pipelineId: document.pipelineId, assetId: document.assetId },
       search: {
         ...buildSearch,
-        result: buildSearch.result === "query" ? "inspect" : buildSearch.result,
+        result: buildSearch.result,
         editor: "asset",
       },
     });
@@ -1756,7 +1757,7 @@ export function AppBuildPage({
           </div>
         </WorkbenchPortal>
       ) : null}
-      {workbenchEnabled && !inspectorCollapsed ? (
+      {workbenchEnabled && !inspectorCollapsed && !narrowProperties ? (
         <WorkbenchPortal slot="inspector">
           <Inspector
             asset={selectedAsset}
@@ -1944,7 +1945,13 @@ export function AppBuildPage({
             </SheetContent>
           </Sheet>
         ) : null}
-        <Sheet open={inspectorOpen} onOpenChange={setInspectorOpen}>
+        <Sheet
+          open={inspectorOpen}
+          onOpenChange={(open) => {
+            setInspectorOpen(open);
+            if (!open && propertyTarget) void resourceNavigation.clear();
+          }}
+        >
           <SheetContent side="right" className="w-[22rem] gap-0 p-0 sm:max-w-[22rem]">
             <SheetTitle className="sr-only">Asset properties</SheetTitle>
             <Inspector

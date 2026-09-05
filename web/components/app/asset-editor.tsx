@@ -14,6 +14,8 @@ import { missingPythonImports } from "@/lib/notebook-python-deps";
 import { WebAsset } from "@/lib/types";
 
 import { MissingPythonDepsBanner } from "./missing-python-deps";
+import { useResourceNavigation } from "@/hooks/use-resource-navigation";
+import { sourceAnchorFingerprint } from "@/lib/deployment-diff-annotations";
 
 /**
  * Monaco editor for a real workspace asset inside the app build page.
@@ -41,17 +43,48 @@ export function AppAssetEditor({
   const [lspActionError, setLSPActionError] = useState<string | null>(null);
   const { editorDisplayValue, editorValue, handleEditorChange, handleSaveSelectedAsset } =
     useAssetContentEditing({ asset, pipelineId });
-  const { editorModelPath, formatSQL, handleBeforeMount, handleMount, isSqlAsset, shortcutLabel } =
-    useAssetMonaco({
-      asset,
-      editorValue,
-      onGoToAsset,
-      onImportExternalRelation,
-      onLSPActionError: setLSPActionError,
-      onGoToJinjaVariable,
-      onInspect,
-      onSave: handleSaveSelectedAsset,
-    });
+  const {
+    editorInstance,
+    editorModelPath,
+    formatSQL,
+    handleBeforeMount,
+    handleMount,
+    isSqlAsset,
+    shortcutLabel,
+  } = useAssetMonaco({
+    asset,
+    editorValue,
+    onGoToAsset,
+    onImportExternalRelation,
+    onLSPActionError: setLSPActionError,
+    onGoToJinjaVariable,
+    onInspect,
+    onSave: handleSaveSelectedAsset,
+  });
+  const resource = useResourceNavigation();
+  const target = resource.detail?.target;
+  const sourceTarget =
+    target?.kind === "asset-section" && target.section === "source" && target.asset_id === asset.id
+      ? target
+      : undefined;
+  const sourceToken = JSON.stringify(sourceTarget);
+  const staleSource = Boolean(
+    sourceTarget?.source_fingerprint &&
+    sourceTarget.source_fingerprint !== sourceAnchorFingerprint(editorValue),
+  );
+  useEffect(() => {
+    if (!sourceTarget || !editorInstance || staleSource) return;
+    editorInstance.focus();
+    if (sourceTarget.line) {
+      editorInstance.setSelection({
+        startLineNumber: sourceTarget.line,
+        startColumn: 1,
+        endLineNumber: sourceTarget.end_line ?? sourceTarget.line,
+        endColumn: 1,
+      });
+      editorInstance.revealLineInCenter(sourceTarget.line);
+    }
+  }, [editorInstance, sourceToken, staleSource]);
 
   const isPythonAsset = usesPythonSource(asset);
   const { missingImports, addDependency } = useAssetPythonDeps(
@@ -62,6 +95,11 @@ export function AppAssetEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {staleSource ? (
+        <p role="alert" className="p-2 text-xs">
+          Source changed since this diagnostic. The old location is not highlighted.
+        </p>
+      ) : null}
       <AssetCodeEditor
         asset={asset}
         containerClassName="min-h-0 flex-1"

@@ -1,9 +1,4 @@
-import { lazy, Suspense, type ReactNode } from "react";
-import { useLocation } from "@tanstack/react-router";
-import type { ResourceSearch } from "@/lib/resource-navigation";
-const ResourceDetailOutlet = lazy(() =>
-  import("../resource-detail-outlet").then((module) => ({ default: module.ResourceDetailOutlet })),
-);
+import { type ReactNode } from "react";
 
 import {
   Sheet,
@@ -19,23 +14,6 @@ import { AppWorkbenchRail } from "./workbench-rail";
 import { useWorkbench } from "./workbench-slots";
 
 export function AppWorkbenchLayout({ children }: { children: ReactNode }) {
-  const location = useLocation();
-  const detail = (location.search as ResourceSearch).detail;
-  // The Data page uses the same routed renderer as its primary surface.
-  const detailOpen = Boolean(
-    detail && !(location.pathname === "/data" && detail.target.kind === "data-object"),
-  );
-  const detailOutlet = detailOpen ? (
-    <Suspense
-      fallback={
-        <p role="status" className="p-4 text-sm">
-          Opening definition…
-        </p>
-      }
-    >
-      <ResourceDetailOutlet />
-    </Suspense>
-  ) : null;
   const {
     navigation,
     session,
@@ -52,7 +30,6 @@ export function AppWorkbenchLayout({ children }: { children: ReactNode }) {
     return (
       <div className="flex h-full min-h-0">
         <div className="min-w-0 flex-1">{children}</div>
-        {detailOutlet}
       </div>
     );
 
@@ -90,16 +67,12 @@ export function AppWorkbenchLayout({ children }: { children: ReactNode }) {
         <aside
           ref={setInspectorHost}
           aria-label="Inspector"
-          inert={detailOpen}
-          aria-hidden={detailOpen || undefined}
           className={cn(
             "hidden min-h-0 w-80 shrink-0 overflow-hidden rounded-xl border bg-card shadow-sm",
-            !detailOpen && "xl:block",
+            "xl:block",
           )}
         />
       ) : null}
-
-      {detailOutlet}
 
       {isMobile ? (
         <Sheet open={mobileNavigationOpen} onOpenChange={setMobileNavigationOpen}>

@@ -1,3 +1,4 @@
+import { normalizeRunLocation, runAssetLocation, type RunLocation } from "@/lib/run-navigation";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import {
@@ -71,7 +72,7 @@ type RunScrollRequest = {
   sequence: number;
 };
 
-export type AppRunsSearch = {
+export type AppRunsSearch = RunLocation & {
   q?: string;
   status?: (typeof runStatuses)[number];
   page?: number;
@@ -86,6 +87,7 @@ export function normalizeAppRunsSearch(search: Record<string, unknown>): AppRuns
         : undefined;
   const page = rawPage && Number.isFinite(rawPage) && rawPage > 0 ? Math.floor(rawPage) : undefined;
   return {
+    ...normalizeRunLocation(search),
     q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
     status: runStatuses.includes(search.status as never)
       ? (search.status as AppRunsSearch["status"])
@@ -393,27 +395,34 @@ export function AppRunDetailPage({
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [hoveredAsset, setHoveredAsset] = useState<string | null>(null);
-  const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
-  const [runDetailTab, setRunDetailTab] = useState("events");
+  const selectedAsset = search.run_asset ?? null;
+  const runDetailTab = search.run_tab ?? "events";
+  const setRunDetailTab = (tab: string) =>
+    void navigate({
+      to: ".",
+      search: (s) => ({ ...s, run_tab: tab as RunLocation["run_tab"], run_focus: undefined }),
+    });
   const [scrollRequest, setScrollRequest] = useState<RunScrollRequest | null>(null);
   const scrollSequenceRef = useRef(0);
   useEffect(() => {
     setHoveredAsset(null);
-    setSelectedAsset(null);
-    setRunDetailTab("events");
     setScrollRequest(null);
   }, [runId]);
   const highlightedAsset = hoveredAsset ?? selectedAsset;
+  useEffect(() => {
+    if (search.run_asset && search.run_focus)
+      setScrollRequest({
+        asset: search.run_asset,
+        target: search.run_focus,
+        sequence: ++scrollSequenceRef.current,
+      });
+  }, [runId, search.run_asset, search.run_focus]);
   const scrollToRunAsset = (asset: string, target: RunScrollRequest["target"]) => {
-    setSelectedAsset(asset);
-    if (target === "events") {
-      setRunDetailTab("events");
-    }
-    setScrollRequest({
-      asset,
-      target,
-      sequence: ++scrollSequenceRef.current,
+    void navigate({
+      to: ".",
+      search: (s) => ({ ...s, ...runAssetLocation(search, asset, target) }),
     });
+    setScrollRequest({ asset, target, sequence: ++scrollSequenceRef.current });
   };
   const output = useMemo(() => combineRunOutput(logs, run?.error), [logs, run?.error]);
   const assetIdsByName = useMemo(() => {
