@@ -96,12 +96,14 @@ not underscore-flattened route hacks.
 ### Addressable diagnostic details
 
 `resource-navigation.ts` defines the versioned, validated `detail` search
-contract, independent of the primary pathname. The first supported target is
-an asset's declared column type. Its generated `ResourceTarget` comes from the
+contract, independent of the primary pathname. Supported targets cover asset
+columns/repair sections, connections/fields, data objects/columns, saved notebook
+cells and presentation definitions. The generated `ResourceTarget` comes from the
 Go `navigationtarget` leaf package; SQL intelligence supplies a semantic
 `authoringdiag.Subject`, never a URL and never a column name extracted from
 diagnostic prose. Pipeline type-check and deployment readiness preserve the
-target and original diagnostic code. Other diagnostics are not yet migrated.
+target and original diagnostic code. See [diagnostic navigation](diagnostic-navigation.md)
+for the explicit coverage policy and limitations.
 
 `ResourceLink` renders an actual router anchor, preserving the main editor/view
 and including the actual project ID, environment, asset ID and exact declared
@@ -118,7 +120,7 @@ right edge; mobile details use a Sheet. The normal inspector portal host stays
 mounted but hidden and inert while the routed surface is active, preserving its
 local form state without leaving two interactive inspectors. Opening a target
 does not dispatch tool selection or change the primary asset, editor, canvas,
-sidebar width, expansion or scroll state. Only the existing Columns form is
+sidebar width, expansion or scroll state. Only the relevant form/controller is
 mounted for the target, not a hidden Build page. Its environment is an explicit
 input, not a write to the global execution environment.
 
@@ -183,11 +185,12 @@ after building for the measured dependency graph.
   so Android/iOS system UI cannot compress or displace its icons.
 
 - [components/app/data-browser/](../web/components/app/data-browser): one shared
-  controller powers both the `/data` workbench route and Build's in-place Data
+  object view powers both the `/data` workbench route and Build's in-place Data
   Browser. In Build, selecting the rail or mobile tab swaps only the contextual
   sidebar, so the active editor/canvas remains mounted; selecting a table or file
-  opens its schema and bounded preview in a dialog. Direct `/data` navigation
-  retains the full detail workspace. It loads configured
+  opens its independently routed schema/preview detail. Direct `/data` navigation
+  renders that same detail as the primary workspace. Navigator state remains
+  separate from the addressed object and its preview. It loads configured
   query-capable connections as credential-free summaries and navigates their
   databases, schemas, and objects lazily through the server Data Browser API.
   **Project files** is a first-class source on desktop and mobile; it lists only

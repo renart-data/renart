@@ -569,6 +569,19 @@ func finishAssetTypeCheck(
 		connectionEngine,
 	)
 	ac.Findings = append(ac.Findings, findings...)
+	for i := range ac.Findings {
+		finding := &ac.Findings[i]
+		if finding.Target == nil {
+			finding.Target = navigationtarget.ForDiagnostic(ac.ID, authoringdiag.Diagnostic{Code: finding.Code})
+		}
+		if finding.Target == nil {
+			finding.NavigationUnavailableReason = "This diagnostic has no verified editable destination."
+		}
+		if finding.Target != nil && finding.Target.Section == "source" && finding.SourceFingerprint != "" && finding.Line > 0 && finding.EndLine >= finding.Line {
+			finding.Target.SourceFingerprint = finding.SourceFingerprint
+			finding.Target.Line, finding.Target.EndLine = finding.Line, finding.EndLine
+		}
+	}
 	if ac.Dialect == "" && len(asset.CustomChecks) > 0 {
 		ac.Dialect = dialect
 	}
@@ -596,6 +609,13 @@ func customCheckTypeCheckFindings(
 		}
 	}
 	findings := make([]TypeCheckFinding, 0)
+	// These diagnostics belong to custom-check SQL, not the asset SQL. Keep
+	// their verified owner even when the diagnostic code is shared.
+	defer func() {
+		for i := range findings {
+			findings[i].Target = &navigationtarget.Target{Kind: "asset-section", AssetID: assetReportID(workspaceRoot, asset), Section: "checks"}
+		}
+	}()
 	for _, check := range asset.CustomChecks {
 		queryText := strings.TrimSpace(check.Query)
 		if queryText == "" {

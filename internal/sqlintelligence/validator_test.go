@@ -224,6 +224,7 @@ func TestValidateSQLReportsUnsafeDeclaredOutputNullabilityDrift(t *testing.T) {
 	require.Len(t, result.Diagnostics, 1)
 	diagnostic := result.Diagnostics[0]
 	assert.Equal(t, authoringdiag.CodeDeclaredColumnNullabilityDrift, diagnostic.Code)
+	assert.Equal(t, &authoringdiag.Subject{Column: "id", Field: "not_null"}, diagnostic.Subject)
 	assert.Equal(t, authoringdiag.SeverityWarning, diagnostic.Severity)
 	assert.Equal(t, authoringdiag.ScopeAsset, diagnostic.Scope)
 	assert.Equal(t, authoringdiag.ConfidenceHigh, diagnostic.Confidence)

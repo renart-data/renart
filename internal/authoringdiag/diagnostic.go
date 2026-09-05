@@ -77,8 +77,8 @@ const (
 // Column preserves the declaration's spelling so adapters never guess identity
 // by parsing translated prose or case-folding SQL identifiers.
 type Subject struct {
-	Column string
-	Field  string
+	Column string `json:"column,omitempty"`
+	Field  string `json:"field,omitempty"`
 }
 
 type Diagnostic struct {

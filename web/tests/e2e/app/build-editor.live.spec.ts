@@ -22,7 +22,7 @@ const customerStatsAssetId = Buffer.from("analytics/assets/analytics/customer_st
 test.describe("app build editor live", () => {
   test.use({ fixtureName: "configured-workspace" });
 
-  test("opens the Data Browser in place and previews selected files in a dialog", async ({
+  test("opens the Data Browser in place and links selected files into independent details", async ({
     liveApp,
     page,
   }, testInfo) => {
@@ -57,13 +57,14 @@ test.describe("app build editor live", () => {
     await expect(sidebarTransition).toHaveClass(/slide-in-from-left-2/);
 
     await page.getByRole("button", { name: /Project files/ }).click();
-    await page.getByRole("button", { name: /browser-sample\.csv/ }).click();
+    await page.getByRole("link", { name: /browser-sample\.csv/ }).click();
 
-    const detail = page.getByRole("dialog", { name: "Data object details" });
+    const detail = page.getByTestId("routed-data-object");
     await expect(detail).toBeVisible();
     await expect(detail.getByRole("heading", { name: "browser-sample.csv" })).toBeVisible();
     await expect(detail.getByRole("tab", { name: /Columns/ })).toContainText("2");
-    await expect(page).toHaveURL(buildURL);
+    expect(new URL(page.url()).pathname).toBe(new URL(buildURL).pathname);
+    expect(new URL(page.url()).searchParams.has("detail")).toBe(true);
   });
 
   test("uses either the responsive properties drawer or the persistent inspector", async ({

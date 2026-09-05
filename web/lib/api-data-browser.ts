@@ -5,6 +5,7 @@ import type {
   DataBrowserObjectResponse,
   DataBrowserPreviewRequest,
   DataBrowserPreviewResponse,
+  DataBrowserResolveRequest,
 } from "@/lib/generated/api-types";
 
 export function getDataBrowserConnections(environment?: string) {
@@ -39,11 +40,20 @@ export function getDataBrowserObject(options: { objectId: string; environment?: 
   );
 }
 
-export function previewDataBrowserObject(request: DataBrowserPreviewRequest) {
+export function resolveDataBrowserObject(request: DataBrowserResolveRequest, signal?: AbortSignal) {
+  return fetchJSONWithBody<DataBrowserObjectResponse>(
+    "/api/data-browser/resolve",
+    "POST",
+    request,
+    { cache: "no-store", signal },
+  );
+}
+
+export function previewDataBrowserObject(request: DataBrowserPreviewRequest, signal?: AbortSignal) {
   return fetchJSONWithBody<DataBrowserPreviewResponse>(
     "/api/data-browser/preview",
     "POST",
     request,
-    { cache: "no-store" },
+    { cache: "no-store", signal },
   );
 }

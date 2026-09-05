@@ -390,6 +390,7 @@ func diagnosticFromAuthoring(text string, diagnostic authoringdiag.Diagnostic) D
 		Source:     diagnostic.Source,
 		Message:    diagnostic.Message,
 		Scope:      string(diagnostic.Scope),
+		Subject:    diagnostic.Subject,
 		Confidence: string(diagnostic.Confidence),
 	}
 }

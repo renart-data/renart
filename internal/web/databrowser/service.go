@@ -85,6 +85,7 @@ type objectRef struct {
 	Database       string `json:"d,omitempty"`
 	Schema         string `json:"h,omitempty"`
 	Name           string `json:"n,omitempty"`
+	LeafName       string `json:"l,omitempty"`
 	Path           string `json:"p,omitempty"`
 }
 
@@ -224,6 +225,7 @@ func (s *Service) Object(ctx context.Context, objectID, environment string) (Obj
 	connectionRef.Database = ""
 	connectionRef.Schema = ""
 	connectionRef.Name = ""
+	connectionRef.LeafName = ""
 	connectionRef.Path = ""
 	scope, apiErr := s.resolveScope(ctx, encodeRef(connectionRef), environment)
 	if apiErr != nil {
@@ -234,6 +236,7 @@ func (s *Service) Object(ctx context.Context, objectID, environment string) (Obj
 	}
 
 	object := Object{
+		Address:        addressForRef(ref),
 		ID:             objectID,
 		ConnectionID:   encodeRef(connectionRef),
 		ConnectionName: ref.Connection,
@@ -249,6 +252,9 @@ func (s *Service) Object(ctx context.Context, objectID, environment string) (Obj
 		return ObjectResponse{}, badRequest("data_browser_object_invalid", "The selected warehouse object is invalid.")
 	}
 	object.Name = shortObjectName(ref.Name)
+	if ref.LeafName != "" {
+		object.Name = ref.LeafName
+	}
 	object.Kind = "table"
 	object.ReferenceText = ref.Name
 	object.Namespace = compactStrings([]string{ref.Database, ref.Schema})
@@ -284,6 +290,7 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (PreviewR
 	connectionRef.Database = ""
 	connectionRef.Schema = ""
 	connectionRef.Name = ""
+	connectionRef.LeafName = ""
 	connectionRef.Path = ""
 	scope, apiErr := s.resolveScope(ctx, encodeRef(connectionRef), request.Environment)
 	if apiErr != nil {
@@ -371,7 +378,7 @@ func (s *Service) resolveScope(ctx context.Context, connectionID, environment st
 		return resolvedScope{}, internalError("data_browser_connections_failed", listErr)
 	}
 	revision := revisionToken(resolvedEnvironment, stateRevision, configs)
-	if ref.Environment != resolvedEnvironment || ref.Revision != revision {
+	if requestedEnvironment != resolvedEnvironment || ref.Environment != resolvedEnvironment || ref.Revision != revision {
 		return resolvedScope{}, &apperror.Error{
 			Status:  http.StatusConflict,
 			Code:    "data_browser_revision_stale",
@@ -488,14 +495,7 @@ func (s *Service) warehouseChildren(ctx context.Context, connection objectRef, p
 	}
 	nodes := make([]Node, 0, len(filtered))
 	for _, table := range filtered {
-		ref := connection
-		ref.Kind = "table"
-		ref.Database = table.DatabaseName
-		if ref.Database == "" {
-			ref.Database = parent.Database
-		}
-		ref.Schema = table.SchemaName
-		ref.Name = table.Name
+		ref := tableRef(connection, table, parent.Database)
 		label := strings.TrimSpace(table.ShortName)
 		if label == "" {
 			label = shortObjectName(table.Name)
@@ -508,6 +508,7 @@ func (s *Service) warehouseChildren(ctx context.Context, connection objectRef, p
 			ObjectKind:    "table",
 			HasChildren:   false,
 			ReferenceText: table.Name,
+			Address:       addressForRef(ref),
 		})
 	}
 	return nodes, truncated, nil
@@ -587,6 +588,7 @@ func (s *Service) localChildren(connection objectRef, parent objectRef, parentID
 			Format:        format,
 			SizeBytes:     info.Size(),
 			ModifiedAt:    info.ModTime().UTC().Format(time.RFC3339),
+			Address:       addressForRef(ref),
 		})
 	}
 	return nodes, truncated, nil
@@ -800,21 +802,75 @@ func duckDBConnection(connections []ConnectionConfig) string {
 }
 
 func quoteQualifiedIdentifier(value string) string {
-	parts := strings.Split(value, ".")
+	parts := identifierParts(value)
 	quoted := make([]string, 0, len(parts))
 	for _, part := range parts {
-		trimmed := strings.TrimSpace(strings.Trim(part, "`\"[]"))
-		quoted = append(quoted, `"`+strings.ReplaceAll(trimmed, `"`, `""`)+`"`)
+		quoted = append(quoted, `"`+strings.ReplaceAll(part, `"`, `""`)+`"`)
 	}
 	return strings.Join(quoted, ".")
 }
 
 func shortObjectName(value string) string {
-	parts := strings.Split(strings.TrimSpace(value), ".")
+	parts := identifierParts(value)
 	if len(parts) == 0 {
 		return value
 	}
-	return strings.Trim(parts[len(parts)-1], "`\"[]")
+	return parts[len(parts)-1]
+}
+
+// Discovery names can contain quoted dots and escaped quotes. Splitting on all
+// dots would silently redirect a preview to a different qualified identifier.
+func identifierParts(value string) []string {
+	var parts []string
+	var part strings.Builder
+	var quote byte
+	quotedPart := false
+	finish := func() string {
+		if quotedPart {
+			return part.String()
+		}
+		return strings.TrimSpace(part.String())
+	}
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if quote != 0 {
+			if c == quote {
+				if i+1 < len(value) && value[i+1] == quote {
+					part.WriteByte(c)
+					i++
+				} else {
+					quote = 0
+				}
+			} else {
+				part.WriteByte(c)
+			}
+			continue
+		}
+		switch c {
+		case '"', '`':
+			if strings.TrimSpace(part.String()) == "" {
+				part.Reset()
+			}
+			quotedPart = true
+			quote = c
+		case '[':
+			if strings.TrimSpace(part.String()) == "" {
+				part.Reset()
+			}
+			quotedPart = true
+			quote = ']'
+		case '.':
+			parts = append(parts, finish())
+			part.Reset()
+			quotedPart = false
+		default:
+			if quotedPart && (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+				continue
+			}
+			part.WriteByte(c)
+		}
+	}
+	return append(parts, finish())
 }
 
 func compactSortedStrings(values []string) []string {

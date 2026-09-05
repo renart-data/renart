@@ -586,6 +586,15 @@ select 1 as id
 		t.Fatal(apiErr)
 	}
 	httpDiagnostic := findLSPDiagnosticByCode(httpResponse.Diagnostics, authoringdiag.CodeDeclaredColumnTypeDrift)
+	foundTarget := false
+	for _, link := range httpResponse.DiagnosticLinks {
+		if httpResponse.Diagnostics[link.Index].Code == authoringdiag.CodeDeclaredColumnTypeDrift {
+			foundTarget = link.Target != nil && link.Target.Kind == "asset-column" && link.Target.AssetID == "typed-asset" && link.Target.Column == "id"
+		}
+	}
+	if !foundTarget {
+		t.Fatal("HTTP LSP lost the exact column destination")
+	}
 	if httpDiagnostic == nil {
 		t.Fatalf("HTTP LSP did not report drift from unsaved SQL: %#v", httpResponse.Diagnostics)
 	}

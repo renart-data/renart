@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CheckCircle2, LoaderCircle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -41,6 +41,7 @@ import type {
 
 export function WorkspaceConnectionFormFields({
   busy,
+  focusedField,
   canValidate,
   connectionForm,
   connectionTypes,
@@ -66,6 +67,7 @@ export function WorkspaceConnectionFormFields({
   onValidate,
 }: {
   busy: boolean;
+  focusedField?: string;
   canValidate: boolean;
   connectionForm: ConnectionFormState;
   connectionTypes: WorkspaceConfigConnectionType[];
@@ -90,6 +92,17 @@ export function WorkspaceConnectionFormFields({
   onTypeChange: (value: string) => void;
   onValidate: () => void;
 }) {
+  const lastFocus = useRef<string | undefined>(undefined);
+  const focusField = (name: string) => (element: HTMLDivElement | null) => {
+    if (!element || name !== focusedField || lastFocus.current === name) return;
+    lastFocus.current = name;
+    requestAnimationFrame(() => {
+      if (!element.isConnected) return;
+      const input = element.querySelector<HTMLElement>('input,button,[role="combobox"]');
+      input?.focus({ preventScroll: true });
+      element.scrollIntoView({ block: "nearest" });
+    });
+  };
   return (
     <FieldGroup>
       {showEnvironmentSelector ? (
@@ -181,6 +194,8 @@ export function WorkspaceConnectionFormFields({
               return (
                 <div
                   key={field.name}
+                  ref={focusField(field.name)}
+                  data-focused-field={field.name === focusedField || undefined}
                   className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
                 >
                   <div className="flex min-w-0 items-center justify-between gap-2 bg-muted/30 px-4 py-2">
@@ -326,6 +341,8 @@ export function WorkspaceConnectionFormFields({
               return (
                 <div
                   key={field.name}
+                  ref={focusField(field.name)}
+                  data-focused-field={field.name === focusedField || undefined}
                   className="flex items-center justify-between gap-4 border-t px-4 py-3 first:border-t-0"
                 >
                   <div>
@@ -347,6 +364,8 @@ export function WorkspaceConnectionFormFields({
               return (
                 <div
                   key={field.name}
+                  ref={focusField(field.name)}
+                  data-focused-field={field.name === focusedField || undefined}
                   className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
                 >
                   <div
@@ -370,6 +389,8 @@ export function WorkspaceConnectionFormFields({
             return (
               <div
                 key={field.name}
+                ref={focusField(field.name)}
+                data-focused-field={field.name === focusedField || undefined}
                 className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
               >
                 <div

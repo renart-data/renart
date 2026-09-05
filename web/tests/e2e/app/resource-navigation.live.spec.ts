@@ -11,6 +11,163 @@ const diagnosticId = Buffer.from("analytics/assets/analytics/diagnostic.sql").to
 test.describe("routed diagnostic details live", () => {
   test.use({ fixtureName: "configured-workspace", isolateUserConfig: true });
 
+  test("opens persisted notebook cells and presentation blocks without mounting their runtimes", async ({
+    liveApp,
+    page,
+  }) => {
+    const directory = await (await page.request.get(`${liveApp.baseURL}/api/projects`)).json();
+    const config = await (await page.request.get(`${liveApp.baseURL}/api/config`)).json();
+    const created = await page.request.post(`${liveApp.baseURL}/api/notebooks`, {
+      data: { title: "Routed notebook" },
+    });
+    expect(created.ok()).toBe(true);
+    const notebook = (await created.json()).notebook;
+    const cellResponse = await page.request.post(
+      `${liveApp.baseURL}/api/notebooks/${notebook.id}/cells`,
+      { data: { name: "stable_cell" } },
+    );
+    expect(cellResponse.ok()).toBe(true);
+    const cell = (await cellResponse.json()).notebook.cells.find(
+      (c: { name: string }) => c.name === "stable_cell",
+    );
+    await writeFile(
+      join(liveApp.workspaceDir, "routed.dashboard.yml"),
+      `version: 1\nid: routed\ntitle: Routed dashboard\nvisualizations:\n  - id: stable_plot\n    dataset: missing\n    definition:\n      version: 1\n      type: table\nlayout:\n  - visualization: stable_plot\n`,
+    );
+    const writes: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() !== "GET" && r.url().includes("/api/")) writes.push(r.url());
+    });
+    for (const target of [
+      { kind: "notebook-cell", notebook_id: notebook.id, cell_id: cell.cell_id },
+      {
+        kind: "presentation",
+        presentation_id: Buffer.from("routed.dashboard.yml").toString("base64url"),
+        block_id: "stable_plot",
+      },
+    ]) {
+      const url = new URL(`${liveApp.baseURL}/schedules/deployments`);
+      url.searchParams.set("project", directory.default_project_id);
+      url.searchParams.set(
+        "detail",
+        JSON.stringify({ v: 1, environment: config.default_environment, target }),
+      );
+      await page.goto(url.href);
+      await expect(page.getByTestId("routed-document")).toBeVisible({ timeout: 15000 });
+      await expect(page.getByTestId("routed-document")).toContainText(
+        target.kind === "notebook-cell" ? "stable_cell" : "stable_plot",
+      );
+      await expect(page.locator(".monaco-editor")).toHaveCount(0);
+    }
+    expect(writes).toEqual([]);
+  });
+
+  test("resolves a data column in a cold tab without a preview and preserves the bookmark across revisions", async ({
+    liveApp,
+    page,
+    browser,
+  }) => {
+    test.setTimeout(60000);
+    await writeFile(join(liveApp.workspaceDir, "addressed.csv"), "id,Total\n1,42\n");
+    const projects = await (await page.request.get(`${liveApp.baseURL}/api/projects`)).json();
+    const config = await (await page.request.get(`${liveApp.baseURL}/api/config`)).json();
+    const environment = config.default_environment;
+    const target = {
+      kind: "data-object",
+      address: { source_kind: "local_files", path: "addressed.csv" },
+      section: "schema",
+      column: "Total",
+    };
+    const url = new URL(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${ordersId}/code`);
+    url.searchParams.set("project", projects.default_project_id);
+    url.searchParams.set("detail", JSON.stringify({ v: 1, environment, target }));
+    const queries: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("data-browser/preview")) queries.push(req.url());
+    });
+    await page.goto(url.href);
+    const detail = page.getByTestId("routed-data-object");
+    await expect(detail.locator('[data-focused-column="true"]')).toBeFocused({ timeout: 20000 });
+    await expect(detail.locator('[data-focused-column="true"]')).toContainText("Total");
+    expect(queries).toEqual([]);
+    const link = detail.getByRole("link", { name: "Total", exact: true });
+    const href = await link.getAttribute("href");
+    await writeFile(join(liveApp.workspaceDir, "revision-change.csv"), "id\n2\n");
+    const context = await browser.newContext(test.info().project.use);
+    try {
+      const fresh = await context.newPage();
+      fresh.on("request", (req) => {
+        if (req.url().includes("data-browser/preview")) queries.push(req.url());
+      });
+      await fresh.goto(new URL(href!, liveApp.baseURL).href);
+      await expect(fresh.locator('[data-focused-column="true"]')).toBeFocused({ timeout: 20000 });
+      expect(queries).toEqual([]);
+      const canonical = new URL(fresh.url());
+      canonical.pathname = "/data";
+      await fresh.goto(canonical.href);
+      await expect(fresh.getByTestId("routed-data-object")).toHaveCount(1);
+      await expect(fresh.locator('[data-focused-column="true"]')).toBeFocused();
+      await fresh.getByRole("button", { name: "Preview rows", exact: true }).click();
+      await expect(fresh.getByRole("grid", { name: "addressed.csv preview" })).toBeVisible();
+      expect(queries).toHaveLength(1);
+      await fresh.goBack();
+      await expect(fresh.getByRole("tab", { name: /Columns/ })).toHaveAttribute(
+        "data-state",
+        "active",
+      );
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("opens a connection field and cancels leaving its unsaved form", async ({
+    liveApp,
+    page,
+  }) => {
+    const projects = await (await page.request.get(`${liveApp.baseURL}/api/projects`)).json();
+    const config = await (await page.request.get(`${liveApp.baseURL}/api/config`)).json();
+    const env = config.environments.find(
+      (e: { name: string }) => e.name === config.default_environment,
+    );
+    const connection = env.connections.find((c: { type: string }) => c.type === "duckdb");
+    const type = config.connection_types.find(
+      (t: { type_name: string }) => t.type_name === connection.type,
+    );
+    const field = type.fields.find(
+      (f: { type: string; is_sensitive: boolean }) => f.type === "string" && !f.is_sensitive,
+    );
+    const url = new URL(`${liveApp.baseURL}/schedules/deployments`);
+    url.searchParams.set("project", projects.default_project_id);
+    url.searchParams.set(
+      "detail",
+      JSON.stringify({
+        v: 1,
+        environment: env.name,
+        target: { kind: "connection", connection: connection.name, field: field.name },
+      }),
+    );
+    const writes: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() !== "GET" && req.url().includes("/api/") && !req.url().includes("resolve"))
+        writes.push(req.url());
+    });
+    await page.goto(url.href);
+    const form = page.getByTestId("routed-connection");
+    const input = form.getByRole("textbox", { name: field.name, exact: true });
+    await expect(input).toBeFocused({ timeout: 15000 });
+    expect(writes).toEqual([]);
+    await input.fill("unsaved-change");
+    page.once("dialog", (dialog) => dialog.dismiss());
+    await page.keyboard.press("Escape");
+    await expect(form).toBeVisible();
+    await expect(input).toHaveValue("unsaved-change");
+    expect(new URL(page.url()).searchParams.has("detail")).toBe(true);
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.keyboard.press("Escape");
+    await expect(form).toHaveCount(0);
+    expect(writes).toEqual([]);
+  });
+
   test("opens an exact column without changing the primary editor and survives a cold tab", async ({
     liveApp,
     page,

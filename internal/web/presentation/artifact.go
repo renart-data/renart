@@ -271,6 +271,7 @@ func CheckArtifactDefinition(artifact Artifact) []Finding {
 		filters[strings.TrimSpace(filter.ID)] = true
 	}
 	for index, visualization := range artifact.Visualizations {
+		firstFinding := len(findings)
 		path := "visualizations[" + strconv.Itoa(index) + "]"
 		id := strings.TrimSpace(visualization.ID)
 		if !parameterIDPattern.MatchString(id) {
@@ -331,8 +332,13 @@ func CheckArtifactDefinition(artifact Artifact) []Finding {
 				})
 			}
 		}
+		for i := firstFinding; i < len(findings); i++ {
+			findings[i].VisualizationID = visualization.ID
+		}
 	}
 
+	// Visualization identity is captured by the producer, never reconstructed
+	// from an indexed display path by navigation consumers.
 	switch artifact.Kind {
 	case ArtifactKindDashboard:
 		if len(artifact.Sections) > 0 {
@@ -441,6 +447,7 @@ func (Checker) CheckArtifact(
 	}
 
 	for index, visualization := range artifact.Visualizations {
+		firstFinding := len(findings)
 		path := "visualizations[" + strconv.Itoa(index) + "]"
 		schema, schemaOK := datasets[strings.TrimSpace(visualization.Dataset)]
 		definition, decodeFindings := DecodeVisualizationDefinition(visualization.Definition)
@@ -464,6 +471,9 @@ func (Checker) CheckArtifact(
 			}
 			finding.Path = joinFindingPath(path, finding.Path)
 			findings = append(findings, finding)
+		}
+		for i := firstFinding; i < len(findings); i++ {
+			findings[i].VisualizationID = visualization.ID
 		}
 	}
 

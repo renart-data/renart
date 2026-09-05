@@ -13,19 +13,20 @@ import (
 // SQL parser, a template-rendering failure, or an asset-source warning).
 // renart:web-name TypeCheckFinding
 type Finding struct {
-	Code              string                   `json:"code"`
-	Source            string                   `json:"source"`
-	Severity          string                   `json:"severity"`
-	Message           string                   `json:"message"`
-	Line              int                      `json:"line,omitempty"`
-	Column            int                      `json:"column,omitempty"`
-	EndLine           int                      `json:"end_line,omitempty"`
-	EndColumn         int                      `json:"end_column,omitempty"`
-	Scope             string                   `json:"scope,omitempty"`
-	Confidence        string                   `json:"confidence,omitempty"`
-	SourceFingerprint string                   `json:"source_fingerprint,omitempty"`
-	Resolutions       []Resolution             `json:"resolutions,omitempty"`
-	Target            *navigationtarget.Target `json:"target,omitempty"`
+	Code                        string                   `json:"code"`
+	Source                      string                   `json:"source"`
+	Severity                    string                   `json:"severity"`
+	Message                     string                   `json:"message"`
+	Line                        int                      `json:"line,omitempty"`
+	Column                      int                      `json:"column,omitempty"`
+	EndLine                     int                      `json:"end_line,omitempty"`
+	EndColumn                   int                      `json:"end_column,omitempty"`
+	Scope                       string                   `json:"scope,omitempty"`
+	Confidence                  string                   `json:"confidence,omitempty"`
+	SourceFingerprint           string                   `json:"source_fingerprint,omitempty"`
+	Resolutions                 []Resolution             `json:"resolutions,omitempty"`
+	Target                      *navigationtarget.Target `json:"target,omitempty"`
+	NavigationUnavailableReason string                   `json:"navigation_unavailable_reason,omitempty"`
 }
 
 // Resolution is a safe semantic edit Renart can offer for a finding.
@@ -78,12 +79,13 @@ type Presentation struct {
 
 // renart:web-name TypeCheckPresentationFinding
 type PresentationFinding struct {
-	Code         string `json:"code"`
-	Severity     string `json:"severity"`
-	Message      string `json:"message"`
-	Path         string `json:"path,omitempty"`
-	Field        string `json:"field,omitempty"`
-	PhysicalType string `json:"physical_type,omitempty"`
+	Target       *navigationtarget.Target `json:"target,omitempty"`
+	Code         string                   `json:"code"`
+	Severity     string                   `json:"severity"`
+	Message      string                   `json:"message"`
+	Path         string                   `json:"path,omitempty"`
+	Field        string                   `json:"field,omitempty"`
+	PhysicalType string                   `json:"physical_type,omitempty"`
 }
 
 // Summary aggregates finding counts across the pipeline.

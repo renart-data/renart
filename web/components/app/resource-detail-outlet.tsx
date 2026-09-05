@@ -5,7 +5,13 @@ import { lazy, Suspense, useEffect, useRef } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
 import { workspaceAtom } from "@/lib/atoms/workspace";
-import { resolveColumn, type ResourceDetail, type ResourceSearch } from "@/lib/resource-navigation";
+import {
+  resolveColumn,
+  type ResourceDetail,
+  type ResourceSearch,
+  type ColumnTarget,
+} from "@/lib/resource-navigation";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -18,12 +24,39 @@ import {
 const ColumnsCard = lazy(() =>
   import("./asset-guided-cards").then((module) => ({ default: module.ColumnsCard })),
 );
+const DataObjectDetail = lazy(() =>
+  import("./data-browser/data-browser").then((m) => ({ default: m.DataObjectDetail })),
+);
+const ResourceAssetSection = lazy(() =>
+  import("./resource-asset-section").then((m) => ({ default: m.ResourceAssetSection })),
+);
+const ResourceConnectionDetail = lazy(() =>
+  import("./resource-connection-detail").then((m) => ({ default: m.ResourceConnectionDetail })),
+);
+const ResourceDocumentDetail = lazy(() =>
+  import("./resource-document-detail").then((m) => ({ default: m.ResourceDocumentDetail })),
+);
 
 export function ResourceDetailOutlet() {
   const location = useLocation();
   const detail = (location.search as ResourceSearch).detail;
   const navigate = useNavigate();
   const mobile = useIsMobile();
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const heading = useRef<HTMLHeadingElement | null>(null);
+  const detailKey = JSON.stringify(detail);
+  useEffect(() => {
+    returnFocus.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    return () => {
+      if (returnFocus.current?.isConnected) returnFocus.current.focus({ preventScroll: true });
+    };
+  }, []);
+  useEffect(() => {
+    if (detail?.target.column || (detail?.target.kind === "connection" && detail.target.field))
+      return;
+    heading.current?.focus({ preventScroll: true });
+  }, [detailKey]);
   const close = () =>
     void navigate({
       to: ".",
@@ -31,8 +64,59 @@ export function ResourceDetailOutlet() {
       replace: true,
     });
   if (!detail) return null;
+  const target = detail.target;
+  const title =
+    target.kind === "asset-column"
+      ? "Current column definition"
+      : target.kind === "data-object"
+        ? "Data object details"
+        : target.kind === "connection"
+          ? "Connection"
+          : target.kind === "notebook-cell"
+            ? "Saved notebook cell"
+            : target.kind === "presentation"
+              ? "Saved presentation definition"
+              : `Current ${target.section}`;
+  const label =
+    target.kind === "data-object"
+      ? (target.address.name ?? target.address.path)
+      : target.kind === "connection"
+        ? target.connection
+        : target.column;
+  const identity = JSON.stringify(detail);
   const content = (
-    <ColumnDetail detail={detail} navigationKey={location.state.key ?? location.href} />
+    <ErrorBoundary
+      resetKey={identity}
+      fallback={
+        <p role="alert" className="p-3">
+          Could not open this detail. Your main workspace is unchanged.
+        </p>
+      }
+    >
+      <Suspense
+        fallback={
+          <p role="status" className="p-3">
+            Opening detail…
+          </p>
+        }
+      >
+        {target.kind === "asset-column" ? (
+          <ColumnDetail detail={{ ...detail, target }} navigationKey={identity} />
+        ) : target.kind === "data-object" ? (
+          <DataObjectDetail target={target} environment={detail.environment} />
+        ) : target.kind === "connection" ? (
+          <ResourceConnectionDetail target={target} environment={detail.environment} />
+        ) : target.kind === "notebook-cell" || target.kind === "presentation" ? (
+          <ResourceDocumentDetail target={target} />
+        ) : (
+          <ResourceAssetSection
+            key={`${target.asset_id}:${target.section}:${target.column}:${target.check_name}`}
+            target={target}
+            environment={detail.environment}
+          />
+        )}
+      </Suspense>
+    </ErrorBoundary>
   );
   if (mobile)
     return (
@@ -48,9 +132,11 @@ export function ResourceDetailOutlet() {
           onOpenAutoFocus={(event) => event.preventDefault()}
         >
           <SheetHeader className="border-b pr-12">
-            <SheetTitle>Current column definition</SheetTitle>
+            <SheetTitle ref={heading} tabIndex={-1}>
+              {title}
+            </SheetTitle>
             <SheetDescription>
-              {detail.target.column} · {detail.environment}
+              {label} · {detail.environment}
             </SheetDescription>
           </SheetHeader>
           {content}
@@ -59,7 +145,7 @@ export function ResourceDetailOutlet() {
     );
   return (
     <aside
-      aria-label="Current column definition"
+      aria-label={title}
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented) close();
       }}
@@ -67,12 +153,19 @@ export function ResourceDetailOutlet() {
     >
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
         <div className="min-w-0">
-          <h2 className="text-sm font-medium">Current column definition</h2>
+          <h2 ref={heading} tabIndex={-1} className="text-sm font-medium">
+            {title}
+          </h2>
           <p className="truncate text-xs text-muted-foreground">
-            {detail.target.column} · {detail.environment}
+            {label} · {detail.environment}
           </p>
         </div>
-        <Button variant="ghost" size="icon-sm" aria-label="Close column definition" onClick={close}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={target.kind === "asset-column" ? "Close column definition" : "Close detail"}
+          onClick={close}
+        >
           <X />
         </Button>
       </div>
@@ -85,19 +178,11 @@ function ColumnDetail({
   detail,
   navigationKey,
 }: {
-  detail: ResourceDetail;
+  detail: ResourceDetail & { target: ColumnTarget };
   navigationKey: string;
 }) {
   const workspace = useAtomValue(workspaceAtom);
   const { workspaceConfig } = useWorkspaceSettingsData();
-  const returnFocus = useRef<HTMLElement | null>(null);
-  useEffect(() => {
-    returnFocus.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    return () => {
-      if (returnFocus.current?.isConnected) returnFocus.current.focus({ preventScroll: true });
-    };
-  }, []);
   const matches =
     workspace?.pipelines.flatMap((pipeline) =>
       pipeline.assets.filter((asset) => asset.id === detail.target.asset_id),

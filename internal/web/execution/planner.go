@@ -426,6 +426,7 @@ func appendCodeCheckIssues(plan *Plan, includePresentations bool) {
 		for _, finding := range artifact.Findings {
 			issue := PlanIssue{
 				Code: "presentation_check_" + finding.Severity, Severity: finding.Severity,
+				DiagnosticCode: finding.Code, Target: finding.Target,
 				Message: fmt.Sprintf("%s %q: %s", kind, label, finding.Message),
 			}
 			if finding.Severity == "error" {

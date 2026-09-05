@@ -1,4 +1,5 @@
 "use client";
+import { ResourceLink } from "./resource-link";
 
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -3471,6 +3472,14 @@ function NotebookSourceCard({
               output={result.error}
               className="max-h-72 overflow-auto px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words"
             />
+            {cell.cell_id ? (
+              <ResourceLink
+                target={{ kind: "notebook-cell", notebook_id: notebookId, cell_id: cell.cell_id }}
+                className="mx-3 mb-2 inline-block text-xs underline"
+              >
+                View current saved cell
+              </ResourceLink>
+            ) : null}
           </div>
         ) : null}
         {result?.status === "ok" && result.columns.length > 0 ? (
@@ -3898,6 +3907,14 @@ function NotebookCellCard({
               output={result.error}
               className="max-h-72 overflow-auto px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-words"
             />
+            {cell.cell_id ? (
+              <ResourceLink
+                target={{ kind: "notebook-cell", notebook_id: notebookId, cell_id: cell.cell_id }}
+                className="mx-3 mb-2 inline-block text-xs underline"
+              >
+                View current saved cell
+              </ResourceLink>
+            ) : null}
           </div>
         ) : null}
         {result?.status === "blocked" ? (

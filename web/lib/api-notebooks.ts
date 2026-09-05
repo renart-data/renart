@@ -402,9 +402,10 @@ type NotebookEnvelope = {
   notebook: WebNotebook;
 };
 
-export async function getNotebook(notebookId: string) {
+export async function getNotebook(notebookId: string, signal?: AbortSignal) {
   const payload = await fetchJSON<NotebookEnvelope>(`/api/notebooks/${notebookId}`, {
     cache: "no-store",
+    signal,
   });
   return payload.notebook;
 }

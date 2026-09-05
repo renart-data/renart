@@ -16,9 +16,10 @@ type PresentationEnvelope = {
   document: PresentationDocument;
 };
 
-export async function getPresentation(workspaceId: string) {
+export async function getPresentation(workspaceId: string, signal?: AbortSignal) {
   const response = await fetchJSON<PresentationEnvelope>(`/api/presentations/${workspaceId}`, {
     cache: "no-store",
+    signal,
   });
   return response.document;
 }

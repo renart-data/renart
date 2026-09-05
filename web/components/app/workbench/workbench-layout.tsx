@@ -19,7 +19,12 @@ import { AppWorkbenchRail } from "./workbench-rail";
 import { useWorkbench } from "./workbench-slots";
 
 export function AppWorkbenchLayout({ children }: { children: ReactNode }) {
-  const detailOpen = Boolean((useLocation().search as ResourceSearch).detail);
+  const location = useLocation();
+  const detail = (location.search as ResourceSearch).detail;
+  // The Data page uses the same routed renderer as its primary surface.
+  const detailOpen = Boolean(
+    detail && !(location.pathname === "/data" && detail.target.kind === "data-object"),
+  );
   const detailOutlet = detailOpen ? (
     <Suspense
       fallback={

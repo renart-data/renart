@@ -3,7 +3,10 @@
 // values or credentials.
 package databrowser
 
-import "renart/internal/web/model"
+import (
+	"renart/internal/web/dataaddress"
+	"renart/internal/web/model"
+)
 
 // renart:web-name DataBrowserCapabilities
 type Capabilities struct {
@@ -37,17 +40,18 @@ type ConnectionsResponse struct {
 
 // renart:web-name DataBrowserNode
 type Node struct {
-	ID            string `json:"id"`
-	ParentID      string `json:"parent_id,omitempty"`
-	NodeType      string `json:"node_type"`
-	Label         string `json:"label"`
-	NamespaceKind string `json:"namespace_kind,omitempty"`
-	ObjectKind    string `json:"object_kind,omitempty"`
-	HasChildren   bool   `json:"has_children"`
-	ReferenceText string `json:"reference_text,omitempty"`
-	Format        string `json:"format,omitempty"`
-	SizeBytes     int64  `json:"size_bytes,omitempty"`
-	ModifiedAt    string `json:"modified_at,omitempty"`
+	Address       *dataaddress.Address `json:"address,omitempty"`
+	ID            string               `json:"id"`
+	ParentID      string               `json:"parent_id,omitempty"`
+	NodeType      string               `json:"node_type"`
+	Label         string               `json:"label"`
+	NamespaceKind string               `json:"namespace_kind,omitempty"`
+	ObjectKind    string               `json:"object_kind,omitempty"`
+	HasChildren   bool                 `json:"has_children"`
+	ReferenceText string               `json:"reference_text,omitempty"`
+	Format        string               `json:"format,omitempty"`
+	SizeBytes     int64                `json:"size_bytes,omitempty"`
+	ModifiedAt    string               `json:"modified_at,omitempty"`
 }
 
 // renart:web
@@ -63,22 +67,23 @@ type ChildrenResponse struct {
 
 // renart:web-name DataBrowserObject
 type Object struct {
-	ID             string            `json:"id"`
-	ConnectionID   string            `json:"connection_id"`
-	ConnectionName string            `json:"connection_name"`
-	ConnectionType string            `json:"connection_type"`
-	Environment    string            `json:"environment"`
-	Revision       string            `json:"revision"`
-	Namespace      []string          `json:"namespace"`
-	Name           string            `json:"name"`
-	Kind           string            `json:"kind"`
-	ReferenceText  string            `json:"reference_text"`
-	Format         string            `json:"format,omitempty"`
-	SizeBytes      int64             `json:"size_bytes,omitempty"`
-	ModifiedAt     string            `json:"modified_at,omitempty"`
-	Columns        []model.SQLColumn `json:"columns"`
-	Capabilities   Capabilities      `json:"capabilities"`
-	Warning        string            `json:"warning,omitempty"`
+	Address        *dataaddress.Address `json:"address,omitempty"`
+	ID             string               `json:"id"`
+	ConnectionID   string               `json:"connection_id"`
+	ConnectionName string               `json:"connection_name"`
+	ConnectionType string               `json:"connection_type"`
+	Environment    string               `json:"environment"`
+	Revision       string               `json:"revision"`
+	Namespace      []string             `json:"namespace"`
+	Name           string               `json:"name"`
+	Kind           string               `json:"kind"`
+	ReferenceText  string               `json:"reference_text"`
+	Format         string               `json:"format,omitempty"`
+	SizeBytes      int64                `json:"size_bytes,omitempty"`
+	ModifiedAt     string               `json:"modified_at,omitempty"`
+	Columns        []model.SQLColumn    `json:"columns"`
+	Capabilities   Capabilities         `json:"capabilities"`
+	Warning        string               `json:"warning,omitempty"`
 }
 
 // renart:web
@@ -86,6 +91,13 @@ type Object struct {
 type ObjectResponse struct {
 	Status string `json:"status"`
 	Object Object `json:"object"`
+}
+
+// renart:web
+// renart:web-name DataBrowserResolveRequest
+type ResolveRequest struct {
+	Environment string              `json:"environment"`
+	Address     dataaddress.Address `json:"address"`
 }
 
 // renart:web

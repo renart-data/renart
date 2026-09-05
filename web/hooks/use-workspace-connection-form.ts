@@ -190,7 +190,7 @@ export function useWorkspaceConnectionForm({
         getSelectedConnectionNameFromEnvironment(environment, connectionForm.name.trim()),
       );
       onModeChange("edit");
-      return;
+      return response;
     }
 
     const response = await onUpdateConnection({
@@ -204,6 +204,7 @@ export function useWorkspaceConnectionForm({
     onSelectedConnectionChange(
       getSelectedConnectionNameFromEnvironment(environment, connectionForm.name.trim()),
     );
+    return response;
   };
 
   const handleDelete = async () => {

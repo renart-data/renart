@@ -87,6 +87,7 @@ func runTypeCheck(t *testing.T, parsed *pipeline.Pipeline, workspaceRoot string)
 			require.NotEmpty(t, finding.Code, "finding has no stable code: asset=%s finding=%#v", asset.Name, finding)
 			_, registered := authoringdiag.TypeCheckDelivery(finding.Code)
 			require.True(t, registered, "finding code %q has no editor delivery: asset=%s finding=%#v", finding.Code, asset.Name, finding)
+			require.NotNil(t, finding.Target, "first-party diagnostic %s lost its repair owner for %s", finding.Code, asset.Name)
 		}
 	}
 	return report

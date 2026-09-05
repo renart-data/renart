@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/afero"
 
 	webmodel "renart/internal/web/model"
+	"renart/internal/web/navigationtarget"
 	"renart/internal/web/presentation"
 )
 
@@ -62,7 +63,8 @@ func AppendPresentationTypeChecks(
 		}
 		for _, finding := range findings {
 			entry.Findings = append(entry.Findings, TypeCheckPresentationFinding{
-				Code: finding.Code, Severity: finding.Severity, Message: finding.Message,
+				Target: &navigationtarget.Target{Kind: "presentation", PresentationID: entry.WorkspaceID, BlockID: finding.VisualizationID},
+				Code:   finding.Code, Severity: finding.Severity, Message: finding.Message,
 				Path: finding.Path, Field: finding.Field, PhysicalType: finding.PhysicalType,
 			})
 			switch finding.Severity {

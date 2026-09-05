@@ -80,12 +80,13 @@ type VisualizationDefinition struct {
 }
 
 type Finding struct {
-	Code         string `json:"code"`
-	Severity     string `json:"severity"`
-	Message      string `json:"message"`
-	Path         string `json:"path,omitempty"`
-	Field        string `json:"field,omitempty"`
-	PhysicalType string `json:"physical_type,omitempty"`
+	VisualizationID string `json:"visualization_id,omitempty"`
+	Code            string `json:"code"`
+	Severity        string `json:"severity"`
+	Message         string `json:"message"`
+	Path            string `json:"path,omitempty"`
+	Field           string `json:"field,omitempty"`
+	PhysicalType    string `json:"physical_type,omitempty"`
 }
 
 type CheckOptions struct {

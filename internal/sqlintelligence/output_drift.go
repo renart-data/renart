@@ -137,6 +137,7 @@ func OutputDriftDiagnostics(
 		}
 		diagnostics = append(diagnostics, authoringdiag.Diagnostic{
 			Code:       authoringdiag.CodeDeclaredColumnNullabilityDrift,
+			Subject:    &authoringdiag.Subject{Column: declared.Name, Field: "not_null"},
 			Source:     authoringdiag.SourceRenart,
 			Severity:   authoringdiag.SeverityWarning,
 			Message:    fmt.Sprintf("Column %q is declared NOT NULL, but the SQL output may be NULL.", declared.Name),

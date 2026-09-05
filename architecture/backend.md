@@ -84,6 +84,13 @@ or preview request. Preview SQL is constructed and quoted by the backend from
 the resolved object reference, capped at 200 rows, and never accepted from the
 browser as arbitrary SQL.
 
+Durable `dataaddress.Address` values sit alongside those operation references.
+The scoped read-only `/api/data-browser/resolve` endpoint rediscovers the exact
+object and issues a current token without previewing rows; old token revision
+checks remain intact. `navigationtarget` is the common leaf DTO/policy boundary
+used by type checks, LSP web adapters and deployment aggregation. See
+[diagnostic navigation](diagnostic-navigation.md) for scope and coverage rules.
+
 The execution boundary lives in `internal/web/execution`. It owns the shared
 render, reviewed-plan, resource, private run, target-snapshot, and time-window
 contracts; pure resource canonicalization and plan identity; DAG selection and

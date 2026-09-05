@@ -247,7 +247,7 @@ function GuidedCard({
 
 // --- Identity card (§14.1) ---
 
-function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: string }) {
+export function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: string }) {
   const fieldIdPrefix = `${useId()}-identity`;
   const fieldId = (name: string) => `${fieldIdPrefix}-${name}`;
   const workspace = useAtomValue(workspaceAtom);
@@ -575,7 +575,13 @@ export function ColumnCombobox({
   );
 }
 
-function MaterializationCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: string }) {
+export function MaterializationCard({
+  asset,
+  pipelineId,
+}: {
+  asset: WebAsset;
+  pipelineId: string;
+}) {
   const fieldIdPrefix = `${useId()}-materialization`;
   const fieldId = (name: string) => `${fieldIdPrefix}-${name}`;
   const { selected, selectedValue, options, hasEditor } = materializationEditorState(asset);
@@ -716,7 +722,7 @@ function MaterializationCard({ asset, pipelineId }: { asset: WebAsset; pipelineI
 
 // --- Dependencies card (§14.3) ---
 
-function DependenciesCard({
+export function DependenciesCard({
   asset,
   onGoToAsset,
 }: {
@@ -1365,7 +1371,7 @@ function columnCheckKey(column: string, name: string) {
   return `${column.trim().toLowerCase()}\u0000${name.trim().toLowerCase()}`;
 }
 
-function QualityChecksCard({
+export function QualityChecksCard({
   asset,
   quality,
   focusedCheck,
@@ -1393,7 +1399,13 @@ function QualityChecksCard({
     const key = columnCheckKey(focusedCheck.column, focusedCheck.name);
     const element = columnCheckElements.current.get(key);
     if (!element) return;
-    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    element.focus({ preventScroll: true });
+    const viewport = element.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
+    if (viewport)
+      viewport.scrollTop +=
+        element.getBoundingClientRect().top -
+        viewport.getBoundingClientRect().top -
+        viewport.clientHeight / 2;
     setHighlightedColumnCheck(key);
     const timeout = window.setTimeout(() => setHighlightedColumnCheck(""), 2200);
     return () => window.clearTimeout(timeout);
@@ -1480,6 +1492,7 @@ function QualityChecksCard({
                         else columnCheckElements.current.delete(key);
                       }}
                       data-column-check={`${col.name}:${check.name}`}
+                      tabIndex={-1}
                       data-highlighted={
                         highlightedColumnCheck === columnCheckKey(col.name, check.name)
                           ? "true"

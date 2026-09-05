@@ -432,6 +432,12 @@ open local files and replaces unknown-table noise with the stable
 
 ## 6. Completion & diagnostic surface (web editor)
 
+Structured diagnostic subjects survive core/stdin and HTTP transport. The HTTP
+adapter adds generated `SQLDiagnosticLink` records for verified asset-body
+owners using the shared navigation policy; Monaco displays real scoped hrefs in
+diagnostic codes. Borrowed ad-hoc/custom-check/hook/presentation query IDs do not
+inherit the asset-body target. See [diagnostic navigation](diagnostic-navigation.md).
+
 The app's Monaco asset editors (`web/components/app/asset-editor.tsx`), the
 query-sensor editor, dashboard/report query-dataset editor, custom-check dialog,
 and pre/post-hook dialogs drive SQL intellisense **entirely through the LSP**

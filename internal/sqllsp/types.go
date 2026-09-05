@@ -21,13 +21,14 @@ type Location struct {
 }
 
 type Diagnostic struct {
-	Range      Range  `json:"range"`
-	Severity   int    `json:"severity"`
-	Code       string `json:"code,omitempty"`
-	Source     string `json:"source,omitempty"`
-	Message    string `json:"message"`
-	Scope      string `json:"scope,omitempty"`
-	Confidence string `json:"confidence,omitempty"`
+	Subject    *authoringdiag.Subject `json:"subject,omitempty"`
+	Range      Range                  `json:"range"`
+	Severity   int                    `json:"severity"`
+	Code       string                 `json:"code,omitempty"`
+	Source     string                 `json:"source,omitempty"`
+	Message    string                 `json:"message"`
+	Scope      string                 `json:"scope,omitempty"`
+	Confidence string                 `json:"confidence,omitempty"`
 }
 
 type CompletionItem struct {

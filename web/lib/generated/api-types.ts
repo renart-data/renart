@@ -462,6 +462,7 @@ export type DataBrowserConnectionsResponse = {
 };
 
 export type DataBrowserNode = {
+  address?: DataObjectAddress;
   id: string;
   parent_id?: string;
   node_type: string;
@@ -476,6 +477,7 @@ export type DataBrowserNode = {
 };
 
 export type DataBrowserObject = {
+  address?: DataObjectAddress;
   id: string;
   connection_id: string;
   connection_name: string;
@@ -512,6 +514,21 @@ export type DataBrowserPreviewResponse = {
   rows: Record<string, unknown>[];
   truncated?: boolean;
   elapsed_ms: number;
+};
+
+export type DataBrowserResolveRequest = {
+  environment: string;
+  address: DataObjectAddress;
+};
+
+export type DataObjectAddress = {
+  source_kind: string;
+  connection?: string;
+  connection_type?: string;
+  database?: string;
+  schema?: string;
+  name?: string;
+  path?: string;
 };
 
 export type EnvironmentPolicy = {
@@ -1329,15 +1346,31 @@ export type ReplacePresentationRequest = {
 };
 
 export type ResourceTarget = {
+  notebook_id?: string;
+  cell_id?: string;
+  presentation_id?: string;
+  block_id?: string;
   kind: string;
-  asset_id: string;
-  column: string;
-  field: string;
+  asset_id?: string;
+  column?: string;
+  field?: string;
+  section?: string;
+  address?: DataObjectAddress;
+  connection?: string;
+  source_fingerprint?: string;
+  line?: number;
+  end_line?: number;
+  check_name?: string;
 };
 
 export type SQLColumn = {
   name: string;
   type?: string;
+};
+
+export type SQLDiagnosticLink = {
+  index: number;
+  target: ResourceTarget;
 };
 
 export type SqlDiscoveryDatabasesResponse = {
@@ -1501,6 +1534,7 @@ export type TypeCheckFinding = {
   source_fingerprint?: string;
   resolutions?: TypeCheckResolution[];
   target?: ResourceTarget;
+  navigation_unavailable_reason?: string;
 };
 
 export type TypeCheckPresentation = {
@@ -1514,6 +1548,7 @@ export type TypeCheckPresentation = {
 };
 
 export type TypeCheckPresentationFinding = {
+  target?: ResourceTarget;
   code: string;
   severity: string;
   message: string;

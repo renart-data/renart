@@ -12,6 +12,7 @@ import (
 )
 
 type DataBrowserHandlers interface {
+	Resolve(ctx context.Context, request databrowser.ResolveRequest) (databrowser.ObjectResponse, *apperror.Error)
 	Connections(ctx context.Context, environment string) (databrowser.ConnectionsResponse, *apperror.Error)
 	Children(ctx context.Context, connectionID, parentID, environment string) (databrowser.ChildrenResponse, *apperror.Error)
 	Object(ctx context.Context, objectID, environment string) (databrowser.ObjectResponse, *apperror.Error)
@@ -27,6 +28,21 @@ func RegisterDataBrowserRoutes(router chi.Router, handlers *DataBrowserAPI) {
 	router.Get("/api/data-browser/connections/{connectionID}/children", handlers.HandleChildren)
 	router.Get("/api/data-browser/objects/{objectID}", handlers.HandleObject)
 	router.Post("/api/data-browser/preview", handlers.HandlePreview)
+	router.Post("/api/data-browser/resolve", handlers.HandleResolve)
+}
+
+func (h *DataBrowserAPI) HandleResolve(w http.ResponseWriter, r *http.Request) {
+	request, err := decodeJSONObject[databrowser.ResolveRequest](w, r, 16<<10)
+	if err != nil {
+		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
+		return
+	}
+	response, apiErr := h.Service.Resolve(r.Context(), request)
+	if apiErr != nil {
+		writeDataBrowserError(w, apiErr)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, response)
 }
 
 func (h *DataBrowserAPI) HandleConnections(w http.ResponseWriter, r *http.Request) {
