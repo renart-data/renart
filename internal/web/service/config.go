@@ -976,7 +976,7 @@ func BuildWorkspaceConfigConnectionTypes() []WorkspaceConfigConnectionType {
 		category := "source"
 		if warehouse[typeName] {
 			category = "warehouse"
-		} else if loadConnectionCategory(typeName) == LoadCategoryStorage {
+		} else if loadConnectionCategory(typeName) == LoadCategoryStorage || loadConnectionCategory(typeName) == LoadCategoryFile {
 			category = "storage"
 		}
 		items = append(items, WorkspaceConfigConnectionType{

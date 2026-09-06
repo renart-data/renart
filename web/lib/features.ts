@@ -1,25 +1,25 @@
 import { useAtomValue } from "jotai";
 
-import { isIngestrAssetType } from "@/lib/asset-types";
 import { workspaceAtom } from "@/lib/atoms/workspace";
 import type { WorkspaceConfigConnectionType, WorkspaceConfigResponse } from "@/lib/types";
 
 /**
- * Whether ingestr surfaces (source connection types, asset options) are
- * visible: either the project opted in via the `ingestr` feature flag in
- * .renart/project.yml, or the workspace already contains ingestr assets —
- * those must keep working and stay visible regardless of the flag.
+ * Creating new Ingestr connections requires explicit project opt-in. Existing
+ * assets and connections remain editable; their presence is not a recommendation
+ * to create more. Loaded config takes precedence over an older workspace snapshot.
  */
 export function useIngestrEnabled(
   workspaceConfig?: Pick<WorkspaceConfigResponse, "features"> | null,
 ): boolean {
   const workspace = useAtomValue(workspaceAtom);
-  if (workspaceConfig?.features?.ingestr || workspace?.features?.ingestr) {
-    return true;
-  }
-  return (workspace?.pipelines ?? []).some((pipeline) =>
-    pipeline.assets.some((asset) => isIngestrAssetType(asset.type)),
-  );
+  return ingestrCreationEnabled(workspaceConfig, workspace);
+}
+
+export function ingestrCreationEnabled(
+  config?: Pick<WorkspaceConfigResponse, "features"> | null,
+  workspace?: Pick<WorkspaceConfigResponse, "features"> | null,
+): boolean {
+  return Boolean((config ?? workspace)?.features?.ingestr);
 }
 
 /**
