@@ -33,7 +33,7 @@ function warmWasmCache() {
 }
 
 export default function globalSetup() {
-  const tempRoot = "/dev/shm/bruin-playwright";
+  const tempRoot = process.env.RENART_E2E_TEMP_DIR ?? "/dev/shm/bruin-playwright";
   mkdirSync(tempRoot, { recursive: true });
   process.env.TMPDIR = tempRoot;
   process.env.TMP = tempRoot;

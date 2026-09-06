@@ -3,6 +3,8 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=goland,go,macos
 
 ### Go ###
+/.test-artifacts/
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
