@@ -17,7 +17,7 @@ CI verifies that the checked-in inventory is current.
 
 | Module | Version | License and notice texts |
 | --- | --- | --- |
-| cel.dev/expr | v0.25.1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| cel.dev/expr | v0.25.2 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | cloud.google.com/go | v0.123.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | cloud.google.com/go/auth | v0.18.2 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | cloud.google.com/go/auth/oauth2adapt | v0.2.8 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
@@ -40,7 +40,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/apache/arrow-go/v18 | v18.6.0 | [license](third_party/licenses/ff2fe52b8dfd2574c6ea7f0c407948c857f62672c2a3a9a17083ee10af8067ef.txt), [license](third_party/licenses/c02e3dc1587f49e4876c8b75ae9e534739a00e834b609395cc2bb2fd24452dfe.txt) |
 | github.com/apache/arrow/go/v12 | v12.0.1 | [license](third_party/licenses/44d90a666995d20b37141973bf1193685cc9a5eb39ffa9492f53fd8b65b7ebd1.txt) |
 | github.com/apache/arrow/go/v15 | v15.0.2 | [license](third_party/licenses/bd939b3a0ca7ffedd7444240915f4f297f09739fa9d07bac8c85ec4ea8c94c35.txt) |
-| github.com/apache/thrift | v0.23.0 | [license](third_party/licenses/89aa7b27868669299bd8a6c53b72ec4beadce42dad6c8336797cc26e1e8df98d.txt), [license](third_party/licenses/c2534e065069887565f871f0648b013a7e5f4a422809faf4ae3c590b7c0bf561.txt) |
+| github.com/apache/thrift | v0.24.0 | [license](third_party/licenses/89aa7b27868669299bd8a6c53b72ec4beadce42dad6c8336797cc26e1e8df98d.txt), [license](third_party/licenses/c2534e065069887565f871f0648b013a7e5f4a422809faf4ae3c590b7c0bf561.txt) |
 | github.com/aws/aws-sdk-go | v1.55.6 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/a6e830174d62dafad3a718384772ea1f4c0e27989f050932dc442a5e3ddad080.txt) |
 | github.com/aws/aws-sdk-go-v2 | v1.42.1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/a6e830174d62dafad3a718384772ea1f4c0e27989f050932dc442a5e3ddad080.txt) |
 | github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream | v1.7.14 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
@@ -130,7 +130,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/google/uuid | v1.6.0 | [license](third_party/licenses/0a8d61ed3cbfd5312326e8126c31ce9c627a283adc99131b56896d29ada04b2d.txt) |
 | github.com/googleapis/enterprise-certificate-proxy | v0.3.14 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/googleapis/gax-go/v2 | v2.19.0 | [license](third_party/licenses/b95218cd9607855a6536384c0262922b30a0c2bf56e4ced790240f3a3bac4722.txt) |
-| github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp | v1.32.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp | v1.33.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric | v0.54.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping | v0.54.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/grpc-ecosystem/grpc-gateway/v2 | v2.29.0 | [license](third_party/licenses/a15b1d1b168954c92ff7fb1620382418f7c72f4f4d251ee791d1098ad68ab0c4.txt) |
@@ -210,7 +210,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/snowflakedb/gosnowflake | v1.19.0 | [license](third_party/licenses/3376624f734322a3be32be001dab57cdfe2e414cec7a3babbb64bd7854db5f95.txt) |
 | github.com/sourcegraph/conc | v0.3.0 | [license](third_party/licenses/e3dfc7ac698a5b64eefc720531595b9d6e3f6c5da7f741ef15e453709e173ee2.txt) |
 | github.com/spf13/afero | v1.15.0 | [license](third_party/licenses/5e3400b93bbb099e83e52bab885e7441750673c21f97988ca3f1240639b63283.txt) |
-| github.com/spiffe/go-spiffe/v2 | v2.6.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
+| github.com/spiffe/go-spiffe/v2 | v2.7.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
 | github.com/stretchr/testify | v1.11.1 | [license](third_party/licenses/f8e536c1c7b695810427095dc85f5f80d44ff7c10535e8a9486cf393e2599189.txt) |
 | github.com/tetratelabs/wazero | v1.12.0 | [license](third_party/licenses/c46f033d017a5af71a1de0105ec56c41bd47f81a0bbdf779fffe316336dc7c1f.txt), [license](third_party/licenses/e6f0c5c151a3ff1eba8f5930a31ec084ca6d7adda43c8675ab81f7d36af50b4f.txt) |
 | github.com/tidwall/gjson | v1.19.0 | [license](third_party/licenses/be83ad53208d03a9fe08c7fac231cabf79422989ef5706bff217bd35104ebf07.txt) |
@@ -239,7 +239,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/zeroshade/machine-id | v0.0.0-20251223181436-930511047eef | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
 | go.mongodb.org/mongo-driver | v1.17.7 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
 | go.opentelemetry.io/auto/sdk | v1.2.1 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
-| go.opentelemetry.io/contrib/detectors/gcp | v1.43.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
+| go.opentelemetry.io/contrib/detectors/gcp | v1.44.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc | v0.63.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp | v0.68.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/otel | v1.44.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
@@ -271,7 +271,7 @@ CI verifies that the checked-in inventory is current.
 | google.golang.org/genproto | v0.0.0-20260316180232-0b37fe3546d5 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | google.golang.org/genproto/googleapis/api | v0.0.0-20260526163538-3dc84a4a5aaa | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | google.golang.org/genproto/googleapis/rpc | v0.0.0-20260526163538-3dc84a4a5aaa | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| google.golang.org/grpc | v1.82.1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/693ff28ec216d5112ac1bbfe64ef539005867d1c7bd427b57d579683293b947f.txt) |
+| google.golang.org/grpc | v1.83.1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/693ff28ec216d5112ac1bbfe64ef539005867d1c7bd427b57d579683293b947f.txt) |
 | google.golang.org/protobuf | v1.36.11 | [license](third_party/licenses/4835612df0098ca95f8e7d9e3bffcb02358d435dbb38057c844c99d7f725eb20.txt) |
 | gopkg.in/warnings.v0 | v0.1.2 | [license](third_party/licenses/986175a94c6ab7f33be5d3b5018797147a6cc740c357597fdb1ca679b72206a8.txt) |
 | gopkg.in/yaml.v3 | v3.0.1 | [license](third_party/licenses/d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b.txt), [license](third_party/licenses/f6c2dd3a67b576eafb89b80200b8b1627230bf3821a0c14cb99a22ac19107d00.txt) |

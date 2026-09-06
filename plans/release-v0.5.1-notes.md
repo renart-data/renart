@@ -28,6 +28,13 @@
 - Added a verified SQL platform reference, including ClickHouse, StarRocks and
   Trino, with explicit materialization limits.
 
+## Dependency updates
+
+- Updated Apache Thrift to 0.24.0 and gRPC-Go to 1.83.1, including the separate
+  Databricks/Sail test proxy. These include the upstream fixes for
+  [CVE-2026-43871](https://github.com/advisories/GHSA-8wv5-x4w7-5gww) and
+  [CVE-2026-84304](https://github.com/grpc/grpc-go/security/advisories/GHSA-vp52-pcj8-j9qc).
+
 Renart remains in public alpha. Deployment saves a version; it does not execute
 the pipeline. Evaluate changes against non-critical data first.
 
