@@ -50,6 +50,7 @@ import { assetNameParts } from "@/lib/asset-presentation";
 import { cn } from "@/lib/utils";
 
 import { kindMeta, type AppAsset } from "./app-data";
+import { DataBrowserLoadDropTarget } from "./data-browser/data-browser-canvas";
 import { AssetNode, AssetNodeMenuItems, type AssetNodeAction } from "./app-primitives";
 
 export type AppLineageCanvasAsset = AppAsset & {
@@ -182,6 +183,7 @@ function AssetFlowNode({ data }: NodeProps<AssetNodeData>) {
         card
       )}
       <Handle className="asset-node-hidden-handle" type="source" position={Position.Right} />
+      <DataBrowserLoadDropTarget assetId={data.asset.id} label={data.asset.name} />
       {data.onCreateDownstream ? (
         <button
           type="button"

@@ -129,6 +129,7 @@ import { renderJinjaAsset } from "@/lib/jinja-intellisense";
 import { effectiveConnectionForAsset } from "@/lib/sql-schema";
 import { withSQLPreviewLimit } from "@/lib/sql-query-preview";
 import { awaitWorkspaceSaves } from "@/lib/workspace-save-barrier";
+import { getPinnedProjectId } from "@/lib/project-context";
 import type {
   AssetInspectResponse,
   SqlQueryResponse,
@@ -159,6 +160,7 @@ import { AppAssetEditor } from "./asset-editor";
 import { ApiParametersEditor } from "./api-parameters-editor";
 import { AssetGuidedCards, type QualityCheckFocus } from "./asset-guided-cards";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
+import { DataBrowserCanvas } from "./data-browser/data-browser-canvas";
 import { NewAssetDialog, NewFolderDialog, NewPipelineDialog } from "./build-create-dialogs";
 import { ConnectionSelect } from "./connection-select";
 import {
@@ -331,7 +333,8 @@ type BuildContextValue = {
   openPipelineVariable: (variableName: string) => void;
   openNewAsset: () => void;
   openNewAssetInGroup: (prefix?: string) => void;
-  createDownstreamAsset: (source: { id: string; name: string }) => void;
+  createDownstreamAsset: (source: { id: string; name: string }, destination?: string) => void;
+  createDataBrowserSource: (objectId: string, environment: string) => void;
   openInspector: () => void;
   reviewFailedCheck: (assetId: string) => void;
   importExternalRelation: (relationId: string) => void;
@@ -957,12 +960,31 @@ export function AppBuildPage({
     string | null
   >(null);
   const [newAssetInitialConnection, setNewAssetInitialConnection] = useState<string | null>(null);
+  const [newAssetInitialKind, setNewAssetInitialKind] = useState<"load" | undefined>();
+  const [dataBrowserSource, setDataBrowserSource] = useState<{
+    object_id: string;
+    environment: string;
+  } | null>(null);
   const [adhocNotebookOpen, setAdhocNotebookOpen] = useState(false);
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   // Path of a pipeline just created here; once the workspace SSE update lists
   // it, we navigate onto it (the create response carries no ID).
   const [pendingPipelinePath, setPendingPipelinePath] = useState<string | null>(null);
+  const [pendingCreatedAsset, setPendingCreatedAsset] = useState<{
+    id: string;
+    pipelineId: string;
+    projectId: string | null;
+    fromHref: string;
+  } | null>(null);
+  const revealCreatedAsset = (assetId: string) => {
+    setPendingCreatedAsset({
+      id: assetId,
+      pipelineId,
+      projectId: getPinnedProjectId(),
+      fromHref: location.href,
+    });
+  };
   const [downstreamSource, setDownstreamSource] = useState<{
     id: string;
     name: string;
@@ -1082,6 +1104,30 @@ export function AppBuildPage({
       });
     }
   }, [buildSearch, navigate, pendingPipelinePath, workspace?.pipelines]);
+
+  useEffect(() => {
+    if (!pendingCreatedAsset) return;
+    // Creation can return before SSE has reconciled the navigation owners.
+    // Wait for canonical state, but never steal focus after the user navigates.
+    if (
+      pendingCreatedAsset.pipelineId !== pipelineId ||
+      pendingCreatedAsset.projectId !== getPinnedProjectId() ||
+      pendingCreatedAsset.fromHref !== location.href
+    ) {
+      setPendingCreatedAsset(null);
+      return;
+    }
+    const created = workspace?.pipelines
+      .find((pipeline) => pipeline.id === pendingCreatedAsset.pipelineId)
+      ?.assets.some((asset) => asset.id === pendingCreatedAsset.id);
+    if (!created) return;
+    setPendingCreatedAsset(null);
+    void resourceNavigation.open({
+      kind: "asset-section",
+      asset_id: pendingCreatedAsset.id,
+      section: "source",
+    });
+  }, [pendingCreatedAsset, pipelineId, location.href, workspace, resourceNavigation]);
 
   const openBottom = (tab: AppResultTab) => {
     if (tab === "query" && editorMode !== "adhoc" && effectiveSelectedAssetId) {
@@ -1493,7 +1539,7 @@ export function AppBuildPage({
     setNewAssetInitialConnection(null);
     setNewAssetOpen(true);
   };
-  const createDownstreamAsset = (source: { id: string; name: string }) => {
+  const createDownstreamAsset = (source: { id: string; name: string }, destination?: string) => {
     const sourceAsset = activePipeline?.assets.find((asset) => asset.id === source.id);
     const sourceConnection = sourceAsset ? effectiveConnectionForAsset(sourceAsset) : null;
     setDownstreamSource({
@@ -1502,7 +1548,8 @@ export function AppBuildPage({
     });
     setNewAssetPrefix(null);
     setNewAssetInitialExecutableContent(null);
-    setNewAssetInitialConnection(null);
+    setNewAssetInitialConnection(destination ?? null);
+    setNewAssetInitialKind(destination ? "load" : undefined);
     setNewAssetOpen(true);
   };
   const convertAdhocToAsset = () => {
@@ -1584,6 +1631,34 @@ export function AppBuildPage({
     }
   };
 
+  const dataBrowserToolAction = (
+    <WorkbenchToolAction
+      tool="data"
+      action={() => {
+        if (isMobileWorkbench) {
+          window.setTimeout(() => setMobileNavigationOpen(true), 0);
+        }
+      }}
+    />
+  );
+  const dataBrowserSidebar = (
+    <Suspense fallback={<DataBrowserSidebarLoading />}>
+      <DataBrowserSidebar
+        pipelineId={pipelineId}
+        onChooseForCanvas={() =>
+          afterMobileNavigationCloses(() => {
+            if (view === "code" && effectiveSelectedAssetId)
+              void navigate({
+                to: appAssetViewPath("canvas"),
+                params: { pipelineId, assetId: effectiveSelectedAssetId },
+                search: { ...location.search, ...buildSearch },
+              });
+          })
+        }
+      />
+    </Suspense>
+  );
+
   if (!workspace) {
     return (
       <AppPage>
@@ -1631,6 +1706,10 @@ export function AppBuildPage({
   if (!selectedAsset) {
     return (
       <AppPage>
+        {workbenchEnabled ? dataBrowserToolAction : null}
+        {workbenchEnabled && activeWorkbenchTool === "data" ? (
+          <WorkbenchPortal slot="context">{dataBrowserSidebar}</WorkbenchPortal>
+        ) : null}
         <PageHeader
           title={activePipeline.name}
           subtitle="This pipeline does not contain any assets yet"
@@ -1641,28 +1720,46 @@ export function AppBuildPage({
             </Button>
           }
         />
-        <div className="flex min-h-0 flex-1 items-center justify-center px-3 pb-3">
-          <AppPanel className="flex max-w-md flex-col items-center gap-3 p-6 text-center">
-            <FileCode className="size-8 text-muted-foreground" />
-            <div>
-              <h2 className="font-medium">No assets yet</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Add the first asset to begin shaping this pipeline.
-              </p>
+        <div className="min-h-0 flex-1">
+          <DataBrowserCanvas
+            pipelineId={pipelineId}
+            assets={[]}
+            onSource={(objectId, environment) =>
+              setDataBrowserSource({ object_id: objectId, environment })
+            }
+            onLoad={() => {}}
+          >
+            <div className="flex h-full min-h-0 items-center justify-center px-3 pb-3">
+              <AppPanel className="flex max-w-md flex-col items-center gap-3 p-6 text-center">
+                <FileCode className="size-8 text-muted-foreground" />
+                <div>
+                  <h2 className="font-medium">No assets yet</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Add the first asset to begin shaping this pipeline.
+                  </p>
+                </div>
+                <Button onClick={openNewAsset}>
+                  <FilePlus2 data-icon="inline-start" />
+                  New asset
+                </Button>
+              </AppPanel>
             </div>
-            <Button onClick={openNewAsset}>
-              <FilePlus2 data-icon="inline-start" />
-              New asset
-            </Button>
-          </AppPanel>
+          </DataBrowserCanvas>
         </div>
+        <ExternalRelationImportDialog
+          pipelineId={pipelineId}
+          dataBrowserSource={dataBrowserSource}
+          onOpenChange={(open) => {
+            if (!open) setDataBrowserSource(null);
+          }}
+        />
         <NewAssetDialog
           open={newAssetOpen}
           onOpenChange={setNewAssetOpen}
           pipelineId={activePipeline.id}
           pipelineName={activePipeline.name}
           existingAssetNames={existingAssetNames}
-          onCreated={(assetId) => goToAsset(activePipeline.id, assetId)}
+          onCreated={revealCreatedAsset}
         />
       </AppPage>
     );
@@ -1688,6 +1785,8 @@ export function AppBuildPage({
     openNewAsset,
     openNewAssetInGroup,
     createDownstreamAsset,
+    createDataBrowserSource: (objectId, environment) =>
+      setDataBrowserSource({ object_id: objectId, environment }),
     openInspector: () => setInspectorOpen(true),
     reviewFailedCheck,
     importExternalRelation: setExternalRelationImportId,
@@ -1724,14 +1823,7 @@ export function AppBuildPage({
             }}
           />
           <WorkbenchToolAction tool="ad-hoc" action={openAdhoc} />
-          <WorkbenchToolAction
-            tool="data"
-            action={() => {
-              if (isMobileWorkbench) {
-                window.setTimeout(() => setMobileNavigationOpen(true), 0);
-              }
-            }}
-          />
+          {dataBrowserToolAction}
           <WorkbenchToolAction tool="pipeline-settings" action={() => openPipelineSettings()} />
         </>
       ) : null}
@@ -1739,9 +1831,7 @@ export function AppBuildPage({
         <WorkbenchPortal slot="context">
           <div className="flex h-full min-h-0 flex-col">
             {activeWorkbenchTool === "data" ? (
-              <Suspense fallback={<DataBrowserSidebarLoading />}>
-                <DataBrowserSidebar />
-              </Suspense>
+              dataBrowserSidebar
             ) : (
               <Explorer
                 pipelineId={pipelineId}
@@ -2005,6 +2095,7 @@ export function AppBuildPage({
               setNewAssetPrefix(null);
               setNewAssetInitialExecutableContent(null);
               setNewAssetInitialConnection(null);
+              setNewAssetInitialKind(undefined);
             }
           }}
           pipelineId={activePipeline?.id}
@@ -2014,7 +2105,15 @@ export function AppBuildPage({
           namePrefix={newAssetPrefix}
           initialExecutableContent={newAssetInitialExecutableContent}
           initialConnection={newAssetInitialConnection}
-          onCreated={(assetId) => goToAsset(activePipeline?.id ?? pipelineId, assetId)}
+          initialKind={newAssetInitialKind}
+          onCreated={revealCreatedAsset}
+        />
+        <ExternalRelationImportDialog
+          pipelineId={pipelineId}
+          dataBrowserSource={dataBrowserSource}
+          onOpenChange={(open) => {
+            if (!open) setDataBrowserSource(null);
+          }}
         />
         <AdhocToNotebookDialog
           open={adhocNotebookOpen}
@@ -2962,9 +3061,11 @@ function AssetButton({
 
 function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) => void }) {
   const {
+    pipelineId,
     pipelineAssets,
     routedAssetId,
     createDownstreamAsset,
+    createDataBrowserSource,
     openNewAssetInGroup,
     runAssetById,
     deleteAssetById,
@@ -2976,34 +3077,44 @@ function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) =>
   } = useBuildContext();
   const sqlHoveredAssetId = useAtomValue(sqlHoveredAssetAtom);
   return (
-    <AppLineageCanvas
+    <DataBrowserCanvas
+      pipelineId={pipelineId}
       assets={pipelineAssets}
-      selectedAssetId={routedAssetId}
-      focusAssetId={routedAssetId}
-      highlightAssetId={sqlHoveredAssetId ?? undefined}
-      onAssetSelect={onAssetSelect}
-      onRunAsset={runAssetById}
-      onDeleteAsset={deleteAssetById}
-      onGoToAsset={(assetId) => {
-        const target = pipelineAssets.find((asset) => asset.id === assetId);
-        if (target?.readOnly && target.pipelineId) {
-          goToAsset(target.pipelineId, target.id);
-          return;
-        }
-        goToCatalog(assetId);
-      }}
-      onAssetConnectionClick={() => openPipelineConnections()}
-      onReviewFailedCheck={reviewFailedCheck}
-      onImportExternalRelation={importExternalRelation}
-      goToLabel="Open in catalog"
-      onCreateAsset={({ prefix }) => openNewAssetInGroup(prefix)}
-      onCreateDownstream={(assetId) => {
+      onSource={createDataBrowserSource}
+      onLoad={(assetId, destination) => {
         const source = pipelineAssets.find((asset) => asset.id === assetId);
-        if (source) {
-          createDownstreamAsset({ id: source.id, name: source.name });
-        }
+        if (source) createDownstreamAsset({ id: source.id, name: source.name }, destination);
       }}
-    />
+    >
+      <AppLineageCanvas
+        assets={pipelineAssets}
+        selectedAssetId={routedAssetId}
+        focusAssetId={routedAssetId}
+        highlightAssetId={sqlHoveredAssetId ?? undefined}
+        onAssetSelect={onAssetSelect}
+        onRunAsset={runAssetById}
+        onDeleteAsset={deleteAssetById}
+        onGoToAsset={(assetId) => {
+          const target = pipelineAssets.find((asset) => asset.id === assetId);
+          if (target?.readOnly && target.pipelineId) {
+            goToAsset(target.pipelineId, target.id);
+            return;
+          }
+          goToCatalog(assetId);
+        }}
+        onAssetConnectionClick={() => openPipelineConnections()}
+        onReviewFailedCheck={reviewFailedCheck}
+        onImportExternalRelation={importExternalRelation}
+        goToLabel="Open in catalog"
+        onCreateAsset={({ prefix }) => openNewAssetInGroup(prefix)}
+        onCreateDownstream={(assetId) => {
+          const source = pipelineAssets.find((asset) => asset.id === assetId);
+          if (source) {
+            createDownstreamAsset({ id: source.id, name: source.name });
+          }
+        }}
+      />
+    </DataBrowserCanvas>
   );
 }
 

@@ -90,14 +90,25 @@ func (s *PipelineService) externalRelationImport(
 			Message: "the external relation is no longer positively observed or referenced; run type-check again",
 		}
 	}
+	return s.importObservedRelation(ctx, pipelineID, *relation, req.IncludeColumns, preview, true)
+}
+
+// The importer owns canonical source files and collision checks. Type-check
+// imports may also bind reviewed consumers; Data Browser imports add only the
+// selected source, without rewriting unrelated assets.
+func (s *PipelineService) importObservedRelation(ctx context.Context, pipelineID string, observed TypeCheckExternalRelation, columns *bool, preview, bindConsumers bool) (ExternalRelationImportResult, *APIError) {
+	relation := &observed
+	if s.externalImporter == nil {
+		return ExternalRelationImportResult{}, newAPIError(501, "source_import_unavailable", "source import is unavailable")
+	}
 
 	relPipelinePath, absPipelinePath, decodeErr := s.resolver().DecodePipelineID(pipelineID)
 	if decodeErr != nil {
 		return ExternalRelationImportResult{}, &APIError{Status: http.StatusBadRequest, Code: "invalid_pipeline_id", Message: decodeErr.Error()}
 	}
 	includeColumns := true
-	if req.IncludeColumns != nil {
-		includeColumns = *req.IncludeColumns
+	if columns != nil {
+		includeColumns = *columns
 	}
 	output, importErr := s.externalImporter.ImportDatabase(ctx, ImportDatabaseRequest{
 		PipelinePath:       relPipelinePath,
@@ -139,7 +150,7 @@ func (s *PipelineService) externalRelationImport(
 	for _, warning := range imported.Warnings {
 		warnings = append(warnings, ExternalRelationImportWarning(warning))
 	}
-	if !preview {
+	if !preview && bindConsumers {
 		warnings = append(warnings, s.bindImportedExternalRelationConsumers(ctx, absPipelinePath, *relation, asset.Name)...)
 	}
 	return ExternalRelationImportResult{

@@ -228,13 +228,30 @@ flags (`internal/web/identity`): `features.ingestr` re-enables the ingestr
 surfaces the UI hides by default. The config contract classifies SQL-capable
 connections as `warehouse`, S3/GCS as `storage`, and remaining connector/API
 types as `source`; project settings always expose warehouse and storage types,
-while the frontend (`web/lib/features.ts`) shows source types only when the flag
-is set or the workspace already contains ingestr assets. Direct execution
+while the frontend (`web/lib/features.ts`) offers new source connections only
+when the flag is set. Existing Ingestr assets and connection edit forms remain
+usable without enabling unrelated Ingestr creation choices. Direct execution
 likewise leaves Bruin's Ingestr main
 operator disabled unless the parsed pipeline already contains an Ingestr
 asset. Ordinary Renart pipelines therefore do not initialize Ingestr or cause
 its Python package to be resolved; an existing Ingestr asset enables the
 operator and the package is fetched only when that asset is executed.
+
+SFTP is classified with storage/file transports in the workspace connection
+catalog, not with Ingestr-only SaaS sources: Renart Load supports it directly.
+
+Data Browser source authoring uses
+`POST /api/pipelines/{id}/data-browser/sources/preview` and the corresponding
+`/sources` confirmation. The request contains a revision-bound `object_id`, an
+explicit environment, and the optional include-columns choice. Both handlers
+revalidate the reference through the Data Browser; malformed requests, stale
+configuration and cross-environment references fail before import. The service
+accepts warehouse tables only, derives the platform's Source type, and delegates
+to the canonical database importer with `RejectExisting`. Preview is read-only;
+confirmation creates the source file and emits workspace reconciliation. Unlike
+the type-check-driven external relation import, it does not rewrite consumers.
+Load drops reuse the existing semantic asset creation API, including its
+server-resolved upstream asset and connection-role validation.
 
 Inside an open project, `GET /api/pipelines/templates` exposes the
 backend-owned catalog used by the **New pipeline** dialog. Alongside a blank

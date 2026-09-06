@@ -182,6 +182,25 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   `WorkspaceConnectionDialog` with a preselected type and returns to the newly
   created source without putting credentials in Data Browser state.
 
+  In a pipeline, table rows and warehouse connections support native drag and
+  the equivalent **Use in canvas** action (keyboard/touch). A table reveals a
+  Source creation target; a destination reveals Load targets beside the output
+  of compatible local assets, based on the Go creation profile's source/destination roles.
+  A drop opens the existing review/creation dialog. It never runs a pipeline,
+  materializes data, or writes an asset before confirmation. Source creation
+  also works in empty pipelines. File rows keep their ordinary navigation;
+  file imports are not part of this table-authoring interaction.
+
+  `lib/data-browser-transfer.ts` holds disposable same-window interaction state,
+  scoped to project, pipeline, and environment. Native DataTransfer carries only
+  a one-drag nonce, not serialized credentials or SQL. Foreign/stale transfers
+  do not activate targets. Escape, Cancel and drag-end clear placement. The
+  canvas does not change independent result/inspector/sidebar selection; only
+  an explicit keyboard/touch placement from Code reveals the required canvas.
+  A bounded, project/environment-scoped navigation cache preserves the browser
+  folder when the mobile sheet closes. Restoring it rechecks the connection
+  revision against the server; stale references still fail server-side validation.
+
 - [components/app/build-page.tsx](../web/components/app/build-page.tsx): the primary
   IDE. Its pipeline-only project explorer and asset metadata inspector occupy the
   shared Workbench slots; Ad-hoc Query and Notebooks are accessed from their
@@ -193,7 +212,10 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   Monaco or notebook runtimes. The central work area retains the interactive
   lineage canvas
   ([lineage-canvas.tsx](../web/components/app/lineage-canvas.tsx), React Flow)
-  beside the asset editor. Bare asset URLs default to this split view; ad-hoc
+  beside the asset editor. After creating an asset, source navigation waits for
+  the canonical workspace/SSE update to expose its owner. This pending reveal
+  is cancelled if the user changes route or project first. Bare asset URLs
+  default to this split view; ad-hoc
   queries preserve code/split layout and add the editor beside a canvas-only
   view. The ad-hoc editor can copy its current draft into a new or existing
   notebook cell, or open the New asset dialog as a SQL asset with the draft
@@ -772,8 +794,12 @@ than hand-rolled `div` shells.
 - [lib/features.ts](../web/lib/features.ts): project-scoped feature flags.
   Warehouse and S3/GCS object-storage connection types stay configurable in
   project settings. Ingestr-only source connection types and asset kinds render
-  only when `.renart/project.yml` sets `features.ingestr` or the workspace
-  already contains ingestr assets (see [backend.md](backend.md) §2).
+  only when `.renart/project.yml` explicitly sets `features.ingestr`. The shared
+  New connection dialog enforces the same filter as project settings, including
+  caller-supplied/preselected types. Existing Ingestr assets remain editable and
+  an existing connection's own type stays available in its edit form; their
+  presence does not enable new Ingestr recommendations. Loaded config overrides
+  stale workspace flags (see [backend.md](backend.md) §2).
 - [lib/sql-schema.ts](../web/lib/sql-schema.ts): schema context for SQL
   intellisense. It scopes tables using only the effective connection resolved by
   the backend; it never guesses a connection from an asset type or selects an

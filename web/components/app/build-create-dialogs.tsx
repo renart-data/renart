@@ -150,6 +150,7 @@ export function NewAssetDialog({
   namePrefix,
   initialExecutableContent,
   initialConnection,
+  initialKind,
   onCreated,
 }: {
   open: boolean;
@@ -161,6 +162,7 @@ export function NewAssetDialog({
   namePrefix?: string | null;
   initialExecutableContent?: string | null;
   initialConnection?: string | null;
+  initialKind?: AssetCreationKind;
   onCreated?: (assetId: string) => void;
 }) {
   const [kind, setKind] = useState<AssetCreationKind>("sql");
@@ -249,7 +251,7 @@ export function NewAssetDialog({
     const resetMode = isDownstream ? "downstream" : "standalone";
     if (resetModeRef.current === resetMode) return;
     resetModeRef.current = resetMode;
-    setKind("sql");
+    setKind(initialKind ?? "sql");
     setConnection(initialConnection?.trim() || downstreamSource?.connection?.trim() || "");
     setSourceConnection(downstreamSource?.connection?.trim() || "");
     setSourceTable("");
@@ -264,6 +266,7 @@ export function NewAssetDialog({
   }, [
     downstreamSource?.connection,
     initialConnection,
+    initialKind,
     isDownstream,
     open,
     semanticCapabilities,

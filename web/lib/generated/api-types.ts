@@ -521,6 +521,12 @@ export type DataBrowserResolveRequest = {
   address: DataObjectAddress;
 };
 
+export type DataBrowserSourceRequest = {
+  object_id: string;
+  environment: string;
+  include_columns?: boolean;
+};
+
 export type DataObjectAddress = {
   source_kind: string;
   connection?: string;

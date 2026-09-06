@@ -49,6 +49,7 @@ import type {
   DataBrowserPreviewResponse,
 } from "@/lib/generated/api-types";
 import { cn } from "@/lib/utils";
+import { getPinnedProjectId } from "@/lib/project-context";
 import { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
 
 import {
@@ -57,6 +58,7 @@ import {
   normalizeConnectionType,
 } from "../connection-type-icon";
 import { WorkspaceConnectionDialog } from "../workspace-connection-dialog";
+import { DataBrowserTransferItem } from "./data-browser-transfer-item";
 import {
   AppContextSidebarTransition,
   type AppContextSidebarTransitionDirection,
@@ -68,6 +70,12 @@ type BrowserLevel = {
   label: string;
   nodes: DataBrowserNode[];
 };
+
+// A mobile Sheet unmounts its content when closed for canvas placement. Preserve
+// navigation (not authority) across that transition and revalidate the connection
+// revision before reusing cached object references. Bounded, same-tab cache only.
+type BrowserNavigation = { connection: DataBrowserConnection; levels: BrowserLevel[] };
+const browserNavigationCache = new Map<string, BrowserNavigation>();
 
 const preferredWarehouseTypes = [
   "postgres",
@@ -85,11 +93,31 @@ export function AppDataBrowserPage() {
   return <DataBrowserWorkspace presentation="page" />;
 }
 
-export function AppDataBrowserSidebar() {
-  return <DataBrowserWorkspace presentation="sidebar-dialog" />;
+export function AppDataBrowserSidebar({
+  pipelineId,
+  onChooseForCanvas,
+}: {
+  pipelineId?: string;
+  onChooseForCanvas?: () => void;
+}) {
+  return (
+    <DataBrowserWorkspace
+      presentation="sidebar-dialog"
+      pipelineId={pipelineId}
+      onChooseForCanvas={onChooseForCanvas}
+    />
+  );
 }
 
-function DataBrowserWorkspace({ presentation }: { presentation: "page" | "sidebar-dialog" }) {
+function DataBrowserWorkspace({
+  presentation,
+  pipelineId,
+  onChooseForCanvas,
+}: {
+  presentation: "page" | "sidebar-dialog";
+  pipelineId?: string;
+  onChooseForCanvas?: () => void;
+}) {
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
   const detail = (useLocation().search as ResourceSearch).detail;
   const settings = useWorkspaceSettingsData();
@@ -149,6 +177,9 @@ function DataBrowserWorkspace({ presentation }: { presentation: "page" | "sideba
 
   const navigator = (
     <DataBrowserNavigator
+      pipelineId={pipelineId}
+      environment={environment}
+      onChooseForCanvas={onChooseForCanvas}
       browser={browser}
       quickWarehouseTypes={quickWarehouseTypes.map((item) => item.type_name)}
       quickFileSystemTypes={quickFileSystemTypes.map((item) => item.type_name)}
@@ -204,12 +235,30 @@ function DataBrowserWorkspace({ presentation }: { presentation: "page" | "sideba
 }
 
 function useDataBrowser(environment: string, enabled: boolean) {
+  const scope = JSON.stringify([getPinnedProjectId(), environment]);
+  const restored = browserNavigationCache.get(scope);
   const requestID = useRef(0);
   const [connections, setConnections] = useState<DataBrowserConnection[]>([]);
-  const [selectedConnection, setSelectedConnection] = useState<DataBrowserConnection | null>(null);
-  const [levels, setLevels] = useState<BrowserLevel[]>([]);
+  const [selectedConnection, setSelectedConnection] = useState<DataBrowserConnection | null>(
+    restored?.connection ?? null,
+  );
+  const [levels, setLevels] = useState<BrowserLevel[]>(restored?.levels ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(
+    () => () => {
+      if (!selectedConnection || !levels.length) {
+        browserNavigationCache.delete(scope);
+        return;
+      }
+      browserNavigationCache.delete(scope);
+      browserNavigationCache.set(scope, { connection: selectedConnection, levels });
+      if (browserNavigationCache.size > 12)
+        browserNavigationCache.delete(browserNavigationCache.keys().next().value!);
+    },
+    [scope, selectedConnection, levels],
+  );
 
   const loadChildren = useCallback(
     async (connection: DataBrowserConnection, parentId?: string, label = connection.name) => {
@@ -245,7 +294,7 @@ function useDataBrowser(environment: string, enabled: boolean) {
   );
 
   const reloadConnections = useCallback(
-    async (selectName?: string) => {
+    async (selectName?: string, restore?: BrowserNavigation) => {
       const nextRequest = ++requestID.current;
       setLoading(true);
       setError(null);
@@ -255,11 +304,16 @@ function useDataBrowser(environment: string, enabled: boolean) {
         setConnections(response.connections);
 
         setLevels([]);
-        const nextConnection = selectName
-          ? response.connections.find((item) => item.name === selectName)
+        const selectedName = selectName ?? restore?.connection.name;
+        const nextConnection = selectedName
+          ? response.connections.find((item) => item.name === selectedName)
           : null;
         setSelectedConnection(nextConnection ?? null);
         if (nextConnection) {
+          if (nextConnection.id === restore?.connection.id) {
+            setLevels(restore.levels);
+            return;
+          }
           const level = await loadChildren(nextConnection);
           if (level && requestID.current === nextRequest) setLevels([level]);
         }
@@ -277,8 +331,8 @@ function useDataBrowser(environment: string, enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) return;
-    void reloadConnections();
-  }, [enabled, reloadConnections]);
+    void reloadConnections(undefined, browserNavigationCache.get(scope));
+  }, [enabled, reloadConnections, scope]);
 
   const openNode = useCallback(
     async (node: DataBrowserNode) => {
@@ -326,6 +380,9 @@ function useDataBrowser(environment: string, enabled: boolean) {
 type DataBrowserController = ReturnType<typeof useDataBrowser>;
 
 function DataBrowserNavigator({
+  pipelineId,
+  environment,
+  onChooseForCanvas,
   browser,
   quickWarehouseTypes,
   quickFileSystemTypes,
@@ -336,6 +393,9 @@ function DataBrowserNavigator({
   onReload,
   navigationDirection,
 }: {
+  pipelineId?: string;
+  environment: string;
+  onChooseForCanvas?: () => void;
   browser: DataBrowserController;
   quickWarehouseTypes: string[];
   quickFileSystemTypes: string[];
@@ -422,23 +482,40 @@ function DataBrowserNavigator({
               <Spinner /> Loading data sources…
             </div>
           ) : browser.selectedConnection ? (
-            <NodeList nodes={filteredNodes} onOpen={onOpenNode} />
+            <NodeList
+              nodes={filteredNodes}
+              onOpen={onOpenNode}
+              pipelineId={pipelineId}
+              environment={environment}
+              onChooseForCanvas={onChooseForCanvas}
+            />
           ) : (
             <>
               <NavigatorSection label="Connected sources">
                 {filteredConnections.map((connection) => (
-                  <NavigatorRow
+                  <DataBrowserTransferItem
                     key={connection.id}
-                    icon={<ConnectionTypeIcon connectionType={connection.type} />}
-                    label={connection.name}
-                    description={
-                      connection.source_kind === "local_files"
-                        ? "Files inside this project"
-                        : friendlyConnectionType(connection.type)
+                    pipelineId={pipelineId}
+                    environment={environment}
+                    onChoose={onChooseForCanvas}
+                    item={
+                      connection.source_kind === "warehouse"
+                        ? { kind: "connection", id: connection.name, label: connection.name }
+                        : undefined
                     }
-                    trailing={<ChevronRight className="size-3.5" />}
-                    onClick={() => void onSelectConnection(connection)}
-                  />
+                  >
+                    <NavigatorRow
+                      icon={<ConnectionTypeIcon connectionType={connection.type} />}
+                      label={connection.name}
+                      description={
+                        connection.source_kind === "local_files"
+                          ? "Files inside this project"
+                          : friendlyConnectionType(connection.type)
+                      }
+                      trailing={<ChevronRight className="size-3.5" />}
+                      onClick={() => void onSelectConnection(connection)}
+                    />
+                  </DataBrowserTransferItem>
                 ))}
                 {filteredConnections.length === 0 ? (
                   <p className="px-2 py-6 text-center text-xs text-muted-foreground">
@@ -503,9 +580,15 @@ function DataBrowserNavigator({
 function NodeList({
   nodes,
   onOpen,
+  pipelineId,
+  environment,
+  onChooseForCanvas,
 }: {
   nodes: DataBrowserNode[];
   onOpen: (node: DataBrowserNode) => void | Promise<void>;
+  pipelineId?: string;
+  environment: string;
+  onChooseForCanvas?: () => void;
 }) {
   if (nodes.length === 0) {
     return <p className="px-2 py-10 text-center text-xs text-muted-foreground">No objects here.</p>;
@@ -525,7 +608,7 @@ function NodeList({
         );
         const className =
           "group flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-accent";
-        return node.address ? (
+        const row = node.address ? (
           <ResourceLink
             key={node.id}
             target={{ kind: "data-object", address: node.address, section: "schema" }}
@@ -542,6 +625,21 @@ function NodeList({
           >
             {content}
           </button>
+        );
+        return (
+          <DataBrowserTransferItem
+            key={node.id}
+            pipelineId={pipelineId}
+            environment={environment}
+            onChoose={onChooseForCanvas}
+            item={
+              node.address?.source_kind === "warehouse" && node.object_kind === "table"
+                ? { kind: "table", id: node.id, label: node.label }
+                : undefined
+            }
+          >
+            {row}
+          </DataBrowserTransferItem>
         );
       })}
     </div>

@@ -6,7 +6,21 @@ import type {
   DataBrowserPreviewRequest,
   DataBrowserPreviewResponse,
   DataBrowserResolveRequest,
+  DataBrowserSourceRequest,
 } from "@/lib/generated/api-types";
+import type { ExternalRelationImportResult } from "@/lib/api-pipelines";
+
+export function createDataBrowserSource(
+  pipelineId: string,
+  request: DataBrowserSourceRequest,
+  preview = false,
+) {
+  return fetchJSONWithBody<ExternalRelationImportResult>(
+    `/api/pipelines/${encodeURIComponent(pipelineId)}/data-browser/sources${preview ? "/preview" : ""}`,
+    "POST",
+    request,
+  );
+}
 
 export function getDataBrowserConnections(environment?: string) {
   return fetchJSON<DataBrowserConnectionsResponse>(
