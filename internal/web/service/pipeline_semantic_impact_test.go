@@ -4,11 +4,40 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	webexecution "renart/internal/web/execution"
 	"renart/internal/web/snapshot"
 )
+
+func TestSemanticImpactFindsSQLColumnAddedBeforeDeclarationsAreUpdated(t *testing.T) {
+	files := semanticImpactPipelineFiles("INTEGER")
+	candidateRoot := t.TempDir()
+	for path, content := range files {
+		if path == "assets/lineitems.sql" {
+			content = strings.Replace(content, "AS total_amount", "AS total_amount, 'a@example.org' AS email", 1)
+		}
+		writeSemanticImpactFile(t, candidateRoot, path, content)
+	}
+	service := &PipelinePlanService{deps: PipelinePlanDependencies{Snapshots: &semanticImpactSnapshotStore{
+		latest: &snapshot.Snapshot{VersionID: "baseline", PipelineUUID: "pipeline"}, files: files,
+	}}}
+	report := service.semanticImpactForDeployment(context.Background(), "pipeline", candidateRoot)
+	for _, asset := range report.Assets {
+		if asset.Name != "analytics.lineitems" {
+			continue
+		}
+		if len(asset.Columns) != 1 || asset.Columns[0].Before != nil || asset.Columns[0].After.Name != "email" {
+			t.Fatalf("new SQL output hidden by old declaration: %#v", asset)
+		}
+		if asset.AfterSource == nil || len(asset.AfterSource.Projections) != 2 {
+			t.Fatalf("new output needs a source-backed projection: %#v", asset.AfterSource)
+		}
+		return
+	}
+	t.Fatalf("missing changed asset: %#v", report)
+}
 
 func TestPipelinePlanningSessionSemanticImpactUsesLatestDeploymentAsBaseline(t *testing.T) {
 	candidateRoot := t.TempDir()

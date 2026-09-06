@@ -73,6 +73,9 @@ type SemanticAssetSnapshot struct {
 // renart:web-name PipelinePlanSemanticColumnImpact
 type SemanticColumnImpact struct {
 	Index              int                     `json:"index"`
+	BeforeIndex        *int                    `json:"before_index,omitempty"`
+	AfterIndex         *int                    `json:"after_index,omitempty"`
+	PositionChanged    bool                    `json:"position_changed,omitempty"`
 	Before             *SemanticColumnContract `json:"before,omitempty"`
 	After              *SemanticColumnContract `json:"after,omitempty"`
 	NameChanged        bool                    `json:"name_changed"`
@@ -256,32 +259,84 @@ func semanticSourceChange(before, after SemanticAssetSnapshot) string {
 }
 
 func semanticColumnChanges(before, after []SemanticColumnContract) []SemanticColumnImpact {
-	count := len(before)
-	if len(after) > count {
-		count = len(after)
+	// Match named outputs first, preserving occurrence order for duplicate names.
+	// Inserting a projection must not rename every following output or bind its
+	// annotation to the wrong side's ordinal. Unmatched pairs remain contract
+	// renames; only surplus outputs are additions/removals.
+	byName := make(map[string][]int, len(before))
+	for index, column := range before {
+		if column.Name != "" {
+			byName[column.Name] = append(byName[column.Name], index)
+		}
 	}
-	result := make([]SemanticColumnImpact, 0, count)
-	for index := 0; index < count; index++ {
-		var beforeColumn, afterColumn *SemanticColumnContract
-		if index < len(before) {
-			value := before[index]
-			beforeColumn = &value
+	matched := make([]int, len(after))
+	used := make([]bool, len(before))
+	for index, column := range after {
+		matched[index] = -1
+		if candidates := byName[column.Name]; len(candidates) > 0 {
+			matched[index] = candidates[0]
+			used[candidates[0]] = true
+			byName[column.Name] = candidates[1:]
 		}
-		if index < len(after) {
-			value := after[index]
-			afterColumn = &value
+	}
+	// Compare relative order of surviving names, not absolute positions shifted
+	// by insertions. An actual reorder remains an explicit contract change.
+	ranks := make(map[int]int, len(before))
+	for index, present := range used {
+		if present {
+			ranks[index] = len(ranks)
 		}
-		change := SemanticColumnImpact{Index: index, Before: beforeColumn, After: afterColumn}
+	}
+	moved := make([]bool, len(after))
+	rank := 0
+	for index, previous := range matched {
+		if previous >= 0 {
+			moved[index] = ranks[previous] != rank
+			rank++
+		}
+	}
+	next := 0
+	for index, previous := range matched {
+		if previous >= 0 {
+			continue
+		}
+		for next < len(before) && used[next] {
+			next++
+		}
+		if next < len(before) {
+			matched[index], used[next] = next, true
+		}
+	}
+
+	result := make([]SemanticColumnImpact, 0)
+	appendChange := func(beforeIndex, afterIndex int, positionChanged bool) {
+		change := SemanticColumnImpact{Index: afterIndex, PositionChanged: positionChanged}
+		if beforeIndex >= 0 {
+			change.BeforeIndex, change.Before = &beforeIndex, &before[beforeIndex]
+		}
+		if afterIndex >= 0 {
+			change.AfterIndex, change.After = &afterIndex, &after[afterIndex]
+		} else {
+			change.Index = beforeIndex
+		}
 		switch {
-		case beforeColumn == nil || afterColumn == nil:
+		case change.Before == nil || change.After == nil:
 			change.NameChanged, change.TypeChanged, change.NullabilityChanged = true, true, true
 		default:
-			change.NameChanged = beforeColumn.Name != afterColumn.Name
-			change.TypeChanged = beforeColumn.Type != afterColumn.Type
-			change.NullabilityChanged = beforeColumn.Nullability != afterColumn.Nullability
+			change.NameChanged = change.Before.Name != change.After.Name
+			change.TypeChanged = change.Before.Type != change.After.Type
+			change.NullabilityChanged = change.Before.Nullability != change.After.Nullability
 		}
-		if change.NameChanged || change.TypeChanged || change.NullabilityChanged {
+		if change.NameChanged || change.TypeChanged || change.NullabilityChanged || change.PositionChanged {
 			result = append(result, change)
+		}
+	}
+	for index, previous := range matched {
+		appendChange(previous, index, moved[index])
+	}
+	for index, present := range used {
+		if !present {
+			appendChange(index, -1, false)
 		}
 	}
 	return result

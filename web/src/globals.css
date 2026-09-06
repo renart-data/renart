@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* Source-backed deployment warnings stay distinct from red/green text diffs. */
+/* Only specific source-backed issues get warning underlines, never entire queries. */
 .monaco-editor .deployment-diff-warning {
   background: color-mix(in srgb, #d99a16 18%, transparent);
   border-bottom: 2px dotted #b77908;
@@ -21,6 +21,15 @@
 }
 .dark .monaco-editor .deployment-diff-warning {
   border-bottom-color: #e4b24d;
+}
+.monaco-editor .deployment-diff-info {
+  background: color-mix(in srgb, #16803c 10%, transparent);
+}
+.monaco-editor .deployment-diff-lens-info {
+  color: #16783a;
+}
+.dark .monaco-editor .deployment-diff-lens-info {
+  color: #85d9a1;
 }
 
 @custom-variant dark (&:is(.dark *));

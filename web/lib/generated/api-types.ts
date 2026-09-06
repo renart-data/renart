@@ -1096,6 +1096,9 @@ export type PipelinePlanSemanticColumnContract = {
 
 export type PipelinePlanSemanticColumnImpact = {
   index: number;
+  before_index?: number;
+  after_index?: number;
+  position_changed?: boolean;
   before?: PipelinePlanSemanticColumnContract;
   after?: PipelinePlanSemanticColumnContract;
   name_changed: boolean;

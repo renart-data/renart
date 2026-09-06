@@ -4,7 +4,7 @@ import type { PipelinePlanSemanticSourceRange } from "./generated/api-types";
 export type DiffAnnotation = {
   range: PipelinePlanSemanticSourceRange;
   label: string;
-  severity: "warning" | "error";
+  severity: "info" | "warning" | "error";
 };
 
 // Matches Go SourceAnchorFingerprint. This is only a stale-annotation guard,
@@ -52,12 +52,21 @@ export function deploymentDiffAnnotations(
       if (!anchors || anchors.fingerprint !== fingerprints[side]) continue;
       for (const column of semantic.columns) {
         if (!(side === "original" ? column.before : column.after)) continue;
-        const range = anchors.projections[column.index];
+        const index = side === "original" ? column.before_index : column.after_index;
+        const range = anchors.projections[index ?? column.index];
         if (!range || !validRange(source, range)) continue;
         const name = column.after?.name || column.before?.name || "Output";
         const changes: string[] = [];
-        if (!column.before) changes.push("output added");
-        else if (!column.after) changes.push("output removed");
+        if (!column.before) {
+          result[side].push({
+            range,
+            label: semantic.complete
+              ? `New column: ${name}`
+              : `${name}: output detected (analysis incomplete)`,
+            severity: semantic.complete ? "info" : "warning",
+          });
+          continue;
+        } else if (!column.after) changes.push("output removed");
         else {
           if (column.name_changed) changes.push(`${column.before.name} → ${column.after.name}`);
           if (column.type_changed)
@@ -66,20 +75,15 @@ export function deploymentDiffAnnotations(
             changes.push(
               `${column.before.nullability || "unknown"} → ${column.after.nullability || "unknown"}`,
             );
+          if (column.position_changed)
+            changes.push(
+              `position ${(column.before_index ?? column.index) + 1} → ${(column.after_index ?? column.index) + 1}`,
+            );
         }
         result[side].push({ range, label: `${name}: ${changes.join(" · ")}`, severity: "warning" });
       }
-      if (
-        !semantic.columns.length &&
-        semantic.source_change === "changed" &&
-        validRange(source, anchors.query)
-      ) {
-        result[side].push({
-          range: anchors.query,
-          label: "Query behavior changed",
-          severity: "warning",
-        });
-      }
+      // Query-only changes already have native text diffs and a row summary.
+      // A statement-wide warning would drown out precisely located findings.
     }
   }
   for (const finding of row.findings) {
@@ -98,5 +102,10 @@ export function deploymentDiffAnnotations(
       severity: finding.severity === "error" ? "error" : "warning",
     });
   }
+  // If several lenses share a line, an actual diagnostic takes priority over
+  // an informational addition. Keep the addition visible in the row summary.
+  const priority = { error: 0, warning: 1, info: 2 };
+  for (const side of ["original", "modified"] as const)
+    result[side].sort((a, b) => priority[a.severity] - priority[b.severity]);
   return result;
 }

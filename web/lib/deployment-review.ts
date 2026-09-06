@@ -129,12 +129,14 @@ export function deploymentRowTone(row: DeploymentReviewRow): "error" | "warning"
 export function deploymentRowSummary(row: DeploymentReviewRow) {
   const errors = row.findings.filter((finding) => finding.severity === "error").length;
   if (errors) return `${errors} ${errors === 1 ? "error" : "errors"}`;
+  const added = newColumnSummary(row.semantic);
   if (row.findings.length)
-    return `${row.findings.length} ${row.findings.length === 1 ? "warning" : "warnings"}`;
+    return `${added ? `${added} · ` : ""}${row.findings.length} ${row.findings.length === 1 ? "warning" : "warnings"}`;
   const impact = row.semantic;
   if (impact?.complete === false) return "Analysis incomplete";
   if (impact?.change === "removed") return "Asset removed";
   if (impact?.change === "added") return "Asset added";
+  if (added) return added;
   if (impact?.columns.length)
     return impact.source_change === "unchanged"
       ? "Upstream type impact"
@@ -144,4 +146,17 @@ export function deploymentRowSummary(row: DeploymentReviewRow) {
   return row.change === "unchanged"
     ? "Needs review"
     : row.change[0].toUpperCase() + row.change.slice(1);
+}
+
+// A rename, removal, mixed contract change or new asset is not just a new column.
+// Classification comes from backend output contracts, never SQL text heuristics.
+export function newColumnSummary(impact?: PipelinePlanSemanticAssetImpact) {
+  if (
+    impact?.change !== "modified" ||
+    !impact.complete ||
+    !impact.columns.length ||
+    !impact.columns.every((column) => !column.before && column.after)
+  )
+    return undefined;
+  return impact.columns.length === 1 ? "New column" : `${impact.columns.length} new columns`;
 }

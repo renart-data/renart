@@ -54,12 +54,12 @@ func (s *PipelinePlanService) semanticImpactForDeployment(
 	}
 	return webexecution.CompareSemanticImpact(
 		latest.VersionID,
-		semanticImpactAssetSnapshots(baselineGraph),
-		semanticImpactAssetSnapshots(candidateGraph),
+		semanticImpactAssetSnapshots(ctx, baselineGraph),
+		semanticImpactAssetSnapshots(ctx, candidateGraph),
 	)
 }
 
-func semanticImpactAssetSnapshots(graph sqllsp.CanonicalGraph) []webexecution.SemanticAssetSnapshot {
+func semanticImpactAssetSnapshots(ctx context.Context, graph sqllsp.CanonicalGraph) []webexecution.SemanticAssetSnapshot {
 	renderingByAsset := make(map[string]sqllsp.RenderedSQL, len(graph.Renderings))
 	for _, rendering := range graph.Renderings {
 		renderingByAsset[rendering.AssetID] = rendering
@@ -91,6 +91,24 @@ func semanticImpactAssetSnapshots(graph sqllsp.CanonicalGraph) []webexecution.Se
 		}
 		relation, relationOK := relationByAsset[asset.ID]
 		layer, layerOK := schemaByRelation[relation.ID]
+		if layerOK && layer.SourceKind == "declared" {
+			// The graph deliberately trusts declared table schemas for downstream
+			// resolution. This asset's diff must compare its actual SQL output,
+			// even while its own declaration is stale. Reuse shared Go inference
+			// without altering the canonical graph or weakening schema checks.
+			inferred := sqllsp.InferOutputSchema(ctx, graph, sqllsp.TextDocumentItem{
+				URI: asset.URI, LanguageID: "sql", Text: rendering.RenderedSQL,
+			}, asset.Dialect)
+			for index := range inferred.Columns {
+				for _, declared := range layer.Columns {
+					if inferred.Columns[index].Name == declared.Name {
+						inferred.Columns[index].Nullable = declared.Nullable
+						break
+					}
+				}
+			}
+			layer.Columns, layer.Completeness = inferred.Columns, inferred.Completeness
+		}
 		snapshot.Complete = snapshot.Complete && relationOK && layerOK &&
 			layer.Completeness == "complete" && len(layer.Columns) > 0
 		if layerOK {

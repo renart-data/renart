@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { newColumnSummary } from "@/lib/deployment-review";
 import type {
   PipelinePlanSemanticAssetImpact,
   PipelinePlanSemanticColumnContract,
@@ -121,14 +122,16 @@ export function SemanticAssetImpactRow({ asset }: { asset: PipelinePlanSemanticA
         <div className="space-y-1">
           {asset.columns.map((column) => (
             <div
-              key={column.index}
+              key={`${column.before_index ?? "absent"}:${column.after_index ?? column.index}`}
               className="grid gap-1 text-xs sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] sm:items-center"
             >
               <code className="truncate rounded bg-muted/40 px-1.5 py-0.5">
-                {semanticColumnContractLabel(column.before)}
+                {column.before ? semanticColumnContractLabel(column.before) : "New column"}
               </code>
               <span className="text-muted-foreground" aria-hidden="true">
-                →
+                {column.position_changed
+                  ? `position ${(column.before_index ?? column.index) + 1} → ${(column.after_index ?? column.index) + 1}`
+                  : "→"}
               </span>
               <code className="truncate rounded bg-muted/40 px-1.5 py-0.5">
                 {semanticColumnContractLabel(column.after)}
@@ -171,6 +174,8 @@ function semanticImpactSummary(impact: PipelinePlanSemanticImpact) {
 
 function semanticSourceChangeLabel(asset: PipelinePlanSemanticAssetImpact) {
   if (asset.change === "added" || asset.change === "removed") return asset.change;
+  const added = newColumnSummary(asset);
+  if (added) return added;
   switch (asset.source_change) {
     case "formatting_only":
       return "formatting only";

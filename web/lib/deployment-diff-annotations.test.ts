@@ -87,12 +87,72 @@ describe("deployment inline annotations", () => {
     value.semantic!.after_source!.projections = [{ ...range, end_column: 8 }];
     expect(deploymentDiffAnnotations(value, sql, sql).modified).toHaveLength(0);
   });
-  it("uses a query-level warning for a behavior change, not a guessed clause", () => {
+  it("leaves query-only changes to the native text diff instead of underlining all SQL", () => {
     const value = row();
     value.semantic!.columns = [];
     value.semantic!.source_change = "changed";
-    expect(deploymentDiffAnnotations(value, sql, sql).modified[0]?.label).toBe(
-      "Query behavior changed",
-    );
+    expect(deploymentDiffAnnotations(value, sql, sql)).toEqual({ original: [], modified: [] });
+    value.findings = [
+      {
+        code: "type",
+        severity: "warning",
+        message: "Check this expression",
+        ...range,
+        source_fingerprint: sourceAnchorFingerprint(sql),
+      },
+    ];
+    expect(deploymentDiffAnnotations(value, sql, sql)).toMatchObject({
+      original: [],
+      modified: [{ range, label: "Check this expression", severity: "warning" }],
+    });
+  });
+  it("labels a new column only at its saved projection, without a warning underline", () => {
+    const value = row();
+    value.semantic!.source_change = "changed";
+    value.semantic!.columns[0].before = undefined;
+    expect(deploymentDiffAnnotations(value, "", sql)).toEqual({
+      original: [],
+      modified: [{ range, label: "New column: total", severity: "info" }],
+    });
+  });
+  it("uses each side's output position after a column is inserted", () => {
+    const value = row();
+    value.semantic!.columns[0] = {
+      ...value.semantic!.columns[0],
+      index: 1,
+      before_index: 0,
+      after_index: 1,
+    };
+    value.semantic!.after_source = {
+      ...value.semantic!.after_source!,
+      projections: [{ ...range, column: 1, end_column: 7 }, range],
+    };
+    expect(deploymentDiffAnnotations(value, sql, sql).original[0]?.range).toEqual(range);
+    expect(deploymentDiffAnnotations(value, sql, sql).modified[0]?.range).toEqual(range);
+  });
+  it("keeps real diagnostics ahead of an addition lens on the same projection", () => {
+    const value = row();
+    value.semantic!.columns[0].before = undefined;
+    value.findings = [
+      {
+        code: "type",
+        severity: "error",
+        message: "Invalid expression",
+        ...range,
+        source_fingerprint: sourceAnchorFingerprint(sql),
+      },
+    ];
+    expect(deploymentDiffAnnotations(value, "", sql).modified).toMatchObject([
+      { range, severity: "error", label: "Invalid expression" },
+      { range, severity: "info", label: "New column: total" },
+    ]);
+  });
+  it("does not call an output new when the baseline analysis is incomplete", () => {
+    const value = row();
+    value.semantic!.columns[0].before = undefined;
+    value.semantic!.complete = false;
+    expect(deploymentDiffAnnotations(value, "", sql).modified).toMatchObject([
+      { range, severity: "warning", label: "total: output detected (analysis incomplete)" },
+    ]);
   });
 });

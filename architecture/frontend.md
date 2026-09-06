@@ -366,8 +366,15 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   disclosed at the affected file, with output contracts from the backend, not
   the playground's curated analyzer or what-if presets.
   SQL diff views explicitly switch to inline mode below 768px. Source-backed
-  semantic projection ranges and mapped code-check diagnostics get amber/red
+  type/contract changes and mapped code-check diagnostics get targeted amber/red
   underlines and compact inline labels; full messages are available on hover.
+  Query-only changes keep the `Query changed` row summary and Monaco's native
+  text diff, without a statement-wide warning decoration. Pure output additions
+  have a `New column` category (with a count for multiple columns) and a green
+  projection lens rather than a warning underline. Real code-check warnings
+  remain independent and take lens priority when they share the same line.
+  Source anchors use separate before/after output positions so inserting a
+  column cannot misplace a neighboring type-change annotation.
   Annotation identities are checked against the displayed file before use
   (UTF-8 FNV-1a, CRLF-normalized, only a stale-display guard, never a deployment
   integrity digest). Unmapped/template/wildcard findings remain in the asset

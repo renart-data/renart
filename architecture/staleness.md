@@ -523,7 +523,14 @@ Byte-level and canonical query fingerprints are separate: presentation
 formatting and ordinary comments are shown as formatting-only, while optimizer
 directive comments remain behavior-bearing. Ordered inferred output contracts
 make an unchanged downstream query visible when an upstream schema change
-propagates into its output type. Unknown schemas and parse failures mark the
+propagates into its output type. Assets with declared schemas additionally use
+the shared SQL output inference for their own comparison, so stale declarations
+cannot hide a newly selected column. Declared nullability metadata is retained
+by output name, and the canonical graph's downstream-resolution rules are not
+changed. Output matching preserves named columns across insertions/removals;
+unmatched pairs describe contract renames, and relative-order changes remain
+explicit. Each impact carries its before/after output ordinal for source-backed
+annotations. Unknown schemas and parse failures mark the
 report incomplete instead of claiming equivalence. The report is warning-only,
 contains no SQL text, and its stable digest is part of the reviewed plan
 identity, so confirmation must reproduce the exact semantic evidence displayed

@@ -5,6 +5,7 @@ import {
   buildDeploymentReview,
   deploymentAssetPath,
   deploymentRowSummary,
+  newColumnSummary,
 } from "./deployment-review";
 
 function fixture() {
@@ -51,6 +52,42 @@ const impact: PipelinePlanSemanticAssetImpact = {
 };
 
 describe("deployment review", () => {
+  it("categorizes added outputs separately from general query and contract changes", () => {
+    const added = {
+      ...impact,
+      source_change: "changed",
+      columns: [{ ...impact.columns[0], before: undefined }],
+    };
+    const row = { key: "revenue", change: "changed" as const, findings: [], semantic: added };
+    expect(newColumnSummary(added)).toBe("New column");
+    expect(deploymentRowSummary(row)).toBe("New column");
+    expect(
+      deploymentRowSummary({
+        ...row,
+        semantic: { ...added, columns: [...added.columns, { ...added.columns[0], index: 1 }] },
+      }),
+    ).toBe("2 new columns");
+    expect(
+      deploymentRowSummary({
+        ...row,
+        findings: [{ code: "schema", message: "Undeclared output", severity: "warning" }],
+      }),
+    ).toBe("New column · 1 warning");
+    expect(
+      deploymentRowSummary({
+        ...row,
+        findings: [{ code: "sql", message: "Invalid SQL", severity: "error" }],
+      }),
+    ).toBe("1 error");
+    expect(
+      newColumnSummary({ ...added, columns: [...added.columns, ...impact.columns] }),
+    ).toBeUndefined();
+    expect(newColumnSummary({ ...added, change: "added" })).toBeUndefined();
+    expect(deploymentRowSummary({ ...row, semantic: { ...added, complete: false } })).toBe(
+      "Analysis incomplete",
+    );
+    expect(newColumnSummary({ ...added, columns: [] })).toBeUndefined();
+  });
   it("merges source, type impact and duplicate readiness findings into one row", () => {
     const { plan, status } = fixture();
     plan.semantic_impact = {
