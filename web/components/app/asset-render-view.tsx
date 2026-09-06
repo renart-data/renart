@@ -44,6 +44,7 @@ import { loadMonacoEditorModule } from "@/lib/load-monaco-editor";
 import { defineBruinMonacoThemes } from "@/lib/monaco-theme";
 import { cn } from "@/lib/utils";
 import type { DiffAnnotation } from "@/lib/deployment-diff-annotations";
+import { revealDiffAnnotation } from "@/lib/reveal-diff-annotation";
 
 const MonacoEditor = lazy(async () => {
   const module = await loadMonacoEditorModule();
@@ -680,10 +681,12 @@ export function ReadOnlyRenderedOperationDiff({
     editor: editor.IStandaloneDiffEditor;
     monaco: Monaco;
   } | null>(null);
-  const onMount = useCallback(
-    (editor: editor.IStandaloneDiffEditor, monaco: Monaco) => setMounted({ editor, monaco }),
-    [],
-  );
+  const onMount = useCallback((editor: editor.IStandaloneDiffEditor, monaco: Monaco) => {
+    // The React wrapper creates Monaco while hidden. Measure it now that
+    // it is visible, before annotations can scroll its initial 5px layout.
+    editor.layout();
+    setMounted({ editor, monaco });
+  }, []);
 
   useLayoutEffect(() => {
     if (!mounted) return;
@@ -751,8 +754,15 @@ export function ReadOnlyRenderedOperationDiff({
       );
     }
     const first = annotations.modified[0];
-    if (first) mounted.editor.getModifiedEditor().revealLineInCenter(first.range.line);
+    const cancelReveal = first
+      ? revealDiffAnnotation(
+          mounted.editor,
+          first.range.line,
+          mounted.monaco.editor.ScrollType.Immediate,
+        )
+      : undefined;
     return () => {
+      cancelReveal?.();
       for (const collection of collections) collection.clear();
     };
   }, [mounted, annotations]);
