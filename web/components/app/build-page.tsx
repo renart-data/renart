@@ -154,7 +154,6 @@ import {
 } from "@/hooks/use-app-asset-materialization-status";
 
 import { kindMeta } from "./app-data";
-import { AdhocToNotebookDialog } from "./adhoc-convert-dialog";
 import { AppAdhocEditor, useAdhocConnectionSelection, useAdhocQueryDraft } from "./adhoc-editor";
 import { AppAssetEditor } from "./asset-editor";
 import { ApiParametersEditor } from "./api-parameters-editor";
@@ -215,6 +214,10 @@ const PipelineSettingsDialog = lazy(async () => {
 const DataBrowserSidebar = lazy(async () => {
   const module = await import("./data-browser/data-browser");
   return { default: module.AppDataBrowserSidebar };
+});
+const AdhocToNotebookDialog = lazy(async () => {
+  const module = await import("./adhoc-convert-dialog");
+  return { default: module.AdhocToNotebookDialog };
 });
 const resultTabs = appResultTabs;
 
@@ -2115,12 +2118,28 @@ export function AppBuildPage({
             if (!open) setDataBrowserSource(null);
           }}
         />
-        <AdhocToNotebookDialog
-          open={adhocNotebookOpen}
-          onOpenChange={setAdhocNotebookOpen}
-          notebooks={workspace?.notebooks ?? []}
-          query={adhocQuery}
-        />
+        {adhocNotebookOpen ? (
+          <Suspense
+            fallback={
+              <Dialog open onOpenChange={setAdhocNotebookOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Save query to notebook</DialogTitle>
+                    <DialogDescription>Loading notebook options…</DialogDescription>
+                  </DialogHeader>
+                  <Spinner className="mx-auto" />
+                </DialogContent>
+              </Dialog>
+            }
+          >
+            <AdhocToNotebookDialog
+              open
+              onOpenChange={setAdhocNotebookOpen}
+              notebooks={workspace?.notebooks ?? []}
+              query={adhocQuery}
+            />
+          </Suspense>
+        ) : null}
         <NewPipelineDialog
           open={newPipelineOpen}
           onOpenChange={setNewPipelineOpen}

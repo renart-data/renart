@@ -26,11 +26,14 @@
 5. Commit verified cohesive changes, update as-built architecture, and prepare
    release notes/checklist. Do not publish/tag/push Renart yet.
 
-## Pending scope decision
+## Release scope confirmed
 
-Asked whether the release also includes existing uncommitted work in
-`intro-video-docs-refresh` and `semantic-diff-annotations`. Preserve those files
-until answered; new work can proceed independently.
+The user requested **v0.5.1**, with `release/v0.5.1` pushed before tagging.
+Include the Docs refresh and semantic annotation changes; keep all video files
+and video-specific capture/edit scripts local in the original worktree. Shared
+media helpers needed for reproducible documentation screenshots are included.
+The source worktrees remain untouched. Local and remote gates must pass on the
+final candidate before the release tag is pushed.
 
 ## Progress
 
@@ -114,11 +117,15 @@ tags or cleans up artifacts. Concurrency and memory are bounded by default.
 
 Before publishing:
 
-- Resolve whether the separate Docs/video and semantic-annotation worktrees
-  belong in this candidate; do not copy their uncommitted work implicitly.
+- Docs and semantic annotations are included; videos remain excluded.
 - Review the completed release gate results below, including skips/failures.
 - Re-run the full live suite on the integrated candidate and resolve the
   remaining old notebook/report/test-expectation failures from the triage.
-- Inspect the final Git diff and release notes, choose the version, and obtain
-  explicit approval for the Renart push/tag/release. No Renart push is part of
-  this task; only the three external Awesome contributor branches were pushed.
+- Inspect the final Git diff and release notes. Push `release/v0.5.1`, then
+  require CI, live E2E and cross-platform release snapshot checks on that exact
+  candidate before creating `v0.5.1`. Push/tag/release is now explicitly approved.
+
+The Awesome data-engineering maintainer was thanked, and PR #357 was rebased
+onto upstream `master` (`50cc98a`), preserving both neighbouring additions.
+The fork was updated with an exact-SHA force-with-lease; GitHub confirmed the
+one-line Renart addition is mergeable.

@@ -6,6 +6,7 @@ docs/.astro
 web/node_modules
 docs/node_modules
 .playwright-live-workspaces
+.test-artifacts
 duckdb-files
 onboarding
 *.tar.gz
