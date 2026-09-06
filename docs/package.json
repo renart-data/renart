@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "astro check && astro build",
+    "build": "node scripts/check-content.mjs && astro check && astro build",
+    "check:content": "node scripts/check-content.mjs --check-code",
     "preview": "astro preview",
     "recordings:cli": "node ../scripts/generate-cli-recordings.mjs",
     "audit": "pnpm audit --audit-level=low"

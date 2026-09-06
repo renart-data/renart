@@ -166,6 +166,7 @@ export default defineConfig({
         {
           label: 'Reference',
           items: [
+            { label: 'Supported platforms', slug: 'docs/reference/supported-platforms' },
             { label: 'CLI reference', slug: 'docs/reference/cli' },
             { label: 'Security & privacy', slug: 'docs/reference/security-and-privacy' },
           ],

@@ -9,7 +9,7 @@ connects to the rest of the pipeline.
 
 <img
   src="/docs-media/sql-asset.webp"
-  alt="A SQL asset open in the editor: the query on the left, the workbench with identity, materialization, and column cards on the right"
+  alt="A SQL asset open in the editor with its General properties and materialization settings on the right"
   width="2800"
   height="1800"
 />
@@ -44,7 +44,7 @@ Referencing `raw.orders` in `FROM` or `JOIN` is all it takes to depend on
 it — Renart infers the dependency and draws the edge on the canvas.
 Unqualified names resolve to the matching asset when it's unambiguous. For
 relationships the SQL can't express, add a manual dependency in the
-workbench's **Dependencies** card.
+properties panel's **Lineage** tab.
 
 The editor can also complete tables positively observed on the selected
 warehouse. Using one is allowed but highlighted as an external-relation
@@ -55,14 +55,18 @@ project.
 ## Metadata in the workbench
 
 Everything about the asset that isn't the query lives in the workbench
-cards next to the editor:
+tabs next to the editor:
 
-- **Identity** — name, owner, description, tags.
-- **Materialization** — whether the asset writes a view, replaces a table
+- **General** — name, owner, description, tags, connection, and
+  **Materialization**: whether the asset writes a view, replaces a table
   each run, or updates incrementally.
 - **Columns** — names, types, descriptions, and quality checks such as
   `not_null` or `unique`; use **Sync schema** after the SQL changes to compare
   the query, saved declaration, and optional current table.
+- **Checks** — column checks and custom SQL checks.
+
+Available write modes depend on the database. See
+[Supported platforms](/docs/reference/supported-platforms/) before choosing a target.
 
 ## Materialization lifecycle
 
@@ -76,7 +80,7 @@ Renart warns and preserves the configured strategy instead of guessing.
 
 ## Check it before it runs
 
-**Inspect** previews the query's result without writing anything. The
+**Inspect** previews the query's result without materializing its target. The
 **Type check** tab verifies that the declared columns match what the query
 actually produces — the same check `renart type-check` runs in CI.
 

@@ -4,9 +4,8 @@ description: What Renart's public alpha includes and what to expect while evalua
 ---
 
 Renart is in public alpha. The main workflow is available today, but the
-product is still changing quickly and may have rough edges. This label sets
-expectations; it does not describe unfinished features as if they already
-worked.
+product is still changing quickly. Evaluate it against non-critical data and
+keep your pipeline definitions in Git.
 
 ## Available today
 
@@ -33,6 +32,10 @@ Some connectors and less common asset configurations have received less real-
 world use than the core DuckDB workflow. Keep pipeline changes in Git, review
 the generated diffs, and try Renart against non-critical data before adopting
 it for important workloads.
+
+Check [Supported platforms](/docs/reference/supported-platforms/) for database
+coverage and materialization limits. These docs describe the current source
+tree; if you use an older release, UI labels and available options may differ.
 
 :::caution[Before relying on schedules]
 Renart's scheduler runs on your machine. The Renart process and that machine

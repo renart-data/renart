@@ -429,7 +429,7 @@ columns:
     type: DATE
     description: "Date of the customer's first order"
   - name: lifetime_orders
-    type: INTEGER
+    type: BIGINT
     description: "Orders placed to date"
 @bruin */
 
@@ -469,7 +469,7 @@ columns:
       - name: not_null
       - name: unique
   - name: order_count
-    type: INTEGER
+    type: BIGINT
     description: "Number of orders"
     checks:
       - name: positive
@@ -524,7 +524,7 @@ columns:
     checks:
       - name: positive
   - name: order_count
-    type: INTEGER
+    type: BIGINT
     description: "Lifetime orders"
   - name: avg_order_value
     type: DOUBLE
@@ -564,7 +564,7 @@ columns:
     type: VARCHAR
     description: "Merchandising category"
   - name: units_sold
-    type: INTEGER
+    type: BIGINT
     description: "Total units sold"
     checks:
       - name: positive
@@ -578,7 +578,7 @@ columns:
 SELECT
     product_name,
     category,
-    SUM(quantity) AS units_sold,
+    CAST(SUM(quantity) AS BIGINT) AS units_sold,
     SUM(line_total) AS revenue
 FROM staging.order_items
 GROUP BY product_name, category
@@ -680,7 +680,7 @@ columns:
     description: "Monday of the ISO week"
     primary_key: true
   - name: order_count
-    type: INTEGER
+    type: BIGINT
     description: "Orders in the week"
   - name: revenue
     type: DOUBLE
@@ -688,7 +688,7 @@ columns:
 @bruin */
 
 SELECT
-    DATE_TRUNC('week', order_date) AS week_start,
+    CAST(DATE_TRUNC('week', order_date) AS DATE) AS week_start,
     COUNT(*) AS order_count,
     SUM(total_amount) AS revenue
 FROM staging.orders

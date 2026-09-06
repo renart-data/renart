@@ -4,8 +4,7 @@ description: Work with a local coding agent in a notebook or connect one over MC
 ---
 
 :::caution[Developer preview]
-The notebook agent surface is intentionally small and its tool schemas may
-evolve while the preview is evaluated. Review the Git diff after agent edits,
+Notebook agent tools may change during the preview. Review the Git diff after agent edits,
 just as you would after making the same change in the visual editor.
 :::
 
@@ -19,7 +18,8 @@ just as you would after making the same change in the visual editor.
 />
 
 Install and sign in to Codex, Claude Code, or OpenCode on the machine where
-Renart runs. Open a notebook and choose **AI** in its toolbar. Renart discovers
+Renart runs. Open **Build → Notebooks**, select a notebook, and choose **AI** in
+its sidebar. Renart discovers
 available clients on `PATH`; it does not ask for or store a provider API key.
 
 Choose a client and one of two capability modes:
@@ -37,7 +37,7 @@ Use the **@** control in the composer to attach notebook cells or workspace
 assets to a message. References are sent as stable semantic identities rather
 than pasted file paths, so the agent can inspect the exact object you mean.
 
-If the task has a genuine product choice, the agent can pause and show a short
+If the agent needs a decision, it can pause and show a short
 questionnaire in the conversation. Answer it there and the same turn continues;
 you do not need to restate the task. Stopping or starting a new chat also
 cancels a pending question.
@@ -58,7 +58,7 @@ notebook.
 The panel starts in Ask whenever it opens, so an earlier Edit choice does not
 silently carry into the next task.
 
-The chat shows semantic progress such as reading the notebook outline,
+The chat shows progress such as reading the notebook outline,
 validating changes, or running cells. Changes appear in the notebook through
 the same server and workspace event stream as normal UI edits, so you can watch
 the document update alongside the conversation. **Stop** cancels the provider
@@ -165,7 +165,7 @@ Add a local server to `opencode.jsonc`:
 }
 ```
 
-This keeps bounded inspection and staging fluent while requiring confirmation
+This allows inspection and change preparation while requiring confirmation
 before authored files change or notebook code runs. Use `opencode mcp list` to
 check the connection. See the
 [OpenCode MCP documentation](https://opencode.ai/docs/mcp-servers/) for current

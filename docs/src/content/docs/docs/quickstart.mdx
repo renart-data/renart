@@ -3,9 +3,8 @@ title: Quickstart
 description: From install to a running, scheduled pipeline in one sitting.
 ---
 
-This walks you from an empty repository to a materialized, scheduled
-pipeline using the built-in demo project. It runs locally against DuckDB —
-no warehouse or credentials needed.
+Create a local DuckDB pipeline, preview its output, and schedule it. The retail
+demo includes its CSV data, so you do not need a warehouse account.
 
 ## 1. Start Renart
 
@@ -26,37 +25,37 @@ entirely offline. Renart scaffolds the project files, creates a local
 DuckDB connection, and runs the pipeline once so you land in a workspace
 with real data in it.
 
-Everything it created is plain files — run `git status` to see the whole
-project.
+Wait for **Demo materialized**, then open the workspace. The Explorer contains
+the retail pipeline and its assets, and Inspect can read their output.
 
 ## 3. Read the canvas
 
-<img
-  src="/docs-media/pipeline-canvas.webp"
-  alt="The pipeline canvas: assets grouped by folder with dependency edges and freshness badges on each node"
-  width="2800"
-  height="1800"
-/>
-
-The **Build** view shows your pipeline as a canvas: each node is an asset,
-each edge a dependency, and the badge on every node tells you whether it's
-fresh or needs a rebuild. Click any asset to open it in the editor with its
-workbench alongside.
+In **Build**, select the retail pipeline and choose **Canvas**. Each node is an
+asset; arrows connect inputs to the assets that read them. Select an SQL asset,
+then choose **Code** or **Split** to read its query.
 
 ## 4. Preview and materialize
 
-Select an asset and use **Inspect** in the results panel to preview the
-data it produces — previews have no side effects. When you change its SQL,
-the asset's badge flips to **Edited** and its downstreams to **Upstream
-changed**; the **Build stale** button rebuilds exactly what changed and
-nothing else.
+Open **Inspect** in the results panel. You should see rows from the demo rather
+than an empty result. This previews the query without materializing its target.
+
+Click **Review run** to see the selected environment, source, and planned work.
+The **Needed assets** selection includes assets Renart considers out of date;
+it may be empty immediately after creating the demo. Reviewing does not execute
+anything. Close the review when you have checked it.
 
 ## 5. Put it on a schedule
 
-Open **Schedules** and click **New schedule**. Pick the pipeline, an
-environment, a cron expression, and a timezone — Renart deploys a snapshot
-of the working tree and runs it on that cadence. Runs land in the **Runs**
-view with per-asset timing and logs.
+Open **Run → Schedules** and click **New schedule**. Select the retail pipeline,
+the `default` environment, the cron expression `0 9 * * *`, and your timezone.
+If the schedule has no deployment, review the option to deploy the saved
+working tree and pin this schedule to it. Save the schedule and check its next
+run time.
+
+Deployment saves a pipeline version; it does not run the pipeline. Scheduled
+runs appear under **Run → Runs**, with timing and logs for each asset. Keep
+Renart and the machine running for the schedule to fire. You can pause the
+schedule from its row after trying it.
 
 ## Next steps
 

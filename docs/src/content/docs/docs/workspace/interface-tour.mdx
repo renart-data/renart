@@ -1,62 +1,60 @@
 ---
 title: Tour of the interface
-description: The six main views of the Renart workspace and how they fit together.
+description: Find pipelines, notebooks, data, deployments, and reports in Build, Run, and Explore.
 ---
 
-The top bar holds the project switcher, the six main views, the environment
-picker, and the current git branch. Everything you do in any of them ends up
-as a file change in the repository.
+The top bar has three modes: **Build**, **Run**, and **Explore**. Choose a mode,
+then use its tool rail on the left. The project switcher, environment picker,
+and Git branch stay in the top bar.
 
 <img
   src="/docs-media/workspace-overview.webp"
-  alt="The Build view in split mode: the explorer on the left, the SQL editor and pipeline canvas side by side, the results panel below, and the asset workbench on the right"
+  alt="Build in split mode, with the tool rail and Explorer on the left, code and canvas in the center, results below, and properties on the right"
   width="3200"
   height="2000"
 />
 
 ## Build
 
-Where you spend most of your time. Build combines:
+Use **Build** to edit assets and notebooks or browse source data:
 
-- the **Explorer** — pipelines, asset files, and notebooks as a file tree;
-- the **editor** — the asset's code, with pipeline-aware IntelliSense;
-- the **canvas** — the pipeline's lineage with freshness badges;
-- the **results panel** — Inspect, Materialize, Query, Type check, and
-  History tabs for the selected asset;
-- the **workbench** — the asset's identity, materialization, dependencies,
-  and columns as editable cards.
+- **Project resources** opens the Explorer with pipelines and asset files.
+- **Notebooks** opens analysis documents. An open notebook has **Outline**,
+  **Data**, **Add**, and **AI** tools in its sidebar.
+- **Data Browser** opens configured databases and object storage.
+- **Ad-hoc query** opens a query without adding a pipeline asset.
+- **Connections**, **Environments**, and **Project settings** are utility
+  tools near the bottom of the rail.
 
-The view toggles at the top right switch between code, split, and canvas
-layouts of the same asset.
+For an asset, **Code**, **Split**, and **Canvas** change the central layout.
+The results panel below it contains **Inspect**, **Render**, **Materialize**,
+**Query**, and **Type check**. The properties panel on the right groups metadata
+into **General**, **Lineage**, **Columns**, and **Checks**. Use **Show properties**
+or **Hide properties** to make room without changing the asset.
 
-## Catalog
+## Run
 
-Every asset across every pipeline in the project, with cross-pipeline
-lineage. Select an asset to trace exactly what feeds it.
+The **Run** tool rail contains **Run overview**, **Deployments**, **Schedules**,
+and **Runs**. Use it to review saved pipeline versions, manage recurring work,
+and inspect execution logs. See [Deployments and scheduling](/docs/scheduling/overview/)
+and [Runs and history](/docs/workspace/runs-and-history/).
 
-## Notebooks
+## Explore
 
-Version-controlled analysis documents with SQL, Python, source imports, text,
-controls, inline tables, and charts. Each notebook integrates its data in a
-local DuckDB session. See [Notebooks](/docs/notebooks/overview/).
+- **Workspace Catalog** shows assets and lineage across pipelines.
+- **Dashboards** opens the visual dashboard builder.
+- **Reports** opens documents that combine text and visualizations.
 
-## Present
+See [Dashboards and reports](/docs/presentations/overview/) for a guided workflow.
 
-Visual builders for checked dashboards and narrative reports. Both use
-version-controlled definitions and can read pipeline assets or a read-only
-query on a configured connection. See
-[Dashboards and reports](/docs/presentations/overview/).
+## Follow a diagnostic
 
-## Runs
+When a warning offers **Open columns** or another navigation link, follow it to
+the existing editor control. These links carry the target in the URL, so they
+also work in a new tab. Unrelated choices, such as the selected results tab or
+left sidebar tool, stay as they are unless the destination needs to change them.
 
-The record of every materialization triggered manually or by a schedule,
-with per-asset status, timing, and logs. See
-[Runs & history](/docs/workspace/runs-and-history/).
-
-## Schedules
-
-One schedule per pipeline and environment, plus dedicated deployment and run
-timeline pages. See [Scheduling](/docs/scheduling/overview/).
+On smaller screens, use the mobile tool tabs to reach the same destinations.
 
 ## The environment picker
 

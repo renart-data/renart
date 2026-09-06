@@ -3,8 +3,7 @@ title: Deployments & scheduling
 description: Pin reviewed pipeline source to a per-environment schedule and understand what runs.
 ---
 
-Renart schedules pipelines itself — there is no separate orchestrator to
-deploy and babysit. One schedule exists per pipeline and environment, and
+One schedule exists per pipeline and environment. Renart runs it locally, and
 scheduled runs execute the pipeline's **deployed snapshot**, not whatever
 happens to be in your working tree.
 
@@ -19,8 +18,8 @@ happens to be in your working tree.
 
 Think of the flow as three separate decisions:
 
-1. **Deploy** captures the pipeline's saved files as an immutable snapshot. It
-   reviews representative operations, but it does not execute the pipeline.
+1. **Deploy** captures the pipeline's saved files as an immutable snapshot.
+   Review source changes and diagnostics first; deployment does not execute the pipeline.
 2. **Schedule** defines when one environment should run and pins that
    environment to one deployment.
 3. **Run** is one execution of that pinned deployment for a specific time
@@ -38,9 +37,26 @@ changing scheduled behavior. A newer deployment also does not move every
 environment automatically: after deploying, select exactly which schedules
 should adopt it.
 
+## Review a deployment
+
+Click **Deploy** or **Redeploy** in the asset workspace. **Changes & impact**
+lists changed files. Expand a file to see its SQL diff and any inline findings;
+open **Why this matters** only when you need the additional explanation.
+
+<img
+  src="/docs-media/deployment-review.webp"
+  alt="Deployment review with an expanded SQL diff, a highlighted filter change, and deployment details kept collapsed"
+  width="2800"
+  height="1800"
+/>
+
+Follow links such as **Open columns** to fix the existing declaration in the
+editor. Check the saved source and environment before confirming. Deployment
+saves definitions only; it does not materialize data.
+
 ## Create a schedule
 
-In **Schedules**, click **New schedule** and pick:
+In **Run → Schedules**, click **New schedule** and pick:
 
 - the **pipeline** and the **environment** to run against;
 - a **cron** expression and **timezone** (for example `0 7 * * 1-5` in
@@ -73,8 +89,8 @@ container runtime, or CI system. See
 ## Deployments keep schedules stable
 
 Deploying records a snapshot of the pipeline as it is; the schedule runs
-that snapshot until you redeploy. You can keep editing — and even break —
-the working tree without affecting tonight's run. When you're ready, review a
+its pinned snapshot until you explicitly update that pin. You can keep editing
+the working tree without changing the scheduled source. When you're ready, review a
 new deployment and explicitly select which schedule pins should advance (or
 create the deployment with [`renart deploy`](/docs/reference/cli/) from CI).
 
@@ -91,7 +107,8 @@ like any other run.
 
 ## Review deployments and the run timeline
 
-Use the sub-navigation above Schedules to move between three views:
+Use the **Run** tool rail to open **Schedules**, **Deployments**, or **Runs**.
+The scheduling area also has a **Run timeline** view:
 
 - **Schedules** owns cadence, environment, lifecycle, and the exact pinned
   deployment.
@@ -104,6 +121,7 @@ Use the sub-navigation above Schedules to move between three views:
 These are separate routes, so browser back/forward navigation and direct links
 preserve the selected operational view.
 
-The scheduler runs inside `renart web`. For an always-on machine, the same
-scheduler is available headless — see the
-[CLI reference](/docs/reference/cli/).
+The scheduler is enabled by default in both desktop and browser mode. Renart
+and the host machine must stay running. For an always-on machine, start
+`renart web --no-open`; use `--scheduler=false` when scheduling should be disabled.
+See the [CLI reference](/docs/reference/cli/).

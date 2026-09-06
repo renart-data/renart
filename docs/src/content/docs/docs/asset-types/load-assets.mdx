@@ -10,25 +10,24 @@ and a target.
 
 <img
   src="/docs-media/load-asset.webp"
-  alt="A Load asset open in the editor: a form with source connection, source table, destination connection, destination table, and mode"
+  alt="A Load asset with inline source connection and file controls, and General properties for its target and materialization"
   width="2800"
   height="1800"
 />
 
 ## Create one
 
-On the canvas, add an asset and choose **Load**. Instead of a code editor,
-the main pane is a form:
+On the canvas, add an asset and choose **Load**. The main pane presents
+inline source controls; target settings live in the properties panel:
 
 - **Source connection** and **source table or object** — where the data comes
   from. The connection picker is grouped into databases, storage, and files;
   once a connection is chosen, Renart browses available tables or bounded
   S3-compatible/GCS objects while still allowing an explicit path.
-- **Destination connection** and **destination table or object** — where it
-  lands. Database targets use a `schema.table` name; storage and file targets
-  use an explicit destination path and distinguish existing objects from a new
-  path you type.
-- **Mode** — how each run writes.
+- **General → Connection** selects the destination. For a database target,
+  the asset name is the target relation, such as `raw.exchange_rates`.
+  Storage and file targets use an explicit destination path.
+- **General → Materialization** controls how each run writes.
 
 Local files are a first-class source: choose the **local** entry and point
 the source at a file path (for example `data/exchange_rates.csv`) to load

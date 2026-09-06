@@ -3,9 +3,8 @@ title: Runs & history
 description: What a run records, how to read a failure, and how to re-run.
 ---
 
-The **Runs** view is the record of every pipeline execution — manual,
-scheduled, or triggered over the API. "What happened last night" is a
-click, not an investigation.
+Open **Run → Runs** to inspect manual, scheduled, and API-triggered pipeline
+executions. Select a run to see its source, environment, timeline, and logs.
 
 ## What a run records
 
@@ -38,9 +37,14 @@ Open a run to see its detail page:
 
 ## Re-run
 
-Use **Re-execute** on a run's detail page to run the same pipeline against
-the same environment again. Runs started from a schedule execute the
-pipeline's deployed snapshot; manual runs execute the working tree.
+When the original execution plan is retained, **Re-execute exact plan** reuses
+its source, environment, window, variables, and selected execution units after
+checking the configuration. The new run is manual; it does not advance a
+schedule's watermark.
+
+Otherwise the action is **Run again with current settings**. Its review explains
+which source and context remain available and which current settings will be
+used. Do not treat that fallback as an exact replay of the failed run.
 
 ## Retention
 

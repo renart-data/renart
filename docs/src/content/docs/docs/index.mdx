@@ -1,12 +1,11 @@
 ---
 title: Overview
-description: Renart is the all-in-one data pipeline IDE — open source, running entirely inside your git repository.
+description: Write, inspect, and run data pipelines in a local workspace backed by Git.
 ---
 
-Renart is the all-in-one data pipeline IDE. It combines the editor, notebooks,
-presentations, scheduler, and freshness monitor in one open-source tool that
-runs entirely inside your git repository — your work is plain files, running
-on the warehouse you already use.
+Renart is a local workspace for data pipelines. Write SQL and Python, inspect
+results, review changes, and run pipelines against your database. Pipeline
+definitions, notebooks, dashboards, and reports stay in your Git repository.
 
 <img
   src="/docs-media/workspace-overview.webp"
@@ -15,29 +14,22 @@ on the warehouse you already use.
   height="2000"
 />
 
-## What you get
+## Find your next task
 
-- **A pipeline canvas** that shows assets, dependencies, and freshness at a
-  glance instead of making you reconstruct them from files by hand.
-- **An editor that knows your pipeline.** IntelliSense suggests columns from
-  upstream assets and validation flags unresolved references while you type.
-- **Preview, then materialize.** Inspect any asset with no side effects, and
-  materialize it explicitly when you're sure.
-- **Catalog-aware SQL.** Complete against authored assets and observed remote
-  tables, then review an import when an external relation should become part of
-  the project.
-- **Notebooks** that combine warehouses, files, object storage, and HTTP data
-  in local DuckDB, with SQL, Python, text, controls, and checked charts.
-- **Dashboards and reports** composed visually from typed datasets and stored
-  as version-controlled definitions.
-- **Reviewed deployments and schedules.** Pin a pipeline snapshot to each
-  environment, run it on a cron, and inspect its timeline and logs.
-- **Freshness you can see.** Renart fingerprints every asset and shows what's
-  fresh, edited, stale, or never built, while external source assets remain
-  explicitly neutral.
+- **Try Renart:** [install it](/docs/installation/) and follow the
+  [local DuckDB quickstart](/docs/quickstart/).
+- **Build a pipeline:** use the [asset editor](/docs/editing-assets/asset-editor/)
+  and follow dependencies on the [canvas](/docs/workspace/pipeline-canvas/).
+- **Connect your data:** check [supported platforms](/docs/reference/supported-platforms/)
+  and [add a connection](/docs/connections-environments/managing-connections/).
+- **Explore results:** combine sources in a [notebook](/docs/notebooks/overview/)
+  or build a [dashboard or report](/docs/presentations/overview/).
+- **Run on a schedule:** [review a deployment](/docs/scheduling/overview/),
+  choose a cadence, and inspect [run history](/docs/workspace/runs-and-history/).
 
-Everything Renart does ends up as an ordinary file change in your repository
-— diffable, reviewable, revertible.
+Authored definitions are version-controlled files. Run history, deployment
+pins, and other machine-local state are stored separately; see
+[How it works](/docs/how-it-works/).
 
 :::note[Public alpha]
 Renart is in public alpha. The core workflow is available, but expect rough
@@ -45,9 +37,5 @@ edges and changes before the first stable release. Read [what public alpha
 means](/docs/alpha-status/) before relying on Renart for critical workloads.
 :::
 
-## Start here
-
-1. [Installation](/docs/installation/)
-2. [Quickstart](/docs/quickstart/) — from install to a scheduled pipeline
-3. [Concepts](/docs/concepts/) — the model behind the UI
-4. [Tour of the interface](/docs/workspace/interface-tour/)
+For orientation, start with [the interface tour](/docs/workspace/interface-tour/)
+and [the main concepts](/docs/concepts/).

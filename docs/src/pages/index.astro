@@ -104,7 +104,7 @@ const landingStructuredData = JSON.stringify({
   ],
 });
 
-const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Databricks', 'S3', 'HTTP APIs', 'Git'];
+const stackItems = ['DuckDB', 'Postgres', 'ClickHouse', 'StarRocks', 'Trino', 'Snowflake', 'BigQuery', 'Databricks', 'S3', 'HTTP APIs', 'Git'];
 ---
 
 <!doctype html>
@@ -191,7 +191,7 @@ const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Databricks',
         </h1>
 
         <p class="hero-sub">
-          Editor, notebooks, dashboards, reports, scheduler, catalog, freshness tracking — Renart ships the parts that usually live behind a hosted login in one open-source package, and knows exactly what to rebuild when you change a file. Runs on the warehouse you already use; starts on your laptop with one command.
+          Write pipelines, explore results in notebooks, and build dashboards in one local workspace. Review source changes and what needs rebuilding before you run. Your definitions stay in Git; execution uses the database you choose.
         </p>
 
         <p class="alpha-note">
@@ -329,7 +329,7 @@ const stackItems = ['DuckDB', 'Postgres', 'Snowflake', 'BigQuery', 'Databricks',
             <div class="life-copy">
               <div class="card-tag">03 · Run</div>
               <h3>From first run to production cron</h3>
-              <p>Preview any asset without side effects, then materialize it explicitly when you're sure. Put the pipeline on a schedule per environment and Renart executes it against your platform of choice — DuckDB, Postgres, Snowflake, BigQuery, and more. No separate orchestrator to deploy and babysit.</p>
+              <p>Inspect results and review the execution plan before materializing a target. Schedule a saved pipeline version per environment, then follow its runs and logs. Choose from DuckDB, PostgreSQL, ClickHouse, StarRocks, Trino, and other supported databases.</p>
             </div>
             <div class="life-media">
               <img

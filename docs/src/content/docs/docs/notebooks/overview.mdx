@@ -3,12 +3,9 @@ title: Notebooks
 description: Version-controlled SQL and Python analysis across warehouses, files, APIs, and local DuckDB.
 ---
 
-Notebooks are where analysis starts before it deserves a permanent place in a
-pipeline. Every notebook is a folder in your repository, with ordered SQL,
-Python, data-source, text, and visualization blocks. Renart executes the
-dataflow and keeps its integration tables in one local DuckDB file, so the
-notebook can combine unlike sources without creating scratch tables in your
-remote warehouses.
+Open **Build → Notebooks** to combine SQL, Python, source data, text, and charts
+in one document. Cells share a local DuckDB session, so you can join snapshots
+from different systems without creating remote scratch tables.
 
 <img
   src="/docs-media/notebook.webp"
@@ -19,7 +16,7 @@ remote warehouses.
 
 ## Add data from several systems
 
-Choose **Add data** to create an explicit source block:
+Open **Data** and choose **Add data** to create a source block:
 
 - browse a configured warehouse connection and start from a generated
   read-only query;
@@ -52,8 +49,14 @@ notebook cells by their concise visible names, and Monaco provides DAG-aware
 completion and diagnostics. A SQL source cell instead uses its selected
 connection's catalog, dialect, and remote-table completion.
 
+For a first SQL cell, run `SELECT 1 AS value` and check that the result table
+contains one row. Add a second cell that references the first by name to build
+the notebook's dependency graph.
+
 Python cells use the same `materialize()` contract as Python pipeline assets.
-They query the notebook's live local session through Renart's built-in SDK:
+They query the notebook's local session through Renart's built-in SDK. The
+examples below assume you have a source cell named `daily_orders` with
+`region` and `order_total` columns:
 
 ```python
 from renart import query
@@ -76,9 +79,8 @@ downloaded as CSV or Parquet.
 
 ## Text and controls
 
-Text blocks use a WYSIWYG Markdown editor and sit naturally between executable
-cells and visualizations. Hover or select a block to reveal its editing and
-move controls; otherwise it reads like part of the document rather than a form.
+Text blocks use a visual Markdown editor. Select a block to reveal its editing
+and move controls.
 
 Open **Add** to drag SQL, Python, Text, controls, or visualizations into an exact
 gap between existing blocks. Controls are first-class notebook blocks with a
@@ -125,7 +127,8 @@ export cannot accidentally reuse output produced with another selection.
 
 ## Visualizations
 
-Add a **Visualization** block and choose its source result. The visual builder
+Run the source cell, then use **Add** to insert a visualization and choose that
+result. Select the chart to open its settings inspector on the right. The builder
 supports tables, KPIs, bar, line, area, scatter, pie, and donut charts. Use the
 **Visual / Definition** switch to edit the same versioned definition through
 controls or YAML; switching views does not rewrite the source SQL.
@@ -141,7 +144,7 @@ block; new visualization edits do not write `@viz` comments.
 
 ## Promote a cell to the pipeline
 
-When a transform or source earns a permanent place, open its actions menu and
+To reuse a transform or source in a pipeline, open its actions menu and
 choose **Promote to pipeline**. Before anything changes, Renart shows the target
 pipeline, asset type, source and target connections, materialization, files to
 change, and any dialect consequences.
@@ -158,11 +161,8 @@ notebook references, and removes the promoted blocks as one recoverable
 workspace change. If the notebook changed after review, Renart keeps both the
 notebook and pipeline untouched and asks you to review again.
 
-## Files like everything else
+## Related
 
-`notebook.yml` owns block order and durable block IDs. SQL and Python remain
-ordinary source files, while non-SQL source definitions use small YAML files
-beside them. The complete authored state is versioned, diffable, and protected
-by a notebook-wide revision when Renart applies a compound change.
-
-For a local coding-agent workflow, see [Notebook agents](/docs/notebooks/agents/).
+- [Notebook agents](/docs/notebooks/agents/)
+- [Dashboards and reports](/docs/presentations/overview/)
+- [How definitions are stored](/docs/how-it-works/)

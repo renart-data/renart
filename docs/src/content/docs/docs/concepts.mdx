@@ -1,11 +1,10 @@
 ---
 title: Concepts
-description: The handful of terms behind everything in Renart.
+description: Projects, assets, dependencies, environments, and the difference between deploying and running.
 ---
 
-Renart is an IDE for a git repository that contains data pipelines. The UI
-is visual, but the project stays file-based: every concept below maps to
-files you can read, diff, and commit.
+Renart separates the definitions you edit from the data and execution history
+they produce. These are the terms used in the UI.
 
 ## Project
 
@@ -47,18 +46,19 @@ waits for the exact producer deployment it was reviewed against.
 
 ## Inspect vs. materialize
 
-**Inspect** is the safe path: preview what an asset returns, with no side
-effects. **Materialize** is the explicit path: execute the asset (or the
-pipeline) and write its output to the target system. You'll spend most of
-your time inspecting and materialize deliberately.
+**Inspect** previews an asset without materializing its destination table.
+**Materialize** executes the asset and writes the configured output. A preview
+can still query a warehouse, execute Python, or make an HTTP request; it is not
+a sandbox for untrusted code. Review the [trust boundary](/docs/reference/security-and-privacy/)
+before running an unfamiliar project.
 
 ## Staleness
 
 Renart fingerprints every asset — its code, its dependencies, its outputs —
 and compares that against what was last materialized. The canvas shows the
 result on each node: **Fresh**, **Edited** (this asset changed), **Upstream
-changed** (something it reads from changed), or **Never built**. "Build
-stale" rebuilds only what the fingerprints say is out of date. Existing source
+changed** (something it reads from changed), or **Never built**. In **Review
+run**, the **Needed assets** selection uses this information to plan work. Existing source
 tables use **External source** instead: Renart does not build them or pretend to
 know whether their data is fresh.
 

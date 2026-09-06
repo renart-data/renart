@@ -3,7 +3,7 @@ title: The pipeline canvas
 description: "Read your pipeline's lineage on the canvas, navigate it, and open or create assets from it."
 ---
 
-The pipeline canvas is the main screen in **Build**. It shows every asset in a
+Choose **Canvas** or **Split** in **Build** to see every asset in a
 pipeline as a node, with arrows for how data flows between them, so you can read
 the whole pipeline at a glance and jump straight to the piece you want to work on.
 
@@ -29,7 +29,7 @@ Each node summarizes one asset:
 - The **connection** it runs against (for example `duckdb-default`).
 
 A node with a coloured border is the one you currently have selected; its details
-open in the workbench on the right.
+open in the properties panel on the right when it is visible.
 
 ## Read the layout
 
@@ -43,7 +43,7 @@ folder holds. An asset in `assets/staging/` is named `staging.<name>`.
 Arrows point from an **upstream** asset to the **downstream** asset that depends on
 it. Read left-to-right to see how raw inputs become finished tables. Renart infers
 most of these links from the asset's SQL; you can also add dependencies by hand in
-the workbench. Dependencies from sibling pipelines appear as read-only producer
+the **Lineage** tab. Dependencies from sibling pipelines appear as read-only producer
 nodes that link back to their owning pipeline.
 
 When an interactive type check positively observes a warehouse table that is
@@ -71,6 +71,21 @@ open the full editor to change the asset's code and metadata — see
 - Use **+ New asset** at the top right to add an asset to the pipeline.
 - To branch off existing work, open a node's **⋯** menu and create a downstream
   asset; the new asset starts with a dependency on the one you came from.
+
+### Bring tables in from the Data Browser
+
+Open **Data Browser** beside the canvas and drag a warehouse table onto the
+source drop target. Renart previews the source asset, including its connection
+and columns; confirm the import to create the file. Existing tables remain
+external sources — importing one does not copy or modify its data.
+
+Drag a destination connection onto the load target after a compatible asset to
+start a **Load** asset with the source and destination prefilled. Review the
+settings before creating it. Drop targets appear only where that operation is
+supported; existing consumers are not rewired automatically.
+
+On touch devices, or without dragging, use the table or connection's **Use**
+action and select the corresponding target on the canvas.
 
 ## Related
 

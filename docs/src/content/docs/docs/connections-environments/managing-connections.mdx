@@ -9,16 +9,23 @@ or Google Cloud Storage. An **environment** is a named set of connections (for
 example `default` and `production`) so the same pipeline can run against
 different targets.
 
-Both live in the project config file in your repository, and both are
-editable in the UI: open the project switcher and choose **Project
-settings**, then the **Environments** and **Connections** sections.
+Manage both from the **Connections** and **Environments** tools in **Build**.
+They are also available through **Project settings**.
 
 ## Add a connection
 
-In **Project settings → Connections**, add a connection with a name (for
-example `duckdb-default` or `pg-prod`) and its credentials. Assets refer to
-connections by name — the workbench shows which connection an asset runs
-against, and the pipeline's defaults live in `pipeline.yml`.
+1. Open **Build → Connections** and add a connection.
+2. Choose its database or storage type and enter a name, such as `pg-analytics`.
+3. Enter the connection details and choose a credential source for secret fields.
+4. Click **Verify** to test the draft, then save it.
+
+Assets refer to connections by name. Choose the connection in the asset's
+**General** properties; set defaults through **Pipeline settings**.
+
+New projects offer the normal database and storage connections. Ingestr-only
+types are hidden unless creation is explicitly enabled in project settings.
+Existing legacy connections remain editable; their presence does not enable
+Ingestr suggestions for new assets or connections.
 
 Sensitive values are write-only. By default Renart stores a replacement in the
 operating system's credential store and keeps only a symbolic placeholder in
@@ -30,7 +37,7 @@ for the complete setup, rotation, and recovery guidance.
 
 ## Environments
 
-In **Project settings → Environments**, define one entry per target. Each
+In **Build → Environments**, define one entry per target. Each
 environment maps connection names to concrete credentials, so switching the
 environment picker in the top bar swaps the whole workspace — previews,
 materializations, and ad-hoc queries — onto that target. Schedules are also
@@ -39,13 +46,10 @@ weekday mornings against `production`.
 
 ## Supported platforms
 
-Renart executes against supported warehouses including DuckDB, Postgres,
-Snowflake, BigQuery, Redshift, and Databricks. Configured S3-compatible and GCS
-connections are available to Load assets even when no connector-specific asset
-integration is enabled; their object browser is explicit, bounded, and keeps
-credential values on the server. The demo projects use DuckDB, which needs no
-credentials at all — a good way to try the workflow before pointing at shared
-infrastructure.
+SQL targets include DuckDB, PostgreSQL, ClickHouse, StarRocks, Trino, Snowflake,
+BigQuery, and others. See the [platform reference](/docs/reference/supported-platforms/)
+for the complete SQL list and materialization limits. Storage connections such
+as S3 and GCS are separate from SQL targets.
 
 :::caution[Keep legacy inline credentials private]
 Newly replaced sensitive values use a write-only credential source. Existing

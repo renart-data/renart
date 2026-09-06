@@ -3,8 +3,6 @@ title: CLI reference
 description: Commands, flags, output modes, and exit behavior for the Renart CLI.
 ---
 
-# CLI reference
-
 The `renart` binary contains the IDE and its command-line workflows. Run
 `renart --help` or `renart <command> --help` for the exact reference shipped
 with your installed version.
@@ -48,7 +46,7 @@ renart web [options] [workspace root]
 | `--static-dir` | `web/dist` | Override the directory containing static web assets. |
 | `--watch-mode` | `auto` | Workspace watcher: `auto`, `fsnotify`, or `poll`. |
 | `--watch-poll-interval` | `2s` | Poll interval used by `poll` and by the polling fallback in `auto`. |
-| `--scheduler` | off | Run the local in-process scheduler. |
+| `--scheduler` | on | Run the local in-process scheduler; use `--scheduler=false` to disable it. |
 | `--scheduler-state` | `.renart/state.db` | Scheduler SQLite state path. |
 | `--notebook-snapshot-max-bytes` | `2147483648` | Maximum staged size for one notebook source snapshot. |
 | `--notebook-snapshot-timeout` | `30m` | Maximum runtime for one notebook source snapshot. |
@@ -74,7 +72,7 @@ platform webview is unavailable, it opens the browser instead.
 | `--static-dir` | `web/dist` | Override the directory containing static web assets. |
 | `--watch-mode` | `auto` | Workspace watcher: `auto`, `fsnotify`, or `poll`. |
 | `--watch-poll-interval` | `2s` | Poll interval used by `poll` and by the polling fallback in `auto`. |
-| `--scheduler` | off | Run the local in-process scheduler. |
+| `--scheduler` | on | Run the local in-process scheduler; use `--scheduler=false` to disable it. |
 | `--scheduler-state` | `.renart/state.db` | Scheduler SQLite state path. |
 | `--notebook-snapshot-max-bytes` | `2147483648` | Maximum staged size for one notebook source snapshot. |
 | `--notebook-snapshot-timeout` | `30m` | Maximum runtime for one notebook source snapshot. |
