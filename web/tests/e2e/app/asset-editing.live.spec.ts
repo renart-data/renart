@@ -429,7 +429,13 @@ select customer_id from analytics.customers
 
     const planSheet = page.getByTestId("pipeline-plan-sheet");
     await expect(planSheet).toBeVisible();
-    await expect(planSheet.getByText("2 changed files will be captured.")).toBeVisible();
+    const changes = planSheet.locator('section[aria-labelledby="pipeline-deploy-source-changes"]');
+    await expect(
+      changes.getByRole("button", { name: /assets\/analytics\/orders.sql/ }),
+    ).toBeVisible();
+    await expect(
+      changes.getByRole("button", { name: /assets\/analytics\/customers.sql/ }),
+    ).toBeVisible();
     const customerFile = planSheet
       .locator('section[aria-labelledby="pipeline-deploy-source-changes"]')
       .locator('[data-slot="collapsible"]')

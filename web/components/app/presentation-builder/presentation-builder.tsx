@@ -124,16 +124,12 @@ export function PresentationBuilder({
   const linkedSelectionAvailable = !linked || selectionExists(artifact, linkedSelection);
   const setSelection = (next: PresentationBuilderSelection) => {
     setLocalSelection(next);
-    void resource.open(
-      {
-        kind: "presentation",
-        presentation_id: presentationId,
-        section: next.kind,
-        ...(next.kind === "artifact" ? {} : { block_id: next.id }),
-      },
-      undefined,
-      true,
-    );
+    void resource.reflect({
+      kind: "presentation",
+      presentation_id: presentationId,
+      section: next.kind,
+      ...(next.kind === "artifact" ? {} : { block_id: next.id }),
+    });
   };
 
   const [previewMode, setPreviewMode] = useState<PresentationPreviewMode>("desktop");
@@ -166,13 +162,21 @@ export function PresentationBuilder({
     setLocalSelection((current) =>
       JSON.stringify(current) === JSON.stringify(next) ? current : next,
     );
+    if (resource.isLocalReflection) return;
     if (next.kind === "visualization") {
       const index = (artifact.visualizations ?? []).findIndex((v) => v.id === next.id);
       setPendingFindingPath(`visualizations[${index}].id`);
     }
     if (next.kind !== "artifact" && !wideBuilder && (!workbenchEnabled || isMobile))
       setInspectorOpen(true);
-  }, [linkedToken, linkedSelectionAvailable, isMobile, wideBuilder, workbenchEnabled]);
+  }, [
+    linkedToken,
+    linkedSelectionAvailable,
+    resource.isLocalReflection,
+    isMobile,
+    wideBuilder,
+    workbenchEnabled,
+  ]);
   const selectedEnvironment = workspace?.selected_environment || "default";
   const assetChoices = useMemo(() => workspaceAssetChoices(workspace), [workspace]);
   const artifactRef = useRef(artifact);

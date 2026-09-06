@@ -1089,7 +1089,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     const reexecutionAccepted = await reexecutionResponse;
     expect(reexecutionAccepted.request().postDataJSON()).toEqual({});
     const reexecution = (await reexecutionAccepted.json()) as { run: { id: string } };
-    await expect(page).toHaveURL(new RegExp(`/runs/${encodeURIComponent(reexecution.run.id)}$`));
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === `/runs/${encodeURIComponent(reexecution.run.id)}` &&
+        url.searchParams.get("run_tab") === "plan",
+    );
 
     let replayDetail: typeof terminalDetail;
     await expect

@@ -29,7 +29,13 @@ export function ResourceNavigation() {
       search &&
       (pathname !== location.pathname || search !== JSON.stringify(location.search))
     )
-      void navigate({ to: pathname, search: JSON.parse(search), replace: true });
+      void navigate({
+        to: pathname,
+        search: JSON.parse(search),
+        state: (state) => state,
+        replace: true,
+        resetScroll: false,
+      });
   }, [pathname, search, location.pathname, location.search, navigate]);
   return error ? (
     <p role="alert" className="px-4 py-2 text-sm text-destructive">

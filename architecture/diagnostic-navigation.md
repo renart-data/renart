@@ -52,6 +52,12 @@ use their existing route search contract extended by the pure run-navigation
 helpers. A timeline target preserves the independent output tab; an event target
 selects Events because the requested event is rendered there.
 
+Local notebook focus and presentation selection use `reflect`, not `open`:
+they replace only the locator without reopening panels, scrolling or stealing
+focus. An ephemeral history-state token identifies that mounted editor's own
+replacement. Other navigation and Back/Forward invalidate it; a cold tab or
+reload has no matching in-memory token and reveals the resource normally.
+
 The small ResourceNavigation component only normalizes legacy v1 bookmarks whose
 path still points to their origin and reports unavailable owners. It renders no
 editor. Root middleware retains project scope, not stale detail targets during

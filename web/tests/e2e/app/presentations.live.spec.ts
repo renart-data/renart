@@ -305,7 +305,7 @@ test.describe("app presentations live", () => {
     await expect(leaveDialog).toBeVisible();
     await leaveDialog.getByRole("button", { name: "Keep editing" }).click();
     await expect(page).toHaveURL(
-      new RegExp(`/dashboards/${created.document.artifact.workspace_id}$`),
+      (url) => url.pathname === `/dashboards/${created.document.artifact.workspace_id}`,
     );
     await page.getByRole("button", { name: "Discard", exact: true }).click();
     await expect(page.getByLabel("Presentation title")).toHaveValue("Keyboard-saved title");
@@ -682,6 +682,8 @@ layout:
     await expect(markdown).toHaveAttribute("contenteditable", "true");
     await expect(markdown).toHaveAttribute("spellcheck", "false");
     await markdown.focus();
+    await expect(markdown).toBeFocused();
+    await expect(page.getByRole("dialog", { name: "Inspector", exact: true })).toBeHidden();
     await expect(markdown).toHaveAttribute("spellcheck", "true");
     await page.getByLabel("Section title").focus();
     await expect(markdown).toHaveAttribute("spellcheck", "false");
@@ -778,11 +780,17 @@ layout:
     ]);
 
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Executive summary" })).toBeVisible();
+    if (narrowBuilder) {
+      const restoredInspector = page.getByRole("dialog", { name: "Inspector" });
+      await expect(restoredInspector.getByLabel("Section ID")).toHaveValue("text");
+      await restoredInspector.getByRole("button", { name: "Close" }).click();
+    }
+    await expect(page.getByLabel("Section title")).toHaveValue("Executive summary");
     await expect(page.getByText("Revenue remained healthy")).toBeVisible();
 
     await page.goto(`${liveApp.baseURL}/reports/${presentationId}/view`);
     const report = page.getByRole("article");
+    await expect(report.getByRole("heading", { name: "Executive summary" })).toBeVisible();
     await expect(report.getByText("New subscriptions")).toBeVisible({ timeout: 15000 });
     await expect(report.locator("ul > li")).toHaveCount(2);
     await expect(report.locator("ol > li")).toHaveCount(2);

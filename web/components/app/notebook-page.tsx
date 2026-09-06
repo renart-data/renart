@@ -1234,8 +1234,8 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const linkedCellAvailable =
     notebook?.cells.filter((cell) => cell.cell_id === linkedCell).length === 1;
   useEffect(() => {
-    if (linkedCell && linkedCellAvailable) revealCell(linkedCell);
-  }, [linkedCell, linkedCellAvailable, revealCell]);
+    if (linkedCell && linkedCellAvailable && !resource.isLocalReflection) revealCell(linkedCell);
+  }, [linkedCell, linkedCellAvailable, resource.isLocalReflection, revealCell]);
   const goToCell = (cellId: string) => {
     void resource.open({ kind: "notebook-cell", notebook_id: notebookId, cell_id: cellId });
     revealCell(cellId);
@@ -1749,15 +1749,11 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
                       onFocusCapture={() => {
                         selectContentBlock(blockKey);
                         if (linkedCell !== block.cell)
-                          void resource.open(
-                            {
-                              kind: "notebook-cell",
-                              notebook_id: notebookId,
-                              cell_id: block.cell!,
-                            },
-                            undefined,
-                            true,
-                          );
+                          void resource.reflect({
+                            kind: "notebook-cell",
+                            notebook_id: notebookId,
+                            cell_id: block.cell!,
+                          });
                       }}
                     >
                       {cell.notebook_source ? (
