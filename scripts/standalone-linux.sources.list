@@ -1,0 +1,6 @@
+# Freeze the complete repository before Bullseye packages left the live pool.
+# Historical snapshots intentionally outlive Valid-Until; signatures and package
+# hashes remain verified. See https://snapshot.debian.org/#usage
+deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260830T000000Z/ bullseye main
+deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260830T000000Z/ bullseye-security main
+deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/20260830T000000Z/ bullseye-updates main
