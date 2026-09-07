@@ -187,12 +187,11 @@ test.describe("app build editor live", () => {
     expect(await page.evaluate(() => localStorage.getItem("renart-theme"))).toBe("light");
   });
 
-  test("ctrl+click on an upstream table opens that asset", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Ctrl+click navigation is a desktop mouse/keyboard affordance.",
-    );
-
+  // Desktop-only: Ctrl+click navigation is a desktop mouse/keyboard affordance.
+  test("ctrl+click on an upstream table opens that asset @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await writeFile(
       join(liveApp.workspaceDir, "analytics", "assets", "analytics", "customer_stats.sql"),
       `/* @bruin
@@ -251,15 +250,11 @@ select customer_id, customer_name from analytics.customers
     });
   });
 
-  test("pipeline settings tags and domains use chips that allow commas", async ({
+  // Desktop-only: Pipeline settings dialog coverage is desktop-only.
+  test("pipeline settings tags and domains use chips that allow commas @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Pipeline settings dialog coverage is desktop-only.",
-    );
-
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
 
@@ -321,15 +316,11 @@ select customer_id, customer_name from analytics.customers
     expect(config.domains).toContain("sales, enterprise");
   });
 
-  test("pipeline connection defaults only offer configured platform and name pairs", async ({
+  // Desktop-only: Pipeline settings connection picker coverage is desktop-only.
+  test("pipeline connection defaults only offer configured platform and name pairs @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Pipeline settings connection picker coverage is desktop-only.",
-    );
-
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
     await page
@@ -367,15 +358,11 @@ select customer_id, customer_name from analytics.customers
     );
   });
 
-  test("pipeline settings keep a fixed full-height layout and manage Python dependencies", async ({
+  // Desktop-only: Pipeline settings dialog layout coverage is desktop-only.
+  test("pipeline settings keep a fixed full-height layout and manage Python dependencies @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Pipeline settings dialog layout coverage is desktop-only.",
-    );
-
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
     await page
@@ -466,12 +453,11 @@ select customer_id, customer_name from analytics.customers
     await expect(dialog.getByRole("textbox", { name: "Start date" })).toBeVisible();
   });
 
-  test("pipeline settings open the filtered Renart schedules page", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Pipeline settings schedule navigation coverage is desktop-only.",
-    );
-
+  // Desktop-only: Pipeline settings schedule navigation coverage is desktop-only.
+  test("pipeline settings open the filtered Renart schedules page @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
     await page
@@ -492,12 +478,8 @@ select customer_id, customer_name from analytics.customers
     await expect(page.getByRole("textbox", { name: "Filter schedules" })).toHaveValue("analytics");
   });
 
-  test("pipeline settings guard unsaved changes", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Pipeline settings discard confirmation coverage is desktop-only.",
-    );
-
+  // Desktop-only: Pipeline settings discard confirmation coverage is desktop-only.
+  test("pipeline settings guard unsaved changes @desktop-only", async ({ liveApp, page }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15000 });
     await page
@@ -521,15 +503,11 @@ select customer_id, customer_name from analytics.customers
     await expect(dialog).toBeHidden();
   });
 
-  test("inferred pipeline defaults are shown and link to the project connection", async ({
+  // Desktop-only: Pipeline settings dialog coverage is desktop-only.
+  test("inferred pipeline defaults are shown and link to the project connection @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Pipeline settings dialog coverage is desktop-only.",
-    );
-
     await writeFile(
       join(liveApp.workspaceDir, "analytics", "pipeline.yml"),
       `id: 693a3341-9762-42b5-a35f-c2a9efe94203

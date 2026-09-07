@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { FullResult, Reporter, TestCase, TestResult } from "@playwright/test/reporter";
 
@@ -40,6 +40,15 @@ export default class LiveTimingReporter implements Reporter {
     return false;
   }
 
+  onBegin() {
+    mkdirSync(this.outputDir, { recursive: true });
+    // Reusing an output directory must not make an interrupted run look complete.
+    for (const file of ["live-timings.json", "live-timings.md"]) {
+      rmSync(resolve(this.outputDir, file), { force: true });
+    }
+    writeFileSync(resolve(this.outputDir, "live-timings.jsonl"), "", "utf8");
+  }
+
   onTestEnd(test: TestCase, result: TestResult) {
     const fixture = parseFixtureTimings(result);
     const measuredMs =
@@ -49,7 +58,7 @@ export default class LiveTimingReporter implements Reporter {
       numberValue(fixture.serverTeardownMs);
     const titlePath = test.titlePath();
 
-    this.entries.push({
+    const entry: TimingEntry = {
       ...fixture,
       project: test.parent.project()?.name ?? titlePath[0] ?? "unknown",
       file: test.location.file,
@@ -58,7 +67,15 @@ export default class LiveTimingReporter implements Reporter {
       status: result.status,
       totalMs: result.duration,
       otherMs: Math.max(0, result.duration - measuredMs),
-    });
+    };
+    this.entries.push(entry);
+    // A killed process never reaches onEnd. Retain each completed attempt;
+    // only the final JSON/Markdown report certifies a completed suite.
+    appendFileSync(
+      resolve(this.outputDir, "live-timings.jsonl"),
+      `${JSON.stringify(entry)}\n`,
+      "utf8",
+    );
   }
 
   onEnd(result: FullResult) {

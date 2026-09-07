@@ -289,12 +289,11 @@ test.describe("sql intellisense live", () => {
     );
   });
 
-  test("shows parser syntax errors as Monaco diagnostics", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco diagnostics are only stable in the desktop editor.",
-    );
-
+  // Desktop-only: Monaco diagnostics are only stable in the desktop editor.
+  test("shows parser syntax errors as Monaco diagnostics @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await openCustomersEditor(page, liveApp.baseURL);
     await replaceEditorContentByInsertText(
       page,
@@ -320,12 +319,11 @@ test.describe("sql intellisense live", () => {
       );
   });
 
-  test("uses SQL LSP completions in the Monaco SQL editor", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Desktop suggest widget exposes stable Monaco completion DOM.",
-    );
-
+  // Desktop-only: Desktop suggest widget exposes stable Monaco completion DOM.
+  test("uses SQL LSP completions in the Monaco SQL editor @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await openCustomersEditor(page, liveApp.baseURL);
     await replaceEditorContentByInsertText(page, "select o.\nfrom analytics.orders o");
     await setEditorPositionAfterText(page, "o.");
@@ -356,12 +354,11 @@ test.describe("sql intellisense live", () => {
     await expectVisibleSuggestText(page, "total_amount");
   });
 
-  test("completes VALUES aliases and DESCRIBE result columns", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Desktop suggest widget exposes stable Monaco completion DOM.",
-    );
-
+  // Desktop-only: Desktop suggest widget exposes stable Monaco completion DOM.
+  test("completes VALUES aliases and DESCRIBE result columns @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await openCustomersEditor(page, liveApp.baseURL);
     await replaceEditorContentByInsertText(page, "select \nfrom (values (1, 2), (3, 4)) n(a, b)");
     await setEditorPositionAfterText(page, "select ");
@@ -384,15 +381,11 @@ test.describe("sql intellisense live", () => {
     await expect(suggestWidget.getByText("total_amount", { exact: true })).toHaveCount(0);
   });
 
-  test("highlights the canvas asset referenced under the SQL pointer", async ({
+  // Desktop-only: The split canvas is a desktop affordance.
+  test("highlights the canvas asset referenced under the SQL pointer @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The split canvas is a desktop affordance.",
-    );
-
     await page.goto(
       `${liveApp.baseURL}/pipelines/${analyticsPipelineId}/assets/${customersAssetId}/split`,
     );
@@ -428,15 +421,11 @@ test.describe("sql intellisense live", () => {
     await expect(highlightedNode).toHaveCount(0);
   });
 
-  test("offers only in-scope aliases in join conditions and chains into columns", async ({
+  // Desktop-only: Desktop suggest widget exposes stable Monaco completion DOM.
+  test("offers only in-scope aliases in join conditions and chains into columns @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Desktop suggest widget exposes stable Monaco completion DOM.",
-    );
-
     const content = "select * from analytics.customers as x join analytics.orders as y on ";
     await openCustomersEditor(page, liveApp.baseURL);
     await replaceEditorContentByInsertText(page, content);
@@ -473,12 +462,11 @@ test.describe("sql intellisense live", () => {
     await expectVisibleSuggestText(page, "customer_id");
   });
 
-  test("suggests SQL keywords in a general statement position", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Desktop suggest widget exposes stable Monaco completion DOM.",
-    );
-
+  // Desktop-only: Desktop suggest widget exposes stable Monaco completion DOM.
+  test("suggests SQL keywords in a general statement position @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await openCustomersEditor(page, liveApp.baseURL);
     // A fresh line after the FROM clause is a general position where the LSP
     // offers clause keywords; the "wher" prefix filters down to "where".
@@ -491,12 +479,11 @@ test.describe("sql intellisense live", () => {
     await expect(suggestWidget.getByText("where", { exact: true })).toBeVisible();
   });
 
-  test("maps SQL LSP rendered-template diagnostics back into Monaco", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco diagnostics are only stable in the desktop editor.",
-    );
-
+  // Desktop-only: Monaco diagnostics are only stable in the desktop editor.
+  test("maps SQL LSP rendered-template diagnostics back into Monaco @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await openCustomersEditor(page, liveApp.baseURL);
 
     const diagnosticsResponse = page.waitForResponse(
@@ -523,12 +510,11 @@ test.describe("sql intellisense live", () => {
       );
   });
 
-  test("flags unresolved columns against a relation's known columns", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco diagnostics are only stable in the desktop editor.",
-    );
-
+  // Desktop-only: Monaco diagnostics are only stable in the desktop editor.
+  test("flags unresolved columns against a relation's known columns @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await openAssetEditor(page, liveApp.baseURL, {
       assetId: ordersAssetId,
       contentToken: "order_id",
@@ -546,12 +532,11 @@ test.describe("sql intellisense live", () => {
       );
   });
 
-  test("flags unqualified unresolved columns in Monaco", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco diagnostics are only stable in the desktop editor.",
-    );
-
+  // Desktop-only: Monaco diagnostics are only stable in the desktop editor.
+  test("flags unqualified unresolved columns in Monaco @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await openCustomersEditor(page, liveApp.baseURL);
     await replaceEditorContentByInsertText(
       page,
@@ -570,15 +555,11 @@ test.describe("sql intellisense live", () => {
       );
   });
 
-  test("does not let stale diagnostic responses replace newer markers", async ({
+  // Desktop-only: Monaco diagnostics are only stable in the desktop editor.
+  test("does not let stale diagnostic responses replace newer markers @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco diagnostics are only stable in the desktop editor.",
-    );
-
     await openCustomersEditor(page, liveApp.baseURL);
 
     let sawStaleRequest = false;
@@ -667,12 +648,11 @@ test.describe("sql intellisense live", () => {
     );
   });
 
-  test("reports self references as circular dependencies", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco diagnostics are only stable in the desktop editor.",
-    );
-
+  // Desktop-only: Monaco diagnostics are only stable in the desktop editor.
+  test("reports self references as circular dependencies @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await openCustomersEditor(page, liveApp.baseURL);
 
     await replaceEditorContentByInsertText(page, "select *\nfrom analytics.customers");
@@ -694,12 +674,8 @@ test.describe("sql intellisense live", () => {
       );
   });
 
-  test("flags unresolved relations in the FROM clause", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco diagnostics are only stable in the desktop editor.",
-    );
-
+  // Desktop-only: Monaco diagnostics are only stable in the desktop editor.
+  test("flags unresolved relations in the FROM clause @desktop-only", async ({ liveApp, page }) => {
     // The app editor drives SQL diagnostics through the server LSP, which
     // reports the misspelled table as "Unresolved table: <name>". The old
     // parse-context editor phrased this as a "Did you mean ...?" quick fix; that
@@ -715,12 +691,11 @@ test.describe("sql intellisense live", () => {
       );
   });
 
-  test("renders Jinja ghost text and completions in the SQL editor", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco injected text DOM is only stable in the desktop editor.",
-    );
-
+  // Desktop-only: Monaco injected text DOM is only stable in the desktop editor.
+  test("renders Jinja ghost text and completions in the SQL editor @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await writeFile(
       join(liveApp.workspaceDir, "analytics", "pipeline.yml"),
       [
@@ -845,12 +820,11 @@ test.describe("sql intellisense live", () => {
     await expect(variable.getByRole("textbox", { name: "Default" })).toHaveValue("incremental");
   });
 
-  test("keeps SQL suggestion focus across workspace SSE updates", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Desktop suggest widget exposes stable Monaco completion DOM.",
-    );
-
+  // Desktop-only: Desktop suggest widget exposes stable Monaco completion DOM.
+  test("keeps SQL suggestion focus across workspace SSE updates @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await openCustomersEditor(page, liveApp.baseURL);
     await replaceEditorContent(page, "select * from analytics.");
     await page.keyboard.press("ControlOrMeta+Space");
@@ -874,15 +848,11 @@ test.describe("sql intellisense live", () => {
     await expect.poll(async () => getFocusedSuggestText(page)).toBe(focusedBefore);
   });
 
-  test("does not fetch remote columns for partial qualified Bruin asset names", async ({
+  // Desktop-only: Desktop suggest widget exposes stable Monaco completion DOM.
+  test("does not fetch remote columns for partial qualified Bruin asset names @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Desktop suggest widget exposes stable Monaco completion DOM.",
-    );
-
     const assetDir = join(liveApp.workspaceDir, "analytics", "assets", "simple");
     await mkdir(assetDir, { recursive: true });
     await writeFile(
@@ -935,12 +905,11 @@ select * from simple.small
     ).toBe(false);
   });
 
-  test("suggests Jinja expressions inside statement blocks", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Desktop suggest widget exposes stable Monaco completion DOM.",
-    );
-
+  // Desktop-only: Desktop suggest widget exposes stable Monaco completion DOM.
+  test("suggests Jinja expressions inside statement blocks @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await writeFile(
       join(liveApp.workspaceDir, "analytics", "pipeline.yml"),
       [
@@ -994,15 +963,11 @@ select * from simple.small
 test.describe("sql intellisense ranking live", () => {
   test.use({ fixtureName: "sql-intellisense-ranking-workspace" });
 
-  test("completes matching assets across pipelines in the FROM clause", async ({
+  // Desktop-only: Desktop suggest widget exposes stable Monaco completion DOM.
+  test("completes matching assets across pipelines in the FROM clause @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Desktop suggest widget exposes stable Monaco completion DOM.",
-    );
-
     // Both analytics.dependencies and marts.dependencies are workspace assets, so
     // the LSP offers them as relation completions when a FROM prefix matches —
     // no materialization required.

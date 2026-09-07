@@ -102,6 +102,7 @@ the corresponding subsystem:
 | [asset-editing.md](architecture/asset-editing.md) | Asset workbench: ownership model, `assetmeta` provenance, reconciliation, transaction API |
 | [sql-lsp.md](architecture/sql-lsp.md) | SQL language server: canonical graph, engine, caching, column inference |
 | [docs.md](architecture/docs.md) | Authoring contract for the user docs under `docs/` |
+| [testing.md](architecture/testing.md) | Local release/focused gates, memory limits, durable live-test evidence |
 
 **[`plans/`](plans/)** — proposals and implementation plans for work that has
 **not** shipped (or only partially). When a plan lands, fold the as-built reality

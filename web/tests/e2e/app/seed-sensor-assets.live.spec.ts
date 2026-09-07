@@ -27,15 +27,12 @@ type WorkspaceResponse = {
 test.describe("seed and sensor assets live", () => {
   test.use({ fixtureName: "configured-workspace" });
 
-  test("creates, edits, and runs a seed and a sensor from the workbench", async ({
+  // Desktop-only: The canvas creation flow is desktop-only.
+  test("creates, edits, and runs a seed and a sensor from the workbench @desktop-only", async ({
     liveApp,
     page,
   }) => {
     test.setTimeout(120000);
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The canvas creation flow is desktop-only.",
-    );
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${ordersAssetId}/canvas`);
     let dialog = await openNewAssetDialog(page);
@@ -416,15 +413,12 @@ test.describe("seed and sensor assets live", () => {
       .toMatchObject({ status: "volatile", volatile: true, last_run_status: "succeeded" });
   });
 
-  test("creates a seed from the workspace picker and keeps asset choices aligned", async ({
+  // Desktop-only: The canvas creation flow is desktop-only.
+  test("creates a seed from the workspace picker and keeps asset choices aligned @desktop-only", async ({
     liveApp,
     page,
   }) => {
     test.setTimeout(120000);
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The canvas creation flow is desktop-only.",
-    );
 
     const workspaceSeedPath = join(liveApp.workspaceDir, "data", "workspace_customers.csv");
     await mkdir(join(liveApp.workspaceDir, "data"), { recursive: true });
@@ -527,12 +521,12 @@ test.describe("seed and sensor assets live", () => {
     expect(definition).not.toContain("workspace_path");
   });
 
-  test("creates and replaces a seed from pasted clipboard data", async ({ liveApp, page }) => {
+  // Desktop-only: The canvas creation flow is desktop-only.
+  test("creates and replaces a seed from pasted clipboard data @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     test.setTimeout(120000);
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The canvas creation flow is desktop-only.",
-    );
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${ordersAssetId}/canvas`);
     const dialog = await openNewAssetDialog(page);

@@ -773,6 +773,12 @@ than hand-rolled `div` shells.
   running, result, cancel, and session-reset transitions; the hook waits for the
   notebook save barrier before executing and delegates durable runtime truth to
   the server.
+- [use-notebook-control-options.ts](../web/hooks/use-notebook-control-options.ts):
+  owns dataset-backed control option snapshots, loading, and notebook-scoped
+  latest-request admission. Pure helpers select newly successful producers;
+  initial/state-only events do not issue queries. The page retains authored
+  definitions, parameter values, selection, and layout state. See
+  [notebook runtime ownership](notebooks.md#10-server-owned-recompute-and-frontend-state).
 - [use-app-asset-materialization-status.ts](../web/hooks/use-app-asset-materialization-status.ts):
   freshness / materialization enrichment with a post-terminal event guard.
 - [use-pipeline-staleness.ts](../web/hooks/use-pipeline-staleness.ts): per-pipeline
@@ -795,6 +801,9 @@ than hand-rolled `div` shells.
   generated API types. The generated types come from the Go DTOs via
   `internal/tools/apitypes` (see [backend.md](backend.md) §5) — don't hand-edit
   `web/lib/generated/api-types.ts`.
+- [lib/api-notebooks.ts](../web/lib/api-notebooks.ts): notebook runtime events,
+  snapshots, and cell results also derive from generated Go wire contracts.
+  Local aliases refine UI unions/nullability without duplicating entire DTOs.
 - [lib/atoms/](../web/lib/atoms): Jotai atoms split by domain (`workspace`,
   `selection`, `editor`, `results`, `materialization`, `sql-discovery`, suggestion
   catalog).

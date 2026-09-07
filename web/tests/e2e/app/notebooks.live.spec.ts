@@ -243,11 +243,8 @@ async function setVisualizationDefinitionValue(page: Page, blockId: string, valu
 test.describe("app notebooks live", () => {
   test.use({ fixtureName: "configured-workspace" });
 
-  test("uses LSP-derived columns for a VALUES source", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Desktop suggest widget exposes stable Monaco completion DOM.",
-    );
+  // Desktop-only: Desktop suggest widget exposes stable Monaco completion DOM.
+  test("uses LSP-derived columns for a VALUES source @desktop-only", async ({ liveApp, page }) => {
     const notebook = await createNotebook(page.request, liveApp.baseURL, "VALUES IntelliSense");
     const baseCellId = await addCell(page.request, liveApp.baseURL, notebook.id, "runtime_base");
     await setCell(
@@ -296,11 +293,11 @@ test.describe("app notebooks live", () => {
     await expect(suggestWidget.getByText("unrelated_runtime", { exact: true })).toHaveCount(0);
   });
 
-  test("resolves CTE columns after a leading viz directive", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Desktop suggest widget exposes stable Monaco completion DOM.",
-    );
+  // Desktop-only: Desktop suggest widget exposes stable Monaco completion DOM.
+  test("resolves CTE columns after a leading viz directive @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     const notebook = await createNotebook(page.request, liveApp.baseURL, "CTE IntelliSense");
     const cellId = await addCell(page.request, liveApp.baseURL, notebook.id, "cte_query");
     await setCell(page.request, liveApp.baseURL, notebook.id, cellId, "select 1 as placeholder");
@@ -928,12 +925,11 @@ test.describe("app notebooks live", () => {
     ).toContain(`from marts.${source!.name}`);
   });
 
-  test("highlights a sibling cell after definition navigation", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Ctrl+click definition navigation is a desktop editor interaction.",
-    );
-
+  // Desktop-only: Ctrl+click definition navigation is a desktop editor interaction.
+  test("highlights a sibling cell after definition navigation @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Definition Highlight");
     const baseCell = await addCell(page.request, liveApp.baseURL, notebook.id, "base");
     await setCell(page.request, liveApp.baseURL, notebook.id, baseCell, "select 1 as value");
@@ -1001,15 +997,11 @@ test.describe("app notebooks live", () => {
     });
   });
 
-  test("serializes autosaves so a delayed response cannot erase newer typing", async ({
+  // Desktop-only: Monaco keyboard editing is only stable in the desktop notebook layout.
+  test("serializes autosaves so a delayed response cannot erase newer typing @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco keyboard editing is only stable in the desktop notebook layout.",
-    );
-
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Save Ordering");
     const cellId = await addCell(page.request, liveApp.baseURL, notebook.id, "typing");
     await setCell(page.request, liveApp.baseURL, notebook.id, cellId, "select 1 as value");
@@ -1129,12 +1121,11 @@ test.describe("app notebooks live", () => {
     }
   });
 
-  test("keeps a local draft when a peer saves the same cell first", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco keyboard editing is only stable in the desktop notebook layout.",
-    );
-
+  // Desktop-only: Monaco keyboard editing is only stable in the desktop notebook layout.
+  test("keeps a local draft when a peer saves the same cell first @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Peer Save Conflict");
     const cellId = await addCell(page.request, liveApp.baseURL, notebook.id, "shared");
     await setCell(page.request, liveApp.baseURL, notebook.id, cellId, "select 1 as baseline");
@@ -1704,15 +1695,11 @@ test.describe("app notebooks live", () => {
     expect(existsSync(join(liveApp.workspaceDir, notebook.path, "pyproject.toml"))).toBe(false);
   });
 
-  test("offers sibling SQL completion inside a Python notebook query literal", async ({
+  // Desktop-only: Monaco suggestions are only stable in the desktop notebook layout.
+  test("offers sibling SQL completion inside a Python notebook query literal @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco suggestions are only stable in the desktop notebook layout.",
-    );
-
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Python SQL IntelliSense");
     const baseCell = await addPythonCell(page.request, liveApp.baseURL, notebook.id, "base");
     await setPythonCell(
@@ -1764,7 +1751,9 @@ test.describe("app notebooks live", () => {
     });
 
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
-    await expect(page.getByText("Python SQL IntelliSense").first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText("Python SQL IntelliSense").first()).toBeVisible({
+      timeout: 15000,
+    });
     await expect(
       page.locator(`[data-notebook-cell-id="${pythonCell}"] .monaco-editor`),
     ).toBeVisible({
@@ -2048,14 +2037,11 @@ test.describe("app notebooks live", () => {
     expect(final.notebook.cells.find((cell) => cell.cell_id === baseCell)!.name).toBe("revenue");
   });
 
-  test("drags a typed control between notebook blocks and inserts text at the same gap", async ({
+  // Desktop-only: Desktop drag and drop keeps the Add rail and notebook insertion target visible together.
+  test("drags a typed control between notebook blocks and inserts text at the same gap @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Desktop drag and drop keeps the Add rail and notebook insertion target visible together.",
-    );
     const notebook = await createNotebook(page.request, liveApp.baseURL, "Ordered Controls");
     const firstCell = notebook.cells[0].cell_id;
     const firstCellName = notebook.cells[0].name;

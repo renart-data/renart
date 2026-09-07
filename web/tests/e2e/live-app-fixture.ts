@@ -51,12 +51,25 @@ const e2eWorkspaceRoot = resolve(repoRoot, ".playwright-live-workspaces");
 const postgresLockPath = resolve(e2eWorkspaceRoot, "postgres.lock");
 
 export const liveTest = base.extend<{
+  deviceContract: void;
   fixtureName: string;
   isolateUserConfig: boolean;
   liveAppEnv: Record<string, string | undefined>;
   liveApp: LiveApp;
   livePostgres: LivePostgres | null;
 }>({
+  // Automatic fixtures run before lazy browser/server/database fixtures. Tags
+  // only move existing device exclusions earlier; skipped tests stay listed.
+  deviceContract: [
+    async ({ isMobile }, use, testInfo) => {
+      base.skip(
+        Boolean(isMobile) && /(?:^|\s)@desktop-only(?:\s|$)/.test(testInfo.title),
+        "Desktop-only interaction; see the test declaration.",
+      );
+      await use();
+    },
+    { auto: true },
+  ],
   fixtureName: ["basic-workspace", { option: true }],
   isolateUserConfig: [false, { option: true }],
   liveAppEnv: [{}, { option: true }],

@@ -22,6 +22,7 @@ in the plan.
 | [asset-editing.md](asset-editing.md) | Asset workbench: ownership model, `assetmeta` provenance keys, reconciliation, transaction API |
 | [sql-lsp.md](sql-lsp.md) | SQL language server: canonical graph, engine, web service caching, notebook cell scoping, column-inference fixpoint |
 | [docs.md](docs.md) | Authoring contract for the user docs under `docs/` |
+| [testing.md](testing.md) | Local release/focused gates, memory limits, durable live-test evidence |
 
 Agent orientation and repo-wide rules live in the top-level [`AGENTS.md`](../AGENTS.md);
 the user-facing product docs live under `docs/` (see docs.md for how

@@ -36,15 +36,11 @@ const pythonAssetId = Buffer.from("analytics/assets/analytics/py_metric.py").toS
 test.describe("app build actions live", () => {
   test.use({ fixtureName: "configured-workspace" });
 
-  test("centers a fitting DAG and opens the first asset selection in split view", async ({
+  // Desktop-only: The full Build canvas is a desktop affordance.
+  test("centers a fitting DAG and opens the first asset selection in split view @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The full Build canvas is a desktop affordance.",
-    );
-
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/canvas`);
     const flow = page.locator(".react-flow").first();
     await expect(flow).toBeVisible({ timeout: 15000 });
@@ -242,12 +238,8 @@ test.describe("app build actions live", () => {
     await expect(disclosure.locator("pre")).toContainText(/select/i);
   });
 
-  test("records a canvas context-menu run as manual", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The canvas context menu is a desktop affordance.",
-    );
-
+  // Desktop-only: The canvas context menu is a desktop affordance.
+  test("records a canvas context-menu run as manual @desktop-only", async ({ liveApp, page }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/canvas`);
     const assetNode = page.locator(
       `[data-testid="lineage-asset"][data-asset-id="${customersAssetId}"]`,
@@ -1192,15 +1184,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     );
   });
 
-  test("explorer creation actions live at the workspace and pipeline scopes", async ({
+  // Desktop-only: The explorer action toolbar is desktop-only.
+  test("explorer creation actions live at the workspace and pipeline scopes @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The explorer action toolbar is desktop-only.",
-    );
-
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
 
     await page.getByRole("button", { name: "New pipeline", exact: true }).click();
@@ -1229,12 +1217,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
       .click();
   });
 
-  test("creates a feature demo from the new pipeline flow", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The explorer action toolbar is desktop-only.",
-    );
-
+  // Desktop-only: The explorer action toolbar is desktop-only.
+  test("creates a feature demo from the new pipeline flow @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await page.getByRole("button", { name: "New pipeline", exact: true }).click();
 
@@ -1278,15 +1265,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(page).toHaveURL(new RegExp(`/pipelines/${createdPipelineID}/canvas`));
   });
 
-  test("ad hoc editor uses Monaco with SQL intellisense and runs queries", async ({
+  // Desktop-only: The Workbench rail ad-hoc affordance is desktop-only.
+  test("ad hoc editor uses Monaco with SQL intellisense and runs queries @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The Workbench rail ad-hoc affordance is desktop-only.",
-    );
-
     await writeFile(
       join(liveApp.workspaceDir, ".bruin.yml"),
       `environments:
@@ -1441,7 +1424,10 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     const parseContextSeen = page.waitForResponse(
       (response) => {
         if (!response.url().includes("/api/sql/parse-context") || !response.ok()) return false;
-        const body = response.request().postDataJSON() as { connection?: string; content?: string };
+        const body = response.request().postDataJSON() as {
+          connection?: string;
+          content?: string;
+        };
         return body.connection === "duckdb-adhoc" && body.content?.includes("adhoc_ok") === true;
       },
       { timeout: 15000 },
@@ -1504,12 +1490,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(queryIcon).toHaveAttribute("stroke-width", "2.75");
   });
 
-  test("converts an ad hoc query to an asset and a notebook cell", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The desktop Workbench rail exposes the ad-hoc conversion actions.",
-    );
-
+  // Desktop-only: The desktop Workbench rail exposes the ad-hoc conversion actions.
+  test("converts an ad hoc query to an asset and a notebook cell @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     const adHocTool = page
       .getByRole("complementary", { name: "build tools" })
@@ -1572,15 +1557,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     });
   });
 
-  test("ad hoc document preserves the asset route and full-size code", async ({
+  // Desktop-only: This route-preservation assertion targets the desktop Workbench rail.
+  test("ad hoc document preserves the asset route and full-size code @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "This route-preservation assertion targets the desktop Workbench rail.",
-    );
-
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/canvas`);
     const adHocTool = page
       .getByRole("complementary", { name: "build tools" })

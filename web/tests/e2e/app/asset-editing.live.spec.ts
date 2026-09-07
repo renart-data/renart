@@ -174,12 +174,11 @@ async function expectCompactAssetDescription(page: Page, description: string) {
 test.describe("app asset editing workbench live", () => {
   test.use({ fixtureName: "configured-workspace" });
 
-  test("keeps downstream SQL on the upstream warehouse", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The canvas downstream affordance is desktop-only.",
-    );
-
+  // Desktop-only: The canvas downstream affordance is desktop-only.
+  test("keeps downstream SQL on the upstream warehouse @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/canvas`);
     const node = page.getByTestId(`rf__node-${customersAssetId}`);
     await node.hover();
@@ -355,12 +354,11 @@ select customer_id from analytics.customers
     expect(overflow.triggerWidth).toBeLessThanOrEqual(overflow.viewportClientWidth);
   });
 
-  test("deployment review waits for a URI committed on blur", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The fixed inspector and top-bar deployment action are desktop affordances.",
-    );
-
+  // Desktop-only: The fixed inspector and top-bar deployment action are desktop affordances.
+  test("deployment review waits for a URI committed on blur @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     const initialDeploy = await page.request.post(
       `${liveApp.baseURL}/api/pipelines/${pipelineId}/deploy`,
       { data: {} },
@@ -449,15 +447,11 @@ select customer_id from analytics.customers
     );
   });
 
-  test("keeps asset descriptions left of connections on both canvases", async ({
+  // Desktop-only: The lineage canvas is a desktop affordance.
+  test("keeps asset descriptions left of connections on both canvases @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The lineage canvas is a desktop affordance.",
-    );
-
     const description = "Customer profile records";
     const update = await page.request.put(
       `${liveApp.baseURL}/api/pipelines/${pipelineId}/assets/${customersAssetId}`,
@@ -918,15 +912,12 @@ materialization:
     await expect(properties.getByRole("button", { name: "YAML", exact: true })).toHaveCount(0);
   });
 
-  test("creates a canonical Load asset, navigates to its source, and edits target connections", async ({
+  // Desktop-only: The canvas creation flow is desktop-only.
+  test("creates a canonical Load asset, navigates to its source, and edits target connections @desktop-only", async ({
     liveApp,
     page,
   }) => {
     test.setTimeout(timeoutForRetry(test.info(), 90000, 60000));
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The canvas creation flow is desktop-only.",
-    );
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${ordersAssetId}/canvas`);
     await page.getByRole("button", { name: "New asset" }).first().click();

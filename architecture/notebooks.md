@@ -544,6 +544,13 @@ surface, not a hosted or access-controlled BI runtime.
 
 ## 10. Server-owned recompute and frontend state
 
+The runtime snapshot, `notebook.runtime` event, and cell-run result wire shapes
+are generated from their Go DTOs by `internal/tools/apitypes`, including nested
+import, snapshot, performance, and visualization records. `api-notebooks.ts`
+keeps only intentional UI union/nullability refinements over those generated
+types. `check:api-types` catches wire drift; private execution fingerprints are
+not exposed by the generator.
+
 The server owns definition staleness, last results, active runs, and the
 auto-recompute closure. Editing an execution cell marks it and descendants
 stale; changing Python dependencies marks every Python cell and its descendants
@@ -578,6 +585,17 @@ request finishing cannot erase newer SSE state. Switching notebooks resets the
 local projection and late results from the previous notebook are ignored. A run
 still crosses the pending-save barrier before calling the server; the reducer is
 only a view projection, not runtime authority.
+
+Dataset-backed control options have a separate, notebook-scoped controller in
+`web/hooks/use-notebook-control-options.ts`. It owns option-query loading,
+definition-keyed result snapshots, and latest-request admission. Navigating away
+invalidates pending responses, including an A → B → A round trip. Manual errors
+remain visible; superseded responses and silent-refresh errors do not overwrite
+the current action state. The initial runtime projection and state-only events
+do not refresh options; a newly successful producer result does. Producer IDs
+take precedence over case-insensitive names. Parameter values, authored control
+definitions, document saves, selected cells, and independent panels retain their
+existing owners; the controller does not navigate or introduce polling.
 
 When the initial runtime GET overlaps SSE, its results form the baseline and
 only result deltas received after the request override it. State-only SSE

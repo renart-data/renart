@@ -37,15 +37,12 @@ type AssetStaleness = {
 test.describe("pipeline failure asset status live", () => {
   test.use({ fixtureName: "configured-workspace" });
 
-  test("keeps an unreached child out of pending and preserves exact-target freshness", async ({
+  // Desktop-only: Canvas status transitions are a desktop affordance.
+  test("keeps an unreached child out of pending and preserves exact-target freshness @desktop-only", async ({
     liveApp,
     page,
     request,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Canvas status transitions are a desktop affordance.",
-    );
     test.setTimeout(timeoutForRetry(test.info(), 240000, 60000));
 
     const { sentinelPath, releasePath } = await addFailurePipeline(liveApp);

@@ -4,16 +4,29 @@ set -euo pipefail
 
 live=0
 checks=1
+notebooks=0
 case "${1:-}" in
   --live) live=1 ;;
   --live-only) live=1; checks=0 ;;
+  --notebooks) live=1; checks=0; notebooks=1 ;;
   --help|-h)
-    printf 'Usage: bash scripts/release-check-local.sh [--live|--live-only]\n\nDefault: production build and make release-check.\n--live: also run the entire live desktop/mobile suite, serially.\n--live-only: build and run the entire live suite without other release gates.\nLogs, traces and a phase-status manifest stay in .test-artifacts/release-*/.\nNo publishing, tagging or cleanup is performed.\n'
+    printf 'Usage: bash scripts/release-check-local.sh [--live|--live-only|--notebooks]\n\nDefault: production build and make release-check.\n--live: also run the entire live desktop/mobile suite, serially.\n--live-only: build and run the entire live suite without other release gates.\n--notebooks: focused frontend, notebook-contract/backend and notebook/workspace live checks, without retries. This is not a full release gate.\nLogs, traces and a phase-status manifest stay in .test-artifacts/release-*/.\nOn a systemd user session, all phases share a hard 4 GiB memory cap (RENART_CHECK_MEMORY_MAX overrides it).\nNo publishing, tagging or cleanup is performed.\n'
     exit 0 ;;
   '') ;;
   *) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
 esac
 if (( $# > 1 )); then printf 'Only one option is accepted.\n' >&2; exit 2; fi
+
+# Go/Node heap targets do not bound native libraries or child processes.
+# Re-enter once in a cgroup when supported, before starting expensive phases.
+if [[ "${RENART_CHECK_MEMORY_GUARDED:-0}" != 1 ]]; then
+  if command -v systemd-run >/dev/null && systemctl --user is-active --quiet default.target; then
+    exec systemd-run --user --scope --quiet --unit="renart-local-check-$$" \
+      -p "MemoryMax=${RENART_CHECK_MEMORY_MAX:-4G}" -p MemorySwapMax=0 \
+      env RENART_CHECK_MEMORY_GUARDED=1 bash "${BASH_SOURCE[0]}" "$@"
+  fi
+  printf 'No systemd user session: only Go/Node heap targets are available; there is no hard process-tree memory cap.\n' >&2
+fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
@@ -37,6 +50,8 @@ mkdir -p "$RENART_E2E_TEMP_DIR" "$PWTEST_CACHE_DIR"
   printf 'Commit: '; git rev-parse HEAD
   printf 'Branch: '; git branch --show-current
   printf 'Working tree:\n'; git status --short
+  printf 'Focused notebook profile: %s\n' "$notebooks"
+  printf 'Hard memory guard: %s\n' "${RENART_CHECK_MEMORY_GUARDED:-0}"
   printf '\nAn absent completion record means interrupted, not passed.\n'
 } > "$artifacts/manifest.txt"
 printf 'phase\tstarted\tfinished\texit_code\n' > "$artifacts/phases.tsv"
@@ -57,11 +72,19 @@ run_phase() {
 }
 
 run_phase frontend-install env CI=true corepack pnpm --dir web install --frozen-lockfile
-run_phase frontend-build corepack pnpm --dir web build
+if (( notebooks )); then
+  run_phase frontend-check corepack pnpm --dir web check
+else
+  run_phase frontend-build corepack pnpm --dir web build
+fi
 target="$(go env GOOS)-$(go env GOARCH)"
 run_phase link-shim bash scripts/build_bruin_sqlparser_stub.sh "$target"
 stub_dir="$RENART_BRUIN_SQLPARSER_STUB_DIR/$target/release"
 printf 'Link shim cache: %s\n' "$stub_dir" >> "$artifacts/manifest.txt"
+if (( notebooks )); then
+  run_phase notebook-contracts env "CGO_LDFLAGS=-L$stub_dir ${CGO_LDFLAGS:-}" go test -p 1 ./internal/tools/apitypes ./internal/web/notebook ./internal/web/service
+  run_phase architecture-check make architecture-check
+fi
 if (( checks )); then
   # CI mode lets pnpm reconcile generated node_modules without a TTY. Frozen
   # lockfiles still prevent dependency resolution changes. Keep this local to
@@ -70,7 +93,15 @@ if (( checks )); then
 fi
 if (( live )); then
   run_phase backend-build env "CGO_LDFLAGS=-L$stub_dir ${CGO_LDFLAGS:-}" go build -p 1 -o "$BRUIN_E2E_BINARY" .
-  run_phase live-e2e corepack pnpm --dir web exec playwright test --config=playwright.live.config.ts
+  live_args=()
+  if (( notebooks )); then
+    live_args=(--retries=0 --trace=retain-on-failure
+      tests/e2e/app/notebooks.live.spec.ts tests/e2e/app/notebook-autorecompute.live.spec.ts
+      tests/e2e/app/notebook-cancel.live.spec.ts tests/e2e/app/notebook-pylogs.live.spec.ts
+      tests/e2e/app/notebook-agent.live.spec.ts tests/e2e/app/workspace-sync.live.spec.ts
+      tests/e2e/app/freshness-failure.live.spec.ts)
+  fi
+  run_phase live-e2e corepack pnpm --dir web exec playwright test --config=playwright.live.config.ts "${live_args[@]}"
 fi
 printf 'Completed requested phases: %s\n' "$(date -Is)" >> "$artifacts/manifest.txt"
 printf 'Requested checks passed. Review skips/flakes in the retained logs: %s\n' "$artifacts"

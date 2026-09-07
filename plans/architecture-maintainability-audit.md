@@ -23,32 +23,27 @@ connected. Their implemented contracts and ownership are documented in
 [frontend synchronization](../architecture/frontend.md#4-key-hooks). Focused
 regressions belong with those boundaries rather than only in the live suite.
 
-Remaining priorities, in order:
+The three follow-up slices are implemented locally as of 8 September:
 
-1. **Close the remaining notebook wire-contract gaps.** `NotebookRuntimeEvent`
-   and `NotebookRuntimeSnapshot` in
-   `internal/web/service/notebook_autorecompute.go` still have full manual
-   counterparts in `web/lib/api-notebooks.ts`; `NotebookCellRunResult` also
-   duplicates the Go result shape. Mark the actual Go roots for the existing
-   `internal/tools/apitypes` generator, generate transitive result types, and
-   retain only intentional frontend union refinements. Acceptance: drift is
-   caught by `check:api-types`, no duplicate full response shapes, unchanged
-   notebook behavior. Do not build another schema/type-generation system.
-2. **Continue feature-adjacent UI ownership extraction.** The production
-   notebook and build pages still exceed 4,000 lines each. Line count is a
-   navigation cost, not proof of a defect. Pick the next independently testable
-   authoring workflow when that feature changes; preserve route ownership,
-   panel selections, and canonical server state. Do not move an entire page
-   into a same-sized hook merely to shorten the component.
-3. **Use existing E2E timing artifacts to lower feedback cost.** The latest
-   dependency pass took roughly 36 minutes for 408 live cases. First identify
-   duplicated expensive setup and slow test cohorts; preserve meaningful
-   desktop/mobile integration coverage. Move deterministic state transitions
-   into fast boundary tests and keep production-browser tests for wiring.
-   Run heavy local validation serially with explicit memory limits and durable
-   logs; source vulnerability analysis previously exhausted this host's memory.
-   Sharding or fewer mobile runs still needs measured evidence.
+1. Notebook runtime events, snapshots, and cell results now use the existing
+   Go-to-TypeScript generator, with only intentional frontend refinements.
+   The generator regression checks real roots, transitive types, and private
+   fingerprint exclusion. See [notebook runtime contracts](../architecture/notebooks.md#10-server-owned-recompute-and-frontend-state).
+2. Dataset-backed notebook control options now have a notebook-scoped,
+   reducer-tested controller. Loading, latest-request admission, producer
+   selection, and automatic refresh are separate from authored definitions,
+   parameter values, navigation, and panel state. The production page uses that
+   controller; it was not replaced by a page-sized hook.
+3. Existing timing evidence identified wasted server setup for device-skipped
+   tests, not expensive workspace copying. Existing desktop-only exclusions now
+   run before expensive fixtures. A focused notebook gate keeps both devices,
+   Go/frontend boundary checks, a hard memory cap on systemd hosts, and durable
+   per-attempt timing checkpoints. See [local validation](../architecture/testing.md)
+   for commands, scope, evidence, and interruption semantics.
 
+The remaining scale decisions in Phase E stay measurement-gated. This pass
+adds no fixture sharing, broad mobile exclusions, workspace delta protocol,
+cache eviction policy, or speculative page-wide extraction.
 The synchronization approach follows the existing protocol, not a replacement:
 [EventSource reconnects after an interrupted stream](https://html.spec.whatwg.org/multipage/server-sent-events.html),
 but that alone cannot recover a dropped delta without snapshot reconciliation.
