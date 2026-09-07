@@ -28,7 +28,7 @@
     "@base-ui/react": "^1.6.0",
     "@monaco-editor/react": "^4.7.0",
     "@shadcn/react": "^0.3.0",
-    "@tanstack/react-router": "^1.170.18",
+    "@tanstack/react-router": "^1.170.32",
     "@tiptap/extension-table": "^3.30.4",
     "@tiptap/markdown": "^3.30.4",
     "@tiptap/react": "^3.30.4",
