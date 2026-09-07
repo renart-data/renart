@@ -115,6 +115,73 @@ test.describe("notebook auto-recompute", () => {
     });
   });
 
+  test("loads results completed between the initial snapshot and the SSE subscription", async ({
+    liveApp,
+    page,
+  }) => {
+    const { request } = page;
+    const notebook = await createNotebook(request, liveApp.baseURL, "SubscriptionGap");
+    await setAutoRecompute(request, liveApp.baseURL, notebook.id, false);
+    const baseCell = await addCell(request, liveApp.baseURL, notebook.id, "base");
+    await setSql(request, liveApp.baseURL, notebook.id, baseCell, "select 10 as amount");
+    const doubledCell = await addCell(request, liveApp.baseURL, notebook.id, "doubled");
+    await setSql(
+      request,
+      liveApp.baseURL,
+      notebook.id,
+      doubledCell,
+      "select amount * 2 as doubled from base",
+    );
+    const runtimeURL = `${liveApp.baseURL}/api/notebooks/${notebook.id}/runtime`;
+    const beforeRun = await request.get(runtimeURL);
+    expect(beforeRun.ok()).toBe(true);
+    const initialSnapshot = await beforeRun.json();
+    expect(initialSnapshot.results[doubledCell]).toBeUndefined();
+
+    let releaseSSE = () => {};
+    const sseBarrier = new Promise<void>((resolve) => {
+      releaseSSE = resolve;
+    });
+    let runtimeRequests = 0;
+    await page.route(runtimeURL, async (route) => {
+      if (++runtimeRequests === 1) {
+        // Reproduce an HTTP snapshot taken before the result was published.
+        await route.fulfill({ json: initialSnapshot });
+      } else {
+        await route.continue();
+      }
+    });
+    await page.route(`${liveApp.baseURL}/api/events`, async (route) => {
+      await sseBarrier;
+      await route.continue();
+    });
+
+    try {
+      await setAutoRecompute(request, liveApp.baseURL, notebook.id, true);
+      await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
+      await expect(page.getByText("SubscriptionGap").first()).toBeVisible({ timeout: 15000 });
+      await expect
+        .poll(
+          async () => {
+            const response = await request.get(runtimeURL);
+            expect(response.ok()).toBe(true);
+            return (await response.json()).results[doubledCell]?.rows?.[0]?.[0];
+          },
+          { timeout: 20000 },
+        )
+        .toBe(20);
+      await expect.poll(() => runtimeRequests).toBe(1);
+      const output = resultCell(notebookCell(page, doubledCell), "doubled", 1, "20");
+      await expect(output).toBeHidden();
+      // The real server has finished; its result event was sent with no SSE
+      // subscriber. Connecting must reconcile once, without a manual run.
+      releaseSSE();
+      await expect(output).toBeVisible({ timeout: 20000 });
+    } finally {
+      releaseSSE();
+    }
+  });
+
   test("a UNION (read-only compound) cell auto-recomputes", async ({ liveApp, page }) => {
     const { request } = page;
     const notebook = await createNotebook(request, liveApp.baseURL, "AutoUnion");
@@ -176,8 +243,9 @@ test.describe("notebook auto-recompute", () => {
     await page.goto(`${liveApp.baseURL}/notebooks/${notebook.id}`);
     await expect(page.getByText("Auto").first()).toBeVisible({ timeout: 15000 });
 
-    // The cells auto-compute from the API saves; wait for the server baseline.
-    await expect(page.getByText("20", { exact: true }).first()).toBeVisible({ timeout: 20000 });
+    // Assert the actual downstream result, not matching SQL/editor text.
+    const doubledCard = notebookCell(page, doubledCell);
+    await expect(resultCell(doubledCard, "doubled", 1, "20")).toBeVisible({ timeout: 20000 });
 
     // Edit the upstream cell in the editor (which marks base + doubled stale)
     // and then click away. No run button is pressed — the server recomputes the
@@ -187,7 +255,7 @@ test.describe("notebook auto-recompute", () => {
     await page.getByText("Auto").first().click(); // blur the editor → save → stale
 
     // The downstream cell recomputes on its own: doubled becomes 42.
-    await expect(page.getByText("42", { exact: true }).first()).toBeVisible({ timeout: 20000 });
+    await expect(resultCell(doubledCard, "doubled", 1, "42")).toBeVisible({ timeout: 20000 });
     // And the stale banner clears once everything is recomputed.
     await expectNoNotebookStaleCount(page);
   });

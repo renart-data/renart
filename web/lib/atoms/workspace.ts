@@ -17,6 +17,9 @@ export type WorkspaceSyncSource = {
 
 export const workspaceAtom = atom<WorkspaceState | null>(null);
 export const workspaceSyncSourceAtom = atom<WorkspaceSyncSource | null>(null);
+// Includes the first connection: runtime results may complete after the initial
+// HTTP snapshot but before the SSE subscription exists.
+export const workspaceConnectionSequenceAtom = atom<number>(0);
 // EventSource does not replay missed events. Increment this after every SSE
 // reconnect so consumers backed by independent snapshots (notably freshness)
 // can reconcile through their canonical HTTP endpoint.

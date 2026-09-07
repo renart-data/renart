@@ -8,6 +8,7 @@ import {
   serverOnlineAtom,
   sqlCatalogReadyEventAtom,
   workspaceAtom,
+  workspaceConnectionSequenceAtom,
   workspaceReconnectSequenceAtom,
   workspaceSyncSourceAtom,
 } from "@/lib/atoms/domains/workspace";
@@ -185,6 +186,7 @@ export function useWorkspaceSync() {
   const setNotebookAgentEvents = useSetAtom(notebookAgentEventsAtom);
   const setSQLCatalogReadyEvent = useSetAtom(sqlCatalogReadyEventAtom);
   const setWorkspaceSyncSource = useSetAtom(workspaceSyncSourceAtom);
+  const setWorkspaceConnectionSequence = useSetAtom(workspaceConnectionSequenceAtom);
   const setWorkspaceReconnectSequence = useSetAtom(workspaceReconnectSequenceAtom);
   const setServerOnline = useSetAtom(serverOnlineAtom);
 
@@ -224,6 +226,7 @@ export function useWorkspaceSync() {
       clearOfflineTimer();
       if (!mounted) return;
       setServerOnline(true);
+      setWorkspaceConnectionSequence((sequence) => sequence + 1);
       if (opened) {
         // There is no Last-Event-ID/replay contract on the workspace stream.
         // Even a reconnect shorter than the offline-overlay grace period may
@@ -336,6 +339,7 @@ export function useWorkspaceSync() {
     setServerOnline,
     setStalenessEvent,
     setWorkspace,
+    setWorkspaceConnectionSequence,
     setWorkspaceReconnectSequence,
     setWorkspaceSyncSource,
   ]);

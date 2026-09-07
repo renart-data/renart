@@ -579,6 +579,17 @@ local projection and late results from the previous notebook are ignored. A run
 still crosses the pending-save barrier before calling the server; the reducer is
 only a view projection, not runtime authority.
 
+When the initial runtime GET overlaps SSE, its results form the baseline and
+only result deltas received after the request override it. State-only SSE
+events retain their newer status/parameter fields without discarding results
+that completed before subscription. A session reset invalidates an outstanding
+initial response, so that response cannot restore cleared output.
+The runtime snapshot is also refreshed once after each SSE connection opens,
+including the first connection, to recover results produced between the initial
+GET and subscription. This does not poll or reset the notebook projection,
+optimistic run state, or other UI regions; reconnect-only consumers retain their
+existing notification semantics.
+
 Preview tables stay bounded, block editors grow with short content before
 using their internal scroll area, and output panes retain user scroll position
 unless the user is already following the end. The shared result table switches
