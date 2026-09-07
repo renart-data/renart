@@ -63,6 +63,8 @@ func NewDebouncedHub(debounce time.Duration) *Hub {
 }
 
 // Subscribe returns a channel that receives published events.
+// A full buffer closes the subscription after its queued prefix; SSE clients
+// must reconnect and reconcile snapshots because this hub has no replay log.
 // The caller must call Unsubscribe when done to prevent leaks.
 func (h *Hub) Subscribe() chan []byte {
 	h.mu.Lock()
@@ -72,12 +74,15 @@ func (h *Hub) Subscribe() chan []byte {
 	return ch
 }
 
-// Unsubscribe removes a client channel from the hub and closes it.
+// Unsubscribe removes and closes a client channel. Repeated calls are safe,
+// including cleanup after a slow-client disconnect.
 func (h *Hub) Unsubscribe(ch chan []byte) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	delete(h.clients, ch)
-	close(ch)
+	if _, subscribed := h.clients[ch]; subscribed {
+		delete(h.clients, ch)
+		close(ch)
+	}
 }
 
 // Publish broadcasts a message to all subscribed clients.
@@ -143,17 +148,18 @@ func (h *Hub) flush() {
 
 func (h *Hub) broadcast(payload []byte) {
 	h.broadcasts.Add(1)
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	for ch := range h.clients {
 		select {
 		case ch <- payload:
 			h.delivered.Add(1)
 		default:
-			// A full client buffer cannot block filesystem reconciliation for
-			// every other subscriber. The drop stays observable so a caller can
-			// decide whether the client/buffer budget needs attention.
+			// Never leave a connected browser silently missing result deltas.
+			// EOF triggers EventSource recovery without blocking healthy clients.
 			h.dropped.Add(1)
+			delete(h.clients, ch)
+			close(ch)
 		}
 	}
 }

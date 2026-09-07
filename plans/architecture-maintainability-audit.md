@@ -8,6 +8,58 @@ below. The remaining backend domain moves are feature-adjacent; E2E sharding,
 workspace deltas, and runtime eviction are evidence-gated. This is not a
 proposal for a rewrite.
 
+## September 2026 follow-up
+
+Rechecked against `main` on 7 September, including the dependency and notebook
+reconnect fixes through `48606d9e`. The sections below retain the original
+audit's evidence and completed slices; they are not a claim that all original
+findings remain open.
+
+The highest-priority concrete findings in this pass were synchronization
+correctness: HTTP workspace snapshots bypassed the SSE revision guard, and an
+overflowing subscriber could silently lose runtime deltas while remaining
+connected. Their implemented contracts and ownership are documented in
+[backend runtime recovery](../architecture/backend.md#2-runtime-model) and
+[frontend synchronization](../architecture/frontend.md#4-key-hooks). Focused
+regressions belong with those boundaries rather than only in the live suite.
+
+Remaining priorities, in order:
+
+1. **Close the remaining notebook wire-contract gaps.** `NotebookRuntimeEvent`
+   and `NotebookRuntimeSnapshot` in
+   `internal/web/service/notebook_autorecompute.go` still have full manual
+   counterparts in `web/lib/api-notebooks.ts`; `NotebookCellRunResult` also
+   duplicates the Go result shape. Mark the actual Go roots for the existing
+   `internal/tools/apitypes` generator, generate transitive result types, and
+   retain only intentional frontend union refinements. Acceptance: drift is
+   caught by `check:api-types`, no duplicate full response shapes, unchanged
+   notebook behavior. Do not build another schema/type-generation system.
+2. **Continue feature-adjacent UI ownership extraction.** The production
+   notebook and build pages still exceed 4,000 lines each. Line count is a
+   navigation cost, not proof of a defect. Pick the next independently testable
+   authoring workflow when that feature changes; preserve route ownership,
+   panel selections, and canonical server state. Do not move an entire page
+   into a same-sized hook merely to shorten the component.
+3. **Use existing E2E timing artifacts to lower feedback cost.** The latest
+   dependency pass took roughly 36 minutes for 408 live cases. First identify
+   duplicated expensive setup and slow test cohorts; preserve meaningful
+   desktop/mobile integration coverage. Move deterministic state transitions
+   into fast boundary tests and keep production-browser tests for wiring.
+   Run heavy local validation serially with explicit memory limits and durable
+   logs; source vulnerability analysis previously exhausted this host's memory.
+   Sharding or fewer mobile runs still needs measured evidence.
+
+The synchronization approach follows the existing protocol, not a replacement:
+[EventSource reconnects after an interrupted stream](https://html.spec.whatwg.org/multipage/server-sent-events.html),
+but that alone cannot recover a dropped delta without snapshot reconciliation.
+Async response admission also makes the stale-response concern explicit at
+one shared boundary rather than relying on each fetch caller; compare
+[React's guidance on fetch race cleanup](https://react.dev/learn/you-might-not-need-an-effect#fetching-data).
+
+This pass does not claim a complete security, performance, or architecture
+audit of every subsystem. No event replay log, polling, framework migration,
+microservice split, or broad notebook rewrite is warranted by these findings.
+
 ## 1. Executive assessment
 
 Renart's architecture is fundamentally sound for the product it is becoming.

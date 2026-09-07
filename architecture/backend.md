@@ -132,7 +132,7 @@ workspace root; one process can host several such runtimes. A watcher
 (`internal/web/watch`) triggers full workspace re-parses through the
 `WorkspaceCoordinator`; the resulting state is pushed to all clients over a
 single SSE endpoint (`/api/events`). The hub (`internal/web/events`) uses
-buffered per-client channels with non-blocking drop-on-slow sends,
+buffered per-client channels with non-blocking sends,
 debounce-with-coalescing for watcher noise, and `PublishImmediate` for
 handler-triggered events. Self-write suppression (a short window in
 `WorkspaceCoordinator`) prevents the server's own file writes from echoing
@@ -143,8 +143,14 @@ values cannot mutate a later read. A focused benchmark tracks clone cost at
 10, 100, and 1,000 synthetic assets. The coordinator records refresh counts,
 failures, duration, revision, and snapshot shape. The SSE hub exposes monotonic
 publish, coalescing, fan-out, payload-byte, and slow-client drop counters; debug
-logs attach those measurements to each workspace refresh/event. HTTP request
-logs include response bytes, so `/api/workspace` size and latency can be
+logs attach those measurements to each workspace refresh/event. When a client
+buffer fills, the hub counts the undelivered event, removes that subscription,
+and closes its channel. The SSE handler drains the queued prefix, returns on
+channel closure or a failed write, and unsubscribes idempotently. A slow client
+therefore cannot silently remain connected with missing deltas: ordinary
+EventSource reconnection triggers canonical workspace and runtime snapshot
+reconciliation. This is bounded-buffer recovery, not an event replay guarantee.
+HTTP request logs include response bytes, so `/api/workspace` size and latency can be
 measured without a second serialization path. Every HTTP request inherits the
 process lifecycle context. Cancelling that context therefore releases long-lived SSE handlers
 before `http.Server.Shutdown` waits for active requests, while ordinary

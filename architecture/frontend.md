@@ -716,7 +716,16 @@ than hand-rolled `div` shells.
   `/api/workspace`, subscribes to `/api/events` (SSE), reconciles workspace state,
   preserves asset `content` on lite SSE updates when appropriate, and dispatches
   run, schedule, staleness, and per-notebook runtime events to their Jotai
-  domains. The app shell owns this single browser SSE connection.
+  domains. The app shell owns this single browser SSE connection. Both HTTP
+  snapshots and SSE workspace events enter through `receiveWorkspaceUpdateAtom`:
+  state and accepted-update provenance change atomically, older revisions are
+  rejected within a connection, and responses from previous connections are
+  ignored. Each successful connection starts a revision epoch so a server
+  restart can reset its revision counter. A full HTTP snapshot is requested
+  after every subscription (including the first); an equal-revision HTTP
+  response may hydrate content omitted by a lite event. The pure lite merge
+  lives in `web/lib/workspace-reconciliation.ts`. This boundary does not reset
+  navigation, panel, or explicit environment selections.
 - [use-asset-content-editing.ts](../web/hooks/use-asset-content-editing.ts): editor
   draft state, display-value sync, and the Ctrl/Cmd+S save path.
 - [use-debounced-asset-save.ts](../web/hooks/use-debounced-asset-save.ts): debounced

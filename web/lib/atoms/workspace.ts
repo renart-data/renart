@@ -2,6 +2,7 @@ import { atom } from "jotai";
 
 import { WorkspaceState } from "@/lib/types";
 import { ExecutionTimeWindow } from "@/lib/execution-time";
+import { mergeWorkspaceWithPreservedContent } from "@/lib/workspace-reconciliation";
 
 export type WorkspaceSyncMethod = "workspace-load" | "workspace-event";
 
@@ -13,6 +14,7 @@ export type WorkspaceSyncSource = {
   eventPath?: string;
   lite?: boolean;
   changedAssetIds?: string[];
+  connectionSequence?: number;
 };
 
 export const workspaceAtom = atom<WorkspaceState | null>(null);
@@ -49,3 +51,33 @@ export const selectedEnvironmentAtom = atom<string | undefined>(
     get(selectedEnvironmentOverrideAtom) || get(workspaceAtom)?.selected_environment || undefined,
 );
 export const selectedExecutionTimeWindowAtom = atom<ExecutionTimeWindow | null>(null);
+
+export type WorkspaceSyncUpdate = {
+  workspace: WorkspaceState;
+  source: WorkspaceSyncSource;
+  connectionSequence: number;
+};
+
+export const receiveWorkspaceUpdateAtom = atom(null, (get, set, update: WorkspaceSyncUpdate) => {
+  // HTTP and SSE share one admission boundary. A connection is a revision
+  // epoch: server restart may reset its counter, but old in-flight requests
+  // must never populate a new connection's projection.
+  if (update.connectionSequence !== get(workspaceConnectionSequenceAtom)) return;
+  const current = get(workspaceAtom);
+  const previousSource = get(workspaceSyncSourceAtom);
+  if (previousSource?.connectionSequence === update.connectionSequence) {
+    const currentRevision = current?.revision ?? -1;
+    const incomingRevision = update.workspace.revision ?? currentRevision + 1;
+    if (incomingRevision < currentRevision) return;
+    // A full HTTP response may hydrate omitted content from an equal-revision
+    // lite event. Duplicate SSE events cannot improve that snapshot.
+    if (incomingRevision === currentRevision && update.source.method === "workspace-event") return;
+  }
+  set(
+    workspaceAtom,
+    update.source.lite
+      ? mergeWorkspaceWithPreservedContent(current, update.workspace, update.source.changedAssetIds)
+      : update.workspace,
+  );
+  set(workspaceSyncSourceAtom, { ...update.source, connectionSequence: update.connectionSequence });
+});

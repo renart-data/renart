@@ -1,7 +1,7 @@
 "use client";
 
 import { projectApiPath } from "@/lib/project-context";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { useEffect } from "react";
 
 import {
@@ -10,7 +10,7 @@ import {
   workspaceAtom,
   workspaceConnectionSequenceAtom,
   workspaceReconnectSequenceAtom,
-  workspaceSyncSourceAtom,
+  receiveWorkspaceUpdateAtom,
 } from "@/lib/atoms/domains/workspace";
 import { getWorkspace } from "@/lib/api-workspace";
 import type { NotebookAgentSnapshot, NotebookRuntimeEvent } from "@/lib/api-notebooks";
@@ -26,63 +26,7 @@ import {
   scheduleOccurrenceEventAtom,
   stalenessEventAtom,
 } from "@/lib/atoms/domains/results";
-import { WebAsset, WorkspaceEvent, WorkspaceState } from "@/lib/types";
-
-function mergeWorkspaceWithPreservedContent(
-  current: WorkspaceState | null,
-  incoming: WorkspaceState,
-  changedAssetIds: string[] = [],
-): WorkspaceState {
-  if (!current) {
-    return incoming;
-  }
-
-  const changedAssetIdSet = new Set(changedAssetIds);
-  const currentAssetById = new Map<string, WebAsset>();
-  for (const pipeline of current.pipelines ?? []) {
-    for (const asset of pipeline.assets ?? []) {
-      if (asset.id) {
-        currentAssetById.set(asset.id, asset);
-      }
-    }
-  }
-
-  const nextPipelines = (incoming.pipelines ?? []).map((pipeline) => ({
-    ...pipeline,
-    assets: (pipeline.assets ?? []).map((asset) => {
-      const currentAsset = currentAssetById.get(asset.id);
-      if (!currentAsset) {
-        return asset;
-      }
-
-      const isChangedAsset = changedAssetIdSet.has(asset.id);
-
-      return {
-        ...currentAsset,
-        ...asset,
-        content: asset.content || currentAsset.content,
-        meta: asset.meta ?? (isChangedAsset ? asset.meta : currentAsset.meta),
-        columns: asset.columns ?? (isChangedAsset ? asset.columns : currentAsset.columns),
-        // These clear to empty (e.g. removing the last tag, blanking the owner,
-        // or fixing a syntax error so the asset parses again). The backend omits
-        // empty values, so for a changed asset we must take the incoming (absent)
-        // value rather than let the spread keep the stale one.
-        tags: asset.tags ?? (isChangedAsset ? asset.tags : currentAsset.tags),
-        owner: asset.owner ?? (isChangedAsset ? asset.owner : currentAsset.owner),
-        incremental_key:
-          asset.incremental_key ??
-          (isChangedAsset ? asset.incremental_key : currentAsset.incremental_key),
-        parse_error:
-          asset.parse_error ?? (isChangedAsset ? asset.parse_error : currentAsset.parse_error),
-      };
-    }),
-  }));
-
-  return {
-    ...incoming,
-    pipelines: nextPipelines,
-  };
-}
+import { WorkspaceEvent, WorkspaceState } from "@/lib/types";
 
 function isSchedulerRunEvent(payload: unknown): payload is SchedulerRunEvent {
   return (
@@ -178,20 +122,21 @@ function isSQLCatalogReadyEvent(payload: unknown): payload is {
 
 export function useWorkspaceSync() {
   const workspace = useAtomValue(workspaceAtom);
-  const setWorkspace = useSetAtom(workspaceAtom);
+  const store = useStore();
+  const receiveWorkspaceUpdate = useSetAtom(receiveWorkspaceUpdateAtom);
   const appendSchedulerRunEvent = useSetAtom(appendSchedulerRunEventAtom);
   const setScheduleOccurrenceEvent = useSetAtom(scheduleOccurrenceEventAtom);
   const setStalenessEvent = useSetAtom(stalenessEventAtom);
   const setNotebookRuntimeEvents = useSetAtom(notebookRuntimeEventsAtom);
   const setNotebookAgentEvents = useSetAtom(notebookAgentEventsAtom);
   const setSQLCatalogReadyEvent = useSetAtom(sqlCatalogReadyEventAtom);
-  const setWorkspaceSyncSource = useSetAtom(workspaceSyncSourceAtom);
   const setWorkspaceConnectionSequence = useSetAtom(workspaceConnectionSequenceAtom);
   const setWorkspaceReconnectSequence = useSetAtom(workspaceReconnectSequenceAtom);
   const setServerOnline = useSetAtom(serverOnlineAtom);
 
   useEffect(() => {
     let mounted = true;
+    let connectionSequence = store.get(workspaceConnectionSequenceAtom);
     // The SSE stream drives the online/offline signal. A dropped connection
     // fires `onerror` repeatedly while EventSource retries; we wait out a short
     // grace period before declaring the server offline so a quick reconnect (or
@@ -209,14 +154,18 @@ export function useWorkspaceSync() {
     };
 
     const reloadWorkspace = () => {
+      const requestConnection = connectionSequence;
       getWorkspace()
         .then((data) => {
           if (!mounted) return;
-          setWorkspace(data);
-          setWorkspaceSyncSource({
-            method: "workspace-load",
-            recordedAt: new Date().toISOString(),
-            revision: data.revision,
+          receiveWorkspaceUpdate({
+            workspace: data,
+            connectionSequence: requestConnection,
+            source: {
+              method: "workspace-load",
+              recordedAt: new Date().toISOString(),
+              revision: data.revision,
+            },
           });
         })
         .catch(() => undefined);
@@ -227,11 +176,13 @@ export function useWorkspaceSync() {
       if (!mounted) return;
       setServerOnline(true);
       setWorkspaceConnectionSequence((sequence) => sequence + 1);
+      connectionSequence = store.get(workspaceConnectionSequenceAtom);
+      // Reconcile after subscription, including the first connection.
+      reloadWorkspace();
       if (opened) {
         // There is no Last-Event-ID/replay contract on the workspace stream.
         // Even a reconnect shorter than the offline-overlay grace period may
         // have missed workspace or freshness events, so always reconcile.
-        reloadWorkspace();
         setWorkspaceReconnectSequence((sequence) => sequence + 1);
       }
       opened = true;
@@ -293,33 +244,18 @@ export function useWorkspaceSync() {
           return;
         }
 
-        setWorkspaceSyncSource({
-          method: "workspace-event",
-          recordedAt: new Date().toISOString(),
-          revision: payload.workspace?.revision,
-          eventType: payload.type,
-          eventPath: payload.path,
-          lite: payload.lite,
-          changedAssetIds: payload.changed_asset_ids,
-        });
-
-        setWorkspace((current) => {
-          const currentRevision = current?.revision ?? -1;
-          const incomingRevision = payload.workspace?.revision ?? currentRevision + 1;
-
-          if (incomingRevision <= currentRevision) {
-            return current;
-          }
-
-          if (payload.lite) {
-            return mergeWorkspaceWithPreservedContent(
-              current,
-              payload.workspace,
-              payload.changed_asset_ids ?? [],
-            );
-          }
-
-          return payload.workspace;
+        receiveWorkspaceUpdate({
+          workspace: payload.workspace,
+          connectionSequence,
+          source: {
+            method: "workspace-event",
+            recordedAt: new Date().toISOString(),
+            revision: payload.workspace.revision,
+            eventType: payload.type,
+            eventPath: payload.path,
+            lite: payload.lite,
+            changedAssetIds: payload.changed_asset_ids,
+          },
         });
       } catch {
         return;
@@ -338,10 +274,10 @@ export function useWorkspaceSync() {
     setSQLCatalogReadyEvent,
     setServerOnline,
     setStalenessEvent,
-    setWorkspace,
+    receiveWorkspaceUpdate,
+    store,
     setWorkspaceConnectionSequence,
     setWorkspaceReconnectSequence,
-    setWorkspaceSyncSource,
   ]);
 
   return workspace as WorkspaceState | null;
