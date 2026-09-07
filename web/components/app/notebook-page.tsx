@@ -107,7 +107,6 @@ import {
   NotebookCellRunResult,
   planNotebookCellPromotion,
   promoteNotebookCell,
-  refreshNotebookControlOptions,
   type PromoteCellPlan,
   replaceNotebookParameters,
   renameNotebookCell,
@@ -138,6 +137,11 @@ import {
   type NotebookDataSourceInput,
 } from "@/hooks/use-notebook-data-source";
 import { useNotebookDocument } from "@/hooks/use-notebook-document";
+import {
+  useNotebookControlOptions,
+  notebookControlOptionSignature,
+  notebookControlProducer,
+} from "@/hooks/use-notebook-control-options";
 import { useNotebookRuntime } from "@/hooks/use-notebook-runtime";
 import {
   AUTHORED_CONTROL_TYPE_LABELS,
@@ -146,7 +150,7 @@ import {
   defaultAuthoredControlValue,
   type AuthoredControlType,
 } from "@/lib/authored-controls";
-import type { NotebookParameter, PresentationDatasetResult } from "@/lib/generated/api-types";
+import type { NotebookParameter } from "@/lib/generated/api-types";
 import { WebAsset, WebNotebook, WebNotebookBlock, WorkspaceQueryConnection } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
@@ -273,33 +277,6 @@ type NotebookBlockCreateOptions = {
   controlType?: AuthoredControlType;
 };
 type NotebookCellDeleteTarget = { id: string; name: string };
-type NotebookControlOptionSnapshot = {
-  signature: string;
-  result: PresentationDatasetResult;
-  refreshedAt: number;
-};
-
-function notebookControlOptionSignature(control: NotebookParameter): string {
-  return JSON.stringify({
-    type: control.type,
-    dataset: control.options?.dataset?.trim() ?? "",
-    valueField: control.options?.value_field?.trim() ?? "",
-    labelField: control.options?.label_field?.trim() ?? "",
-  });
-}
-
-function notebookControlProducer(
-  control: NotebookParameter,
-  cells: WebAsset[],
-): WebAsset | undefined {
-  const dataset = control.options?.dataset?.trim();
-  if (!dataset) return undefined;
-  return (
-    cells.find((cell) => cell.cell_id === dataset) ??
-    cells.find((cell) => cell.name.toLowerCase() === dataset.toLowerCase())
-  );
-}
-
 function notebookBlockKey(block: WebNotebookBlock, index: number) {
   if (block.cell) {
     return `cell:${block.cell}`;
@@ -573,13 +550,6 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
       window.localStorage.getItem("renart-notebook-autorecompute") !== "off",
   );
   const [parameterValues, setParameterValues] = useState<Record<string, unknown>>({});
-  const [controlOptionSnapshots, setControlOptionSnapshots] = useState<
-    Record<string, NotebookControlOptionSnapshot>
-  >({});
-  const [loadingControlOptions, setLoadingControlOptions] = useState<Set<string>>(new Set());
-  const controlOptionRequestSequenceRef = useRef(0);
-  const controlOptionRequestTokensRef = useRef<Map<string, number>>(new Map());
-  const controlOptionRuntimeEventRef = useRef(notebookRuntimeEvent);
   const wideNotebookTools = useWideNotebookTools();
   useEffect(() => {
     window.localStorage.setItem("renart-notebook-autorecompute", autoRecompute ? "on" : "off");
@@ -611,10 +581,6 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     setVisualizationInspectorOpen(false);
     setVisualizationInspectorTarget(null);
     setParameterValues({});
-    setControlOptionSnapshots({});
-    setLoadingControlOptions(new Set());
-    controlOptionRequestTokensRef.current.clear();
-    controlOptionRuntimeEventRef.current = notebookRuntimeEventRef.current;
     parameterValuesRef.current = {};
     if (parameterSaveTimerRef.current !== null) {
       window.clearTimeout(parameterSaveTimerRef.current);
@@ -868,73 +834,13 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     [notebook?.cells, results],
   );
 
-  const refreshControlOptions = useCallback(
-    async (control: NotebookParameter, options: { silent?: boolean } = {}) => {
-      if (!control.options?.dataset?.trim() || !control.options.value_field?.trim()) return;
-
-      const requestKey = `${notebookId}\u0000${control.id}`;
-      const requestToken = ++controlOptionRequestSequenceRef.current;
-      controlOptionRequestTokensRef.current.set(requestKey, requestToken);
-      setLoadingControlOptions((current) => new Set(current).add(control.id));
-      if (!options.silent) setActionError("");
-
-      try {
-        const result = await refreshNotebookControlOptions(notebookId, control.id);
-        if (controlOptionRequestTokensRef.current.get(requestKey) !== requestToken) return;
-        setControlOptionSnapshots((current) => ({
-          ...current,
-          [control.id]: {
-            signature: notebookControlOptionSignature(control),
-            result,
-            refreshedAt: Date.now(),
-          },
-        }));
-      } catch (error) {
-        if (
-          !options.silent &&
-          controlOptionRequestTokensRef.current.get(requestKey) === requestToken
-        ) {
-          setActionError(String(error));
-        }
-      } finally {
-        if (controlOptionRequestTokensRef.current.get(requestKey) === requestToken) {
-          controlOptionRequestTokensRef.current.delete(requestKey);
-          setLoadingControlOptions((current) => {
-            const next = new Set(current);
-            next.delete(control.id);
-            return next;
-          });
-        }
-      }
-    },
-    [notebookId, setActionError],
-  );
-
-  // Runtime SSE messages contain result deltas. Refresh dataset-backed control
-  // snapshots only when their producer publishes a new successful result; an
-  // initial runtime read or a state-only event must never issue a query.
-  useEffect(() => {
-    const previous = controlOptionRuntimeEventRef.current;
-    controlOptionRuntimeEventRef.current = notebookRuntimeEvent;
-    if (!notebookRuntimeEvent || notebookRuntimeEvent.notebook_id !== notebookId) {
-      return;
-    }
-
-    const changedSuccessfulCells = new Set<string>();
-    for (const [cellID, result] of Object.entries(notebookRuntimeEvent.results ?? {})) {
-      if (result.status === "ok" && previous?.results?.[cellID] !== result) {
-        changedSuccessfulCells.add(cellID);
-      }
-    }
-    if (changedSuccessfulCells.size === 0) return;
-
-    for (const control of notebook?.parameters ?? []) {
-      const producer = notebookControlProducer(control, notebook?.cells ?? []);
-      if (producer?.cell_id && changedSuccessfulCells.has(producer.cell_id)) {
-        void refreshControlOptions(control, { silent: true });
-      }
-    }
-  }, [notebook, notebookId, notebookRuntimeEvent, refreshControlOptions]);
+  const { controlOptionSnapshots, loadingControlOptions, refreshControlOptions } =
+    useNotebookControlOptions({
+      notebookId,
+      notebook,
+      runtimeEvent: notebookRuntimeEvent,
+      onError: setActionError,
+    });
 
   const handleSourceCreated = useCallback((cellId: string) => {
     setEnteringBlockKey(`cell:${cellId}`);
