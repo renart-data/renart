@@ -71,6 +71,7 @@ var unsupportedConnectionTypes = map[string]string{
 	"iceberg":             "table-format asset without a Renart SQL connection profile",
 	"mongo":               "non-SQL source connection",
 	"quicksight":          "presentation asset connection",
+	"spark":               "Spark has no Renart SQL connection profile",
 }
 
 var (

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd AS build
+FROM node:26-alpine@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019 AS build
 
 WORKDIR /app
 
@@ -9,7 +9,8 @@ ARG RENART_COMMIT
 ENV RENART_VERSION=${RENART_VERSION}
 ENV RENART_COMMIT=${RENART_COMMIT}
 
-RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+# Node 25+ no longer bundles Corepack. Keep the package manager pinned.
+RUN npm install --global --ignore-scripts pnpm@10.33.0
 
 COPY docs/package.json docs/pnpm-lock.yaml ./docs/
 WORKDIR /app/docs

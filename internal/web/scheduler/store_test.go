@@ -79,6 +79,67 @@ func TestOpenStoreEncodesBoundTimesAsCanonicalUTC(t *testing.T) {
 	assert.True(t, parseable)
 }
 
+func TestFormatRiverTimeMatchesSQLiteDriver(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	require.NoError(t, err)
+	defer store.Close()
+	client, err := river.NewClient(riversqlite.New(store.db), &river.Config{})
+	require.NoError(t, err)
+
+	for _, test := range []struct {
+		name       string
+		nanosecond int
+	}{
+		{"whole second", 0},
+		{"one tenth", 100_000_000},
+		{"one hundredth", 10_000_000},
+		{"one millisecond", 1_000_000},
+		{"round fractional milliseconds", 123_600_000},
+		{"round into next second", 999_600_000},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			when := time.Date(2026, 9, 7, 10, 0, 0, test.nanosecond, time.FixedZone("test-local", 2*60*60))
+			inserted, err := client.Insert(context.Background(), sqliteSnoozeTestArgs{}, &river.InsertOpts{
+				Queue: pipelineRunQueue, ScheduledAt: when,
+			})
+			require.NoError(t, err)
+			var persisted string
+			require.NoError(t, store.db.QueryRow(`SELECT CAST(scheduled_at AS TEXT) FROM river_job WHERE id = ?`, inserted.Job.ID).Scan(&persisted))
+			assert.Equal(t, persisted, formatRiverTime(when), "direct scheduler writes must use the same lexical timestamp format as River")
+		})
+	}
+}
+
+func TestRiverReadsLegacySQLiteTimestampsAfterReopen(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "state.db")
+	store, err := OpenStore(databasePath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+	when := time.Date(2026, 9, 7, 8, 0, 0, 0, time.UTC)
+	jobs := make(map[int64]time.Time)
+	for _, fractional := range []time.Duration{0, 10 * time.Millisecond, 100 * time.Millisecond, 123 * time.Millisecond} {
+		jobID := insertTestRiverJob(t, store, sqliteSnoozeTestArgs{})
+		scheduledAt := when.Add(fractional)
+		// River 0.40 wrote variable-width fractions; an upgrade must retain
+		// these queued jobs without rewriting or losing their timestamps.
+		legacy := scheduledAt.Format("2006-01-02 15:04:05.999")
+		_, err := store.db.Exec(`UPDATE river_job SET scheduled_at = ? WHERE id = ?`, legacy, jobID)
+		require.NoError(t, err)
+		jobs[jobID] = scheduledAt
+	}
+	require.NoError(t, store.Close())
+	store, err = OpenStore(databasePath)
+	require.NoError(t, err)
+	client, err := river.NewClient(riversqlite.New(store.db), &river.Config{})
+	require.NoError(t, err)
+	for jobID, expected := range jobs {
+		job, err := client.JobGet(context.Background(), jobID)
+		require.NoError(t, err)
+		assert.Equal(t, rivertype.JobStateAvailable, job.State)
+		assert.True(t, expected.Equal(job.ScheduledAt), "job %d: got %s, want %s", jobID, job.ScheduledAt, expected)
+	}
+}
+
 func TestSetRunRiverJobReleasesOnlyTerminalHistoricalLink(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

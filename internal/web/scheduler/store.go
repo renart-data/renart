@@ -2628,7 +2628,7 @@ func formatTime(value time.Time) string {
 // timestamps lexically in SQLite, so RFC3339 and other parseable encodings are
 // not interchangeable here.
 func formatRiverTime(value time.Time) string {
-	return value.UTC().Round(time.Millisecond).Format("2006-01-02 15:04:05.999")
+	return value.UTC().Round(time.Millisecond).Format("2006-01-02 15:04:05.000")
 }
 
 func runsFromDB(rows []storedb.PipelineRun) ([]PipelineRun, error) {

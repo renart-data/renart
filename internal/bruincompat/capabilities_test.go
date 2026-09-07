@@ -51,6 +51,30 @@ func TestConnectionProfilesDerivePreferredBruinAssetTypes(t *testing.T) {
 	assert.Equal(t, pipeline.AssetTypePostgresSource, sourceType)
 }
 
+func TestSparkRequiresExplicitRenartIntegration(t *testing.T) {
+	t.Parallel()
+
+	supported, reason, known := ConnectionTypeDecision("spark")
+	require.True(t, known)
+	assert.False(t, supported)
+	assert.NotEmpty(t, reason)
+
+	_, queryOK := QueryAssetTypeForConnectionType("spark")
+	_, sourceOK := SourceAssetTypeForConnectionType("spark")
+	assert.False(t, queryOK, "an upstream mapping alone must not advertise query support")
+	assert.False(t, sourceOK, "an upstream mapping alone must not advertise source support")
+	for _, assetType := range []pipeline.AssetType{
+		pipeline.AssetTypeSparkQuery,
+		pipeline.AssetTypeSparkQuerySensor,
+		pipeline.AssetTypeSparkSeed,
+		pipeline.AssetTypeSparkSource,
+		pipeline.AssetTypeSparkTableSensor,
+	} {
+		_, ok := ConnectionProfileForAssetType(assetType)
+		assert.False(t, ok, "asset %s must not inherit an unrelated warehouse profile", assetType)
+	}
+}
+
 func TestConnectionProfilesKeepConsumerDialectDecisionsExplicit(t *testing.T) {
 	t.Parallel()
 

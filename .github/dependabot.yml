@@ -4,6 +4,12 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    groups:
+      # River's separately versioned drivers must match the core interfaces.
+      river:
+        patterns:
+          - "github.com/riverqueue/river"
+          - "github.com/riverqueue/river/*"
 
   - package-ecosystem: npm
     directory: "/web"
