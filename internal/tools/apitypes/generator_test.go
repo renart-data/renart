@@ -87,6 +87,28 @@ type Two struct { Count int `+"`json:\"count\"`"+` }
 	}
 }
 
+func TestNotebookRuntimeContractsFollowGoDTOs(t *testing.T) {
+	generated, err := generateAPITypeScript(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"NotebookRuntimeEvent", "NotebookRuntimeSnapshot", "NotebookCellRunResult", "CellRunPerformance", "SnapshotRecord", "ImportRecord", "VizDirective", "VizDiagnostic"} {
+		if !strings.Contains(generated, "export type "+name+" = {") {
+			t.Fatalf("notebook wire contract %s is not generated from Go", name)
+		}
+	}
+	for _, field := range []string{"results: Record<string, NotebookCellRunResult>", "results?: Record<string, NotebookCellRunResult>"} {
+		if !strings.Contains(generated, field) {
+			t.Errorf("missing runtime result contract %q", field)
+		}
+	}
+	start := strings.Index(generated, "export type NotebookCellRunResult = {")
+	end := start + strings.Index(generated[start:], "};")
+	if strings.Contains(generated[start:end], "fingerprint:") {
+		t.Fatal("private execution fingerprint leaked into the public result contract")
+	}
+}
+
 func writeTestFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

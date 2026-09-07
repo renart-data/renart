@@ -95,6 +95,9 @@ const (
 )
 
 // CellRunResult is the outcome of executing one cell.
+//
+// renart:web
+// renart:web-name NotebookCellRunResult
 type CellRunResult struct {
 	CellID       string          `json:"cell_id"`
 	Name         string          `json:"name"`

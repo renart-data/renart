@@ -311,6 +311,20 @@ export type BrowseDirsResponse = {
   entries: BrowseDirEntry[];
 };
 
+export type CellRunPerformance = {
+  request_total_ms?: number;
+  request_setup_ms?: number;
+  batch_run_ms?: number;
+  session_open_ms?: number;
+  materialize_ms?: number;
+  preview_query_ms?: number;
+  metadata_write_ms?: number;
+  runtime_sync_ms?: number;
+  session_bytes?: number;
+  transfer_bytes?: number;
+  python_startup_ms?: number;
+};
+
 export type ColumnInferencePreview = {
   status: string;
   source: ColumnInferenceSource;
@@ -576,6 +590,14 @@ export type FormatSQLAssetResponse = {
   error?: string;
 };
 
+export type ImportRecord = {
+  ref: string;
+  object_name: string;
+  imported_at: string;
+  row_count: number;
+  complete: boolean;
+};
+
 export type InferColumnsResponse = {
   status: string;
   columns: WebColumn[];
@@ -607,6 +629,28 @@ export type MaterializationCapability = {
   requires_time_granularity?: boolean;
   supports_partition_by?: boolean;
   supports_cluster_by?: boolean;
+};
+
+export type NotebookCellRunResult = {
+  cell_id: string;
+  name: string;
+  object_name: string;
+  status: string;
+  error?: string;
+  columns: string[];
+  rows: unknown[][];
+  total_rows: number;
+  materialized: string;
+  imports?: ImportRecord[];
+  column_types?: string[];
+  snapshot?: SnapshotRecord;
+  sampled?: boolean;
+  rewritten_sql?: string;
+  logs?: string;
+  duration_ms: number;
+  performance?: CellRunPerformance;
+  viz?: VizDirective;
+  viz_diagnostics?: VizDiagnostic[];
 };
 
 export type NotebookChangeApplyResult = {
@@ -674,6 +718,26 @@ export type NotebookParameterOptions = {
   dataset?: string;
   value_field?: string;
   label_field?: string;
+};
+
+export type NotebookRuntimeEvent = {
+  type: string;
+  notebook_id: string;
+  auto_recompute: boolean;
+  parameter_values: Record<string, unknown>;
+  stale: string[];
+  auto_pending: string[];
+  running: string[];
+  results?: Record<string, NotebookCellRunResult>;
+};
+
+export type NotebookRuntimeSnapshot = {
+  auto_recompute: boolean;
+  parameter_values: Record<string, unknown>;
+  stale: string[];
+  auto_pending: string[];
+  running: string[];
+  results: Record<string, NotebookCellRunResult>;
 };
 
 export type NotebookSQLRefactor = {
@@ -1382,6 +1446,23 @@ export type SQLDiagnosticLink = {
   target: ResourceTarget;
 };
 
+export type SnapshotRecord = {
+  block_id: string;
+  object_name: string;
+  source_kind: string;
+  environment?: string;
+  connection?: string;
+  definition_fingerprint: string;
+  source_fingerprint?: string;
+  imported_at: string;
+  row_count: number;
+  byte_count: number;
+  complete: boolean;
+  sampled: boolean;
+  schema: TabularColumn[];
+  warnings?: string[];
+};
+
 export type SqlDiscoveryDatabasesResponse = {
   status: string;
   connection_name: string;
@@ -1484,6 +1565,12 @@ export type SqlQueryResponse = {
   rows: Record<string, unknown>[];
   truncated?: boolean;
   error?: string;
+};
+
+export type TabularColumn = {
+  name: string;
+  type: string;
+  nullable?: boolean;
 };
 
 export type TransactionDependency = {
@@ -1613,6 +1700,19 @@ export type UpdatePipelinePythonDependenciesRequest = {
 export type UpdatePresentationRequest = {
   expected_revision: string;
   content: string;
+};
+
+export type VizDiagnostic = {
+  message: string;
+  severity: string;
+  line: number;
+  col: number;
+  end_col: number;
+};
+
+export type VizDirective = {
+  kind: string;
+  options: Record<string, unknown>;
 };
 
 export type WebAsset = {
