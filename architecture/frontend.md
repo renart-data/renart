@@ -211,7 +211,12 @@ and never inferred from a location URL. Bundle gates remain unchanged.
 
   The shadcn InputGroup renders a shadow completion; Tab or its touch button
   accepts the canonical name and namespace separator, while a leaf adds no
-  separator. Abbreviations only suggest names, never select an ambiguous path.
+  separator. The shadow omits the appended separator; the completion button and
+  screen-reader hint retain the full target. Completed path segments get a subtle
+  background behind the native input, with no padding or added width. Grammar and
+  connection boundaries come from the search planner, preserving quoted names and
+  literal storage dots. Native caret, selection, clipboard and IME remain intact.
+  Abbreviations only suggest names, never select an ambiguous path.
   Escape dismisses and Shift+Tab retains normal focus navigation. Mid-input
   selection and IME composition suppress completion. The input stays outside
   hierarchy transition keys so lazy result updates cannot remount it. Search

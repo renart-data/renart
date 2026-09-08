@@ -144,25 +144,38 @@ test("path search completes warehouse names and preserves focus without recursiv
   const input = await openData(page, liveApp.baseURL, isMobile);
   const originalURL = page.url();
   await input.fill("duckdb-def");
-  await expect(page.getByTestId("data-browser-shadow-suggestion")).toHaveText("duckdb-default.");
+  await expect(page.getByTestId("data-browser-shadow-suggestion")).toHaveText("ault");
   await page.screenshot({ path: info.outputPath("connection-completion.png") });
   expect(requests).toEqual([]);
   if (isMobile)
     await page.getByRole("button", { name: "Complete to duckdb-default.", exact: true }).click();
   else await input.press("Tab");
   await expect(input).toHaveValue("duckdb-default.");
+  await expect(page.locator('[data-search-segment="true"]')).toHaveText(["duckdb-default"]);
   await expect(input).toBeFocused();
   await expect(page.getByRole("button", { name: "search_demo", exact: true })).toBeVisible();
   await input.pressSequentially("search_d");
-  await expect(page.getByTestId("data-browser-shadow-suggestion")).toContainText("search_demo.");
+  await expect(page.getByTestId("data-browser-shadow-suggestion")).toHaveText("emo");
   await input.press("Tab");
   await expect(input).toHaveValue("duckdb-default.search_demo.");
+  await expect(page.locator('[data-search-segment="true"]')).toHaveText([
+    "duckdb-default",
+    "search_demo",
+  ]);
   await expect(page.getByRole("link", { name: "alpha_orders", exact: true })).toBeVisible();
   await input.pressSequentially("al");
   await expect(input).toHaveValue("duckdb-default.search_demo.al");
   await expect(input).toBeFocused();
   await expect(page.getByRole("link", { name: "beta", exact: true })).toBeHidden();
   await page.screenshot({ path: info.outputPath("table-completion.png") });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.screenshot({
+    path: info.outputPath("table-completion-dark.png"),
+    animations: "disabled",
+  });
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect(page.locator("html")).not.toHaveClass(/dark/);
   await input.press("Escape");
   await expect(page.getByTestId("data-browser-shadow-suggestion")).toBeHidden();
   await expect(input).toHaveValue("duckdb-default.search_demo.al");
@@ -180,7 +193,7 @@ test("path search completes warehouse names and preserves focus without recursiv
   expect(page.url()).toBe(originalURL); // no editor/result/sidebar routing as a side effect
   await input.fill("duckb-def");
   await expect(page.getByTestId("data-browser-shadow-suggestion")).toContainText(
-    "→ duckdb-default.",
+    "→ duckdb-default",
   );
   await input.press("Tab");
   await expect(input).toHaveValue("duckdb-default.");
@@ -263,20 +276,27 @@ storageTest(
     });
     const input = await openData(page, liveApp.baseURL, isMobile);
     await input.fill("s3-search./inc");
-    await expect(page.getByTestId("data-browser-shadow-suggestion")).toContainText("incoming/");
+    await expect(page.getByTestId("data-browser-shadow-suggestion")).toHaveText("oming");
     if (isMobile)
       await page
         .getByRole("button", { name: "Complete to s3-search./incoming/", exact: true })
         .click();
     else await input.press("Tab");
     await expect(input).toHaveValue("s3-search./incoming/");
+    await expect(page.locator('[data-search-segment="true"]')).toHaveText([
+      "s3-search",
+      "incoming",
+    ]);
     await expect(page.getByRole("link", { name: /orders.csv/ })).toBeVisible();
     await input.fill("s3-search./incoming");
     await expect(page.getByRole("link", { name: /orders.csv/ })).toBeVisible();
-    await expect(page.getByTestId("data-browser-shadow-suggestion")).toContainText("incoming/");
+    await expect(page.getByTestId("data-browser-shadow-suggestion")).toBeHidden();
+    await expect(
+      page.getByRole("button", { name: "Complete to s3-search./incoming/", exact: true }),
+    ).toBeVisible();
     await input.press("Tab");
     await input.pressSequentially("ord");
-    await expect(page.getByTestId("data-browser-shadow-suggestion")).toContainText("orders.csv");
+    await expect(page.getByTestId("data-browser-shadow-suggestion")).toHaveText("ers.csv");
     await page.screenshot({ path: info.outputPath("storage-completion.png") });
     await input.press("Tab");
     await expect(input).toHaveValue("s3-search./incoming/orders.csv");

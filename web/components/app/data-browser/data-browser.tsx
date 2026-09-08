@@ -507,6 +507,7 @@ function DataBrowserNavigator({
           value={query}
           onChange={setQuery}
           completions={loading || error ? [] : search.completions}
+          pathSyntax={search.pathSyntax}
           placeholder={selectedConnection ? "Filter objects…" : "Filter sources…"}
         />
       </div>

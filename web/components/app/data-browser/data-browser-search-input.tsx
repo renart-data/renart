@@ -6,18 +6,21 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import type { BrowserCompletion } from "@/lib/data-browser-search";
+import type { BrowserCompletion, BrowserPathSyntax } from "@/lib/data-browser-search";
+import { completionShadow, searchPathSegments } from "@/lib/data-browser-search-presentation";
 
 export function DataBrowserSearchInput({
   value,
   onChange,
   completions,
   placeholder,
+  pathSyntax,
 }: {
   value: string;
   onChange: (value: string) => void;
   completions: BrowserCompletion[];
   placeholder: string;
+  pathSyntax?: BrowserPathSyntax;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const shadow = useRef<HTMLSpanElement>(null);
@@ -32,11 +35,8 @@ export function DataBrowserSearchInput({
     focused && atEnd && !composing && !dismissed
       ? completions[index % (completions.length || 1)]
       : undefined;
-  const suffix = completion?.value.toLowerCase().startsWith(value.toLowerCase())
-    ? completion.value.slice(value.length)
-    : completion
-      ? ` → ${completion.value}`
-      : "";
+  const suffix = completionShadow(value, completion);
+  const segments = searchPathSegments(value, pathSyntax);
   // Radix Sheets observe Escape in document capture phase. Consume only this
   // field's visible completion first; a second Escape still closes the Sheet.
   useEffect(() => {
@@ -79,7 +79,26 @@ export function DataBrowserSearchInput({
   return (
     <InputGroup>
       <div className="relative min-w-0 flex-1">
+        {segments.some((segment) => segment.completed) ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 flex items-center overflow-hidden px-2 text-sm text-transparent md:text-xs/relaxed"
+          >
+            <span className="whitespace-pre" style={{ transform: `translateX(${-scrollLeft}px)` }}>
+              {segments.map((segment, position) => (
+                <span
+                  key={position}
+                  data-search-segment={segment.completed || undefined}
+                  className={segment.completed ? "rounded-xs bg-primary/10" : undefined}
+                >
+                  {segment.text}
+                </span>
+              ))}
+            </span>
+          </div>
+        ) : null}
         <InputGroupInput
+          className="relative"
           ref={input}
           value={value}
           maxLength={4096}
@@ -126,15 +145,16 @@ export function DataBrowserSearchInput({
             }
           }}
         />
-        {completion ? (
+        {completion && suffix ? (
           <div
             aria-hidden="true"
-            data-testid="data-browser-shadow-suggestion"
             className="pointer-events-none absolute inset-0 flex items-center overflow-hidden px-2 text-sm text-muted-foreground md:text-xs/relaxed"
           >
             <span className="whitespace-pre" style={{ transform: `translateX(${-scrollLeft}px)` }}>
               <span className="invisible">{value}</span>
-              <span ref={shadow}>{suffix}</span>
+              <span ref={shadow} data-testid="data-browser-shadow-suggestion">
+                {suffix}
+              </span>
             </span>
           </div>
         ) : null}

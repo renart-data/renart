@@ -16,9 +16,11 @@ export type BrowserSearchBase = {
   nodes: DataBrowserNode[];
   truncated?: boolean;
 };
-export type BrowserCompletion = { value: string; label: string };
+export type BrowserCompletion = { value: string; label: string; separator?: "." | "/" | "./" };
+export type BrowserPathSyntax = { connectionEnd: number; separator: "." | "/" };
 export type BrowserSearchPlan = {
   connection?: DataBrowserConnection;
+  pathSyntax?: BrowserPathSyntax;
   connections: DataBrowserConnection[];
   nodes: DataBrowserNode[];
   completions: BrowserCompletion[];
@@ -83,17 +85,25 @@ function dottedParts(value: string): string[] | undefined {
   return [...parts, text];
 }
 
-function completeNodes(plan: BrowserSearchPlan, query: string, filter: string, separator: string) {
+function completeNodes(
+  plan: BrowserSearchPlan,
+  query: string,
+  filter: string,
+  separator: "." | "/",
+) {
   plan.nodes = matches(plan.nodes, filter, (node) => node.label);
   if (!filter) return plan;
   plan.completions = plan.nodes
-    .map((node) => ({
-      label: node.label,
-      value:
-        plan.prefix +
-        (separator === "." ? quoteBrowserSegment(node.label) : node.label) +
-        (node.node_type === "namespace" ? separator : ""),
-    }))
+    .map(
+      (node): BrowserCompletion => ({
+        label: node.label,
+        separator: node.node_type === "namespace" ? separator : undefined,
+        value:
+          plan.prefix +
+          (separator === "." ? quoteBrowserSegment(node.label) : node.label) +
+          (node.node_type === "namespace" ? separator : ""),
+      }),
+    )
     .filter((completion) => completion.value !== query);
   return plan;
 }
@@ -144,10 +154,13 @@ export function planDataBrowserSearch(
   if (!connection) {
     plan.connections = matches(connections, query, (item) => item.name);
     if (query)
-      plan.completions = plan.connections.map((item) => ({
-        label: item.name,
-        value: connectionSearchPrefix(item),
-      }));
+      plan.completions = plan.connections.map(
+        (item): BrowserCompletion => ({
+          label: item.name,
+          value: connectionSearchPrefix(item),
+          separator: item.source_kind === "warehouse" ? "." : "./",
+        }),
+      );
     plan.connections.push(
       ...connections.filter(
         (item) =>
@@ -157,6 +170,10 @@ export function planDataBrowserSearch(
     return plan;
   }
   plan.connection = connection;
+  plan.pathSyntax = {
+    connectionEnd: explicit?.length ?? 0,
+    separator: connection.source_kind === "warehouse" ? "." : "/",
+  };
   plan.label = connection.name;
   const root = connectionSearchPrefix(connection);
   let remaining = explicit ? query.slice(explicit.length) : query;
@@ -248,7 +265,7 @@ export function planDataBrowserSearch(
       plan.prefix = root + path + "/";
       plan.back = root + parent;
       plan.label = filter;
-      plan.completions = [{ label: filter, value: plan.prefix }];
+      plan.completions = [{ label: filter, value: plan.prefix, separator: "/" }];
       listing({ connectionId: connection.id, prefix: path + "/" });
       return localCompletions(plan);
     }
