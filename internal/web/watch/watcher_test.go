@@ -32,3 +32,22 @@ func TestRelevantPathIncludesScheduleDeclarations(t *testing.T) {
 	t.Parallel()
 	assert.True(t, IsRelevantPath("/workspace/.renart/schedules.yml"))
 }
+
+func TestSlingRuntimeBootstrapDoesNotChangeWorkspaceSnapshot(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	watcher := New(Config{WorkspaceRoot: root}, nil)
+	before, err := watcher.takeSnapshot()
+	require.NoError(t, err)
+	path := filepath.Join(root, ".renart", "config", ".sling", "env.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+	require.NoError(t, os.WriteFile(path, []byte("connections: {}\n"), 0o600))
+	after, err := watcher.takeSnapshot()
+	require.NoError(t, err)
+	assert.Equal(t, before, after)
+	assert.False(t, IsRelevantPath(path), "fsnotify must agree with polling")
+	assert.False(t, IsRelevantPath(".renart/config/.sling/env.yaml"))
+	for _, authored := range []string{".bruin.yml", ".renart/secrets.yml", ".renart/environments.yml", ".renart/config/settings.yaml", "assets/foo.sql"} {
+		assert.True(t, IsRelevantPath(filepath.Join(root, authored)), authored)
+	}
+}

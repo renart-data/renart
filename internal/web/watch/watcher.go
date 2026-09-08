@@ -284,12 +284,18 @@ func firstChangedPath(prev, current Snapshot) string {
 
 // IsRelevantPath returns true if the given path should trigger workspace updates.
 func IsRelevantPath(path string) bool {
+	// Sling bootstraps its own runtime config during metadata discovery. It is
+	// not an authored connection declaration and must not invalidate the very
+	// Data Browser references that triggered its creation.
+	normalized := "/" + strings.TrimPrefix(filepath.ToSlash(path), "/")
+	if strings.Contains(normalized, "/.renart/config/.sling/") {
+		return false
+	}
 	base := filepath.Base(path)
 	if base == "pipeline.yml" || base == "pipeline.yaml" || base == "glossary.yml" || base == "glossary.yaml" || base == ".bruin.yml" {
 		return true
 	}
 
-	normalized := filepath.ToSlash(path)
 	if strings.Contains(normalized, "/assets/") || strings.Contains(normalized, "/tasks/") {
 		return true
 	}
