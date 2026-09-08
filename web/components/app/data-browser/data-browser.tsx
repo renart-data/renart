@@ -11,6 +11,7 @@ import {
   Columns3,
   Database,
   File,
+  FileCode2,
   Folder,
   Plus,
   RefreshCw,
@@ -33,7 +34,6 @@ import {
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { selectedEnvironmentAtom } from "@/lib/atoms/domains/workspace";
 import {
@@ -59,6 +59,8 @@ import {
 } from "../connection-type-icon";
 import { WorkspaceConnectionDialog } from "../workspace-connection-dialog-lazy";
 import { DataBrowserTransferItem } from "./data-browser-transfer-item";
+import { DataBrowserLoading } from "./data-browser-loading";
+import { SqlPreview } from "../sql-preview";
 import {
   AppContextSidebarTransition,
   type AppContextSidebarTransitionDirection,
@@ -460,7 +462,7 @@ function DataBrowserNavigator({
           onClick={() => void onReload()}
           disabled={browser.loading}
         >
-          <RefreshCw className={cn(browser.loading && "animate-spin")} />
+          <RefreshCw />
         </Button>
       </div>
       <div className="shrink-0 border-b p-2">
@@ -491,10 +493,8 @@ function DataBrowserNavigator({
                 : " Choose a smaller namespace to see more specific results."}
             </p>
           ) : null}
-          {browser.loading && !browser.currentLevel ? (
-            <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
-              <Spinner /> Loading data sources…
-            </div>
+          {browser.loading ? (
+            <DataBrowserLoading label="Loading data sources…" />
           ) : browser.selectedConnection ? (
             <NodeList
               nodes={filteredNodes}
@@ -637,6 +637,7 @@ function NodeList({
               key={node.id}
               target={{ kind: "data-object", address: node.address, section: "schema" }}
               className={className}
+              draggable={false}
             >
               {content}
             </ResourceLink>
@@ -657,8 +658,15 @@ function NodeList({
             environment={environment}
             onChoose={onChooseForCanvas}
             item={
-              node.address?.source_kind === "warehouse" && node.object_kind === "table"
-                ? { kind: "table", id: node.id, label: node.label }
+              node.address?.source_kind === "warehouse" &&
+              node.object_kind === "table" &&
+              node.reference_text
+                ? {
+                    kind: "table",
+                    id: node.id,
+                    label: node.label,
+                    referenceText: node.reference_text,
+                  }
                 : node.address?.source_kind === "storage"
                   ? { kind: "storage", id: node.id, label: node.label }
                   : undefined
@@ -727,8 +735,8 @@ function DataBrowserDetail({
     runPreview: () => Promise<void>;
   };
   className?: string;
-  section?: "schema" | "rows";
-  onSectionChange?: (section: "schema" | "rows") => void;
+  section?: DataTarget["section"];
+  onSectionChange?: (section: DataTarget["section"]) => void;
   focusedColumn?: string;
 }) {
   const object = browser.selectedObject;
@@ -737,9 +745,7 @@ function DataBrowserDetail({
   return (
     <section className={cn("flex min-h-0 min-w-0 flex-col bg-background", className)}>
       {browser.objectLoading ? (
-        <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
-          <Spinner /> Describing object…
-        </div>
+        <DataBrowserLoading label="Describing object…" table />
       ) : !object ? (
         <Empty className="border-0">
           <EmptyHeader>
@@ -760,7 +766,7 @@ function DataBrowserDetail({
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="truncate text-sm font-semibold">{object.name}</h2>
-                <Badge variant="secondary">{object.kind}</Badge>
+                <Badge variant="secondary">{object.view_definition ? "view" : object.kind}</Badge>
                 {object.format ? <Badge variant="outline">{object.format}</Badge> : null}
               </div>
               <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
@@ -776,7 +782,7 @@ function DataBrowserDetail({
           {object.warning ? (
             <Alert variant="destructive" className="m-3 mb-0">
               <AlertCircle />
-              <AlertTitle>Schema discovery incomplete</AlertTitle>
+              <AlertTitle>Some metadata is unavailable</AlertTitle>
               <AlertDescription>{object.warning}</AlertDescription>
             </Alert>
           ) : null}
@@ -789,10 +795,10 @@ function DataBrowserDetail({
           ) : (
             <Tabs
               value={section}
-              onValueChange={(value) => onSectionChange?.(value as "schema" | "rows")}
+              onValueChange={(value) => onSectionChange?.(value as DataTarget["section"])}
               className="min-h-0 flex-1 gap-0"
             >
-              <div className="flex min-h-11 shrink-0 items-center justify-between gap-2 border-b px-3">
+              <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3">
                 <TabsList variant="line" className="h-10 rounded-none p-0">
                   <TabsTrigger value="rows" className="rounded-none">
                     <Rows3 /> Preview
@@ -803,6 +809,11 @@ function DataBrowserDetail({
                       {object.columns.length}
                     </Badge>
                   </TabsTrigger>
+                  {object.view_definition || section === "definition" ? (
+                    <TabsTrigger value="definition" className="rounded-none">
+                      <FileCode2 /> SQL
+                    </TabsTrigger>
+                  ) : null}
                 </TabsList>
                 <Button
                   size="sm"
@@ -812,12 +823,29 @@ function DataBrowserDetail({
                   }}
                   disabled={!object.capabilities.preview_rows || browser.previewLoading}
                 >
-                  {browser.previewLoading ? <Spinner /> : <Rows3 />}
+                  <Rows3 />
                   Preview rows
                 </Button>
               </div>
+              <TabsContent value="definition" className="min-h-0 flex-1 overflow-auto p-0">
+                {object.view_definition ? (
+                  <div data-testid="data-browser-view-definition" className="h-full">
+                    <SqlPreview
+                      query={object.view_definition}
+                      className="h-full max-h-none border-0 p-4"
+                    />
+                  </div>
+                ) : (
+                  <p className="p-4 text-sm text-muted-foreground">
+                    No view definition is available. This may be a table, an unsupported warehouse,
+                    or a definition hidden by database permissions.
+                  </p>
+                )}
+              </TabsContent>
               <TabsContent value="rows" className="min-h-0 flex-1 p-0">
-                {browser.preview ? (
+                {browser.previewLoading ? (
+                  <DataBrowserLoading label="Loading preview rows…" table />
+                ) : browser.preview ? (
                   <div className="flex h-full min-h-0 flex-col">
                     <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5 text-[10px] text-muted-foreground">
                       <span>

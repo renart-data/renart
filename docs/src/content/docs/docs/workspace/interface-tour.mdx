@@ -29,8 +29,20 @@ Use **Build** to edit assets and notebooks or browse source data:
 For an asset, **Code**, **Split**, and **Canvas** change the central layout.
 The results panel below it contains **Inspect**, **Render**, **Materialize**,
 **Query**, and **Type check**. The properties panel on the right groups metadata
-into **General**, **Lineage**, **Columns**, and **Checks**. Use **Show properties**
+into **General**, **Lineage**, **Columns**, **Checks**, and, for SQL assets,
+**Tests**. Use **Show properties**
 or **Hide properties** to make room without changing the asset.
+
+### View SQL in the Data Browser
+
+For views whose warehouse exposes the definition, the **SQL** tab shows the
+stored query with syntax highlighting. Its URL also opens that tab directly.
+The definition remains available if reading the view's data fails.
+
+In DuckDB, relative file reads use the active project's root, not the folder
+containing the database or SQL asset. A view created in another or nested project
+may therefore refer to a missing file. Check its **SQL** tab and the project root
+shown in the error; Renart does not rewrite the view or guess a different folder.
 
 ## Run
 

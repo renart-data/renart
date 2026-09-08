@@ -64,14 +64,15 @@ type QueryResult struct {
 }
 
 type Dependencies struct {
-	WorkspaceRoot   string
-	ListConnections func(context.Context, string) (string, []ConnectionConfig, int64, error)
-	ListDatabases   func(context.Context, string, string) ([]string, error)
-	ListTables      func(context.Context, string, string, string) ([]Table, error)
-	ListColumns     func(context.Context, string, string, string) ([]model.SQLColumn, error)
-	RunQuery        func(context.Context, string, string, string, int) (QueryResult, error)
-	ListStorage     func(context.Context, string, string, string) (StorageListing, error)
-	Now             func() time.Time
+	WorkspaceRoot        string
+	ListConnections      func(context.Context, string) (string, []ConnectionConfig, int64, error)
+	ListDatabases        func(context.Context, string, string) ([]string, error)
+	ListTables           func(context.Context, string, string, string) ([]Table, error)
+	ListColumns          func(context.Context, string, string, string) ([]model.SQLColumn, error)
+	LookupViewDefinition func(context.Context, string, string, string) (string, error)
+	RunQuery             func(context.Context, string, string, string, int) (QueryResult, error)
+	ListStorage          func(context.Context, string, string, string) (StorageListing, error)
+	Now                  func() time.Time
 }
 
 type Service struct {
@@ -277,12 +278,24 @@ func (s *Service) Object(ctx context.Context, objectID, environment string) (Obj
 		PreviewRows:     s.deps.RunQuery != nil,
 		Query:           true,
 	}
+	if sql := viewDefinitionQuery(ref); sql != "" && s.deps.LookupViewDefinition != nil {
+		definition, definitionErr := s.deps.LookupViewDefinition(ctx, ref.Connection, ref.Environment, sql)
+		if definitionErr != nil {
+			object.Warning = "View definition could not be read: " + definitionErr.Error()
+		} else {
+			object.ViewDefinition = definition
+		}
+	}
 	if s.deps.ListColumns != nil {
 		columns, columnErr := s.deps.ListColumns(ctx, ref.Connection, ref.Name, ref.Environment)
 		if columnErr != nil {
-			return ObjectResponse{}, internalError("data_browser_describe_failed", columnErr)
+			if object.ViewDefinition == "" {
+				return ObjectResponse{}, internalError("data_browser_describe_failed", s.describeError(ref, columnErr))
+			}
+			object.Warning = strings.TrimSpace(object.Warning + "\n" + s.describeError(ref, columnErr).Error())
+		} else {
+			object.Columns = nonNilColumns(columns)
 		}
-		object.Columns = nonNilColumns(columns)
 	}
 	return ObjectResponse{Status: "ok", Object: object}, nil
 }
@@ -345,7 +358,7 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (PreviewR
 		limit+1,
 	)
 	if queryErr != nil {
-		return PreviewResponse{}, internalError("data_browser_preview_failed", queryErr)
+		return PreviewResponse{}, internalError("data_browser_preview_failed", s.describeError(ref, queryErr))
 	}
 	truncated := result.Truncated || len(result.Rows) > limit
 	if len(result.Rows) > limit {

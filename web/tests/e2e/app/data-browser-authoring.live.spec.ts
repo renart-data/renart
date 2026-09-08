@@ -59,13 +59,33 @@ test.describe("Data Browser authoring", () => {
       await useTable.click();
       await page.getByTestId("data-browser-drop-target").click();
     } else {
+      await page.evaluate(() => {
+        const setDragImage = DataTransfer.prototype.setDragImage;
+        DataTransfer.prototype.setDragImage = function (image, x, y) {
+          document.body.dataset.tableDragPreview = JSON.stringify({
+            label: image.textContent,
+            card: image.hasAttribute("data-data-browser-drag-preview"),
+            width: image.getBoundingClientRect().width,
+          });
+          setDragImage.call(this, image, x, y);
+        };
+      });
       const transfer = await page.evaluateHandle(() => new DataTransfer());
       const row = page.locator(
         '[data-testid="data-browser-transfer-item"][data-transfer-label="browser_orders"]',
       );
       await row.dispatchEvent("dragstart", { dataTransfer: transfer });
+      const dragPreview = JSON.parse(
+        (await page.locator("body").getAttribute("data-table-drag-preview")) ?? "{}",
+      );
+      expect(dragPreview.label).toContain("browser_orders");
+      expect(dragPreview.card).toBe(true);
+      expect(dragPreview.width).toBeGreaterThan(200);
+      await expect(page.locator("[data-data-browser-drag-preview]")).toHaveCount(0);
       const target = page.getByTestId("data-browser-drop-target");
       await expect(target).toBeVisible();
+      await expect(target).toHaveAttribute("data-source-group", "raw");
+      await expect(target).toHaveAttribute("data-new-group", "true");
       expect(await transfer.evaluate((value) => value.types)).toContain(MIME);
       const foreign = await page.evaluateHandle((mime) => {
         const data = new DataTransfer();
@@ -140,6 +160,27 @@ test.describe("Data Browser authoring", () => {
       );
       await row.dispatchEvent("dragstart", { dataTransfer: transfer });
       await expect(target).toBeVisible();
+      const initial = (await target.boundingBox())!;
+      const assetId = Buffer.from("analytics/assets/analytics/customers.sql").toString("base64url");
+      const asset = page.locator(`[data-testid="lineage-asset"][data-asset-id="${assetId}"]`);
+      const position = await asset.boundingBox();
+      await page.locator("body").dispatchEvent("dragover", {
+        dataTransfer: transfer,
+        clientX: initial.x - 20,
+        clientY: initial.y + initial.height / 2,
+      });
+      await expect(target).toHaveAttribute("data-proximity", "near");
+      await expect
+        .poll(async () => (await target.boundingBox())!.width)
+        .toBeGreaterThan(initial.width * 1.5);
+      expect(await asset.boundingBox()).toEqual(position);
+      const expanded = (await target.boundingBox())!;
+      await target.dispatchEvent("dragover", {
+        dataTransfer: transfer,
+        clientX: expanded.x + expanded.width - 1,
+        clientY: expanded.y + expanded.height / 2,
+      });
+      await expect(target).toHaveAttribute("data-proximity", "near");
       await page.screenshot({ path: info.outputPath("load-placement.png") });
       await target.dispatchEvent("dragover", { dataTransfer: transfer });
       await target.dispatchEvent("drop", { dataTransfer: transfer });
@@ -178,6 +219,57 @@ test.describe("Data Browser authoring", () => {
     expect(new URL(page.url()).searchParams.get("result")).toBe("inspect");
     expect(errors).toEqual([]);
     await page.screenshot({ path: info.outputPath("load-created.png") });
+  });
+
+  test("uses only the matching existing prefix group without moving its assets", async ({
+    page,
+    liveApp,
+  }, info) => {
+    for (const query of [
+      "create schema if not exists analytics",
+      "create table analytics.prefixed_source as select 7 as id",
+    ]) {
+      const result = await page.request.post(`${liveApp.baseURL}/api/sql/query`, {
+        data: { connection: "duckdb-default", environment: "default", query },
+      });
+      expect(result.ok(), await result.text()).toBe(true);
+      expect((await result.json()).status).toBe("ok");
+    }
+    await page.goto(`${liveApp.baseURL}${canvasPath}`);
+    await openBrowser(page);
+    await page.getByRole("button", { name: /duckdb-default.*DuckDB/ }).click();
+    await page.getByRole("button", { name: "analytics", exact: true }).click();
+    const assets = page.getByTestId("lineage-asset");
+    const before = await assets.evaluateAll((nodes) =>
+      nodes.map((node) => node.getBoundingClientRect().toJSON()),
+    );
+    await page.getByRole("button", { name: "Use prefixed_source in canvas", exact: true }).click();
+    const target = page.getByTestId("data-browser-drop-target");
+    await expect(target).toHaveCount(1);
+    await expect(target).toHaveAttribute("data-source-group", "analytics");
+    await expect(target).toHaveAttribute("data-new-group", "false");
+    await expect(
+      page.locator(".react-flow__node-prefixGroup").getByTestId("data-browser-drop-target"),
+    ).toHaveCount(1);
+    expect(
+      await assets.evaluateAll((nodes) =>
+        nodes.map((node) => node.getBoundingClientRect().toJSON()),
+      ),
+    ).toEqual(before);
+    await expect(target).toBeFocused();
+    await page.screenshot({ path: info.outputPath("matching-source-group.png") });
+    await target.click();
+    const dialog = page.getByRole("dialog", { name: "Create source asset", exact: true });
+    await expect(
+      dialog.getByRole("button", { name: "Create source asset", exact: true }),
+    ).toBeEnabled();
+    await dialog.getByRole("button", { name: "Create source asset", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    const saved = await readFile(
+      join(liveApp.workspaceDir, "analytics/assets/analytics/prefixed_source.asset.yml"),
+      "utf8",
+    );
+    expect(saved).toContain("name: analytics.prefixed_source");
   });
 
   test("offers source placement in an empty pipeline without leaving it", async ({

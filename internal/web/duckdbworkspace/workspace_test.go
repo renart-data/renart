@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bruin-data/bruin/pkg/config"
@@ -46,6 +47,44 @@ func TestClientResolvesRelativeFilesFromWorkspace(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"row_count"}, result.Columns)
 	require.Equal(t, [][]any{{int64(1)}}, result.Rows)
+}
+
+func TestRelativeFileViewDiscoveryUsesWorkspace(t *testing.T) {
+	root := t.TempDir()
+	base, err := duck.NewClient(duck.Config{Path: filepath.Join(root, "views.duckdb")})
+	require.NoError(t, err)
+	t.Cleanup(base.Close)
+	client := WrapClient(base, root).(*Client)
+	parquet := strings.ReplaceAll(filepath.Join(root, "workspace_view_rows.parquet"), "'", "''")
+	require.NoError(t, client.RunQueryWithoutResult(t.Context(), &query.Query{Query: "COPY (SELECT 42 AS value) TO '" + parquet + "' (FORMAT PARQUET)"}))
+	require.NoError(t, client.RunQueryWithoutResult(t.Context(), &query.Query{Query: "CREATE VIEW main.relative_rows AS SELECT * FROM 'workspace_view_rows.parquet'"}))
+	_, err = base.SelectWithSchema(t.Context(), &query.Query{Query: "SELECT * FROM main.relative_rows"})
+	require.Error(t, err, "unscoped native query must reproduce the wrong-working-directory failure")
+	t.Run("preview", func(t *testing.T) {
+		result, err := client.SelectWithSchema(t.Context(), &query.Query{Query: "SELECT * FROM main.relative_rows"})
+		require.NoError(t, err)
+		require.Equal(t, [][]any{{int64(42)}}, result.Rows)
+	})
+	t.Run("schemas", func(t *testing.T) {
+		names, err := client.GetDatabases(t.Context())
+		require.NoError(t, err)
+		require.Contains(t, names, "main")
+	})
+	t.Run("tables", func(t *testing.T) {
+		names, err := client.GetTables(t.Context(), "main")
+		require.NoError(t, err)
+		require.Contains(t, names, "relative_rows")
+	})
+	t.Run("columns", func(t *testing.T) {
+		columns, err := client.GetColumns(t.Context(), "main", "relative_rows")
+		require.NoError(t, err)
+		require.Len(t, columns, 1)
+		require.Equal(t, "value", columns[0].Name)
+	})
+	t.Run("summary", func(t *testing.T) {
+		_, err := client.GetDatabaseSummary(t.Context())
+		require.NoError(t, err)
+	})
 }
 
 func TestClientDisablesLocalFilesystemAccessWithoutBreakingOrdinaryQueries(t *testing.T) {

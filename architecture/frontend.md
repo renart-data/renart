@@ -162,6 +162,10 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   navigate in place, and selecting the active contextual tab toggles its Sheet.
   The fixed 3.5rem bottom row keeps the device safe-area inset outside the row
   so Android/iOS system UI cannot compress or displace its icons.
+  Mobile tool tabs use one click activation path (including Enter/Space) rather
+  than combining a tab value-change event with another active-tab click action.
+  Selecting the already-active Query tab is idempotent; contextual tabs can
+  still toggle their navigation sheet.
 
 - [components/app/data-browser/](../web/components/app/data-browser): one shared
   object view powers both the `/data` workbench route and Build's in-place Data
@@ -182,14 +186,37 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   `WorkspaceConnectionDialog` with a preselected type and returns to the newly
   created source without putting credentials in Data Browser state.
 
+  Loading connections, namespaces, columns and preview rows uses the shared
+  `DataBrowserLoading` skeleton, with a screen-reader status and reduced-motion
+  support. A pending namespace replaces the previous list instead of presenting
+  stale children as the current folder.
+
   In a pipeline, table rows and warehouse connections support native drag and
   the equivalent **Use in canvas** action (keyboard/touch). A table reveals a
-  Source creation target; a destination reveals Load targets beside the output
+  matching prefix group as its Source creation target; when absent, a temporary
+  group card appears inside the canvas. The server-supplied relation name is a
+  display-only hint, so targets appear without a warehouse round trip. Source
+  names stay unchanged: they identify physical tables, not arbitrary aliases.
+  A destination reveals Load targets beside the output
   of compatible local assets, based on the Go creation profile's source/destination roles.
   A drop opens the existing review/creation dialog. It never runs a pipeline,
   materializes data, or writes an asset before confirmation. Source creation
   also works in empty pipelines. File rows keep their ordinary navigation;
   file imports are not part of this table-authoring interaction.
+
+  Table drags capture the existing row in a compact themed card; nested resource
+  links disable native URL dragging but keep ordinary navigation. Compatible Load
+  targets grow as the pointer approaches. Screen-space proximity is measured from
+  fixed anchors, so zoom/pan is accounted for without relaying out the DAG; the
+  expanded hit area stays open until the pointer leaves it. Capture-phase drag
+  tracking observes transitions even when a target stops event propagation.
+  Vertical alignment belongs to the anchor, not the button's translate property,
+  so its pressed-state animation cannot move the touch target away from a finger.
+
+  View SQL lives in the object's existing, routable `definition` section and
+  uses `SqlPreview` syntax highlighting. It is read-only and does not execute
+  the definition. Supported catalog definitions remain visible when reading the
+  view for column discovery fails; ordinary table-discovery errors still fail.
 
   `lib/data-browser-transfer.ts` holds disposable same-window interaction state,
   scoped to project, pipeline, and environment. Native DataTransfer carries only

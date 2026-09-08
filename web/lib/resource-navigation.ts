@@ -9,7 +9,7 @@ export type ColumnTarget = ResourceTarget & {
 export type DataTarget = ResourceTarget & {
   kind: "data-object";
   address: NonNullable<ResourceTarget["address"]>;
-  section: "schema" | "rows";
+  section: "schema" | "rows" | "definition";
 };
 export type SectionTarget = ResourceTarget & {
   kind: "asset-section";
@@ -94,7 +94,7 @@ export function parseDetail(value: unknown): ResourceDetail {
   if (
     target.kind === "data-object" &&
     record(target.address) &&
-    ["schema", "rows"].includes(String(target.section))
+    ["schema", "rows", "definition"].includes(String(target.section))
   ) {
     const a = target.address;
     const column =

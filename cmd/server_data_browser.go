@@ -79,6 +79,28 @@ func configureDataBrowserService(server *webServer, workspaceRoot string) {
 			}
 			return result.Columns, nil
 		},
+		LookupViewDefinition: func(ctx context.Context, connection, environment, query string) (string, error) {
+			result := server.sqlSvc.Query(ctx, connection, environment, query, 2)
+			if result.Status != "ok" {
+				return "", errors.New(result.Error)
+			}
+			if len(result.Rows) == 0 {
+				return "", nil
+			}
+			if len(result.Rows) != 1 {
+				return "", errors.New("catalog returned an ambiguous view definition")
+			}
+			for key, value := range result.Rows[0] {
+				if strings.EqualFold(key, "view_definition") {
+					if value == nil {
+						return "", errors.New("the warehouse does not expose this view's SQL to the current database role")
+					}
+					definition, _ := value.(string)
+					return definition, nil
+				}
+			}
+			return "", nil
+		},
 		RunQuery: func(ctx context.Context, connection, environment, query string, limit int) (databrowser.QueryResult, error) {
 			result := server.sqlSvc.Query(ctx, connection, environment, query, limit)
 			if result.Status != "ok" {

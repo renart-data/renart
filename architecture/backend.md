@@ -927,6 +927,22 @@ connection/query as the requested SQL, so relative reads such as
 working directory. Notebook session clients use the same wrapper. This avoids a
 process-wide `chdir`, which would couple unrelated server filesystem operations
 to query execution; non-DuckDB connections are passed through unchanged.
+This also covers previews of saved views over relative Parquet files. Regression
+tests exercise native view discovery and the Data Browser's actual preview path.
+The base is the project root, not the asset folder or database file's directory.
+A view created elsewhere with a different historical working directory must use
+an appropriate project-relative or absolute path; Renart does not guess that
+directory or rewrite the view definition. `file_search_path` applies to reads,
+not relative output destinations such as `COPY ... TO`.
+
+Data Browser definitions are fetched separately from columns via bounded,
+exact-object catalog queries (`databrowser/view_definition.go`), not by running
+the view or reading a whole database summary. Adapters cover `duckdb_views()`,
+PostgreSQL, Redshift, MySQL, StarRocks, Trino and Snowflake information-schema
+metadata, and ClickHouse view engines in `system.tables`. Unsupported engines omit definitions;
+catalog permission failures do not block otherwise available columns. Definition
+SQL is returned verbatim. Missing DuckDB-file diagnostics include the active
+project root and explain foreign/nested-project paths without mutating the view.
 `--enable-filesystem-access` defaults to `true`. With the flag disabled, every
 web-server DuckDB connection path — resolved connection managers, native shared
 sessions, and notebook sessions — executes

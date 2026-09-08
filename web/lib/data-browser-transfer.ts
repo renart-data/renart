@@ -8,6 +8,8 @@ export type DataBrowserTransfer = {
   kind: "table" | "connection" | "storage";
   id: string;
   label: string;
+  // Display hint from the server's listing; creation still revalidates the ID.
+  referenceText?: string;
   token: string;
   pipelineId: string;
   projectId: string | null;

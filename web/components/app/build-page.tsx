@@ -3965,11 +3965,11 @@ function Inspector({
       </div>
       {editable && workspaceAsset && asset.pipelineId ? (
         <ErrorBoundary
-          resetKey={workspaceAsset.content ?? ""}
+          resetKey={`${workspaceAsset.id}:${workspaceAsset.content ?? ""}`}
           fallback={
             <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-center text-xs text-muted-foreground">
-              These properties can&apos;t be shown right now — the asset file may have a syntax
-              error. Fix it in the code editor to continue.
+              An unexpected interface error prevented these properties from opening. Reopen the
+              asset or reload the page to try again.
             </div>
           }
         >

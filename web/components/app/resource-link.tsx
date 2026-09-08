@@ -11,11 +11,13 @@ export function ResourceLink({
   environment,
   children,
   className,
+  draggable,
 }: {
   target?: ResourceTarget;
   environment?: string;
   children?: ReactNode;
   className?: string;
+  draggable?: boolean;
 }) {
   const location = useLocation();
   const { destination } = useResourceNavigation();
@@ -35,6 +37,7 @@ export function ResourceLink({
         JSON.stringify((location.search as { detail?: unknown }).detail) === JSON.stringify(detail)
       }
       preload={false}
+      draggable={draggable}
       data-resource-link="true"
       className={
         className ??

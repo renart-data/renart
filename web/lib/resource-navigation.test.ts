@@ -19,6 +19,20 @@ const detail = {
 };
 
 describe("resource navigation", () => {
+  it("round trips a view SQL definition tab", () => {
+    const target = {
+      kind: "data-object",
+      section: "definition",
+      address: {
+        source_kind: "warehouse",
+        connection: "local",
+        connection_type: "duckdb",
+        database: "main",
+        name: "example",
+      },
+    };
+    expect(parseDetail({ ...detail, target }).target).toEqual(target);
+  });
   it("addresses the actual SQL Tests tab", () => {
     expect(
       parseDetail({

@@ -70,6 +70,7 @@ type ChildrenResponse struct {
 
 // renart:web-name DataBrowserObject
 type Object struct {
+	ViewDefinition string               `json:"view_definition,omitempty"`
 	Address        *dataaddress.Address `json:"address,omitempty"`
 	ID             string               `json:"id"`
 	ConnectionID   string               `json:"connection_id"`

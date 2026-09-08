@@ -519,6 +519,7 @@ export type DataBrowserNode = {
 };
 
 export type DataBrowserObject = {
+  view_definition?: string;
   address?: DataObjectAddress;
   id: string;
   connection_id: string;

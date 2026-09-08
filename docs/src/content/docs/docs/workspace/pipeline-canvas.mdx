@@ -75,14 +75,16 @@ open the full editor to change the asset's code and metadata — see
 ### Bring tables in from the Data Browser
 
 Open **Data Browser** beside the canvas and drag a warehouse table onto the
-source drop target. Renart previews the source asset, including its connection
+matching prefix group. For example, `raw.orders` belongs in `raw`; if that
+group does not exist, a temporary drop area marks the new group. The source name
+stays unchanged because it identifies the warehouse table. Renart previews the source asset, including its connection
 and columns; confirm the import to create the file. Existing tables remain
 external sources — importing one does not copy or modify its data.
 
 Drag a destination connection onto the load target after a compatible asset to
 start a **Load** asset with the source and destination prefilled. Review the
 settings before creating it. Drop targets appear only where that operation is
-supported; existing consumers are not rewired automatically.
+supported and grow as you drag closer; existing consumers are not rewired automatically.
 
 On touch devices, or without dragging, use the table or connection's **Use**
 action and select the corresponding target on the canvas.

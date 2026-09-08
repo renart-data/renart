@@ -400,6 +400,8 @@ bundled monaco-yaml worker; JSON is only the API transport. The plugin's legacy
 worker handshake is adapted to Monaco 0.56 without changing MonacoEnvironment.
 Providers and marker-model events are scoped to fixture URIs, and no remote
 schemas are fetched. The language service is disposed on editor unmount.
+Fixture model identities use React IDs, not secure-context-only browser UUIDs,
+so authoring also works over plain HTTP on a LAN host.
 Unknown schemas and CTE rows stay untyped. Duplicate keys, custom tags, multiple
 documents, nonfinite numbers and unsafe integers are rejected before transport.
 Dirty dialogs have navigation/close guards. Incoming SSE updates never replace

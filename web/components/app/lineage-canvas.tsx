@@ -50,7 +50,11 @@ import { assetNameParts } from "@/lib/asset-presentation";
 import { cn } from "@/lib/utils";
 
 import { kindMeta, type AppAsset } from "./app-data";
-import { DataBrowserLoadDropTarget } from "./data-browser/data-browser-canvas";
+import {
+  DataBrowserLoadDropTarget,
+  DataBrowserSourceDropTarget,
+  useDataBrowserSourceGroup,
+} from "./data-browser/data-browser-canvas";
 import { AssetNode, AssetNodeMenuItems, type AssetNodeAction } from "./app-primitives";
 
 export type AppLineageCanvasAsset = AppAsset & {
@@ -109,6 +113,7 @@ function PrefixGroupFlowNode({ data }: NodeProps<PrefixGroupNodeData>) {
           </span>
         </div>
       ) : null}
+      <DataBrowserSourceDropTarget group={data.label} />
     </div>
   );
 }
@@ -399,6 +404,7 @@ export function AppLineageCanvas({
   // paint that urgent update before reconciling the selected canvas card; the
   // graph remains interactive and catches up immediately afterward.
   const deferredSelectedAssetId = useDeferredValue(selectedAssetId);
+  const sourceGroup = useDataBrowserSourceGroup();
 
   useEffect(() => {
     setLineageAssetId((current) => (current && current !== selectedAssetId ? null : current));
@@ -734,7 +740,16 @@ export function AppLineageCanvas({
   return (
     <div ref={containerRef} className="relative h-full min-h-0 bg-muted/40">
       <ReactFlow
-        nodes={nodes}
+        nodes={
+          sourceGroup === null
+            ? nodes
+            : nodes.map((node) =>
+                node.type === "prefixGroup" &&
+                (node.data as PrefixGroupNodeData).label === sourceGroup
+                  ? { ...node, zIndex: 1000 }
+                  : node,
+              )
+        }
         edges={edges}
         nodeTypes={nodeTypes}
         nodesDraggable={false}

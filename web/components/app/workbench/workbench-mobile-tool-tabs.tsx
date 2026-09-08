@@ -41,8 +41,6 @@ export function AppWorkbenchMobileToolTabs() {
     if (active) {
       if (tool.contextual && hasContextSlot) {
         setMobileNavigationOpen(!mobileNavigationOpen);
-      } else if (hasToolAction(tool.id)) {
-        invokeToolAction(tool.id);
       }
       return;
     }
@@ -62,18 +60,9 @@ export function AppWorkbenchMobileToolTabs() {
     }
   };
 
-  const toolById = new Map(tools.map((tool) => [tool.id, tool]));
-
   return (
     <div className="no-scrollbar shrink-0 overflow-x-auto border-b bg-background md:hidden">
-      <Tabs
-        value={modeState.activeTool}
-        onValueChange={(value) => {
-          const tool = toolById.get(value as AppWorkbenchTool["id"]);
-          if (tool) activateTool(tool);
-        }}
-        className="block min-w-max gap-0"
-      >
+      <Tabs value={modeState.activeTool} activationMode="manual" className="block min-w-max gap-0">
         <TabsList
           variant="line"
           aria-label={`${navigation.mode} tools`}
@@ -88,9 +77,10 @@ export function AppWorkbenchMobileToolTabs() {
                 ref={active ? activeToolRef : undefined}
                 value={tool.id}
                 className="h-10 flex-none rounded-none px-3 text-[11px] after:bottom-0"
-                onClick={() => {
-                  if (active) activateTool(tool);
-                }}
+                // One activation owner for pointer and Enter/Space clicks.
+                // Radix's earlier value change can rerender before click and
+                // make the same gesture look like a second, active-tab action.
+                onClick={() => activateTool(tool)}
               >
                 <Icon className="size-3.5" />
                 <span>{tool.mobileLabel ?? tool.label}</span>

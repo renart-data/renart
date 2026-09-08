@@ -19,7 +19,7 @@ export function DataBrowserTransferItem({
   onChoose,
 }: {
   children: ReactNode;
-  item?: Pick<DataBrowserTransfer, "kind" | "id" | "label">;
+  item?: Pick<DataBrowserTransfer, "kind" | "id" | "label" | "referenceText">;
   pipelineId?: string;
   environment: string;
   onChoose?: () => void;
@@ -53,6 +53,27 @@ export function DataBrowserTransferItem({
               event.dataTransfer.clearData();
               event.dataTransfer.effectAllowed = "copy";
               event.dataTransfer.setData(DATA_BROWSER_MIME, transfer.token);
+              if (transfer.kind === "table") {
+                // Links otherwise drag as a URL/text fragment. Capture the
+                // actual table row as a compact themed card, like connections.
+                const row = event.currentTarget.firstElementChild;
+                if (row) {
+                  const preview = row.cloneNode(true) as HTMLElement;
+                  preview.className =
+                    "pointer-events-none fixed z-50 w-64 rounded-lg border bg-card p-1 text-card-foreground shadow-lg";
+                  preview.style.left = `${event.clientX + 12}px`;
+                  preview.style.top = `${event.clientY + 12}px`;
+                  preview.setAttribute("aria-hidden", "true");
+                  preview.setAttribute("data-data-browser-drag-preview", "");
+                  preview.inert = true;
+                  document.body.appendChild(preview);
+                  try {
+                    event.dataTransfer.setDragImage(preview, 12, 20);
+                  } finally {
+                    requestAnimationFrame(() => preview.remove());
+                  }
+                }
+              }
             }
           : undefined
       }

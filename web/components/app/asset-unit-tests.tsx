@@ -3,7 +3,7 @@ import { useAtomValue } from "jotai";
 import { Pencil, Play, Plus, Trash2 } from "lucide-react";
 import type { Monaco } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -250,7 +250,10 @@ function UnitTestEditor({
   const [diagnostic, setDiagnostic] = useState("");
   const { monacoTheme } = useWorkspaceTheme();
   const [monaco, setMonaco] = useState<Monaco>();
-  const [path] = useState(() => `renart-unit-tests://fixtures/${crypto.randomUUID()}.yaml`);
+  // Model identity is local UI state, not a security token. React IDs also work
+  // when Renart is opened over plain HTTP on a LAN (no crypto.randomUUID).
+  const editorId = useId();
+  const path = `renart-unit-tests://fixtures/${encodeURIComponent(editorId)}.yaml`;
   const schema = useMemo(() => sqlUnitTestSchema(context), [context]);
   const accepted = useRef(false);
   const dirty = draft !== initial;
