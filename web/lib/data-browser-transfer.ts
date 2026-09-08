@@ -5,7 +5,7 @@ export const DATA_BROWSER_MIME = "application/x-renart-data-browser";
 // Disposable same-window interaction state. Only the nonce enters DataTransfer:
 // no credentials, SQL, file paths, or reusable cross-project authority.
 export type DataBrowserTransfer = {
-  kind: "table" | "connection";
+  kind: "table" | "connection" | "storage";
   id: string;
   label: string;
   token: string;

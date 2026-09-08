@@ -460,6 +460,7 @@ CI verifies that the checked-in inventory is current.
 | @types/unist | 2.0.11, 3.0.3 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @types/use-sync-external-store | 0.0.6 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @ungap/structured-clone | 1.3.3 | ISC | [license](third_party/licenses/dc6d4961d8b6ee747231582ae9c53ce1d66bf76bc9f5a28f554c0e97210953bf.txt) |
+| @vscode/l10n | 0.0.18 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | ansi-to-html | 0.7.2 | MIT | [license](third_party/licenses/f76b01518da28afcbd249c6aa4c03c6ff08cdefb40db4d6d9b5929627980cb9c.txt) |
 | aria-hidden | 1.2.6 | MIT | [license](third_party/licenses/30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9.txt) |
 | bail | 2.0.2 | MIT | [license](third_party/licenses/63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf.txt) |
@@ -528,6 +529,7 @@ CI verifies that the checked-in inventory is current.
 | js-tokens | 4.0.0 | MIT | [license](third_party/licenses/2213d91c606205c71eb051a199478cdc2adde945893404d7f1421436dd6d5cc1.txt) |
 | jsesc | 3.1.0 | MIT | [license](third_party/licenses/483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a.txt) |
 | json5 | 2.2.3 | MIT | [license](third_party/licenses/53e59feb13058722d977c699eb0407c7bce2f93c949b681bbd2ff31698535927.txt) |
+| jsonc-parser | 3.3.1 | MIT | [license](third_party/licenses/d0e26984080b12c7830983ef4de2ec522e1aa94047f2753347953b278e9c66e0.txt) |
 | linkifyjs | 4.3.3 | MIT | [license](third_party/licenses/58e6f3677452cca096ce5328ebf7de37a1406bbeeb2f263c1b2ededc8c7d0228.txt) |
 | longest-streak | 3.1.0 | MIT | [license](third_party/licenses/9f084fac69d8cf1e6ce983ba5a3499c7695ed74a26ec625c38f0fd19fddd5e10.txt) |
 | loose-envify | 1.4.0 | MIT | [license](third_party/licenses/4eb7543b08d955a6d23fcc224601d43ff566e775be918805e26210d7f6eb4893.txt) |
@@ -564,12 +566,19 @@ CI verifies that the checked-in inventory is current.
 | micromark-util-symbol | 2.0.1 | MIT | [license](third_party/licenses/dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb.txt) |
 | micromark-util-types | 2.0.2 | MIT | [license](third_party/licenses/dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb.txt) |
 | monaco-editor | 0.56.0 | MIT | [license](third_party/licenses/33e4ff1a06ef62ba21788ea162564ee8165269a24a9ce6ef301837447eab0ac6.txt) |
+| monaco-languageserver-types | 0.4.1 | MIT | [license](third_party/licenses/2dfbe68133c7e886b8711f4012d67eeab02f44852409f2d35b9c8c9a46d591b0.txt) |
+| monaco-marker-data-provider | 1.2.5 | MIT | [license](third_party/licenses/5cfd57aac48343d56af97fa97028cb107e50de822559891c46cb5742ca804714.txt) |
+| monaco-types | 0.1.2 | MIT | [license](third_party/licenses/5a849276d2f24e8604bbcaabab2b3350de2a82a969f438e9ae1ad52f6c8eef52.txt) |
+| monaco-worker-manager | 2.0.1 | MIT | [license](third_party/licenses/d87a73b164875987b85954e6bf940543e937479ccd725f0138764f97f97b70ef.txt) |
+| monaco-yaml | 5.5.1 | MIT | [license](third_party/licenses/d6a010f8689777efb5a57f6298a374f5cd2849fde423b6f7879c3308f528d890.txt) |
 | ms | 2.1.3 | MIT | [license](third_party/licenses/1662fae9b5314d11cf51284e2dcd1f006a354f7343f08712a730fcff9a359801.txt) |
 | node-releases | 2.0.54 | MIT | [license](third_party/licenses/3706296ed611888111ceccc1dff4712844dea4bde0b185c82d718c3b69895abe.txt) |
 | object-assign | 4.1.1 | MIT | [license](third_party/licenses/6fb9754611c20f6649f68805e8c990e83261f29316e29de9e6cedae607b8634c.txt) |
 | orderedmap | 2.1.1 | MIT | [license](third_party/licenses/869c30f368eb08735e779027b9f4bc9fea2f39624351856aebe42741f0bc0884.txt) |
 | parse-entities | 4.0.2 | MIT | [license](third_party/licenses/5d0698266086f217bb11ea0499d33453e401fe479fb9126ad04e625e63d3557b.txt) |
+| path-browserify | 1.0.1 | MIT | [license](third_party/licenses/a22b9d5763f574e5db347c30acc0b33eaf4846767c03d2e27d012e864e79a824.txt) |
 | picocolors | 1.1.1 | ISC | [license](third_party/licenses/6582629e2979466878f6014313dcc2f3756c9616148682227ce3063dde310750.txt) |
+| prettier | 3.9.5 | MIT | [license](third_party/licenses/b0f2417199889f1c0d28ec4e0244eacf1a15de5819d61f641dd7d8f45153ac9c.txt) |
 | prop-types | 15.8.1 | MIT | [license](third_party/licenses/f657f99d3fb9647db92628e96007aabb46e5f04f33e49999075aab8e250ca7ce.txt) |
 | property-information | 7.2.0 | MIT | [license](third_party/licenses/5d0698266086f217bb11ea0499d33453e401fe479fb9126ad04e625e63d3557b.txt) |
 | prosemirror-changeset | 2.4.1 | MIT | [license](third_party/licenses/7543dfe82fa61d5bb2478c78cbd9dfb2cbd500b6ac2893b24ed925773b67fb70.txt) |
@@ -585,6 +594,7 @@ CI verifies that the checked-in inventory is current.
 | prosemirror-tables | 1.8.5 | MIT | [license](third_party/licenses/d1d2046ebbe6362f9ad8fd4d62e9074f2553f289c0e1de895a650f10ba5f4239.txt) |
 | prosemirror-transform | 1.12.0 | MIT | [license](third_party/licenses/ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8.txt) |
 | prosemirror-view | 1.42.2 | MIT | [license](third_party/licenses/ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8.txt) |
+| proxy-disposable | 1.0.0 | MIT | [license](third_party/licenses/c7e2620a17241e03c13daf7799e6cce99f406b00fd571a680d8364fa4c61b888.txt) |
 | radix-ui | 1.6.2 | MIT | [license](third_party/licenses/0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138.txt) |
 | react | 19.2.7 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
 | react-dom | 19.2.7 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
@@ -635,7 +645,13 @@ CI verifies that the checked-in inventory is current.
 | vfile | 6.0.3 | MIT | [license](third_party/licenses/05811400116ed61f1a7693b78fe8ca6598c155a12f3978e609db4df648a4cb3d.txt) |
 | vfile-message | 4.0.3 | MIT | [license](third_party/licenses/dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb.txt) |
 | victory-vendor | 37.3.6 | MIT AND ISC | [license](third_party/licenses/ada0c4e0c2adbdbe22d6a44a2f762b038fa7e664be9ab023438cb0e76872b0bc.txt) |
+| vscode-jsonrpc | 9.0.2 | MIT | [license](third_party/licenses/ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0.txt) |
+| vscode-languageserver-protocol | 3.18.3 | MIT | [license](third_party/licenses/ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0.txt) |
+| vscode-languageserver-textdocument | 1.0.14 | MIT | [license](third_party/licenses/ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0.txt) |
+| vscode-languageserver-types | 3.18.3 | MIT | [license](third_party/licenses/ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0.txt) |
+| vscode-uri | 3.2.0 | MIT | [license](third_party/licenses/5bf78228f68c7cd7811974f8e98a4c9bec9fdf4adf5c2a3f222184898c669f5b.txt) |
 | w3c-keyname | 2.2.8 | MIT | [license](third_party/licenses/869c30f368eb08735e779027b9f4bc9fea2f39624351856aebe42741f0bc0884.txt) |
 | yallist | 3.1.1 | ISC | [license](third_party/licenses/4ec3d4c66cd87f5c8d8ad911b10f99bf27cb00cdfcff82621956e379186b016b.txt) |
+| yaml | 2.9.0 | ISC | [license](third_party/licenses/5bba27375d93e9119f76c1015f7672cf9ad5f70952296e0842fb2243d6376869.txt) |
 | zustand | 4.5.7 | MIT | [license](third_party/licenses/c1e6e266563517467b1bf874817d23e426f3149252bd7d42758cd697514b8417.txt) |
 | zwitch | 2.0.4 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |

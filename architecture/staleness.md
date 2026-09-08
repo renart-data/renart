@@ -413,7 +413,7 @@ instead of being joined from retained run history, so pruning old runs cannot
 erase the explanation.
 
 Each `AssetStatus` also carries the last run attempt (`last_run_status`,
-`last_run_at`, `last_run_on_current_content` — the latter true when the run's
+`last_run_id`, `last_run_at`, `last_run_on_current_content` — the latter true when the run's
 fingerprint matches the asset's current one) from `renart_asset_runs`,
 orthogonal to the base `status`. The frontend renders both dimensions instead
 of allowing one to replace the other: for example, unchanged built content can
@@ -422,7 +422,10 @@ current version failed shows its base **Edited**/**Never built** badge + **Build
 failed**. A cancelled attempt is likewise separate. This preserves the answer
 to "can I use the existing data?" while also answering "what happened when I
 last tried to build it?" and distinguishes an untested edit from one that was
-run and failed.
+run and failed. Failed/cancelled badges and their hover cards link to that exact
+attempt's existing run route, including the project and asset-event locator.
+The badge itself is a real keyboard/touch/new-tab link; legacy attempts without
+a stored run ID remain informational rather than guessing a run from time.
 
 Running state is transient and asset-scoped. The UI derives materialization
 state from scheduler steps (initial active-run hydration plus `run.step` SSE

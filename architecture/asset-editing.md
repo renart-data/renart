@@ -383,6 +383,41 @@ normal settings Sheet and guard unsaved changes. See
   it opens a preview of the native single-table source-asset import, defaults to
   persisting observed columns, and writes only after confirmation.
 
+## SQL unit test editing and execution
+
+`AssetUnitTests` is mounted on the existing SQL asset Properties → Tests tab,
+addressed by the ordinary `asset-section` target with `section: tests`. It uses
+the current navigation intent machinery; changing the tab does not switch
+Inspect to Output or change an unrelated sidebar. There is no separate editor route.
+The test panel is keyed by asset identity so drafts and late mutation responses
+cannot migrate to another asset while the surrounding workbench stays mounted.
+
+The context endpoint (`GET /api/assets/{id}/unit-tests`) reads canonical
+`unit_tests`, reusable fixture names, upstream schemas and inferred output columns.
+`sql-unit-test-schema.ts` derives a per-document Monaco JSON schema for field
+completion and scalar value checking. The editor uses YAML 1.2 and a locally
+bundled monaco-yaml worker; JSON is only the API transport. The plugin's legacy
+worker handshake is adapted to Monaco 0.56 without changing MonacoEnvironment.
+Providers and marker-model events are scoped to fixture URIs, and no remote
+schemas are fetched. The language service is disposed on editor unmount.
+Unknown schemas and CTE rows stay untyped. Duplicate keys, custom tags, multiple
+documents, nonfinite numbers and unsafe integers are rejected before transport.
+Dirty dialogs have navigation/close guards. Incoming SSE updates never replace
+an open fixture draft; `unit_tests.set` compares its captured revision under the
+existing asset transaction lock and rejects stale saves with 409.
+
+`POST /api/assets/{id}/unit-tests/run` checks the saved revision, compiles fixture
+relations with Bruin's pure-Go compiler/comparator and a native Golyglot Rewriter,
+then uses the existing connection query port. All physical relations must be
+replaced before execution; known unmocked inputs can become typed empty relations,
+but unknown unmocked inputs fail. SELECT-only validation rejects scripts, INTO
+and external table functions. This is not a sandbox for database UDFs.
+The runner does not materialize assets or write fixture tables. It caps elapsed
+time at 60 seconds, 50 tests, fixture JSON at 256 KiB, fixture/assertion rows at
+500 each and query output at 5,000 rows (overflow is an error). Original ORDER BY
+and smaller row limits are preserved. Supported SQL clocks and Jinja dates can
+be frozen; CTE assertions use the same native rewrite/query path.
+
 ## 7. Not built (still intent, from the original concept)
 
 - **Draft persistence layer** (browser/IndexedDB journal recovering unsaved

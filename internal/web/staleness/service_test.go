@@ -473,6 +473,7 @@ func TestEditedThenRunFailedOnCurrentContent(t *testing.T) {
 	s := f.statuses(t, "dev", nil, nil)["a"]
 	assert.Equal(t, StatusStaleEdited, s.Status)
 	assert.Equal(t, "failed", s.LastRunStatus)
+	assert.Equal(t, "run-2", s.LastRunID, "link the failed attempt, not the earlier successful build")
 	assert.True(t, s.LastRunOnCurrentContent, "the failing run was on the edited content")
 }
 
@@ -532,6 +533,7 @@ func TestFreshAssetRetainsFailedQualityOutcome(t *testing.T) {
 	assert.Equal(t, bus.QualityStatusFailed, s.QualityStatus)
 	assert.True(t, s.QualityOnCurrentContent)
 	assert.Equal(t, "quality-run", s.QualityRunID)
+	assert.Equal(t, "quality-run", s.LastRunID)
 	assert.Equal(t, checkedAt, *s.QualityCheckedAt)
 	assert.Equal(t, []bus.QualityCheckFailure{{
 		Kind: bus.QualityCheckKindCustom, Name: "no invalid rows", Blocking: true,

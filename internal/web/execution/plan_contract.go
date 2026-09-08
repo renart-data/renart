@@ -2,6 +2,7 @@ package execution
 
 import (
 	"renart/internal/web/navigationtarget"
+	"renart/internal/web/policy"
 	webtypecheck "renart/internal/web/typecheck"
 )
 
@@ -226,13 +227,23 @@ type Resources struct {
 	Claims    []ResourceClaim `json:"claims"`
 }
 
+// AccessRequirement is review evidence, never an authorization input. Use the
+// existing hashed identity to keep private aliases out of persisted snapshots.
+type AccessRequirement struct {
+	ConnectionKey string        `json:"connection_key"`
+	Effect        policy.Effect `json:"effect"`
+	Operation     string        `json:"operation"`
+}
+
 // renart:web-name PipelinePlanExecutionContract
 type ExecutionContract struct {
-	AssetID               string    `json:"asset_id"`
-	AssetName             string    `json:"asset_name"`
-	ConnectionKeys        []string  `json:"connection_keys"`
-	MutationResources     Resources `json:"mutation_resources"`
-	CoordinationResources Resources `json:"coordination_resources"`
+	AccessRequirements    []AccessRequirement `json:"access_requirements,omitempty"`
+	AccessPolicyIdentity  string              `json:"access_policy_identity,omitempty"`
+	AssetID               string              `json:"asset_id"`
+	AssetName             string              `json:"asset_name"`
+	ConnectionKeys        []string            `json:"connection_keys"`
+	MutationResources     Resources           `json:"mutation_resources"`
+	CoordinationResources Resources           `json:"coordination_resources"`
 }
 
 // renart:web-name PipelinePlanSummary

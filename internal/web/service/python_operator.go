@@ -348,6 +348,12 @@ func (o *renartPythonOperator) startBroker(ctx context.Context, p *pipeline.Pipe
 // runBrokerQuery executes one SDK query on a named project connection,
 // inside this process — the Python side never sees the credentials.
 func (o *renartPythonOperator) runBrokerQuery(ctx context.Context, connectionName, sql string) (*query.QueryResult, error) {
+	// The requested connection may have a different dialect than the asset's
+	// target. Validate again at the actual broker boundary, before resolution.
+	validator := brokerSQLTools{dialect: brokerQueryDialect(o.manager, connectionName)}
+	if err := validator.validateReadOnly(sql); err != nil {
+		return nil, err
+	}
 	conn, err := resolveRuntimeConnection(o.manager, connectionName)
 	if err != nil {
 		return nil, err

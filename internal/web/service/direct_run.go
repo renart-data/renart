@@ -75,6 +75,9 @@ func (e *HybridBruinExecutor) RunAsset(ctx context.Context, req RunAssetRequest,
 		return printer.buffer.Bytes(), err
 	}
 
+	if err := e.checkRenderedConnectionAccess(runCtx, pp.Config, pp.Pipeline, []*pipeline.Asset{pp.Asset}, renderer); err != nil {
+		return printer.buffer.Bytes(), err
+	}
 	var seq *bruinexecutor.Sequential
 	var fullRefreshSeq *bruinexecutor.Sequential
 	if isAPIAsset(pp.Asset) || isLoadAsset(pp.Asset) {
@@ -296,6 +299,9 @@ func (e *HybridBruinExecutor) RunPipeline(ctx context.Context, req RunPipelineRe
 			return printer.buffer.Bytes(), err
 		}
 	}
+	if err := e.checkRenderedConnectionAccess(runCtx, cfg, foundPipeline, foundPipeline.Assets, renderer); err != nil {
+		return printer.buffer.Bytes(), err
+	}
 	seq, fullRefreshSeq, err := buildDirectMainExecutorSequences(
 		manager, renderer, parser, foundPipeline, cfg, e.runRegistry,
 		e.duckDBCoordinator, e.duckDBSessions, e.workspaceRoot,
@@ -445,6 +451,23 @@ func (e *HybridBruinExecutor) runPlannedPipeline(
 			configurationAssets = append(configurationAssets, asset)
 		}
 	}
+	for _, unit := range req.ExecutionUnits {
+		tw, err := ResolveExecutionTimeWindow(string(pp.Pipeline.Schedule), unit.StartDate, unit.EndDate, executionTime)
+		if err != nil {
+			return printer.buffer.Bytes(), err
+		}
+		renderer, err := buildDirectRunAssetRenderer(pp, tw, executionTime, runID)
+		if err != nil {
+			return printer.buffer.Bytes(), err
+		}
+		accessCtx := context.WithValue(ctx, config.EnvironmentNameContextKey, pp.Config.SelectedEnvironmentName)
+		accessCtx = context.WithValue(accessCtx, config.EnvironmentContextKey, pp.Config.SelectedEnvironment)
+		accessCtx = directAssetHookRenderContext(accessCtx, assetByName[unit.AssetName], req.FullRefresh)
+		if err := e.checkRenderedConnectionAccess(accessCtx, pp.Config, pp.Pipeline, []*pipeline.Asset{assetByName[unit.AssetName]}, renderer); err != nil {
+			return printer.buffer.Bytes(), err
+		}
+	}
+
 	if req.PlanVersion >= PipelineExecutionPlanVersionV3 &&
 		req.MaxActiveSteps != effectivePipelineMaxActiveSteps(pp.Pipeline) {
 		return printer.buffer.Bytes(), fmt.Errorf(
@@ -486,7 +509,7 @@ func (e *HybridBruinExecutor) runPlannedPipeline(
 			// execution. Reviewed and recovered runs always carry contracts.
 			req.ExecutionContracts = actualContracts
 		} else if !equalPipelinePlanExecutionContracts(req.ExecutionContracts, actualContracts) {
-			return printer.buffer.Bytes(), errors.New(
+			return printer.buffer.Bytes(), newAPIError(409, "plan_stale",
 				"planned execution connection or resource contract changed during execution",
 			)
 		}
@@ -1088,6 +1111,9 @@ func (e *HybridBruinExecutor) runDirectTask(
 		runErr = e.directTaskGate(taskCtx, instance)
 	}
 	if runErr == nil {
+		runErr = e.checkRuntimeAssetAccess(taskCtx, pl, asset, renderer)
+	}
+	if runErr == nil {
 		connectionNames, connectionErr := directTaskConnectionNames(pl, instance)
 		if connectionErr != nil {
 			runErr = connectionErr
@@ -1096,7 +1122,11 @@ func (e *HybridBruinExecutor) runDirectTask(
 		}
 	}
 	executionSeq := seq
-	if runErr == nil && instance.GetType() == scheduler.TaskInstanceTypeMain && !isAPIAsset(asset) && !isLoadAsset(asset) {
+	readOnlySQLHandled := false
+	if runErr == nil && instance.GetType() == scheduler.TaskInstanceTypeMain {
+		readOnlySQLHandled, runErr = e.runReadOnlySQLTask(taskCtx, pl, asset, renderer, manager, assetWriter)
+	}
+	if runErr == nil && !readOnlySQLHandled && instance.GetType() == scheduler.TaskInstanceTypeMain && !isAPIAsset(asset) && !isLoadAsset(asset) {
 		decision, lifecycleErr := e.prepareMaterializationTarget(
 			taskCtx, pl, asset, manager, fullRefreshSeq, assetWriter,
 		)
@@ -1115,10 +1145,10 @@ func (e *HybridBruinExecutor) runDirectTask(
 			}
 		}
 	}
-	if runErr == nil && executionSeq == nil {
+	if runErr == nil && !readOnlySQLHandled && executionSeq == nil {
 		runErr = fmt.Errorf("direct executor is unavailable for asset %q", asset.Name)
 	}
-	if runErr == nil {
+	if runErr == nil && !readOnlySQLHandled {
 		switch {
 		case isAPIAsset(asset) && instance.GetType() == scheduler.TaskInstanceTypeMain:
 			_, runErr = e.runAPIAsset(taskCtx, pl, asset, renderer, manager, forward)

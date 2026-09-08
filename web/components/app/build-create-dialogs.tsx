@@ -54,7 +54,7 @@ import {
   type SemanticAssetKind,
 } from "./semantic-asset-create-fields";
 import { TemplateCatalog } from "./template-catalog";
-import { WorkspaceConnectionDialog } from "./workspace-connection-dialog";
+import { WorkspaceConnectionDialog } from "./workspace-connection-dialog-lazy";
 
 // Asset kinds the creation dialog can produce, mapped to real backend create
 // calls. Standalone: SQL/Python transforms, HTTP API, Seed, Sensor, and Load.
@@ -151,6 +151,7 @@ export function NewAssetDialog({
   initialExecutableContent,
   initialConnection,
   initialKind,
+  initialLoad,
   onCreated,
 }: {
   open: boolean;
@@ -163,6 +164,7 @@ export function NewAssetDialog({
   initialExecutableContent?: string | null;
   initialConnection?: string | null;
   initialKind?: AssetCreationKind;
+  initialLoad?: { sourceConnection?: string; sourceTable?: string; destinationObject?: string };
   onCreated?: (assetId: string) => void;
 }) {
   const [kind, setKind] = useState<AssetCreationKind>("sql");
@@ -253,9 +255,11 @@ export function NewAssetDialog({
     resetModeRef.current = resetMode;
     setKind(initialKind ?? "sql");
     setConnection(initialConnection?.trim() || downstreamSource?.connection?.trim() || "");
-    setSourceConnection(downstreamSource?.connection?.trim() || "");
-    setSourceTable("");
-    setDestinationObject("");
+    setSourceConnection(
+      initialLoad?.sourceConnection || downstreamSource?.connection?.trim() || "",
+    );
+    setSourceTable(initialLoad?.sourceTable || "");
+    setDestinationObject(initialLoad?.destinationObject || "");
     setAPITemplate("openapi");
     setOpenAPISpecURL("");
     setSensorVariant("");
@@ -267,6 +271,7 @@ export function NewAssetDialog({
     downstreamSource?.connection,
     initialConnection,
     initialKind,
+    initialLoad,
     isDownstream,
     open,
     semanticCapabilities,
@@ -791,6 +796,10 @@ export function NewAssetDialog({
                       onCommit={setDestinationObject}
                     />
                   )}
+                  <FieldDescription>
+                    Nothing is written until this Load asset runs. Review the path to avoid
+                    replacing existing data.
+                  </FieldDescription>
                 </Field>
               ) : null}
               {error ? (

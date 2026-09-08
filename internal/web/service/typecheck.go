@@ -113,6 +113,7 @@ func CheckPipelineAt(
 }
 
 type typeCheckOptions struct {
+	PolicyRoot             string
 	RemoteCatalog          RemoteCatalogProvider
 	Environment            string
 	WorkspaceGraph         *sqllsp.CanonicalGraph
@@ -165,6 +166,11 @@ func checkPipelineAt(
 		assetSnapshot := typeCheckSnapshotWithRemoteCatalog(snapshot, pp, asset, options)
 		connectionEngine := sqllsp.NewEngine(assetSnapshot.Graph)
 		ac := checkAsset(ctx, pp, workspaceRoot, asset, assetSnapshot, connectionEngine)
+		policyRoot := options.PolicyRoot
+		if policyRoot == "" {
+			policyRoot = workspaceRoot
+		}
+		ac.Findings = append(ac.Findings, connectionAccessFindings(ctx, fs, policyRoot, options.Environment, pp, asset, renderer)...)
 		if options.WorkspaceState != nil {
 			sourceText := assetSQLSource(asset)
 			for _, unit := range assetSnapshot.RenderedUnits[asset] {

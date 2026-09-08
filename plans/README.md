@@ -22,7 +22,7 @@ the original.
 | [navigation-workbench-migration.md](navigation-workbench-migration.md)                       | release train 1 implemented on feature branch — convergence/regression gate pending; Data Browser and structure-aware drops remain separate expansion slices                 |
 | [notebook-platform.md](notebook-platform.md)                                                 | core platform implemented — focused release evidence for transfer fidelity, restart/concurrency, performance, accessibility, and authenticated agent-client corpus remains   |
 | [open-project-links.md](open-project-links.md)                                               | investigation — safe docs-to-local open intents, native protocol registration, and hosted routing                                                                            |
-| [object-storage-assets.md](object-storage-assets.md)                                         | partial support + proposal — existing Load S3/GCS browsing, upstream-compatible Seed sources, schema preview, lineage, and storage write safety                              |
+| [object-storage-assets.md](object-storage-assets.md)                                         | Load pickers and S3/SFTP Data Browser handoffs implemented — Seed sources, richer metadata, schema preview, lineage, and broader storage lifecycle remain proposed           |
 | [secret-management.md](secret-management.md)                                                 | local/env provider core and CLI administration implemented — file leases, team providers, and hosted run-scoped access remain                                                |
 | [python-asset-sdk.md](python-asset-sdk.md)                                                   | phases 1–2 + upstream refresh + PyPI publication implemented — credential-free `query()`, ingestr-free uploads, editor/notebook parity; policy and protocol reach items open |
 | [python-cross-connection-policy.md](python-cross-connection-policy.md)                       | proposal — opt-in per-environment connection scopes for Python SDK queries                                                                                                   |
@@ -39,4 +39,6 @@ Recently folded away (git history keeps them): `docs-alpha.md` and
 `remote-table-intellisense.md` → `architecture/sql-lsp.md`;
 `cross-pipeline-dependencies.md` → `architecture/backend.md`,
 `architecture/staleness.md`, `architecture/sql-lsp.md`, and
-`architecture/asset-editing.md`.
+`architecture/asset-editing.md`; `discovery-storage-unit-tests.md` →
+`architecture/sql-discovery.md`, `architecture/backend.md`,
+`architecture/staleness.md`, and `architecture/asset-editing.md`.

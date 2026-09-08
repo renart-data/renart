@@ -137,7 +137,8 @@ import type {
   WebPipeline,
   WorkspaceQueryConnection,
 } from "@/lib/types";
-import type { PipelinePlanSelectionRequest } from "@/lib/generated/api-types";
+import type { DataBrowserObject, PipelinePlanSelectionRequest } from "@/lib/generated/api-types";
+import { storageLoadDraft, type StorageLoadDraft } from "@/lib/storage-load-draft";
 import { cn } from "@/lib/utils";
 import { deploymentLabel } from "@/lib/deployment-label";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
@@ -338,6 +339,7 @@ type BuildContextValue = {
   openNewAssetInGroup: (prefix?: string) => void;
   createDownstreamAsset: (source: { id: string; name: string }, destination?: string) => void;
   createDataBrowserSource: (objectId: string, environment: string) => void;
+  createStorageLoad: (object: DataBrowserObject, upstreamId?: string) => void;
   openInspector: () => void;
   reviewFailedCheck: (assetId: string) => void;
   importExternalRelation: (relationId: string) => void;
@@ -964,6 +966,7 @@ export function AppBuildPage({
   >(null);
   const [newAssetInitialConnection, setNewAssetInitialConnection] = useState<string | null>(null);
   const [newAssetInitialKind, setNewAssetInitialKind] = useState<"load" | undefined>();
+  const [newAssetInitialLoad, setNewAssetInitialLoad] = useState<StorageLoadDraft>();
   const [dataBrowserSource, setDataBrowserSource] = useState<{
     object_id: string;
     environment: string;
@@ -1530,6 +1533,8 @@ export function AppBuildPage({
       setNewAssetPrefix(null);
       setNewAssetInitialExecutableContent(null);
       setNewAssetInitialConnection(null);
+      setNewAssetInitialKind(undefined);
+      setNewAssetInitialLoad(undefined);
       setNewAssetOpen(true);
     });
   };
@@ -1540,6 +1545,8 @@ export function AppBuildPage({
     setNewAssetPrefix(prefix ?? null);
     setNewAssetInitialExecutableContent(null);
     setNewAssetInitialConnection(null);
+    setNewAssetInitialKind(undefined);
+    setNewAssetInitialLoad(undefined);
     setNewAssetOpen(true);
   };
   const createDownstreamAsset = (source: { id: string; name: string }, destination?: string) => {
@@ -1553,6 +1560,32 @@ export function AppBuildPage({
     setNewAssetInitialExecutableContent(null);
     setNewAssetInitialConnection(destination ?? null);
     setNewAssetInitialKind(destination ? "load" : undefined);
+    setNewAssetInitialLoad(undefined);
+    setNewAssetOpen(true);
+  };
+  const createStorageLoad = (object: DataBrowserObject, upstreamId?: string) => {
+    if (object.environment !== effectiveEnvironment || !activePipeline) return;
+    const upstream = upstreamId
+      ? activePipeline.assets.find((asset) => asset.id === upstreamId)
+      : undefined;
+    if (upstreamId && !upstream) return;
+    const sourceConnection = upstream ? effectiveConnectionForAsset(upstream) : undefined;
+    if (upstream && !sourceConnection) return;
+    const draft = storageLoadDraft(
+      object,
+      upstream && sourceConnection
+        ? { name: upstream.name, connection: sourceConnection }
+        : undefined,
+    );
+    if (!draft) return;
+    setDownstreamSource(
+      upstream ? { id: upstream.id, name: upstream.name, connection: sourceConnection! } : null,
+    );
+    setNewAssetPrefix(null);
+    setNewAssetInitialExecutableContent(null);
+    setNewAssetInitialConnection(draft.connection ?? null);
+    setNewAssetInitialKind("load");
+    setNewAssetInitialLoad(draft);
     setNewAssetOpen(true);
   };
   const convertAdhocToAsset = () => {
@@ -1560,6 +1593,8 @@ export function AppBuildPage({
     setNewAssetPrefix(null);
     setNewAssetInitialExecutableContent(adhocQuery);
     setNewAssetInitialConnection(adhocConnection?.name ?? null);
+    setNewAssetInitialKind(undefined);
+    setNewAssetInitialLoad(undefined);
     setNewAssetOpen(true);
   };
 
@@ -1731,6 +1766,7 @@ export function AppBuildPage({
               setDataBrowserSource({ object_id: objectId, environment })
             }
             onLoad={() => {}}
+            onStorage={createStorageLoad}
           >
             <div className="flex h-full min-h-0 items-center justify-center px-3 pb-3">
               <AppPanel className="flex max-w-md flex-col items-center gap-3 p-6 text-center">
@@ -1758,10 +1794,20 @@ export function AppBuildPage({
         />
         <NewAssetDialog
           open={newAssetOpen}
-          onOpenChange={setNewAssetOpen}
+          onOpenChange={(open) => {
+            setNewAssetOpen(open);
+            if (!open) {
+              setNewAssetInitialLoad(undefined);
+              setNewAssetInitialKind(undefined);
+              setNewAssetInitialConnection(null);
+            }
+          }}
           pipelineId={activePipeline.id}
           pipelineName={activePipeline.name}
           existingAssetNames={existingAssetNames}
+          initialKind={newAssetInitialKind}
+          initialConnection={newAssetInitialConnection}
+          initialLoad={newAssetInitialLoad}
           onCreated={revealCreatedAsset}
         />
       </AppPage>
@@ -1790,6 +1836,7 @@ export function AppBuildPage({
     createDownstreamAsset,
     createDataBrowserSource: (objectId, environment) =>
       setDataBrowserSource({ object_id: objectId, environment }),
+    createStorageLoad,
     openInspector: () => setInspectorOpen(true),
     reviewFailedCheck,
     importExternalRelation: setExternalRelationImportId,
@@ -2099,6 +2146,7 @@ export function AppBuildPage({
               setNewAssetInitialExecutableContent(null);
               setNewAssetInitialConnection(null);
               setNewAssetInitialKind(undefined);
+              setNewAssetInitialLoad(undefined);
             }
           }}
           pipelineId={activePipeline?.id}
@@ -2109,6 +2157,7 @@ export function AppBuildPage({
           initialExecutableContent={newAssetInitialExecutableContent}
           initialConnection={newAssetInitialConnection}
           initialKind={newAssetInitialKind}
+          initialLoad={newAssetInitialLoad}
           onCreated={revealCreatedAsset}
         />
         <ExternalRelationImportDialog
@@ -3085,6 +3134,7 @@ function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) =>
     routedAssetId,
     createDownstreamAsset,
     createDataBrowserSource,
+    createStorageLoad,
     openNewAssetInGroup,
     runAssetById,
     deleteAssetById,
@@ -3100,6 +3150,7 @@ function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) =>
       pipelineId={pipelineId}
       assets={pipelineAssets}
       onSource={createDataBrowserSource}
+      onStorage={createStorageLoad}
       onLoad={(assetId, destination) => {
         const source = pipelineAssets.find((asset) => asset.id === assetId);
         if (source) createDownstreamAsset({ id: source.id, name: source.name }, destination);

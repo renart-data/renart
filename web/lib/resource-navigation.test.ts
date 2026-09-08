@@ -19,6 +19,41 @@ const detail = {
 };
 
 describe("resource navigation", () => {
+  it("addresses the actual SQL Tests tab", () => {
+    expect(
+      parseDetail({
+        ...detail,
+        target: { kind: "asset-section", asset_id: "orders", section: "tests" },
+      }).target,
+    ).toEqual({ kind: "asset-section", asset_id: "orders", section: "tests" });
+  });
+  it("round trips storage locators without accepting URLs or traversal", () => {
+    const target = {
+      kind: "data-object",
+      section: "schema",
+      address: {
+        source_kind: "storage",
+        connection: "lake",
+        connection_type: "s3",
+        path: "events/2026/a.csv",
+      },
+    };
+    expect(parseDetail({ ...detail, target }).target).toEqual(target);
+    for (const path of [
+      "../a.csv",
+      "s3://other/a.csv",
+      "a|b",
+      "**/",
+      "/etc/passwd",
+      "a\u0000.csv",
+      "a\t.csv",
+      "a\u0085.csv",
+      "[a].csv",
+    ])
+      expect(() =>
+        parseDetail({ ...detail, target: { ...target, address: { ...target.address, path } } }),
+      ).toThrow();
+  });
   it("addresses every editable column field, not just diagnostic type fixes", () => {
     for (const field of ["type", "description", "primary_key", "update_on_merge", "merge_sql"])
       expect(parseDetail({ ...detail, target: { ...detail.target, field } }).target.field).toBe(

@@ -149,7 +149,7 @@ func (s *SQLService) Databases(ctx context.Context, connectionName, environment 
 		return SQLDatabaseDiscoveryResult{}, &APIError{Status: http.StatusBadRequest, Code: "connection_not_found", Message: fmt.Sprintf("connection '%s' not found", connectionName)}
 	}
 
-	fetcher, ok := conn.(interface {
+	fetcher, ok := sqlDiscoveryAdapter(conn, manager.GetConnectionType(connectionName)).(interface {
 		GetDatabases(ctx context.Context) ([]string, error)
 	})
 	if !ok {
@@ -185,6 +185,7 @@ func (s *SQLService) Tables(ctx context.Context, connectionName, databaseName, e
 	}
 
 	connectionType := strings.TrimSpace(manager.GetConnectionType(connectionName))
+	conn = sqlDiscoveryAdapter(conn, connectionType)
 	tables := make([]SQLDiscoveryTableItem, 0)
 	if fetcherWithSchemas, ok := conn.(interface {
 		GetTablesWithSchemas(ctx context.Context, databaseName string) (map[string][]string, error)

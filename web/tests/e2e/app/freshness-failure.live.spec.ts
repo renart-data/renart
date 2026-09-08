@@ -435,6 +435,7 @@ print("sentinel ok")
           asset_name: string;
           status: string;
           last_run_status?: string;
+          last_run_id?: string;
           last_run_on_current_content?: boolean;
           target_fidelity?: string;
         }>;
@@ -489,6 +490,43 @@ print("sentinel ok")
       timeout: 20000,
     });
     await expect(sentinelNode.locator('[data-last-run="failed"]')).toHaveText("Build failed");
+    const failedRun = (await sentinelStaleness())?.last_run_id;
+    expect(failedRun).toBeTruthy();
+    const badge = sentinelNode.getByRole("link", {
+      name: "Build failed: open run for analytics.sentinel_check",
+    });
+    await badge.hover();
+    const openRun = page.getByRole("link", { name: "Open run", exact: true });
+    await expect(openRun).toBeVisible();
+    const href = await openRun.getAttribute("href");
+    const destination = new URL(href!, liveApp.baseURL);
+    expect(destination.pathname).toBe(`/runs/${failedRun}`);
+    expect(destination.searchParams.get("project")).toBeTruthy();
+    expect(destination.searchParams.get("run_asset")).toBe("analytics.sentinel_check");
+    // No inherited sessionStorage: the URL alone must identify the project/run.
+    const coldContext = await page.context().browser()!.newContext();
+    try {
+      const coldPage = await coldContext.newPage();
+      const runResponse = coldPage.waitForResponse(
+        (response) =>
+          response.url().includes(`/runs/${failedRun}`) && response.url().includes("/api/"),
+      );
+      await coldPage.goto(destination.toString());
+      expect((await runResponse).ok()).toBe(true);
+      await expect(
+        coldPage.getByRole("heading", { name: `Run ${failedRun}`, exact: true }),
+      ).toBeVisible();
+      await expect(
+        coldPage
+          .getByTestId("run-event-row")
+          .filter({ hasText: "analytics.sentinel_check" })
+          .filter({ hasText: "asset_failed" }),
+      ).toBeVisible();
+      await coldPage.getByRole("tab", { name: "Output", exact: true }).click();
+      await expect(coldPage.getByText("sentinel missing").first()).toBeVisible({ timeout: 20000 });
+    } finally {
+      await coldContext.close();
+    }
   });
 
   // Desktop-only: The freshness badge is a desktop sidebar/canvas affordance.

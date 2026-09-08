@@ -45,12 +45,15 @@ export function getDataBrowserChildren(options: {
   );
 }
 
-export function getDataBrowserObject(options: { objectId: string; environment?: string }) {
+export function getDataBrowserObject(
+  options: { objectId: string; environment?: string },
+  signal?: AbortSignal,
+) {
   return fetchJSON<DataBrowserObjectResponse>(
     `/api/data-browser/objects/${encodeURIComponent(options.objectId)}${buildQueryString({
       environment: options.environment,
     })}`,
-    { cache: "no-store" },
+    { cache: "no-store", signal },
   );
 }
 

@@ -33,7 +33,35 @@ Local files are a first-class source: choose the **local** entry and point
 the source at a file path (for example `data/exchange_rates.csv`) to load
 a CSV that lives in your repository.
 
+## Start from the Data Browser
+
+S3-compatible and SFTP connections can be browsed by prefix or folder in
+**Data Browser**. Configure an S3 bucket first; an optional connection path
+acts as its browsing prefix. SFTP lists folders from the server root using the
+existing Sling connection, without Ingestr or a separate FTP integration.
+
+Drag a file or prefix onto the canvas, or choose **Use … in canvas** on mobile
+or with the keyboard. The top target opens a Load source draft. Drop a writable
+prefix or connection after a database asset to create a Load destination draft.
+Review the connection, object path and write mode before saving. Cancelling
+does not create an asset, and saving does not transfer any data.
+
+Storage browsing lists metadata only, up to 500 entries per folder; it does not
+offer SQL previews for objects. Paths containing wildcard or selector characters
+are not shown because Sling would treat them as patterns. A source prefix
+prefills a wildcard; a destination prefix suggests a Parquet filename. Review
+both explicitly, especially when a destination already exists.
+
 ## Write behavior
+
+A **Read-only** connection can be the source, but not the destination. From the
+Data Browser, add an existing table as a **Source** asset, then add a Load asset
+downstream and select a writable connection in **General → Connection**.
+The Source stays externally managed; the Load asset owns the copied target.
+
+Load copies data without deleting it from the source. **Full refresh** changes
+the destination only. Add downstream SQL assets on that destination connection
+to transform the copy.
 
 | Choice | Each run… |
 | --- | --- |

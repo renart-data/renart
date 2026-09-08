@@ -113,7 +113,26 @@ func executionContractForAsset(
 		}
 	}
 	coordination = canonicalPipelinePlanResources(coordination)
+	requirements, accessErr := assetAccessRequirements(pl, asset)
+	// Effect validation belongs to the selected execution set. Snapshot facts
+	// may also describe invalid, unselected assets; they must not block a valid
+	// explicit selection. The final task guard always re-resolves requirements.
+	if accessErr != nil {
+		requirements = nil
+	}
+	accessIdentity, err := connectionAccessIdentity(workspaceRoot, cfg, requirements)
+	if err != nil {
+		return PipelinePlanExecutionContract{}, err
+	}
+	accessRequirements := make([]webexecution.AccessRequirement, 0, len(requirements))
+	for _, requirement := range requirements {
+		accessRequirements = append(accessRequirements, webexecution.AccessRequirement{
+			ConnectionKey: executionConnectionKeys([]string{requirement.Connection})[0], Effect: requirement.Effect, Operation: requirement.Operation,
+		})
+	}
 	return PipelinePlanExecutionContract{
+		AccessRequirements:    accessRequirements,
+		AccessPolicyIdentity:  accessIdentity,
 		AssetID:               identityForPipelineAsset(pl, asset),
 		AssetName:             asset.Name,
 		ConnectionKeys:        executionConnectionKeys(connections),

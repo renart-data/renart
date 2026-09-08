@@ -34,6 +34,7 @@ type Response struct {
 	Embedded
 	Alias EmbeddedAlias `+"`json:\"alias\"`"+`
 	Pointer *Embedded `+"`json:\"pointer,omitempty\"`"+`
+	Rows []string `+"`json:\"rows,omitzero\"`"+`
 	States map[string][]Status `+"`json:\"states\"`"+`
 	CreatedAt time.Time `+"`json:\"created_at\"`"+`
 	NoTag string
@@ -50,6 +51,7 @@ type Response struct {
 		`  id: string;`,
 		`  alias: Embedded;`,
 		`  pointer?: Embedded;`,
+		`  rows?: string[];`,
 		`  states: Record<string, Status[]>;`,
 		`  created_at: string;`,
 		`  NoTag: string;`,

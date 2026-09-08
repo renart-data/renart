@@ -64,6 +64,7 @@ tabs next to the editor:
   `not_null` or `unique`; use **Sync schema** after the SQL changes to compare
   the query, saved declaration, and optional current table.
 - **Checks** — column checks and custom SQL checks.
+- **Tests** — mock inputs and assertions for the SQL itself, before materialization.
 
 Available write modes depend on the database. See
 [Supported platforms](/docs/reference/supported-platforms/) before choosing a target.
@@ -83,6 +84,44 @@ Renart warns and preserves the configured strategy instead of guessing.
 **Inspect** previews the query's result without materializing its target. The
 **Type check** tab verifies that the declared columns match what the query
 actually produces — the same check `renart type-check` runs in CI.
+
+## SQL unit tests
+
+Open **Properties → Tests → Add test**. Write the fixture in YAML; the editor
+suggests upstream column names and checks values against their declared or inferred SQL
+types. Unknown schemas remain untyped; Renart does not guess their columns.
+
+For a query that sums `amount` from `raw.orders`, a small test could be:
+
+```yaml
+name: Two orders add up
+inputs:
+  - asset: raw.orders
+    rows:
+      - amount: 10
+      - amount: 20
+expected:
+  rows:
+    - total: 30
+  match: exact
+```
+
+Save the test, then choose **Run tests**. Renart flushes pending editor saves
+and runs the saved SELECT on the asset's connection in the selected environment.
+Fixtures replace source relations; the real asset is not materialized. Tests
+do not fall back to reading an unknown, unmocked table. They still execute SQL
+on that connection, so normal warehouse permissions and query costs apply.
+
+Use `expected.count` to assert a row count, `match: "exact"` to reject extra
+rows, or `order: "strict"` when the query has a deterministic `ORDER BY`.
+Expected rows can assert only the columns you care about. Existing reusable
+pipeline fixtures, variable overrides, CTE assertions and `execution_time`
+are supported. CTE row types are not inferred in the fixture editor.
+
+The runner currently accepts one SELECT, not SQL scripts or write statements.
+External table functions must be represented as mock inputs. Runs have a
+60-second deadline; fixtures and assertions allow 500 rows each and results
+are limited to 5,000 rows. An oversized result is an error, not a partial pass.
 
 ## Related
 

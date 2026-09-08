@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -242,8 +243,11 @@ func TestOverlayCLIEnvironmentReplacesOnlyExactKeys(t *testing.T) {
 func writeCLISecretsWorkspace(t *testing.T, sourceVariable string) string {
 	t.Helper()
 	root := t.TempDir()
+	// Keep parent repositories (including one in TMPDIR) out of CLI discovery.
+	output, err := exec.Command("git", "init", "--quiet", root).CombinedOutput()
+	require.NoError(t, err, "%s", output)
 	configService := service.NewConfigService(root, filepath.Join(root, ".bruin.yml"))
-	_, err := configService.CreateConnectionAndPersist(
+	_, err = configService.CreateConnectionAndPersist(
 		t.Context(),
 		service.UpsertWorkspaceConnectionParams{
 			EnvironmentName: "default",
@@ -266,5 +270,11 @@ func writeCLISecretsWorkspace(t *testing.T, sourceVariable string) string {
 		},
 	)
 	require.NoError(t, err)
+	loaded, loadedPath, err := configService.LoadReadOnly()
+	require.NoError(t, err)
+	require.Equal(t, loadedPath, resolveConfigFilePath(root), "CLI must use the explicitly selected workspace configuration")
+	response := configService.BuildResponse(loadedPath, loaded)
+	require.Len(t, response.Environments, 1)
+	require.Len(t, response.Environments[0].Connections, 1, "fixture connection must survive persistence")
 	return root
 }

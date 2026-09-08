@@ -43,6 +43,9 @@ type AssetTransaction struct {
 	HookPhase string `json:"hook_phase,omitempty"`
 	HookIndex *int   `json:"hook_index,omitempty"`
 	HookQuery string `json:"hook_query,omitempty"`
+
+	UnitTests                 []webmodel.SQLUnitTest `json:"unit_tests,omitempty"`
+	ExpectedUnitTestsRevision string                 `json:"expected_unit_tests_revision,omitempty"`
 }
 
 // TransactionDependency describes a dependency to add manually.
@@ -51,14 +54,16 @@ type TransactionDependency = webmodel.TransactionDependency
 // AssetTransactionResult is the post-transaction asset state the UI needs to
 // refresh its cards.
 type AssetTransactionResult struct {
-	Status         string                    `json:"status"`
-	URI            string                    `json:"uri,omitempty"`
-	Upstreams      []string                  `json:"upstreams"`
-	Columns        []WorkspaceColumn         `json:"columns"`
-	CustomChecks   []webmodel.CustomCheck    `json:"custom_checks"`
-	PreHooks       []string                  `json:"pre_hooks"`
-	PostHooks      []string                  `json:"post_hooks"`
-	ReconcileItems []assetmeta.ReconcileItem `json:"reconcile_items,omitempty"`
+	Status            string                    `json:"status"`
+	URI               string                    `json:"uri,omitempty"`
+	Upstreams         []string                  `json:"upstreams"`
+	Columns           []WorkspaceColumn         `json:"columns"`
+	CustomChecks      []webmodel.CustomCheck    `json:"custom_checks"`
+	PreHooks          []string                  `json:"pre_hooks"`
+	PostHooks         []string                  `json:"post_hooks"`
+	UnitTests         []webmodel.SQLUnitTest    `json:"unit_tests"`
+	UnitTestsRevision string                    `json:"unit_tests_revision"`
+	ReconcileItems    []assetmeta.ReconcileItem `json:"reconcile_items,omitempty"`
 }
 
 // Supported transaction types.
@@ -84,6 +89,7 @@ const (
 	TxMaterializationClusterByClear   = "materialization.cluster_by.clear"
 	TxHookUpsert                      = "hook.upsert"
 	TxHookRemove                      = "hook.remove"
+	TxUnitTestsSet                    = "unit_tests.set"
 )
 
 // ApplyAssetTransaction applies a single semantic transaction to an asset,
@@ -129,18 +135,31 @@ func (s *AssetService) ApplyAssetTransaction(ctx context.Context, assetID string
 	}
 
 	return AssetTransactionResult{
-		Status:       "ok",
-		URI:          strings.TrimSpace(asset.URI),
-		Upstreams:    upstreamNames(asset.Upstreams),
-		Columns:      PipelineColumnsToModelColumns(asset.Columns),
-		CustomChecks: PipelineCustomChecksToModelCustomChecks(asset.CustomChecks),
-		PreHooks:     pipelineHookQueries(asset.Hooks.Pre),
-		PostHooks:    pipelineHookQueries(asset.Hooks.Post),
+		Status:            "ok",
+		URI:               strings.TrimSpace(asset.URI),
+		Upstreams:         upstreamNames(asset.Upstreams),
+		Columns:           PipelineColumnsToModelColumns(asset.Columns),
+		CustomChecks:      PipelineCustomChecksToModelCustomChecks(asset.CustomChecks),
+		PreHooks:          pipelineHookQueries(asset.Hooks.Pre),
+		PostHooks:         pipelineHookQueries(asset.Hooks.Post),
+		UnitTests:         pipelineUnitTestsToModel(asset.UnitTests),
+		UnitTestsRevision: unitTestsRevision(asset.UnitTests),
 	}, nil
 }
 
 func applyTransactionToAsset(asset *pipeline.Asset, meta *assetmeta.RenartMeta, tx AssetTransaction) *APIError {
 	switch tx.Type {
+	case TxUnitTestsSet:
+		if schemaPolicyForAsset(asset).Kind != assetSchemaKindSQL {
+			return badRequestError("unit_tests_unsupported", "Unit tests require a SQL asset.")
+		}
+		if tx.ExpectedUnitTestsRevision == "" || tx.ExpectedUnitTestsRevision != unitTestsRevision(asset.UnitTests) {
+			return &APIError{Status: 409, Code: "unit_tests_conflict", Message: "These tests changed outside this editor. Reload them before saving."}
+		}
+		if err := validateSQLUnitTests(tx.UnitTests); err != nil {
+			return badRequestError("invalid_unit_tests", err.Error())
+		}
+		asset.UnitTests = modelUnitTestsToPipeline(tx.UnitTests)
 	case TxAssetURISet:
 		asset.URI = strings.TrimSpace(tx.AssetURI)
 

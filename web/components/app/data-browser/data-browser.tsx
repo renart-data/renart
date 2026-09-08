@@ -57,7 +57,7 @@ import {
   friendlyConnectionType,
   normalizeConnectionType,
 } from "../connection-type-icon";
-import { WorkspaceConnectionDialog } from "../workspace-connection-dialog";
+import { WorkspaceConnectionDialog } from "../workspace-connection-dialog-lazy";
 import { DataBrowserTransferItem } from "./data-browser-transfer-item";
 import {
   AppContextSidebarTransition,
@@ -69,6 +69,7 @@ type BrowserLevel = {
   parentId?: string;
   label: string;
   nodes: DataBrowserNode[];
+  truncated?: boolean;
 };
 
 // A mobile Sheet unmounts its content when closed for canvas placement. Preserve
@@ -270,7 +271,12 @@ function useDataBrowser(environment: string, enabled: boolean) {
           parentId,
           environment,
         });
-        return { parentId, label, nodes: response.nodes } satisfies BrowserLevel;
+        return {
+          parentId,
+          label,
+          nodes: response.nodes,
+          truncated: response.truncated,
+        } satisfies BrowserLevel;
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Could not browse this data source.");
         return null;
@@ -477,6 +483,14 @@ function DataBrowserNavigator({
               <AlertDescription>{browser.error}</AlertDescription>
             </Alert>
           ) : null}
+          {browser.currentLevel?.truncated ? (
+            <p role="status" className="mb-2 px-2 text-xs text-muted-foreground">
+              Showing the first 500 objects.
+              {browser.selectedConnection?.source_kind === "storage"
+                ? " Narrow the storage prefix in the connection settings to browse a smaller location."
+                : " Choose a smaller namespace to see more specific results."}
+            </p>
+          ) : null}
           {browser.loading && !browser.currentLevel ? (
             <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
               <Spinner /> Loading data sources…
@@ -499,7 +513,9 @@ function DataBrowserNavigator({
                     environment={environment}
                     onChoose={onChooseForCanvas}
                     item={
-                      connection.source_kind === "warehouse"
+                      (connection.source_kind === "warehouse" ||
+                        connection.source_kind === "storage") &&
+                      connection.access_mode !== "read_only"
                         ? { kind: "connection", id: connection.name, label: connection.name }
                         : undefined
                     }
@@ -512,7 +528,14 @@ function DataBrowserNavigator({
                           ? "Files inside this project"
                           : friendlyConnectionType(connection.type)
                       }
-                      trailing={<ChevronRight className="size-3.5" />}
+                      trailing={
+                        <span className="flex items-center gap-1">
+                          {connection.access_mode === "read_only" ? (
+                            <span className="text-[10px] text-muted-foreground">Read-only</span>
+                          ) : null}
+                          <ChevronRight className="size-3.5" />
+                        </span>
+                      }
                       onClick={() => void onSelectConnection(connection)}
                     />
                   </DataBrowserTransferItem>
@@ -608,24 +631,25 @@ function NodeList({
         );
         const className =
           "group flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-accent";
-        const row = node.address ? (
-          <ResourceLink
-            key={node.id}
-            target={{ kind: "data-object", address: node.address, section: "schema" }}
-            className={className}
-          >
-            {content}
-          </ResourceLink>
-        ) : (
-          <button
-            key={node.id}
-            type="button"
-            className={className}
-            onClick={() => void onOpen(node)}
-          >
-            {content}
-          </button>
-        );
+        const row =
+          node.address && node.node_type !== "namespace" ? (
+            <ResourceLink
+              key={node.id}
+              target={{ kind: "data-object", address: node.address, section: "schema" }}
+              className={className}
+            >
+              {content}
+            </ResourceLink>
+          ) : (
+            <button
+              key={node.id}
+              type="button"
+              className={className}
+              onClick={() => void onOpen(node)}
+            >
+              {content}
+            </button>
+          );
         return (
           <DataBrowserTransferItem
             key={node.id}
@@ -635,7 +659,9 @@ function NodeList({
             item={
               node.address?.source_kind === "warehouse" && node.object_kind === "table"
                 ? { kind: "table", id: node.id, label: node.label }
-                : undefined
+                : node.address?.source_kind === "storage"
+                  ? { kind: "storage", id: node.id, label: node.label }
+                  : undefined
             }
           >
             {row}
@@ -754,128 +780,136 @@ function DataBrowserDetail({
               <AlertDescription>{object.warning}</AlertDescription>
             </Alert>
           ) : null}
-          <Tabs
-            value={section}
-            onValueChange={(value) => onSectionChange?.(value as "schema" | "rows")}
-            className="min-h-0 flex-1 gap-0"
-          >
-            <div className="flex min-h-11 shrink-0 items-center justify-between gap-2 border-b px-3">
-              <TabsList variant="line" className="h-10 rounded-none p-0">
-                <TabsTrigger value="rows" className="rounded-none">
-                  <Rows3 /> Preview
-                </TabsTrigger>
-                <TabsTrigger value="schema" className="rounded-none">
-                  <Columns3 /> Columns
-                  <Badge variant="secondary" className="ml-0.5">
-                    {object.columns.length}
-                  </Badge>
-                </TabsTrigger>
-              </TabsList>
-              <Button
-                size="sm"
-                onClick={() => {
-                  onSectionChange?.("rows");
-                  void browser.runPreview();
-                }}
-                disabled={!object.capabilities.preview_rows || browser.previewLoading}
-              >
-                {browser.previewLoading ? <Spinner /> : <Rows3 />}
-                Preview rows
-              </Button>
+          {object.address?.source_kind === "storage" ? (
+            <div className="p-4 text-sm text-muted-foreground">
+              {object.kind === "prefix" ? "Storage prefix" : "Storage object"} · metadata only. Use
+              it in the pipeline canvas to create a Load asset. Browsing does not read or transfer
+              its contents.
             </div>
-            <TabsContent value="rows" className="min-h-0 flex-1 p-0">
-              {browser.preview ? (
-                <div className="flex h-full min-h-0 flex-col">
-                  <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5 text-[10px] text-muted-foreground">
-                    <span>
-                      {browser.preview.rows.length} rows · {browser.preview.elapsed_ms} ms
-                    </span>
-                    {browser.preview.truncated ? <span>Preview truncated</span> : null}
-                  </div>
-                  <div className="min-h-0 flex-1">
-                    <VirtualDataTable
-                      ariaLabel={`${object.name} preview`}
-                      columns={browser.preview.columns}
-                      rows={browser.preview.rows}
-                      height="100%"
-                      frameless
-                    />
-                  </div>
-                </div>
-              ) : (
-                <Empty className="border-0">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <Rows3 />
-                    </EmptyMedia>
-                    <EmptyTitle>No rows loaded</EmptyTitle>
-                    <EmptyDescription>
-                      Preview up to 100 rows. Renart builds the read-only query on the server.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              )}
-            </TabsContent>
-            <TabsContent value="schema" className="min-h-0 flex-1 overflow-auto p-0">
-              {object.columns.length > 0 ? (
-                <div className="divide-y">
-                  {object.columns.map((column, index) => (
-                    <div
-                      key={`${column.name}:${index}`}
-                      tabIndex={focusedColumn === column.name ? -1 : undefined}
-                      data-focused-column={focusedColumn === column.name || undefined}
-                      ref={(element) => {
-                        if (
-                          element &&
-                          focusedColumn === column.name &&
-                          lastFocus.current !== focusKey
-                        ) {
-                          lastFocus.current = focusKey;
-                          element.focus({ preventScroll: true });
-                          element.scrollIntoView({ block: "nearest" });
-                        }
-                      }}
-                      className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,auto)] gap-3 px-4 py-2 text-xs data-[focused-column=true]:bg-primary/10 data-[focused-column=true]:ring-inset data-[focused-column=true]:ring-1 data-[focused-column=true]:ring-primary"
-                    >
-                      <span className="truncate font-mono">
-                        {object.address ? (
-                          <ResourceLink
-                            target={{
-                              kind: "data-object",
-                              address: object.address,
-                              section: "schema",
-                              column: column.name,
-                            }}
-                            environment={object.environment}
-                            className="hover:underline"
-                          >
-                            {column.name}
-                          </ResourceLink>
-                        ) : (
-                          column.name
-                        )}
+          ) : (
+            <Tabs
+              value={section}
+              onValueChange={(value) => onSectionChange?.(value as "schema" | "rows")}
+              className="min-h-0 flex-1 gap-0"
+            >
+              <div className="flex min-h-11 shrink-0 items-center justify-between gap-2 border-b px-3">
+                <TabsList variant="line" className="h-10 rounded-none p-0">
+                  <TabsTrigger value="rows" className="rounded-none">
+                    <Rows3 /> Preview
+                  </TabsTrigger>
+                  <TabsTrigger value="schema" className="rounded-none">
+                    <Columns3 /> Columns
+                    <Badge variant="secondary" className="ml-0.5">
+                      {object.columns.length}
+                    </Badge>
+                  </TabsTrigger>
+                </TabsList>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    onSectionChange?.("rows");
+                    void browser.runPreview();
+                  }}
+                  disabled={!object.capabilities.preview_rows || browser.previewLoading}
+                >
+                  {browser.previewLoading ? <Spinner /> : <Rows3 />}
+                  Preview rows
+                </Button>
+              </div>
+              <TabsContent value="rows" className="min-h-0 flex-1 p-0">
+                {browser.preview ? (
+                  <div className="flex h-full min-h-0 flex-col">
+                    <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5 text-[10px] text-muted-foreground">
+                      <span>
+                        {browser.preview.rows.length} rows · {browser.preview.elapsed_ms} ms
                       </span>
-                      <span className="truncate text-right font-mono text-muted-foreground">
-                        {column.type || "unknown"}
-                      </span>
+                      {browser.preview.truncated ? <span>Preview truncated</span> : null}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <Empty className="border-0">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <Columns3 />
-                    </EmptyMedia>
-                    <EmptyTitle>No schema available</EmptyTitle>
-                    <EmptyDescription>
-                      This connection could not provide column metadata for the selected object.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                </Empty>
-              )}
-            </TabsContent>
-          </Tabs>
+                    <div className="min-h-0 flex-1">
+                      <VirtualDataTable
+                        ariaLabel={`${object.name} preview`}
+                        columns={browser.preview.columns}
+                        rows={browser.preview.rows}
+                        height="100%"
+                        frameless
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <Empty className="border-0">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <Rows3 />
+                      </EmptyMedia>
+                      <EmptyTitle>No rows loaded</EmptyTitle>
+                      <EmptyDescription>
+                        Preview up to 100 rows. Renart builds the read-only query on the server.
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                )}
+              </TabsContent>
+              <TabsContent value="schema" className="min-h-0 flex-1 overflow-auto p-0">
+                {object.columns.length > 0 ? (
+                  <div className="divide-y">
+                    {object.columns.map((column, index) => (
+                      <div
+                        key={`${column.name}:${index}`}
+                        tabIndex={focusedColumn === column.name ? -1 : undefined}
+                        data-focused-column={focusedColumn === column.name || undefined}
+                        ref={(element) => {
+                          if (
+                            element &&
+                            focusedColumn === column.name &&
+                            lastFocus.current !== focusKey
+                          ) {
+                            lastFocus.current = focusKey;
+                            element.focus({ preventScroll: true });
+                            element.scrollIntoView({ block: "nearest" });
+                          }
+                        }}
+                        className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,auto)] gap-3 px-4 py-2 text-xs data-[focused-column=true]:bg-primary/10 data-[focused-column=true]:ring-inset data-[focused-column=true]:ring-1 data-[focused-column=true]:ring-primary"
+                      >
+                        <span className="truncate font-mono">
+                          {object.address ? (
+                            <ResourceLink
+                              target={{
+                                kind: "data-object",
+                                address: object.address,
+                                section: "schema",
+                                column: column.name,
+                              }}
+                              environment={object.environment}
+                              className="hover:underline"
+                            >
+                              {column.name}
+                            </ResourceLink>
+                          ) : (
+                            column.name
+                          )}
+                        </span>
+                        <span className="truncate text-right font-mono text-muted-foreground">
+                          {column.type || "unknown"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Empty className="border-0">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <Columns3 />
+                      </EmptyMedia>
+                      <EmptyTitle>No schema available</EmptyTitle>
+                      <EmptyDescription>
+                        This connection could not provide column metadata for the selected object.
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                )}
+              </TabsContent>
+            </Tabs>
+          )}
         </>
       )}
     </section>

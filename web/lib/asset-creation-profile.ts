@@ -14,7 +14,7 @@ import type {
 } from "@/lib/types";
 
 export type AssetCreationKind = "sql" | "python" | "api" | "load" | "seed" | "sensor";
-export type AssetCreationRole = "target" | "source" | "destination";
+export type AssetCreationRole = "target" | "read_target" | "source" | "destination";
 
 export function assetCreationKindForType(assetType: string): AssetCreationKind | null {
   const normalized = assetType.trim().toLowerCase();

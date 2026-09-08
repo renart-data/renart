@@ -18,7 +18,8 @@ func (s *Service) Resolve(ctx context.Context, request ResolveRequest) (ObjectRe
 			return ObjectResponse{}, badRequest("data_browser_address_invalid", "This data address is invalid.")
 		}
 	}
-	if request.Environment == "" || (a.SourceKind != "warehouse" && a.SourceKind != "local_files") ||
+	if request.Environment == "" || (a.SourceKind != "warehouse" && a.SourceKind != "local_files" && a.SourceKind != "storage") ||
+		(a.SourceKind == "storage" && (a.Connection == "" || a.ConnectionType == "" || a.Path == "" || a.Database != "" || a.Schema != "" || a.Name != "")) ||
 		(a.SourceKind == "warehouse" && (a.Connection == "" || a.ConnectionType == "" || a.Name == "" || a.Path != "")) ||
 		(a.SourceKind == "local_files" && (a.Path == "" || a.Connection != "" || a.ConnectionType != "" || a.Database != "" || a.Schema != "" || a.Name != "")) {
 		return ObjectResponse{}, badRequest("data_browser_address_invalid", "This data address is incomplete or ambiguous.")
@@ -40,6 +41,13 @@ func (s *Service) Resolve(ctx context.Context, request ResolveRequest) (ObjectRe
 		return ObjectResponse{}, &apperror.Error{Status: http.StatusNotFound, Code: "data_browser_connection_not_found", Message: "The linked data source is missing or ambiguous in this environment."}
 	}
 	ref, _ := decodeRef(candidates[0].ID)
+	if a.SourceKind == "storage" {
+		ref.Kind, ref.Path = "storage_object", a.Path
+		if strings.HasSuffix(a.Path, "/") {
+			ref.Kind = "storage_prefix"
+		}
+		return s.Object(ctx, encodeRef(ref), request.Environment)
+	}
 	if a.SourceKind == "local_files" {
 		ref.Kind, ref.Path = "file", a.Path
 		return s.Object(ctx, encodeRef(ref), request.Environment)
@@ -78,6 +86,9 @@ func tableRef(connection objectRef, table Table, database string) objectRef {
 }
 
 func addressForRef(ref objectRef) *dataaddress.Address {
+	if ref.SourceKind == "storage" && (ref.Kind == "storage_object" || ref.Kind == "storage_prefix") {
+		return &dataaddress.Address{SourceKind: "storage", Connection: ref.Connection, ConnectionType: ref.ConnectionType, Path: ref.Path}
+	}
 	if ref.Kind == "file" {
 		return &dataaddress.Address{SourceKind: "local_files", Path: ref.Path}
 	}

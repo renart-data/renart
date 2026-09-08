@@ -26,6 +26,7 @@ import {
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 import { ResourceLink } from "./resource-link";
 import { WorkspaceConnectionFormFields } from "@/components/workspace-connection-form-fields";
+import { ConnectionAccessPreview } from "@/components/app/connection-access-preview";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -980,6 +981,10 @@ export function AppProjectConnectionsPage({
       ) : null}
       <SettingsStatus message={workspaceConfigStatusMessage} tone={workspaceConfigStatusTone} />
       <SecretBindingsAlert message={workspaceConfig?.secret_bindings_error} />
+      <SecretBindingsAlert
+        title="Connection access needs attention"
+        message={workspaceConfig?.connection_policy_error}
+      />
       {workspaceConfig?.secret_vault ? <LocalVaultCard settings={settings} /> : null}
       {normalizedConfigEnvironments.length === 0 ? (
         <SettingsCard title="Connections">
@@ -1266,6 +1271,9 @@ function ConnectionRow({
         {connection.name}
       </span>
       <IntegrationBadge name={connection.type} />
+      {connection.effective_access_mode === "read_only" ? (
+        <Badge variant="outline">Read-only</Badge>
+      ) : null}
       {connection.load_category ? (
         <Badge variant="secondary">{connection.load_category}</Badge>
       ) : null}
@@ -1300,6 +1308,7 @@ function ConnectionSheet({
   const [dirty, setDirty] = useState(false);
   const acceptingSave = useRef(false);
   const [snapshot] = useState(normalizedConfigEnvironments);
+  const [configSnapshot] = useState(workspaceConfig);
   useBlocker({
     shouldBlockFn: ({ current, next }) => {
       const a = current.search as { environment?: string; connection?: string };
@@ -1339,7 +1348,7 @@ function ConnectionSheet({
           ?.connections.find((connection) => connection.name === state.connection)?.type
       : undefined;
   const connectionTypes = useMemo(() => {
-    const all = workspaceConfig?.connection_types ?? [];
+    const all = configSnapshot?.connection_types ?? [];
     const visible = visibleConnectionTypes(all, ingestrEnabled);
     if (editedConnectionType && !visible.some((type) => type.type_name === editedConnectionType)) {
       const edited = all.find((type) => type.type_name === editedConnectionType);
@@ -1348,7 +1357,7 @@ function ConnectionSheet({
       }
     }
     return visible;
-  }, [editedConnectionType, ingestrEnabled, workspaceConfig?.connection_types]);
+  }, [editedConnectionType, ingestrEnabled, configSnapshot?.connection_types]);
   const [validateBusy, setValidateBusy] = useState(false);
   const [validateMessage, setValidateMessage] = useState<string | null>(null);
   const [validateTone, setValidateTone] = useState<"error" | "success" | null>(null);
@@ -1359,6 +1368,7 @@ function ConnectionSheet({
   }, [state]);
 
   const form = useWorkspaceConnectionForm({
+    policyRevision: configSnapshot?.connection_policy_revision,
     connectionTypes: connectionTypes,
     defaultEnvironment: workspaceConfig?.default_environment,
     environments: snapshot,
@@ -1389,6 +1399,7 @@ function ConnectionSheet({
         type: form.connectionForm.type,
         values: form.connectionForm.values,
         secret_changes: form.connectionForm.secretChanges,
+        access_mode: form.connectionForm.accessMode,
       });
       setValidateMessage(response.message ?? "Connection validated.");
       setValidateTone("success");
@@ -1442,6 +1453,7 @@ function ConnectionSheet({
         >
           <div className="grid gap-4" onChangeCapture={() => setDirty(true)}>
             {focusedField &&
+            focusedField !== "access_mode" &&
             !form.selectedConnectionType?.fields.some((f) => f.name === focusedField) ? (
               <p role="alert">The linked field no longer exists.</p>
             ) : null}
@@ -1452,6 +1464,12 @@ function ConnectionSheet({
               />
             ) : null}
             <SecretBindingsAlert message={workspaceConfig?.secret_bindings_error} />
+            {state?.mode === "edit" && form.connectionForm.accessMode === "read_only" ? (
+              <ConnectionAccessPreview
+                environment={form.connectionForm.environmentName}
+                connection={state.connection}
+              />
+            ) : null}
             <WorkspaceConnectionFormFields
               focusedField={focusedField}
               onFieldFocus={(field) => {
@@ -1483,6 +1501,9 @@ function ConnectionSheet({
               validateMessage={validateMessage}
               validateTone={validateTone}
               showActions={false}
+              onAccessModeChange={(accessMode) =>
+                changeForm((current) => ({ ...current, accessMode }))
+              }
               onEnvironmentChange={(value) =>
                 changeForm((current) => ({ ...current, environmentName: value }))
               }
@@ -1611,13 +1632,19 @@ function SettingsStatus({
   );
 }
 
-function SecretBindingsAlert({ message }: { message?: string }) {
+function SecretBindingsAlert({
+  message,
+  title = "Secret bindings need attention",
+}: {
+  message?: string;
+  title?: string;
+}) {
   if (!message) {
     return null;
   }
   return (
     <Alert variant="destructive">
-      <AlertTitle>Secret bindings need attention</AlertTitle>
+      <AlertTitle>{title}</AlertTitle>
       <AlertDescription className="whitespace-pre-wrap">{message}</AlertDescription>
     </Alert>
   );

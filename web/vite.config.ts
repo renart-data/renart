@@ -113,6 +113,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname),
+      // monaco-worker-manager still uses Monaco's pre-0.56 package path.
+      "monaco-editor/esm/vs/editor/editor.worker.js":
+        require.resolve("monaco-editor/editor/editor.worker.js"),
     },
   },
   server: {

@@ -55,6 +55,7 @@ export function WorkspaceConnectionDialog({
   const [saveError, setSaveError] = useState("");
 
   const form = useWorkspaceConnectionForm({
+    policyRevision: settings.workspaceConfig?.connection_policy_revision,
     connectionTypes,
     defaultEnvironment: environment,
     environments: settings.normalizedConfigEnvironments,
@@ -94,6 +95,7 @@ export function WorkspaceConnectionDialog({
         type: form.connectionForm.type,
         values: form.connectionForm.values,
         secret_changes: form.connectionForm.secretChanges,
+        access_mode: form.connectionForm.accessMode,
       });
       setValidateMessage(response.message ?? "Connection validated.");
       setValidateTone("success");
@@ -152,6 +154,9 @@ export function WorkspaceConnectionDialog({
               validateMessage={validateMessage}
               validateTone={validateTone}
               showActions={false}
+              onAccessModeChange={(accessMode) =>
+                form.setConnectionForm((current) => ({ ...current, accessMode }))
+              }
               onEnvironmentChange={() => {}}
               onFieldValueChange={(fieldName, value) =>
                 form.setConnectionForm((current) => ({

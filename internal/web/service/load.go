@@ -155,6 +155,14 @@ func resolveLoadConnectionURI(manager config.ConnectionGetter, connectionName st
 	}
 	if details, ok := manager.(config.ConnectionDetailsGetter); ok {
 		switch connection := details.GetConnectionDetails(name).(type) {
+		case *config.S3Connection:
+			return slingS3ConnectionPayload(*connection)
+		case config.S3Connection:
+			return slingS3ConnectionPayload(connection)
+		case *config.SFTPConnection:
+			return slingSFTPConnectionURI(*connection)
+		case config.SFTPConnection:
+			return slingSFTPConnectionURI(connection)
 		case *config.ClickHouseConnection:
 			return slingClickHouseConnectionURI(*connection)
 		case config.ClickHouseConnection:
@@ -164,12 +172,24 @@ func resolveLoadConnectionURI(manager config.ConnectionGetter, connectionName st
 		case config.DatabricksConnection:
 			return slingDatabricksConnectionPayload(connection)
 		case *config.DuckDBConnection:
+			if connection.Lakehouse != nil && nativeConnectionReadOnly(connection) {
+				return "", fmt.Errorf("read-only DuckLake Load sources are not supported by this adapter; use a supported read-only source connection")
+			}
 			if connection.Lakehouse != nil {
 				return slingDuckLakeConnectionURI(*connection)
 			}
+			if nativeConnectionReadOnly(connection) {
+				return slingReadOnlyDuckDBConnection(*connection)
+			}
 		case config.DuckDBConnection:
+			if connection.Lakehouse != nil && nativeConnectionReadOnly(connection) {
+				return "", fmt.Errorf("read-only DuckLake Load sources are not supported by this adapter; use a supported read-only source connection")
+			}
 			if connection.Lakehouse != nil {
 				return slingDuckLakeConnectionURI(connection)
+			}
+			if nativeConnectionReadOnly(connection) {
+				return slingReadOnlyDuckDBConnection(connection)
 			}
 		case *config.StarRocksConnection:
 			return slingStarRocksConnectionURI(*connection)
@@ -195,6 +215,14 @@ func resolveLoadConnectionURI(manager config.ConnectionGetter, connectionName st
 		return strings.TrimSpace(raw), nil
 	}
 	return "", fmt.Errorf("connection %q cannot be converted to a Load connection URI", name)
+}
+
+// Sling's DuckDB adapter uses read_only (not access_mode) to launch DuckDB
+// with -readonly. Bruin's GetIngestrURI drops the native ReadOnly field.
+func slingReadOnlyDuckDBConnection(connection config.DuckDBConnection) (string, error) {
+	path := strings.TrimPrefix(connection.Path, "duckdb://")
+	payload, err := json.Marshal(map[string]any{"type": "duckdb", "url": "duckdb://" + path, "read_only": true})
+	return string(payload), err
 }
 
 // Bruin's ingestr URI uses Databricks' HTTP path as a query option and omits
@@ -860,13 +888,22 @@ func withoutSelfReferentialSlingBinary(env []string, commandPath string) []strin
 func slingCommandConnectionEnv(args []string) ([]string, []string) {
 	normalized := append([]string(nil), args...)
 	var env []string
+	var sourceConnection, sourceStream, targetConnection, targetObject string
 	for i := 0; i+1 < len(normalized); i++ {
 		var name string
 		switch normalized[i] {
 		case "--src-conn":
 			name = slingSourceConnectionEnv
+			sourceConnection = name
+		case "--src-stream":
+			sourceStream = normalized[i+1]
+			continue
 		case "--tgt-conn":
 			name = slingTargetConnectionEnv
+			targetConnection = name
+		case "--tgt-object":
+			targetObject = normalized[i+1]
+			continue
 		default:
 			continue
 		}
@@ -877,6 +914,23 @@ func slingCommandConnectionEnv(args []string) ([]string, []string) {
 		normalized[i+1] = name
 		env = append(env, name+"="+value)
 		i++
+	}
+	task := map[string]map[string]string{}
+	if sourceConnection != "" && strings.Contains(sourceStream, "://") {
+		// Sling 1.5.22 processRun renames src-conn to src_conn while iterating
+		// a map. If src-stream is visited later, its URL replaces the connection
+		// (and loses credentials). Task configuration is applied after flags.
+		task["source"] = map[string]string{
+			"conn": sourceConnection, "stream": sourceStream,
+		}
+	}
+	// The same flag-renaming bug applies to URL destinations.
+	if targetConnection != "" && strings.Contains(targetObject, "://") {
+		task["target"] = map[string]string{"conn": targetConnection, "object": targetObject}
+	}
+	if len(task) > 0 {
+		payload, _ := json.Marshal(task)
+		env = append(env, "SLING_TASK_CONFIG="+string(payload))
 	}
 	return normalized, env
 }
@@ -1034,6 +1088,9 @@ func runSlingCombinedOutput(ctx context.Context, cmd *exec.Cmd) ([]byte, error) 
 func (e *HybridBruinExecutor) runLoadAsset(ctx context.Context, pl *pipeline.Pipeline, asset *pipeline.Asset, manager config.ConnectionGetter, onChunk func([]byte)) ([]byte, error) {
 	if asset == nil {
 		return nil, errors.New("load asset is required")
+	}
+	if err := e.checkRuntimeAssetAccess(ctx, pl, asset, nil); err != nil {
+		return nil, err
 	}
 	writer := &streamCaptureWriter{buffer: bytes.NewBuffer(nil), onChunk: onChunk}
 

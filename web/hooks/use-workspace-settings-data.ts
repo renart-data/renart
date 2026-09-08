@@ -196,6 +196,8 @@ export function useWorkspaceSettingsData() {
       type: string;
       values: Record<string, unknown>;
       secret_changes?: WorkspaceConnectionSecretChanges;
+      access_mode?: "read_only" | "read_write";
+      policy_revision?: string;
     }) =>
       runWorkspaceConfigMutation(
         () => createWorkspaceConnection(input),
@@ -212,6 +214,8 @@ export function useWorkspaceSettingsData() {
       type: string;
       values: Record<string, unknown>;
       secret_changes?: WorkspaceConnectionSecretChanges;
+      access_mode?: "read_only" | "read_write";
+      policy_revision?: string;
     }) =>
       runWorkspaceConfigMutation(
         () => updateWorkspaceConnection(input),

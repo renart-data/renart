@@ -10,6 +10,8 @@ import (
 
 // renart:web-name DataBrowserCapabilities
 type Capabilities struct {
+	LoadSource      bool `json:"load_source,omitempty"`
+	LoadDestination bool `json:"load_destination,omitempty"`
 	ListNamespaces  bool `json:"list_namespaces"`
 	ListObjects     bool `json:"list_objects"`
 	DescribeColumns bool `json:"describe_columns"`
@@ -19,6 +21,7 @@ type Capabilities struct {
 
 // renart:web-name DataBrowserConnection
 type Connection struct {
+	AccessMode      string       `json:"access_mode,omitempty"`
 	ID              string       `json:"id"`
 	Name            string       `json:"name"`
 	Type            string       `json:"type"`

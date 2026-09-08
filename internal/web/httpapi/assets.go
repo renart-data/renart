@@ -111,6 +111,8 @@ func RegisterAssetRoutes(router chi.Router, handlers *AssetsAPI) {
 	router.Get("/api/assets/{assetID}/python-deps", handlers.HandlePythonDeps)
 	router.Post("/api/assets/{assetID}/python-deps", handlers.HandleAddPythonDependency)
 	router.Post("/api/assets/{assetID}/transactions", handlers.HandleApplyAssetTransaction)
+	router.Get("/api/assets/{assetID}/unit-tests", handlers.HandleUnitTestContext)
+	router.Post("/api/assets/{assetID}/unit-tests/run", handlers.HandleRunUnitTests)
 }
 
 func (h *AssetsAPI) HandleAssetCreationProfile(w http.ResponseWriter, r *http.Request) {

@@ -21,6 +21,8 @@ import {
 export type ConnectionMode = "edit" | "create";
 
 export type ConnectionFormState = {
+  policyRevision?: string;
+  accessMode?: "read_only" | "read_write";
   environmentName: string;
   name: string;
   type: string;
@@ -39,6 +41,7 @@ export function useWorkspaceConnectionForm({
   onSelectedConnectionChange,
   onSelectedEnvironmentChange,
   onUpdateConnection,
+  policyRevision,
   requestedConnectionType,
   requestedConnectionName,
   selectedConnectionName,
@@ -54,6 +57,8 @@ export function useWorkspaceConnectionForm({
     type: string;
     values: Record<string, unknown>;
     secret_changes?: WorkspaceConnectionSecretChanges;
+    access_mode?: "read_only" | "read_write";
+    policy_revision?: string;
   }) => Promise<WorkspaceConfigResponse>;
   onDeleteConnection: (input: {
     environment_name: string;
@@ -69,7 +74,10 @@ export function useWorkspaceConnectionForm({
     type: string;
     values: Record<string, unknown>;
     secret_changes?: WorkspaceConnectionSecretChanges;
+    access_mode?: "read_only" | "read_write";
+    policy_revision?: string;
   }) => Promise<WorkspaceConfigResponse>;
+  policyRevision?: string;
   requestedConnectionType?: string;
   requestedConnectionName?: string;
   selectedConnectionName?: string | null;
@@ -116,6 +124,8 @@ export function useWorkspaceConnectionForm({
         }),
         name: requestedConnectionName?.trim() ?? "",
         type: fallbackType,
+        accessMode: "read_write",
+        policyRevision,
         values: buildConnectionFieldDefaults({
           connectionTypes,
           typeName: fallbackType,
@@ -147,6 +157,8 @@ export function useWorkspaceConnectionForm({
       environmentName: activeEnvironment.name,
       name: activeConnection.name,
       type: activeConnection.type,
+      policyRevision,
+      accessMode: activeConnection.access_mode === "read_only" ? "read_only" : "read_write",
       values: buildConnectionFieldDefaults({
         connectionTypes,
         typeName: activeConnection.type,
@@ -167,6 +179,7 @@ export function useWorkspaceConnectionForm({
     mode,
     requestedConnectionType,
     requestedConnectionName,
+    policyRevision,
     selectedEnvironmentName,
   ]);
 
@@ -177,6 +190,8 @@ export function useWorkspaceConnectionForm({
       type: connectionForm.type,
       values: connectionForm.values,
       secret_changes: connectionForm.secretChanges,
+      access_mode: connectionForm.accessMode ?? "read_write",
+      policy_revision: connectionForm.policyRevision,
     };
 
     if (mode === "create") {

@@ -14,7 +14,14 @@ export type DataTarget = ResourceTarget & {
 export type SectionTarget = ResourceTarget & {
   kind: "asset-section";
   asset_id: string;
-  section: "columns" | "checks" | "dependencies" | "materialization" | "identity" | "source";
+  section:
+    | "columns"
+    | "checks"
+    | "tests"
+    | "dependencies"
+    | "materialization"
+    | "identity"
+    | "source";
 };
 export type ConnectionTarget = ResourceTarget & { kind: "connection"; connection: string };
 export type DocumentTarget = ResourceTarget &
@@ -107,6 +114,25 @@ export function parseDetail(value: unknown): ResourceDetail {
       },
     });
     if (
+      a.source_kind === "storage" &&
+      boundedString(a.connection, 256) &&
+      boundedString(a.connection_type, 256) &&
+      boundedString(a.path, 4096) &&
+      !/[\\*?[\]{}|:\p{Cc}]/u.test(a.path) &&
+      !a.path.startsWith("/") &&
+      a.path
+        .replace(/\/$/, "")
+        .split("/")
+        .every((part) => part && part !== "." && part !== "..") &&
+      [a.database, a.schema, a.name].every((v) => v === undefined || v === "")
+    )
+      return result({
+        source_kind: "storage",
+        connection: a.connection,
+        connection_type: a.connection_type,
+        path: a.path,
+      });
+    if (
       a.source_kind === "local_files" &&
       boundedString(a.path, 4096) &&
       !a.path.startsWith("/") &&
@@ -142,9 +168,15 @@ export function parseDetail(value: unknown): ResourceDetail {
   if (
     target.kind === "asset-section" &&
     boundedString(target.asset_id, 4096) &&
-    ["columns", "checks", "dependencies", "materialization", "identity", "source"].includes(
-      String(target.section),
-    )
+    [
+      "columns",
+      "checks",
+      "tests",
+      "dependencies",
+      "materialization",
+      "identity",
+      "source",
+    ].includes(String(target.section))
   ) {
     const anchor =
       target.source_fingerprint === undefined

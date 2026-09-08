@@ -8,6 +8,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { ComponentType, Fragment, ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,6 +26,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { getPinnedProjectId } from "@/lib/project-context";
+import { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
 import {
   Table,
   TableBody,
@@ -297,6 +301,9 @@ export function LastRunBadge({ staleness }: { staleness?: AssetStaleness }) {
     return null;
   }
   const label = lastRunLabel(staleness);
+  if (staleness.last_run_id) {
+    return <LastRunLinkBadge staleness={staleness} runId={staleness.last_run_id} />;
+  }
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -313,6 +320,58 @@ export function LastRunBadge({ staleness }: { staleness?: AssetStaleness }) {
       </TooltipTrigger>
       <TooltipContent>{lastRunTooltip(staleness)}</TooltipContent>
     </Tooltip>
+  );
+}
+
+function LastRunLinkBadge({ staleness, runId }: { staleness: AssetStaleness; runId: string }) {
+  const { workspaceConfig } = useWorkspaceSettingsData();
+  const label = lastRunLabel(staleness);
+  const params = { runId };
+  const search = {
+    project: getPinnedProjectId() ?? workspaceConfig?.project_id,
+    run_asset: staleness.asset_name,
+    run_tab: "events" as const,
+    run_focus: "events" as const,
+  };
+  return (
+    <HoverCard openDelay={250}>
+      <HoverCardTrigger asChild>
+        <Badge
+          asChild
+          size="xs"
+          variant={staleness.last_run_status === "failed" ? "destructive" : "muted"}
+          data-last-run={staleness.last_run_status}
+          className="nodrag nopan max-w-full shrink-0 truncate"
+        >
+          <Link
+            to="/runs/$runId"
+            params={params}
+            search={search}
+            preload={false}
+            aria-label={`${label}: open run for ${staleness.asset_name}`}
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+          >
+            {label}
+          </Link>
+        </Badge>
+      </HoverCardTrigger>
+      <HoverCardContent
+        className="nodrag nopan flex flex-col gap-2"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <p>{lastRunTooltip(staleness)}</p>
+        <Link
+          to="/runs/$runId"
+          params={params}
+          search={search}
+          preload={false}
+          className="text-primary underline underline-offset-2"
+        >
+          Open run
+        </Link>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 

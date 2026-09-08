@@ -2,6 +2,7 @@ import { fetchJSON, fetchJSONWithBody } from "@/lib/api-core";
 import { getSQLTableColumns } from "@/lib/api-sql-discovery";
 import { WebColumn, WebCustomCheck } from "@/lib/types";
 import { trackWorkspaceSave } from "@/lib/workspace-save-barrier";
+import type { SQLUnitTest } from "@/lib/generated/api-types";
 
 /**
  * Client for the asset provenance/transaction endpoints (§11 of the asset
@@ -23,10 +24,13 @@ export type AssetTransactionResult = {
   custom_checks: WebCustomCheck[];
   pre_hooks: string[];
   post_hooks: string[];
+  unit_tests?: SQLUnitTest[];
+  unit_tests_revision?: string;
   reconcile_items?: AssetReconcileItem[];
 };
 
 export type AssetTransaction =
+  | { type: "unit_tests.set"; unit_tests: SQLUnitTest[]; expected_unit_tests_revision: string }
   | { type: "asset.uri.set"; asset_uri: string }
   | {
       type: "dependency.manual.add";

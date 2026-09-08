@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useRef,
+  useState,
   type DragEvent,
   type ReactNode,
 } from "react";
@@ -19,6 +20,8 @@ import {
   matchesDataBrowserTransfer,
 } from "@/lib/data-browser-transfer";
 import { getPinnedProjectId } from "@/lib/project-context";
+import { getDataBrowserObject } from "@/lib/api-data-browser";
+import type { DataBrowserObject } from "@/lib/generated/api-types";
 import type { AppLineageCanvasAsset } from "../lineage-canvas";
 
 type DropContext = {
@@ -33,12 +36,14 @@ export function DataBrowserCanvas({
   assets,
   onSource,
   onLoad,
+  onStorage,
 }: {
   children: ReactNode;
   pipelineId: string;
   assets: AppLineageCanvasAsset[];
   onSource: (objectId: string, environment: string) => void;
   onLoad: (assetId: string, destination: string) => void;
+  onStorage: (object: DataBrowserObject, upstreamId?: string) => void;
 }) {
   const [transfer, setTransfer] = useAtom(dataBrowserTransferAtom);
   const environment = useAtomValue(selectedEnvironmentAtom) ?? "default";
@@ -47,8 +52,29 @@ export function DataBrowserCanvas({
     : null;
   const { profile, loading, error } = useAssetCreationProfile(
     pipelineId,
-    active?.kind === "connection",
+    active?.kind === "connection" || active?.kind === "storage",
   );
+  const [storage, setStorage] = useState<DataBrowserObject | null>(null);
+  const [storageError, setStorageError] = useState("");
+  useEffect(() => {
+    setStorage(null);
+    setStorageError("");
+    if (active?.kind !== "storage") return;
+    const abort = new AbortController();
+    void getDataBrowserObject({ objectId: active.id, environment }, abort.signal)
+      .then((response) => {
+        if (!abort.signal.aborted) setStorage(response.object);
+      })
+      .catch((cause) => {
+        if (!abort.signal.aborted)
+          setStorageError(
+            cause instanceof Error ? cause.message : "Could not resolve this storage object.",
+          );
+      });
+    return () => abort.abort();
+  }, [active?.id, active?.kind, environment]);
+  const storageObject = active?.kind === "storage" && storage?.id === active.id ? storage : null;
+  const destination = active?.kind === "storage" ? storageObject?.connection_name : active?.id;
   const load =
     profile?.environment === environment
       ? profile.kinds.find((kind) => kind.kind === "load")
@@ -59,9 +85,11 @@ export function DataBrowserCanvas({
     load?.roles.find((role) => role.role === "destination")?.connections.map((item) => item.name) ??
     [];
   const eligible = new Set(
-    active?.kind === "connection"
+    (active?.kind === "connection" || storageObject?.capabilities.load_destination) && destination
       ? assets
-          .filter((asset) => canLoadDataBrowserConnection(asset, active.id, sources, destinations))
+          .filter((asset) =>
+            canLoadDataBrowserConnection(asset, destination, sources, destinations),
+          )
           .map((asset) => asset.id)
       : [],
   );
@@ -82,7 +110,7 @@ export function DataBrowserCanvas({
         ?.focus(),
     );
     return () => cancelAnimationFrame(frame);
-  }, [active?.token, active?.method, eligible.size]);
+  }, [active?.token, active?.method, eligible.size, storageObject?.id]);
   const drop = (assetId: string | undefined, event?: DragEvent) => {
     if (!active) return;
     if (event) {
@@ -92,6 +120,12 @@ export function DataBrowserCanvas({
         return;
     } else if (active.method !== "choose") return;
     if (active.kind === "table" && !assetId) onSource(active.id, active.environment);
+    else if (
+      active.kind === "storage" &&
+      storageObject &&
+      ((!assetId && storageObject.capabilities.load_source) || (assetId && eligible.has(assetId)))
+    )
+      onStorage(storageObject, assetId);
     else if (active.kind === "connection" && assetId && eligible.has(assetId))
       onLoad(assetId, active.id);
     else return;
@@ -103,7 +137,7 @@ export function DataBrowserCanvas({
         {children}
         {active ? (
           <div className="absolute top-3 left-3 z-20 flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-xl border bg-background p-2 shadow-sm">
-            {active.kind === "table" ? (
+            {active.kind === "table" || active.kind === "storage" ? (
               <Button
                 variant="outline"
                 className="h-auto min-w-0 border-dashed border-primary px-3 py-2 text-left"
@@ -111,12 +145,18 @@ export function DataBrowserCanvas({
                 onDragOver={allowDataBrowserDrop}
                 onDrop={(event) => drop(undefined, event)}
                 onClick={() => drop(undefined)}
+                disabled={active.kind === "storage" && !storageObject?.capabilities.load_source}
               >
                 <Database data-icon="inline-start" />
                 <span className="min-w-0">
-                  <span className="block">Create source asset</span>
+                  <span className="block">
+                    {active.kind === "storage" ? "Create Load from object" : "Create source asset"}
+                  </span>
                   <span className="block truncate text-xs font-normal text-muted-foreground">
-                    {active.label} · review before saving
+                    {storageError ||
+                      (active.kind === "storage" && !storageObject
+                        ? "Checking storage object…"
+                        : `${active.label} · review before saving`)}
                   </span>
                 </span>
               </Button>
@@ -131,6 +171,11 @@ export function DataBrowserCanvas({
                       : "No compatible upstream asset for this connection."}
               </p>
             )}
+            {active.kind === "storage" && eligible.size > 0 ? (
+              <p role="status" className="text-xs text-muted-foreground">
+                Or drop beside an asset to use this as its destination.
+              </p>
+            ) : null}
             <Button
               variant="ghost"
               size="icon-xs"

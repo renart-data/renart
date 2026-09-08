@@ -253,6 +253,29 @@ test.describe("multi-warehouse pipeline live", () => {
 
         const rows = await inspectFinalRows(page, liveApp.baseURL);
         expect(rows, `${variant.name} produced unexpected rows`).toEqual(expectedRows);
+        if (variant.name === "trino" || variant.name === "starrocks") {
+          const database = variant.name === "trino" ? "memory" : "analytics";
+          const params = new URLSearchParams({
+            connection: variant.connection,
+            environment: "default",
+          });
+          const catalogs = await page.request.get(`${liveApp.baseURL}/api/sql/databases?${params}`);
+          expect(catalogs.ok(), await catalogs.text()).toBe(true);
+          expect((await catalogs.json()).databases).toContain(database);
+          params.set("database", database);
+          const tables = await page.request.get(`${liveApp.baseURL}/api/sql/tables?${params}`);
+          expect(tables.ok(), await tables.text()).toBe(true);
+          expect((await tables.json()).tables).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                name:
+                  variant.name === "trino"
+                    ? "memory.analytics.final_report"
+                    : "analytics.final_report",
+              }),
+            ]),
+          );
+        }
         if (variant.supportsIncrementalSQL !== false) {
           const expectedDates = runWindows.map((window) => window.date);
           expect(

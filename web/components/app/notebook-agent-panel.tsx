@@ -21,7 +21,7 @@ import ReactMarkdown from "react-markdown";
 
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { ConnectionSelect, type ConnectionSelectGroup } from "@/components/app/connection-select";
-import { WorkspaceConnectionDialog } from "@/components/app/workspace-connection-dialog";
+import { WorkspaceConnectionDialog } from "@/components/app/workspace-connection-dialog-lazy";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

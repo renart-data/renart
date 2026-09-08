@@ -17,7 +17,8 @@ They are also available through **Project settings**.
 1. Open **Build → Connections** and add a connection.
 2. Choose its database or storage type and enter a name, such as `pg-analytics`.
 3. Enter the connection details and choose a credential source for secret fields.
-4. Click **Verify** to test the draft, then save it.
+4. Choose **Access → Read-only** if Renart should only read from this connection.
+5. Click **Verify** to test the draft, then save it.
 
 Assets refer to connections by name. Choose the connection in the asset's
 **General** properties; set defaults through **Pipeline settings**.
@@ -43,6 +44,40 @@ environment picker in the top bar swaps the whole workspace — previews,
 materializations, and ad-hoc queries — onto that target. Schedules are also
 per environment: the same pipeline can run nightly against `default` and on
 weekday mornings against `production`.
+
+## Read-only connections
+
+Use **Access → Read-only** for a production database that Renart should read
+without changing. The setting belongs to the connection in the selected
+environment: the same name can remain writable in development.
+
+You can browse its tables, preview data, and add tables to the canvas as
+**Source** assets. Source assets describe existing tables; you can still edit
+their columns and descriptions. To transform the data elsewhere, add a
+[Load asset](/docs/asset-types/load-assets/) downstream and choose a writable
+destination.
+
+Read-only connections are not offered as materialization or Load destinations.
+Existing assets that write there are blocked rather than moved to another
+connection. Code checks explain the conflict and link to the connection's
+Access setting. Verified single-query reads are allowed; DDL, DML, scripts,
+write hooks, and opaque operators are not.
+
+When editing an existing connection, choosing Read-only shows a collapsible
+preview of affected saved assets. Deployed versions are checked when they run,
+too. New tasks use the saved access mode, but operations already in progress
+may finish. Review and cancel active runs separately if necessary.
+
+:::caution[Use database permissions as well]
+This setting restricts operations managed by Renart. It does not change your
+database account's grants or sandbox arbitrary code. Use credentials with
+read-only database permissions when the source must be protected outside
+Renart too. Another writable connection to the same database can still change it.
+:::
+
+Existing native DuckDB read-only settings remain effective even if Access is
+set to Read and write. Read-only DuckLake connections are not supported yet;
+Renart refuses to initialize them rather than opening them in a writable mode.
 
 ## Supported platforms
 

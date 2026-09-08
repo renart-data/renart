@@ -28,6 +28,7 @@ func TypeCheck() *cli.Command {
 		Category:  categoryPipeline,
 		Flags: []cli.Flag{
 			workspaceFlag(),
+			&cli.StringFlag{Name: "environment", Aliases: []string{"env"}, Usage: "Environment used to validate connections and access modes"},
 			&cli.StringFlag{
 				Name:  "start-date",
 				Usage: "RFC3339 start timestamp used for the Jinja date context (defaults to the pipeline schedule)",
@@ -65,7 +66,7 @@ func TypeCheck() *cli.Command {
 				return fmt.Errorf("failed to resolve execution window: %w", err)
 			}
 
-			report := service.CheckPipeline(ctx, fs, parsed, workspaceRoot, tw)
+			report := service.CheckPipelineInEnvironment(ctx, fs, parsed, workspaceRoot, tw, c.String("environment"))
 			state, stateErr := service.NewWorkspaceService(
 				workspaceRoot,
 				filepath.Join(workspaceRoot, ".bruin.yml"),

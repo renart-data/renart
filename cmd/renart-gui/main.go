@@ -29,6 +29,8 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"renart/web"
 )
 
 func main() {
@@ -56,6 +58,12 @@ func run(appURL, title string, width, height int) error {
 		Height:    height,
 		MinWidth:  900,
 		MinHeight: 600,
+		Linux: &linux.Options{
+			Icon:        web.DesktopIcon(),
+			ProgramName: "renart",
+			// Preserve Wails' nil-Linux-options default when adding branding.
+			WebviewGpuPolicy: linux.WebviewGpuPolicyNever,
+		},
 		AssetServer: &assetserver.Options{
 			Handler: loaderHandler(parsed.String()),
 		},

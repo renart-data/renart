@@ -122,6 +122,7 @@ export function AssetConnectionField({
           value: connection.name,
           label: connection.name,
           connectionType: connection.connection_type,
+          badge: connection.access_mode === "read_only" ? "Read-only" : undefined,
         })) ?? []),
       ],
     },

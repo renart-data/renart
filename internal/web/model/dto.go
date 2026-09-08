@@ -1,7 +1,10 @@
 // Package model provides data transfer objects for the Bruin web API.
 package model
 
-import "time"
+import (
+	"renart/internal/web/policy"
+	"time"
+)
 
 // SQLColumn is the compact schema contract shared by SQL discovery,
 // type-checking, and execution planning. It intentionally carries only the
@@ -189,6 +192,8 @@ type Asset struct {
 	Meta                   map[string]string       `json:"meta,omitempty"`
 	Columns                []Column                `json:"columns,omitempty"`
 	CustomChecks           []CustomCheck           `json:"custom_checks,omitempty"`
+	UnitTests              []SQLUnitTest           `json:"unit_tests,omitempty"`
+	UnitTestsRevision      string                  `json:"unit_tests_revision,omitempty"`
 	PreHooks               []string                `json:"pre_hooks,omitempty"`
 	PostHooks              []string                `json:"post_hooks,omitempty"`
 	ColumnInferenceSources []ColumnInferenceSource `json:"column_inference_sources,omitempty"`
@@ -399,11 +404,7 @@ type Notebook struct {
 // EnvironmentPolicy mirrors the per-environment execution rules from
 // .renart/environments.yml so the UI can disable controls; enforcement
 // lives in the run-dispatch chokepoint, not here.
-type EnvironmentPolicy struct {
-	Protected          bool `json:"protected"`
-	DeployedOnly       bool `json:"deployed_only"`
-	ConfirmDestructive bool `json:"confirm_destructive"`
-}
+type EnvironmentPolicy = policy.EnvironmentPolicy
 
 // WorkspaceQueryConnection is one selected-environment connection that can
 // execute ad-hoc SQL. AssetType and Dialect are backend-derived so the editor

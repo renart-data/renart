@@ -9,6 +9,7 @@ import (
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/spf13/afero"
+	"renart/internal/web/apperror"
 
 	webexecution "renart/internal/web/execution"
 	"renart/internal/web/fingerprint"
@@ -243,7 +244,7 @@ func (s *PipelinePlanService) openPipelinePlanningSession(
 			session.snapshotWorkspace = &workspace
 		}
 	}
-	checkOptions := typeCheckOptions{}
+	checkOptions := typeCheckOptions{Environment: selected.EnvironmentName(), PolicyRoot: s.deps.WorkspaceRoot}
 	if session.snapshotWorkspace != nil {
 		checkOptions.WorkspaceGraph = &session.snapshotWorkspace.sqlGraph
 	} else if resolved.source.Kind == PipelinePlanSourceWorkingTree &&
@@ -430,6 +431,10 @@ func (s *pipelinePlanningSession) BindExecutionContracts(
 		s.owner.deps.WorkspaceRoot, s.configuration.cfg, s.source.parsed, assets,
 	)
 	if err != nil {
+		var policyErr *apperror.Error
+		if errors.As(err, &policyErr) {
+			return nil, policyErr
+		}
 		return nil, &APIError{Status: 500, Code: "execution_contract_invalid", Message: "selected execution resources could not be bound"}
 	}
 	return contracts, nil

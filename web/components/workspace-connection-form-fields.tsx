@@ -59,6 +59,7 @@ export function WorkspaceConnectionFormFields({
   validateMessage,
   validateTone,
   showActions = true,
+  onAccessModeChange,
   onEnvironmentChange,
   onFieldValueChange,
   onNameChange,
@@ -86,6 +87,7 @@ export function WorkspaceConnectionFormFields({
   validateMessage: string | null;
   validateTone: "error" | "success" | null;
   showActions?: boolean;
+  onAccessModeChange?: (value: "read_only" | "read_write") => void;
   onEnvironmentChange: (value: string) => void;
   onFieldValueChange: (fieldName: string, value: string | number | boolean | string[]) => void;
   onNameChange: (value: string) => void;
@@ -95,11 +97,19 @@ export function WorkspaceConnectionFormFields({
   onValidate: () => void;
 }) {
   const lastFocus = useRef<string | undefined>(undefined);
+  const nativeReadOnly =
+    connectionForm.type === "duckdb" &&
+    (connectionForm.values.read_only === true ||
+      new URLSearchParams(String(connectionForm.values.path ?? "").split("?")[1] ?? "")
+        .get("access_mode")
+        ?.toLowerCase() === "read_only");
   const focusField = (name: string) => (element: HTMLDivElement | null) => {
     if (!element || name !== focusedField || lastFocus.current === name) return;
     lastFocus.current = name;
     requestAnimationFrame(() => {
       if (!element.isConnected) return;
+      const details = element.closest("details");
+      if (details) details.open = true;
       const input = element.querySelector<HTMLElement>('input,button,[role="combobox"]');
       input?.focus({ preventScroll: true });
       const viewport = element.closest('[data-slot="scroll-area-viewport"]');
@@ -167,11 +177,66 @@ export function WorkspaceConnectionFormFields({
         </Field>
       </div>
 
+      <Field
+        ref={focusField("access_mode")}
+        data-focused-field={focusedField === "access_mode" || undefined}
+        onFocusCapture={() => onFieldFocus?.("access_mode")}
+      >
+        <FieldLabel htmlFor="workspace-connection-access">Access</FieldLabel>
+        <Select
+          value={connectionForm.accessMode ?? "read_write"}
+          onValueChange={(value) => onAccessModeChange?.(value as "read_only" | "read_write")}
+          disabled={busy}
+        >
+          <SelectTrigger
+            id="workspace-connection-access"
+            aria-describedby="workspace-connection-access-help"
+            className="w-full"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="read_write">Read and write</SelectItem>
+            <SelectItem value="read_only">Read-only</SelectItem>
+          </SelectContent>
+        </Select>
+        <p id="workspace-connection-access-help" className="text-xs text-muted-foreground">
+          {connectionForm.accessMode === "read_only"
+            ? "Use as a source. Load data into another connection to transform it. Existing assets that write here will be blocked."
+            : nativeReadOnly
+              ? "The native connection settings still require read-only access."
+              : "Allow Renart to read and materialize data. Database permissions still apply."}
+        </p>
+      </Field>
+
       <FieldSet>
         <FieldLegend>Connection values</FieldLegend>
         <div className="overflow-hidden rounded-lg border">
           {selectedConnectionType?.fields.map((field) => {
             const fieldValue = connectionForm.values[field.name];
+            if (connectionForm.type === "duckdb" && field.name === "read_only") {
+              return (
+                <details key={field.name} className="border-t px-4 py-3 first:border-t-0">
+                  <summary className="cursor-pointer text-xs text-muted-foreground">
+                    Native driver restriction{fieldValue === true ? " · active" : ""}
+                  </summary>
+                  <div ref={focusField(field.name)} className="mt-3 space-y-2">
+                    <label className="flex items-center justify-between gap-4 text-xs">
+                      Always open DuckDB read-only
+                      <Switch
+                        checked={fieldValue === true}
+                        disabled={busy}
+                        onCheckedChange={(value) => onFieldValueChange(field.name, value)}
+                      />
+                    </label>
+                    <p className="text-xs text-muted-foreground">
+                      An additional native restriction, kept for existing connections. The Access
+                      setting above enforces read-only mode even when this option is off.
+                    </p>
+                  </div>
+                </details>
+              );
+            }
             if (field.is_sensitive || field.is_sensitive_file) {
               const change = connectionForm.secretChanges[field.name] ?? { action: "keep" };
               const descriptor = secretFields?.[field.name];

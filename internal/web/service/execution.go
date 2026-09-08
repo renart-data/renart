@@ -2469,13 +2469,7 @@ func schedulerExecutionTargetSnapshot(snapshot ExecutionTargetSnapshot) websched
 func schedulerPipelineRunExecutionContract(
 	contract PipelinePlanExecutionContract,
 ) webscheduler.PipelineRunExecutionContract {
-	return webscheduler.PipelineRunExecutionContract{
-		AssetID:               contract.AssetID,
-		AssetName:             contract.AssetName,
-		ConnectionKeys:        append([]string(nil), contract.ConnectionKeys...),
-		MutationResources:     schedulerPipelineRunPlanResources(contract.MutationResources),
-		CoordinationResources: schedulerPipelineRunPlanResources(contract.CoordinationResources),
-	}
+	return webexecution.CloneExecutionContract(contract)
 }
 
 func busExecutionContract(

@@ -12,7 +12,9 @@ import (
 	"unicode"
 
 	"github.com/bruin-data/bruin/pkg/config"
+	"renart/internal/web/policy"
 	"renart/internal/web/secretstore"
+	"renart/internal/web/workspacefs"
 )
 
 type PersistedConnectionChange struct {
@@ -28,6 +30,11 @@ func (s *ConfigService) CreateEnvironmentAndPersist(
 ) (PersistedConnectionChange, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, lockErr := s.lockConfiguration()
+	if lockErr != nil {
+		return PersistedConnectionChange{}, lockErr
+	}
+	defer unlock()
 
 	cfg, configPath, err := s.LoadForEditing()
 	if err != nil {
@@ -56,6 +63,11 @@ func (s *ConfigService) UpdateEnvironmentAndPersist(
 ) (PersistedConnectionChange, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, lockErr := s.lockConfiguration()
+	if lockErr != nil {
+		return PersistedConnectionChange{}, lockErr
+	}
+	defer unlock()
 
 	currentName = strings.TrimSpace(currentName)
 	nextName = strings.TrimSpace(nextName)
@@ -113,6 +125,7 @@ func (s *ConfigService) UpdateEnvironmentAndPersist(
 		manifestPath,
 		nextManifest,
 		mutations,
+		environmentPolicyChange(currentName, nextName, true),
 	)
 }
 
@@ -125,6 +138,11 @@ func (s *ConfigService) CloneEnvironmentAndPersist(
 ) (PersistedConnectionChange, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, lockErr := s.lockConfiguration()
+	if lockErr != nil {
+		return PersistedConnectionChange{}, lockErr
+	}
+	defer unlock()
 
 	sourceName = strings.TrimSpace(sourceName)
 	targetName = strings.TrimSpace(targetName)
@@ -174,6 +192,7 @@ func (s *ConfigService) CloneEnvironmentAndPersist(
 		manifestPath,
 		nextManifest,
 		mutations,
+		environmentPolicyChange(sourceName, targetName, false),
 	)
 }
 
@@ -183,6 +202,11 @@ func (s *ConfigService) DeleteEnvironmentAndPersist(
 ) (PersistedConnectionChange, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, lockErr := s.lockConfiguration()
+	if lockErr != nil {
+		return PersistedConnectionChange{}, lockErr
+	}
+	defer unlock()
 
 	environmentName = strings.TrimSpace(environmentName)
 	cfg, configPath, err := s.LoadForEditing()
@@ -216,6 +240,7 @@ func (s *ConfigService) DeleteEnvironmentAndPersist(
 		manifestPath,
 		nextManifest,
 		mutations,
+		environmentPolicyChange(environmentName, "", true),
 	)
 }
 
@@ -240,6 +265,11 @@ func (s *ConfigService) DeleteConnectionAndPersist(
 ) (PersistedConnectionChange, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, lockErr := s.lockConfiguration()
+	if lockErr != nil {
+		return PersistedConnectionChange{}, lockErr
+	}
+	defer unlock()
 
 	environmentName = strings.TrimSpace(environmentName)
 	connectionName = strings.TrimSpace(connectionName)
@@ -278,6 +308,7 @@ func (s *ConfigService) DeleteConnectionAndPersist(
 		manifestPath,
 		nextManifest,
 		mutations,
+		connectionPolicyChange(environmentName, connectionName, "", nil),
 	)
 }
 
@@ -288,6 +319,21 @@ func (s *ConfigService) changeConnectionAndPersist(
 ) (PersistedConnectionChange, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	unlock, lockErr := s.lockConfiguration()
+	if lockErr != nil {
+		return PersistedConnectionChange{}, lockErr
+	}
+	defer unlock()
+
+	if params.PolicyRevision != "" {
+		snapshot, err := policy.NewLoader(s.environmentPolicyPath()).Snapshot()
+		if err != nil {
+			return PersistedConnectionChange{}, err
+		}
+		if snapshot.Revision != params.PolicyRevision {
+			return PersistedConnectionChange{}, newAPIError(409, "connection_policy_stale", "Connection access settings changed. Reload the connection before saving.")
+		}
+	}
 
 	cfg, configPath, err := s.LoadForEditing()
 	if err != nil {
@@ -324,6 +370,7 @@ func (s *ConfigService) changeConnectionAndPersist(
 		manifestPath,
 		nextManifest,
 		mutations,
+		connectionPolicyChange(params.EnvironmentName, params.CurrentName, params.Name, params.AccessMode),
 	)
 }
 
@@ -782,7 +829,28 @@ func (s *ConfigService) persistConfigAndSecretManifest(
 	manifestPath string,
 	nextManifest secretstore.Manifest,
 	mutations []providerMutation,
+	policyChanges ...configurationPolicyChange,
 ) (PersistedConnectionChange, error) {
+	policyPath := s.environmentPolicyPath()
+	policyBackup, policyExisted, policyMode, err := readOptionalFile(policyPath)
+	if err != nil {
+		return PersistedConnectionChange{}, err
+	}
+	nextPolicy, err := policy.Load(policyPath)
+	if err != nil {
+		return PersistedConnectionChange{}, policy.InvalidError(err.Error())
+	}
+	if nextPolicy.Environments == nil {
+		nextPolicy.Environments = map[string]policy.EnvironmentPolicy{}
+	}
+	for _, change := range policyChanges {
+		if err := change(&nextPolicy); err != nil {
+			return PersistedConnectionChange{}, err
+		}
+	}
+	if err := nextPolicy.Validate(); err != nil {
+		return PersistedConnectionChange{}, err
+	}
 	configBackup, configExisted, configMode, err := readOptionalFile(configPath)
 	if err != nil {
 		clearSecretMutationSnapshots(mutations)
@@ -795,14 +863,22 @@ func (s *ConfigService) persistConfigAndSecretManifest(
 		return PersistedConnectionChange{}, err
 	}
 	defer clearSecretBytes(manifestBackup)
+	if err := workspacefs.WriteFileAtomic(policy.PendingPath(policyPath), []byte("configuration transaction in progress\n"), 0o600); err != nil {
+		return PersistedConnectionChange{}, err
+	}
 	applied, err := s.applySecretMutations(ctx, mutations)
 	if err != nil {
 		clearSecretMutationSnapshots(mutations)
+		_ = os.Remove(policy.PendingPath(policyPath))
 		return PersistedConnectionChange{}, err
 	}
 	rollback := func() {
-		_ = restoreOptionalFile(manifestPath, manifestBackup, manifestExisted, manifestMode)
-		_ = restoreOptionalFile(configPath, configBackup, configExisted, configMode)
+		manifestErr := restoreOptionalFile(manifestPath, manifestBackup, manifestExisted, manifestMode)
+		configErr := restoreOptionalFile(configPath, configBackup, configExisted, configMode)
+		policyErr := restoreOptionalFile(policyPath, policyBackup, policyExisted, policyMode)
+		if manifestErr == nil && configErr == nil && policyErr == nil {
+			_ = os.Remove(policy.PendingPath(policyPath))
+		}
 		s.rollbackSecretMutations(ctx, applied)
 	}
 	if err := secretstore.SaveManifest(manifestPath, nextManifest); err != nil {
@@ -811,6 +887,16 @@ func (s *ConfigService) persistConfigAndSecretManifest(
 	}
 	relPath, err := s.Persist(cfg)
 	if err != nil {
+		rollback()
+		return PersistedConnectionChange{}, err
+	}
+	if policyExisted || len(nextPolicy.Environments) > 0 {
+		if err := policy.Save(policyPath, nextPolicy); err != nil {
+			rollback()
+			return PersistedConnectionChange{}, err
+		}
+	}
+	if err := os.Remove(policy.PendingPath(policyPath)); err != nil {
 		rollback()
 		return PersistedConnectionChange{}, err
 	}

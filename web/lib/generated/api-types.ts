@@ -15,6 +15,14 @@ export type APIRecordsPathSample = {
   detail?: string;
 };
 
+export type AccessMode = "read_only" | "read_write";
+
+export type AccessRequirement = {
+  connection_key: string;
+  effect: Effect;
+  operation: string;
+};
+
 export type ArtifactColumnImpact = {
   producer: ArtifactRef;
   column: string;
@@ -97,6 +105,7 @@ export type AssetCreationCandidate = {
 };
 
 export type AssetCreationConnection = {
+  access_mode?: AccessMode;
   name: string;
   connection_type: string;
   category?: string;
@@ -409,6 +418,22 @@ export type ColumnSchemaSyncResult = {
   notes?: string[];
 };
 
+export type ConnectionAccessImpact = {
+  pipeline: string;
+  asset: string;
+  scheduled: boolean;
+  operations: string[];
+};
+
+export type ConnectionAccessPreview = {
+  assets: ConnectionAccessImpact[];
+  warnings: string[];
+};
+
+export type ConnectionPolicy = {
+  access_mode: AccessMode;
+};
+
 export type CreateDirectoryRequest = {
   parent_dir: string;
   name: string;
@@ -441,6 +466,8 @@ export type CreateProjectResponse = {
 };
 
 export type DataBrowserCapabilities = {
+  load_source?: boolean;
+  load_destination?: boolean;
   list_namespaces: boolean;
   list_objects: boolean;
   describe_columns: boolean;
@@ -458,6 +485,7 @@ export type DataBrowserChildrenResponse = {
 };
 
 export type DataBrowserConnection = {
+  access_mode?: string;
   id: string;
   name: string;
   type: string;
@@ -551,10 +579,13 @@ export type DataObjectAddress = {
   path?: string;
 };
 
+export type Effect = "read" | "write" | "unknown";
+
 export type EnvironmentPolicy = {
   protected: boolean;
   deployed_only: boolean;
   confirm_destructive: boolean;
+  connections?: Record<string, ConnectionPolicy>;
 };
 
 export type ExternalRelationImportAsset = {
@@ -1013,6 +1044,8 @@ export type PipelinePlanContext = {
 };
 
 export type PipelinePlanExecutionContract = {
+  access_requirements?: AccessRequirement[];
+  access_policy_identity?: string;
   asset_id: string;
   asset_name: string;
   connection_keys: string[];
@@ -1446,6 +1479,67 @@ export type SQLDiagnosticLink = {
   target: ResourceTarget;
 };
 
+export type SQLUnitTest = {
+  name: string;
+  description?: string;
+  inputs?: SQLUnitTestInput[];
+  fixtures?: string[];
+  variables?: Record<string, unknown>;
+  execution_time?: string;
+  expected: SQLUnitTestExpected;
+};
+
+export type SQLUnitTestCTEExpected = {
+  rows?: Record<string, unknown>[];
+  count?: number;
+  match?: string;
+  order?: string;
+};
+
+export type SQLUnitTestContext = {
+  status: string;
+  tests: SQLUnitTest[];
+  revision: string;
+  inputs: SQLUnitTestSchema[];
+  output: WebColumn[];
+  fixtures: string[];
+};
+
+export type SQLUnitTestExpected = {
+  rows?: Record<string, unknown>[];
+  count?: number;
+  match?: string;
+  order?: string;
+  ctes?: Record<string, SQLUnitTestCTEExpected>;
+};
+
+export type SQLUnitTestInput = {
+  asset: string;
+  rows: Record<string, unknown>[];
+};
+
+export type SQLUnitTestResult = {
+  name: string;
+  status: string;
+  message?: string;
+};
+
+export type SQLUnitTestRunRequest = {
+  environment?: string;
+  name?: string;
+  revision: string;
+};
+
+export type SQLUnitTestRunResponse = {
+  status: string;
+  results: SQLUnitTestResult[];
+};
+
+export type SQLUnitTestSchema = {
+  asset: string;
+  columns: WebColumn[];
+};
+
 export type SnapshotRecord = {
   block_id: string;
   object_name: string;
@@ -1730,6 +1824,8 @@ export type WebAsset = {
   meta?: Record<string, string>;
   columns?: WebColumn[];
   custom_checks?: WebCustomCheck[];
+  unit_tests?: SQLUnitTest[];
+  unit_tests_revision?: string;
   pre_hooks?: string[];
   post_hooks?: string[];
   column_inference_sources?: ColumnInferenceSource[];
@@ -1874,6 +1970,8 @@ export type WebUpdatePipelineConfigRequest = {
 };
 
 export type WorkspaceConfigConnection = {
+  access_mode?: AccessMode;
+  effective_access_mode?: AccessMode;
   name: string;
   type: string;
   values: Record<string, unknown>;
@@ -1917,6 +2015,8 @@ export type WorkspaceConfigResponse = {
   secret_vault: WorkspaceLocalVault;
   parse_error?: string;
   secret_bindings_error?: string;
+  connection_policy_error?: string;
+  connection_policy_revision?: string;
 };
 
 export type WorkspaceConfigSecretField = {

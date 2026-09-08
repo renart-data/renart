@@ -547,7 +547,9 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   provides consistent type recognition with semantic per-engine color (for
   example PostgreSQL blue and DuckDB amber). Exact engine marks come from the
   bundled Simple Icons Iconify set; local glyphs cover file storage and engines
-  without a matching mark. Icon data is compiled into the web bundle and never
+  without a matching mark. StarRocks uses a local symbol from its official logo,
+  with the same monochrome sizing and theme-aware color as the other brands.
+  Icon data is compiled into the web bundle and never
   fetched from a third-party API at runtime.
 - Bounded analytical results share `VirtualDataTable` across notebook outputs,
   asset inspect, and table visualizations in notebooks, dashboards, and reports.

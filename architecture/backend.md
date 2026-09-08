@@ -247,6 +247,8 @@ SFTP is classified with storage/file transports in the workspace connection
 catalog, not with Ingestr-only SaaS sources: Renart Load supports it directly.
 
 Data Browser source authoring uses
+the [shared SQL discovery adapters and audited warehouse coverage](sql-discovery.md).
+Warehouse source creation uses
 `POST /api/pipelines/{id}/data-browser/sources/preview` and the corresponding
 `/sources` confirmation. The request contains a revision-bound `object_id`, an
 explicit environment, and the optional include-columns choice. Both handlers
@@ -424,6 +426,10 @@ shutdown. A missing desktop webview therefore degrades to the browser UI rather
 than taking the workspace server down. Release archives colocate the native
 helper with the CLI. Linux archives carry WebKitGTK 4.1 and 4.0 variants behind
 a small launcher that selects the variant whose shared libraries are available.
+The native Linux window embeds the same 256px PNG as the web UI and sets its
+GTK program name to `renart`. Adding Linux options retains Wails' conservative
+`WebviewGpuPolicyNever` default. The standalone helper only references the icon
+accessor from `web`; unused static application assets are linker-eliminated.
 
 For an asset target, `--refresh-upstreams` first invokes the server-side stale
 planner narrowed to that asset's transitive upstream closure; only non-fresh
@@ -1539,6 +1545,30 @@ WASM module, native parser download, FFI boundary, runtime pool, or SQL warmup.
 Python intelligence still runs ty as WASM (`pyintelligence`) under wazero with
 an on-disk compilation cache; `renart debug warm-cache` pre-warms only that
 module.
+
+## Storage Data Browser adapter
+
+S3/SFTP reuse the Data Browser's opaque revision-scoped references and durable
+connection/type/path addresses. `storage.go` adds prefix/file nodes, explicit
+load_source/load_destination capabilities and parent-list revalidation before
+handoff. Storage has no SQL preview capability. Read-only connections are sources
+only, including after access-mode changes invalidate prior revision tokens.
+
+`LoadService.BrowseStorage` invokes bounded, metadata-only Sling discovery through
+the shared process limiter and credential resolver. One prefix is listed with a
+30-second deadline, 1 MiB capture and 500-entry cap; unsupported selector-like keys
+are omitted. Configured S3 paths scope the root. Credentials stay server-side in
+child environment variables, not argv, object references or provider error text.
+Native structured S3 payloads preserve custom endpoints and keys; native SFTP
+URLs preserve authentication and default port 22. Neither invokes Ingestr.
+
+The same payloads feed Load. `slingCommandConnectionEnv` pins named source and
+target connections with URL streams/objects in SLING_TASK_CONFIG after CLI flag
+parsing, working around Sling 1.5.22's nondeterministic connection-key renaming
+that otherwise loses credentials.
+Canvas drops only open existing reviewed creation dialogs; execution remains an
+explicit operation. Live tests use isolated MinIO and a loopback, memory-only
+SFTP server and assert both no execution on cancel/create and real transferred data.
 
 ## 7. Open items
 

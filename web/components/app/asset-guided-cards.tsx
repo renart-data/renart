@@ -1,6 +1,16 @@
 "use client";
 
-import { type Ref, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  type Ref,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { useAtomValue } from "jotai";
 import {
@@ -95,6 +105,10 @@ import { AssetDependencyPicker } from "./asset-dependency-picker";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 import { resolveColumn, type ColumnTarget } from "@/lib/resource-navigation";
 
+const AssetUnitTests = lazy(() =>
+  import("./asset-unit-tests").then((module) => ({ default: module.AssetUnitTests })),
+);
+
 /**
  * Guided metadata cards for the app asset editor (§13–14 of the asset
  * editing concept). Renders focused, editable sections beside the SQL editor so
@@ -102,7 +116,7 @@ import { resolveColumn, type ColumnTarget } from "@/lib/resource-navigation";
  * the asset API, and the workspace SSE stream refreshes the asset prop.
  */
 export type QualityCheckFocus = FailedQualityCheck & { token: number };
-type AssetMetadataTab = "general" | "lineage" | "columns" | "checks";
+type AssetMetadataTab = "general" | "lineage" | "columns" | "checks" | "tests";
 
 export function AssetGuidedCards({
   asset,
@@ -132,7 +146,7 @@ export function AssetGuidedCards({
   const section = addressed?.kind === "asset-column" ? "columns" : addressed?.section;
   const [localTab, setActiveTab] = useState<AssetMetadataTab>(focusedCheck ? "checks" : "general");
   const activeTab: AssetMetadataTab =
-    section === "columns" || section === "checks"
+    section === "columns" || section === "checks" || section === "tests"
       ? section
       : section === "dependencies"
         ? "lineage"
@@ -205,7 +219,14 @@ export function AssetGuidedCards({
       <div className="shrink-0 border-b px-2 py-1.5">
         <TabsList
           aria-label="Asset property sections"
-          className={cn("grid w-full", supportsColumns ? "grid-cols-4" : "grid-cols-2")}
+          className={cn(
+            "grid w-full",
+            isSqlAssetType(asset.type)
+              ? "grid-cols-5"
+              : supportsColumns
+                ? "grid-cols-4"
+                : "grid-cols-2",
+          )}
         >
           <MetadataTab value="general" label="General" icon={SlidersHorizontal} />
           <MetadataTab value="lineage" label="Lineage" icon={GitBranch} count={dependencyCount} />
@@ -215,9 +236,26 @@ export function AssetGuidedCards({
           {supportsColumns ? (
             <MetadataTab value="checks" label="Checks" icon={ShieldCheck} count={checkCount} />
           ) : null}
+          {isSqlAssetType(asset.type) ? (
+            <MetadataTab
+              value="tests"
+              label="Tests"
+              icon={ShieldCheck}
+              count={asset.unit_tests?.length}
+            />
+          ) : null}
         </TabsList>
       </div>
       <ScrollArea className="min-h-0 w-full flex-1">
+        {isSqlAssetType(asset.type) && activeTab === "tests" ? (
+          <TabsContent value="tests" className="m-0">
+            <Suspense
+              fallback={<p className="p-3 text-xs text-muted-foreground">Loading tests…</p>}
+            >
+              <AssetUnitTests key={asset.id} asset={asset} />
+            </Suspense>
+          </TabsContent>
+        ) : null}
         {addressed?.kind === "asset-column" && !linkedColumn ? (
           <p role="alert" className="p-3 text-sm">
             The linked column is missing or ambiguous. No other column has been selected.

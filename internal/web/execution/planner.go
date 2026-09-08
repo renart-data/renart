@@ -222,7 +222,6 @@ func (p *Planner) Plan(ctx context.Context, pipelineID string, req PlanRequest) 
 	defer session.Close()
 	base.Readiness.CodeChecks = session.CodeChecks()
 	base.Readiness.CodeChecks.PipelineID = pipelineID
-	appendCodeCheckIssues(&base, purpose == PlanPurposeDeployment)
 
 	staleSnapshot := staleness.Snapshot{}
 	dataStateAvailable := false
@@ -246,6 +245,15 @@ func (p *Planner) Plan(ctx context.Context, pipelineID string, req PlanRequest) 
 	selected, err := SelectPlanAssets(parsed, selectionRequest, staleSnapshot.Assets, dataStateAvailable)
 	if err != nil {
 		return Plan{}, applicationError(400, "invalid_plan_selection", err.Error())
+	}
+	if purpose == PlanPurposeDeployment {
+		appendCodeCheckIssues(&base, true)
+	} else {
+		selectedNames := map[string]bool{}
+		for _, item := range selected {
+			selectedNames[item.Asset.Name] = true
+		}
+		appendScopedCodeCheckIssues(&base, false, selectedNames)
 	}
 	session.ApplyPrerequisites(ctx, &base, selected)
 	if req.Backfill && (selectionRequest.Mode != PlanSelectionAsset || selectionRequest.Scope != "asset") {
@@ -394,9 +402,18 @@ func newPlanBase(
 }
 
 func appendCodeCheckIssues(plan *Plan, includePresentations bool) {
+	appendScopedCodeCheckIssues(plan, includePresentations, nil)
+}
+
+func appendScopedCodeCheckIssues(plan *Plan, includePresentations bool, selectedNames map[string]bool) {
 	for _, asset := range plan.Readiness.CodeChecks.Assets {
 		assetID := plan.PipelineUUID + ":" + asset.Name
 		for _, finding := range asset.Findings {
+			// Permission to run an explicit selection does not depend on an
+			// unselected branch's write access. Invalid global policy still blocks.
+			if selectedNames != nil && !selectedNames[asset.Name] && (finding.Code == "connection_read_only" || finding.Code == "connection_access_unknown") {
+				continue
+			}
 			issue := PlanIssue{
 				Code: "code_check_" + finding.Severity, Severity: finding.Severity,
 				Message: finding.Message, AssetID: assetID, AssetName: asset.Name,

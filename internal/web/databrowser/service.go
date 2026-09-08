@@ -43,9 +43,11 @@ var excludedLocalDirectories = map[string]struct{}{
 }
 
 type ConnectionConfig struct {
-	Name      string
-	Type      string
-	Queryable bool
+	AccessMode string
+	Name       string
+	Type       string
+	Queryable  bool
+	Storage    bool
 }
 
 type Table struct {
@@ -68,6 +70,7 @@ type Dependencies struct {
 	ListTables      func(context.Context, string, string, string) ([]Table, error)
 	ListColumns     func(context.Context, string, string, string) ([]model.SQLColumn, error)
 	RunQuery        func(context.Context, string, string, string, int) (QueryResult, error)
+	ListStorage     func(context.Context, string, string, string) (StorageListing, error)
 	Now             func() time.Time
 }
 
@@ -111,6 +114,11 @@ func (s *Service) Connections(ctx context.Context, environment string) (Connecti
 	duckDBAvailable := hasDuckDBConnection(configs)
 	connections := make([]Connection, 0, len(configs)+1)
 	for _, config := range configs {
+		if config.Storage && s.deps.ListStorage != nil {
+			ref := objectRef{Kind: "connection", SourceKind: "storage", Connection: config.Name, ConnectionType: config.Type, Environment: resolvedEnvironment, Revision: revision}
+			connections = append(connections, Connection{AccessMode: config.AccessMode, ID: encodeRef(ref), Name: config.Name, Type: config.Type, Environment: resolvedEnvironment, Revision: revision, SourceKind: "storage", DiscoveryStatus: "idle", Capabilities: Capabilities{ListNamespaces: true, ListObjects: true, LoadDestination: config.AccessMode != "read_only"}})
+			continue
+		}
 		if !config.Queryable {
 			continue
 		}
@@ -123,6 +131,7 @@ func (s *Service) Connections(ctx context.Context, environment string) (Connecti
 			Revision:       revision,
 		}
 		connections = append(connections, Connection{
+			AccessMode:      config.AccessMode,
 			ID:              encodeRef(ref),
 			Name:            config.Name,
 			Type:            config.Type,
@@ -199,6 +208,8 @@ func (s *Service) Children(ctx context.Context, connectionID, parentID, environm
 	var err error
 	if scope.ref.SourceKind == "local_files" {
 		nodes, truncated, err = s.localChildren(scope.ref, parent, parentID)
+	} else if scope.ref.SourceKind == "storage" {
+		nodes, truncated, err = s.storageChildren(ctx, scope.ref, parent, parentID)
 	} else {
 		nodes, truncated, err = s.warehouseChildren(ctx, scope.ref, parent, parentID)
 	}
@@ -217,7 +228,7 @@ func (s *Service) Children(ctx context.Context, connectionID, parentID, environm
 
 func (s *Service) Object(ctx context.Context, objectID, environment string) (ObjectResponse, *apperror.Error) {
 	ref, err := decodeRef(objectID)
-	if err != nil || (ref.Kind != "table" && ref.Kind != "file") {
+	if err != nil || (ref.Kind != "table" && ref.Kind != "file" && ref.Kind != "storage_object" && ref.Kind != "storage_prefix") {
 		return ObjectResponse{}, badRequest("data_browser_object_invalid", "The selected data object is invalid.")
 	}
 	connectionRef := ref
@@ -247,6 +258,9 @@ func (s *Service) Object(ctx context.Context, objectID, environment string) (Obj
 	}
 	if ref.SourceKind == "local_files" {
 		return s.localObject(ctx, scope, ref, object)
+	}
+	if ref.SourceKind == "storage" {
+		return s.storageObject(ctx, scope, ref, object)
 	}
 	if ref.Kind != "table" || strings.TrimSpace(ref.Name) == "" {
 		return ObjectResponse{}, badRequest("data_browser_object_invalid", "The selected warehouse object is invalid.")
@@ -295,6 +309,9 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (PreviewR
 	scope, apiErr := s.resolveScope(ctx, encodeRef(connectionRef), request.Environment)
 	if apiErr != nil {
 		return PreviewResponse{}, apiErr
+	}
+	if scope.ref.SourceKind == "storage" {
+		return PreviewResponse{}, badRequest("data_browser_preview_unavailable", "Storage browsing lists metadata only. Use a Load asset to read the file's data.")
 	}
 	if s.deps.RunQuery == nil {
 		return PreviewResponse{}, badRequest("data_browser_preview_unavailable", "This data source does not support preview queries.")
@@ -389,7 +406,8 @@ func (s *Service) resolveScope(ctx context.Context, connectionID, environment st
 		return resolvedScope{ref: ref, connections: configs, revision: revision}, nil
 	}
 	for _, config := range configs {
-		if config.Queryable && config.Name == ref.Connection && config.Type == ref.ConnectionType {
+		validKind := (config.Queryable && ref.SourceKind == "warehouse") || (config.Storage && s.deps.ListStorage != nil && ref.SourceKind == "storage")
+		if validKind && config.Name == ref.Connection && config.Type == ref.ConnectionType {
 			return resolvedScope{ref: ref, connections: configs, revision: revision}, nil
 		}
 	}
@@ -754,7 +772,7 @@ func mapStringValue(row map[string]any, keys ...string) string {
 func revisionToken(environment string, stateRevision int64, connections []ConnectionConfig) string {
 	parts := []string{environment, strconv.FormatInt(stateRevision, 10)}
 	for _, connection := range connections {
-		parts = append(parts, connection.Name+"\x00"+connection.Type+"\x00"+strconv.FormatBool(connection.Queryable))
+		parts = append(parts, connection.Name+"\x00"+connection.Type+"\x00"+strconv.FormatBool(connection.Queryable)+"\x00"+strconv.FormatBool(connection.Storage)+"\x00"+connection.AccessMode)
 	}
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x1f")))
 	return hex.EncodeToString(sum[:8])
