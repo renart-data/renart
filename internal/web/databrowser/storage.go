@@ -41,6 +41,33 @@ func ValidateStoragePath(value string, allowRoot bool) error {
 	return nil
 }
 
+// Prefix lists an explicitly typed location without enumerating its ancestors.
+// It creates only scoped discovery references; object handoff still revalidates
+// the provider listing. The configured connection root remains authoritative.
+func (s *Service) Prefix(ctx context.Context, connectionID, prefix, environment string) (ChildrenResponse, *apperror.Error) {
+	scope, apiErr := s.resolveScope(ctx, connectionID, environment)
+	if apiErr != nil {
+		return ChildrenResponse{}, apiErr
+	}
+	if scope.ref.SourceKind != "storage" {
+		return ChildrenResponse{}, badRequest("data_browser_prefix_unsupported", "Choose a storage connection to browse a prefix.")
+	}
+	if err := ValidateStoragePath(prefix, true); err != nil {
+		return ChildrenResponse{}, badRequest("data_browser_prefix_invalid", err.Error())
+	}
+	parent := scope.ref
+	parentID := ""
+	if prefix != "" {
+		parent.Kind, parent.Path = "storage_prefix", strings.TrimSuffix(prefix, "/")+"/"
+		parentID = encodeRef(parent)
+	}
+	nodes, truncated, err := s.storageChildren(ctx, scope.ref, parent, parentID)
+	if err != nil {
+		return ChildrenResponse{}, internalError("data_browser_discovery_failed", err)
+	}
+	return ChildrenResponse{Status: "ok", ConnectionID: connectionID, ParentID: parentID, Revision: scope.revision, Nodes: nodes, Truncated: truncated}, nil
+}
+
 func (s *Service) storageChildren(ctx context.Context, connection, parent objectRef, parentID string) ([]Node, bool, error) {
 	if parent.Kind != "connection" && parent.Kind != "storage_prefix" {
 		return nil, false, fmt.Errorf("choose a storage prefix")

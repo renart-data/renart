@@ -13,6 +13,7 @@ import (
 )
 
 type DataBrowserHandlers interface {
+	Prefix(ctx context.Context, connectionID, prefix, environment string) (databrowser.ChildrenResponse, *apperror.Error)
 	Resolve(ctx context.Context, request databrowser.ResolveRequest) (databrowser.ObjectResponse, *apperror.Error)
 	Connections(ctx context.Context, environment string) (databrowser.ConnectionsResponse, *apperror.Error)
 	Children(ctx context.Context, connectionID, parentID, environment string) (databrowser.ChildrenResponse, *apperror.Error)
@@ -31,6 +32,7 @@ type DataBrowserAPI struct {
 func RegisterDataBrowserRoutes(router chi.Router, handlers *DataBrowserAPI) {
 	router.Get("/api/data-browser/connections", handlers.HandleConnections)
 	router.Get("/api/data-browser/connections/{connectionID}/children", handlers.HandleChildren)
+	router.Get("/api/data-browser/connections/{connectionID}/prefix", handlers.HandlePrefix)
 	router.Get("/api/data-browser/objects/{objectID}", handlers.HandleObject)
 	router.Post("/api/data-browser/preview", handlers.HandlePreview)
 	router.Post("/api/data-browser/resolve", handlers.HandleResolve)
@@ -107,6 +109,15 @@ func (h *DataBrowserAPI) HandleChildren(w http.ResponseWriter, r *http.Request) 
 		strings.TrimSpace(r.URL.Query().Get("parent_id")),
 		strings.TrimSpace(r.URL.Query().Get("environment")),
 	)
+	if apiErr != nil {
+		writeDataBrowserError(w, apiErr)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, response)
+}
+
+func (h *DataBrowserAPI) HandlePrefix(w http.ResponseWriter, r *http.Request) {
+	response, apiErr := h.Service.Prefix(r.Context(), chi.URLParam(r, "connectionID"), r.URL.Query().Get("path"), strings.TrimSpace(r.URL.Query().Get("environment")))
 	if apiErr != nil {
 		writeDataBrowserError(w, apiErr)
 		return

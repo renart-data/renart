@@ -29,11 +29,14 @@ export function getDataBrowserConnections(environment?: string) {
   );
 }
 
-export function getDataBrowserChildren(options: {
-  connectionId: string;
-  parentId?: string;
-  environment?: string;
-}) {
+export function getDataBrowserChildren(
+  options: {
+    connectionId: string;
+    parentId?: string;
+    environment?: string;
+  },
+  signal?: AbortSignal,
+) {
   return fetchJSON<DataBrowserChildrenResponse>(
     `/api/data-browser/connections/${encodeURIComponent(options.connectionId)}/children${buildQueryString(
       {
@@ -41,7 +44,17 @@ export function getDataBrowserChildren(options: {
         environment: options.environment,
       },
     )}`,
-    { cache: "no-store" },
+    { cache: "no-store", signal },
+  );
+}
+
+export function getDataBrowserPrefix(
+  options: { connectionId: string; prefix: string; environment: string },
+  signal?: AbortSignal,
+) {
+  return fetchJSON<DataBrowserChildrenResponse>(
+    `/api/data-browser/connections/${encodeURIComponent(options.connectionId)}/prefix${buildQueryString({ path: options.prefix, environment: options.environment })}`,
+    { cache: "no-store", signal },
   );
 }
 

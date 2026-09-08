@@ -33,6 +33,20 @@ into **General**, **Lineage**, **Columns**, **Checks**, and, for SQL assets,
 **Tests**. Use **Show properties**
 or **Hide properties** to make room without changing the asset.
 
+### Find data across levels
+
+In the Data Browser search field, start with a connection name, then follow its
+namespaces: `duckdb-default.a` filters that connection's first level for `a`.
+Continue with dots to reach a schema or table. For S3 and SFTP, use slashes:
+`my-s3-connection./some/path/` lists that prefix below the connection's configured
+root. Renart loads only the requested levels, not the entire tree.
+
+Press **Tab** to accept the faint suggestion and its next separator, or tap the
+**Tab** button on mobile. Tables and files complete without a separator. Names
+containing literal dots are quoted in warehouse paths. If a listing reaches its
+500-entry limit, enter a more specific storage prefix ending in `/` to open it
+directly. Clearing the search returns to the folder you were browsing.
+
 ### View SQL in the Data Browser
 
 For views whose warehouse exposes the definition, the **SQL** tab shows the

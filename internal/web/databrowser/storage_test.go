@@ -14,6 +14,37 @@ func TestStoragePathsRejectControlCharactersConsistently(t *testing.T) {
 	require.NoError(t, ValidateStoragePath("events/Frühstück.csv", false))
 }
 
+func TestStoragePrefixListsOnlyTheRequestedLocation(t *testing.T) {
+	var requested []string
+	svc := New(Dependencies{
+		ListConnections: staticConnections([]ConnectionConfig{{Name: "lake", Type: "s3", Storage: true}}),
+		ListStorage: func(_ context.Context, _, prefix, _ string) (StorageListing, error) {
+			requested = append(requested, prefix)
+			return StorageListing{Entries: []StorageEntry{
+				{Path: "some/deep/path/orders.csv", Reference: "s3://bucket/some/deep/path/orders.csv"},
+				{Path: "outside.csv"},
+			}}, nil
+		},
+	})
+	connections, apiErr := svc.Connections(t.Context(), "dev")
+	require.Nil(t, apiErr)
+	id := connections.Connections[0].ID
+	result, apiErr := svc.Prefix(t.Context(), id, "some/deep/path/", "dev")
+	require.Nil(t, apiErr)
+	require.Equal(t, []string{"some/deep/path/"}, requested)
+	require.Len(t, result.Nodes, 1)
+	require.Equal(t, "orders.csv", result.Nodes[0].Label)
+	require.NotEmpty(t, result.ParentID)
+	for _, value := range []string{"../secret/", "/absolute/", "a//b/", "a/*/", "s3://other/", "a\n/"} {
+		_, apiErr = svc.Prefix(t.Context(), id, value, "dev")
+		require.NotNil(t, apiErr, value)
+		require.Equal(t, 400, apiErr.Status)
+	}
+	require.Len(t, requested, 1, "invalid paths must not reach Sling")
+	_, apiErr = svc.Prefix(t.Context(), id, "", "other")
+	require.NotNil(t, apiErr, "environment scope still applies")
+}
+
 func TestStorageHierarchyRevalidatesObjectsAndAccess(t *testing.T) {
 	var requested []string
 	svc := New(Dependencies{

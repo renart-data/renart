@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,4 +35,35 @@ func TestDataAddressHTTPBoundary(t *testing.T) {
 		router.ServeHTTP(response, httptest.NewRequest("POST", "/api/data-browser/resolve", strings.NewReader(test.body)))
 		require.Equal(t, test.status, response.Code, response.Body.String())
 	}
+}
+
+func TestDataBrowserPrefixHTTPBoundary(t *testing.T) {
+	var requested []string
+	service := databrowser.New(databrowser.Dependencies{
+		ListConnections: func(context.Context, string) (string, []databrowser.ConnectionConfig, int64, error) {
+			return "dev", []databrowser.ConnectionConfig{{Name: "lake", Type: "s3", Storage: true}}, 1, nil
+		},
+		ListStorage: func(_ context.Context, _, prefix, _ string) (databrowser.StorageListing, error) {
+			requested = append(requested, prefix)
+			return databrowser.StorageListing{}, nil
+		},
+	})
+	connections, apiErr := service.Connections(t.Context(), "dev")
+	require.Nil(t, apiErr)
+	router := chi.NewRouter()
+	RegisterDataBrowserRoutes(router, &DataBrowserAPI{Service: service})
+	for _, test := range []struct {
+		path   string
+		status int
+	}{
+		{"events/Frühstück/", 200},
+		{"../outside/", 400},
+		{"events/\n/", 400},
+		{"/absolute/", 400},
+	} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest("GET", "/api/data-browser/connections/"+connections.Connections[0].ID+"/prefix?environment=dev&path="+url.QueryEscape(test.path), nil))
+		require.Equal(t, test.status, response.Code, response.Body.String())
+	}
+	require.Equal(t, []string{"events/Frühstück/"}, requested)
 }

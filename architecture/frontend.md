@@ -191,6 +191,27 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   support. A pending namespace replaces the previous list instead of presenting
   stale children as the current folder.
 
+  The search field accepts connection-qualified paths. Warehouse levels use
+  dots (quoted names preserve literal dots); storage and project-file paths use
+  slashes after the connection name. `lib/data-browser-search.ts` is a pure
+  incremental planner: it requests only the next missing level on the typed
+  branch, never recursively searches siblings. `use-data-browser-search.ts`
+  debounces requests, shares listings across leaf-filter edits, bounds its
+  mounted metadata cache to 32 levels, and cancels obsolete requests. Project,
+  environment and revision IDs scope that cache. Refresh discards it. Storage
+  prefixes use a direct server lookup, so a pasted prefix does not require its
+  ancestors to fit within their listing caps. An exactly matched storage folder
+  also reveals its children without a trailing slash.
+
+  The shadcn InputGroup renders a shadow completion; Tab or its touch button
+  accepts the canonical name and namespace separator, while a leaf adds no
+  separator. Abbreviations only suggest names, never select an ambiguous path.
+  Escape dismisses and Shift+Tab retains normal focus navigation. Mid-input
+  selection and IME composition suppress completion. The input stays outside
+  hierarchy transition keys so lazy result updates cannot remount it. Search
+  state is disposable, bounded and project/environment-scoped across mobile
+  Sheet transitions, separate from the routed object, editor and result tabs.
+
   In a pipeline, table rows and warehouse connections support native drag and
   the equivalent **Use in canvas** action (keyboard/touch). A table reveals a
   matching prefix group as its Source creation target; when absent, a temporary

@@ -1578,6 +1578,17 @@ child environment variables, not argv, object references or provider error text.
 Native structured S3 payloads preserve custom endpoints and keys; native SFTP
 URLs preserve authentication and default port 22. Neither invokes Ingestr.
 
+`GET /api/data-browser/connections/{connectionID}/prefix?path=...` lists a typed
+storage prefix directly, without walking its parents. It checks the connection's
+current revision/environment and storage capability, applies the same relative
+path/selector validation as ordinary browsing, and issues the same scoped node
+references. The provider still enforces the configured root; this endpoint does
+not resolve SQL, preview files or bypass later object-handoff revalidation.
+The workspace watcher excludes Sling's generated `.renart/config/.sling/` files
+from both polling snapshots and fsnotify relevance checks. Bootstrapping Sling
+therefore does not advance the workspace revision and invalidate its own browser
+references. Authored connection, secret and environment declarations remain watched.
+
 The same payloads feed Load. `slingCommandConnectionEnv` pins named source and
 target connections with URL streams/objects in SLING_TASK_CONFIG after CLI flag
 parsing, working around Sling 1.5.22's nondeterministic connection-key renaming

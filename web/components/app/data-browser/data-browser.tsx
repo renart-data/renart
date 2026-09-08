@@ -16,7 +16,6 @@ import {
   Plus,
   RefreshCw,
   Rows3,
-  Search,
   Table2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -32,7 +31,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { selectedEnvironmentAtom } from "@/lib/atoms/domains/workspace";
@@ -66,6 +64,9 @@ import {
   type AppContextSidebarTransitionDirection,
 } from "../workbench/workbench-context-sidebar";
 import { WorkbenchPortal } from "../workbench/workbench-slots";
+import { useDataBrowserSearch } from "@/hooks/use-data-browser-search";
+import { connectionSearchPrefix, quoteBrowserSegment } from "@/lib/data-browser-search";
+import { DataBrowserSearchInput } from "./data-browser-search-input";
 
 type BrowserLevel = {
   parentId?: string;
@@ -79,6 +80,7 @@ type BrowserLevel = {
 // revision before reusing cached object references. Bounded, same-tab cache only.
 type BrowserNavigation = { connection: DataBrowserConnection; levels: BrowserLevel[] };
 const browserNavigationCache = new Map<string, BrowserNavigation>();
+const browserSearchCache = new Map<string, string>();
 
 const preferredWarehouseTypes = [
   "postgres",
@@ -180,6 +182,7 @@ function DataBrowserWorkspace({
 
   const navigator = (
     <DataBrowserNavigator
+      key={JSON.stringify([getPinnedProjectId(), environment])}
       pipelineId={pipelineId}
       environment={environment}
       onChooseForCanvas={onChooseForCanvas}
@@ -414,13 +417,43 @@ function DataBrowserNavigator({
   onReload: () => void | Promise<void>;
   navigationDirection: AppContextSidebarTransitionDirection;
 }) {
-  const [query, setQuery] = useState("");
-  const filteredConnections = browser.connections.filter((connection) =>
-    `${connection.name} ${connection.type}`.toLowerCase().includes(query.trim().toLowerCase()),
+  const searchScope = JSON.stringify([getPinnedProjectId(), environment]);
+  const [query, setQuery] = useState(() => browserSearchCache.get(searchScope) ?? "");
+  const search = useDataBrowserSearch(
+    query,
+    browser.connections,
+    browser.selectedConnection
+      ? {
+          connection: browser.selectedConnection,
+          parts: browser.levels.slice(1).map((level) => level.label),
+          nodes: browser.currentLevel?.nodes ?? [],
+          truncated: browser.currentLevel?.truncated,
+        }
+      : undefined,
+    environment,
   );
-  const filteredNodes = (browser.currentLevel?.nodes ?? []).filter((node) =>
-    node.label.toLowerCase().includes(query.trim().toLowerCase()),
-  );
+  useEffect(() => {
+    browserSearchCache.delete(searchScope);
+    if (query) browserSearchCache.set(searchScope, query);
+    if (browserSearchCache.size > 12)
+      browserSearchCache.delete(browserSearchCache.keys().next().value!);
+  }, [query, searchScope]);
+  const activeSearch = query.length > 0;
+  const selectedConnection = activeSearch ? search.connection : browser.selectedConnection;
+  const filteredConnections = activeSearch ? search.connections : browser.connections;
+  const filteredNodes = activeSearch ? search.nodes : (browser.currentLevel?.nodes ?? []);
+  const loading = browser.loading || (activeSearch && search.loading);
+  const error = activeSearch ? (search.error ?? browser.error) : browser.error;
+  const truncated = activeSearch ? search.truncated : browser.currentLevel?.truncated;
+  const openSearchNode = (node: DataBrowserNode) => {
+    if (!activeSearch) return onOpenNode(node);
+    const separator = selectedConnection?.source_kind === "warehouse" ? "." : "/";
+    setQuery(
+      search.prefix +
+        (separator === "." ? quoteBrowserSegment(node.label) : node.label) +
+        separator,
+    );
+  };
   const viewKey = browser.selectedConnection
     ? [
         browser.selectedConnection.id,
@@ -429,17 +462,18 @@ function DataBrowserNavigator({
     : "sources";
 
   return (
-    <AppContextSidebarTransition
-      viewKey={viewKey}
-      direction={navigationDirection}
-      className="overflow-hidden bg-card"
-    >
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">
       <div
         data-slot="workbench-context-header"
         className="flex h-10 shrink-0 items-center gap-2 border-b px-3 pr-12 md:pr-3"
       >
-        {browser.selectedConnection ? (
-          <Button variant="ghost" size="icon-sm" aria-label="Back" onClick={onBack}>
+        {selectedConnection ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Back"
+            onClick={() => (activeSearch ? setQuery(search.back) : onBack())}
+          >
             <ArrowLeft />
           </Button>
         ) : (
@@ -447,11 +481,11 @@ function DataBrowserNavigator({
         )}
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-xs font-semibold">
-            {browser.currentLevel?.label ?? "Data Browser"}
+            {activeSearch ? search.label : (browser.currentLevel?.label ?? "Data Browser")}
           </h2>
           <p className="truncate text-[10px] text-muted-foreground">
-            {browser.selectedConnection
-              ? friendlyConnectionType(browser.selectedConnection.type)
+            {selectedConnection
+              ? friendlyConnectionType(selectedConnection.type)
               : "Warehouses and local files"}
           </p>
         </div>
@@ -459,144 +493,154 @@ function DataBrowserNavigator({
           variant="ghost"
           size="icon-sm"
           aria-label="Refresh data sources"
-          onClick={() => void onReload()}
-          disabled={browser.loading}
+          onClick={() => {
+            search.refresh();
+            void onReload();
+          }}
+          disabled={loading}
         >
           <RefreshCw />
         </Button>
       </div>
       <div className="shrink-0 border-b p-2">
-        <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={browser.selectedConnection ? "Filter objects…" : "Filter sources…"}
-            className="h-8 pl-8 text-xs"
-          />
-        </div>
+        <DataBrowserSearchInput
+          value={query}
+          onChange={setQuery}
+          completions={loading || error ? [] : search.completions}
+          placeholder={selectedConnection ? "Filter objects…" : "Filter sources…"}
+        />
       </div>
-      <ScrollArea className="min-h-0 flex-1" showHorizontalScrollBar={false}>
-        <div className="p-2">
-          {browser.error ? (
-            <Alert variant="destructive" className="mb-2">
-              <AlertCircle />
-              <AlertTitle>Data Browser needs attention</AlertTitle>
-              <AlertDescription>{browser.error}</AlertDescription>
-            </Alert>
-          ) : null}
-          {browser.currentLevel?.truncated ? (
-            <p role="status" className="mb-2 px-2 text-xs text-muted-foreground">
-              Showing the first 500 objects.
-              {browser.selectedConnection?.source_kind === "storage"
-                ? " Narrow the storage prefix in the connection settings to browse a smaller location."
-                : " Choose a smaller namespace to see more specific results."}
-            </p>
-          ) : null}
-          {browser.loading ? (
-            <DataBrowserLoading label="Loading data sources…" />
-          ) : browser.selectedConnection ? (
-            <NodeList
-              nodes={filteredNodes}
-              onOpen={onOpenNode}
-              pipelineId={pipelineId}
-              environment={environment}
-              onChooseForCanvas={onChooseForCanvas}
-            />
-          ) : (
-            <>
-              <NavigatorSection label="Connected sources">
-                {filteredConnections.map((connection) => (
-                  <DataBrowserTransferItem
-                    key={connection.id}
-                    pipelineId={pipelineId}
-                    environment={environment}
-                    onChoose={onChooseForCanvas}
-                    item={
-                      (connection.source_kind === "warehouse" ||
-                        connection.source_kind === "storage") &&
-                      connection.access_mode !== "read_only"
-                        ? { kind: "connection", id: connection.name, label: connection.name }
-                        : undefined
-                    }
-                  >
-                    <NavigatorRow
-                      icon={<ConnectionTypeIcon connectionType={connection.type} />}
-                      label={connection.name}
-                      description={
-                        connection.source_kind === "local_files"
-                          ? "Files inside this project"
-                          : friendlyConnectionType(connection.type)
+      <AppContextSidebarTransition
+        viewKey={activeSearch ? "search-results" : viewKey}
+        direction={activeSearch ? "replace" : navigationDirection}
+        className="min-h-0 flex-1"
+      >
+        <ScrollArea className="min-h-0 flex-1" showHorizontalScrollBar={false}>
+          <div className="p-2">
+            {error ? (
+              <Alert variant="destructive" className="mb-2">
+                <AlertCircle />
+                <AlertTitle>Data Browser needs attention</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+            {truncated && !loading ? (
+              <p role="status" className="mb-2 px-2 text-xs text-muted-foreground">
+                Showing the first 500 objects.
+                {selectedConnection?.source_kind === "storage"
+                  ? " Enter a more specific prefix ending in / to browse it directly."
+                  : " Choose a smaller namespace to see more specific results."}
+              </p>
+            ) : null}
+            {loading ? (
+              <DataBrowserLoading label="Loading data sources…" />
+            ) : error ? null : selectedConnection ? (
+              <NodeList
+                nodes={filteredNodes}
+                onOpen={openSearchNode}
+                pipelineId={pipelineId}
+                environment={environment}
+                onChooseForCanvas={onChooseForCanvas}
+              />
+            ) : (
+              <>
+                <NavigatorSection label="Connected sources">
+                  {filteredConnections.map((connection) => (
+                    <DataBrowserTransferItem
+                      key={connection.id}
+                      pipelineId={pipelineId}
+                      environment={environment}
+                      onChoose={onChooseForCanvas}
+                      item={
+                        (connection.source_kind === "warehouse" ||
+                          connection.source_kind === "storage") &&
+                        connection.access_mode !== "read_only"
+                          ? { kind: "connection", id: connection.name, label: connection.name }
+                          : undefined
                       }
-                      trailing={
-                        <span className="flex items-center gap-1">
-                          {connection.access_mode === "read_only" ? (
-                            <span className="text-[10px] text-muted-foreground">Read-only</span>
-                          ) : null}
-                          <ChevronRight className="size-3.5" />
-                        </span>
-                      }
-                      onClick={() => void onSelectConnection(connection)}
-                    />
-                  </DataBrowserTransferItem>
-                ))}
-                {filteredConnections.length === 0 ? (
-                  <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-                    No matching data sources.
-                  </p>
+                    >
+                      <NavigatorRow
+                        icon={<ConnectionTypeIcon connectionType={connection.type} />}
+                        label={connection.name}
+                        description={
+                          connection.source_kind === "local_files"
+                            ? "Files inside this project"
+                            : friendlyConnectionType(connection.type)
+                        }
+                        trailing={
+                          <span className="flex items-center gap-1">
+                            {connection.access_mode === "read_only" ? (
+                              <span className="text-[10px] text-muted-foreground">Read-only</span>
+                            ) : null}
+                            <ChevronRight className="size-3.5" />
+                          </span>
+                        }
+                        onClick={() =>
+                          activeSearch
+                            ? setQuery(connectionSearchPrefix(connection))
+                            : void onSelectConnection(connection)
+                        }
+                      />
+                    </DataBrowserTransferItem>
+                  ))}
+                  {filteredConnections.length === 0 ? (
+                    <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+                      No matching data sources.
+                    </p>
+                  ) : null}
+                </NavigatorSection>
+                {!activeSearch && quickWarehouseTypes.length > 0 ? (
+                  <NavigatorSection label="Add a warehouse">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {quickWarehouseTypes.map((connectionType) => (
+                        <button
+                          key={connectionType}
+                          type="button"
+                          className="flex min-w-0 items-center gap-2 rounded-lg border bg-background px-2 py-2 text-left transition-colors hover:border-primary/30 hover:bg-accent"
+                          onClick={() => onAddConnection(connectionType)}
+                        >
+                          <ConnectionTypeIcon connectionType={connectionType} className="size-7" />
+                          <span className="truncate text-[11px] font-medium">
+                            {friendlyConnectionType(connectionType)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-1 w-full justify-start"
+                      onClick={() => onAddConnection()}
+                    >
+                      <Plus /> Other connection
+                    </Button>
+                  </NavigatorSection>
                 ) : null}
-              </NavigatorSection>
-              {quickWarehouseTypes.length > 0 ? (
-                <NavigatorSection label="Add a warehouse">
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {quickWarehouseTypes.map((connectionType) => (
-                      <button
-                        key={connectionType}
-                        type="button"
-                        className="flex min-w-0 items-center gap-2 rounded-lg border bg-background px-2 py-2 text-left transition-colors hover:border-primary/30 hover:bg-accent"
-                        onClick={() => onAddConnection(connectionType)}
-                      >
-                        <ConnectionTypeIcon connectionType={connectionType} className="size-7" />
-                        <span className="truncate text-[11px] font-medium">
-                          {friendlyConnectionType(connectionType)}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mt-1 w-full justify-start"
-                    onClick={() => onAddConnection()}
-                  >
-                    <Plus /> Other connection
-                  </Button>
-                </NavigatorSection>
-              ) : null}
-              {quickFileSystemTypes.length > 0 ? (
-                <NavigatorSection label="Add a file system">
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {quickFileSystemTypes.map((connectionType) => (
-                      <button
-                        key={connectionType}
-                        type="button"
-                        className="flex min-w-0 items-center gap-2 rounded-lg border bg-background px-2 py-2 text-left transition-colors hover:border-primary/30 hover:bg-accent"
-                        onClick={() => onAddConnection(connectionType)}
-                      >
-                        <ConnectionTypeIcon connectionType={connectionType} className="size-7" />
-                        <span className="truncate text-[11px] font-medium">
-                          {friendlyConnectionType(connectionType)}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </NavigatorSection>
-              ) : null}
-            </>
-          )}
-        </div>
-      </ScrollArea>
-    </AppContextSidebarTransition>
+                {!activeSearch && quickFileSystemTypes.length > 0 ? (
+                  <NavigatorSection label="Add a file system">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {quickFileSystemTypes.map((connectionType) => (
+                        <button
+                          key={connectionType}
+                          type="button"
+                          className="flex min-w-0 items-center gap-2 rounded-lg border bg-background px-2 py-2 text-left transition-colors hover:border-primary/30 hover:bg-accent"
+                          onClick={() => onAddConnection(connectionType)}
+                        >
+                          <ConnectionTypeIcon connectionType={connectionType} className="size-7" />
+                          <span className="truncate text-[11px] font-medium">
+                            {friendlyConnectionType(connectionType)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </NavigatorSection>
+                ) : null}
+              </>
+            )}
+          </div>
+        </ScrollArea>
+      </AppContextSidebarTransition>
+    </div>
   );
 }
 
