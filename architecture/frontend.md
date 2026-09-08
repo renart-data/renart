@@ -206,7 +206,8 @@ and never inferred from a location URL. Bundle gates remain unchanged.
 
   Table drags capture the existing row in a compact themed card; nested resource
   links disable native URL dragging but keep ordinary navigation. Compatible Load
-  targets grow as the pointer approaches. Screen-space proximity is measured from
+  targets, including the standalone storage-source target, grow as the pointer
+  approaches. Screen-space proximity is measured from
   fixed anchors, so zoom/pan is accounted for without relaying out the DAG; the
   expanded hit area stays open until the pointer leaves it. Capture-phase drag
   tracking observes transitions even when a target stops event propagation.

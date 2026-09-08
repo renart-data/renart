@@ -217,26 +217,38 @@ export function DataBrowserCanvas({
                     : `${active.method === "drag" ? "Drop in" : "Choose"} the ${sourceGroup} group · review before saving`)}
               </p>
             ) : active.kind === "storage" ? (
-              <Button
-                variant="outline"
-                className="h-auto min-w-0 border-dashed border-primary px-3 py-2 text-left"
-                data-testid="data-browser-drop-target"
-                onDragOver={allowDataBrowserDrop}
-                onDrop={(event) => drop(undefined, event)}
-                onClick={() => drop(undefined)}
-                disabled={active.kind === "storage" && !storageObject?.capabilities.load_source}
+              <div
+                ref={(element) =>
+                  registerTarget(
+                    "storage:source",
+                    storageObject?.capabilities.load_source ? element : null,
+                  )
+                }
+                className="relative h-12 w-64 min-w-0"
               >
-                <Database data-icon="inline-start" />
-                <span className="min-w-0">
-                  <span className="block">Create Load from object</span>
-                  <span className="block truncate text-xs font-normal text-muted-foreground">
-                    {objectError ||
-                      (active.kind === "storage" && !storageObject
-                        ? "Checking storage object…"
-                        : `${active.label} · review before saving`)}
+                <Button
+                  variant="outline"
+                  className="absolute h-auto min-w-0 border-dashed border-primary px-3 py-2 text-left transition-[inset] duration-150 motion-reduce:transition-none"
+                  style={{ inset: nearTarget === "storage:source" ? -8 : 0 }}
+                  data-testid="data-browser-drop-target"
+                  data-proximity={nearTarget === "storage:source" ? "near" : "far"}
+                  onDragOver={allowDataBrowserDrop}
+                  onDrop={(event) => drop(undefined, event)}
+                  onClick={() => drop(undefined)}
+                  disabled={active.kind === "storage" && !storageObject?.capabilities.load_source}
+                >
+                  <Database data-icon="inline-start" />
+                  <span className="min-w-0">
+                    <span className="block">Create Load from object</span>
+                    <span className="block truncate text-xs font-normal text-muted-foreground">
+                      {objectError ||
+                        (active.kind === "storage" && !storageObject
+                          ? "Checking storage object…"
+                          : `${active.label} · review before saving`)}
+                    </span>
                   </span>
-                </span>
-              </Button>
+                </Button>
+              </div>
             ) : (
               <p role="status" className="min-w-0 px-1 text-xs">
                 {loading
@@ -249,7 +261,7 @@ export function DataBrowserCanvas({
               </p>
             )}
             {active.kind === "storage" && eligible.size > 0 ? (
-              <p role="status" className="text-xs text-muted-foreground">
+              <p role="status" className="sr-only text-xs text-muted-foreground sm:not-sr-only">
                 Or drop beside an asset to use this as its destination.
               </p>
             ) : null}

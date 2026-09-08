@@ -109,6 +109,16 @@ test.describe("Sling storage browser", () => {
             .dispatchEvent("dragstart", { dataTransfer: transfer });
           const target = page.getByRole("button", { name: /Create Load from object/ });
           await expect(target).toBeEnabled();
+          const initial = (await target.boundingBox())!;
+          await page.locator("body").dispatchEvent("dragover", {
+            dataTransfer: transfer,
+            clientX: initial.x - 20,
+            clientY: initial.y + initial.height / 2,
+          });
+          await expect(target).toHaveAttribute("data-proximity", "near");
+          await expect
+            .poll(async () => (await target.boundingBox())!.height)
+            .toBeGreaterThan(initial.height + 8);
           await target.dispatchEvent("drop", { dataTransfer: transfer });
         }
         if (info.project.name.includes("mobile"))
