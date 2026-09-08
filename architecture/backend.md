@@ -428,8 +428,10 @@ helper with the CLI. Linux archives carry WebKitGTK 4.1 and 4.0 variants behind
 a small launcher that selects the variant whose shared libraries are available.
 The native Linux window embeds the same 256px PNG as the web UI and sets its
 GTK program name to `renart`. Adding Linux options retains Wails' conservative
-`WebviewGpuPolicyNever` default. The standalone helper only references the icon
-accessor from `web`; unused static application assets are linker-eliminated.
+`WebviewGpuPolicyNever` default. The standalone helper imports the independent
+`internal/desktopicon` package, not `web`, so a fresh checkout can build it before
+the frontend bundle exists. The shared icon generator updates its checked-in PNG
+alongside the web icons; tests check byte identity and the helper dependency graph.
 
 For an asset target, `--refresh-upstreams` first invokes the server-side stale
 planner narrowed to that asset's transitive upstream closure; only non-fresh

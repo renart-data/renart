@@ -140,7 +140,7 @@ jobs:
           corepack pnpm build
 
       - name: Restore generated icon assets
-        run: git restore web/public/icons
+        run: git restore web/public/icons internal/desktopicon/icon-256.png
 
       - name: Verify third-party licenses and notices
         run: ./scripts/check-third-party-licenses.sh
@@ -283,7 +283,7 @@ jobs:
           corepack pnpm build
 
       - name: Restore generated icon assets
-        run: git restore web/public/icons
+        run: git restore web/public/icons internal/desktopicon/icon-256.png
 
       - name: Verify third-party licenses and notices
         run: ./scripts/check-third-party-licenses.sh
