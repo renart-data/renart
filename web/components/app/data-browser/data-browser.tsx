@@ -527,9 +527,11 @@ function DataBrowserNavigator({
             {truncated && !loading ? (
               <p role="status" className="mb-2 px-2 text-xs text-muted-foreground">
                 Showing the first 500 objects.
-                {selectedConnection?.source_kind === "storage"
-                  ? " Enter a more specific prefix ending in / to browse it directly."
-                  : " Choose a smaller namespace to see more specific results."}
+                {selectedConnection?.type === "s3"
+                  ? " Keep typing the name prefix to narrow the S3 results (case-sensitive)."
+                  : selectedConnection?.source_kind === "storage"
+                    ? " Enter a more specific prefix ending in / to browse it directly."
+                    : " Choose a smaller namespace to see more specific results."}
               </p>
             ) : null}
             {loading ? (

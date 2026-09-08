@@ -71,7 +71,7 @@ type Dependencies struct {
 	ListColumns          func(context.Context, string, string, string) ([]model.SQLColumn, error)
 	LookupViewDefinition func(context.Context, string, string, string) (string, error)
 	RunQuery             func(context.Context, string, string, string, int) (QueryResult, error)
-	ListStorage          func(context.Context, string, string, string) (StorageListing, error)
+	ListStorage          func(context.Context, string, StorageQuery, string) (StorageListing, error)
 	Now                  func() time.Time
 }
 

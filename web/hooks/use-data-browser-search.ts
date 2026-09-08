@@ -10,8 +10,8 @@ import type { DataBrowserChildrenResponse, DataBrowserConnection } from "@/lib/g
 import { getPinnedProjectId } from "@/lib/project-context";
 
 // Disposable metadata only, bounded to this mounted browser and revision scope.
-// The request key excludes the leaf filter: typing another character never
-// starts another listing of the same parent. A different path aborts the old one.
+// Complete listings are shared across leaf edits. Capped S3 listings include a
+// literal name prefix in the key; obsolete refinements are debounced/aborted.
 export function useDataBrowserSearch(
   query: string,
   connections: DataBrowserConnection[],
@@ -44,7 +44,12 @@ export function useDataBrowserSearch(
         request.prefix === undefined
           ? getDataBrowserChildren({ ...request, environment }, controller.signal)
           : getDataBrowserPrefix(
-              { connectionId: request.connectionId, prefix: request.prefix, environment },
+              {
+                connectionId: request.connectionId,
+                prefix: request.prefix,
+                namePrefix: request.namePrefix,
+                environment,
+              },
               controller.signal,
             );
       void result

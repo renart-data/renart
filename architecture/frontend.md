@@ -202,6 +202,12 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   prefixes use a direct server lookup, so a pasted prefix does not require its
   ancestors to fit within their listing caps. An exactly matched storage folder
   also reveals its children without a trailing slash.
+  For a truncated S3 level, a nonempty leaf filter becomes a debounced
+  `name_prefix` lookup. Complete parents (including the manually opened folder)
+  and complete cached prefix subsets answer further edits locally. Subsets are
+  reused only for case-sensitive extensions on the same connection and parent;
+  broadening outside them requires a new request. Refined subsets use literal
+  starts-with matching, not incomplete fuzzy results. SFTP stays local-only.
 
   The shadcn InputGroup renders a shadow completion; Tab or its touch button
   accepts the canonical name and namespace separator, while a leaf adds no

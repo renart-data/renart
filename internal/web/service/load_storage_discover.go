@@ -67,14 +67,13 @@ func (r storageRoot) pattern(relative string) (string, error) {
 	return u.String(), nil
 }
 
-// BrowseStorage uses the same Sling launcher, resolved credentials and process
-// limiter as Load. Only one directory is listed; it never reads object data or
-// invokes Ingestr. The deadline and bounded capture also apply to bad providers.
-func (s *LoadService) BrowseStorage(ctx context.Context, connection, prefix, environment string) (databrowser.StorageListing, error) {
+// BrowseStorage uses resolved Load credentials for metadata-only S3/SFTP listing.
+// S3 filters in ListObjectsV2 before the cap; SFTP retains bounded Sling discovery.
+func (s *LoadService) BrowseStorage(ctx context.Context, connection string, query databrowser.StorageQuery, environment string) (databrowser.StorageListing, error) {
 	if s.deps.NewConnectionManager == nil {
 		return databrowser.StorageListing{}, fmt.Errorf("storage browsing is unavailable")
 	}
-	if err := databrowser.ValidateStoragePath(prefix, true); err != nil {
+	if err := query.Validate(); err != nil {
 		return databrowser.StorageListing{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -91,7 +90,26 @@ func (s *LoadService) BrowseStorage(ctx context.Context, connection, prefix, env
 	if err != nil {
 		return databrowser.StorageListing{}, err
 	}
-	pattern, err := root.pattern(prefix)
+	if root.url.Scheme == "s3" {
+		release, err := sharedSlingProcessLimiter.acquire(ctx)
+		if err != nil {
+			return databrowser.StorageListing{}, fmt.Errorf("storage browsing was cancelled")
+		}
+		defer release()
+		client, err := newStorageS3Client(ctx, uri)
+		if err == nil {
+			var listing databrowser.StorageListing
+			listing, err = listS3Storage(ctx, client, root, query)
+			if err == nil {
+				return listing, nil
+			}
+		}
+		return databrowser.StorageListing{}, fmt.Errorf("could not list this storage location; check connection settings and list permissions")
+	}
+	if query.NamePrefix != "" || query.Exact {
+		return databrowser.StorageListing{}, fmt.Errorf("name-prefix filtering is supported for S3 connections")
+	}
+	pattern, err := root.pattern(query.Prefix)
 	if err != nil {
 		return databrowser.StorageListing{}, err
 	}
@@ -109,7 +127,7 @@ func (s *LoadService) BrowseStorage(ctx context.Context, connection, prefix, env
 		}
 		return databrowser.StorageListing{}, fmt.Errorf("could not list this storage location; check connection settings and list permissions")
 	}
-	return parseStorageDiscovery(capture.String(), root, prefix)
+	return parseStorageDiscovery(capture.String(), root, query.Prefix)
 }
 
 type storageDiscoveryCapture struct {

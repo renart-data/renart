@@ -1566,15 +1566,20 @@ module.
 
 S3/SFTP reuse the Data Browser's opaque revision-scoped references and durable
 connection/type/path addresses. `storage.go` adds prefix/file nodes, explicit
-load_source/load_destination capabilities and parent-list revalidation before
+load_source/load_destination capabilities and provider revalidation before
 handoff. Storage has no SQL preview capability. Read-only connections are sources
 only, including after access-mode changes invalidate prior revision tokens.
 
-`LoadService.BrowseStorage` invokes bounded, metadata-only Sling discovery through
-the shared process limiter and credential resolver. One prefix is listed with a
-30-second deadline, 1 MiB capture and 500-entry cap; unsupported selector-like keys
-are omitted. Configured S3 paths scope the root. Credentials stay server-side in
-child environment variables, not argv, object references or provider error text.
+`LoadService.BrowseStorage` uses bounded, metadata-only provider discovery through
+the shared Load concurrency limiter and credential resolver. SFTP invokes Sling;
+S3 uses the existing AWS SDK's `ListObjectsV2` with `Delimiter=/` and a literal
+`Prefix`, applied before `MaxKeys`. One level is listed with a 30-second deadline,
+1 MiB per-response/capture limit and 500-entry cap (501st-entry lookahead).
+Continuation pages consume the remaining budget, with a 32-page safety ceiling;
+an unfinished provider listing remains truncated, even when unsafe keys are omitted.
+Configured S3 paths scope the root. Credentials stay server-side, not in argv,
+object references or provider error text. S3 preserves custom endpoints, static
+credentials, the default AWS credential chain and bucket-region discovery.
 Native structured S3 payloads preserve custom endpoints and keys; native SFTP
 URLs preserve authentication and default port 22. Neither invokes Ingestr.
 
@@ -1584,6 +1589,11 @@ current revision/environment and storage capability, applies the same relative
 path/selector validation as ordinary browsing, and issues the same scoped node
 references. The provider still enforces the configured root; this endpoint does
 not resolve SQL, preview files or bypass later object-handoff revalidation.
+The optional `name_prefix` query parameter narrows one S3 leaf name, without
+changing the directory/node identity. `StorageQuery` keeps that filter separate
+from the parent path. S3 handoff uses an internal exact-name, one-result listing
+(prefix existence for directories), so opening or loading an off-page result
+does not fall back to the original 500-entry parent listing.
 The workspace watcher excludes Sling's generated `.renart/config/.sling/` files
 from both polling snapshots and fsnotify relevance checks. Bootstrapping Sling
 therefore does not advance the workspace revision and invalidate its own browser

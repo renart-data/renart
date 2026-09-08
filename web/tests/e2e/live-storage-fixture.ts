@@ -7,7 +7,7 @@ const repo = resolve(__dirname, "../../..");
 const minioImage = "quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z";
 const mcImage = "quay.io/minio/mc:RELEASE.2025-05-21T01-59-54Z";
 
-export async function createLiveStorage() {
+export async function createLiveStorage(options: { largeS3Listing?: boolean } = {}) {
   const suffix = randomUUID().slice(0, 8);
   const container = `renart-e2e-storage-${suffix}`;
   const password = randomUUID();
@@ -86,7 +86,10 @@ export async function createLiveStorage() {
       "/bin/sh",
       mcImage,
       "-c",
-      "mc alias set local http://127.0.0.1:9000 renart renart-secret >/dev/null && mc mb local/browser && mc cp /fixture/orders.csv local/browser/incoming/orders.csv && mc cp /fixture/orders.csv local/browser/outgoing/previous.csv",
+      "set -e; mc alias set local http://127.0.0.1:9000 renart renart-secret >/dev/null; mc mb local/browser; mc cp /fixture/orders.csv local/browser/incoming/orders.csv; mc cp /fixture/orders.csv local/browser/outgoing/previous.csv" +
+        (options.largeS3Listing
+          ? "; mkdir -p /seed/many-files; i=1000; while [ $i -lt 1520 ]; do mkdir -p /seed/my_table/day=2024-$i; cp /fixture/orders.csv /seed/my_table/day=2024-$i/data.csv; cp /fixture/orders.csv /seed/many-files/part-$i.csv; i=$((i+1)); done; for date in 2026-09-01 2026-09-20 2026-10-01; do mkdir -p /seed/my_table/day=$date; cp /fixture/orders.csv /seed/my_table/day=$date/data.csv; cp /fixture/orders.csv /seed/many-files/part-$date.csv; done; mc cp --recursive /seed/ local/browser/ >/dev/null"
+          : ""),
     ]);
     return { minioPort, sftpPort, password, dispose };
   } catch (error) {

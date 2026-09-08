@@ -110,6 +110,57 @@ describe("lazy Data Browser path search", () => {
       prefix: "unlisted/deep/",
     });
   });
+  it("narrows capped S3 listings at the provider, then reuses complete subsets", () => {
+    cache.clear();
+    const parent = { connectionId: lake.id, prefix: "my_table/" };
+    put(parent, [namespace("day=2024-01-01")], true);
+    const query = "my-s3-connection./my_table/";
+    expect(plan(query + "day=").request).toEqual({ ...parent, namePrefix: "day=" });
+    put({ ...parent, namePrefix: "day=" }, [], true);
+    expect(plan(query + "day=2026-09").request).toEqual({ ...parent, namePrefix: "day=2026-09" });
+    put({ ...parent, namePrefix: "day=2026-09" }, [
+      namespace("day=2026-09-01"),
+      namespace("day=2026-09-20"),
+    ]);
+    const narrowed = plan(query + "day=2026-09-2");
+    expect(narrowed.request).toBeUndefined();
+    expect(narrowed.nodes.map((n) => n.label)).toEqual(["day=2026-09-20"]);
+    expect(narrowed.truncated).toBe(false);
+    expect(plan(query + "day=2026-0").request).toEqual({ ...parent, namePrefix: "day=2026-0" });
+    expect(plan(query + "DAY=2026-09").request).toEqual({ ...parent, namePrefix: "DAY=2026-09" });
+    expect(plan(query + "day=2026-09-20").request).toEqual({
+      connectionId: lake.id,
+      prefix: "my_table/day=2026-09-20/",
+    });
+    // Eviction of the parent must not cause a broad reload if a complete subset covers the input.
+    cache.delete(searchRequestKey(parent));
+    expect(plan(query + "day=2026-09-2").request).toBeUndefined();
+  });
+  it("does not refetch complete S3 listings, including the manually opened folder", () => {
+    cache.clear();
+    const nodes = [table("day=2026-09-01.csv"), table("day=2026-08-01.csv")];
+    const base = { connection: lake, parts: ["my_table"], nodes, truncated: false };
+    const local = planDataBrowserSearch("day=2026-09", [lake], base, cache);
+    expect(local.request).toBeUndefined();
+    expect(local.nodes.map((n) => n.label)).toEqual(["day=2026-09-01.csv"]);
+    put({ connectionId: lake.id, prefix: "my_table/" }, nodes);
+    expect(plan("my-s3-connection./my_table/day=2026-09").request).toBeUndefined();
+    expect(plan("my-s3-connection./my_table/2026-09").nodes).toHaveLength(1);
+  });
+  it("keeps SFTP filtering local and does not reuse a subset from another path", () => {
+    cache.clear();
+    const sftp = { ...lake, type: "sftp" };
+    put({ connectionId: lake.id, prefix: "my_table/" }, [table("first.csv")], true);
+    expect(
+      planDataBrowserSearch("my-s3-connection./my_table/day=", [sftp], undefined, cache).request,
+    ).toBeUndefined();
+    put({ connectionId: lake.id, prefix: "elsewhere/", namePrefix: "day=" }, []);
+    expect(plan("my-s3-connection./my_table/day=").request).toEqual({
+      connectionId: lake.id,
+      prefix: "my_table/",
+      namePrefix: "day=",
+    });
+  });
   it("refuses unsafe storage paths without starting discovery", () => {
     for (const path of [
       "../secret/",

@@ -24,6 +24,31 @@ type StorageListing struct {
 	Truncated bool
 }
 
+// StorageQuery keeps the directory identity separate from a literal leaf filter.
+// Exact is internal-only: handoff verifies one object/prefix, not a capped parent.
+type StorageQuery struct {
+	Prefix     string
+	NamePrefix string
+	Exact      bool
+}
+
+func (q StorageQuery) Validate() error {
+	if err := ValidateStoragePath(q.Prefix, true); err != nil {
+		return err
+	}
+	if q.Prefix != "" && !strings.HasSuffix(q.Prefix, "/") {
+		return fmt.Errorf("choose a directory prefix ending in /")
+	}
+	name := q.NamePrefix
+	if q.Exact {
+		name = strings.TrimSuffix(name, "/")
+	}
+	if strings.Contains(name, "/") || (q.Exact && name == "") {
+		return fmt.Errorf("choose a single storage name to filter")
+	}
+	return ValidateStoragePath(q.Prefix+q.NamePrefix, true)
+}
+
 // Sling treats globs and pipe-separated patterns as executable selectors. Do
 // not let an object locator become a pattern, URL override or parent traversal.
 func ValidateStoragePath(value string, allowRoot bool) error {
@@ -44,7 +69,7 @@ func ValidateStoragePath(value string, allowRoot bool) error {
 // Prefix lists an explicitly typed location without enumerating its ancestors.
 // It creates only scoped discovery references; object handoff still revalidates
 // the provider listing. The configured connection root remains authoritative.
-func (s *Service) Prefix(ctx context.Context, connectionID, prefix, environment string) (ChildrenResponse, *apperror.Error) {
+func (s *Service) Prefix(ctx context.Context, connectionID, prefix, namePrefix, environment string) (ChildrenResponse, *apperror.Error) {
 	scope, apiErr := s.resolveScope(ctx, connectionID, environment)
 	if apiErr != nil {
 		return ChildrenResponse{}, apiErr
@@ -61,7 +86,14 @@ func (s *Service) Prefix(ctx context.Context, connectionID, prefix, environment 
 		parent.Kind, parent.Path = "storage_prefix", strings.TrimSuffix(prefix, "/")+"/"
 		parentID = encodeRef(parent)
 	}
-	nodes, truncated, err := s.storageChildren(ctx, scope.ref, parent, parentID)
+	query := StorageQuery{Prefix: parent.Path, NamePrefix: namePrefix}
+	if err := query.Validate(); err != nil {
+		return ChildrenResponse{}, badRequest("data_browser_prefix_invalid", err.Error())
+	}
+	if namePrefix != "" && scope.ref.ConnectionType != "s3" {
+		return ChildrenResponse{}, badRequest("data_browser_prefix_unsupported", "Name-prefix filtering is supported for S3 connections.")
+	}
+	nodes, truncated, err := s.storageChildrenMatching(ctx, scope.ref, parent, parentID, query)
 	if err != nil {
 		return ChildrenResponse{}, internalError("data_browser_discovery_failed", err)
 	}
@@ -69,13 +101,17 @@ func (s *Service) Prefix(ctx context.Context, connectionID, prefix, environment 
 }
 
 func (s *Service) storageChildren(ctx context.Context, connection, parent objectRef, parentID string) ([]Node, bool, error) {
+	return s.storageChildrenMatching(ctx, connection, parent, parentID, StorageQuery{Prefix: parent.Path})
+}
+
+func (s *Service) storageChildrenMatching(ctx context.Context, connection, parent objectRef, parentID string, query StorageQuery) ([]Node, bool, error) {
 	if parent.Kind != "connection" && parent.Kind != "storage_prefix" {
 		return nil, false, fmt.Errorf("choose a storage prefix")
 	}
 	if err := ValidateStoragePath(parent.Path, parent.Kind == "connection"); err != nil {
 		return nil, false, err
 	}
-	listing, err := s.deps.ListStorage(ctx, connection.Connection, parent.Path, connection.Environment)
+	listing, err := s.deps.ListStorage(ctx, connection.Connection, query, connection.Environment)
 	if err != nil {
 		return nil, false, err
 	}
@@ -84,7 +120,7 @@ func (s *Service) storageChildren(ctx context.Context, connection, parent object
 		if err := ValidateStoragePath(entry.Path, false); err != nil {
 			continue
 		}
-		if storageParent(entry.Path) != parent.Path {
+		if storageParent(entry.Path) != parent.Path || !strings.HasPrefix(entry.Path, parent.Path+query.NamePrefix) {
 			continue
 		}
 		ref := connection
@@ -112,7 +148,11 @@ func (s *Service) storageObject(ctx context.Context, scope resolvedScope, ref ob
 	if parent.Path != "" {
 		parent.Kind = "storage_prefix"
 	}
-	nodes, _, err := s.storageChildren(ctx, scope.ref, parent, "")
+	query := StorageQuery{Prefix: parent.Path}
+	if scope.ref.ConnectionType == "s3" {
+		query.NamePrefix, query.Exact = strings.TrimPrefix(ref.Path, parent.Path), true
+	}
+	nodes, _, err := s.storageChildrenMatching(ctx, scope.ref, parent, "", query)
 	if err != nil {
 		return ObjectResponse{}, internalError("data_browser_discovery_failed", err)
 	}

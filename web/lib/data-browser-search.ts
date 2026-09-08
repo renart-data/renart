@@ -4,7 +4,12 @@ import type {
   DataBrowserNode,
 } from "./generated/api-types";
 
-export type BrowserSearchRequest = { connectionId: string; parentId?: string; prefix?: string };
+export type BrowserSearchRequest = {
+  connectionId: string;
+  parentId?: string;
+  prefix?: string;
+  namePrefix?: string;
+};
 export type BrowserSearchBase = {
   connection: DataBrowserConnection;
   parts: string[];
@@ -203,7 +208,38 @@ export function planDataBrowserSearch(
     plan.prefix = root + parent;
     plan.back = parent ? root + parent.slice(0, parent.slice(0, -1).lastIndexOf("/") + 1) : "";
     plan.label = parent ? parent.slice(0, -1).split("/").at(-1)! : connection.name;
-    if (!listing({ connectionId: connection.id, prefix: parent })) return plan;
+    const request = { connectionId: connection.id, prefix: parent };
+    // A complete parent (or complete literal-prefix subset) can answer further
+    // edits locally. S3 prefixes are case-sensitive, unlike local fuzzy matching.
+    const candidates: {
+      namePrefix: string;
+      result: Pick<DataBrowserChildrenResponse, "nodes" | "truncated">;
+    }[] = [];
+    if (!explicit && base && parent === (initialParts.length ? initialParts.join("/") + "/" : ""))
+      candidates.push({ namePrefix: "", result: base });
+    for (const [key, result] of cache) {
+      const cached = JSON.parse(key) as BrowserSearchRequest;
+      if (
+        cached.connectionId === connection.id &&
+        cached.prefix === parent &&
+        filter.startsWith(cached.namePrefix ?? "")
+      )
+        candidates.push({ namePrefix: cached.namePrefix ?? "", result });
+    }
+    candidates.sort(
+      (a, b) =>
+        Number(Boolean(a.result.truncated)) - Number(Boolean(b.result.truncated)) ||
+        a.namePrefix.length - b.namePrefix.length,
+    );
+    const complete = candidates.find((candidate) => !candidate.result.truncated);
+    const available =
+      complete ?? candidates.find((candidate) => candidate.namePrefix === filter) ?? candidates[0];
+    if (!available) {
+      listing(request);
+      return plan;
+    }
+    plan.nodes = available.result.nodes;
+    plan.truncated = available.result.truncated;
     // An exact prefix means "under this prefix", even without a final slash.
     if (
       filter &&
@@ -216,6 +252,13 @@ export function planDataBrowserSearch(
       listing({ connectionId: connection.id, prefix: path + "/" });
       return localCompletions(plan);
     }
+    if (connection.type === "s3" && filter && !complete && available.namePrefix !== filter) {
+      listing({ ...request, namePrefix: filter });
+      return plan;
+    }
+    // A provider-filtered subset cannot offer complete fuzzy/substring results.
+    if (available.namePrefix)
+      plan.nodes = plan.nodes.filter((node) => node.label.startsWith(filter));
     return localCompletions(completeNodes(plan, query, filter, "/"));
   }
 

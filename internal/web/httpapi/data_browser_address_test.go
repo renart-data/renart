@@ -39,12 +39,14 @@ func TestDataAddressHTTPBoundary(t *testing.T) {
 
 func TestDataBrowserPrefixHTTPBoundary(t *testing.T) {
 	var requested []string
+	var filters []string
 	service := databrowser.New(databrowser.Dependencies{
 		ListConnections: func(context.Context, string) (string, []databrowser.ConnectionConfig, int64, error) {
 			return "dev", []databrowser.ConnectionConfig{{Name: "lake", Type: "s3", Storage: true}}, 1, nil
 		},
-		ListStorage: func(_ context.Context, _, prefix, _ string) (databrowser.StorageListing, error) {
-			requested = append(requested, prefix)
+		ListStorage: func(_ context.Context, _ string, query databrowser.StorageQuery, _ string) (databrowser.StorageListing, error) {
+			requested = append(requested, query.Prefix)
+			filters = append(filters, query.NamePrefix)
 			return databrowser.StorageListing{}, nil
 		},
 	})
@@ -66,4 +68,14 @@ func TestDataBrowserPrefixHTTPBoundary(t *testing.T) {
 		require.Equal(t, test.status, response.Code, response.Body.String())
 	}
 	require.Equal(t, []string{"events/Frühstück/"}, requested)
+	for _, name := range []string{"day=2026-09", " space", "a/b", "../outside", "a|b", "a\n"} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest("GET", "/api/data-browser/connections/"+connections.Connections[0].ID+"/prefix?environment=dev&path=events%2F&name_prefix="+url.QueryEscape(name), nil))
+		status := 400
+		if name == "day=2026-09" || name == " space" {
+			status = 200
+		}
+		require.Equal(t, status, response.Code, response.Body.String())
+	}
+	require.Equal(t, []string{"", "day=2026-09", " space"}, filters, "literal name filters must not be trimmed or interpreted as paths")
 }

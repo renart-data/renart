@@ -49,11 +49,11 @@ export function getDataBrowserChildren(
 }
 
 export function getDataBrowserPrefix(
-  options: { connectionId: string; prefix: string; environment: string },
+  options: { connectionId: string; prefix: string; namePrefix?: string; environment: string },
   signal?: AbortSignal,
 ) {
   return fetchJSON<DataBrowserChildrenResponse>(
-    `/api/data-browser/connections/${encodeURIComponent(options.connectionId)}/prefix${buildQueryString({ path: options.prefix, environment: options.environment })}`,
+    `/api/data-browser/connections/${encodeURIComponent(options.connectionId)}/prefix${buildQueryString({ path: options.prefix, name_prefix: options.namePrefix, environment: options.environment })}`,
     { cache: "no-store", signal },
   );
 }

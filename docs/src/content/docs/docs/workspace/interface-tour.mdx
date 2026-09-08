@@ -43,9 +43,12 @@ root. Renart loads only the requested levels, not the entire tree.
 
 Press **Tab** to accept the faint suggestion and its next separator, or tap the
 **Tab** button on mobile. Tables and files complete without a separator. Names
-containing literal dots are quoted in warehouse paths. If a listing reaches its
-500-entry limit, enter a more specific storage prefix ending in `/` to open it
-directly. Clearing the search returns to the folder you were browsing.
+containing literal dots are quoted in warehouse paths. If an S3 listing exceeds
+500 entries, keep typing the name prefix: `my-s3-connection./my_table/day=2026-09`
+asks S3 for that narrower, case-sensitive prefix. Once the results fit within the
+limit, further filtering uses the loaded list without another request. You can
+also enter a storage prefix ending in `/` to open it directly. Clearing the
+search returns to the folder you were browsing.
 
 ### View SQL in the Data Browser
 

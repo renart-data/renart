@@ -5,11 +5,14 @@ import { createLiveStorage } from "../live-storage-fixture";
 test.use({ fixtureName: "configured-workspace", isolateUserConfig: true });
 // Set up Docker networking before opening a page. Starting it during the test
 // body can interrupt Chromium's initial module requests (ERR_NETWORK_CHANGED).
-const storageTest = test.extend<{ storage: Awaited<ReturnType<typeof createLiveStorage>> }>({
+const storageTest = test.extend<{
+  storage: Awaited<ReturnType<typeof createLiveStorage>>;
+  largeS3Listing: boolean;
+}>({
+  largeS3Listing: [false, { option: true }],
   storage: [
-    // eslint-disable-next-line no-empty-pattern -- Playwright requires destructured fixture dependencies, even when there are none.
-    async ({}, use) => {
-      const storage = await createLiveStorage();
+    async ({ largeS3Listing }, use) => {
+      const storage = await createLiveStorage({ largeS3Listing });
       try {
         await use(storage);
       } finally {
@@ -18,6 +21,88 @@ const storageTest = test.extend<{ storage: Awaited<ReturnType<typeof createLiveS
     },
     { auto: true, timeout: 60000 },
   ],
+});
+
+storageTest.describe("capped S3 listings", () => {
+  storageTest.use({ largeS3Listing: true });
+  storageTest(
+    "refines prefixes before the cap and reuses complete results",
+    async ({ page, liveApp, isMobile, storage }, info) => {
+      storageTest.setTimeout(60000);
+      const created = await page.request.post(`${liveApp.baseURL}/api/config/connections`, {
+        data: {
+          name: "s3-search",
+          type: "s3",
+          environment_name: "default",
+          values: { bucket_name: "browser", endpoint_url: `http://127.0.0.1:${storage.minioPort}` },
+          secret_changes: {
+            access_key_id: { action: "replace", value: "renart" },
+            secret_access_key: { action: "replace", value: "renart-secret" },
+          },
+        },
+      });
+      expect(created.ok(), await created.text()).toBe(true);
+      const requests: URL[] = [];
+      page.on("request", (request) => {
+        if (request.url().includes("/data-browser/") && /\/(prefix|children)\?/.test(request.url()))
+          requests.push(new URL(request.url()));
+      });
+      const input = await openData(page, liveApp.baseURL, isMobile);
+      for (const [parent, filter, role, target] of [
+        ["my_table/", "day=", "button", "day=2026-09-20"],
+        ["many-files/", "part-", "link", "part-2026-09-20.csv"],
+      ] as const) {
+        const initial = requests.length;
+        const broad = page.waitForResponse(
+          (r) => new URL(r.url()).searchParams.get("name_prefix") === filter,
+        );
+        await input.fill(`s3-search./${parent}${filter}`);
+        expect((await (await broad).json()).truncated).toBe(true);
+        await expect(page.getByText(/Showing the first 500 objects/)).toBeVisible();
+        const row = page.getByRole(role, {
+          name: role === "link" ? `${target} csv` : target,
+          exact: true,
+        });
+        await expect(row).toBeHidden();
+        const refined = page.waitForResponse(
+          (r) => new URL(r.url()).searchParams.get("name_prefix") === filter + "2026-09",
+        );
+        await input.fill(`s3-search./${parent}${filter}2026-09`);
+        const listing = await (await refined).json();
+        expect(listing.truncated).toBeFalsy();
+        expect(listing.nodes).toHaveLength(2);
+        await expect(row).toBeVisible();
+        await expect(page.getByText(/Showing the first 500 objects/)).toBeHidden();
+        await input.fill(`s3-search./${parent}${filter}2026-09-2`);
+        await expect(row).toBeVisible();
+        // Wait beyond the request debounce: a complete result must stay local.
+        await page.waitForTimeout(400);
+        expect(requests).toHaveLength(initial + 3); // parent, capped filter, complete filter
+        await page.screenshot({ path: info.outputPath(`${role}-refined.png`) });
+        const node = listing.nodes.find((n: { label: string }) => n.label === target);
+        const object = await page.request.get(
+          `${liveApp.baseURL}/api/data-browser/objects/${encodeURIComponent(node.id)}?environment=default`,
+        );
+        expect(object.ok(), await object.text()).toBe(true);
+        const resolved = (await object.json()).object;
+        expect(resolved.capabilities.load_source).toBe(true);
+        expect(resolved.capabilities.load_destination).toBe(true);
+        const address = await page.request.post(`${liveApp.baseURL}/api/data-browser/resolve`, {
+          data: { environment: "default", address: node.address },
+        });
+        expect(address.ok(), await address.text()).toBe(true);
+        // Broadening outside the complete September subset needs one new query.
+        const broader = page.waitForResponse(
+          (r) => new URL(r.url()).searchParams.get("name_prefix") === filter + "2026-",
+        );
+        await input.fill(`s3-search./${parent}${filter}2026-`);
+        expect((await (await broader).json()).nodes).toHaveLength(3);
+        await input.fill(`s3-search./${parent}${filter}2026-10`);
+        await page.waitForTimeout(400);
+        expect(requests).toHaveLength(initial + 4);
+      }
+    },
+  );
 });
 const pipeline = Buffer.from("analytics").toString("base64url");
 const canvas = `/pipelines/${pipeline}/canvas?result=inspect&editor=asset`;
