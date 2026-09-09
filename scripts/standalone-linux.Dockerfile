@@ -5,8 +5,10 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Keep the GLIBC 2.31 build baseline reproducible after Bullseye's LTS end.
 COPY scripts/standalone-linux.sources.list /etc/apt/sources.list
 
-RUN apt-get update \
-	&& apt-get install -y --no-install-recommends \
+# The snapshot mirror can reset individual transfers. Retry the same pinned,
+# checksum-verified packages rather than failing the entire native build.
+RUN apt-get -o Acquire::Retries=3 update \
+	&& apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
 		g++ \
 		gcc \
 		libgtk-3-dev \
