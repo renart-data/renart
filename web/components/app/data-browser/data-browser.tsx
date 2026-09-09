@@ -35,7 +35,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { selectedEnvironmentAtom } from "@/lib/atoms/domains/workspace";
 import {
-  getDataBrowserChildren,
   getDataBrowserConnections,
   resolveDataBrowserObject,
   previewDataBrowserObject,
@@ -59,27 +58,14 @@ import { WorkspaceConnectionDialog } from "../workspace-connection-dialog-lazy";
 import { DataBrowserTransferItem } from "./data-browser-transfer-item";
 import { DataBrowserLoading } from "./data-browser-loading";
 import { SqlPreview } from "../sql-preview";
-import {
-  AppContextSidebarTransition,
-  type AppContextSidebarTransitionDirection,
-} from "../workbench/workbench-context-sidebar";
+import { AppContextSidebarTransition } from "../workbench/workbench-context-sidebar";
 import { WorkbenchPortal } from "../workbench/workbench-slots";
 import { useDataBrowserSearch } from "@/hooks/use-data-browser-search";
-import { connectionSearchPrefix, quoteBrowserSegment } from "@/lib/data-browser-search";
+import { connectionSearchPrefix, nodeSearchCompletion } from "@/lib/data-browser-search";
 import { DataBrowserSearchInput } from "./data-browser-search-input";
 
-type BrowserLevel = {
-  parentId?: string;
-  label: string;
-  nodes: DataBrowserNode[];
-  truncated?: boolean;
-};
-
-// A mobile Sheet unmounts its content when closed for canvas placement. Preserve
-// navigation (not authority) across that transition and revalidate the connection
-// revision before reusing cached object references. Bounded, same-tab cache only.
-type BrowserNavigation = { connection: DataBrowserConnection; levels: BrowserLevel[] };
-const browserNavigationCache = new Map<string, BrowserNavigation>();
+// A mobile Sheet unmounts its content. Preserve only the qualified search path,
+// never revision-bound nodes or credentials, across same-tab transitions.
 const browserSearchCache = new Map<string, string>();
 
 const preferredWarehouseTypes = [
@@ -101,15 +87,18 @@ export function AppDataBrowserPage() {
 export function AppDataBrowserSidebar({
   pipelineId,
   onChooseForCanvas,
+  onNavigateObject,
 }: {
   pipelineId?: string;
   onChooseForCanvas?: () => void;
+  onNavigateObject?: (target: DataTarget) => void | Promise<void>;
 }) {
   return (
     <DataBrowserWorkspace
       presentation="sidebar-dialog"
       pipelineId={pipelineId}
       onChooseForCanvas={onChooseForCanvas}
+      onNavigateObject={onNavigateObject}
     />
   );
 }
@@ -118,10 +107,12 @@ function DataBrowserWorkspace({
   presentation,
   pipelineId,
   onChooseForCanvas,
+  onNavigateObject,
 }: {
   presentation: "page" | "sidebar-dialog";
   pipelineId?: string;
   onChooseForCanvas?: () => void;
+  onNavigateObject?: (target: DataTarget) => void | Promise<void>;
 }) {
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
   const detail = (useLocation().search as ResourceSearch).detail;
@@ -130,8 +121,6 @@ function DataBrowserWorkspace({
   const browser = useDataBrowser(environment, true);
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
   const [requestedConnectionType, setRequestedConnectionType] = useState<string>();
-  const [navigationDirection, setNavigationDirection] =
-    useState<AppContextSidebarTransitionDirection>("replace");
   const connectionTypes = settings.workspaceConfig?.connection_types ?? [];
   const quickWarehouseTypes = useMemo(() => {
     const warehouseTypes = connectionTypes.filter((item) => item.category === "warehouse");
@@ -160,41 +149,17 @@ function DataBrowserWorkspace({
     setConnectionDialogOpen(true);
   };
 
-  const openNode = async (node: DataBrowserNode) => {
-    if (node.node_type === "namespace") setNavigationDirection("forward");
-    await browser.openNode(node);
-  };
-
-  const selectConnection = async (connection: DataBrowserConnection) => {
-    setNavigationDirection("forward");
-    await browser.selectConnection(connection);
-  };
-
-  const navigateBack = () => {
-    setNavigationDirection("back");
-    browser.back();
-  };
-
-  const reloadConnections = async () => {
-    setNavigationDirection("replace");
-    await browser.reloadConnections();
-  };
-
   const navigator = (
     <DataBrowserNavigator
       key={JSON.stringify([getPinnedProjectId(), environment])}
       pipelineId={pipelineId}
       environment={environment}
       onChooseForCanvas={onChooseForCanvas}
+      onNavigateObject={onNavigateObject}
       browser={browser}
       quickWarehouseTypes={quickWarehouseTypes.map((item) => item.type_name)}
       quickFileSystemTypes={quickFileSystemTypes.map((item) => item.type_name)}
       onAddConnection={beginConnectionCreation}
-      onOpenNode={openNode}
-      onSelectConnection={selectConnection}
-      onBack={navigateBack}
-      onReload={reloadConnections}
-      navigationDirection={navigationDirection}
     />
   );
 
@@ -231,7 +196,6 @@ function DataBrowserWorkspace({
           connectionTypes={connectionTypes}
           requestedConnectionType={requestedConnectionType}
           onCreated={async (connectionName) => {
-            setNavigationDirection("forward");
             await browser.reloadConnections(connectionName);
           }}
         />
@@ -241,179 +205,44 @@ function DataBrowserWorkspace({
 }
 
 function useDataBrowser(environment: string, enabled: boolean) {
-  const scope = JSON.stringify([getPinnedProjectId(), environment]);
-  const restored = browserNavigationCache.get(scope);
   const requestID = useRef(0);
   const pending = useRef<AbortController | null>(null);
   const [connections, setConnections] = useState<DataBrowserConnection[]>([]);
-  const [selectedConnection, setSelectedConnection] = useState<DataBrowserConnection | null>(
-    restored?.connection ?? null,
-  );
-  const [levels, setLevels] = useState<BrowserLevel[]>(restored?.levels ?? []);
+  const [createdConnection, setCreatedConnection] = useState<DataBrowserConnection | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const cancelRequest = useCallback(() => {
-    ++requestID.current;
-    pending.current?.abort();
-    pending.current = null;
-    setLoading(false);
-  }, []);
-  const beginRequest = useCallback(() => {
-    cancelRequest();
-    const controller = new AbortController();
-    pending.current = controller;
-    setLoading(true);
-    setError(null);
-    return { id: requestID.current, signal: controller.signal };
-  }, [cancelRequest]);
-  useEffect(
-    () => () => {
-      ++requestID.current;
+  const reloadConnections = useCallback(
+    async (selectName?: string) => {
+      const id = ++requestID.current;
       pending.current?.abort();
-    },
-    [scope],
-  );
-
-  useEffect(
-    () => () => {
-      if (!selectedConnection || !levels.length) {
-        browserNavigationCache.delete(scope);
-        return;
+      const controller = new AbortController();
+      pending.current = controller;
+      setLoading(true);
+      setError(null);
+      setConnections([]);
+      try {
+        const response = await getDataBrowserConnections(environment, controller.signal);
+        if (id !== requestID.current) return;
+        setConnections(response.connections);
+        if (selectName)
+          setCreatedConnection(response.connections.find((c) => c.name === selectName) ?? null);
+      } catch (cause) {
+        if (id === requestID.current)
+          setError(cause instanceof Error ? cause.message : "Could not load data sources.");
+      } finally {
+        if (id === requestID.current) setLoading(false);
       }
-      browserNavigationCache.delete(scope);
-      browserNavigationCache.set(scope, { connection: selectedConnection, levels });
-      if (browserNavigationCache.size > 12)
-        browserNavigationCache.delete(browserNavigationCache.keys().next().value!);
-    },
-    [scope, selectedConnection, levels],
-  );
-
-  const loadChildren = useCallback(
-    async (
-      connection: DataBrowserConnection,
-      signal: AbortSignal,
-      parentId?: string,
-      label = connection.name,
-    ) => {
-      const response = await getDataBrowserChildren(
-        {
-          connectionId: connection.id,
-          parentId,
-          environment,
-        },
-        signal,
-      );
-      return {
-        parentId,
-        label,
-        nodes: response.nodes,
-        truncated: response.truncated,
-      } satisfies BrowserLevel;
     },
     [environment],
   );
-
-  const selectConnection = useCallback(
-    async (connection: DataBrowserConnection) => {
-      const request = beginRequest();
-      setSelectedConnection(connection);
-      setLevels([]);
-      try {
-        const level = await loadChildren(connection, request.signal);
-        if (requestID.current === request.id) setLevels([level]);
-      } catch (cause) {
-        if (requestID.current === request.id)
-          setError(cause instanceof Error ? cause.message : "Could not browse this data source.");
-      } finally {
-        if (requestID.current === request.id) setLoading(false);
-      }
-    },
-    [beginRequest, loadChildren],
-  );
-
-  const reloadConnections = useCallback(
-    async (selectName?: string, restore?: BrowserNavigation) => {
-      const request = beginRequest();
-      setConnections([]);
-      try {
-        const response = await getDataBrowserConnections(environment, request.signal);
-        if (requestID.current !== request.id) return;
-        setConnections(response.connections);
-
-        setLevels([]);
-        const selectedName = selectName ?? restore?.connection.name;
-        const nextConnection = selectedName
-          ? response.connections.find((item) => item.name === selectedName)
-          : null;
-        setSelectedConnection(nextConnection ?? null);
-        if (nextConnection) {
-          if (nextConnection.id === restore?.connection.id) {
-            setLevels(restore.levels);
-            return;
-          }
-          const level = await loadChildren(nextConnection, request.signal);
-          if (requestID.current === request.id) setLevels([level]);
-        }
-      } catch (cause) {
-        if (requestID.current === request.id) {
-          setError(cause instanceof Error ? cause.message : "Could not load data sources.");
-        }
-      } finally {
-        if (requestID.current === request.id) setLoading(false);
-      }
-    },
-    [beginRequest, environment, loadChildren],
-  );
-
   useEffect(() => {
-    if (!enabled) return;
-    void reloadConnections(undefined, browserNavigationCache.get(scope));
-  }, [enabled, reloadConnections, scope]);
-
-  const openNode = useCallback(
-    async (node: DataBrowserNode) => {
-      if (!selectedConnection || node.node_type !== "namespace") return;
-      const request = beginRequest();
-      try {
-        const level = await loadChildren(selectedConnection, request.signal, node.id, node.label);
-        if (request.id === requestID.current) {
-          setLevels((current) => [...current, level]);
-        }
-      } catch (cause) {
-        if (request.id === requestID.current)
-          setError(cause instanceof Error ? cause.message : "Could not browse this data source.");
-      } finally {
-        if (request.id === requestID.current) setLoading(false);
-      }
-    },
-    [beginRequest, loadChildren, selectedConnection],
-  );
-
-  const back = () => {
-    cancelRequest();
-    setError(null);
-
-    if (levels.length > 1) {
-      setLevels((current) => current.slice(0, -1));
-      return;
-    }
-    setLevels([]);
-    setSelectedConnection(null);
-  };
-
-  return {
-    connections,
-    selectedConnection,
-    levels,
-    currentLevel: levels.at(-1) ?? null,
-    loading,
-    error,
-    selectConnection,
-    openNode,
-    back,
-    reloadConnections,
-  };
+    if (enabled) void reloadConnections();
+    return () => {
+      ++requestID.current;
+      pending.current?.abort();
+    };
+  }, [enabled, reloadConnections]);
+  return { connections, createdConnection, loading, error, reloadConnections };
 }
 
 type DataBrowserController = ReturnType<typeof useDataBrowser>;
@@ -422,28 +251,20 @@ function DataBrowserNavigator({
   pipelineId,
   environment,
   onChooseForCanvas,
+  onNavigateObject,
   browser,
   quickWarehouseTypes,
   quickFileSystemTypes,
   onAddConnection,
-  onOpenNode,
-  onSelectConnection,
-  onBack,
-  onReload,
-  navigationDirection,
 }: {
   pipelineId?: string;
   environment: string;
   onChooseForCanvas?: () => void;
+  onNavigateObject?: (target: DataTarget) => void | Promise<void>;
   browser: DataBrowserController;
   quickWarehouseTypes: string[];
   quickFileSystemTypes: string[];
   onAddConnection: (connectionType?: string) => void;
-  onOpenNode: (node: DataBrowserNode) => void | Promise<void>;
-  onSelectConnection: (connection: DataBrowserConnection) => void | Promise<void>;
-  onBack: () => void;
-  onReload: () => void | Promise<void>;
-  navigationDirection: AppContextSidebarTransitionDirection;
 }) {
   const navigator = useRef<HTMLDivElement>(null);
   const keyboardNavigation = useRef(false);
@@ -459,48 +280,39 @@ function DataBrowserNavigator({
     (direction === "first" ? targets[0] : targets.at(-1))?.focus();
   };
   const searchScope = JSON.stringify([getPinnedProjectId(), environment]);
-  const [query, setQuery] = useState(() => browserSearchCache.get(searchScope) ?? "");
-  const search = useDataBrowserSearch(
-    query,
-    browser.connections,
-    browser.selectedConnection
-      ? {
-          connection: browser.selectedConnection,
-          parts: browser.levels.slice(1).map((level) => level.label),
-          nodes: browser.currentLevel?.nodes ?? [],
-          truncated: browser.currentLevel?.truncated,
-        }
-      : undefined,
-    environment,
+  const [query, updateQuery] = useState(() => browserSearchCache.get(searchScope) ?? "");
+  const setQuery = useCallback(
+    (value: string) => {
+      // Persist synchronously before a leaf link can unmount this navigator.
+      browserSearchCache.delete(searchScope);
+      if (value) browserSearchCache.set(searchScope, value);
+      if (browserSearchCache.size > 12)
+        browserSearchCache.delete(browserSearchCache.keys().next().value!);
+      updateQuery(value);
+    },
+    [searchScope],
   );
   useEffect(() => {
-    browserSearchCache.delete(searchScope);
-    if (query) browserSearchCache.set(searchScope, query);
-    if (browserSearchCache.size > 12)
-      browserSearchCache.delete(browserSearchCache.keys().next().value!);
-  }, [query, searchScope]);
+    if (browser.createdConnection) setQuery(connectionSearchPrefix(browser.createdConnection));
+  }, [browser.createdConnection, setQuery]);
+  const search = useDataBrowserSearch(query, browser.connections, undefined, environment);
   const activeSearch = query.length > 0;
-  const selectedConnection = activeSearch ? search.connection : browser.selectedConnection;
-  const filteredConnections = activeSearch ? search.connections : browser.connections;
-  const filteredNodes = activeSearch ? search.nodes : (browser.currentLevel?.nodes ?? []);
+  const selectedConnection = search.connection;
+  const filteredConnections = search.connections;
+  const filteredNodes = search.nodes;
   const loading = browser.loading || (activeSearch && search.loading);
-  const error = activeSearch ? (search.error ?? browser.error) : browser.error;
-  const truncated = activeSearch ? search.truncated : browser.currentLevel?.truncated;
+  const error = search.error ?? browser.error;
+  const truncated = search.truncated;
   const openSearchNode = (node: DataBrowserNode) => {
-    if (!activeSearch) return onOpenNode(node);
-    const separator = selectedConnection?.source_kind === "warehouse" ? "." : "/";
     setQuery(
-      search.prefix +
-        (separator === "." ? quoteBrowserSegment(node.label) : node.label) +
-        separator,
+      nodeSearchCompletion(
+        search.prefix,
+        node,
+        selectedConnection?.source_kind === "warehouse" ? "." : "/",
+      ).value,
     );
   };
-  const viewKey = browser.selectedConnection
-    ? [
-        browser.selectedConnection.id,
-        ...browser.levels.slice(1).map((level) => level.parentId ?? level.label),
-      ].join(":")
-    : "sources";
+  const viewKey = search.prefix || "sources";
 
   useEffect(() => {
     if (!keyboardNavigation.current || loading) return;
@@ -551,8 +363,7 @@ function DataBrowserNavigator({
         } else if (event.key === "ArrowLeft" && selectedConnection) {
           event.preventDefault();
           keyboardNavigation.current = false;
-          if (activeSearch) setQuery(search.back);
-          else onBack();
+          setQuery(search.back);
           focusFilter();
         }
       }}
@@ -566,7 +377,7 @@ function DataBrowserNavigator({
             variant="ghost"
             size="icon-sm"
             aria-label="Back"
-            onClick={() => (activeSearch ? setQuery(search.back) : onBack())}
+            onClick={() => setQuery(search.back)}
           >
             <ArrowLeft />
           </Button>
@@ -574,11 +385,7 @@ function DataBrowserNavigator({
           <Database className="size-4 text-primary" />
         )}
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-xs font-semibold">
-            {activeSearch
-              ? search.label
-              : (browser.currentLevel?.label ?? browser.selectedConnection?.name ?? "Data Browser")}
-          </h2>
+          <h2 className="truncate text-xs font-semibold">{search.label}</h2>
           <p className="truncate text-[10px] text-muted-foreground">
             {selectedConnection
               ? friendlyConnectionType(selectedConnection.type)
@@ -591,7 +398,7 @@ function DataBrowserNavigator({
           aria-label="Refresh data sources"
           onClick={() => {
             search.refresh();
-            void onReload();
+            void browser.reloadConnections();
           }}
           disabled={loading}
         >
@@ -608,11 +415,7 @@ function DataBrowserNavigator({
           placeholder={selectedConnection ? "Filter objects…" : "Filter sources…"}
         />
       </div>
-      <AppContextSidebarTransition
-        viewKey={activeSearch ? "search-results" : viewKey}
-        direction={activeSearch ? "replace" : navigationDirection}
-        className="min-h-0 flex-1"
-      >
+      <AppContextSidebarTransition viewKey={viewKey} className="min-h-0 flex-1">
         <ScrollArea className="min-h-0 flex-1" showHorizontalScrollBar={false}>
           <div className="p-2">
             {error ? (
@@ -626,7 +429,7 @@ function DataBrowserNavigator({
                     size="sm"
                     onClick={() => {
                       search.refresh();
-                      void onReload();
+                      void browser.reloadConnections();
                     }}
                   >
                     Retry
@@ -659,6 +462,7 @@ function DataBrowserNavigator({
                 pipelineId={pipelineId}
                 environment={environment}
                 onChooseForCanvas={onChooseForCanvas}
+                onNavigateObject={onNavigateObject}
               />
             ) : (
               <>
@@ -693,11 +497,7 @@ function DataBrowserNavigator({
                             <ChevronRight className="size-3.5" />
                           </span>
                         }
-                        onClick={() =>
-                          activeSearch
-                            ? setQuery(connectionSearchPrefix(connection))
-                            : void onSelectConnection(connection)
-                        }
+                        onClick={() => setQuery(connectionSearchPrefix(connection))}
                       />
                     </DataBrowserTransferItem>
                   ))}
@@ -768,12 +568,14 @@ function NodeList({
   pipelineId,
   environment,
   onChooseForCanvas,
+  onNavigateObject,
 }: {
   nodes: DataBrowserNode[];
   onOpen: (node: DataBrowserNode) => void | Promise<void>;
   pipelineId?: string;
   environment: string;
   onChooseForCanvas?: () => void;
+  onNavigateObject?: (target: DataTarget) => void | Promise<void>;
 }) {
   if (nodes.length === 0) {
     return <p className="px-2 py-10 text-center text-xs text-muted-foreground">No objects here.</p>;
@@ -802,6 +604,25 @@ function NodeList({
               target={{ kind: "data-object", address: node.address, section: "schema" }}
               className={className}
               draggable={false}
+              onClick={(event) => {
+                if (
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                void onOpen(node);
+                if (onNavigateObject && node.address) {
+                  event.preventDefault();
+                  void onNavigateObject({
+                    kind: "data-object",
+                    address: node.address,
+                    section: "schema",
+                  });
+                }
+              }}
             >
               {content}
             </ResourceLink>

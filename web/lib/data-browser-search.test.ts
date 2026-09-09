@@ -5,6 +5,7 @@ import type {
   DataBrowserNode,
 } from "./generated/api-types";
 import {
+  nodeSearchCompletion,
   planDataBrowserSearch,
   searchRequestKey,
   type BrowserSearchRequest,
@@ -29,6 +30,20 @@ const put = (request: BrowserSearchRequest, nodes: DataBrowserNode[], truncated 
 const plan = (query: string) => planDataBrowserSearch(query, [duck, lake], undefined, cache);
 
 describe("lazy Data Browser path search", () => {
+  it("uses the same canonical paths for clicked items and Tab completion", () => {
+    expect(nodeSearchCompletion('"warehouse.prod".', namespace('sales."eu'), ".").value).toBe(
+      '"warehouse.prod"."sales.""eu".',
+    );
+    expect(nodeSearchCompletion("duckdb-default.main.", table("order.items"), ".").value).toBe(
+      'duckdb-default.main."order.items"',
+    );
+    expect(nodeSearchCompletion("lake./day=2026/", namespace("with spaces"), "/").value).toBe(
+      "lake./day=2026/with spaces/",
+    );
+    expect(nodeSearchCompletion('"Project files"./data/', table("orders.csv"), "/").value).toBe(
+      '"Project files"./data/orders.csv',
+    );
+  });
   it("traverses catalog and schema lazily without mixing identical names", () => {
     cache.clear();
     const catA = { ...namespace("lake"), id: "catalog:lake", namespace_kind: "catalog" };

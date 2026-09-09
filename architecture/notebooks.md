@@ -578,6 +578,16 @@ Mutation responses are ignored after navigation, while the current notebook
 response remains visible until the workspace reaches its revision. Initial-load
 failures and action failures remain separate UI states.
 
+The shared save barrier drains newly queued saves as well as the requests that
+were pending when it started. Navigation uses its `awaitSavedChanges` wrapper:
+failed saves remain notebook-scoped and block leaving until a successful
+replacement save or explicit removal of the cell, so document-tab, library and Data
+Browser object navigation cannot mistake a settled failed request for a saved
+draft. The **All notebooks** sidebar step uses the existing notebook route's
+`notebook_nav=library` locator without unmounting the active document. Selecting
+another notebook reuses the existing Build document tabs; Data Browser remains
+an independent contextual tool and never imports or executes merely by opening.
+
 The frontend runtime controller models the initial snapshot, SSE deltas, manual
 run, cancellation, and session reset as notebook-scoped events. Server-reported
 running cells and request-local optimistic targets are separate sets, so an HTTP

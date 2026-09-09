@@ -85,6 +85,21 @@ function dottedParts(value: string): string[] | undefined {
   return [...parts, text];
 }
 
+export function nodeSearchCompletion(
+  prefix: string,
+  node: DataBrowserNode,
+  separator: "." | "/",
+): BrowserCompletion {
+  return {
+    label: node.label,
+    separator: node.node_type === "namespace" ? separator : undefined,
+    value:
+      prefix +
+      (separator === "." ? quoteBrowserSegment(node.label) : node.label) +
+      (node.node_type === "namespace" ? separator : ""),
+  };
+}
+
 function completeNodes(
   plan: BrowserSearchPlan,
   query: string,
@@ -94,16 +109,7 @@ function completeNodes(
   plan.nodes = matches(plan.nodes, filter, (node) => node.label);
   if (!filter) return plan;
   plan.completions = plan.nodes
-    .map(
-      (node): BrowserCompletion => ({
-        label: node.label,
-        separator: node.node_type === "namespace" ? separator : undefined,
-        value:
-          plan.prefix +
-          (separator === "." ? quoteBrowserSegment(node.label) : node.label) +
-          (node.node_type === "namespace" ? separator : ""),
-      }),
-    )
+    .map((node) => nodeSearchCompletion(plan.prefix, node, separator))
     .filter((completion) => completion.value !== query);
   return plan;
 }

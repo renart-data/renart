@@ -101,7 +101,7 @@ export function workbenchSessionReducer(
   if (action.type === "route-entered") {
     const sharedBuildContext =
       action.mode === "build" &&
-      ["resources", "ad-hoc"].includes(action.tool) &&
+      ["resources", "ad-hoc", "notebooks"].includes(action.tool) &&
       modeState.activeTool === "data";
     return updateMode(state, action.mode, {
       ...modeState,

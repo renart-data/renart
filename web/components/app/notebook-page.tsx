@@ -6,6 +6,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowUpFromLine,
   BookOpen,
   Check,
@@ -29,7 +30,17 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  Suspense,
+  lazy,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { AnsiOutput } from "@/components/ansi-output";
 import { ConnectionSelect } from "@/components/app/connection-select";
@@ -196,7 +207,14 @@ import {
   useBuildDocuments,
 } from "./workbench/build-document-state";
 import { BuildDocumentTabs } from "./workbench/build-document-tabs";
-import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
+import { WorkbenchPortal, WorkbenchToolAction, useWorkbench } from "./workbench/workbench-slots";
+import { DataBrowserLoading } from "./data-browser/data-browser-loading";
+import { useIsMobile } from "@/hooks/use-mobile";
+
+const NotebookDataBrowser = lazy(async () => {
+  const module = await import("./data-browser/data-browser");
+  return { default: module.AppDataBrowserSidebar };
+});
 import {
   semanticTypeForPhysicalType,
   visualizationSuggestionForType,
@@ -300,25 +318,46 @@ function notebookPlacementKey(placement: NotebookBlockPlacement): string {
   return placement.position === "start" ? "start" : `after:${placement.after_block_id ?? "end"}`;
 }
 
+function NotebookContextToolActions() {
+  const isMobile = useIsMobile();
+  const { setMobileNavigationOpen } = useWorkbench();
+  const openContext = () => {
+    if (isMobile) window.setTimeout(() => setMobileNavigationOpen(true), 0);
+  };
+  return (
+    <>
+      <WorkbenchToolAction tool="data" action={openContext} />
+      <WorkbenchToolAction tool="notebooks" action={openContext} />
+    </>
+  );
+}
+
 export function AppNotebooksIndexPage() {
   const workspace = useAtomValue(workspaceAtom);
   const navigate = useNavigate();
-  const { navigation } = useWorkbench();
+  const { navigation, session } = useWorkbench();
   const workbenchEnabled = Boolean(navigation?.workbench);
   const notebooks = workspace?.notebooks ?? [];
   const [newNotebookOpen, setNewNotebookOpen] = useState(false);
 
   return (
     <AppPage>
+      {workbenchEnabled ? <NotebookContextToolActions /> : null}
       {workbenchEnabled ? (
         <WorkbenchPortal slot="context">
-          <NotebookLibrarySidebar
-            notebooks={notebooks}
-            onSelect={(id) =>
-              void navigate({ to: "/notebooks/$notebookId", params: { notebookId: id } })
-            }
-            onCreate={() => setNewNotebookOpen(true)}
-          />
+          {session.modes.build.activeTool === "data" ? (
+            <Suspense fallback={<DataBrowserLoading label="Loading data browser…" />}>
+              <NotebookDataBrowser />
+            </Suspense>
+          ) : (
+            <NotebookLibrarySidebar
+              notebooks={notebooks}
+              onSelect={(id) =>
+                void navigate({ to: "/notebooks/$notebookId", params: { notebookId: id } })
+              }
+              onCreate={() => setNewNotebookOpen(true)}
+            />
+          )}
         </WorkbenchPortal>
       ) : (
         <PageHeader
@@ -406,10 +445,12 @@ function NotebookLibrarySidebar({
   notebooks,
   onSelect,
   onCreate,
+  activeNotebookId,
 }: {
   notebooks: readonly WebNotebook[];
   onSelect: (notebookId: string) => void;
   onCreate: () => void;
+  activeNotebookId?: string;
 }) {
   return (
     <AppContextSidebarFrame
@@ -430,7 +471,11 @@ function NotebookLibrarySidebar({
             <button
               key={notebook.id}
               type="button"
-              className="flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent"
+              aria-current={notebook.id === activeNotebookId ? "page" : undefined}
+              className={cn(
+                "flex min-w-0 items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent",
+                notebook.id === activeNotebookId && "bg-accent",
+              )}
               onClick={() => onSelect(notebook.id)}
             >
               <BookOpen className="size-3.5 shrink-0 text-primary" />
@@ -451,7 +496,13 @@ function NotebookLibrarySidebar({
   );
 }
 
-export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
+export function AppNotebookLivePage({
+  notebookId,
+  libraryOpen = false,
+}: {
+  notebookId: string;
+  libraryOpen?: boolean;
+}) {
   const resource = useResourceNavigation();
   const cellElements = useRef(new Map<string, HTMLDivElement>());
   const linkedCell =
@@ -467,12 +518,21 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
   const selectedExecutionTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
   const navigate = useNavigate();
+  const [newNotebookOpen, setNewNotebookOpen] = useState(false);
   const {
     navigation: workbenchNavigation,
     session: workbenchSession,
     setMobileNavigationOpen,
   } = useWorkbench();
   const workbenchEnabled = Boolean(workbenchNavigation?.workbench);
+  const activeWorkbenchTool = workbenchSession.modes.build.activeTool;
+  const revealNotebookLibrary = (open: boolean) =>
+    navigate({
+      to: "/notebooks/$notebookId",
+      params: { notebookId },
+      search: (search) => ({ ...search, notebook_nav: open ? "library" : undefined }),
+      resetScroll: false,
+    });
   const availableBuildAssetKeys = useMemo(
     () =>
       new Set(
@@ -514,6 +574,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     mutate,
     saveCellBody,
     flushPendingSaves,
+    awaitSavedChanges,
   } = useNotebookDocument({ notebookId, workspaceNotebook: stateNotebook });
   const [notebookScrolled, setNotebookScrolled] = useState(false);
   const [pendingBlock, setPendingBlock] = useState<{
@@ -765,13 +826,13 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     async (document: BuildDocument) => {
       if (buildDocumentKey(document) === buildDocumentKey(activeBuildDocument)) return;
       try {
-        await flushPendingSaves();
+        await awaitSavedChanges();
         await navigateToBuildDocument(document);
       } catch (error) {
         setDocumentNavigationError(error instanceof Error ? error.message : String(error));
       }
     },
-    [activeBuildDocument, flushPendingSaves, navigateToBuildDocument],
+    [activeBuildDocument, awaitSavedChanges, navigateToBuildDocument],
   );
 
   const closeBuildDocument = useCallback(
@@ -782,7 +843,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         return;
       }
       try {
-        await flushPendingSaves();
+        await awaitSavedChanges();
         const next = documentAfterClose(buildDocuments, key);
         await navigateToBuildDocument(next);
         removeBuildDocument(key);
@@ -793,7 +854,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
     [
       activeBuildDocument,
       buildDocuments,
-      flushPendingSaves,
+      awaitSavedChanges,
       navigateToBuildDocument,
       removeBuildDocument,
     ],
@@ -1476,10 +1537,64 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
 
   return (
     <AppPage>
+      {workbenchEnabled ? <NotebookContextToolActions /> : null}
       {workbenchEnabled ? (
         <WorkbenchPortal slot="context">
           <div className="flex h-full min-h-0 flex-col">
-            {renderNotebookTools(() => setMobileNavigationOpen(false))}
+            {activeWorkbenchTool === "data" ? (
+              <Suspense fallback={<DataBrowserLoading label="Loading data browser…" />}>
+                <NotebookDataBrowser
+                  onNavigateObject={async (target) => {
+                    try {
+                      await awaitSavedChanges();
+                      await resource.open(target);
+                      setMobileNavigationOpen(false);
+                    } catch (error) {
+                      setDocumentNavigationError(
+                        error instanceof Error ? error.message : String(error),
+                      );
+                    }
+                  }}
+                />
+              </Suspense>
+            ) : libraryOpen ? (
+              <NotebookLibrarySidebar
+                notebooks={workspace?.notebooks ?? []}
+                activeNotebookId={notebookId}
+                onSelect={(id) => {
+                  if (id === notebookId) void revealNotebookLibrary(false);
+                  else void selectBuildDocument({ kind: "notebook", notebookId: id });
+                  setMobileNavigationOpen(false);
+                }}
+                onCreate={() => {
+                  void awaitSavedChanges()
+                    .then(() => {
+                      setMobileNavigationOpen(false);
+                      setNewNotebookOpen(true);
+                    })
+                    .catch((error) => setDocumentNavigationError(String(error)));
+                }}
+              />
+            ) : (
+              <>
+                <div
+                  data-slot="workbench-context-header"
+                  className="flex h-10 shrink-0 items-center gap-2 border-b px-2 pr-12 md:pr-2"
+                >
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void revealNotebookLibrary(true)}
+                  >
+                    <ArrowLeft data-icon="inline-start" /> All notebooks
+                  </Button>
+                  <span className="min-w-0 truncate text-xs text-muted-foreground">
+                    {notebook.title}
+                  </span>
+                </div>
+                {renderNotebookTools(() => setMobileNavigationOpen(false))}
+              </>
+            )}
           </div>
         </WorkbenchPortal>
       ) : null}
@@ -1528,6 +1643,7 @@ export function AppNotebookLivePage({ notebookId }: { notebookId: string }) {
         dependencies={dependencies}
         onSave={updateDependencies}
       />
+      <NewNotebookDialog open={newNotebookOpen} onOpenChange={setNewNotebookOpen} />
 
       <NotebookParametersDialog
         open={parametersOpen}

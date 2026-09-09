@@ -194,9 +194,9 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   still toggle their navigation sheet.
 
 - [components/app/data-browser/](../web/components/app/data-browser): one shared
-  object view powers both the `/data` workbench route and Build's in-place Data
-  Browser. In Build, selecting the rail or mobile tab swaps only the contextual
-  sidebar, so the active editor/canvas remains mounted; selecting a table or file
+  object view powers the `/data` workbench route and the in-place Data Browser
+  beside pipeline and notebook documents. Selecting the rail or mobile tab swaps
+  only the contextual sidebar, so the active editor/canvas remains mounted; selecting a table or file
   navigates to its schema/preview in the existing `/data` page. Direct `/data`
   navigation renders that same object view as the primary workspace. Navigator state remains
   separate from the addressed object and its preview. It loads configured
@@ -225,8 +225,9 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   discovery requests have a 30-second deadline with a visible Retry action.
   Back, replacement navigation and unmount abort obsolete requests; request
   identities prevent delayed replies from reopening a source or leaving its
-  loading state active. A failed restored-source expansion retains the fetched
-  connection summaries so Back can still return to the source list.
+  loading state active. Only the qualified search path is retained across sidebar
+  mounts; metadata is revalidated against the fetched connection revision. Failed
+  path expansion leaves Back available to return to the source list.
 
   Opening the navigator focuses its filter once, including through the mobile
   Sheet; metadata updates do not steal focus. Up/Down move between native source
@@ -234,6 +235,13 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   first/last row, Enter/Right open and Left returns one level. Namespace expansion
   transfers keyboard focus to its first result, or back to the filter on an empty
   result/error. Native links, modifier keys and Tab navigation stay intact.
+
+  Clicking a source, namespace or object updates the search field using the same
+  completion formatter as Tab. One lazy planner owns typed and clicked paths,
+  not a parallel folder stack. Namespace completion includes its separator;
+  object completion does not. Ordinary object links synchronously retain the
+  path before navigating; modifier clicks keep native new-tab behavior without
+  changing the originating filter. Leaf links participate in keyboard navigation.
 
   The search field accepts connection-qualified paths. Warehouse levels use
   dots (quoted names preserve literal dots); storage and project-file paths use
@@ -247,7 +255,7 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   ancestors to fit within their listing caps. An exactly matched storage folder
   also reveals its children without a trailing slash.
   For a truncated S3 level, a nonempty leaf filter becomes a debounced
-  `name_prefix` lookup. Complete parents (including the manually opened folder)
+  `name_prefix` lookup. Complete cached parents
   and complete cached prefix subsets answer further edits locally. Subsets are
   reused only for case-sensitive extensions on the same connection and parent;
   broadening outside them requires a new request. Refined subsets use literal
@@ -685,6 +693,17 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   owns overflow for tall content while the command bar and desktop sidebars
   remain fixed; definition Monaco and audience viewers retain their own scroll
   owners.
+- Notebook authoring has an **All notebooks** navigation step in the contextual
+  sidebar. It changes `notebook_nav=library` on the existing notebook route,
+  leaving the active document and its editor mounted. Selecting another notebook
+  uses the existing project-scoped Build document tabs and notebook save barrier;
+  inactive notebook runtimes are not mounted. Returning to the selected notebook
+  removes the locator. The library and open notebook both register the shared
+  Data Browser as an in-place tool; switching tools does not import data or run a
+  cell. Object navigation waits for pending notebook saves and retains a failed
+  draft instead of leaving its owner. Desktop and mobile use the same controller
+  through their existing workbench portals.
+
 - Other pages: [catalog-page.tsx](../web/components/app/catalog-page.tsx),
   [notebook-page.tsx](../web/components/app/notebook-page.tsx),
   [runs-page.tsx](../web/components/app/runs-page.tsx),

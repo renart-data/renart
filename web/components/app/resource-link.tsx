@@ -1,5 +1,5 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import type { ReactNode, MouseEventHandler } from "react";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 import type { ResourceTarget } from "@/lib/generated/api-types";
 import { resourceLabel } from "@/lib/resource-navigation";
@@ -12,12 +12,16 @@ export function ResourceLink({
   children,
   className,
   draggable,
+  onClick,
+  "data-browser-row": browserRow,
 }: {
   target?: ResourceTarget;
   environment?: string;
   children?: ReactNode;
   className?: string;
   draggable?: boolean;
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
+  "data-browser-row"?: boolean;
 }) {
   const location = useLocation();
   const { destination } = useResourceNavigation();
@@ -38,6 +42,8 @@ export function ResourceLink({
       }
       preload={false}
       draggable={draggable}
+      onClick={onClick}
+      data-browser-row={browserRow}
       data-resource-link="true"
       className={
         className ??

@@ -209,6 +209,7 @@ export function useNotebookDocument({
     new Map(),
   );
   const saveSeqRef = useRef<Map<string, number>>(new Map());
+  const failedSavesRef = useRef(new Map<string, { notebookId: string; message: string }>());
   const saveQueuesRef = useRef<
     Map<
       string,
@@ -266,9 +267,11 @@ export function useNotebookDocument({
             queue.knownRevisions.add(updatedCell.content_revision);
           }
           if (saveSeqRef.current.get(queueKey) === seq) {
+            failedSavesRef.current.delete(queueKey);
             dispatch({ type: "mutation_applied", notebookId, notebook: updated });
           }
         } catch (error) {
+          failedSavesRef.current.set(queueKey, { notebookId, message: String(error) });
           reportActionError(String(error));
         } finally {
           queue.pending = Math.max(0, queue.pending - 1);
@@ -285,11 +288,32 @@ export function useNotebookDocument({
   );
 
   const flushPendingSaves = useCallback(async () => {
-    const pending = [...pendingSavesRef.current.values()]
-      .filter((entry) => entry.notebookId === notebookId)
-      .map((entry) => entry.promise);
-    if (pending.length > 0) await Promise.allSettled(pending);
+    // Typing may queue another save while a caller is waiting.
+    for (;;) {
+      const pending = [...pendingSavesRef.current.values()]
+        .filter((entry) => entry.notebookId === notebookId)
+        .map((entry) => entry.promise);
+      if (pending.length === 0) break;
+      await Promise.allSettled(pending);
+    }
   }, [notebookId]);
+
+  const awaitSavedChanges = useCallback(async () => {
+    await flushPendingSaves();
+    // Explicitly deleting a cell also retires its failed draft. Navigation must
+    // remain blocked for any failed save that still belongs to this document.
+    const existing = notebook
+      ? new Set(notebook.cells.map((cell) => `${notebookId}\u0000${cell.cell_id}`))
+      : null;
+    for (const [key, failed] of failedSavesRef.current) {
+      if (failed.notebookId !== notebookId) continue;
+      if (existing && !existing.has(key)) {
+        failedSavesRef.current.delete(key);
+        continue;
+      }
+      throw new Error(`Could not save notebook changes: ${failed.message}`);
+    }
+  }, [flushPendingSaves, notebook, notebookId]);
 
   return {
     notebook,
@@ -302,5 +326,6 @@ export function useNotebookDocument({
     mutate,
     saveCellBody,
     flushPendingSaves,
+    awaitSavedChanges,
   };
 }
