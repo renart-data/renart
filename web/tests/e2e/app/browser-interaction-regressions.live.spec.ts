@@ -132,10 +132,7 @@ test("opens earthquake SQL test fixtures without secure-context UUID support", a
   isMobile,
 }) => {
   const definition = await readFile(
-    resolve(
-      __dirname,
-      "../../../../example/earthquake_monitoring/assets/earthquakes/window_summary.sql",
-    ),
+    resolve(__dirname, "../../fixtures/sql-unit-tests/window_summary.sql"),
     "utf8",
   );
   await mkdir(join(liveApp.workspaceDir, "analytics/assets/earthquakes"), { recursive: true });

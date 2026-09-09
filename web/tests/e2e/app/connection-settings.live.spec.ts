@@ -108,10 +108,16 @@ test("keeps long connection forms scrollable and puts tuning fields last", async
   ).toBe(true);
 
   if (testInfo.project.name === "mobile-chrome-live") {
-    const sheetBox = await sheet.boundingBox();
-    expect(sheetBox).not.toBeNull();
-    expect(sheetBox!.x).toBeLessThanOrEqual(1);
-    expect(Math.abs(sheetBox!.width - page.viewportSize()!.width)).toBeLessThanOrEqual(1);
+    // Visibility is true during the slide-in animation; measure its settled
+    // geometry without weakening the one-pixel viewport-fit requirement.
+    await expect
+      .poll(async () => {
+        const box = await sheet.boundingBox();
+        return box
+          ? Math.max(Math.abs(box.x), Math.abs(box.width - page.viewportSize()!.width))
+          : Infinity;
+      })
+      .toBeLessThanOrEqual(1);
   }
 });
 

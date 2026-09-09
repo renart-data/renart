@@ -5,6 +5,11 @@ against that binary in disposable Git-backed workspaces, not against the user's
 project. Each test keeps its own server and workspace; database fixture locks
 and single-worker execution preserve external-resource isolation.
 
+Storage browser tests use `live-storage-app-fixture.ts` to start S3/SFTP before
+the browser and supply credentials through environment secret references. They
+must not depend on the developer's unlocked desktop keyring. Regression SQL
+belongs in tracked `web/tests/fixtures/`, not the untracked example workspace.
+
 ## Local entry points
 
 `scripts/release-check-local.sh` records logs, phase exit codes, the source Git

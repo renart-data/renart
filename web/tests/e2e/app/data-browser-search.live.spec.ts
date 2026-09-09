@@ -1,27 +1,8 @@
 import { expect, type Page } from "@playwright/test";
 import { liveTest as test } from "../live-app-fixture";
-import { createLiveStorage } from "../live-storage-fixture";
+import { storageSecretChanges, storageTest } from "../live-storage-app-fixture";
 
 test.use({ fixtureName: "configured-workspace", isolateUserConfig: true });
-// Set up Docker networking before opening a page. Starting it during the test
-// body can interrupt Chromium's initial module requests (ERR_NETWORK_CHANGED).
-const storageTest = test.extend<{
-  storage: Awaited<ReturnType<typeof createLiveStorage>>;
-  largeS3Listing: boolean;
-}>({
-  largeS3Listing: [false, { option: true }],
-  storage: [
-    async ({ largeS3Listing }, use) => {
-      const storage = await createLiveStorage({ largeS3Listing });
-      try {
-        await use(storage);
-      } finally {
-        await storage.dispose();
-      }
-    },
-    { auto: true, timeout: 60000 },
-  ],
-});
 
 storageTest.describe("capped S3 listings", () => {
   storageTest.use({ largeS3Listing: true });
@@ -35,10 +16,7 @@ storageTest.describe("capped S3 listings", () => {
           type: "s3",
           environment_name: "default",
           values: { bucket_name: "browser", endpoint_url: `http://127.0.0.1:${storage.minioPort}` },
-          secret_changes: {
-            access_key_id: { action: "replace", value: "renart" },
-            secret_access_key: { action: "replace", value: "renart-secret" },
-          },
+          secret_changes: storageSecretChanges("s3"),
         },
       });
       expect(created.ok(), await created.text()).toBe(true);
@@ -248,7 +226,7 @@ storageTest(
   "S3 and SFTP search list only typed prefixes and complete folder and object names",
   async ({ page, liveApp, isMobile, storage }, info) => {
     test.setTimeout(120000);
-    for (const provider of ["s3", "sftp"]) {
+    for (const provider of ["s3", "sftp"] as const) {
       const response = await page.request.post(`${liveApp.baseURL}/api/config/connections`, {
         data: {
           environment_name: "default",
@@ -258,13 +236,7 @@ storageTest(
             provider === "s3"
               ? { bucket_name: "browser", endpoint_url: `http://127.0.0.1:${storage.minioPort}` }
               : { host: "127.0.0.1", port: storage.sftpPort, username: "fixture" },
-          secret_changes:
-            provider === "s3"
-              ? {
-                  access_key_id: { action: "replace", value: "renart" },
-                  secret_access_key: { action: "replace", value: "renart-secret" },
-                }
-              : { password: { action: "replace", value: storage.password } },
+          secret_changes: storageSecretChanges(provider),
         },
       });
       expect(response.ok(), await response.text()).toBe(true);
