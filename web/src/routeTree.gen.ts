@@ -12,12 +12,9 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as SemanticDiffRouteImport } from './routes/semantic-diff'
 import { Route as ShellRouteImport } from './routes/_shell'
-import { Route as NavigationLabRouteRouteImport } from './routes/navigation-lab/route'
 import { Route as RedesignIndexRouteImport } from './routes/redesign.index'
-import { Route as NavigationLabIndexRouteImport } from './routes/navigation-lab/index'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
 import { Route as RedesignSplatRouteImport } from './routes/redesign.$'
-import { Route as NavigationLabVariantRouteImport } from './routes/navigation-lab/$variant'
 import { Route as ShellRunRouteImport } from './routes/_shell/run'
 import { Route as ShellDataRouteImport } from './routes/_shell/data'
 import { Route as ShellCatalogRouteImport } from './routes/_shell/catalog'
@@ -69,20 +66,10 @@ const ShellRoute = ShellRouteImport.update({
   id: '/_shell',
   getParentRoute: () => rootRouteImport,
 } as any)
-const NavigationLabRouteRoute = NavigationLabRouteRouteImport.update({
-  id: '/navigation-lab',
-  path: '/navigation-lab',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const RedesignIndexRoute = RedesignIndexRouteImport.update({
   id: '/redesign/',
   path: '/redesign/',
   getParentRoute: () => rootRouteImport,
-} as any)
-const NavigationLabIndexRoute = NavigationLabIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => NavigationLabRouteRoute,
 } as any)
 const ShellIndexRoute = ShellIndexRouteImport.update({
   id: '/',
@@ -93,11 +80,6 @@ const RedesignSplatRoute = RedesignSplatRouteImport.update({
   id: '/redesign/$',
   path: '/redesign/$',
   getParentRoute: () => rootRouteImport,
-} as any)
-const NavigationLabVariantRoute = NavigationLabVariantRouteImport.update({
-  id: '/$variant',
-  path: '/$variant',
-  getParentRoute: () => NavigationLabRouteRoute,
 } as any)
 const ShellRunRoute = ShellRunRouteImport.update({
   id: '/run',
@@ -301,7 +283,6 @@ const ShellPipelinesPipelineIdAssetsAssetIdCanvasRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/navigation-lab': typeof NavigationLabRouteRouteWithChildren
   '/': typeof ShellIndexRoute
   '/semantic-diff': typeof SemanticDiffRoute
   '/welcome': typeof WelcomeRoute
@@ -311,9 +292,7 @@ export interface FileRoutesByFullPath {
   '/catalog': typeof ShellCatalogRoute
   '/data': typeof ShellDataRoute
   '/run': typeof ShellRunRoute
-  '/navigation-lab/$variant': typeof NavigationLabVariantRoute
   '/redesign/$': typeof RedesignSplatRoute
-  '/navigation-lab/': typeof NavigationLabIndexRoute
   '/redesign/': typeof RedesignIndexRoute
   '/pipelines/$pipelineId': typeof ShellPipelinesPipelineIdRouteRouteWithChildren
   '/notebooks/$notebookId': typeof ShellNotebooksNotebookIdRoute
@@ -352,9 +331,7 @@ export interface FileRoutesByTo {
   '/catalog': typeof ShellCatalogRoute
   '/data': typeof ShellDataRoute
   '/run': typeof ShellRunRoute
-  '/navigation-lab/$variant': typeof NavigationLabVariantRoute
   '/redesign/$': typeof RedesignSplatRoute
-  '/navigation-lab': typeof NavigationLabIndexRoute
   '/redesign': typeof RedesignIndexRoute
   '/notebooks/$notebookId': typeof ShellNotebooksNotebookIdRoute
   '/project/connections': typeof ShellProjectConnectionsRoute
@@ -384,7 +361,6 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/navigation-lab': typeof NavigationLabRouteRouteWithChildren
   '/_shell': typeof ShellRouteWithChildren
   '/semantic-diff': typeof SemanticDiffRoute
   '/welcome': typeof WelcomeRoute
@@ -395,10 +371,8 @@ export interface FileRoutesById {
   '/_shell/catalog': typeof ShellCatalogRoute
   '/_shell/data': typeof ShellDataRoute
   '/_shell/run': typeof ShellRunRoute
-  '/navigation-lab/$variant': typeof NavigationLabVariantRoute
   '/redesign/$': typeof RedesignSplatRoute
   '/_shell/': typeof ShellIndexRoute
-  '/navigation-lab/': typeof NavigationLabIndexRoute
   '/redesign/': typeof RedesignIndexRoute
   '/_shell/pipelines/$pipelineId': typeof ShellPipelinesPipelineIdRouteRouteWithChildren
   '/_shell/notebooks/$notebookId': typeof ShellNotebooksNotebookIdRoute
@@ -433,7 +407,6 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/navigation-lab'
     | '/'
     | '/semantic-diff'
     | '/welcome'
@@ -443,9 +416,7 @@ export interface FileRouteTypes {
     | '/catalog'
     | '/data'
     | '/run'
-    | '/navigation-lab/$variant'
     | '/redesign/$'
-    | '/navigation-lab/'
     | '/redesign/'
     | '/pipelines/$pipelineId'
     | '/notebooks/$notebookId'
@@ -484,9 +455,7 @@ export interface FileRouteTypes {
     | '/catalog'
     | '/data'
     | '/run'
-    | '/navigation-lab/$variant'
     | '/redesign/$'
-    | '/navigation-lab'
     | '/redesign'
     | '/notebooks/$notebookId'
     | '/project/connections'
@@ -515,7 +484,6 @@ export interface FileRouteTypes {
     | '/pipelines/$pipelineId/assets/$assetId'
   id:
     | '__root__'
-    | '/navigation-lab'
     | '/_shell'
     | '/semantic-diff'
     | '/welcome'
@@ -526,10 +494,8 @@ export interface FileRouteTypes {
     | '/_shell/catalog'
     | '/_shell/data'
     | '/_shell/run'
-    | '/navigation-lab/$variant'
     | '/redesign/$'
     | '/_shell/'
-    | '/navigation-lab/'
     | '/redesign/'
     | '/_shell/pipelines/$pipelineId'
     | '/_shell/notebooks/$notebookId'
@@ -563,7 +529,6 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  NavigationLabRouteRoute: typeof NavigationLabRouteRouteWithChildren
   ShellRoute: typeof ShellRouteWithChildren
   SemanticDiffRoute: typeof SemanticDiffRoute
   WelcomeRoute: typeof WelcomeRoute
@@ -594,26 +559,12 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/navigation-lab': {
-      id: '/navigation-lab'
-      path: '/navigation-lab'
-      fullPath: '/navigation-lab'
-      preLoaderRoute: typeof NavigationLabRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/redesign/': {
       id: '/redesign/'
       path: '/redesign'
       fullPath: '/redesign/'
       preLoaderRoute: typeof RedesignIndexRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/navigation-lab/': {
-      id: '/navigation-lab/'
-      path: '/'
-      fullPath: '/navigation-lab/'
-      preLoaderRoute: typeof NavigationLabIndexRouteImport
-      parentRoute: typeof NavigationLabRouteRoute
     }
     '/_shell/': {
       id: '/_shell/'
@@ -628,13 +579,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/redesign/$'
       preLoaderRoute: typeof RedesignSplatRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/navigation-lab/$variant': {
-      id: '/navigation-lab/$variant'
-      path: '/$variant'
-      fullPath: '/navigation-lab/$variant'
-      preLoaderRoute: typeof NavigationLabVariantRouteImport
-      parentRoute: typeof NavigationLabRouteRoute
     }
     '/_shell/run': {
       id: '/_shell/run'
@@ -891,19 +835,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface NavigationLabRouteRouteChildren {
-  NavigationLabVariantRoute: typeof NavigationLabVariantRoute
-  NavigationLabIndexRoute: typeof NavigationLabIndexRoute
-}
-
-const NavigationLabRouteRouteChildren: NavigationLabRouteRouteChildren = {
-  NavigationLabVariantRoute: NavigationLabVariantRoute,
-  NavigationLabIndexRoute: NavigationLabIndexRoute,
-}
-
-const NavigationLabRouteRouteWithChildren =
-  NavigationLabRouteRoute._addFileChildren(NavigationLabRouteRouteChildren)
-
 interface ShellPresentationsDashboardsPresentationIdRouteRouteChildren {
   ShellPresentationsDashboardsPresentationIdViewRoute: typeof ShellPresentationsDashboardsPresentationIdViewRoute
   ShellPresentationsDashboardsPresentationIdIndexRoute: typeof ShellPresentationsDashboardsPresentationIdIndexRoute
@@ -1088,7 +1019,6 @@ const ShellRouteChildren: ShellRouteChildren = {
 const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
-  NavigationLabRouteRoute: NavigationLabRouteRouteWithChildren,
   ShellRoute: ShellRouteWithChildren,
   SemanticDiffRoute: SemanticDiffRoute,
   WelcomeRoute: WelcomeRoute,

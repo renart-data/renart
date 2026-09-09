@@ -43,9 +43,6 @@ function RootComponent() {
 }
 
 function getDocumentTitle(pathname: string) {
-  if (pathname.startsWith("/navigation-lab")) {
-    return "Navigation study · renart";
-  }
   if (pathname.startsWith("/semantic-diff")) {
     return "Semantic Diff · renart";
   }

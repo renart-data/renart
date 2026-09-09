@@ -4,8 +4,6 @@ import {
   appNavigationModes,
   appShellRouteNavigation,
   appWorkbenchTools,
-  destinationForAppPath,
-  modeForAppPath,
   navigationForAppRouteMatches,
 } from "./app-navigation-model";
 import routeTreeSource from "@/src/routeTree.gen.ts?raw";
@@ -22,33 +20,12 @@ describe("app navigation model", () => {
 
     expect(new Set(destinationIds).size).toBe(destinationIds.length);
     for (const mode of appNavigationModes) {
-      expect(modeForAppPath(mode.to)?.id).toBe(mode.id);
+      const owner = Object.entries(appShellRouteNavigation).find(
+        ([routeId]) => routeId === `/_shell${mode.to}`,
+      )?.[1];
+      expect(owner?.mode).toBe(mode.id);
     }
   });
-
-  it.each([
-    ["/", "build", "workbench"],
-    ["/pipelines/cmV2ZW51ZS1tb2RlbA/split", "build", "workbench"],
-    ["/notebooks/bm90ZWJvb2tzL2NoYXJ0cw", "build", "notebooks"],
-    ["/data", "build", "data-browser"],
-    ["/runs", "run", "runs"],
-    ["/runs/123?tab=logs", "run", "runs"],
-    ["/schedules/deployments", "run", "schedules"],
-    ["/catalog", "explore", "catalog"],
-    ["/dashboards/ZGFzaGJvYXJkcy9oZWFsdGg", "explore", "presentations"],
-    ["/reports/cmVwb3J0cy93ZWVrbHk", "explore", "presentations"],
-  ])("maps %s to %s/%s", (path, expectedMode, expectedDestination) => {
-    expect(modeForAppPath(path)?.id).toBe(expectedMode);
-    expect(destinationForAppPath(path)?.id).toBe(expectedDestination);
-  });
-
-  it.each(["/project/connections", "/welcome", "/navigation-lab/workbench", "/unknown"])(
-    "keeps global or unknown route %s outside the mode registry",
-    (path) => {
-      expect(modeForAppPath(path)).toBeNull();
-      expect(destinationForAppPath(path)).toBeNull();
-    },
-  );
 
   it("assigns every generated shell route to one exact navigation owner", () => {
     const generatedShellRouteIds = [...routeTreeSource.matchAll(/id: '(\/_shell[^']*)'/g)]
@@ -59,7 +36,12 @@ describe("app navigation model", () => {
     expect(Object.keys(appShellRouteNavigation).sort()).toEqual(generatedShellRouteIds);
   });
 
-  it("uses the deepest exact route match and gates migrated workbench routes", () => {
+  it("retires the navigation study without removing the semantic impact playground", () => {
+    expect(routeTreeSource).not.toContain("/navigation-lab");
+    expect(routeTreeSource).toContain("/semantic-diff");
+  });
+
+  it("uses the deepest exact route match", () => {
     expect(
       navigationForAppRouteMatches([
         { routeId: "/_shell" },
@@ -73,6 +55,13 @@ describe("app navigation model", () => {
         { routeId: "/_shell/pipelines/$pipelineId" },
       ]),
     ).toMatchObject({ mode: "build", tool: "resources", workbench: true });
+  });
+
+  it("uses one workbench for every shell page except the root redirect", () => {
+    for (const routeId of Object.keys(appShellRouteNavigation)) {
+      expect(navigationForAppRouteMatches([{ routeId }])?.workbench).toBe(routeId !== "/_shell/");
+    }
+    expect(navigationForAppRouteMatches([{ routeId: "/unknown" }])).toBeNull();
   });
 
   it("keeps tool ids unique inside each mode", () => {

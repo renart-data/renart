@@ -81,7 +81,6 @@ export type AppNavigationDestination = {
   label: string;
   to: string;
   icon: LucideIcon;
-  routePrefixes: readonly string[];
 };
 
 export type AppNavigationMode = {
@@ -104,21 +103,18 @@ export const appNavigationModes = [
         label: "Build",
         to: "/",
         icon: Hammer,
-        routePrefixes: ["/", "/pipelines"],
       },
       {
         id: "notebooks",
         label: "Notebooks",
         to: "/notebooks",
         icon: BookOpen,
-        routePrefixes: ["/notebooks"],
       },
       {
         id: "data-browser",
         label: "Data Browser",
         to: "/data",
         icon: Database,
-        routePrefixes: ["/data"],
       },
     ],
   },
@@ -133,21 +129,18 @@ export const appNavigationModes = [
         label: "Run",
         to: "/run",
         icon: Activity,
-        routePrefixes: ["/run"],
       },
       {
         id: "runs",
         label: "Runs",
         to: "/runs",
         icon: Play,
-        routePrefixes: ["/runs"],
       },
       {
         id: "schedules",
         label: "Schedules",
         to: "/schedules",
         icon: Calendar,
-        routePrefixes: ["/schedules"],
       },
     ],
   },
@@ -162,14 +155,12 @@ export const appNavigationModes = [
         label: "Catalog",
         to: "/catalog",
         icon: Network,
-        routePrefixes: ["/catalog"],
       },
       {
         id: "presentations",
         label: "Present",
         to: "/dashboards",
         icon: LayoutDashboard,
-        routePrefixes: ["/dashboards", "/reports"],
       },
     ],
   },
@@ -491,45 +482,6 @@ export const appShellRouteNavigation = {
   "/_shell/pipelines/$pipelineId/assets/$assetId/canvas": buildResourcesNavigation,
 } as const satisfies Record<AppShellRouteId, AppRouteNavigationDefinition>;
 
-const migratedWorkbenchRouteIds = new Set<AppShellRouteId>([
-  "/_shell/pipelines/$pipelineId",
-  "/_shell/pipelines/$pipelineId/",
-  "/_shell/pipelines/$pipelineId/split",
-  "/_shell/pipelines/$pipelineId/code",
-  "/_shell/pipelines/$pipelineId/canvas",
-  "/_shell/pipelines/$pipelineId/assets/$assetId",
-  "/_shell/pipelines/$pipelineId/assets/$assetId/",
-  "/_shell/pipelines/$pipelineId/assets/$assetId/split",
-  "/_shell/pipelines/$pipelineId/assets/$assetId/code",
-  "/_shell/pipelines/$pipelineId/assets/$assetId/canvas",
-  "/_shell/notebooks/",
-  "/_shell/notebooks/$notebookId",
-  "/_shell/data",
-  "/_shell/_presentations",
-  "/_shell/_presentations/reports/",
-  "/_shell/_presentations/dashboards/",
-  "/_shell/_presentations/reports/$presentationId",
-  "/_shell/_presentations/dashboards/$presentationId",
-  "/_shell/_presentations/reports/$presentationId/",
-  "/_shell/_presentations/dashboards/$presentationId/",
-  "/_shell/_presentations/reports/$presentationId/view",
-  "/_shell/_presentations/dashboards/$presentationId/view",
-  "/_shell/project",
-  "/_shell/project/",
-  "/_shell/project/general",
-  "/_shell/project/environments",
-  "/_shell/project/connections",
-  "/_shell/run",
-  "/_shell/catalog",
-  "/_shell/schedules",
-  "/_shell/schedules/",
-  "/_shell/schedules/deployments",
-  "/_shell/schedules/timeline",
-  "/_shell/runs",
-  "/_shell/runs/",
-  "/_shell/runs/$runId",
-]);
-
 export function navigationForAppRouteMatches(
   matches: readonly { routeId: string }[],
 ): AppRouteNavigation | null {
@@ -540,42 +492,9 @@ export function navigationForAppRouteMatches(
     if (!definition) continue;
     return {
       ...definition,
-      workbench: migratedWorkbenchRouteIds.has(routeId),
+      // The root only redirects; every actual shell page uses the workbench.
+      workbench: routeId !== "/_shell/",
     };
   }
   return null;
-}
-
-function normalizePathname(pathname: string) {
-  const path = pathname.split(/[?#]/, 1)[0] || "/";
-  return path.length > 1 ? path.replace(/\/+$/, "") : path;
-}
-
-function routePrefixMatches(pathname: string, prefix: string) {
-  if (prefix === "/") return pathname === "/";
-  return pathname === prefix || pathname.startsWith(`${prefix}/`);
-}
-
-export function destinationForAppPath(pathname: string): AppNavigationDestination | null {
-  const normalized = normalizePathname(pathname);
-  const candidates = appNavigationModes.flatMap((mode) =>
-    mode.destinations.flatMap((destination) =>
-      destination.routePrefixes.map((prefix) => ({ destination, prefix })),
-    ),
-  );
-
-  candidates.sort((left, right) => right.prefix.length - left.prefix.length);
-  return (
-    candidates.find(({ prefix }) => routePrefixMatches(normalized, prefix))?.destination ?? null
-  );
-}
-
-export function modeForAppPath(pathname: string): AppNavigationMode | null {
-  const destination = destinationForAppPath(pathname);
-  if (!destination) return null;
-  return (
-    appNavigationModes.find((mode) =>
-      mode.destinations.some((candidate) => candidate.id === destination.id),
-    ) ?? null
-  );
 }

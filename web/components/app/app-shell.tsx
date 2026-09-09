@@ -53,11 +53,7 @@ import { rememberWorkspaceProject } from "@/lib/project-route-bootstrap";
 
 import { ProjectSwitcher } from "./project-switcher";
 import { AppCommandPalette } from "./app-command-palette";
-import {
-  appNavigationModes,
-  modeForAppPath,
-  navigationForAppRouteMatches,
-} from "./app-navigation-model";
+import { appNavigationModes, navigationForAppRouteMatches } from "./app-navigation-model";
 import { LocalVaultControl } from "./local-vault-control";
 import { ServerOfflineOverlay } from "./server-offline-overlay";
 import { SourceControlDiffViewer } from "./source-control-diff-viewer";
@@ -91,9 +87,7 @@ export function AppShell() {
       tool: "ad-hoc" as const,
     };
   }, [location.search, matchedRouteNavigation]);
-  const activeMode = routeNavigation
-    ? { id: routeNavigation.mode }
-    : modeForAppPath(location.pathname);
+  const activeMode = routeNavigation ? { id: routeNavigation.mode } : null;
   const { workspaceConfig } = useWorkspaceSettingsData();
   const projectId = getPinnedProjectId() ?? workspaceConfig?.project_id ?? "default";
   useEffect(() => {
@@ -107,7 +101,7 @@ export function AppShell() {
       <div
         className="flex h-dvh min-h-0 flex-col bg-muted/40 text-foreground"
         data-app-mode={activeMode?.id}
-        data-workbench-route={routeNavigation?.workbench ? "migrated" : "legacy"}
+        data-workbench-route={routeNavigation?.workbench ? "workbench" : "redirect"}
       >
         <ServerOfflineOverlay />
         <AppHeader sourceControl={sourceControl} activeMode={activeMode?.id ?? null} />
