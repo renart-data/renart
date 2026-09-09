@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,12 +26,15 @@ import (
 	webexecution "renart/internal/web/execution"
 	"renart/internal/web/identity"
 	"renart/internal/web/matlog"
+	"renart/internal/web/model"
 	"renart/internal/web/policy"
+	"renart/internal/web/preview"
 	"renart/internal/web/runcontext"
 	webscheduler "renart/internal/web/scheduler"
 )
 
 type InspectResult struct {
+	Preview                             *model.PreviewMetadata
 	Status                              string
 	Columns                             []string
 	Rows                                []map[string]any
@@ -381,6 +385,8 @@ func (s *ExecutionService) findPipelineViewForAsset(assetID string) (PipelineVie
 }
 
 func (s *ExecutionService) InspectAsset(ctx context.Context, assetID, limit, environment, startDate, endDate string) InspectResult {
+	rowLimit := normalizeInspectLimit(limit)
+	limit = strconv.Itoa(rowLimit)
 	relAssetPath, err := DecodeID(assetID)
 	if err != nil {
 		return InspectResult{Status: "error", Error: "invalid asset id", HTTPStatus: 400}
@@ -406,7 +412,7 @@ func (s *ExecutionService) InspectAsset(ctx context.Context, assetID, limit, env
 
 	queryReq := QueryAssetRequest{
 		AssetPath:   relAssetPath,
-		Limit:       limit,
+		Limit:       strconv.Itoa(rowLimit + 1),
 		Environment: environment,
 		StartDate:   startDate,
 		EndDate:     endDate,
@@ -458,9 +464,13 @@ func (s *ExecutionService) InspectAsset(ctx context.Context, assetID, limit, env
 	}
 
 	columns, rows := s.deps.ParseQueryOutput(output)
+	rows, metadata := preview.Bound(rows, rowLimit, false)
 	// Surface the executed (rendered) query so the UI can show what actually ran.
 	operation.Query = ExtractQueryTextFromOutput(output)
+	// Do not smuggle lookahead or oversized rows back through raw_output.
+	output, _ = json.Marshal(QueryRowsEnvelope{Columns: columns, Rows: rows})
 	return InspectResult{
+		Preview:    metadata,
 		Status:     "ok",
 		Columns:    columns,
 		Rows:       rows,
@@ -527,7 +537,7 @@ func (s *ExecutionService) inspectMaterializedNonSQLAsset(ctx context.Context, a
 		tableName = asset.Name
 	}
 
-	query := fmt.Sprintf("select * from %s limit %d", tableName, rowLimit)
+	query := fmt.Sprintf("select * from %s limit %d", tableName, rowLimit+1)
 	operation := queryConnectionOperation(connectionName, query, environment)
 	operation.AssetPath = relAssetPath
 	operation.Target = relAssetPath
@@ -548,8 +558,10 @@ func (s *ExecutionService) inspectMaterializedNonSQLAsset(ctx context.Context, a
 		}, true
 	}
 
+	rows, metadata := preview.Bound(rows, rowLimit, false)
 	output, _ := json.Marshal(QueryRowsEnvelope{Columns: columns, Rows: rows})
 	return InspectResult{
+		Preview:    metadata,
 		Status:     "ok",
 		Columns:    columns,
 		Rows:       rows,
@@ -569,10 +581,7 @@ func normalizeInspectLimit(limit string) int {
 	if _, err := fmt.Sscanf(trimmed, "%d", &value); err != nil || value <= 0 {
 		return 100
 	}
-	if value > 1000 {
-		return 1000
-	}
-	return value
+	return preview.NormalizeLimit(value)
 }
 
 func (s *ExecutionService) ensureAssetInspectable(ctx context.Context, assetID, environment, startDate, endDate string) error {

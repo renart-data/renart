@@ -158,6 +158,7 @@ export type AssetDependency = {
 };
 
 export type AssetInspectResponse = {
+  preview?: PreviewMetadata;
   status: string;
   columns: string[];
   rows: Record<string, unknown>[];
@@ -552,6 +553,7 @@ export type DataBrowserPreviewRequest = {
 };
 
 export type DataBrowserPreviewResponse = {
+  preview?: PreviewMetadata;
   status: string;
   object_id: string;
   columns: string[];
@@ -1413,6 +1415,16 @@ export type PresentationVisualization = {
   dataset: string;
   definition: Record<string, unknown>;
   filter_bindings?: PresentationFilterBinding[];
+};
+
+export type PreviewMetadata = {
+  returned_rows: number;
+  has_more: boolean;
+  limit: number;
+  next_limit?: number;
+  continuation: string;
+  reason?: string;
+  result_id: string;
 };
 
 export type ProjectInfo = {

@@ -21,6 +21,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { VirtualDataTable } from "@/components/virtual-data-table";
+import { PreviewRequests } from "@/lib/preview";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -721,7 +722,8 @@ function DataBrowserDetail({
     objectLoading: boolean;
     preview: DataBrowserPreviewResponse | null;
     previewLoading: boolean;
-    runPreview: () => Promise<void>;
+    runPreview: (limit?: number) => Promise<void>;
+    previewError?: string | null;
   };
   className?: string;
   section?: DataTarget["section"];
@@ -832,21 +834,31 @@ function DataBrowserDetail({
                 )}
               </TabsContent>
               <TabsContent value="rows" className="min-h-0 flex-1 p-0">
-                {browser.previewLoading ? (
+                {browser.previewError ? (
+                  <Alert variant="destructive">
+                    <AlertCircle />
+                    <AlertTitle>Could not load preview rows</AlertTitle>
+                    <AlertDescription>
+                      {browser.previewError} Try again; any previous rows are still available.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+                {browser.previewLoading && !browser.preview ? (
                   <DataBrowserLoading label="Loading preview rows…" table />
                 ) : browser.preview ? (
                   <div className="flex h-full min-h-0 flex-col">
-                    <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5 text-[10px] text-muted-foreground">
-                      <span>
-                        {browser.preview.rows.length} rows · {browser.preview.elapsed_ms} ms
-                      </span>
-                      {browser.preview.truncated ? <span>Preview truncated</span> : null}
-                    </div>
                     <div className="min-h-0 flex-1">
                       <VirtualDataTable
                         ariaLabel={`${object.name} preview`}
                         columns={browser.preview.columns}
                         rows={browser.preview.rows}
+                        preview={browser.preview.preview}
+                        loading={browser.previewLoading}
+                        canLoadMore={browser.preview.preview?.continuation === "replace"}
+                        onLoadMore={() =>
+                          void browser.runPreview(browser.preview?.preview?.next_limit)
+                        }
+                        scrollKey={`data-preview:${object.id}`}
                         height="100%"
                         frameless
                       />
@@ -948,6 +960,8 @@ export function DataObjectDetail({
   const [preview, setPreview] = useState<DataBrowserPreviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewRequests = useRef(new PreviewRequests<DataBrowserPreviewResponse>());
   const [error, setError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
   const addressKey = JSON.stringify(target.address);
@@ -959,6 +973,8 @@ export function DataObjectDetail({
     setError(null);
     setLoading(true);
     setPreviewLoading(false);
+    setPreviewError(null);
+    const requests = previewRequests.current;
     void resolveDataBrowserObject(
       { address: JSON.parse(addressKey), environment },
       controller.signal,
@@ -973,22 +989,24 @@ export function DataObjectDetail({
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      requests.cancel("preview");
+    };
   }, [addressKey, environment, retry]);
-  const runPreview = async () => {
+  const runPreview = async (limit = preview?.preview?.limit ?? 100) => {
     const controller = request.current;
     if (!object || !controller || previewLoading) return;
     setPreviewLoading(true);
-    setError(null);
+    setPreviewError(null);
     try {
-      const result = await previewDataBrowserObject(
-        { object_id: object.id, environment, limit: 100 },
-        controller.signal,
+      const result = await previewRequests.current.run("preview", limit, (bound, signal) =>
+        previewDataBrowserObject({ object_id: object.id, environment, limit: bound }, signal),
       );
-      if (!controller.signal.aborted) setPreview(result);
+      if (result && !controller.signal.aborted) setPreview(result.value);
     } catch (cause) {
       if (!controller.signal.aborted)
-        setError(cause instanceof Error ? cause.message : "Could not preview this object.");
+        setPreviewError(cause instanceof Error ? cause.message : "Could not preview this object.");
     } finally {
       if (!controller.signal.aborted) setPreviewLoading(false);
     }
@@ -1016,6 +1034,7 @@ export function DataObjectDetail({
           objectLoading: loading,
           preview,
           previewLoading,
+          previewError,
           runPreview,
         }}
         section={target.section}

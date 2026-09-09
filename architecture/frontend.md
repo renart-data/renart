@@ -688,6 +688,18 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   copies selected cells as TSV and HTML. Hover alone never expands a value;
   only the active selected cell can open its complete content. Tables whose
   row-action semantics do not fit this spreadsheet contract remain separate.
+- Data Browser and asset Inspect use that table's compact preview footer: row
+  count, an explicit **Load more rows** action, or a row/size-limit explanation.
+  Backend lookahead metadata replaces the old row-count heuristic; Inspect no
+  longer auto-fetches on scrolling. Larger samples replace rows, clear stale
+  selection and retain the table/scroll position. Failures retain the prior
+  sample and retry the same bound. `PreviewRequests` coalesces pending bounds,
+  rejects cancelled replies even for adapters that ignore abort signals, and
+  releases shared Inspect requests only when their last consumer leaves. It
+  stores no results: existing domain state remains authoritative. Inspect scope
+  includes workspace connection sequence, environment and execution window;
+  explicit refresh/source-change invalidation cancels prior in-flight reads.
+  No preview rows, SQL or result identities enter persisted browser state.
 - Dashboard/report authoring keeps one explicit shrink-safe height chain from
   the routed page through the tabs and builder. The visual canvas ScrollArea
   owns overflow for tall content while the command bar and desktop sidebars

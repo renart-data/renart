@@ -23,6 +23,8 @@ import {
   useState,
 } from "react";
 
+import type { PreviewMetadata } from "@/lib/generated/api-types";
+import { previewStatus } from "@/lib/preview";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -91,6 +93,7 @@ export function virtualRowWindow({
 }
 
 type Props = {
+  preview?: PreviewMetadata;
   columns: string[];
   columnKeys?: string[];
   rows: Record<string, unknown>[];
@@ -110,6 +113,7 @@ type Props = {
 };
 
 export function VirtualDataTable({
+  preview,
   columns,
   columnKeys,
   rows,
@@ -197,6 +201,10 @@ export function VirtualDataTable({
       }),
     );
   }, [fallbackColumns.length, rows.length]);
+
+  useEffect(() => {
+    if (preview?.result_id) setSelection(EMPTY_DATA_GRID_SELECTION);
+  }, [preview?.result_id]);
 
   useEffect(() => {
     const stopDragging = () => {
@@ -471,6 +479,86 @@ export function VirtualDataTable({
     return () => window.cancelAnimationFrame(frame);
   }, [rows, visibleRows.length]);
 
+  const selectionControls =
+    selection.selected.size > 0 ? (
+      <div
+        aria-label="Table selection controls"
+        className={cn(
+          "mobile-data-grid-selection-controls absolute right-2 z-30 items-center gap-0.5 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur",
+          preview ? "bottom-full mb-2" : "bottom-2",
+        )}
+        data-testid="mobile-table-selection-controls"
+        role="toolbar"
+      >
+        <span className="px-1.5 text-[10px] tabular-nums text-muted-foreground" aria-live="polite">
+          {selection.selected.size} selected
+        </span>
+        <Button
+          aria-label="Adjust selection up"
+          onClick={() => adjustSelection({ row: -1, column: 0 })}
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+        >
+          <ArrowUp />
+        </Button>
+        <Button
+          aria-label="Adjust selection down"
+          onClick={() => adjustSelection({ row: 1, column: 0 })}
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+        >
+          <ArrowDown />
+        </Button>
+        <Button
+          aria-label="Adjust selection left"
+          onClick={() => adjustSelection({ row: 0, column: -1 })}
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+        >
+          <ArrowLeft />
+        </Button>
+        <Button
+          aria-label="Adjust selection right"
+          onClick={() => adjustSelection({ row: 0, column: 1 })}
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+        >
+          <ArrowRight />
+        </Button>
+        <Button
+          aria-label="Select all cells"
+          onClick={selectAllCells}
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+        >
+          <Maximize2 />
+        </Button>
+        <Button
+          aria-label="Copy selection"
+          onClick={() => void copyTable(true)}
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+        <Button
+          aria-label="Clear selection"
+          onClick={clearSelection}
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+        >
+          <X />
+        </Button>
+      </div>
+    ) : null;
+
   const showLoadMoreControl = Boolean(
     onLoadMore && (canLoadMore || loading) && (nearBottom || loading),
   );
@@ -503,92 +591,15 @@ export function VirtualDataTable({
         </Button>
       ) : null}
 
-      {selection.selected.size > 0 ? (
-        <div
-          aria-label="Table selection controls"
-          className="mobile-data-grid-selection-controls absolute bottom-2 right-2 z-30 items-center gap-0.5 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur"
-          data-testid="mobile-table-selection-controls"
-          role="toolbar"
-        >
-          <span
-            className="px-1.5 text-[10px] tabular-nums text-muted-foreground"
-            aria-live="polite"
-          >
-            {selection.selected.size} selected
-          </span>
-          <Button
-            aria-label="Adjust selection up"
-            onClick={() => adjustSelection({ row: -1, column: 0 })}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <ArrowUp />
-          </Button>
-          <Button
-            aria-label="Adjust selection down"
-            onClick={() => adjustSelection({ row: 1, column: 0 })}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <ArrowDown />
-          </Button>
-          <Button
-            aria-label="Adjust selection left"
-            onClick={() => adjustSelection({ row: 0, column: -1 })}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <ArrowLeft />
-          </Button>
-          <Button
-            aria-label="Adjust selection right"
-            onClick={() => adjustSelection({ row: 0, column: 1 })}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <ArrowRight />
-          </Button>
-          <Button
-            aria-label="Select all cells"
-            onClick={selectAllCells}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <Maximize2 />
-          </Button>
-          <Button
-            aria-label="Copy selection"
-            onClick={() => void copyTable(true)}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            {copied ? <Check /> : <Copy />}
-          </Button>
-          <Button
-            aria-label="Clear selection"
-            onClick={clearSelection}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <X />
-          </Button>
-        </div>
-      ) : null}
+      {!preview ? selectionControls : null}
 
-      {loading ? (
+      {loading && !preview ? (
         <div className="pointer-events-none absolute right-2 top-10 z-20 rounded bg-background/90 p-1 text-muted-foreground shadow-sm">
           <Loader2 className="size-3.5 animate-spin" />
         </div>
       ) : null}
 
-      {showLoadMoreControl ? (
+      {showLoadMoreControl && !preview ? (
         <Button
           className="absolute bottom-3 left-1/2 z-30 h-8 -translate-x-1/2 gap-2 bg-background/95 px-3 text-[11px] shadow-md backdrop-blur disabled:opacity-70"
           disabled={!canLoadMore || loading}
@@ -751,6 +762,26 @@ export function VirtualDataTable({
           </tbody>
         </table>
       </ScrollArea>
+      {preview ? (
+        <div className="relative flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-3 py-1.5">
+          {selectionControls}
+          <span role="status" className="text-xs text-muted-foreground">
+            {previewStatus(preview)}
+          </span>
+          {preview.continuation === "replace" && onLoadMore ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={loading || !canLoadMore}
+              title="Refreshes a larger sample. Rows may change if the source changes."
+              onClick={triggerLoadMore}
+            >
+              {loading ? "Loading more rows…" : "Load more rows"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

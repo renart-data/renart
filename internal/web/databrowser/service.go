@@ -17,13 +17,14 @@ import (
 
 	"renart/internal/web/apperror"
 	"renart/internal/web/model"
+	"renart/internal/web/preview"
 	"renart/internal/web/sqlnamespace"
 )
 
 const (
 	localFilesConnectionName = "Project files"
 	maxChildren              = 500
-	maxPreviewRows           = 200
+	maxPreviewRows           = preview.MaxRows
 )
 
 var supportedLocalExtensions = map[string]string{
@@ -373,10 +374,8 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (PreviewR
 	if queryErr != nil {
 		return PreviewResponse{}, internalError("data_browser_preview_failed", s.describeError(ref, queryErr))
 	}
-	truncated := result.Truncated || len(result.Rows) > limit
-	if len(result.Rows) > limit {
-		result.Rows = result.Rows[:limit]
-	}
+	rows, metadata := preview.Bound(result.Rows, limit, result.Truncated)
+	result.Rows = rows
 	if result.Columns == nil {
 		result.Columns = []string{}
 	}
@@ -388,7 +387,8 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (PreviewR
 		ObjectID:  request.ObjectID,
 		Columns:   result.Columns,
 		Rows:      result.Rows,
-		Truncated: truncated,
+		Truncated: metadata.HasMore,
+		Preview:   metadata,
 		ElapsedMS: max(0, s.deps.Now().Sub(started).Milliseconds()),
 	}, nil
 }

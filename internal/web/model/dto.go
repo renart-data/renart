@@ -652,6 +652,7 @@ type CommandResult struct {
 // renart:web
 // renart:web-name AssetInspectResponse
 type InspectResult struct {
+	Preview                             *PreviewMetadata  `json:"preview,omitempty"`
 	Status                              string            `json:"status"`
 	Columns                             []string          `json:"columns"`
 	Rows                                []map[string]any  `json:"rows"`

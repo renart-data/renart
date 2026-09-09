@@ -1,6 +1,23 @@
 # Shared preview row loading
 
-Status: proposed, 9 September 2026. This is a plan, not a shipped capability.
+Status: partially implemented, 9 September 2026. Data Browser and asset Inspect
+now share bounded replacement loading. Notebook, ad-hoc query and presentation
+adapters below remain unfinished; this is not universal result pagination.
+
+## Implemented foundation
+
+- Generated `PreviewMetadata`, backend limit+1 exhaustion detection, 1,000-row
+  ceiling and 2 MiB row-payload budget. No count query or unordered page appends.
+- One compact VirtualDataTable footer with explicit load-more. Shared pending
+  request admission, cancellation, duplicate-click coalescing, retained rows on
+  failure, same-bound retry and replacement-selection invalidation.
+- Data Browser warehouse/local-file previews and the existing shared Inspect
+  owner use the contract. Storage remains metadata-only. Successful Inspect raw
+  output is bounded too; the row budget does not promise bounded driver memory.
+
+Current contracts live in [backend](../architecture/backend.md) and
+[frontend](../architecture/frontend.md). Tests cover the budget, shared consumers,
+late replies, retry, exact-limit exhaustion and virtualized rendering.
 
 ## Outcome
 
@@ -14,8 +31,8 @@ Unsupported continuation should be explicit, not an endlessly enabled button.
 | Surface | Current owner / gap |
 | --- | --- |
 | Table rendering | [VirtualDataTable](../web/components/virtual-data-table.tsx) already owns windowing, selection, copy, scroll retention, and optional load-more controls. Keep it. |
-| Asset inspect and canvas previews | [use-asset-inspect](../web/hooks/use-asset-inspect.ts) shares requested limits and cached results; load-more increases the bound and fetches a replacement result. Completeness currently depends on row count reaching the requested limit. |
-| Data Browser | [service](../internal/web/databrowser/service.go) fetches limit + 1, reports truncation, and caps a preview at 200. The UI requests 100; no continuation is wired. S3/SFTP are metadata-only here. |
+| Asset inspect | [use-asset-inspect](../web/hooks/use-asset-inspect.ts) owns shared requested limits and results; load-more uses reliable backend metadata and replaces the sample. |
+| Data Browser | [service](../internal/web/databrowser/service.go) fetches limit + 1. The UI starts at 100 and grows to at most 1,000 rows under the shared byte budget. S3/SFTP remain metadata-only. |
 | Notebook cells | Runtime owns the bounded result and local materialized relations. UI renders all returned preview rows, but a cell run is not a paging endpoint. See [notebook state](../architecture/notebooks.md#10-server-owned-recompute-and-frontend-state). |
 | Query and presentations | Audit the consumers of VirtualDataTable and SQL result DTOs; distinguish ad-hoc query samples, retained notebook results, and table visualization limits. A chart/data transformation limit is not just a display limit. |
 
@@ -66,24 +83,24 @@ never clear a useful table or append duplicate pages. Clear stale selection if a
 replacement changes row identity, but preserve it for genuine append pages.
 Do not put rows, SQL text or tokens in session storage or route parameters.
 
-## Delivery sequence
+## Remaining delivery sequence
 
-1. **Inventory and contract tests.** Cover all VirtualDataTable consumers and
-   result DTOs. Define byte/row ceilings and initial/page sizes per domain;
-   document whether each source supports replacement, snapshot pages, or neither.
-2. **Shared controller + inspect.** Replace heuristic completeness with backend
-   metadata. Migrate canvas and full inspect together. Keep explicit load-more
-   the default; opt-in auto-loading only after a memory/request-budget review.
-3. **Data Browser.** Wire warehouse/local-file preview through the same controller
-   and a reviewed bounded-replacement limit. Do not merely remove the 200-row
-   cap. Preserve metadata-only behavior for unsupported storage previews.
-4. **Notebook result endpoint.** Add a read-only endpoint in the existing notebook
+1. **Notebook result endpoint.** Add a read-only endpoint in the existing notebook
    service/httpapi adapter. Validate generation under the session lock, page stable
    results, and return a recoverable expiry response after reset/recompute.
    Persisting a new immutable result snapshot needs an explicit disk/TTL budget.
-5. **Ad-hoc query + table presentations.** Reuse the adapters; preserve authored
+   The existing cell-run manifest and ExportCell session-lock validation are the
+   reuse points. A cell fingerprint alone is insufficient: rerunning identical
+   SQL changes its result generation, and retained views can change when an
+   upstream is replaced. Do not claim immutable paging over those views.
+2. **Ad-hoc query + table presentations.** Reuse the adapters; preserve authored
    visualization row limits and full/sample semantics. No implicit re-execution
    of Python, remote transfer, or source assets.
+   The existing Query action accepts more than read-only SELECTs; attaching its
+   Run callback to load-more would risk repeating side effects. Introduce a
+   separately guarded read-result adapter first. Table visualizations in
+   `notebook-viz.tsx` consume authored presentation datasets; their transform or
+   sample limits must not be silently increased by a display control.
 
 ## Acceptance and evidence
 

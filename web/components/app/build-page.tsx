@@ -3769,6 +3769,7 @@ function ResultsPanel({
               <RenderedQueryDisclosure query={inspectResult.operation?.query} />
               <div className="min-h-0 flex-1">
                 <AssetInspectView
+                  preview={inspectResult.preview}
                   columns={inspectResult.columns ?? []}
                   rows={inspectResult.rows ?? []}
                   loading={inspectLoading}

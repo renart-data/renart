@@ -88,8 +88,26 @@ coverage, backward compatibility and version limits. Local-file discovery accept
 only supported tabular formats below visible project paths and rechecks path
 containment, symlinks, hidden/generated directories, and format at every object
 or preview request. Preview SQL is constructed and quoted by the backend from
-the resolved object reference, capped at 200 rows, and never accepted from the
+the resolved object reference, capped at 1,000 rows, and never accepted from the
 browser as arbitrary SQL.
+
+Data Browser and asset Inspect share `internal/web/preview` and the generated
+`model.PreviewMetadata` contract. Initial Data Browser samples request 100 rows;
+Inspect keeps its existing per-view initial bounds. Each adapter asks for one
+lookahead row, then applies a 1,000-row and 2 MiB serialized-row budget. Exact
+limit results without a lookahead row are exhausted. Metadata distinguishes a
+larger replacement sample (`next_limit`) from completion, row cap and byte cap;
+no COUNT query or OFFSET-page append is involved. Each response receives a fresh
+result ID for UI selection invalidation, not an authorization token. Successful
+Inspect raw output is rebuilt from the bounded rows so it cannot bypass the
+budget; the executed SQL remains in operation metadata. This bounds rows returned
+to the UI, not peak driver allocation or query execution cost.
+
+Every continuation repeats the existing read-only Inspect guard or Data Browser
+reference/path/connection checks. S3/SFTP remain metadata-only. Notebook result
+continuation, ad-hoc queries and authored presentation datasets are separate
+adapters, not implicit consumers of this replacement policy; remaining work is
+tracked in [preview row loading](../plans/preview-row-loading.md).
 
 Durable `dataaddress.Address` values sit alongside those operation references.
 The scoped read-only `/api/data-browser/resolve` endpoint rediscovers the exact

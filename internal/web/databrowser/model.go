@@ -116,10 +116,11 @@ type PreviewRequest struct {
 // renart:web
 // renart:web-name DataBrowserPreviewResponse
 type PreviewResponse struct {
-	Status    string           `json:"status"`
-	ObjectID  string           `json:"object_id"`
-	Columns   []string         `json:"columns"`
-	Rows      []map[string]any `json:"rows"`
-	Truncated bool             `json:"truncated,omitempty"`
-	ElapsedMS int64            `json:"elapsed_ms"`
+	Preview   *model.PreviewMetadata `json:"preview,omitempty"`
+	Status    string                 `json:"status"`
+	ObjectID  string                 `json:"object_id"`
+	Columns   []string               `json:"columns"`
+	Rows      []map[string]any       `json:"rows"`
+	Truncated bool                   `json:"truncated,omitempty"`
+	ElapsedMS int64                  `json:"elapsed_ms"`
 }

@@ -1611,7 +1611,7 @@ func TestExecutionServiceInspectNonSQLAssetQueriesMaterializedTable(t *testing.T
 
 	require.Len(t, executor.queryConnReqs, 1)
 	assert.Equal(t, "duckdb-default", executor.queryConnReqs[0].ConnectionName)
-	assert.Equal(t, "select * from analytics.customers limit 25", executor.queryConnReqs[0].Query)
+	assert.Equal(t, "select * from analytics.customers limit 26", executor.queryConnReqs[0].Query)
 	assert.Equal(t, "ok", result.Status)
 	assert.Equal(t, []string{"customer_id"}, result.Columns)
 	assert.Equal(t, []map[string]any{{"customer_id": float64(1)}}, result.Rows)
@@ -1642,7 +1642,7 @@ func TestExecutionServiceInspectLoadAssetQueriesDestinationConnection(t *testing
 
 	require.Len(t, executor.queryConnReqs, 1)
 	assert.Equal(t, "duckdb-default", executor.queryConnReqs[0].ConnectionName)
-	assert.Equal(t, "select * from analytics.orders limit 25", executor.queryConnReqs[0].Query)
+	assert.Equal(t, "select * from analytics.orders limit 26", executor.queryConnReqs[0].Query)
 	assert.Equal(t, "ok", result.Status)
 	assert.Equal(t, []string{"id"}, result.Columns)
 }

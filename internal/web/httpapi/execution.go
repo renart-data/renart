@@ -47,6 +47,7 @@ func (h *ExecutionAPI) HandleInspectAsset(w http.ResponseWriter, r *http.Request
 		"status":                                 result.Status,
 		"columns":                                result.Columns,
 		"rows":                                   result.Rows,
+		"preview":                                result.Preview,
 		"raw_output":                             result.RawOutput,
 		"operation":                              result.Operation,
 		"error":                                  result.Error,

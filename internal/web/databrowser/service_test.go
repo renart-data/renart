@@ -130,6 +130,15 @@ func TestLocalFilesStayInsideWorkspaceAndPreviewIsServerConstructed(t *testing.T
 	require.NotContains(t, capturedQuery, "notes.txt")
 	require.Len(t, preview.Rows, 1)
 	require.True(t, preview.Truncated)
+	require.Equal(t, "replace", preview.Preview.Continuation)
+	require.Equal(t, 101, preview.Preview.NextLimit)
+	exhausted, apiErr := service.Preview(context.Background(), PreviewRequest{ObjectID: dataNodes.Nodes[1].ID, Environment: "dev", Limit: 2})
+	require.Nil(t, apiErr)
+	require.False(t, exhausted.Preview.HasMore, "exactly limit rows are exhausted without a lookahead row")
+	require.Zero(t, exhausted.Preview.NextLimit)
+	_, apiErr = service.Preview(context.Background(), PreviewRequest{ObjectID: dataNodes.Nodes[1].ID, Environment: "dev", Limit: 1000000})
+	require.Nil(t, apiErr)
+	require.Contains(t, capturedQuery, "limit 1001")
 
 	malicious := objectRef{
 		Kind: "file", SourceKind: "local_files", Environment: "dev", Revision: localFiles.Revision, Path: "../secret.csv",
