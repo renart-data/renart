@@ -48,7 +48,7 @@ test.describe("Data Browser authoring", () => {
     await page.goto(`${liveApp.baseURL}${canvasPath}`);
     await openBrowser(page);
     await page.getByRole("button", { name: /duckdb-default.*DuckDB/ }).click();
-    // This fixture's DuckDB catalog exposes the raw schema directly.
+    await page.getByRole("button", { name: "local Default", exact: true }).click();
     await page.getByRole("button", { name: "raw", exact: true }).click();
     const useTable = page.getByRole("button", {
       name: "Use browser_orders in canvas",
@@ -84,7 +84,7 @@ test.describe("Data Browser authoring", () => {
       await expect(page.locator("[data-data-browser-drag-preview]")).toHaveCount(0);
       const target = page.getByTestId("data-browser-drop-target");
       await expect(target).toBeVisible();
-      await expect(target).toHaveAttribute("data-source-group", "raw");
+      await expect(target).toHaveAttribute("data-source-group", "local.raw");
       await expect(target).toHaveAttribute("data-new-group", "true");
       expect(await transfer.evaluate((value) => value.types)).toContain(MIME);
       const foreign = await page.evaluateHandle((mime) => {
@@ -116,7 +116,7 @@ test.describe("Data Browser authoring", () => {
       page.getByTestId("lineage-asset").filter({ hasText: "browser_orders" }),
     ).toBeVisible();
     const source = await readFile(
-      join(liveApp.workspaceDir, "analytics/assets/raw/browser_orders.asset.yml"),
+      join(liveApp.workspaceDir, "analytics/assets/local.raw/browser_orders.asset.yml"),
       "utf8",
     );
     expect(source).toContain("type: duckdb.source");
@@ -225,6 +225,10 @@ test.describe("Data Browser authoring", () => {
     page,
     liveApp,
   }, info) => {
+    await writeFile(
+      join(liveApp.workspaceDir, "analytics/assets/catalog_anchor.asset.yml"),
+      "name: local.analytics.anchor\ntype: duckdb.source\nconnection: duckdb-default\n",
+    );
     for (const query of [
       "create schema if not exists analytics",
       "create table analytics.prefixed_source as select 7 as id",
@@ -238,6 +242,7 @@ test.describe("Data Browser authoring", () => {
     await page.goto(`${liveApp.baseURL}${canvasPath}`);
     await openBrowser(page);
     await page.getByRole("button", { name: /duckdb-default.*DuckDB/ }).click();
+    await page.getByRole("button", { name: "local Default", exact: true }).click();
     await page.getByRole("button", { name: "analytics", exact: true }).click();
     const assets = page.getByTestId("lineage-asset");
     const before = await assets.evaluateAll((nodes) =>
@@ -246,7 +251,7 @@ test.describe("Data Browser authoring", () => {
     await page.getByRole("button", { name: "Use prefixed_source in canvas", exact: true }).click();
     const target = page.getByTestId("data-browser-drop-target");
     await expect(target).toHaveCount(1);
-    await expect(target).toHaveAttribute("data-source-group", "analytics");
+    await expect(target).toHaveAttribute("data-source-group", "local.analytics");
     await expect(target).toHaveAttribute("data-new-group", "false");
     await expect(
       page.locator(".react-flow__node-prefixGroup").getByTestId("data-browser-drop-target"),
@@ -266,10 +271,10 @@ test.describe("Data Browser authoring", () => {
     await dialog.getByRole("button", { name: "Create source asset", exact: true }).click();
     await expect(dialog).toBeHidden();
     const saved = await readFile(
-      join(liveApp.workspaceDir, "analytics/assets/analytics/prefixed_source.asset.yml"),
+      join(liveApp.workspaceDir, "analytics/assets/local.analytics/prefixed_source.asset.yml"),
       "utf8",
     );
-    expect(saved).toContain("name: analytics.prefixed_source");
+    expect(saved).toContain("name: local.analytics.prefixed_source");
   });
 
   test("offers source placement in an empty pipeline without leaving it", async ({
@@ -296,6 +301,7 @@ test.describe("Data Browser authoring", () => {
     await openBrowser(page);
     await expect(page).toHaveURL(new RegExp(`/pipelines/${emptyId}/canvas`));
     await page.getByRole("button", { name: /duckdb-default.*DuckDB/ }).click();
+    await page.getByRole("button", { name: "local Default", exact: true }).click();
     await page.getByRole("button", { name: "main", exact: true }).click();
     const useTable = page.getByRole("button", { name: "Use empty_source in canvas", exact: true });
     await useTable.click();

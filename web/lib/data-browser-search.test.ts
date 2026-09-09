@@ -29,6 +29,32 @@ const put = (request: BrowserSearchRequest, nodes: DataBrowserNode[], truncated 
 const plan = (query: string) => planDataBrowserSearch(query, [duck, lake], undefined, cache);
 
 describe("lazy Data Browser path search", () => {
+  it("traverses catalog and schema lazily without mixing identical names", () => {
+    cache.clear();
+    const catA = { ...namespace("lake"), id: "catalog:lake", namespace_kind: "catalog" };
+    const catB = { ...namespace("warehouse"), id: "catalog:warehouse", namespace_kind: "catalog" };
+    put({ connectionId: duck.id }, [catA, catB]);
+    expect(plan("duckdb-default.lak").completions[0].value).toBe("duckdb-default.lake.");
+    expect(plan("duckdb-default.lake.sales.or").request).toEqual({
+      connectionId: duck.id,
+      parentId: catA.id,
+    });
+    put({ connectionId: duck.id, parentId: catA.id }, [
+      { ...namespace("sales"), id: "lake:sales" },
+    ]);
+    expect(plan("duckdb-default.lake.sales.or").request).toEqual({
+      connectionId: duck.id,
+      parentId: "lake:sales",
+    });
+    put({ connectionId: duck.id, parentId: "lake:sales" }, [table("orders")]);
+    expect(plan("duckdb-default.lake.sales.or").completions[0].value).toBe(
+      "duckdb-default.lake.sales.orders",
+    );
+    expect(plan("duckdb-default.warehouse.sales.or").request).toEqual({
+      connectionId: duck.id,
+      parentId: catB.id,
+    });
+  });
   it("suggests canonical connections without discovering any children", () => {
     const result = plan("duckdb-def");
     expect(result.completions[0].value).toBe("duckdb-default.");

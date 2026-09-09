@@ -7,13 +7,17 @@ import (
 
 	"renart/internal/web/apperror"
 	"renart/internal/web/dataaddress"
+	"renart/internal/web/sqlnamespace"
 )
 
 // Resolve discovers the exact current object and mints a fresh operation token.
 // It never runs a row preview or constructs SQL from the supplied address.
 func (s *Service) Resolve(ctx context.Context, request ResolveRequest) (ObjectResponse, *apperror.Error) {
 	a := request.Address
-	for _, value := range []string{request.Environment, a.Connection, a.ConnectionType, a.Database, a.Schema, a.Name, a.Path} {
+	if a.SourceKind != "warehouse" && a.Catalog != "" {
+		return ObjectResponse{}, badRequest("data_browser_address_invalid", "Only warehouse objects have catalogs.")
+	}
+	for _, value := range []string{request.Environment, a.Connection, a.ConnectionType, a.Catalog, a.Database, a.Schema, a.Name, a.Path} {
 		if len(value) > 4096 || strings.ContainsAny(value, "\x00\r\n") {
 			return ObjectResponse{}, badRequest("data_browser_address_invalid", "This data address is invalid.")
 		}
@@ -52,6 +56,12 @@ func (s *Service) Resolve(ctx context.Context, request ResolveRequest) (ObjectRe
 		ref.Kind, ref.Path = "file", a.Path
 		return s.Object(ctx, encodeRef(ref), request.Environment)
 	}
+	if s.deps.ListWarehouse != nil && sqlnamespace.Supported(ref.ConnectionType) {
+		return s.resolveCatalogAddress(ctx, ref, a, request.Environment)
+	}
+	if a.Catalog != "" {
+		return ObjectResponse{}, badRequest("data_browser_address_invalid", "This connection does not support catalog addresses.")
+	}
 	if s.deps.ListTables == nil {
 		return ObjectResponse{}, badRequest("data_browser_discovery_unavailable", "Table discovery is unavailable for this data source.")
 	}
@@ -74,6 +84,7 @@ func (s *Service) Resolve(ctx context.Context, request ResolveRequest) (ObjectRe
 
 func tableRef(connection objectRef, table Table, database string) objectRef {
 	connection.Kind, connection.Name = "table", table.Name
+	connection.Catalog = table.CatalogName
 	connection.Database, connection.Schema = table.DatabaseName, table.SchemaName
 	if connection.Database == "" {
 		connection.Database = database
@@ -99,5 +110,46 @@ func addressForRef(ref objectRef) *dataaddress.Address {
 	if name == "" {
 		name = shortObjectName(ref.Name)
 	}
-	return &dataaddress.Address{SourceKind: "warehouse", Connection: ref.Connection, ConnectionType: ref.ConnectionType, Database: ref.Database, Schema: ref.Schema, Name: name}
+	return &dataaddress.Address{SourceKind: "warehouse", Connection: ref.Connection, ConnectionType: ref.ConnectionType, Catalog: ref.Catalog, Database: ref.Database, Schema: ref.Schema, Name: name}
+}
+
+func (s *Service) resolveCatalogAddress(ctx context.Context, ref objectRef, a dataaddress.Address, environment string) (ObjectResponse, *apperror.Error) {
+	// Old Trino addresses stored the catalog in Database; DuckDB/Databricks
+	// stored a schema there. Only catalogless legacy addresses are normalized.
+	legacy := a.Catalog == ""
+	if legacy {
+		switch ref.ConnectionType {
+		case "trino":
+			a.Catalog, a.Database = a.Database, ""
+		case "duckdb", "motherduck", "databricks":
+			if a.Schema == "" {
+				a.Schema = a.Database
+			}
+			a.Database = ""
+		}
+	}
+	entries, err := s.deps.ListWarehouse(ctx, ref.Connection, sqlnamespace.Scope{Catalog: a.Catalog, Database: a.Database, Schema: a.Schema}, environment)
+	if err != nil {
+		return ObjectResponse{}, internalError("data_browser_discovery_failed", err)
+	}
+	var matches []objectRef
+	for _, entry := range entries {
+		if entry.Kind != "table" {
+			continue
+		}
+		candidate := ref
+		candidate.Kind, candidate.Name, candidate.LeafName = "table", entry.Reference, entry.Name
+		candidate.Catalog, candidate.Database, candidate.Schema = entry.Scope.Catalog, entry.Scope.Database, entry.Scope.Schema
+		address := *addressForRef(candidate)
+		if legacy && a.Catalog == "" {
+			address.Catalog = ""
+		}
+		if address == a {
+			matches = append(matches, candidate)
+		}
+	}
+	if len(matches) != 1 {
+		return ObjectResponse{}, &apperror.Error{Status: http.StatusNotFound, Code: "data_browser_object_not_found", Message: "The linked object was removed, renamed, or is ambiguous. No other object has been selected."}
+	}
+	return s.Object(ctx, encodeRef(matches[0]), environment)
 }

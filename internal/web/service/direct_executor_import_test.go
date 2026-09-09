@@ -10,6 +10,7 @@ import (
 	"github.com/bruin-data/bruin/pkg/ansisql"
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/pipeline"
+	"github.com/bruin-data/bruin/pkg/query"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,24 @@ import (
 
 type directImportSummaryConnection struct {
 	summary *ansisql.DBDatabase
+}
+
+func (c *directImportSummaryConnection) Select(context.Context, *query.Query) ([][]any, error) {
+	var rows [][]any
+	for _, schema := range c.summary.Schemas {
+		for _, table := range schema.Tables {
+			rows = append(rows, []any{schema.Name, table.Name, false})
+		}
+	}
+	return rows, nil
+}
+func (c *directImportSummaryConnection) SelectWithSchema(context.Context, *query.Query) (*query.QueryResult, error) {
+	result := &query.QueryResult{}
+	for _, column := range c.summary.Schemas[0].Tables[0].Columns {
+		result.Columns = append(result.Columns, column.Name)
+		result.ColumnTypes = append(result.ColumnTypes, column.Type)
+	}
+	return result, nil
 }
 
 func (c *directImportSummaryConnection) GetDatabaseSummaryForSchemas(context.Context, []string) (*ansisql.DBDatabase, error) {
@@ -129,10 +148,10 @@ func TestDirectDatabaseImportPreservesSupportedThreePartAssetName(t *testing.T) 
 	require.NoError(t, json.Unmarshal(output, &imported))
 	require.Len(t, imported.Assets, 1)
 	assert.Equal(t, "main.external.orders", imported.Assets[0].Name)
-	assert.Equal(t, "analytics/assets/external/orders.asset.yml", imported.Assets[0].Path)
+	assert.Equal(t, "analytics/assets/main.external/orders.asset.yml", imported.Assets[0].Path)
 	assert.Equal(t, "databricks.source", imported.Assets[0].Type)
 
-	assetPath := filepath.Join(pipelineRoot, "assets", "external", "orders.asset.yml")
+	assetPath := filepath.Join(root, imported.Assets[0].Path)
 	content, err := os.ReadFile(assetPath)
 	require.NoError(t, err)
 	assert.Contains(t, string(content), "name: main.external.orders")

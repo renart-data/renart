@@ -504,6 +504,7 @@ export type DataBrowserConnectionsResponse = {
 };
 
 export type DataBrowserNode = {
+  is_default?: boolean;
   address?: DataObjectAddress;
   id: string;
   parent_id?: string;
@@ -574,6 +575,7 @@ export type DataObjectAddress = {
   source_kind: string;
   connection?: string;
   connection_type?: string;
+  catalog?: string;
   database?: string;
   schema?: string;
   name?: string;
@@ -1567,6 +1569,7 @@ export type SqlDiscoveryDatabasesResponse = {
 };
 
 export type SqlDiscoveryTable = {
+  catalog_name?: string;
   name: string;
   short_name: string;
   schema_name?: string;

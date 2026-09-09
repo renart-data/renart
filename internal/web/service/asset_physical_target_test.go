@@ -130,11 +130,13 @@ func TestStarRocksWriteIdentityMatchesNativeRoutingDefaults(t *testing.T) {
 	}
 
 	implicit := resolve(0, "")
-	explicit := resolve(9030, "lakehouse_catalog")
+	explicit := resolve(9030, "default_catalog")
 	require.Equal(t, AssetRenderFidelityExact, implicit.Fidelity, implicit.Message)
 	require.Equal(t, AssetRenderFidelityExact, explicit.Fidelity, explicit.Message)
 	assert.Equal(t, implicit.Identity, explicit.Identity)
 	assert.Equal(t, implicit.WriteResource.Identity, explicit.WriteResource.Identity)
+	otherCatalog := resolve(9030, "lakehouse_catalog")
+	assert.NotEqual(t, implicit.Identity, otherCatalog.Identity)
 	assert.Equal(t, assetWriteResourceWarehouse, implicit.WriteResource.Kind)
 }
 

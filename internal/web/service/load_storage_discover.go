@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"renart/internal/web/databrowser"
+	"renart/internal/web/secretstore"
 )
 
 type storageRoot struct {
@@ -80,11 +82,11 @@ func (s *LoadService) BrowseStorage(ctx context.Context, connection string, quer
 	defer cancel()
 	manager, err := s.deps.NewConnectionManager(ctx, environment)
 	if err != nil {
-		return databrowser.StorageListing{}, fmt.Errorf("could not resolve the storage connection; check its settings")
+		return databrowser.StorageListing{}, storageConnectionError(err)
 	}
 	uri, err := loadConnectionURI(manager, connection)
 	if err != nil {
-		return databrowser.StorageListing{}, fmt.Errorf("could not resolve the storage connection; check its settings")
+		return databrowser.StorageListing{}, storageConnectionError(err)
 	}
 	root, err := storageBrowseRoot(uri, manager.GetConnectionType(connection))
 	if err != nil {
@@ -128,6 +130,23 @@ func (s *LoadService) BrowseStorage(ctx context.Context, connection string, quer
 		return databrowser.StorageListing{}, fmt.Errorf("could not list this storage location; check connection settings and list permissions")
 	}
 	return parseStorageDiscovery(capture.String(), root, query.Prefix)
+}
+
+// Driver/provider errors may contain credentials or connection URIs. Only
+// classify known secret errors; never forward the underlying error text.
+func storageConnectionError(err error) error {
+	switch {
+	case errors.Is(err, secretstore.ErrNotFound):
+		return errors.New("A required connection secret is missing. Review its saved secret reference in Connection settings.")
+	case errors.Is(err, secretstore.ErrPermissionRequired):
+		return errors.New("A required secret store is locked or requires permission. Unlock its store and retry.")
+	case errors.Is(err, secretstore.ErrUnavailable):
+		return errors.New("A required secret provider is unavailable in this Renart session. Check its availability and the connection's secret settings.")
+	case errors.Is(err, secretstore.ErrUnknownProvider):
+		return errors.New("A required secret provider is not installed. Review the connection's secret settings.")
+	default:
+		return errors.New("could not resolve the storage connection; check its settings")
+	}
 }
 
 type storageDiscoveryCapture struct {

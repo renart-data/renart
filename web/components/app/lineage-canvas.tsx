@@ -53,7 +53,9 @@ import { kindMeta, type AppAsset } from "./app-data";
 import {
   DataBrowserLoadDropTarget,
   DataBrowserSourceDropTarget,
-  useDataBrowserSourceGroup,
+  useDataBrowserDropGroups,
+  useDataBrowserLoadTargets,
+  useDataBrowserExpandedTarget,
 } from "./data-browser/data-browser-canvas";
 import { AssetNode, AssetNodeMenuItems, type AssetNodeAction } from "./app-primitives";
 
@@ -120,6 +122,7 @@ function PrefixGroupFlowNode({ data }: NodeProps<PrefixGroupNodeData>) {
 
 function AssetFlowNode({ data }: NodeProps<AssetNodeData>) {
   const overview = useStore((state) => state.transform[2] < overviewZoomThreshold);
+  const placingInGroup = useDataBrowserDropGroups().has(assetGroupName(data.asset));
   const displayAsset = {
     ...data.asset,
     name: assetDisplayName(data.asset),
@@ -132,6 +135,7 @@ function AssetFlowNode({ data }: NodeProps<AssetNodeData>) {
       tabIndex={0}
       data-testid="lineage-asset"
       data-asset-id={data.asset.id}
+      inert={placingInGroup || undefined}
       className="cursor-pointer text-left outline-none"
       onClick={() => data.onSelect?.(data.asset.id)}
       onKeyDown={(event) => {
@@ -189,7 +193,7 @@ function AssetFlowNode({ data }: NodeProps<AssetNodeData>) {
       )}
       <Handle className="asset-node-hidden-handle" type="source" position={Position.Right} />
       <DataBrowserLoadDropTarget assetId={data.asset.id} label={data.asset.name} />
-      {data.onCreateDownstream ? (
+      {data.onCreateDownstream && !placingInGroup ? (
         <button
           type="button"
           title="Create downstream asset"
@@ -404,7 +408,9 @@ export function AppLineageCanvas({
   // paint that urgent update before reconciling the selected canvas card; the
   // graph remains interactive and catches up immediately afterward.
   const deferredSelectedAssetId = useDeferredValue(selectedAssetId);
-  const sourceGroup = useDataBrowserSourceGroup();
+  const dropGroups = useDataBrowserDropGroups();
+  const loadTargets = useDataBrowserLoadTargets();
+  const expandedTarget = useDataBrowserExpandedTarget();
 
   useEffect(() => {
     setLineageAssetId((current) => (current && current !== selectedAssetId ? null : current));
@@ -741,15 +747,30 @@ export function AppLineageCanvas({
     <div ref={containerRef} className="relative h-full min-h-0 bg-muted/40">
       <ReactFlow
         nodes={
-          sourceGroup === null
+          dropGroups.size === 0 && !expandedTarget
             ? nodes
-            : nodes.map((node) =>
-                node.type === "prefixGroup" &&
-                (node.data as PrefixGroupNodeData).label === sourceGroup
-                  ? { ...node, zIndex: 1000 }
-                  : node,
-              )
+            : nodes.map((node) => {
+                if (node.type === "prefixGroup") {
+                  const group = (node.data as PrefixGroupNodeData).label;
+                  return dropGroups.has(group)
+                    ? { ...node, zIndex: expandedTarget === `source:${group}` ? 1002 : 1000 }
+                    : node;
+                }
+                const expanded = expandedTarget === `load:${node.id}`;
+                if (!loadTargets.has(node.id) || (!dropGroups.size && !expanded)) return node;
+                // The nearest expanded target wins stacking, without moving
+                // cards. For file placement, only destination handles catch
+                // pointers above a group's source drop area, not the card body.
+                return {
+                  ...node,
+                  zIndex: expanded ? 1003 : 1001,
+                  ...(dropGroups.size
+                    ? { focusable: false, style: { ...node.style, pointerEvents: "none" as const } }
+                    : {}),
+                };
+              })
         }
+        elevateNodesOnSelect={dropGroups.size === 0 && !expandedTarget}
         edges={edges}
         nodeTypes={nodeTypes}
         nodesDraggable={false}

@@ -69,3 +69,13 @@ func TestMissingViewFileKeepsDefinitionAndExplainsProjectRoot(t *testing.T) {
 	unrelated := errors.New("permission denied")
 	require.Equal(t, unrelated, service.describeError(ref, unrelated))
 }
+
+func TestViewDefinitionKeepsCatalogAndLegacyDatabaseSeparate(t *testing.T) {
+	for _, engine := range []string{"starrocks", "doris"} {
+		ref := objectRef{ConnectionType: engine, Database: "sales", Name: "sales.orders", LeafName: "orders"}
+		require.Contains(t, viewDefinitionQuery(ref), "from information_schema.views where table_schema = 'sales'")
+		ref.Catalog = "lake.catalog"
+		ref.Name = "`lake.catalog`.sales.orders"
+		require.Contains(t, viewDefinitionQuery(ref), "from `lake.catalog`.information_schema.views where table_schema = 'sales'")
+	}
+}

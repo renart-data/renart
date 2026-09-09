@@ -19,6 +19,32 @@ const detail = {
 };
 
 describe("resource navigation", () => {
+  it("keeps catalogs distinct when a data link is reopened", () => {
+    const target = {
+      kind: "data-object",
+      section: "schema",
+      address: {
+        source_kind: "warehouse",
+        connection: "sr",
+        connection_type: "starrocks",
+        catalog: "lake",
+        database: "sales",
+        name: "orders",
+      },
+    };
+    expect(parseDetail({ ...detail, target }).target).toEqual(target);
+    const other = { ...target, address: { ...target.address, catalog: "warehouse" } };
+    expect(parseDetail({ ...detail, target: other }).target).not.toEqual(target);
+    expect(() =>
+      parseDetail({
+        ...detail,
+        target: {
+          ...target,
+          address: { source_kind: "local_files", path: "orders.csv", catalog: "lake" },
+        },
+      }),
+    ).toThrow();
+  });
   it("round trips a view SQL definition tab", () => {
     const target = {
       kind: "data-object",

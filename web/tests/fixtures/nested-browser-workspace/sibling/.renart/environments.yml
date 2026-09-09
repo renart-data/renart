@@ -1,0 +1,5 @@
+environments:
+  default:
+    connections:
+      sibling-storage:
+        access_mode: read_write

@@ -86,6 +86,7 @@ test("previews a saved DuckDB view over a project-relative Parquet file", async 
       : page.getByRole("button", { name: "Data Browser", exact: true })
   ).click();
   await page.getByRole("button", { name: /duckdb-default.*DuckDB/ }).click();
+  await page.getByRole("button", { name: "local Default", exact: true }).click();
   await page.getByRole("button", { name: "main", exact: true }).click();
   await page.getByRole("link", { name: "relative_view", exact: true }).click();
   const response = page.waitForResponse(

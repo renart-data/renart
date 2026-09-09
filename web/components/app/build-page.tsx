@@ -339,7 +339,7 @@ type BuildContextValue = {
   openNewAssetInGroup: (prefix?: string) => void;
   createDownstreamAsset: (source: { id: string; name: string }, destination?: string) => void;
   createDataBrowserSource: (objectId: string, environment: string) => void;
-  createStorageLoad: (object: DataBrowserObject, upstreamId?: string) => void;
+  createStorageLoad: (object: DataBrowserObject, upstreamId?: string, prefix?: string) => void;
   openInspector: () => void;
   reviewFailedCheck: (assetId: string) => void;
   importExternalRelation: (relationId: string) => void;
@@ -1563,7 +1563,7 @@ export function AppBuildPage({
     setNewAssetInitialLoad(undefined);
     setNewAssetOpen(true);
   };
-  const createStorageLoad = (object: DataBrowserObject, upstreamId?: string) => {
+  const createStorageLoad = (object: DataBrowserObject, upstreamId?: string, prefix?: string) => {
     if (object.environment !== effectiveEnvironment || !activePipeline) return;
     const upstream = upstreamId
       ? activePipeline.assets.find((asset) => asset.id === upstreamId)
@@ -1581,7 +1581,7 @@ export function AppBuildPage({
     setDownstreamSource(
       upstream ? { id: upstream.id, name: upstream.name, connection: sourceConnection! } : null,
     );
-    setNewAssetPrefix(null);
+    setNewAssetPrefix(prefix ?? null);
     setNewAssetInitialExecutableContent(null);
     setNewAssetInitialConnection(draft.connection ?? null);
     setNewAssetInitialKind("load");
@@ -1908,7 +1908,7 @@ export function AppBuildPage({
           />
         </WorkbenchPortal>
       ) : null}
-      <AppPage>
+      <AppPage surface={workbenchEnabled ? "transparent" : "muted"}>
         {!workbenchEnabled ? (
           <BuildTopBar
             pipelineId={pipelineId}

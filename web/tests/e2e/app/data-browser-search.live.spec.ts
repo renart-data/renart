@@ -131,18 +131,28 @@ test("path search completes warehouse names and preserves focus without recursiv
   await expect(input).toHaveValue("duckdb-default.");
   await expect(page.locator('[data-search-segment="true"]')).toHaveText(["duckdb-default"]);
   await expect(input).toBeFocused();
+  await expect(page.getByRole("button", { name: "local Default", exact: true })).toBeVisible();
+  await input.pressSequentially("loc");
+  await expect(page.getByTestId("data-browser-shadow-suggestion")).toHaveText("al");
+  await input.press("Tab");
+  await expect(input).toHaveValue("duckdb-default.local.");
   await expect(page.getByRole("button", { name: "search_demo", exact: true })).toBeVisible();
   await input.pressSequentially("search_d");
   await expect(page.getByTestId("data-browser-shadow-suggestion")).toHaveText("emo");
   await input.press("Tab");
-  await expect(input).toHaveValue("duckdb-default.search_demo.");
+  await expect(input).toHaveValue("duckdb-default.local.search_demo.");
   await expect(page.locator('[data-search-segment="true"]')).toHaveText([
     "duckdb-default",
+    "local",
     "search_demo",
   ]);
+  await expect(page.locator('[data-search-segment="true"]').first()).toHaveCSS(
+    "box-shadow",
+    /inset/,
+  );
   await expect(page.getByRole("link", { name: "alpha_orders", exact: true })).toBeVisible();
   await input.pressSequentially("al");
-  await expect(input).toHaveValue("duckdb-default.search_demo.al");
+  await expect(input).toHaveValue("duckdb-default.local.search_demo.al");
   await expect(input).toBeFocused();
   await expect(page.getByRole("link", { name: "beta", exact: true })).toBeHidden();
   await page.screenshot({ path: info.outputPath("table-completion.png") });
@@ -156,18 +166,18 @@ test("path search completes warehouse names and preserves focus without recursiv
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   await input.press("Escape");
   await expect(page.getByTestId("data-browser-shadow-suggestion")).toBeHidden();
-  await expect(input).toHaveValue("duckdb-default.search_demo.al");
+  await expect(input).toHaveValue("duckdb-default.local.search_demo.al");
   await input.press("Tab");
   await expect(input).not.toBeFocused();
-  await input.fill("duckdb-default.search_demo.alp");
+  await input.fill("duckdb-default.local.search_demo.alp");
   await input.press("Shift+Tab");
   await expect(input).not.toBeFocused();
-  await expect(input).toHaveValue("duckdb-default.search_demo.alp");
+  await expect(input).toHaveValue("duckdb-default.local.search_demo.alp");
   await input.focus();
   await input.press("Tab");
-  await expect(input).toHaveValue("duckdb-default.search_demo.alpha_orders");
+  await expect(input).toHaveValue("duckdb-default.local.search_demo.alpha_orders");
   await expect(page.getByTestId("data-browser-shadow-suggestion")).toBeHidden();
-  expect(requests).toHaveLength(2); // connection + selected namespace only
+  expect(requests).toHaveLength(3); // connection + selected catalog + selected schema only
   expect(page.url()).toBe(originalURL); // no editor/result/sidebar routing as a side effect
   await input.fill("duckb-def");
   await expect(page.getByTestId("data-browser-shadow-suggestion")).toContainText(
@@ -175,10 +185,10 @@ test("path search completes warehouse names and preserves focus without recursiv
   );
   await input.press("Tab");
   await expect(input).toHaveValue("duckdb-default.");
-  await input.fill("duckdb-default.search_demo.al");
+  await input.fill("duckdb-default.local.search_demo.al");
   await input.press("ArrowLeft");
   await expect(page.getByTestId("data-browser-shadow-suggestion")).toBeHidden();
-  expect(requests).toHaveLength(2);
+  expect(requests).toHaveLength(3);
   expect(errors).toEqual([]);
 });
 

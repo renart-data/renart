@@ -3,13 +3,54 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"renart/internal/web/databrowser"
+	"renart/internal/web/secretstore"
 )
+
+type failingStorageConnectionManager struct {
+	loadConnectionManagerWithDetails
+	err error
+}
+
+func (m failingStorageConnectionManager) ResolveConnection(string) (any, error) { return nil, m.err }
+
+func TestStorageBrowseReportsSafeSecretFailures(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		err  error
+		hint string
+	}{
+		{"missing", secretstore.ErrNotFound, "secret is missing"},
+		{"locked", secretstore.ErrPermissionRequired, "locked or requires permission"},
+		{"unavailable", secretstore.ErrUnavailable, "secret provider is unavailable"},
+		{"unknown provider", secretstore.ErrUnknownProvider, "secret provider is not installed"},
+		{"driver", errors.New("invalid driver"), "could not resolve the storage connection"},
+	} {
+		for _, lazy := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/lazy=%t", tc.name, lazy), func(t *testing.T) {
+				cause := fmt.Errorf("private-uri-and-password-canary: %w", tc.err)
+				s := NewLoadService(LoadDependencies{NewConnectionManager: func(context.Context, string) (config.ConnectionAndDetailsGetter, error) {
+					if lazy {
+						return failingStorageConnectionManager{err: cause}, nil
+					}
+					return nil, cause
+				}})
+				_, err := s.BrowseStorage(t.Context(), "storage", databrowser.StorageQuery{}, "default")
+				require.ErrorContains(t, err, tc.hint)
+				require.NotContains(t, err.Error(), "private-uri-and-password-canary")
+			})
+		}
+	}
+}
 
 func TestStorageDiscoveryCaptureCancelsOversizedOutput(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())

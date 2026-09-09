@@ -43,6 +43,7 @@ type ConnectionsResponse struct {
 
 // renart:web-name DataBrowserNode
 type Node struct {
+	IsDefault     bool                 `json:"is_default,omitempty"`
 	Address       *dataaddress.Address `json:"address,omitempty"`
 	ID            string               `json:"id"`
 	ParentID      string               `json:"parent_id,omitempty"`

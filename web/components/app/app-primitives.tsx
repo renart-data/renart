@@ -42,8 +42,23 @@ import { cn } from "@/lib/utils";
 
 import { AppAsset, integrations, kindMeta } from "./app-data";
 
-export function AppPage({ children }: { children: ReactNode }) {
-  return <div className="flex h-full min-h-0 flex-col bg-muted/40 text-foreground">{children}</div>;
+export function AppPage({
+  children,
+  surface = "muted",
+}: {
+  children: ReactNode;
+  surface?: "muted" | "transparent";
+}) {
+  return (
+    <div
+      className={cn(
+        "flex h-full min-h-0 flex-col text-foreground",
+        surface === "muted" && "bg-muted/40",
+      )}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function PageHeader({

@@ -124,7 +124,7 @@ export function parseDetail(value: unknown): ResourceDetail {
         .replace(/\/$/, "")
         .split("/")
         .every((part) => part && part !== "." && part !== "..") &&
-      [a.database, a.schema, a.name].every((v) => v === undefined || v === "")
+      [a.catalog, a.database, a.schema, a.name].every((v) => v === undefined || v === "")
     )
       return result({
         source_kind: "storage",
@@ -142,7 +142,7 @@ export function parseDetail(value: unknown): ResourceDetail {
         .every(
           (p) => p && !p.startsWith(".") && !["node_modules", "dist", "__pycache__"].includes(p),
         ) &&
-      [a.connection, a.connection_type, a.database, a.schema, a.name].every(
+      [a.connection, a.connection_type, a.catalog, a.database, a.schema, a.name].every(
         (v) => v === undefined || v === "",
       )
     )
@@ -152,7 +152,9 @@ export function parseDetail(value: unknown): ResourceDetail {
       boundedString(a.connection, 256) &&
       boundedString(a.connection_type, 256) &&
       boundedString(a.name, 1024) &&
-      [a.database, a.schema].every((v) => v === undefined || v === "" || boundedString(v, 1024)) &&
+      [a.catalog, a.database, a.schema].every(
+        (v) => v === undefined || v === "" || boundedString(v, 1024),
+      ) &&
       (a.path === undefined || a.path === "")
     )
       return result({
@@ -160,6 +162,7 @@ export function parseDetail(value: unknown): ResourceDetail {
         connection: a.connection,
         connection_type: a.connection_type,
         name: a.name,
+        ...(a.catalog ? { catalog: a.catalog as string } : {}),
         ...(a.database ? { database: a.database as string } : {}),
         ...(a.schema ? { schema: a.schema as string } : {}),
       });

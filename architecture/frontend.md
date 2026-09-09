@@ -171,7 +171,9 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   [components/app/workbench/](../web/components/app/workbench) renders one
   rounded desktop surface containing the narrow mode-aware rail and its
   collapsible contextual sidebar. The main page surface and optional right
-  inspector use the same bounded height and small shell gap. Rail state is
+  inspector use the same bounded height and small shell gap. Build's canvas and
+  result cards sit on a transparent page wrapper, so their rounded corners are
+  not filled by a rectangular backdrop. Rail state is
   disposable, project-scoped session state: selecting an inactive tool opens
   its context, selecting it again collapses the wide sidebar. Stateful pages
   keep ownership of their editors, canvases, result models, and forms; they
@@ -182,6 +184,8 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   `Tabs` strip directly below the global header; selecting a contextual tab
   opens one Sheet that contains only that tool's hierarchy. Direct destinations
   navigate in place, and selecting the active contextual tab toggles its Sheet.
+  That Sheet composes its close button at the compact navigation header's
+  alignment, without changing close-button placement for other Sheets.
   The fixed 3.5rem bottom row keeps the device safe-area inset outside the row
   so Android/iOS system UI cannot compress or displace its icons.
   Mobile tool tabs use one click activation path (including Enter/Space) rather
@@ -197,7 +201,13 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   navigation renders that same object view as the primary workspace. Navigator state remains
   separate from the addressed object and its preview. It loads configured
   query-capable connections as credential-free summaries and navigates their
-  databases, schemas, and objects lazily through the server Data Browser API.
+  catalogs, databases, schemas, and objects lazily through the server Data Browser
+  API. Catalog-aware engines add a native catalog level, with the known default
+  marked by the existing outline Badge. Other engines retain their current
+  hierarchy. Catalog expansion and path completion reuse the same namespace
+  state/search planner; there is no parallel catalog selector or session switch.
+  Object addresses and SQL/Source references retain the catalog, including in
+  links opened in a new tab. Empty schemas do not require table discovery.
   **Project files** is a first-class source on desktop and mobile; it lists only
   visible supported tabular files inside the project root. Selecting an object
   describes its columns, while rows remain unloaded until the explicit bounded
@@ -211,7 +221,19 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   Loading connections, namespaces, columns and preview rows uses the shared
   `DataBrowserLoading` skeleton, with a screen-reader status and reduced-motion
   support. A pending namespace replaces the previous list instead of presenting
-  stale children as the current folder.
+  stale children as the current folder. Connection, child and typed-prefix
+  discovery requests have a 30-second deadline with a visible Retry action.
+  Back, replacement navigation and unmount abort obsolete requests; request
+  identities prevent delayed replies from reopening a source or leaving its
+  loading state active. A failed restored-source expansion retains the fetched
+  connection summaries so Back can still return to the source list.
+
+  Opening the navigator focuses its filter once, including through the mobile
+  Sheet; metadata updates do not steal focus. Up/Down move between native source
+  and object rows (Up from the first returns to the filter), Home/End choose the
+  first/last row, Enter/Right open and Left returns one level. Namespace expansion
+  transfers keyboard focus to its first result, or back to the filter on an empty
+  result/error. Native links, modifier keys and Tab navigation stay intact.
 
   The search field accepts connection-qualified paths. Warehouse levels use
   dots (quoted names preserve literal dots); storage and project-file paths use
@@ -234,8 +256,11 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   The shadcn InputGroup renders a shadow completion; Tab or its touch button
   accepts the canonical name and namespace separator, while a leaf adds no
   separator. The shadow omits the appended separator; the completion button and
-  screen-reader hint retain the full target. Completed path segments get a subtle
-  background behind the native input, with no padding or added width. Grammar and
+  screen-reader hint retain the full target. Accepting completion commits the
+  caret in a layout effect, so a delayed animation frame cannot insert subsequent
+  typing before the new caret. Completed path segments get subtle bordered
+  badge decorations behind the native input; compensated inline padding keeps
+  text advances and caret positions unchanged. Grammar and
   connection boundaries come from the search planner, preserving quoted names and
   literal storage dots. Native caret, selection, clipboard and IME remain intact.
   Abbreviations only suggest names, never select an ambiguous path.
@@ -255,16 +280,29 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   of compatible local assets, based on the Go creation profile's source/destination roles.
   A drop opens the existing review/creation dialog. It never runs a pipeline,
   materializes data, or writes an asset before confirmation. Source creation
-  also works in empty pipelines. File rows keep their ordinary navigation;
-  file imports are not part of this table-authoring interaction.
+  also works in empty pipelines. Project-file rows support drag and the same
+  keyboard/touch placement action without losing ordinary navigation. Their
+  server-validated object ID opens a reviewed Load draft with source `local`
+  and a project-relative file path. Only supported tabular files are offered;
+  local folders and existing files are not overwrite destinations. This source
+  capability does not depend on DuckDB column discovery being available.
+  Load-source files/objects from local storage, S3 and SFTP reveal all existing
+  prefix groups as drop targets. The chosen group seeds the Load asset name,
+  never the source object's path or physical name. The standalone creation target
+  remains available for empty canvases. Compatible downstream destination targets
+  remain above group overlays, so choosing a prefix does not hide destination
+  placement. Warehouse Source assets still target only their physical-name prefix.
 
-  Table drags capture the existing row in a compact themed card; nested resource
+  Table and project-file drags capture the existing row in a compact themed card; nested resource
   links disable native URL dragging but keep ordinary navigation. Compatible Load
   targets, including the standalone storage-source target, grow as the pointer
   approaches. Screen-space proximity is measured from
   fixed anchors, so zoom/pan is accounted for without relaying out the DAG; the
   expanded hit area stays open until the pointer leaves it. Capture-phase drag
   tracking observes transitions even when a target stops event propagation.
+  The nearest expanded target is elevated above asset cards, including selected
+  cards, without changing layout. React Flow's automatic selected-node elevation
+  is suspended for this placement layer and restored when placement ends.
   Vertical alignment belongs to the anchor, not the button's translate property,
   so its pressed-state animation cannot move the touch target away from a finger.
 
@@ -277,6 +315,8 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   scoped to project, pipeline, and environment. Native DataTransfer carries only
   a one-drag nonce, not serialized credentials or SQL. Foreign/stale transfers
   do not activate targets. Escape, Cancel and drag-end clear placement. The
+  Cancel button is shown only for the persistent keyboard/touch **Use in canvas**
+  mode; native drags clean up on drag-end and need no close control. The
   canvas does not change independent result/inspector/sidebar selection; only
   an explicit keyboard/touch placement from Code reveals the required canvas.
   A bounded, project/environment-scoped navigation cache preserves the browser

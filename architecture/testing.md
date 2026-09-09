@@ -10,6 +10,13 @@ the browser and supply credentials through environment secret references. They
 must not depend on the developer's unlocked desktop keyring. Regression SQL
 belongs in tracked `web/tests/fixtures/`, not the untracked example workspace.
 
+For nested-project regressions, `live-app-fixture.ts` accepts a
+`workspaceSubdirectory`. The disposable Git root and parent connection config
+stay above the server's child workspace; the returned `liveApp.workspaceDir`
+is the child. `nested-browser-workspace` exercises parent-owned connections with
+separate parent/sibling project metadata and verifies that Project files cannot
+escape into the parent. No developer projects or credentials are needed.
+
 ## Local entry points
 
 `scripts/release-check-local.sh` records logs, phase exit codes, the source Git

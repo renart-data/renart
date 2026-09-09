@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/input-group";
 import type { BrowserCompletion, BrowserPathSyntax } from "@/lib/data-browser-search";
 import { completionShadow, searchPathSegments } from "@/lib/data-browser-search-presentation";
+import { cn } from "@/lib/utils";
 
 export function DataBrowserSearchInput({
   value,
@@ -15,14 +16,17 @@ export function DataBrowserSearchInput({
   completions,
   placeholder,
   pathSyntax,
+  onNavigateResults,
 }: {
   value: string;
   onChange: (value: string) => void;
   completions: BrowserCompletion[];
   placeholder: string;
   pathSyntax?: BrowserPathSyntax;
+  onNavigateResults?: (direction: "first" | "last") => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
+  const completionCaret = useRef<string | null>(null);
   const shadow = useRef<HTMLSpanElement>(null);
   const hintId = useId();
   const [focused, setFocused] = useState(false);
@@ -31,6 +35,21 @@ export function DataBrowserSearchInput({
   const [dismissed, setDismissed] = useState(false);
   const [index, setIndex] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
+  useEffect(() => {
+    // The navigator can mount through a portal or a mobile focus scope.
+    // Focus once on opening, never again after metadata updates or typing.
+    const frame = requestAnimationFrame(() => input.current?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+  useLayoutEffect(() => {
+    const accepted = completionCaret.current;
+    completionCaret.current = null;
+    if (accepted === null || input.current?.value !== accepted) return;
+    // Commit the completed value and caret together, before the next keystroke.
+    // An animation-frame callback can otherwise move behind newly typed text.
+    input.current.focus({ preventScroll: true });
+    input.current.setSelectionRange(accepted.length, accepted.length);
+  }, [value]);
   const completion =
     focused && atEnd && !composing && !dismissed
       ? completions[index % (completions.length || 1)]
@@ -69,11 +88,8 @@ export function DataBrowserSearchInput({
   };
   const accept = () => {
     if (!completion) return;
+    completionCaret.current = completion.value;
     change(completion.value);
-    requestAnimationFrame(() => {
-      input.current?.focus();
-      input.current?.setSelectionRange(completion.value.length, completion.value.length);
-    });
   };
 
   return (
@@ -89,7 +105,10 @@ export function DataBrowserSearchInput({
                 <span
                   key={position}
                   data-search-segment={segment.completed || undefined}
-                  className={segment.completed ? "rounded-xs bg-primary/10" : undefined}
+                  className={cn(
+                    segment.completed &&
+                      "-mx-px rounded-sm bg-muted/70 px-px py-0.5 ring-1 ring-inset ring-border/70",
+                  )}
                 >
                   {segment.text}
                 </span>
@@ -106,6 +125,7 @@ export function DataBrowserSearchInput({
           aria-autocomplete="inline"
           aria-describedby={hintId}
           autoComplete="off"
+          autoFocus
           autoCapitalize="off"
           spellCheck={false}
           placeholder={placeholder}
@@ -124,7 +144,14 @@ export function DataBrowserSearchInput({
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey)
               return;
-            if (event.key === "Tab" && !event.shiftKey && completion) {
+            if (
+              !event.shiftKey &&
+              (event.key === "ArrowDown" || event.key === "ArrowUp") &&
+              onNavigateResults
+            ) {
+              event.preventDefault();
+              onNavigateResults(event.key === "ArrowDown" ? "first" : "last");
+            } else if (event.key === "Tab" && !event.shiftKey && completion) {
               event.preventDefault();
               accept();
             } else if (event.key === "Escape" && completion) {
@@ -190,6 +217,9 @@ export function DataBrowserSearchInput({
         {completion
           ? `Complete to ${completion.value}. Press Tab or use the completion button. Escape dismisses; Shift Tab leaves the field.`
           : "Search this level, or enter connection.namespace. Storage paths use slashes."}
+        {onNavigateResults
+          ? " Use the arrow keys to navigate results; Enter opens, Left goes back."
+          : null}
       </span>
     </InputGroup>
   );

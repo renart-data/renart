@@ -53,9 +53,9 @@ export function DataBrowserTransferItem({
               event.dataTransfer.clearData();
               event.dataTransfer.effectAllowed = "copy";
               event.dataTransfer.setData(DATA_BROWSER_MIME, transfer.token);
-              if (transfer.kind === "table") {
+              if (transfer.kind === "table" || transfer.kind === "file") {
                 // Links otherwise drag as a URL/text fragment. Capture the
-                // actual table row as a compact themed card, like connections.
+                // actual object row as a compact themed card, like connections.
                 const row = event.currentTarget.firstElementChild;
                 if (row) {
                   const preview = row.cloneNode(true) as HTMLElement;

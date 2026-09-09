@@ -11,7 +11,10 @@ export type StorageLoadDraft = {
 // resolved server-side immediately before placement; asset creation still
 // applies the current connection roles and read-only policy on confirmation.
 export function storageLoadDraft(
-  object: Pick<DataBrowserObject, "connection_name" | "reference_text" | "kind" | "capabilities">,
+  object: Pick<
+    DataBrowserObject,
+    "address" | "connection_name" | "reference_text" | "kind" | "capabilities"
+  >,
   upstream?: { name: string; connection: string },
 ): StorageLoadDraft | null {
   if (upstream) {
@@ -25,7 +28,8 @@ export function storageLoadDraft(
   }
   if (!object.capabilities.load_source) return null;
   return {
-    sourceConnection: object.connection_name,
+    sourceConnection:
+      object.address?.source_kind === "local_files" ? "local" : object.connection_name,
     sourceTable: object.reference_text + (object.kind === "prefix" ? "*" : ""),
   };
 }

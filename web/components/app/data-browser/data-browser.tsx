@@ -244,6 +244,7 @@ function useDataBrowser(environment: string, enabled: boolean) {
   const scope = JSON.stringify([getPinnedProjectId(), environment]);
   const restored = browserNavigationCache.get(scope);
   const requestID = useRef(0);
+  const pending = useRef<AbortController | null>(null);
   const [connections, setConnections] = useState<DataBrowserConnection[]>([]);
   const [selectedConnection, setSelectedConnection] = useState<DataBrowserConnection | null>(
     restored?.connection ?? null,
@@ -251,6 +252,28 @@ function useDataBrowser(environment: string, enabled: boolean) {
   const [levels, setLevels] = useState<BrowserLevel[]>(restored?.levels ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const cancelRequest = useCallback(() => {
+    ++requestID.current;
+    pending.current?.abort();
+    pending.current = null;
+    setLoading(false);
+  }, []);
+  const beginRequest = useCallback(() => {
+    cancelRequest();
+    const controller = new AbortController();
+    pending.current = controller;
+    setLoading(true);
+    setError(null);
+    return { id: requestID.current, signal: controller.signal };
+  }, [cancelRequest]);
+  useEffect(
+    () => () => {
+      ++requestID.current;
+      pending.current?.abort();
+    },
+    [scope],
+  );
 
   useEffect(
     () => () => {
@@ -267,51 +290,55 @@ function useDataBrowser(environment: string, enabled: boolean) {
   );
 
   const loadChildren = useCallback(
-    async (connection: DataBrowserConnection, parentId?: string, label = connection.name) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const response = await getDataBrowserChildren({
+    async (
+      connection: DataBrowserConnection,
+      signal: AbortSignal,
+      parentId?: string,
+      label = connection.name,
+    ) => {
+      const response = await getDataBrowserChildren(
+        {
           connectionId: connection.id,
           parentId,
           environment,
-        });
-        return {
-          parentId,
-          label,
-          nodes: response.nodes,
-          truncated: response.truncated,
-        } satisfies BrowserLevel;
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Could not browse this data source.");
-        return null;
-      } finally {
-        setLoading(false);
-      }
+        },
+        signal,
+      );
+      return {
+        parentId,
+        label,
+        nodes: response.nodes,
+        truncated: response.truncated,
+      } satisfies BrowserLevel;
     },
     [environment],
   );
 
   const selectConnection = useCallback(
     async (connection: DataBrowserConnection) => {
-      const nextRequest = ++requestID.current;
+      const request = beginRequest();
       setSelectedConnection(connection);
-
       setLevels([]);
-      const level = await loadChildren(connection);
-      if (level && requestID.current === nextRequest) setLevels([level]);
+      try {
+        const level = await loadChildren(connection, request.signal);
+        if (requestID.current === request.id) setLevels([level]);
+      } catch (cause) {
+        if (requestID.current === request.id)
+          setError(cause instanceof Error ? cause.message : "Could not browse this data source.");
+      } finally {
+        if (requestID.current === request.id) setLoading(false);
+      }
     },
-    [loadChildren],
+    [beginRequest, loadChildren],
   );
 
   const reloadConnections = useCallback(
     async (selectName?: string, restore?: BrowserNavigation) => {
-      const nextRequest = ++requestID.current;
-      setLoading(true);
-      setError(null);
+      const request = beginRequest();
+      setConnections([]);
       try {
-        const response = await getDataBrowserConnections(environment);
-        if (requestID.current !== nextRequest) return;
+        const response = await getDataBrowserConnections(environment, request.signal);
+        if (requestID.current !== request.id) return;
         setConnections(response.connections);
 
         setLevels([]);
@@ -325,19 +352,18 @@ function useDataBrowser(environment: string, enabled: boolean) {
             setLevels(restore.levels);
             return;
           }
-          const level = await loadChildren(nextConnection);
-          if (level && requestID.current === nextRequest) setLevels([level]);
+          const level = await loadChildren(nextConnection, request.signal);
+          if (requestID.current === request.id) setLevels([level]);
         }
       } catch (cause) {
-        if (requestID.current === nextRequest) {
-          setConnections([]);
+        if (requestID.current === request.id) {
           setError(cause instanceof Error ? cause.message : "Could not load data sources.");
         }
       } finally {
-        if (requestID.current === nextRequest) setLoading(false);
+        if (requestID.current === request.id) setLoading(false);
       }
     },
-    [environment, loadChildren],
+    [beginRequest, environment, loadChildren],
   );
 
   useEffect(() => {
@@ -348,22 +374,24 @@ function useDataBrowser(environment: string, enabled: boolean) {
   const openNode = useCallback(
     async (node: DataBrowserNode) => {
       if (!selectedConnection || node.node_type !== "namespace") return;
-      const nextRequest = ++requestID.current;
-      setError(null);
-
-      if (node.node_type === "namespace") {
-        const level = await loadChildren(selectedConnection, node.id, node.label);
-        if (level && nextRequest === requestID.current) {
+      const request = beginRequest();
+      try {
+        const level = await loadChildren(selectedConnection, request.signal, node.id, node.label);
+        if (request.id === requestID.current) {
           setLevels((current) => [...current, level]);
         }
-        return;
+      } catch (cause) {
+        if (request.id === requestID.current)
+          setError(cause instanceof Error ? cause.message : "Could not browse this data source.");
+      } finally {
+        if (request.id === requestID.current) setLoading(false);
       }
     },
-    [environment, loadChildren, selectedConnection],
+    [beginRequest, loadChildren, selectedConnection],
   );
 
   const back = () => {
-    ++requestID.current;
+    cancelRequest();
     setError(null);
 
     if (levels.length > 1) {
@@ -417,6 +445,19 @@ function DataBrowserNavigator({
   onReload: () => void | Promise<void>;
   navigationDirection: AppContextSidebarTransitionDirection;
 }) {
+  const navigator = useRef<HTMLDivElement>(null);
+  const keyboardNavigation = useRef(false);
+  const rows = () => [
+    ...(navigator.current?.querySelectorAll<HTMLElement>("[data-browser-row]") ?? []),
+  ];
+  const focusFilter = () =>
+    navigator.current
+      ?.querySelector<HTMLInputElement>('input[aria-label="Search data browser"]')
+      ?.focus({ preventScroll: true });
+  const focusRow = (direction: "first" | "last") => {
+    const targets = rows();
+    (direction === "first" ? targets[0] : targets.at(-1))?.focus();
+  };
   const searchScope = JSON.stringify([getPinnedProjectId(), environment]);
   const [query, setQuery] = useState(() => browserSearchCache.get(searchScope) ?? "");
   const search = useDataBrowserSearch(
@@ -461,8 +502,61 @@ function DataBrowserNavigator({
       ].join(":")
     : "sources";
 
+  useEffect(() => {
+    if (!keyboardNavigation.current || loading) return;
+    keyboardNavigation.current = false;
+    if (error || rows().length === 0) focusFilter();
+    else focusRow("first");
+  }, [loading, error, viewKey, query, filteredNodes, filteredConnections]);
+
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-card">
+    <div
+      ref={navigator}
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-card"
+      onKeyDown={(event) => {
+        if (
+          event.nativeEvent.isComposing ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.shiftKey
+        )
+          return;
+        const target =
+          event.target instanceof Element
+            ? event.target.closest<HTMLElement>("[data-browser-row]")
+            : null;
+        if (!target) return;
+        const items = rows();
+        const index = items.indexOf(target);
+        if (index < 0) return;
+        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          if (event.key === "ArrowUp" && index === 0) focusFilter();
+          else
+            items[
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? items.length - 1
+                  : Math.max(
+                      0,
+                      Math.min(items.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
+                    )
+            ]?.focus();
+        } else if (event.key === "Enter" || event.key === "ArrowRight") {
+          event.preventDefault();
+          keyboardNavigation.current = true;
+          target.click();
+        } else if (event.key === "ArrowLeft" && selectedConnection) {
+          event.preventDefault();
+          keyboardNavigation.current = false;
+          if (activeSearch) setQuery(search.back);
+          else onBack();
+          focusFilter();
+        }
+      }}
+    >
       <div
         data-slot="workbench-context-header"
         className="flex h-10 shrink-0 items-center gap-2 border-b px-3 pr-12 md:pr-3"
@@ -481,7 +575,9 @@ function DataBrowserNavigator({
         )}
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-xs font-semibold">
-            {activeSearch ? search.label : (browser.currentLevel?.label ?? "Data Browser")}
+            {activeSearch
+              ? search.label
+              : (browser.currentLevel?.label ?? browser.selectedConnection?.name ?? "Data Browser")}
           </h2>
           <p className="truncate text-[10px] text-muted-foreground">
             {selectedConnection
@@ -508,6 +604,7 @@ function DataBrowserNavigator({
           onChange={setQuery}
           completions={loading || error ? [] : search.completions}
           pathSyntax={search.pathSyntax}
+          onNavigateResults={focusRow}
           placeholder={selectedConnection ? "Filter objects…" : "Filter sources…"}
         />
       </div>
@@ -522,7 +619,19 @@ function DataBrowserNavigator({
               <Alert variant="destructive" className="mb-2">
                 <AlertCircle />
                 <AlertTitle>Data Browser needs attention</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>
+                  {error}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      search.refresh();
+                      void onReload();
+                    }}
+                  >
+                    Retry
+                  </Button>
+                </AlertDescription>
               </Alert>
             ) : null}
             {truncated && !loading ? (
@@ -536,7 +645,13 @@ function DataBrowserNavigator({
               </p>
             ) : null}
             {loading ? (
-              <DataBrowserLoading label="Loading data sources…" />
+              <DataBrowserLoading
+                label={
+                  selectedConnection
+                    ? `Loading ${selectedConnection.name}…`
+                    : "Loading data sources…"
+                }
+              />
             ) : error ? null : selectedConnection ? (
               <NodeList
                 nodes={filteredNodes}
@@ -672,15 +787,17 @@ function NodeList({
           <>
             <Icon className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
             <span className="min-w-0 flex-1 truncate text-xs font-medium">{node.label}</span>
+            {node.is_default ? <Badge variant="outline">Default</Badge> : null}
             {node.format ? <Badge variant="secondary">{node.format}</Badge> : null}
             {node.has_children ? <ChevronRight className="size-3.5 text-muted-foreground" /> : null}
           </>
         );
         const className =
-          "group flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-accent";
+          "group flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
         const row =
           node.address && node.node_type !== "namespace" ? (
             <ResourceLink
+              data-browser-row
               key={node.id}
               target={{ kind: "data-object", address: node.address, section: "schema" }}
               className={className}
@@ -690,6 +807,7 @@ function NodeList({
             </ResourceLink>
           ) : (
             <button
+              data-browser-row
               key={node.id}
               type="button"
               className={className}
@@ -716,7 +834,9 @@ function NodeList({
                   }
                 : node.address?.source_kind === "storage"
                   ? { kind: "storage", id: node.id, label: node.label }
-                  : undefined
+                  : node.address?.source_kind === "local_files" && node.object_kind === "file"
+                    ? { kind: "file", id: node.id, label: node.label }
+                    : undefined
             }
           >
             {row}
@@ -753,8 +873,9 @@ function NavigatorRow({
 }) {
   return (
     <button
+      data-browser-row
       type="button"
-      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent"
+      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       onClick={onClick}
     >
       {icon}

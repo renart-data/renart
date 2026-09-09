@@ -1,4 +1,6 @@
 import { expect, type Page } from "@playwright/test";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { storageSecretChanges, storageTest as test } from "../live-storage-app-fixture";
 import type {
   DataBrowserConnectionsResponse,
@@ -29,7 +31,7 @@ test.describe("Sling storage browser", () => {
   test.use({ fixtureName: "configured-workspace", isolateUserConfig: true });
   test.setTimeout(180000);
   for (const provider of ["s3", "sftp"] as const) {
-    test(`${provider} browses real prefixes and creates reviewed Load sources and destinations`, async ({
+    test(`${provider} browses real prefixes and creates reviewed Loads in chosen groups and downstream destinations`, async ({
       page,
       liveApp,
       storage,
@@ -38,6 +40,11 @@ test.describe("Sling storage browser", () => {
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
       const name = `${provider}-browser`;
+      // Seed the second group before config creation refreshes the workspace.
+      await writeFile(
+        join(liveApp.workspaceDir, "analytics/assets/landing.sql"),
+        "/* @bruin\nname: landing.anchor\ntype: duckdb.sql\nconnection: duckdb-default\n@bruin */\nselect 1 as id\n",
+      );
       const created = await page.request.post(`${liveApp.baseURL}/api/config/connections`, {
         data: {
           environment_name: "default",
@@ -80,6 +87,9 @@ test.describe("Sling storage browser", () => {
           commands.push(request.url());
       });
       await page.goto(`${liveApp.baseURL}${canvas}`);
+      await expect(
+        page.locator(".react-flow__node").filter({ hasText: "anchor" }).first(),
+      ).toBeVisible();
       await openData(page);
       await page
         .getByRole("button", {
@@ -101,6 +111,33 @@ test.describe("Sling storage browser", () => {
           .dispatchEvent("dragstart", { dataTransfer: transfer });
         const target = page.getByRole("button", { name: /Create Load from object/ });
         await expect(target).toBeEnabled();
+        const group = page.getByRole("button", {
+          name: "Create Load in landing group",
+          exact: true,
+        });
+        const groupBounds = (await group.boundingBox())!;
+        await group.dispatchEvent("dragover", {
+          dataTransfer: transfer,
+          clientX: groupBounds.x + 10,
+          clientY: groupBounds.y + 10,
+        });
+        await expect(group).toHaveAttribute("data-proximity", "near");
+        await expect
+          .poll(() =>
+            group.evaluate((element) => {
+              const groupNode = element.closest(".react-flow__node")!;
+              return (
+                Number(getComputedStyle(groupNode).zIndex) >
+                Math.max(
+                  ...[...document.querySelectorAll(".react-flow__node-lineageAsset")].map(
+                    (node) => Number(getComputedStyle(node).zIndex) || 0,
+                  ),
+                )
+              );
+            }),
+          )
+          .toBe(true);
+        await page.screenshot({ path: info.outputPath("expanded-prefix-layer.png") });
         const initial = (await target.boundingBox())!;
         await page.locator("body").dispatchEvent("dragover", {
           dataTransfer: transfer,
@@ -126,8 +163,13 @@ test.describe("Sling storage browser", () => {
       expect(commands).toEqual([]);
       if (info.project.name.includes("mobile")) await openData(page);
       await useObject.click();
-      await page.getByRole("button", { name: /Create Load from object/ }).click();
-      await dialog.getByLabel("Asset name").fill(`analytics.${provider}_import`);
+      await expect(
+        page.getByRole("button", { name: "Create Load in landing group", exact: true }),
+      ).toBeVisible();
+      await page.screenshot({ path: info.outputPath("file-prefix-targets.png") });
+      await page.getByRole("button", { name: "Create Load in landing group", exact: true }).click();
+      await expect(dialog.getByLabel("Asset name")).toHaveValue(/^landing\./);
+      await dialog.getByLabel("Asset name").fill(`landing.${provider}_import`);
       await dialog.getByLabel("Destination connection", { exact: true }).click();
       await page.getByRole("option", { name: "duckdb-default", exact: true }).click();
       await dialog.getByRole("button", { name: "Create", exact: true }).click();
@@ -138,7 +180,7 @@ test.describe("Sling storage browser", () => {
       ).json()) as WorkspaceState;
       const asset = workspace.pipelines
         .find((p) => p.id === pipelineId)!
-        .assets.find((a) => a.name === `analytics.${provider}_import`)!;
+        .assets.find((a) => a.name === `landing.${provider}_import`)!;
       expect(asset.parameters?.source_table).toBe(source);
       expect(asset.type).toBe("load");
       const result = await page.request.post(
@@ -160,7 +202,7 @@ test.describe("Sling storage browser", () => {
         data: {
           connection: "duckdb-default",
           environment: "default",
-          query: `select sum(amount) as total from analytics.${provider}_import`,
+          query: `select sum(amount) as total from landing.${provider}_import`,
         },
       });
       expect(await query.json()).toMatchObject({ status: "ok", rows: [{ total: 30 }] });
@@ -198,7 +240,7 @@ test.describe("Sling storage browser", () => {
       await page.getByRole("button", { name: "Use outgoing in canvas", exact: true }).click();
       await page
         .getByRole("button", {
-          name: `Create Load after analytics.${provider}_import`,
+          name: `Create Load after landing.${provider}_import`,
           exact: true,
         })
         .click();

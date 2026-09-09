@@ -12,6 +12,7 @@ import (
 	"github.com/bruin-data/bruin/pkg/tablename"
 
 	webmodel "renart/internal/web/model"
+	"renart/internal/web/sqlnamespace"
 )
 
 type SQLColumnValuesResult struct {
@@ -42,6 +43,7 @@ type SQLDatabaseDiscoveryResult struct {
 
 // renart:web-name SqlDiscoveryTable
 type SQLDiscoveryTableItem struct {
+	CatalogName  string `json:"catalog_name,omitempty"`
 	Name         string `json:"name"`
 	ShortName    string `json:"short_name"`
 	SchemaName   string `json:"schema_name,omitempty"`
@@ -149,7 +151,7 @@ func (s *SQLService) Databases(ctx context.Context, connectionName, environment 
 		return SQLDatabaseDiscoveryResult{}, &APIError{Status: http.StatusBadRequest, Code: "connection_not_found", Message: fmt.Sprintf("connection '%s' not found", connectionName)}
 	}
 
-	fetcher, ok := sqlDiscoveryAdapter(conn, manager.GetConnectionType(connectionName)).(interface {
+	fetcher, ok := sqlDiscoveryAdapter(conn, manager.GetConnectionType(connectionName), configuredCatalog(manager.GetConnectionDetails(connectionName))).(interface {
 		GetDatabases(ctx context.Context) ([]string, error)
 	})
 	if !ok {
@@ -185,7 +187,7 @@ func (s *SQLService) Tables(ctx context.Context, connectionName, databaseName, e
 	}
 
 	connectionType := strings.TrimSpace(manager.GetConnectionType(connectionName))
-	conn = sqlDiscoveryAdapter(conn, connectionType)
+	conn = sqlDiscoveryAdapter(conn, connectionType, configuredCatalog(manager.GetConnectionDetails(connectionName)))
 	tables := make([]SQLDiscoveryTableItem, 0)
 	if fetcherWithSchemas, ok := conn.(interface {
 		GetTablesWithSchemas(ctx context.Context, databaseName string) (map[string][]string, error)
@@ -207,6 +209,19 @@ func (s *SQLService) Tables(ctx context.Context, connectionName, databaseName, e
 		return SQLTableDiscoveryResult{}, &APIError{Status: http.StatusBadRequest, Code: "connection_type_not_supported", Message: fmt.Sprintf("connection '%s' does not support table discovery", connectionName)}
 	}
 
+	if adapter, ok := conn.(mysqlDiscovery); ok && adapter.catalog != "" {
+		for i := range tables {
+			tables[i].CatalogName = adapter.catalog
+			tables[i].Name = sqlnamespace.Reference(connectionType, adapter.catalog, databaseName, tables[i].ShortName)
+		}
+	}
+	if connectionType == "trino" {
+		for i := range tables {
+			// This compatibility API calls catalogs "databases". Preserve the
+			// explicit identity when merging with lazy browser observations.
+			tables[i].CatalogName = databaseName
+		}
+	}
 	result := SQLTableDiscoveryResult{
 		Status:         "ok",
 		ConnectionName: connectionName,
@@ -224,7 +239,19 @@ func (s *SQLService) Tables(ctx context.Context, connectionName, databaseName, e
 }
 
 func (s *SQLService) TableColumns(ctx context.Context, connectionName, tableName, environment string) (SQLTableColumnsResult, int) {
-	query := fmt.Sprintf("select * from %s limit 1", QuoteQualifiedIdentifier(tableName))
+	engine := ""
+	if s.deps.NewConnectionManager != nil {
+		manager, err := s.deps.NewConnectionManager(ctx, environment)
+		if err != nil {
+			return SQLTableColumnsResult{Status: "error", Error: err.Error()}, http.StatusBadRequest
+		}
+		engine = normalizeConnectionType(manager.GetConnectionType(connectionName))
+	}
+	reference, err := sqlnamespace.QuoteReference(engine, tableName)
+	if err != nil {
+		return SQLTableColumnsResult{Status: "error", Error: err.Error()}, http.StatusBadRequest
+	}
+	query := fmt.Sprintf("select * from %s limit 1", reference)
 	operation := queryConnectionOperation(connectionName, query, environment)
 	output, err := s.deps.Executor.QueryConnection(ctx, QueryConnectionRequest{
 		ConnectionName: connectionName,

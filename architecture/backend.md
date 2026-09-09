@@ -77,7 +77,14 @@ out of the central server constructor.
 `cmd/server_data_browser.go` from the existing configuration and SQL services. Its API
 exposes only connection names, types, capabilities, revision-bound object
 references, and display metadata—never connection values. Warehouse hierarchy
-requests reuse the shared SQL discovery adapters. Local-file discovery accepts
+requests reuse the shared SQL discovery adapters. Catalog-aware engines use the
+lower `sqlnamespace` provider through `SQLService.NamespaceChildren`, listing
+only the addressed level. Optional typed catalog coordinates survive durable
+addresses, opaque references, columns, view queries and previews. StarRocks's
+native DSN is corrected without replacing Bruin's concrete client; configured
+catalog defaults apply to every physical connection, while browser expansion
+never changes session defaults. See [SQL discovery](sql-discovery.md) for engine
+coverage, backward compatibility and version limits. Local-file discovery accepts
 only supported tabular formats below visible project paths and rechecks path
 containment, symlinks, hidden/generated directories, and format at every object
 or preview request. Preview SQL is constructed and quoted by the backend from
@@ -258,6 +265,12 @@ accepts warehouse tables only, derives the platform's Source type, and delegates
 to the canonical database importer with `RejectExisting`. Preview is read-only;
 confirmation creates the source file and emits workspace reconciliation. Unlike
 the type-check-driven external relation import, it does not rewrite consumers.
+For a fully qualified catalog table, the importer revalidates only the selected
+namespace and carries `catalog.schema.table` (or `catalog.database.table`) into
+the source name, filesystem prefix and column query. It does not silently use
+the connection's default-catalog summary or strip a catalog to fit Bruin's old
+two-part StarRocks/Doris name limit. Those engines allow three-part Source names
+only; their SQL materialization lint contract is unchanged.
 Load drops reuse the existing semantic asset creation API, including its
 server-resolved upstream asset and connection-role validation.
 
@@ -323,6 +336,14 @@ unavailable credential store fails closed—there is no plaintext fallback.
 Existing inline credentials remain readable for compatibility and are migrated
 to the selected local store on replacement. Config writes use owner-only
 permissions because an untouched legacy credential may still be present.
+Provider identity comes from the binding, not availability: a locked or
+unavailable store retains its provider and can be checked again in the same
+process. An unresolved generated placeholder with no binding includes a
+diagnostic about the current project's `.renart/secrets.yml`; legacy environment
+references remain supported, without guessing or borrowing another project's
+credentials. Storage browsing distinguishes missing, locked, and unavailable
+secret providers using static messages, never underlying provider/driver errors
+that could expose a secret or connection URI.
 `sensitive_file` fields retain their write-only path behavior; provider-backed
 temporary file leases are not built yet.
 

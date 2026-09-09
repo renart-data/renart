@@ -7,6 +7,7 @@ type Address struct {
 	SourceKind     string `json:"source_kind"`
 	Connection     string `json:"connection,omitempty"`
 	ConnectionType string `json:"connection_type,omitempty"`
+	Catalog        string `json:"catalog,omitempty"`
 	Database       string `json:"database,omitempty"`
 	Schema         string `json:"schema,omitempty"`
 	Name           string `json:"name,omitempty"`

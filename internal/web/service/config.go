@@ -571,6 +571,10 @@ func (s *ConfigService) decorateWorkspaceConnectionSecrets(
 			}
 
 			descriptor = s.describeWorkspaceSecret(projectID, environmentName, binding.Reference)
+			if !hasBinding && symbol == managedSecretSymbol(item.Name, fieldDef.Name) &&
+				descriptor.Status != string(secretstore.StatusConfigured) {
+				descriptor.Message = "No binding for this placeholder was found in this project's .renart/secrets.yml, so it is treated as an environment reference. If it used a credential store, reopen the original project or restore its secret bindings. " + descriptor.Message
+			}
 			item.SecretFields[fieldDef.Name] = descriptor
 		}
 	}

@@ -32,3 +32,31 @@ it("creates reviewed Load defaults for files and prefixes, respecting read-only 
   expect(storageLoadDraft(readOnly)?.sourceTable).toBe("s3://bucket/a.csv");
   expect(storageLoadDraft(readOnly, upstream)).toBeNull();
 });
+
+it("uses the local Load source for project files without making them overwrite targets", () => {
+  const object = {
+    address: { source_kind: "local_files", path: "data/orders.csv" },
+    connection_name: "Project files",
+    reference_text: "data/orders.csv",
+    kind: "file",
+    capabilities: {
+      list_namespaces: false,
+      list_objects: false,
+      describe_columns: false,
+      preview_rows: false,
+      query: false,
+      load_source: true,
+      load_destination: false,
+    },
+  };
+  expect(storageLoadDraft(object)).toEqual({
+    sourceConnection: "local",
+    sourceTable: "data/orders.csv",
+  });
+  expect(
+    storageLoadDraft(object, { name: "analytics.orders", connection: "duckdb-default" }),
+  ).toBeNull();
+  expect(
+    storageLoadDraft({ ...object, capabilities: { ...object.capabilities, load_source: false } }),
+  ).toBeNull();
+});

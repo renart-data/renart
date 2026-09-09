@@ -64,6 +64,18 @@ func TestTrinoDiscoveryQuotesCatalogAndPropagatesErrors(t *testing.T) {
 func TestMySQLCompatibleDiscovery(t *testing.T) {
 	for _, connectionType := range []string{"mysql", "starrocks", "doris", "vitess", "planetscale"} {
 		t.Run(connectionType, func(t *testing.T) {
+			catalog := ""
+			if connectionType == "starrocks" {
+				catalog = "default_catalog"
+			}
+			if connectionType == "doris" {
+				catalog = "internal"
+			}
+			catalogSQL, catalogRef := "", ""
+			if catalog != "" {
+				catalogSQL = "`" + catalog + "`."
+				catalogRef = catalog + "."
+			}
 			conn := &trinoDiscoveryStub{rows: [][]any{{[]byte("analytics")}, {"analytics"}}}
 			svc := NewSQLService(SQLDependencies{NewConnectionManager: func(context.Context, string) (config.ConnectionAndDetailsGetter, error) {
 				return &stubConnectionManager{conn: conn, connectionType: connectionType}, nil
@@ -71,16 +83,20 @@ func TestMySQLCompatibleDiscovery(t *testing.T) {
 			result, apiErr := svc.Databases(t.Context(), "warehouse", "dev")
 			require.Nil(t, apiErr)
 			assert.Equal(t, []string{"analytics"}, result.Databases)
-			assert.Equal(t, "SHOW DATABASES", conn.queries[0])
+			databaseSQL := "SHOW DATABASES"
+			if catalog != "" {
+				databaseSQL += " FROM `" + catalog + "`"
+			}
+			assert.Equal(t, databaseSQL, conn.queries[0])
 			conn.rows = [][]any{{[]byte("orders")}}
 			tables, apiErr := svc.Tables(t.Context(), "warehouse", "analytics", "dev")
 			require.Nil(t, apiErr)
 			require.Len(t, tables.Tables, 1)
-			assert.Equal(t, "analytics.orders", tables.Tables[0].Name)
-			assert.Equal(t, "SHOW TABLES FROM `analytics`", conn.queries[1])
+			assert.Equal(t, catalogRef+"analytics.orders", tables.Tables[0].Name)
+			assert.Equal(t, "SHOW TABLES FROM "+catalogSQL+"`analytics`", conn.queries[1])
 			_, apiErr = svc.Tables(t.Context(), "warehouse", "a`b; DROP TABLE x--", "dev")
 			require.Nil(t, apiErr)
-			assert.Equal(t, "SHOW TABLES FROM `a``b; DROP TABLE x--`", conn.queries[2])
+			assert.Equal(t, "SHOW TABLES FROM "+catalogSQL+"`a``b; DROP TABLE x--`", conn.queries[2])
 			_, apiErr = svc.Tables(t.Context(), "warehouse", "\x00", "dev")
 			require.NotNil(t, apiErr)
 			assert.Len(t, conn.queries, 3)

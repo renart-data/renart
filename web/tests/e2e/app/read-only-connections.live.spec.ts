@@ -186,6 +186,7 @@ test.describe("Read-only connections", () => {
       page.getByRole("button", { name: "Use duckdb-default in canvas", exact: true }),
     ).toHaveCount(0);
     await page.getByRole("button", { name: /duckdb-default.*DuckDB/ }).click();
+    await page.getByRole("button", { name: "local Default", exact: true }).click();
     await page.getByRole("button", { name: "raw", exact: true }).click();
     await page.getByRole("button", { name: "Use read_only_orders in canvas", exact: true }).click();
     await page.getByTestId("data-browser-drop-target").click();
@@ -194,7 +195,7 @@ test.describe("Read-only connections", () => {
     await expect(sourceDialog).toBeHidden();
     const sourcePath = join(
       liveApp.workspaceDir,
-      "analytics/assets/raw/read_only_orders.asset.yml",
+      "analytics/assets/local.raw/read_only_orders.asset.yml",
     );
     await expect
       .poll(async () => readFile(sourcePath, "utf8").catch(() => ""))
@@ -205,7 +206,7 @@ test.describe("Read-only connections", () => {
       await page.getByRole("button", { name: "Back", exact: true }).click();
     await page.getByRole("button", { name: "Use duckdb-output in canvas", exact: true }).click();
     await page
-      .getByRole("button", { name: "Create Load after raw.read_only_orders", exact: true })
+      .getByRole("button", { name: "Create Load after local.raw.read_only_orders", exact: true })
       .click();
     const loadDialog = page.getByRole("dialog", {
       name: /New downstream asset|New asset|Create downstream/,

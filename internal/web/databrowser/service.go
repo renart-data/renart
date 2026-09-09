@@ -17,6 +17,7 @@ import (
 
 	"renart/internal/web/apperror"
 	"renart/internal/web/model"
+	"renart/internal/web/sqlnamespace"
 )
 
 const (
@@ -51,6 +52,7 @@ type ConnectionConfig struct {
 }
 
 type Table struct {
+	CatalogName  string
 	Name         string
 	ShortName    string
 	SchemaName   string
@@ -68,6 +70,7 @@ type Dependencies struct {
 	ListConnections      func(context.Context, string) (string, []ConnectionConfig, int64, error)
 	ListDatabases        func(context.Context, string, string) ([]string, error)
 	ListTables           func(context.Context, string, string, string) ([]Table, error)
+	ListWarehouse        func(context.Context, string, sqlnamespace.Scope, string) ([]sqlnamespace.Entry, error)
 	ListColumns          func(context.Context, string, string, string) ([]model.SQLColumn, error)
 	LookupViewDefinition func(context.Context, string, string, string) (string, error)
 	RunQuery             func(context.Context, string, string, string, int) (QueryResult, error)
@@ -86,6 +89,7 @@ type objectRef struct {
 	ConnectionType string `json:"t,omitempty"`
 	Environment    string `json:"e"`
 	Revision       string `json:"r"`
+	Catalog        string `json:"a,omitempty"`
 	Database       string `json:"d,omitempty"`
 	Schema         string `json:"h,omitempty"`
 	Name           string `json:"n,omitempty"`
@@ -234,6 +238,7 @@ func (s *Service) Object(ctx context.Context, objectID, environment string) (Obj
 	}
 	connectionRef := ref
 	connectionRef.Kind = "connection"
+	connectionRef.Catalog = ""
 	connectionRef.Database = ""
 	connectionRef.Schema = ""
 	connectionRef.Name = ""
@@ -272,7 +277,7 @@ func (s *Service) Object(ctx context.Context, objectID, environment string) (Obj
 	}
 	object.Kind = "table"
 	object.ReferenceText = ref.Name
-	object.Namespace = compactStrings([]string{ref.Database, ref.Schema})
+	object.Namespace = compactStrings([]string{ref.Catalog, ref.Database, ref.Schema})
 	object.Capabilities = Capabilities{
 		DescribeColumns: s.deps.ListColumns != nil,
 		PreviewRows:     s.deps.RunQuery != nil,
@@ -314,6 +319,7 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (PreviewR
 	}
 	connectionRef := ref
 	connectionRef.Kind = "connection"
+	connectionRef.Catalog = ""
 	connectionRef.Database = ""
 	connectionRef.Schema = ""
 	connectionRef.Name = ""
@@ -347,6 +353,13 @@ func (s *Service) Preview(ctx context.Context, request PreviewRequest) (PreviewR
 		}
 	} else {
 		relation = quoteQualifiedIdentifier(ref.Name)
+		if sqlnamespace.Supported(ref.ConnectionType) {
+			parts := identifierParts(ref.Name)
+			for i, part := range parts {
+				parts[i] = sqlnamespace.Quote(ref.ConnectionType, part)
+			}
+			relation = strings.Join(parts, ".")
+		}
 	}
 
 	started := s.deps.Now()
@@ -432,6 +445,9 @@ func (s *Service) resolveScope(ctx context.Context, connectionID, environment st
 }
 
 func (s *Service) warehouseChildren(ctx context.Context, connection objectRef, parent objectRef, parentID string) ([]Node, bool, error) {
+	if s.deps.ListWarehouse != nil && sqlnamespace.Supported(connection.ConnectionType) {
+		return s.catalogChildren(ctx, connection, parent, parentID)
+	}
 	if parent.Kind == "connection" {
 		if s.deps.ListDatabases == nil {
 			return nil, false, fmt.Errorf("database discovery is unavailable")
@@ -649,6 +665,7 @@ func (s *Service) localObject(ctx context.Context, scope resolvedScope, ref obje
 	object.SizeBytes = info.Size()
 	object.ModifiedAt = info.ModTime().UTC().Format(time.RFC3339)
 	object.Capabilities = Capabilities{
+		LoadSource:      true,
 		DescribeColumns: queryConnection != "" && s.deps.RunQuery != nil,
 		PreviewRows:     queryConnection != "" && s.deps.RunQuery != nil,
 	}

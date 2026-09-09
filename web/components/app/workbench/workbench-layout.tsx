@@ -2,11 +2,14 @@ import { type ReactNode } from "react";
 
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { XIcon } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 
@@ -76,7 +79,11 @@ export function AppWorkbenchLayout({ children }: { children: ReactNode }) {
 
       {isMobile ? (
         <Sheet open={mobileNavigationOpen} onOpenChange={setMobileNavigationOpen}>
-          <SheetContent side="left" className="w-[min(90vw,360px)] gap-0 p-0 sm:max-w-none">
+          <SheetContent
+            side="left"
+            showCloseButton={false}
+            className="w-[min(90vw,360px)] gap-0 p-0 sm:max-w-none"
+          >
             <SheetHeader className="sr-only">
               <SheetTitle>{navigation.mobileLabel} navigation</SheetTitle>
               <SheetDescription>Browse resources for the selected tool.</SheetDescription>
@@ -84,6 +91,12 @@ export function AppWorkbenchLayout({ children }: { children: ReactNode }) {
             {hasContextSlot ? (
               <div ref={setContextHost} className="min-h-0 flex-1 overflow-hidden" />
             ) : null}
+            <SheetClose asChild>
+              <Button variant="ghost" size="icon-sm" className="absolute top-2 right-3">
+                <XIcon />
+                <span className="sr-only">Close</span>
+              </Button>
+            </SheetClose>
           </SheetContent>
         </Sheet>
       ) : null}

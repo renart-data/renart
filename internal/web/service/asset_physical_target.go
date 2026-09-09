@@ -488,10 +488,13 @@ func resolveRelationTargetCoordinates(workspaceRoot, rawConnectionType string, c
 			return unresolvedRelation("the StarRocks target configuration has an unexpected shape")
 		}
 		// Native StarRocks execution uses the MySQL protocol and selects the
-		// configured database. Catalog affects Sling URIs, not this native SQL
-		// connection, so including it would let aliases for the same relation
-		// evade exclusion.
-		return networkRelationTarget("starrocks", "starrocks", rawObject, conn.Host, conn.Port, 9030, tablename.Defaults{Schema: conn.Database}, false, true)
+		// configured database and catalog. Native connection setup and fully
+		// qualified browser references use the same catalog default.
+		catalog := conn.Catalog
+		if catalog == "" {
+			catalog = "default_catalog"
+		}
+		return networkRelationTarget("starrocks", "starrocks", rawObject, conn.Host, conn.Port, 9030, tablename.Defaults{Catalog: catalog, Schema: conn.Database}, true, true)
 
 	case "databricks":
 		conn, ok := connection.(*config.DatabricksConnection)
@@ -610,7 +613,7 @@ func resolvePhysicalRelation(platform, rawObject string, defaults tablename.Defa
 	if name == "" || strings.ContainsAny(name, "\"`[]{}$") {
 		return tablename.TableName{}, "", false
 	}
-	capability, ok := tablename.For(platform)
+	capability, ok := warehouseTableCapability(platform)
 	if !ok || capability.Unbounded {
 		return tablename.TableName{}, name, false
 	}

@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } fro
 import http from "node:http";
 import net from "node:net";
 import { open } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 
 export type LiveApp = {
@@ -54,6 +54,7 @@ export const liveTest = base.extend<{
   deviceContract: void;
   fixtureName: string;
   isolateUserConfig: boolean;
+  workspaceSubdirectory: string;
   liveAppEnv: Record<string, string | undefined>;
   liveApp: LiveApp;
   livePostgres: LivePostgres | null;
@@ -72,6 +73,7 @@ export const liveTest = base.extend<{
   ],
   fixtureName: ["basic-workspace", { option: true }],
   isolateUserConfig: [false, { option: true }],
+  workspaceSubdirectory: ["", { option: true }],
   liveAppEnv: [{}, { option: true }],
   livePostgres: [
     async ({ fixtureName }, use) => {
@@ -173,7 +175,11 @@ export const liveTest = base.extend<{
       }
     }
   },
-  liveApp: async ({ fixtureName, isolateUserConfig, livePostgres, liveAppEnv }, use, testInfo) => {
+  liveApp: async (
+    { fixtureName, isolateUserConfig, workspaceSubdirectory, livePostgres, liveAppEnv },
+    use,
+    testInfo,
+  ) => {
     const fixtureStartedAt = Date.now();
     const timings: LiveAppTimings = {
       fixture: fixtureName,
@@ -192,9 +198,15 @@ export const liveTest = base.extend<{
     mkdirSync(e2eWorkspaceRoot, { recursive: true });
     const workspaceDir = mkdtempSync(join(e2eWorkspaceRoot, "renart-e2e-"));
     cpSync(fixtureRoot, workspaceDir, { recursive: true });
+    const serverWorkspaceDir = resolve(workspaceDir, workspaceSubdirectory);
+    if (serverWorkspaceDir !== workspaceDir && !serverWorkspaceDir.startsWith(workspaceDir + sep))
+      throw new Error("Fixture workspace must stay inside its disposable root");
     mkdirSync(join(workspaceDir, ".git"));
     mkdirSync(join(workspaceDir, "duckdb-files"));
     const configPath = join(workspaceDir, ".bruin.yml");
+    if (fixtureName === "nested-browser-workspace") {
+      cpSync(join(workspaceDir, "parent-connections.yml"), configPath);
+    }
     if (fixtureName === "notebook-postgres-workspace" && livePostgres) {
       writeFileSync(
         configPath,
@@ -248,7 +260,7 @@ environments:
         "--watch-mode",
         "poll",
         "--no-open",
-        workspaceDir,
+        serverWorkspaceDir,
       ],
       {
         cwd: repoRoot,
@@ -273,7 +285,7 @@ environments:
       timings.serverStartupMs = Date.now() - serverStartedAt;
       const bodyStartedAt = Date.now();
       try {
-        await use({ baseURL, workspaceDir });
+        await use({ baseURL, workspaceDir: serverWorkspaceDir });
       } finally {
         timings.testBodyMs = Date.now() - bodyStartedAt;
       }

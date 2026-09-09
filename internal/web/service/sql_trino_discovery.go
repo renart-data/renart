@@ -16,12 +16,21 @@ type discoverySelector interface {
 // The pinned Trino client can query metadata but does not implement Bruin's
 // discovery interfaces. Adapt it locally without changing connection ownership
 // or installing another credentialed client.
-func sqlDiscoveryAdapter(connection any, connectionType string) any {
+func sqlDiscoveryAdapter(connection any, connectionType string, catalog ...string) any {
 	if selector, ok := connection.(discoverySelector); ok {
 		switch normalizeConnectionType(connectionType) {
 		case "trino":
 			return trinoDiscovery{selector: selector}
-		case "mysql", "starrocks", "doris", "vitess", "planetscale":
+		case "starrocks", "doris":
+			selected := "default_catalog"
+			if normalizeConnectionType(connectionType) == "doris" {
+				selected = "internal"
+			}
+			if len(catalog) > 0 && catalog[0] != "" {
+				selected = catalog[0]
+			}
+			return mysqlDiscovery{selector: selector, catalog: selected}
+		case "mysql", "vitess", "planetscale":
 			return mysqlDiscovery{selector: selector}
 		}
 	}
@@ -30,17 +39,28 @@ func sqlDiscoveryAdapter(connection any, connectionType string) any {
 
 // These clients speak the MySQL metadata protocol, but the pinned dependency
 // only exposes Select. SHOW respects the connected user's object privileges.
-type mysqlDiscovery struct{ selector discoverySelector }
+type mysqlDiscovery struct {
+	selector discoverySelector
+	catalog  string
+}
 
 func (d mysqlDiscovery) GetDatabases(ctx context.Context) ([]string, error) {
-	return discoveryNames(ctx, d.selector, "SHOW DATABASES")
+	sql := "SHOW DATABASES"
+	if d.catalog != "" {
+		sql += " FROM `" + strings.ReplaceAll(d.catalog, "`", "``") + "`"
+	}
+	return discoveryNames(ctx, d.selector, sql)
 }
 
 func (d mysqlDiscovery) GetTables(ctx context.Context, database string) ([]string, error) {
 	if strings.TrimSpace(database) == "" || strings.ContainsRune(database, '\x00') {
 		return nil, fmt.Errorf("a valid database is required")
 	}
-	return discoveryNames(ctx, d.selector, "SHOW TABLES FROM `"+strings.ReplaceAll(database, "`", "``")+"`")
+	prefix := ""
+	if d.catalog != "" {
+		prefix = "`" + strings.ReplaceAll(d.catalog, "`", "``") + "`."
+	}
+	return discoveryNames(ctx, d.selector, "SHOW TABLES FROM "+prefix+"`"+strings.ReplaceAll(database, "`", "``")+"`")
 }
 
 func discoveryNames(ctx context.Context, selector discoverySelector, sql string) ([]string, error) {

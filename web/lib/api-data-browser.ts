@@ -22,10 +22,38 @@ export function createDataBrowserSource(
   );
 }
 
-export function getDataBrowserConnections(environment?: string) {
-  return fetchJSON<DataBrowserConnectionsResponse>(
+// Metadata discovery must settle even when a restored connection is offline.
+// Cancellation is caller-owned; the deadline is local to this request and never
+// applies to running/materializing a pipeline.
+async function fetchMetadata<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const cancel = () => controller.abort(signal?.reason);
+  if (signal?.aborted) cancel();
+  else signal?.addEventListener("abort", cancel, { once: true });
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 30_000);
+  try {
+    return await fetchJSON<T>(path, { cache: "no-store", signal: controller.signal });
+  } catch (cause) {
+    if (timedOut)
+      throw new Error(
+        "Data source discovery timed out. Check the connection and its project configuration, then Retry.",
+        { cause },
+      );
+    throw cause;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", cancel);
+  }
+}
+
+export function getDataBrowserConnections(environment?: string, signal?: AbortSignal) {
+  return fetchMetadata<DataBrowserConnectionsResponse>(
     `/api/data-browser/connections${buildQueryString({ environment })}`,
-    { cache: "no-store" },
+    signal,
   );
 }
 
@@ -37,14 +65,14 @@ export function getDataBrowserChildren(
   },
   signal?: AbortSignal,
 ) {
-  return fetchJSON<DataBrowserChildrenResponse>(
+  return fetchMetadata<DataBrowserChildrenResponse>(
     `/api/data-browser/connections/${encodeURIComponent(options.connectionId)}/children${buildQueryString(
       {
         parent_id: options.parentId,
         environment: options.environment,
       },
     )}`,
-    { cache: "no-store", signal },
+    signal,
   );
 }
 
@@ -52,9 +80,9 @@ export function getDataBrowserPrefix(
   options: { connectionId: string; prefix: string; namePrefix?: string; environment: string },
   signal?: AbortSignal,
 ) {
-  return fetchJSON<DataBrowserChildrenResponse>(
+  return fetchMetadata<DataBrowserChildrenResponse>(
     `/api/data-browser/connections/${encodeURIComponent(options.connectionId)}/prefix${buildQueryString({ path: options.prefix, name_prefix: options.namePrefix, environment: options.environment })}`,
-    { cache: "no-store", signal },
+    signal,
   );
 }
 

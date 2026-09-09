@@ -1,0 +1,14 @@
+default_environment: default
+environments:
+  default:
+    connections:
+      duckdb:
+        - name: inherited-warehouse
+          path: duckdb-files/parent.db
+      s3:
+        - name: inherited-storage
+          bucket_name: nested-browser-fixture
+          path_to_file: /tmp/example
+          endpoint_url: http://127.0.0.1:1
+          access_key_id: fixture
+          secret_access_key: fixture

@@ -30,10 +30,11 @@ import type { AppLineageCanvasAsset } from "../lineage-canvas";
 
 type DropContext = {
   eligible: Set<string>;
-  drop: (assetId: string | undefined, event?: DragEvent) => void;
+  drop: (assetId: string | undefined, event?: DragEvent, group?: string) => void;
   registerTarget: (id: string, element: HTMLElement | null) => void;
   nearTarget: string | null;
-  sourceGroup: string | null;
+  sourceGroups: Set<string>;
+  fileSource: boolean;
   sourceLabel: string;
 };
 const CanvasDropContext = createContext<DropContext | null>(null);
@@ -51,23 +52,24 @@ export function DataBrowserCanvas({
   assets: AppLineageCanvasAsset[];
   onSource: (objectId: string, environment: string) => void;
   onLoad: (assetId: string, destination: string) => void;
-  onStorage: (object: DataBrowserObject, upstreamId?: string) => void;
+  onStorage: (object: DataBrowserObject, upstreamId?: string, prefix?: string) => void;
 }) {
   const [transfer, setTransfer] = useAtom(dataBrowserTransferAtom);
   const environment = useAtomValue(selectedEnvironmentAtom) ?? "default";
   const active = acceptsDataBrowserTransfer(transfer, pipelineId, getPinnedProjectId(), environment)
     ? transfer
     : null;
+  const isLoadObject = active?.kind === "storage" || active?.kind === "file";
   const { profile, loading, error } = useAssetCreationProfile(
     pipelineId,
-    active?.kind === "connection" || active?.kind === "storage",
+    active?.kind === "connection" || isLoadObject,
   );
   const [resolvedObject, setResolvedObject] = useState<DataBrowserObject | null>(null);
   const [objectError, setObjectError] = useState("");
   useEffect(() => {
     setResolvedObject(null);
     setObjectError("");
-    if (active?.kind !== "storage") return;
+    if (!active || !isLoadObject) return;
     const abort = new AbortController();
     void getDataBrowserObject({ objectId: active.id, environment }, abort.signal)
       .then((response) => {
@@ -80,17 +82,24 @@ export function DataBrowserCanvas({
           );
       });
     return () => abort.abort();
-  }, [active?.id, active?.kind, environment]);
-  const storageObject =
-    active?.kind === "storage" && resolvedObject?.id === active.id ? resolvedObject : null;
+  }, [active?.id, isLoadObject, environment]);
+  const storageObject = isLoadObject && resolvedObject?.id === active?.id ? resolvedObject : null;
   // Placement must appear immediately, not wait for a warehouse schema query.
   // This is only a hint; the reviewed import resolves the opaque ID again.
   const sourceReference = active?.kind === "table" ? active.referenceText : undefined;
   const sourceGroup = sourceReference ? (assetNameParts(sourceReference).prefix ?? "root") : null;
+  const fileSource = Boolean(storageObject?.capabilities.load_source);
+  const sourceGroups = new Set(
+    fileSource
+      ? assets.map((asset) => asset.prefix || asset.group || "root")
+      : sourceGroup !== null
+        ? [sourceGroup]
+        : [],
+  );
   const newSourceGroup =
     sourceGroup !== null &&
     !assets.some((asset) => (asset.prefix || asset.group || "root") === sourceGroup);
-  const destination = active?.kind === "storage" ? storageObject?.connection_name : active?.id;
+  const destination = isLoadObject ? storageObject?.connection_name : active?.id;
   const load =
     profile?.environment === environment
       ? profile.kinds.find((kind) => kind.kind === "load")
@@ -164,8 +173,9 @@ export function DataBrowserCanvas({
     );
     return () => cancelAnimationFrame(frame);
   }, [active?.token, active?.method, eligible.size, storageObject?.id, sourceGroup]);
-  const drop = (assetId: string | undefined, event?: DragEvent) => {
+  const drop = (assetId: string | undefined, event?: DragEvent, group?: string) => {
     if (!active) return;
+    if (group !== undefined && !sourceGroups.has(group)) return;
     if (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -175,11 +185,11 @@ export function DataBrowserCanvas({
     if (active.kind === "table" && sourceReference && !assetId)
       onSource(active.id, active.environment);
     else if (
-      active.kind === "storage" &&
+      isLoadObject &&
       storageObject &&
       ((!assetId && storageObject.capabilities.load_source) || (assetId && eligible.has(assetId)))
     )
-      onStorage(storageObject, assetId);
+      onStorage(storageObject, assetId, group);
     else if (active.kind === "connection" && assetId && eligible.has(assetId))
       onLoad(assetId, active.id);
     else return;
@@ -194,7 +204,8 @@ export function DataBrowserCanvas({
               drop,
               registerTarget,
               nearTarget,
-              sourceGroup,
+              sourceGroups,
+              fileSource,
               sourceLabel: sourceReference ?? active.label,
             }
           : null
@@ -216,7 +227,7 @@ export function DataBrowserCanvas({
                     ? "Checking source table…"
                     : `${active.method === "drag" ? "Drop in" : "Choose"} the ${sourceGroup} group · review before saving`)}
               </p>
-            ) : active.kind === "storage" ? (
+            ) : isLoadObject ? (
               <div
                 ref={(element) =>
                   registerTarget(
@@ -235,15 +246,17 @@ export function DataBrowserCanvas({
                   onDragOver={allowDataBrowserDrop}
                   onDrop={(event) => drop(undefined, event)}
                   onClick={() => drop(undefined)}
-                  disabled={active.kind === "storage" && !storageObject?.capabilities.load_source}
+                  disabled={!storageObject?.capabilities.load_source}
                 >
                   <Database data-icon="inline-start" />
                   <span className="min-w-0">
-                    <span className="block">Create Load from object</span>
+                    <span className="block">
+                      {active.kind === "file" ? "Create Load from file" : "Create Load from object"}
+                    </span>
                     <span className="block truncate text-xs font-normal text-muted-foreground">
                       {objectError ||
-                        (active.kind === "storage" && !storageObject
-                          ? "Checking storage object…"
+                        (!storageObject
+                          ? "Checking data object…"
                           : `${active.label} · review before saving`)}
                     </span>
                   </span>
@@ -260,19 +273,21 @@ export function DataBrowserCanvas({
                       : "No compatible upstream asset for this connection."}
               </p>
             )}
-            {active.kind === "storage" && eligible.size > 0 ? (
+            {isLoadObject && eligible.size > 0 ? (
               <p role="status" className="sr-only text-xs text-muted-foreground sm:not-sr-only">
                 Or drop beside an asset to use this as its destination.
               </p>
             ) : null}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              aria-label="Cancel canvas placement"
-              onClick={() => setTransfer(null)}
-            >
-              <X />
-            </Button>
+            {active.method === "choose" ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                aria-label="Cancel canvas placement"
+                onClick={() => setTransfer(null)}
+              >
+                <X />
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -287,8 +302,17 @@ function allowDataBrowserDrop(event: DragEvent) {
   event.dataTransfer.dropEffect = "copy";
 }
 
-export function useDataBrowserSourceGroup() {
-  return useContext(CanvasDropContext)?.sourceGroup ?? null;
+const noDropGroups = new Set<string>();
+export function useDataBrowserDropGroups() {
+  return useContext(CanvasDropContext)?.sourceGroups ?? noDropGroups;
+}
+
+export function useDataBrowserLoadTargets() {
+  return useContext(CanvasDropContext)?.eligible ?? noDropGroups;
+}
+
+export function useDataBrowserExpandedTarget() {
+  return useContext(CanvasDropContext)?.nearTarget ?? null;
 }
 
 export function DataBrowserSourceDropTarget({
@@ -299,7 +323,7 @@ export function DataBrowserSourceDropTarget({
   isNew?: boolean;
 }) {
   const context = useContext(CanvasDropContext);
-  if (!context || context.sourceGroup !== group) return null;
+  if (!context?.sourceGroups.has(group)) return null;
   const id = `source:${group}`;
   const near = context.nearTarget === id;
   return (
@@ -315,29 +339,38 @@ export function DataBrowserSourceDropTarget({
         data-source-group={group}
         data-new-group={isNew ? "true" : "false"}
         data-proximity={near ? "near" : "far"}
-        aria-label={`Create source in ${group} group`}
+        aria-label={`Create ${context.fileSource ? "Load" : "source"} in ${group} group`}
         onDragOver={allowDataBrowserDrop}
-        onDrop={(event) => context.drop(undefined, event)}
+        onDrop={(event) => context.drop(undefined, event, group)}
         onClick={(event) => {
           event.stopPropagation();
-          context.drop(undefined);
+          context.drop(undefined, undefined, group);
         }}
       >
         {isNew ? <span className="absolute top-3 left-3 font-mono">{group}</span> : null}
-        <span
-          className={cn(
-            "flex max-w-full flex-col items-center gap-2",
-            !isNew && "rounded-lg border bg-background p-3 shadow-sm",
-          )}
-        >
-          <span className="flex max-w-full items-center gap-2">
-            <Database data-icon="inline-start" />
-            <span className="truncate">{context.sourceLabel}</span>
+        {context.fileSource ? (
+          <span
+            className="absolute right-3 top-2 flex items-center gap-1.5 rounded-md border bg-background px-2 py-1 text-xs shadow-sm"
+            title={context.sourceLabel}
+          >
+            <Plus className="size-3.5" /> Load here
           </span>
-          <span className="text-xs font-normal text-muted-foreground">
-            {isNew ? "Create source in new group" : "Add source to this group"}
+        ) : (
+          <span
+            className={cn(
+              "flex max-w-full flex-col items-center gap-2",
+              !isNew && "rounded-lg border bg-background p-3 shadow-sm",
+            )}
+          >
+            <span className="flex max-w-full items-center gap-2">
+              <Database data-icon="inline-start" />
+              <span className="truncate">{context.sourceLabel}</span>
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {isNew ? "Create source in new group" : "Add source to this group"}
+            </span>
           </span>
-        </span>
+        )}
       </Button>
     </div>
   );

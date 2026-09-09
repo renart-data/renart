@@ -114,6 +114,11 @@ func TestLocalFilesStayInsideWorkspaceAndPreviewIsServerConstructed(t *testing.T
 	require.Len(t, dataNodes.Nodes, 2)
 	require.Equal(t, "nested", dataNodes.Nodes[0].Label)
 	require.Equal(t, "orders.csv", dataNodes.Nodes[1].Label)
+	object, apiErr := service.Object(context.Background(), dataNodes.Nodes[1].ID, "dev")
+	require.Nil(t, apiErr)
+	require.True(t, object.Object.Capabilities.LoadSource)
+	require.False(t, object.Object.Capabilities.LoadDestination)
+	require.Equal(t, "data/orders.csv", object.Object.ReferenceText)
 
 	preview, apiErr := service.Preview(context.Background(), PreviewRequest{
 		ObjectID: dataNodes.Nodes[1].ID, Environment: "dev", Limit: 1,
