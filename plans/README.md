@@ -14,7 +14,6 @@ decisions and dependencies in each plan; there is no global questions scratchpad
 | Plan | Remaining boundary / prerequisite |
 | --- | --- |
 | [Shared preview row loading](preview-row-loading.md) | Inspect, Data Browser, notebook and query previews implemented; authored table presentation adapters remain |
-| [Connection/environment navigation](connection-environment-navigation.md) | Contextual sidebar hierarchy and existing owner forms, without changing execution context; plan only |
 | [Workspace command handoff](workspace-command-handoff.md) | Stateful CLI delegation, short-lived authority, safe launcher handoff; highest-priority correctness boundary |
 | [Local secret lifecycle](secret-management.md) | Sensitive-file leases, migration/crash evidence, remaining subprocess boundaries; local vault already exists |
 | [Data Browser](data-browser.md) | Positive Usage matching, notebook handoff, pagination/cache provenance, shared observations; browsing/search/drops already exist |
@@ -59,7 +58,7 @@ Revalidate historical external research when selecting one.
 3. Keep unresolved work in a focused plan with prerequisites and acceptance.
 4. Delete the completed plan; do not create a permanent plans archive.
 
-Completed navigation/migration studies, the broad architecture audit, the Python
+Completed connection/environment navigation, navigation/migration studies, the broad architecture audit, the Python
 SDK implementation plan, empty questions, and v0.5.1 release scratchpads have
 been retired. Navigation rationale is in frontend architecture, SDK/runtime
 contracts are in backend/notebook architecture, and retained local release

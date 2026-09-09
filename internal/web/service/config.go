@@ -92,6 +92,8 @@ type WorkspaceRetentionSettings struct {
 type WorkspaceConfigResponse struct {
 	Status                   string                          `json:"status"`
 	Path                     string                          `json:"path"`
+	ConfigurationPath        string                          `json:"configuration_path,omitempty"`
+	ConfigurationInherited   bool                            `json:"configuration_inherited,omitempty"`
 	WorkspacePath            string                          `json:"workspace_path,omitempty"`
 	ProjectID                string                          `json:"project_id,omitempty"`
 	ProjectName              string                          `json:"project_name,omitempty"`
@@ -409,21 +411,28 @@ func (s *ConfigService) Persist(cfg *config.Config) (string, error) {
 }
 
 func (s *ConfigService) BuildResponse(configPath string, cfg *config.Config) WorkspaceConfigResponse {
+	configurationPath, pathErr := filepath.Rel(s.workspaceRoot, configPath)
+	inherited := pathErr != nil || configurationPath == ".." || strings.HasPrefix(configurationPath, ".."+string(filepath.Separator))
+	if pathErr != nil {
+		configurationPath = filepath.Clean(configPath)
+	}
 	project := s.ProjectIdentity()
 	manifest, manifestErr := secretstore.LoadManifest(filepath.Join(s.workspaceRoot, ".renart", "secrets.yml"))
 	response := WorkspaceConfigResponse{
-		Status:              "ok",
-		Path:                filepath.Base(configPath),
-		WorkspacePath:       filepath.Clean(s.workspaceRoot),
-		ProjectID:           project.ID,
-		ProjectName:         project.Name,
-		DefaultEnvironment:  cfg.DefaultEnvironmentName,
-		SelectedEnvironment: cfg.SelectedEnvironmentName,
-		Environments:        []WorkspaceConfigEnvironment{},
-		ConnectionTypes:     BuildWorkspaceConfigConnectionTypes(),
-		Features:            project.Features,
-		Retention:           workspaceRetentionSettings(project.Retention),
-		SecretVault:         workspaceLocalVaultStatus(s.secretVault.Status(project.ID)),
+		Status:                 "ok",
+		Path:                   filepath.Base(configPath),
+		ConfigurationPath:      filepath.ToSlash(configurationPath),
+		ConfigurationInherited: inherited,
+		WorkspacePath:          filepath.Clean(s.workspaceRoot),
+		ProjectID:              project.ID,
+		ProjectName:            project.Name,
+		DefaultEnvironment:     cfg.DefaultEnvironmentName,
+		SelectedEnvironment:    cfg.SelectedEnvironmentName,
+		Environments:           []WorkspaceConfigEnvironment{},
+		ConnectionTypes:        BuildWorkspaceConfigConnectionTypes(),
+		Features:               project.Features,
+		Retention:              workspaceRetentionSettings(project.Retention),
+		SecretVault:            workspaceLocalVaultStatus(s.secretVault.Status(project.ID)),
 	}
 	if manifestErr != nil {
 		response.SecretBindingsError = manifestErr.Error()

@@ -79,10 +79,10 @@ export function useWorkspaceSettingsData() {
   ]);
 
   useEffect(() => {
-    if (!workspaceConfig && !workspaceConfigLoading) {
+    if (!workspaceConfig && !workspaceConfigLoading && workspaceConfigStatusTone !== "error") {
       void loadWorkspaceConfig();
     }
-  }, [loadWorkspaceConfig, workspaceConfig, workspaceConfigLoading]);
+  }, [loadWorkspaceConfig, workspaceConfig, workspaceConfigLoading, workspaceConfigStatusTone]);
 
   const normalizedConfigEnvironments = useMemo(
     () =>

@@ -14,11 +14,11 @@ They are also available through **Project settings**.
 
 ## Add a connection
 
-1. Open **Build → Connections** and add a connection.
-2. Choose its database or storage type and enter a name, such as `pg-analytics`.
-3. Enter the connection details and choose a credential source for secret fields.
+1. Open **Build → Connections** and click **New connection**, or the **+** beside an environment.
+2. Choose its environment, database or storage type, and a name such as `pg-analytics`.
+3. Enter the connection details. Open **Credentials** for secret fields and **Advanced** for tuning options.
 4. Choose **Access → Read-only** if Renart should only read from this connection.
-5. Click **Verify** to test the draft, then save it.
+5. Click **Verify** to test the draft, then **Create connection**. The saved connection stays open.
 
 Assets refer to connections by name. Choose the connection in the asset's
 **General** properties; set defaults through **Pipeline settings**.
@@ -36,14 +36,35 @@ bindings for CI and unattended runs. See
 [Manage connection credentials](/docs/connections-environments/managing-credentials/)
 for the complete setup, rotation, and recovery guidance.
 
+## Find and edit a connection
+
+The sidebar groups connections by environment. Filter by connection name, type,
+or environment, then select a row to open its editor in the main area. On a
+phone, tap **Connections** again to reopen the navigator; selecting a row closes it.
+
+Click **Save changes** when ready. If you navigate away with a draft, choose
+**Save and continue**, **Discard**, or **Stay**. A failed save keeps your draft.
+Links from diagnostics open the relevant field in this same editor, including
+when you open the link in a new tab.
+
+:::caution[Shared configuration]
+A nested project can inherit its connection definitions from another directory.
+Renart shows the destination and asks you to **Allow editing shared configuration**
+before saving there. Those changes can affect other projects using that configuration.
+:::
+
 ## Environments
 
-In **Build → Environments**, define one entry per target. Each
-environment maps connection names to concrete credentials, so switching the
-environment picker in the top bar swaps the whole workspace — previews,
-materializations, and ad-hoc queries — onto that target. Schedules are also
-per environment: the same pipeline can run nightly against `default` and on
-weekday mornings against `production`.
+In **Build → Environments**, select an environment in the sidebar or click
+**New environment**. Edit its name, schema prefix, default status and execution
+guardrails in the main area. **Clone** copies an environment's connections and
+guardrails. Its connection links open the corresponding connection editors.
+
+Selecting an environment here does not change where queries or pipelines run.
+Use **Use for execution**, or the execution picker in the top bar, to switch the
+active target. **Default environment** is a separate saved setting, used when no
+explicit environment is selected. Schedules remain per environment: the same
+pipeline can run nightly against `default` and on weekday mornings against `production`.
 
 ## Read-only connections
 

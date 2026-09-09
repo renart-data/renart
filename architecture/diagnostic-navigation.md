@@ -29,7 +29,7 @@ UI, not an auxiliary outlet. No new special-purpose detail pages are mounted.
 | Asset column | Asset path, existing Properties → Columns, exact row/field |
 | Asset section | Properties → General, Lineage, Columns or Checks |
 | Saved source location | Real asset Monaco; reveal a hidden editor if necessary |
-| Connection / field | Project Connections and its normal edit Sheet |
+| Connection / field | Project Connections and its routed main-pane editor |
 | Data object / column | Existing /data schema/rows view and explicit row preview |
 | Notebook cell | Existing notebook editor, persisted cell ID, local scroll/focus |
 | Presentation component | Existing visual editor and its normal inspector |
@@ -73,9 +73,9 @@ drafts and compatible Data Browser sidebar state stay independent. The Workbench
 reconciles a tool only when it represents the destination's owner/editor; it no
 longer opens a collapsed sidebar solely because the route tool changed.
 
-Responsive UI uses the same existing Properties and Connection Sheets. Only one
-asset inspector is mounted for the current breakpoint. A mobile navigation
-Sheet closes when its context is replaced and would otherwise cover the new
+Responsive UI uses the existing Properties surface and main-pane connection
+editor. Only one asset inspector is mounted for the current breakpoint. A mobile navigation
+Sheet closes after a committed settings item selection or when its context is replaced and would otherwise cover the new
 page. This is a necessary reveal, not a reset of desktop sidebar preferences.
 Focus uses semantic refs and scrolls the target's own viewport. Missing,
 ambiguous or capability-incompatible targets show a notice instead of selecting
@@ -89,9 +89,11 @@ use a document navigation/new tab. The target environment is used where the
 owner needs it (connection, schema metadata, data object); definition navigation
 does not reconfigure the global execution environment.
 
-Connection edits retain a stable form snapshot and guard leaving dirty state,
-including Close/Escape and browser unload. Changing only its addressed field
-does not discard that form. Presentation selection within the same editor does
+Connection and environment editors retain a stable form snapshot and guard leaving
+dirty state with Save / Discard / Stay. Save failures retain the draft and pending
+destination; browser unload uses the native unsaved-changes prompt. Changing only
+a connection's addressed field does not discard the form, including when the
+first locator adds the current project's explicit ID. Presentation selection within the same editor does
 not invoke the leave guard; changing owners/editor modes does. Existing
 blur/explicit asset-save semantics remain authoritative.
 

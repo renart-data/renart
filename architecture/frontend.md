@@ -738,7 +738,7 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   facts, schedule history, deployments, and abandoned temporary directories,
   plus the per-pipeline run/log/deployment floors. Integer validation happens
   in both the form and Go service; saving replaces the complete policy.
-  Connection sheets consume backend-provided `is_sensitive` and
+  Connection editors consume backend-provided `is_sensitive` and
   `is_sensitive_file` metadata. Sensitive inputs never populate browser state
   with a saved value. They show configured/missing/unavailable status and the
   safe provider/reference descriptor, with explicit keep, replace, and clear
@@ -751,6 +751,43 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   Provider/manifest parse failures remain visible as shadcn alerts instead of
   silently resetting the form. The same write-only form contract is used by
   inline asset connection creation and onboarding database import.
+
+  Connections and environments use the existing owner routes with a searchable
+  `SettingsNavigator` in the Workbench context slot and a single main-pane editor.
+  `workspace-settings-pages.tsx` owns route selection; the connection/environment
+  editors reuse `useWorkspaceConnectionForm`, `useWorkspaceEnvironmentForm` and
+  the shared `useWorkspaceSettingsData` API boundary. The vault and presentation
+  helpers have separate components. No duplicate hidden forms or settings state
+  in AppShell. Quick-create adapters still use `WorkspaceConnectionFormFields`;
+  main-pane editors additionally fold Credentials and Advanced sections.
+
+  `/project/connections?environment=…&connection=…` preserves existing bookmarks
+  and field `detail` locators. `/project/environments?environment=…` selects the
+  environment; validated `action=create|clone|vault` is limited to the relevant
+  owner. Missing or ambiguous identities never select a different environment's
+  connection. Field-only navigation keeps the draft. `useSettingsLeaveGuard`
+  shares Save / Discard / Stay handling across both editors and browser history;
+  beforeunload uses the native prompt. Snapshots are replaced after successful
+  saves, not by background config/policy loads. Environment guardrails save before
+  metadata, so renaming migrates them; a partial failure explicitly retains the
+  unfinished draft. Settings load failures stop until explicit Retry.
+
+  Sidebar filter/expansion preferences are bounded, disposable and project-scoped;
+  only existing Workbench width/visibility state is persisted. Mobile uses the
+  existing navigation Sheet, which closes after committed selection, not when
+  an unsaved-changes prompt is cancelled. Editing environment selection never
+  sets execution state; **Use for execution** is explicit. A retained `editor=adhoc`
+  parameter affects the Build tool only on pipeline/resource owners, not settings.
+  Rail and mobile-tab selection is committed only after routed navigation succeeds;
+  cancelling a leave prompt does not change the active tool or sidebar visibility.
+
+  Config DTOs expose the effective project-relative `configuration_path` and
+  `configuration_inherited` flag, while retaining the legacy `path` basename.
+  Editing a shared external configuration requires an explicit per-editor opt-in
+  before Save/Delete. The notice explains that definitions affect the shared file
+  while guardrails and secret bindings remain project-local. No write path or
+  credential resolution behavior was changed. This is a UI confirmation, not a
+  replacement for the Go service's access and secret enforcement.
   Pipeline settings are lazy-loaded behind a stable fixed-size shell. They use
   an icon-labelled vertical shadcn tab menu at desktop widths and the same tabs
   in a horizontally scrollable rail on mobile. The dialog has one fixed

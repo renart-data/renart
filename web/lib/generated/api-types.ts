@@ -2034,6 +2034,8 @@ export type WorkspaceConfigFieldDef = {
 export type WorkspaceConfigResponse = {
   status: string;
   path: string;
+  configuration_path?: string;
+  configuration_inherited?: boolean;
   workspace_path?: string;
   project_id?: string;
   project_name?: string;

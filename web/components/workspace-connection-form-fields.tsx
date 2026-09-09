@@ -1,11 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { CheckCircle2, LoaderCircle } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { CheckCircle2, ChevronRight, LoaderCircle } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ConnectionSelect } from "@/components/app/connection-select";
 import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Button } from "@/components/ui/button";
 import {
   Combobox,
@@ -59,6 +60,7 @@ export function WorkspaceConnectionFormFields({
   validateMessage,
   validateTone,
   showActions = true,
+  compactSections = false,
   onAccessModeChange,
   onEnvironmentChange,
   onFieldValueChange,
@@ -87,6 +89,7 @@ export function WorkspaceConnectionFormFields({
   validateMessage: string | null;
   validateTone: "error" | "success" | null;
   showActions?: boolean;
+  compactSections?: boolean;
   onAccessModeChange?: (value: "read_only" | "read_write") => void;
   onEnvironmentChange: (value: string) => void;
   onFieldValueChange: (fieldName: string, value: string | number | boolean | string[]) => void;
@@ -118,436 +121,453 @@ export function WorkspaceConnectionFormFields({
           element.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 32;
     });
   };
-  return (
-    <FieldGroup>
-      {showEnvironmentSelector ? (
-        <Field>
-          <FieldLabel htmlFor="workspace-connection-environment">Environment</FieldLabel>
-          <Select
-            value={connectionForm.environmentName || selectedEnvironment || undefined}
-            onValueChange={onEnvironmentChange}
-            disabled={environmentDisabled}
+  const renderField = (field: WorkspaceConfigConnectionType["fields"][number]) => {
+    const fieldValue = connectionForm.values[field.name];
+    if (connectionForm.type === "duckdb" && field.name === "read_only") {
+      return (
+        <details key={field.name} className="border-t px-4 py-3 first:border-t-0">
+          <summary className="cursor-pointer text-xs text-muted-foreground">
+            Native driver restriction{fieldValue === true ? " · active" : ""}
+          </summary>
+          <div ref={focusField(field.name)} className="mt-3 space-y-2">
+            <label className="flex items-center justify-between gap-4 text-xs">
+              Always open DuckDB read-only
+              <Switch
+                checked={fieldValue === true}
+                disabled={busy}
+                onCheckedChange={(value) => onFieldValueChange(field.name, value)}
+              />
+            </label>
+            <p className="text-xs text-muted-foreground">
+              An additional native restriction, kept for existing connections. The Access setting
+              above enforces read-only mode even when this option is off.
+            </p>
+          </div>
+        </details>
+      );
+    }
+    if (field.is_sensitive || field.is_sensitive_file) {
+      const change = connectionForm.secretChanges[field.name] ?? { action: "keep" };
+      const descriptor = secretFields?.[field.name];
+      const display = secretFieldDisplay(change, descriptor);
+      const storageMode = secretStorageMode(change, descriptor);
+      const help = secretFieldHelp(field.is_sensitive_file, storageMode, change, descriptor);
+      const environmentName = secretEnvironmentName(change, descriptor);
+      const inputValue =
+        change.action === "clear"
+          ? ""
+          : storageMode === "env"
+            ? environmentName
+            : change.action === "replace"
+              ? (change.value ?? "")
+              : "";
+      const environmentNameInvalid =
+        storageMode === "env" &&
+        environmentName.length > 0 &&
+        !validEnvironmentName(environmentName);
+      return (
+        <div
+          key={field.name}
+          ref={focusField(field.name)}
+          data-focused-field={field.name === focusedField || undefined}
+          onFocusCapture={() => onFieldFocus?.(field.name)}
+          className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
+        >
+          <div className="flex min-w-0 items-center justify-between gap-2 bg-muted/30 px-4 py-2">
+            <span
+              className="truncate text-xs text-muted-foreground"
+              style={{
+                fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace',
+              }}
+            >
+              {field.name}
+            </span>
+            <Badge variant={display.variant} size="xs">
+              {display.label}
+            </Badge>
+          </div>
+          <div className="grid gap-1 px-4 py-2 transition-colors focus-within:bg-primary/5">
+            <div className="flex min-w-0 items-center gap-2">
+              <Input
+                aria-label={field.name}
+                aria-invalid={environmentNameInvalid || undefined}
+                type={storageMode === "env" || field.is_sensitive_file ? "text" : "password"}
+                autoComplete={
+                  storageMode === "local" || storageMode === "local-vault" ? "new-password" : "off"
+                }
+                value={inputValue}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (storageMode === "env") {
+                    onSecretChange(field.name, {
+                      action: "replace",
+                      binding: { ref: `env:${value}` },
+                    });
+                    return;
+                  }
+                  onSecretChange(
+                    field.name,
+                    value
+                      ? {
+                          action: "replace",
+                          value,
+                          binding: field.is_sensitive_file ? undefined : { provider: storageMode },
+                        }
+                      : { action: "keep" },
+                  );
+                }}
+                placeholder={
+                  change.action === "clear"
+                    ? "Will be removed when saved"
+                    : storageMode === "env"
+                      ? "Environment variable name"
+                      : descriptor?.status === "configured"
+                        ? "Leave blank to keep current value"
+                        : field.is_sensitive_file
+                          ? "Enter a credential file path"
+                          : "Enter a value"
+                }
+                className="h-7 min-w-0 font-mono text-xs"
+              />
+              {descriptor?.status === "configured" ? (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant={change.action === "clear" ? "outline" : "ghost"}
+                  onClick={() =>
+                    onSecretChange(
+                      field.name,
+                      change.action === "clear" ? { action: "keep" } : { action: "clear" },
+                    )
+                  }
+                >
+                  {change.action === "clear" ? "Keep" : "Clear"}
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex min-w-0 flex-col items-start gap-1">
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                spacing={0}
+                className="grid w-full grid-cols-1 sm:w-auto sm:grid-cols-3"
+                value={storageMode}
+                aria-label={`${field.name} secret source`}
+                onValueChange={(nextMode) => {
+                  if (!nextMode || nextMode === storageMode) {
+                    return;
+                  }
+                  onSecretChange(
+                    field.name,
+                    nextMode === "env"
+                      ? { action: "replace", binding: { ref: "env:" } }
+                      : {
+                          action: "replace",
+                          value: "",
+                          binding: field.is_sensitive_file
+                            ? undefined
+                            : {
+                                provider: nextMode === "local-vault" ? "local-vault" : "local",
+                              },
+                        },
+                  );
+                }}
+              >
+                <ToggleGroupItem value="local">
+                  {field.is_sensitive_file ? "File path" : "Credential store"}
+                </ToggleGroupItem>
+                {!field.is_sensitive_file ? (
+                  <ToggleGroupItem value="local-vault" disabled={localVaultState !== "unlocked"}>
+                    Encrypted vault
+                  </ToggleGroupItem>
+                ) : null}
+                <ToggleGroupItem value="env">Environment</ToggleGroupItem>
+              </ToggleGroup>
+              <p className="min-w-0 text-[0.6875rem] leading-relaxed text-muted-foreground">
+                {help}
+              </p>
+            </div>
+            {environmentNameInvalid ? (
+              <p className="text-[0.6875rem] leading-relaxed text-destructive">
+                Use a valid environment variable name, such as WAREHOUSE_PASSWORD.
+              </p>
+            ) : null}
+            {descriptor?.message && descriptor.message !== help ? (
+              <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
+                {descriptor.message}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
+    if (field.type === "bool") {
+      return (
+        <div
+          key={field.name}
+          ref={focusField(field.name)}
+          data-focused-field={field.name === focusedField || undefined}
+          onFocusCapture={() => onFieldFocus?.(field.name)}
+          className="flex items-center justify-between gap-4 border-t px-4 py-3 first:border-t-0"
+        >
+          <div>
+            <div className="font-medium">{field.name}</div>
+            <div className="text-xs text-muted-foreground">
+              {field.is_required ? "Required" : "Optional"}
+            </div>
+          </div>
+          <Switch
+            checked={Boolean(fieldValue)}
+            onCheckedChange={(checked) => onFieldValueChange(field.name, checked)}
+          />
+        </div>
+      );
+    }
+
+    if (field.type === "string_array") {
+      const values = Array.isArray(fieldValue) ? fieldValue : [];
+      return (
+        <div
+          key={field.name}
+          ref={focusField(field.name)}
+          data-focused-field={field.name === focusedField || undefined}
+          onFocusCapture={() => onFieldFocus?.(field.name)}
+          className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
+        >
+          <div
+            className="bg-muted/30 px-4 py-2 text-xs text-muted-foreground"
+            style={{ fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace' }}
           >
-            <SelectTrigger id="workspace-connection-environment" className="w-full">
-              <SelectValue placeholder="Select environment" />
+            {field.name}
+          </div>
+          <div className="px-4 py-1.5 transition-colors focus-within:bg-emerald-500/10 dark:focus-within:bg-emerald-500/15">
+            <StringArrayCombobox
+              value={values}
+              suggestions={field.default_value?.split(",") ?? []}
+              placeholder="Add values..."
+              onChange={(nextValues) => onFieldValueChange(field.name, nextValues)}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        key={field.name}
+        ref={focusField(field.name)}
+        data-focused-field={field.name === focusedField || undefined}
+        onFocusCapture={() => onFieldFocus?.(field.name)}
+        className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
+      >
+        <div
+          className="bg-muted/30 px-4 py-2 text-xs text-muted-foreground"
+          style={{ fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace' }}
+        >
+          {field.name}
+        </div>
+        <div className="px-4 py-1.5 transition-colors focus-within:bg-emerald-500/10 dark:focus-within:bg-emerald-500/15">
+          <Input
+            aria-label={field.name}
+            disabled={busy}
+            type={field.type === "int" ? "number" : "text"}
+            value={
+              fieldValue === undefined || fieldValue === null
+                ? ""
+                : Array.isArray(fieldValue)
+                  ? fieldValue.join(", ")
+                  : String(fieldValue)
+            }
+            onChange={(event) =>
+              onFieldValueChange(
+                field.name,
+                field.type === "string_array"
+                  ? event.target.value
+                      .split(",")
+                      .map((item) => item.trim())
+                      .filter(Boolean)
+                  : field.type === "int"
+                    ? event.target.value
+                    : event.target.value,
+              )
+            }
+            placeholder={field.default_value || (field.is_required ? "Required" : "Optional")}
+            className="h-6 border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+            style={{ fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace' }}
+          />
+        </div>
+      </div>
+    );
+  };
+  const fields = selectedConnectionType?.fields ?? [];
+  const sensitive = (field: (typeof fields)[number]) =>
+    field.is_sensitive || field.is_sensitive_file;
+  const advanced = (field: (typeof fields)[number]) =>
+    !sensitive(field) && /^(max_|pool_|disable_)|timeout|page_size|prefetch/.test(field.name);
+  const groups = compactSections
+    ? [
+        {
+          title: "Connection values",
+          collapsible: false,
+          fields: fields.filter((field) => !sensitive(field) && !advanced(field)),
+        },
+        { title: "Credentials", collapsible: true, fields: fields.filter(sensitive) },
+        { title: "Advanced", collapsible: true, fields: fields.filter(advanced) },
+      ]
+    : [{ title: "Connection values", collapsible: false, fields }];
+  return (
+    <fieldset disabled={busy || validateBusy} className="min-w-0">
+      <FieldGroup>
+        {showEnvironmentSelector ? (
+          <Field>
+            <FieldLabel htmlFor="workspace-connection-environment">Environment</FieldLabel>
+            <Select
+              value={connectionForm.environmentName || selectedEnvironment || undefined}
+              onValueChange={onEnvironmentChange}
+              disabled={environmentDisabled}
+            >
+              <SelectTrigger id="workspace-connection-environment" className="w-full">
+                <SelectValue placeholder="Select environment" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {environments.map((environment) => (
+                    <SelectItem key={environment.name} value={environment.name}>
+                      {environment.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+        ) : null}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor="workspace-connection-name">Name</FieldLabel>
+            <Input
+              id="workspace-connection-name"
+              disabled={busy}
+              value={connectionForm.name}
+              onChange={(event) => onNameChange(event.target.value)}
+              placeholder="postgres-default"
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="workspace-connection-type">Type</FieldLabel>
+            <ConnectionSelect
+              value={connectionForm.type || undefined}
+              groups={[
+                {
+                  label: "Connection types",
+                  options: connectionTypes.map((connectionType) => ({
+                    value: connectionType.type_name,
+                    label: connectionType.type_name,
+                    connectionType: connectionType.type_name,
+                  })),
+                },
+              ]}
+              onValueChange={onTypeChange}
+              disabled={typeDisabled}
+              id="workspace-connection-type"
+              className="w-full"
+              placeholder="Select connection type"
+            />
+          </Field>
+        </div>
+
+        <Field
+          ref={focusField("access_mode")}
+          data-focused-field={focusedField === "access_mode" || undefined}
+          onFocusCapture={() => onFieldFocus?.("access_mode")}
+        >
+          <FieldLabel htmlFor="workspace-connection-access">Access</FieldLabel>
+          <Select
+            value={connectionForm.accessMode ?? "read_write"}
+            onValueChange={(value) => onAccessModeChange?.(value as "read_only" | "read_write")}
+            disabled={busy}
+          >
+            <SelectTrigger
+              id="workspace-connection-access"
+              aria-describedby="workspace-connection-access-help"
+              className="w-full"
+            >
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
-                {environments.map((environment) => (
-                  <SelectItem key={environment.name} value={environment.name}>
-                    {environment.name}
-                  </SelectItem>
-                ))}
+                <SelectItem value="read_write">Read and write</SelectItem>
+                <SelectItem value="read_only">Read-only</SelectItem>
               </SelectGroup>
             </SelectContent>
           </Select>
+          <p id="workspace-connection-access-help" className="text-xs text-muted-foreground">
+            {connectionForm.accessMode === "read_only"
+              ? "Use as a source. Load data into another connection to transform it. Existing assets that write here will be blocked."
+              : nativeReadOnly
+                ? "The native connection settings still require read-only access."
+                : "Allow Renart to read and materialize data. Database permissions still apply."}
+          </p>
         </Field>
-      ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field>
-          <FieldLabel htmlFor="workspace-connection-name">Name</FieldLabel>
-          <Input
-            id="workspace-connection-name"
-            value={connectionForm.name}
-            onChange={(event) => onNameChange(event.target.value)}
-            placeholder="postgres-default"
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="workspace-connection-type">Type</FieldLabel>
-          <ConnectionSelect
-            value={connectionForm.type || undefined}
-            groups={[
-              {
-                label: "Connection types",
-                options: connectionTypes.map((connectionType) => ({
-                  value: connectionType.type_name,
-                  label: connectionType.type_name,
-                  connectionType: connectionType.type_name,
-                })),
-              },
-            ]}
-            onValueChange={onTypeChange}
-            disabled={typeDisabled}
-            id="workspace-connection-type"
-            className="w-full"
-            placeholder="Select connection type"
-          />
-        </Field>
-      </div>
-
-      <Field
-        ref={focusField("access_mode")}
-        data-focused-field={focusedField === "access_mode" || undefined}
-        onFocusCapture={() => onFieldFocus?.("access_mode")}
-      >
-        <FieldLabel htmlFor="workspace-connection-access">Access</FieldLabel>
-        <Select
-          value={connectionForm.accessMode ?? "read_write"}
-          onValueChange={(value) => onAccessModeChange?.(value as "read_only" | "read_write")}
-          disabled={busy}
-        >
-          <SelectTrigger
-            id="workspace-connection-access"
-            aria-describedby="workspace-connection-access-help"
-            className="w-full"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="read_write">Read and write</SelectItem>
-            <SelectItem value="read_only">Read-only</SelectItem>
-          </SelectContent>
-        </Select>
-        <p id="workspace-connection-access-help" className="text-xs text-muted-foreground">
-          {connectionForm.accessMode === "read_only"
-            ? "Use as a source. Load data into another connection to transform it. Existing assets that write here will be blocked."
-            : nativeReadOnly
-              ? "The native connection settings still require read-only access."
-              : "Allow Renart to read and materialize data. Database permissions still apply."}
-        </p>
-      </Field>
-
-      <FieldSet>
-        <FieldLegend>Connection values</FieldLegend>
-        <div className="overflow-hidden rounded-lg border">
-          {selectedConnectionType?.fields.map((field) => {
-            const fieldValue = connectionForm.values[field.name];
-            if (connectionForm.type === "duckdb" && field.name === "read_only") {
-              return (
-                <details key={field.name} className="border-t px-4 py-3 first:border-t-0">
-                  <summary className="cursor-pointer text-xs text-muted-foreground">
-                    Native driver restriction{fieldValue === true ? " · active" : ""}
-                  </summary>
-                  <div ref={focusField(field.name)} className="mt-3 space-y-2">
-                    <label className="flex items-center justify-between gap-4 text-xs">
-                      Always open DuckDB read-only
-                      <Switch
-                        checked={fieldValue === true}
-                        disabled={busy}
-                        onCheckedChange={(value) => onFieldValueChange(field.name, value)}
-                      />
-                    </label>
-                    <p className="text-xs text-muted-foreground">
-                      An additional native restriction, kept for existing connections. The Access
-                      setting above enforces read-only mode even when this option is off.
-                    </p>
-                  </div>
-                </details>
-              );
-            }
-            if (field.is_sensitive || field.is_sensitive_file) {
-              const change = connectionForm.secretChanges[field.name] ?? { action: "keep" };
-              const descriptor = secretFields?.[field.name];
-              const display = secretFieldDisplay(change, descriptor);
-              const storageMode = secretStorageMode(change, descriptor);
-              const help = secretFieldHelp(
-                field.is_sensitive_file,
-                storageMode,
-                change,
-                descriptor,
-              );
-              const environmentName = secretEnvironmentName(change, descriptor);
-              const inputValue =
-                change.action === "clear"
-                  ? ""
-                  : storageMode === "env"
-                    ? environmentName
-                    : change.action === "replace"
-                      ? (change.value ?? "")
-                      : "";
-              const environmentNameInvalid =
-                storageMode === "env" &&
-                environmentName.length > 0 &&
-                !validEnvironmentName(environmentName);
-              return (
-                <div
-                  key={field.name}
-                  ref={focusField(field.name)}
-                  data-focused-field={field.name === focusedField || undefined}
-                  onFocusCapture={() => onFieldFocus?.(field.name)}
-                  className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
-                >
-                  <div className="flex min-w-0 items-center justify-between gap-2 bg-muted/30 px-4 py-2">
-                    <span
-                      className="truncate text-xs text-muted-foreground"
-                      style={{
-                        fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace',
-                      }}
-                    >
-                      {field.name}
-                    </span>
-                    <Badge variant={display.variant} size="xs">
-                      {display.label}
-                    </Badge>
-                  </div>
-                  <div className="grid gap-1 px-4 py-2 transition-colors focus-within:bg-primary/5">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <Input
-                        aria-label={field.name}
-                        aria-invalid={environmentNameInvalid || undefined}
-                        type={
-                          storageMode === "env" || field.is_sensitive_file ? "text" : "password"
-                        }
-                        autoComplete={
-                          storageMode === "local" || storageMode === "local-vault"
-                            ? "new-password"
-                            : "off"
-                        }
-                        value={inputValue}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          if (storageMode === "env") {
-                            onSecretChange(field.name, {
-                              action: "replace",
-                              binding: { ref: `env:${value}` },
-                            });
-                            return;
-                          }
-                          onSecretChange(
-                            field.name,
-                            value
-                              ? {
-                                  action: "replace",
-                                  value,
-                                  binding: field.is_sensitive_file
-                                    ? undefined
-                                    : { provider: storageMode },
-                                }
-                              : { action: "keep" },
-                          );
-                        }}
-                        placeholder={
-                          change.action === "clear"
-                            ? "Will be removed when saved"
-                            : storageMode === "env"
-                              ? "Environment variable name"
-                              : descriptor?.status === "configured"
-                                ? "Leave blank to keep current value"
-                                : field.is_sensitive_file
-                                  ? "Enter a credential file path"
-                                  : "Enter a value"
-                        }
-                        className="h-7 min-w-0 font-mono text-xs"
-                      />
-                      {descriptor?.status === "configured" ? (
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant={change.action === "clear" ? "outline" : "ghost"}
-                          onClick={() =>
-                            onSecretChange(
-                              field.name,
-                              change.action === "clear" ? { action: "keep" } : { action: "clear" },
-                            )
-                          }
-                        >
-                          {change.action === "clear" ? "Keep" : "Clear"}
-                        </Button>
-                      ) : null}
-                    </div>
-                    <div className="flex min-w-0 flex-col items-start gap-1">
-                      <ToggleGroup
-                        type="single"
-                        variant="outline"
-                        size="sm"
-                        spacing={0}
-                        className="grid w-full grid-cols-1 sm:w-auto sm:grid-cols-3"
-                        value={storageMode}
-                        aria-label={`${field.name} secret source`}
-                        onValueChange={(nextMode) => {
-                          if (!nextMode || nextMode === storageMode) {
-                            return;
-                          }
-                          onSecretChange(
-                            field.name,
-                            nextMode === "env"
-                              ? { action: "replace", binding: { ref: "env:" } }
-                              : {
-                                  action: "replace",
-                                  value: "",
-                                  binding: field.is_sensitive_file
-                                    ? undefined
-                                    : {
-                                        provider:
-                                          nextMode === "local-vault" ? "local-vault" : "local",
-                                      },
-                                },
-                          );
-                        }}
-                      >
-                        <ToggleGroupItem value="local">
-                          {field.is_sensitive_file ? "File path" : "Credential store"}
-                        </ToggleGroupItem>
-                        {!field.is_sensitive_file ? (
-                          <ToggleGroupItem
-                            value="local-vault"
-                            disabled={localVaultState !== "unlocked"}
-                          >
-                            Encrypted vault
-                          </ToggleGroupItem>
-                        ) : null}
-                        <ToggleGroupItem value="env">Environment</ToggleGroupItem>
-                      </ToggleGroup>
-                      <p className="min-w-0 text-[0.6875rem] leading-relaxed text-muted-foreground">
-                        {help}
-                      </p>
-                    </div>
-                    {environmentNameInvalid ? (
-                      <p className="text-[0.6875rem] leading-relaxed text-destructive">
-                        Use a valid environment variable name, such as WAREHOUSE_PASSWORD.
-                      </p>
-                    ) : null}
-                    {descriptor?.message && descriptor.message !== help ? (
-                      <p className="text-[0.6875rem] leading-relaxed text-muted-foreground">
-                        {descriptor.message}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            }
-            if (field.type === "bool") {
-              return (
-                <div
-                  key={field.name}
-                  ref={focusField(field.name)}
-                  data-focused-field={field.name === focusedField || undefined}
-                  onFocusCapture={() => onFieldFocus?.(field.name)}
-                  className="flex items-center justify-between gap-4 border-t px-4 py-3 first:border-t-0"
-                >
-                  <div>
-                    <div className="font-medium">{field.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {field.is_required ? "Required" : "Optional"}
-                    </div>
-                  </div>
-                  <Switch
-                    checked={Boolean(fieldValue)}
-                    onCheckedChange={(checked) => onFieldValueChange(field.name, checked)}
-                  />
-                </div>
-              );
-            }
-
-            if (field.type === "string_array") {
-              const values = Array.isArray(fieldValue) ? fieldValue : [];
-              return (
-                <div
-                  key={field.name}
-                  ref={focusField(field.name)}
-                  data-focused-field={field.name === focusedField || undefined}
-                  onFocusCapture={() => onFieldFocus?.(field.name)}
-                  className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
-                >
-                  <div
-                    className="bg-muted/30 px-4 py-2 text-xs text-muted-foreground"
-                    style={{ fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace' }}
-                  >
-                    {field.name}
-                  </div>
-                  <div className="px-4 py-1.5 transition-colors focus-within:bg-emerald-500/10 dark:focus-within:bg-emerald-500/15">
-                    <StringArrayCombobox
-                      value={values}
-                      suggestions={field.default_value?.split(",") ?? []}
-                      placeholder="Add values..."
-                      onChange={(nextValues) => onFieldValueChange(field.name, nextValues)}
-                    />
-                  </div>
-                </div>
-              );
-            }
-
-            return (
-              <div
-                key={field.name}
-                ref={focusField(field.name)}
-                data-focused-field={field.name === focusedField || undefined}
-                onFocusCapture={() => onFieldFocus?.(field.name)}
-                className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
-              >
-                <div
-                  className="bg-muted/30 px-4 py-2 text-xs text-muted-foreground"
-                  style={{ fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace' }}
-                >
-                  {field.name}
-                </div>
-                <div className="px-4 py-1.5 transition-colors focus-within:bg-emerald-500/10 dark:focus-within:bg-emerald-500/15">
-                  <Input
-                    aria-label={field.name}
-                    type={field.type === "int" ? "number" : "text"}
-                    value={
-                      fieldValue === undefined || fieldValue === null
-                        ? ""
-                        : Array.isArray(fieldValue)
-                          ? fieldValue.join(", ")
-                          : String(fieldValue)
-                    }
-                    onChange={(event) =>
-                      onFieldValueChange(
-                        field.name,
-                        field.type === "string_array"
-                          ? event.target.value
-                              .split(",")
-                              .map((item) => item.trim())
-                              .filter(Boolean)
-                          : field.type === "int"
-                            ? event.target.value
-                            : event.target.value,
-                      )
-                    }
-                    placeholder={
-                      field.default_value || (field.is_required ? "Required" : "Optional")
-                    }
-                    className="h-6 border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
-                    style={{ fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace' }}
-                  />
-                </div>
+        {groups
+          .filter((group) => group.fields.length)
+          .map((group) => (
+            <ConnectionFieldSection
+              key={connectionForm.type + group.title}
+              title={group.title}
+              collapsible={group.collapsible}
+              initiallyOpen={mode === "create" && group.title === "Credentials"}
+              focusedField={
+                group.fields.some((field) => field.name === focusedField) ? focusedField : undefined
+              }
+            >
+              <div className="overflow-hidden rounded-lg border">
+                {group.fields.map(renderField)}
               </div>
-            );
-          })}
-        </div>
-      </FieldSet>
+            </ConnectionFieldSection>
+          ))}
 
-      {validateMessage ? (
-        <Alert variant={validateTone === "error" ? "destructive" : "default"}>
-          <AlertTitle>
-            {validateTone === "error"
-              ? "Connection validation failed"
-              : "Connection validation succeeded"}
-          </AlertTitle>
-          <AlertDescription className="whitespace-pre-wrap">{validateMessage}</AlertDescription>
-        </Alert>
-      ) : null}
+        {validateMessage ? (
+          <Alert variant={validateTone === "error" ? "destructive" : "default"}>
+            <AlertTitle>
+              {validateTone === "error"
+                ? "Connection validation failed"
+                : "Connection validation succeeded"}
+            </AlertTitle>
+            <AlertDescription className="whitespace-pre-wrap">{validateMessage}</AlertDescription>
+          </Alert>
+        ) : null}
 
-      {showActions ? (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full sm:w-auto"
-            onClick={onValidate}
-            disabled={busy || validateBusy || !canValidate}
-          >
-            {validateBusy ? (
-              <LoaderCircle className="mr-1 inline size-3 animate-spin" />
-            ) : (
-              <CheckCircle2 className="mr-1 inline size-3" />
-            )}
-            Verify Connection
-          </Button>
-          <Button
-            className="w-full sm:w-auto"
-            type="button"
-            onClick={onSave}
-            disabled={busy || !canValidate}
-          >
-            {mode === "create" ? "Create Connection" : "Save Changes"}
-          </Button>
-        </div>
-      ) : null}
-    </FieldGroup>
+        {showActions ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={onValidate}
+              disabled={busy || validateBusy || !canValidate}
+            >
+              {validateBusy ? (
+                <LoaderCircle className="mr-1 inline size-3 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-1 inline size-3" />
+              )}
+              Verify Connection
+            </Button>
+            <Button
+              className="w-full sm:w-auto"
+              type="button"
+              onClick={onSave}
+              disabled={busy || !canValidate}
+            >
+              {mode === "create" ? "Create Connection" : "Save Changes"}
+            </Button>
+          </div>
+        ) : null}
+      </FieldGroup>
+    </fieldset>
   );
 }
 
@@ -783,4 +803,41 @@ function secretEnvironmentName(
 
 function validEnvironmentName(value: string) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}
+
+function ConnectionFieldSection({
+  title,
+  collapsible,
+  initiallyOpen,
+  focusedField,
+  children,
+}: {
+  title: string;
+  collapsible: boolean;
+  initiallyOpen: boolean;
+  focusedField?: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(initiallyOpen || Boolean(focusedField));
+  useEffect(() => {
+    if (focusedField) setOpen(true);
+  }, [focusedField]);
+  if (!collapsible)
+    return (
+      <FieldSet>
+        <FieldLegend>{title}</FieldLegend>
+        {children}
+      </FieldSet>
+    );
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="sm" className="w-full justify-start">
+          <ChevronRight data-icon="inline-start" className={open ? "rotate-90" : undefined} />
+          {title}
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-3">{children}</CollapsibleContent>
+    </Collapsible>
+  );
 }

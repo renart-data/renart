@@ -77,7 +77,11 @@ export function AppShell() {
     select: (matches) => navigationForAppRouteMatches(matches),
   });
   const routeNavigation = useMemo(() => {
-    if (!matchedRouteNavigation || matchedRouteNavigation.mode !== "build") {
+    if (
+      !matchedRouteNavigation ||
+      matchedRouteNavigation.mode !== "build" ||
+      matchedRouteNavigation.tool !== "resources"
+    ) {
       return matchedRouteNavigation;
     }
     const search = location.search as { editor?: unknown };
@@ -147,7 +151,7 @@ function AppHeader({
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center border-b border-zinc-800 bg-zinc-950 px-2 text-zinc-100 sm:px-3">
-      <Link to="/" className="flex items-center gap-2 pr-2 sm:pr-3">
+      <Link to="/" aria-label="renart" className="flex items-center gap-2 pr-2 sm:pr-3">
         <img src="/icons/icon.svg" alt="" aria-hidden className="size-7 rounded-lg" />
         <span className="hidden font-semibold tracking-tight sm:inline">renart</span>
       </Link>

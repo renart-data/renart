@@ -302,7 +302,7 @@ select customer_id from analytics.customers
     await expect(page).toHaveURL(
       /\/project\/connections\?environment=default&connection=duckdb-default$/,
     );
-    await expect(page.getByRole("dialog", { name: "duckdb-default" })).toBeVisible({
+    await expect(page.getByRole("region", { name: "duckdb-default" })).toBeVisible({
       timeout: 15000,
     });
   });

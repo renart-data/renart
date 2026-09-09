@@ -40,6 +40,7 @@ test("connection settings retain credential source when a provider is locked or 
     await page.goto(
       `${liveApp.baseURL}/project/connections?environment=default&connection=storage`,
     );
+    await page.getByRole("button", { name: "Credentials", exact: true }).click();
     const source = page.getByRole("radiogroup", {
       name: "secret_access_key secret source",
       exact: true,

@@ -37,6 +37,7 @@ export function resourceDestination(
     }
     case "connection":
       pathname = "/project/connections";
+      search.action = undefined;
       search.environment = detail.environment;
       search.connection = target.connection;
       break;

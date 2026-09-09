@@ -111,18 +111,25 @@ test.describe("Read-only connections", () => {
       }),
     );
     await page.goto(url.href);
-    const dialog = page.getByRole("dialog", { name: "duckdb-default", exact: true });
+    const dialog = page.getByRole("region", { name: "duckdb-default", exact: true });
     const access = dialog.getByRole("combobox", { name: "Access", exact: true });
     await expect(access).toBeFocused();
     await access.click();
     await page.getByRole("option", { name: "Read-only", exact: true }).click();
+    const saved = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/config/connections") && response.request().method() === "PUT",
+    );
     await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
-    await expect(dialog).toBeHidden();
+    expect((await saved).ok()).toBe(true);
+    await expect(dialog.getByRole("combobox", { name: "Access", exact: true })).toContainText(
+      "Read-only",
+    );
     const policy = await readFile(join(liveApp.workspaceDir, ".renart/environments.yml"), "utf8");
     expect(policy).toContain("access_mode: read_only");
     const cold = await context.newPage();
     await cold.goto(url.href);
-    const coldDialog = cold.getByRole("dialog", { name: "duckdb-default", exact: true });
+    const coldDialog = cold.getByRole("region", { name: "duckdb-default", exact: true });
     await expect(coldDialog.getByRole("combobox", { name: "Access", exact: true })).toBeFocused();
     await expect(coldDialog.getByRole("combobox", { name: "Access", exact: true })).toContainText(
       "Read-only",

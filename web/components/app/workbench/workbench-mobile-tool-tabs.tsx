@@ -1,10 +1,10 @@
-import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef } from "react";
 
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { appWorkbenchTools, type AppWorkbenchTool } from "../app-navigation-model";
 import { useWorkbench } from "./workbench-slots";
+import { useToolNavigation } from "./use-tool-navigation";
 
 export function AppWorkbenchMobileToolTabs() {
   const {
@@ -17,7 +17,7 @@ export function AppWorkbenchMobileToolTabs() {
     mobileNavigationOpen,
     setMobileNavigationOpen,
   } = useWorkbench();
-  const navigate = useNavigate();
+  const navigateTool = useToolNavigation();
   const activeToolRef = useRef<HTMLButtonElement | null>(null);
   const tools = useMemo(
     () =>
@@ -45,14 +45,17 @@ export function AppWorkbenchMobileToolTabs() {
       return;
     }
 
-    setMobileNavigationOpen(false);
-    dispatch({ type: "tool-selected", mode: tool.mode, tool: tool.id });
     if (hasToolAction(tool.id)) {
+      setMobileNavigationOpen(false);
+      dispatch({ type: "tool-selected", mode: tool.mode, tool: tool.id });
       invokeToolAction(tool.id);
       return;
     }
     if (tool.to) {
-      void navigate({ to: tool.to as never }).then(() => {
+      void navigateTool(tool.to).then((committed) => {
+        if (!committed) return;
+        dispatch({ type: "tool-selected", mode: tool.mode, tool: tool.id });
+        setMobileNavigationOpen(false);
         if (tool.contextual) {
           window.setTimeout(() => setMobileNavigationOpen(true), 0);
         }

@@ -62,8 +62,8 @@ test("sets up the encrypted vault and offers it for connection credentials", asy
   await vaultOverlay.getByRole("button", { name: "Unlock vault" }).click();
   await expect(unlockedButton).toBeVisible();
 
-  await page.getByRole("button", { name: "Add", exact: true }).click();
-  const connectionSheet = page.getByRole("dialog", { name: "New connection" });
+  await page.getByRole("button", { name: "New connection", exact: true }).click();
+  const connectionSheet = page.getByRole("region", { name: "New connection" });
   await expect(
     connectionSheet.getByRole("radio", { name: "Encrypted vault" }).first(),
   ).toBeEnabled();
@@ -72,15 +72,18 @@ test("sets up the encrypted vault and offers it for connection credentials", asy
 test("keeps long connection forms scrollable and puts tuning fields last", async ({
   page,
   liveApp,
-}, testInfo) => {
+}) => {
   await page.goto(`${liveApp.baseURL}/project/connections`);
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "New connection", exact: true }).click();
 
-  const sheet = page.getByRole("dialog", { name: "New connection" });
+  const sheet = page.getByRole("region", { name: "New connection" });
   await expect(sheet).toBeVisible();
   await expect(sheet.getByText("query_results_path", { exact: true })).toBeVisible();
 
-  const formViewport = sheet.locator('[data-slot="scroll-area-viewport"]');
+  await sheet.getByRole("button", { name: "Advanced", exact: true }).click();
+  const formViewport = page
+    .getByTestId("project-settings-scroll")
+    .locator(':scope > [data-slot="scroll-area-viewport"]');
   const formText = await formViewport.innerText();
   expect(formText.indexOf("query_results_path")).toBeGreaterThanOrEqual(0);
   expect(formText.indexOf("access_key_id")).toBeGreaterThan(formText.indexOf("query_results_path"));
@@ -107,25 +110,17 @@ test("keeps long connection forms scrollable and puts tuning fields last", async
     ),
   ).toBe(true);
 
-  if (testInfo.project.name === "mobile-chrome-live") {
-    // Visibility is true during the slide-in animation; measure its settled
-    // geometry without weakening the one-pixel viewport-fit requirement.
-    await expect
-      .poll(async () => {
-        const box = await sheet.boundingBox();
-        return box
-          ? Math.max(Math.abs(box.x), Math.abs(box.width - page.viewportSize()!.width))
-          : Infinity;
-      })
-      .toBeLessThanOrEqual(1);
-  }
+  const box = await sheet.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 });
 
 test("creates an environment with an explained schema prefix", async ({ page, liveApp }) => {
   await page.goto(`${liveApp.baseURL}/project/environments`);
   await page.getByRole("button", { name: "New environment" }).click();
 
-  const sheet = page.getByRole("dialog", { name: "New environment" });
+  const sheet = page.getByRole("region", { name: "New environment" });
   await expect(sheet).toContainText(
     "dev_ turns analytics.orders into dev_analytics.orders while the asset name stays unchanged.",
   );
@@ -134,11 +129,9 @@ test("creates an environment with an explained schema prefix", async ({ page, li
   await sheet.getByRole("button", { name: "Create environment" }).click();
 
   await expect(sheet).toBeHidden();
-  const environment = page.getByRole("button").filter({
-    has: page.getByText("Schema prefix: dev_", { exact: true }),
-  });
-  await expect(environment.getByText("dev", { exact: true })).toBeVisible();
+  const environment = page.getByRole("region", { name: "dev", exact: true });
   await expect(environment).toBeVisible();
+  await expect(environment.getByLabel("Schema prefix", { exact: true })).toHaveValue("dev_");
 
   const response = await page.request.get(`${liveApp.baseURL}/api/config`);
   expect(response.ok()).toBe(true);

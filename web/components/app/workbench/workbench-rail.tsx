@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 
 import { appWorkbenchTools, type AppWorkbenchTool } from "../app-navigation-model";
 import { useWorkbench } from "./workbench-slots";
+import { useToolNavigation } from "./use-tool-navigation";
 
 export function AppWorkbenchRail() {
   const { navigation, session, hasToolAction } = useWorkbench();
@@ -41,6 +42,7 @@ export function AppWorkbenchRail() {
 }
 
 function WorkbenchRailTool({ tool }: { tool: AppWorkbenchTool }) {
+  const navigateTool = useToolNavigation();
   const { navigation, session, dispatch, hasToolAction, invokeToolAction } = useWorkbench();
   if (!navigation) return null;
   const modeState = session.modes[tool.mode];
@@ -99,12 +101,24 @@ function WorkbenchRailTool({ tool }: { tool: AppWorkbenchTool }) {
               aria-label={tool.label}
               aria-current={active ? "page" : undefined}
               onClick={(event) => {
+                if (
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                event.preventDefault();
                 if (active) {
-                  event.preventDefault();
                   activate();
                   return;
                 }
-                dispatch({ type: "tool-selected", mode: tool.mode, tool: tool.id });
+                if (tool.to)
+                  void navigateTool(tool.to).then((committed) => {
+                    if (committed)
+                      dispatch({ type: "tool-selected", mode: tool.mode, tool: tool.id });
+                  });
               }}
             >
               {content}

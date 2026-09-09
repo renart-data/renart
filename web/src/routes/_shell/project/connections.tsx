@@ -1,23 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { AppProjectConnectionsPage } from "@/components/app/settings-pages";
-
-type ProjectConnectionsSearch = {
-  environment?: string;
-  connection?: string;
-};
-
-function normalizeProjectConnectionsSearch(
-  search: Record<string, unknown>,
-): ProjectConnectionsSearch {
-  return {
-    environment: typeof search.environment === "string" ? search.environment : undefined,
-    connection: typeof search.connection === "string" ? search.connection : undefined,
-  };
-}
+import { normalizeSettingsSearch } from "@/lib/settings-navigation";
 
 export const Route = createFileRoute("/_shell/project/connections")({
-  validateSearch: normalizeProjectConnectionsSearch,
+  validateSearch: (search) => normalizeSettingsSearch(search, "connections"),
   component: AppProjectConnectionsRoute,
 });
 
@@ -27,6 +14,7 @@ function AppProjectConnectionsRoute() {
     <AppProjectConnectionsPage
       selectedEnvironment={search.environment}
       selectedConnection={search.connection}
+      action={search.action}
     />
   );
 }
