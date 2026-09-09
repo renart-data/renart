@@ -73,3 +73,19 @@ baseline to 76 ms in a focused no-binary skip check (summed attempt durations,
 not a controlled full-suite wall-clock comparison). Further sharding, fixture
 sharing, or warehouse matrix reduction requires new measurements and an
 isolation review.
+
+## Retained release evidence
+
+The former v0.5.1 preparation and release-note plans were historical scratchpads,
+not current release gates. Their original contents remain in Git history,
+including the v0.5.1 tree. The completed local gate at
+`.test-artifacts/release-20260906-184404-tuSN2z/manifest.txt` records its exact
+dirty candidate and completion on 6 September; the separate
+`.test-artifacts/2026-09-06-release-prep/e2e-authoring-complete.log` records eight
+passing authoring cases. The artifacts remain local and ignored, not bundled
+into Git or copied into a permanent plans archive.
+
+Those results do not establish that the historical full live suite, a later
+candidate, a remote CI run, or packaged release artifacts passed. Use a fresh
+manifest for the exact candidate being released. Video artifacts and unrelated
+marketing proposals are not part of these validation records.

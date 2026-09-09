@@ -93,6 +93,28 @@ For hierarchical URLs that should not visually nest parent pages, use pathful
 layout routes (`route.tsx` renders `<Outlet />`) with leaf `index.tsx` files —
 not underscore-flattened route hacks.
 
+### Workbench design decisions
+
+Build, Run, and Explore describe the product workflow; connection management,
+data discovery, and settings stay close to the work that needs them rather than
+becoming additional global modes. The rail selects a contextual hierarchy,
+the center owns the active document/canvas, and the inspector edits the actual
+selected resource. Independent regions change only when navigation requires it.
+Ad-hoc Query and notebooks are peer documents, not hidden duplicate overlays.
+
+The chosen workbench design replaced the experimental Lifecycle and Project
+Studio variants. Their isolated `/navigation-lab` routes, mock data, and UI are
+retired; Git history preserves the study. There is one production workbench,
+not a permanent migration allowlist or selectable alternate shell. The
+intentional `/redesign/*` bookmark redirects remain. The separate semantic
+impact playground is retained.
+
+Keep the interface lean: one primary review/action flow, contextual controls,
+and progressive disclosure of diagnostics. Data Browser observations are not
+authored pipeline assets until a reviewed import is confirmed. New expansions
+are tracked in [Data Browser follow-ups](../plans/data-browser.md), not in a
+second shell migration plan.
+
 ### Addressable UI places
 
 The existing page routes own their UI. web/lib/ui-navigation.ts maps structured
@@ -768,9 +790,9 @@ Project connection routes accept an environment/connection search target so
 pipeline default-connection links can open the exact editable connection sheet.
 
 All feature UI lives under `components/app/`; shared primitives under
-`components/ui/`. Prefer the shared shadcn card primitives
-([components/ui/card.tsx](../web/components/ui/card.tsx)) for panelized UI rather
-than hand-rolled `div` shells.
+`components/ui/`. Reuse the existing
+[DelimitedCard](../web/components/ui/delimited-card.tsx) for panelized workbench
+surfaces rather than inventing another card shell.
 
 ## 4. Key hooks
 

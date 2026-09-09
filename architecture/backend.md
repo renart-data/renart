@@ -1395,6 +1395,18 @@ queries run against the notebook's already-open live session and the resulting
 Parquet file is loaded directly into that session, without input or output
 DuckDB staging databases.
 
+The SDK identity is `renart`, without a `bruin` import shim: brokered queries and
+legacy credential injection have different trust contracts. A Python pipeline
+asset may currently query any named connection in its selected environment;
+the optional read-scope policy is still a
+[proposal](../plans/python-cross-connection-policy.md), distinct from connection
+read-only/write protection. Explicit legacy Bruin `secrets:` injection remains
+compatible and is not the credential-blind SDK path. The SDK itself neither
+changes that opt-in nor makes Ingestr a Python-upload dependency. The
+`--refresh-upstreams` CLI path uses the ordinary stale-upstream plan before
+running the requested asset, as documented in staleness. Alternate broker
+transports remain [measurement-gated](../plans/performance-evidence.md).
+
 Workspace asset DTOs carry a backend-owned materialization capability profile
 derived from the concrete asset type and destination. It is the contract used by
 both metadata editors: warehouse-specific exclusions and field requirements are

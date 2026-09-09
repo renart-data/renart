@@ -1,9 +1,12 @@
 # Semantic deployment impact
 
-Status: first end-to-end, warning-only vertical slice implemented on
-`codex/semantic-impact`.
+Status: active follow-ups. Warning-only semantic deployment review, inferred
+output-contract changes, formatting-only classification, new-column categories,
+and source-backed desktop/mobile annotations are implemented. Current behavior
+lives in [staleness](../architecture/staleness.md) and
+[frontend](../architecture/frontend.md); this is not a branch-local prototype.
 
-## Shipped in the prototype
+## Implemented baseline
 
 - Deployment review compares the saved working tree with the exact latest
   deployed snapshot; first deployments return an explicit no-baseline state.
@@ -33,14 +36,15 @@ Status: first end-to-end, warning-only vertical slice implemented on
   loader, not every possible environment/variable/time-window expansion.
 - Query behavior is currently one canonical unit. Golyglot's new component
   facts (filter, grouping, relations, ordering, limit, directives, and so on)
-  can replace this coarse bucket after that API is released and Renart upgrades
-  its pinned dependency.
+  need a fresh check against Renart's pinned dependency before replacing this
+  coarse bucket. API availability alone does not mean Renart consumes the facts.
 - This is impact analysis, not a proof of relational equivalence.
 
 ## Next slices
 
-1. Release and consume Golyglot's component-level behavior facts so the review
-   explains which query dimension changed.
+1. Verify the released Golyglot component-facts API and integrate it so the
+   review explains which query dimension changed without noisy whole-query
+   annotations.
 2. Rebuild exact cross-pipeline baseline/candidate worlds from the reviewed
    dependency manifests and producer deployment pins.
 3. Add severity policy for contract compatibility (for example widening vs

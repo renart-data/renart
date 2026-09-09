@@ -1,10 +1,15 @@
 # Enabling dbt assets in renart — evaluation
 
-Status: evaluation (in-depth, no implementation). Question: can renart open an
+Status: parked evaluation, no implementation. The research below is historical;
+refresh dbt artifact/adapter assumptions before selecting this work. Renart now
+uses native pure-Go Golyglot, not the former WASM SQL engine. References below
+to that former runtime describe the original investigation, not current code.
+
+Question: can renart open an
 **existing dbt project** and light up the features it already has for bruin
 assets — canvas/lineage, column inference, IntelliSense, type checking, runs,
 staleness — on dbt models? Short answer: **yes, with a hybrid architecture
-that uses the dbt CLI as the compilation oracle and renart's existing wasm SQL
+that uses the dbt CLI as the compilation oracle and Renart's native Golyglot SQL
 engine for everything keystroke-latency.** The hard parts are Jinja fidelity
 and diagnostic span mapping, not the graph or the UI.
 
