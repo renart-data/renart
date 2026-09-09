@@ -33,6 +33,9 @@ reach the real owner without resetting unrelated workbench state.
 
 ## 2. Notebook handoff and restoration
 
+The shared Data Browser is available beside an open notebook. That navigation
+does not itself import a notebook source; the reviewed handoff below remains open.
+
 Add a notebook-source handoff through the existing source approval/import
 workflow. Carry a server-issued object identity and selected environment, not
 a client-built SQL string or credentials. Opening the flow is not approval to
@@ -47,6 +50,10 @@ contract; read-only connections remain valid sources, not destinations; a stale
 object identity is re-resolved or rejected rather than silently redirected.
 
 ## 3. Pagination and truthful cached states
+
+Row-preview loading is a separate contract in
+[shared preview row loading](preview-row-loading.md); this section concerns
+namespace/object listings, not query results.
 
 The current children contract returns a cap and truncation flag, not a cursor.
 S3 prefix refinement avoids enumerating ancestors and refetches only when a
