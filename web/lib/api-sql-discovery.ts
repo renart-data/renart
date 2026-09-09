@@ -62,14 +62,17 @@ export async function getSQLTableColumns(options: {
   );
 }
 
-export async function runSQLQuery(options: {
-  connection: string;
-  environment?: string;
-  query: string;
-  limit?: number;
-  signal?: AbortSignal;
-}) {
-  return fetchJSON<SqlQueryResponse>("/api/sql/query", {
+export async function runSQLQuery(
+  options: {
+    connection: string;
+    environment?: string;
+    query: string;
+    limit?: number;
+    signal?: AbortSignal;
+  },
+  previewOnly = false,
+) {
+  return fetchJSON<SqlQueryResponse>(previewOnly ? "/api/sql/preview" : "/api/sql/query", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -83,6 +86,11 @@ export async function runSQLQuery(options: {
       limit: options.limit,
     }),
   });
+}
+
+// Deliberately separate from Run at call sites; the server revalidates SELECT.
+export function loadSQLPreview(options: Parameters<typeof runSQLQuery>[0]) {
+  return runSQLQuery(options, true);
 }
 
 export async function getSQLParseContext(options: {

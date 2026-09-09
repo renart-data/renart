@@ -1,4 +1,23 @@
 import { fetchJSON, fetchJSONWithBody } from "@/lib/api-core";
+import type { NotebookCellPreviewResult, NotebookPreviewRequest } from "@/lib/generated/api-types";
+
+export function loadNotebookPreview(
+  notebookId: string,
+  cellId: string,
+  request: NotebookPreviewRequest,
+  signal?: AbortSignal,
+) {
+  return fetchJSON<NotebookCellPreviewResult>(
+    `/api/notebooks/${notebookId}/cells/${cellId}/preview`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      signal,
+      body: JSON.stringify(request),
+    },
+  );
+}
 import type {
   ImportRecord,
   NotebookCellRunResult as GeneratedNotebookCellRunResult,

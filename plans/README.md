@@ -13,7 +13,7 @@ decisions and dependencies in each plan; there is no global questions scratchpad
 
 | Plan | Remaining boundary / prerequisite |
 | --- | --- |
-| [Shared preview row loading](preview-row-loading.md) | Inspect/Data Browser replacement loading implemented; notebook generation-safe reads and query/presentation adapters remain |
+| [Shared preview row loading](preview-row-loading.md) | Inspect, Data Browser, notebook and query previews implemented; authored table presentation adapters remain |
 | [Connection/environment navigation](connection-environment-navigation.md) | Contextual sidebar hierarchy and existing owner forms, without changing execution context; plan only |
 | [Workspace command handoff](workspace-command-handoff.md) | Stateful CLI delegation, short-lived authority, safe launcher handoff; highest-priority correctness boundary |
 | [Local secret lifecycle](secret-management.md) | Sensitive-file leases, migration/crash evidence, remaining subprocess boundaries; local vault already exists |

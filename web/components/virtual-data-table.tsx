@@ -768,13 +768,17 @@ export function VirtualDataTable({
           <span role="status" className="text-xs text-muted-foreground">
             {previewStatus(preview)}
           </span>
-          {preview.continuation === "replace" && onLoadMore ? (
+          {["replace", "snapshot"].includes(preview.continuation) && onLoadMore ? (
             <Button
               type="button"
               variant="ghost"
               size="sm"
               disabled={loading || !canLoadMore}
-              title="Refreshes a larger sample. Rows may change if the source changes."
+              title={
+                preview.continuation === "snapshot"
+                  ? "Shows more saved rows. Does not run the cell again."
+                  : "Refreshes a larger sample. Rows may change if the source changes."
+              }
               onClick={triggerLoadMore}
             >
               {loading ? "Loading more rows…" : "Load more rows"}

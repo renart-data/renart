@@ -104,9 +104,22 @@ budget; the executed SQL remains in operation metadata. This bounds rows returne
 to the UI, not peak driver allocation or query execution cost.
 
 Every continuation repeats the existing read-only Inspect guard or Data Browser
-reference/path/connection checks. S3/SFTP remain metadata-only. Notebook result
-continuation, ad-hoc queries and authored presentation datasets are separate
-adapters, not implicit consumers of this replacement policy; remaining work is
+reference/path/connection checks. S3/SFTP remain metadata-only.
+
+Ad-hoc SQL uses the same replacement budget. Explicit `/api/sql/query` runs
+positively validated SELECTs with a preview bound; other explicitly submitted
+statements retain their execution semantics but advertise no continuation.
+`POST /api/sql/preview` independently requires exactly one read-only SELECT on
+every request and has a 30-second timeout. The source-span wrapper excludes the
+terminating semicolon/comments and preserves authored LIMIT/FETCH semantics.
+SQL Server-family queries use native TOP for unbounded SELECTs (including CTEs,
+ORDER BY and unnamed projections); authored T-SQL bounds/set queries currently
+have no continuation, rather than rewriting their meaning or failing explicit
+Run through an invalid derived-table wrapper. Result bodies are `no-store`.
+
+Notebook continuation reads immutable bounded bytes from the existing session
+database, not a re-evaluated view; see [notebooks](notebooks.md#10-server-owned-recompute-and-frontend-state).
+Authored presentation datasets keep their existing limits; remaining work is
 tracked in [preview row loading](../plans/preview-row-loading.md).
 
 Durable `dataaddress.Address` values sit alongside those operation references.

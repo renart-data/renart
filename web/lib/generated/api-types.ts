@@ -667,6 +667,13 @@ export type MaterializationCapability = {
   supports_cluster_by?: boolean;
 };
 
+export type NotebookCellPreviewResult = {
+  columns: string[];
+  column_types?: string[];
+  rows: unknown[][];
+  preview: PreviewMetadata;
+};
+
 export type NotebookCellRunResult = {
   cell_id: string;
   name: string;
@@ -675,6 +682,7 @@ export type NotebookCellRunResult = {
   error?: string;
   columns: string[];
   rows: unknown[][];
+  preview?: PreviewMetadata;
   total_rows: number;
   materialized: string;
   imports?: ImportRecord[];
@@ -754,6 +762,12 @@ export type NotebookParameterOptions = {
   dataset?: string;
   value_field?: string;
   label_field?: string;
+};
+
+export type NotebookPreviewRequest = {
+  result_id: string;
+  environment: string;
+  limit: number;
 };
 
 export type NotebookRuntimeEvent = {
@@ -1674,6 +1688,7 @@ export type SqlQueryResponse = {
   columns: string[];
   rows: Record<string, unknown>[];
   truncated?: boolean;
+  preview?: PreviewMetadata;
   error?: string;
 };
 

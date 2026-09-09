@@ -131,6 +131,9 @@ import {
   upgradeNotebookManifest,
 } from "@/lib/api-notebooks";
 import type { NotebookBlockPosition } from "@/lib/api-notebooks";
+import { loadNotebookPreview } from "@/lib/api-notebooks";
+import { useResultPreview } from "@/hooks/use-result-preview";
+import { workspaceConnectionSequenceAtom } from "@/lib/atoms/domains/workspace";
 import { notebookAgentEventsAtom, notebookRuntimeEventsAtom } from "@/lib/atoms/domains/results";
 import {
   selectedEnvironmentAtom,
@@ -3218,14 +3221,35 @@ function NotebookCellNameBadge({
 }
 
 function NotebookResultPreview({
+  notebookId,
   cellName,
-  result,
+  result: baseResult,
   selected,
 }: {
+  notebookId: string;
   cellName: string;
   result: NotebookCellRunResult;
   selected: boolean;
 }) {
+  const environment = useAtomValue(selectedEnvironmentAtom) ?? "";
+  const workspaceSequence = useAtomValue(workspaceConnectionSequenceAtom);
+  const previewKey = JSON.stringify([
+    workspaceSequence,
+    notebookId,
+    baseResult.cell_id,
+    baseResult.preview?.result_id,
+    environment,
+  ]);
+  const continuation = useResultPreview(previewKey, baseResult, async (limit, signal) => ({
+    ...baseResult,
+    ...(await loadNotebookPreview(
+      notebookId,
+      baseResult.cell_id,
+      { result_id: baseResult.preview!.result_id, environment, limit },
+      signal,
+    )),
+  }));
+  const result = continuation.result ?? baseResult;
   const [open, setOpen] = useState(true);
   const [renderMeasurement, setRenderMeasurement] = useState<VirtualTableRenderMeasurement>();
   const rows = useMemo(
@@ -3264,10 +3288,19 @@ function NotebookResultPreview({
           height={288}
           onRenderMeasured={setRenderMeasurement}
           rows={rows}
+          preview={continuation.preview}
+          loading={continuation.loading}
+          canLoadMore={continuation.canLoadMore}
+          onLoadMore={() => void continuation.loadMore()}
           scrollKey={`notebook:${result.cell_id}:preview`}
           viewportClassName="max-h-72"
         />
       </CollapsibleContent>
+      {continuation.error ? (
+        <div role="alert" className="border-t px-3 py-2 text-xs text-destructive">
+          {continuation.error}
+        </div>
+      ) : null}
       <div
         className={cn(
           "flex min-h-8 items-center gap-2 bg-muted/30 px-2 text-[11px] text-muted-foreground",
@@ -3289,7 +3322,7 @@ function NotebookResultPreview({
             Result
           </Button>
         </CollapsibleTrigger>
-        <span>{rowSummary}</span>
+        {!open || !result.preview ? <span>{rowSummary}</span> : null}
         <NotebookSelectedControls
           selected={selected}
           className="ml-auto shrink-0"
@@ -3543,7 +3576,12 @@ function NotebookSourceCard({
           </div>
         ) : null}
         {result?.status === "ok" && result.columns.length > 0 ? (
-          <NotebookResultPreview cellName={cell.name} result={result} selected={selected} />
+          <NotebookResultPreview
+            notebookId={notebookId}
+            cellName={cell.name}
+            result={result}
+            selected={selected}
+          />
         ) : null}
       </DelimitedCardContent>
     </AppPanel>
@@ -4030,7 +4068,12 @@ function NotebookCellCard({
               <NotebookVizRenderer result={result} />
             </div>
           ) : (
-            <NotebookResultPreview cellName={cell.name} result={result} selected={selected} />
+            <NotebookResultPreview
+              notebookId={notebookId}
+              cellName={cell.name}
+              result={result}
+              selected={selected}
+            />
           )
         ) : null}
         <NotebookCellNameBadge

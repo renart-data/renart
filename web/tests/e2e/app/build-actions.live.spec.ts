@@ -1464,8 +1464,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(disclosure).toContainText("adhoc_ok");
     await expect(disclosure).not.toContainText("{{");
 
-    // Truncation is represented compactly in the rendered-query strip instead
-    // of obscuring the result table with a modal-style warning overlay.
+    // The shared footer owns preview bounds; the disclosure retains authored SQL.
     await editor.click();
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.insertText("select range as value from range(0, 501)");
@@ -1480,8 +1479,9 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     };
     expect(truncatedPayload.truncated).toBe(true);
     expect(truncatedPayload.rows).toHaveLength(500);
-    await expect(disclosure.getByLabel("Result limited to the first 500 rows")).toBeVisible();
-    await expect(disclosure).toContainText("LIMIT 500");
+    await expect(page.getByRole("status").filter({ hasText: "Showing 500 rows" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Load more rows", exact: true })).toBeVisible();
+    await expect(disclosure).not.toContainText("LIMIT 500");
     await expect(page.getByTestId("inspect-warning-banner")).toHaveCount(0);
 
     const queryIcon = disclosure.getByTestId("rendered-query-icon");

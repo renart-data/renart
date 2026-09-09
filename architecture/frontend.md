@@ -688,7 +688,7 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   copies selected cells as TSV and HTML. Hover alone never expands a value;
   only the active selected cell can open its complete content. Tables whose
   row-action semantics do not fit this spreadsheet contract remain separate.
-- Data Browser and asset Inspect use that table's compact preview footer: row
+- Data Browser, asset Inspect, notebook cells and ad-hoc queries use that table's compact preview footer: row
   count, an explicit **Load more rows** action, or a row/size-limit explanation.
   Backend lookahead metadata replaces the old row-count heuristic; Inspect no
   longer auto-fetches on scrolling. Larger samples replace rows, clear stale
@@ -700,6 +700,15 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   includes workspace connection sequence, environment and execution window;
   explicit refresh/source-change invalidation cancels prior in-flight reads.
   No preview rows, SQL or result identities enter persisted browser state.
+  `useResultPreview` is the small notebook/query display adapter over that same
+  admission helper, not another execution owner or shared result cache. Notebook
+  expansions replace the array with a longer immutable prefix under the same
+  result ID, preserving selection; 409 expiry keeps visible rows and disables
+  continuation with an explanation. Query expansion freezes the last rendered
+  SQL/connection, never rerenders the editor draft, and uses `/api/sql/preview`,
+  not Run. Workspace/environment/window/pipeline changes, new results, explicit
+  Run and unmount invalidate pending requests. The rendered-query disclosure
+  keeps the original SQL; the shared footer owns preview-bound information.
 - Dashboard/report authoring keeps one explicit shrink-safe height chain from
   the routed page through the tabs and builder. The visual canvas ScrollArea
   owns overflow for tall content while the command bar and desktop sidebars

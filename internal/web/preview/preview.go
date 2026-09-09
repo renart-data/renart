@@ -23,12 +23,17 @@ func NormalizeLimit(limit int) int {
 // Bound consumes an adapter's limit+1 lookahead. It never counts the warehouse
 // or constructs OFFSET pages. Wider samples replace, rather than append to, rows.
 func Bound(rows []map[string]any, limit int, adapterHasMore bool) ([]map[string]any, *model.PreviewMetadata) {
+	return BoundRows(rows, limit, adapterHasMore)
+}
+
+// BoundRows also budgets positional notebook rows without losing duplicate columns.
+func BoundRows[T any](rows []T, limit int, adapterHasMore bool) ([]T, *model.PreviewMetadata) {
 	limit = NormalizeLimit(limit)
 	meta := &model.PreviewMetadata{
 		Limit: limit, HasMore: adapterHasMore || len(rows) > limit,
 		Continuation: "none", Reason: "complete", ResultID: uuid.NewString(),
 	}
-	bounded := make([]map[string]any, 0, min(len(rows), limit))
+	bounded := make([]T, 0, min(len(rows), limit))
 	bytes := 2 // JSON array delimiters; budget includes row commas.
 	for _, row := range rows[:min(len(rows), limit)] {
 		encoded, err := json.Marshal(row)

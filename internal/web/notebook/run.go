@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/bruin-data/bruin/pkg/query"
+	"renart/internal/web/model"
+	"renart/internal/web/preview"
 )
 
 // ErrUnknownSource signals that an external reference is not a known
@@ -99,18 +101,19 @@ const (
 // renart:web
 // renart:web-name NotebookCellRunResult
 type CellRunResult struct {
-	CellID       string          `json:"cell_id"`
-	Name         string          `json:"name"`
-	ObjectName   string          `json:"object_name"`
-	Status       string          `json:"status"`
-	Error        string          `json:"error,omitempty"`
-	Columns      []string        `json:"columns"`
-	Rows         [][]any         `json:"rows"`
-	TotalRows    int64           `json:"total_rows"`
-	Materialized string          `json:"materialized"` // view | table
-	Imports      []ImportRecord  `json:"imports,omitempty"`
-	ColumnTypes  []string        `json:"column_types,omitempty"`
-	Snapshot     *SnapshotRecord `json:"snapshot,omitempty"`
+	CellID       string                 `json:"cell_id"`
+	Name         string                 `json:"name"`
+	ObjectName   string                 `json:"object_name"`
+	Status       string                 `json:"status"`
+	Error        string                 `json:"error,omitempty"`
+	Columns      []string               `json:"columns"`
+	Rows         [][]any                `json:"rows"`
+	Preview      *model.PreviewMetadata `json:"preview,omitempty"`
+	TotalRows    int64                  `json:"total_rows"`
+	Materialized string                 `json:"materialized"` // view | table
+	Imports      []ImportRecord         `json:"imports,omitempty"`
+	ColumnTypes  []string               `json:"column_types,omitempty"`
+	Snapshot     *SnapshotRecord        `json:"snapshot,omitempty"`
 	// Sampled propagates through the notebook DAG: a local result derived from
 	// an explicitly sampled source remains visibly sampled.
 	Sampled      bool   `json:"sampled,omitempty"`
@@ -198,6 +201,10 @@ func (r *Runner) RunCells(ctx context.Context, nb *Notebook, cells []*Cell, opts
 	}
 	defer session.Close()
 	sessionOpenMS := elapsedMilliseconds(sessionStartedAt)
+	// A failed rerun invalidates its previous preview too, including consumers.
+	if err := session.invalidatePreviews(ctx, nb, cells); err != nil {
+		return nil, err
+	}
 
 	failed := map[string]bool{}
 	priorRuns, _ := session.listCellRuns(ctx)
@@ -253,9 +260,24 @@ func (r *Runner) RunCells(ctx context.Context, nb *Notebook, cells []*Cell, opts
 		result.Sampled = result.Sampled || inheritedSample || (result.Snapshot != nil && result.Snapshot.Sampled)
 		if result.Status == CellRunOK {
 			metadataStartedAt := time.Now()
-			if recordErr := session.recordCellRun(ctx, nb, cell, result, r.ParameterValues); recordErr != nil {
+			recordErr := session.Exec(ctx, "begin transaction")
+			if recordErr == nil {
+				recordErr = session.recordCellRun(ctx, nb, cell, result, r.ParameterValues)
+			}
+			if recordErr == nil {
+				recordErr = session.retainPreview(ctx, r.Store.previewEpoch, nb, cell, &result, r.Environment, r.ParameterValues, preview.NormalizeLimit(r.PreviewLimit))
+			}
+			if recordErr == nil {
+				recordErr = session.Exec(ctx, "commit")
+			}
+			if recordErr != nil {
+				_ = session.Exec(context.Background(), "rollback")
 				result.Status = CellRunError
 				result.Error = "could not persist notebook run metadata: " + recordErr.Error()
+				// Persistence failure must not leak the larger capture through
+				// an error response or advertise a generation that never committed.
+				result.Rows, result.Preview = preview.BoundRows(result.Rows, r.PreviewLimit, result.TotalRows > int64(len(result.Rows)))
+				result.Preview.Continuation, result.Preview.NextLimit = "none", 0
 			}
 			metadataWriteMS := elapsedMilliseconds(metadataStartedAt)
 			result.performance().MetadataWriteMS = &metadataWriteMS
@@ -647,10 +669,8 @@ func toInt64(value any) int64 {
 }
 
 func (r *Runner) previewLimit() int {
-	if r.PreviewLimit > 0 {
-		return r.PreviewLimit
-	}
-	return defaultPreviewLimit
+	// Capture one bounded immutable preview during execution, not on expansion.
+	return preview.MaxRows + 1
 }
 
 func normalizeDuckDBError(err error) string {

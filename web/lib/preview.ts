@@ -4,6 +4,8 @@ export function previewStatus(preview: PreviewMetadata): string {
   const rows = `Showing ${preview.returned_rows.toLocaleString()} ${preview.returned_rows === 1 ? "row" : "rows"}`;
   if (preview.reason === "row_limit") return `${rows} · preview limit reached`;
   if (preview.reason === "byte_limit") return `${rows} · preview size limit reached`;
+  if (preview.reason === "expired") return `${rows} · saved preview expired`;
+  if (preview.reason === "unsupported") return `${rows} · further preview unavailable`;
   if (!preview.has_more) return `${rows} · all rows`;
   return rows;
 }

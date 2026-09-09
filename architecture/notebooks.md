@@ -184,9 +184,9 @@ while a restart or recreated database runs the migrations again.
 Versioned session tables retain source snapshot provenance and successful cell
 run summaries: fingerprints, timestamps, schemas, row counts, durations,
 materialization kind, and source snapshot IDs. On restart, Renart reconstructs
-result summaries, verifies the current definition fingerprints, and queries
-only a bounded preview from live session objects. Definitions remain Git state;
-runtime observations do not.
+result summaries, verifies the current definition fingerprints, and reads only
+bounded saved preview bytes, without re-evaluating a view. Definitions remain
+Git state; runtime observations do not.
 
 SQL fingerprints use the canonical ID-resolved query. Python fingerprints are
 deliberately conservative: they hash the exact cell bytes, typed parameter
@@ -544,6 +544,32 @@ surface, not a hosted or access-controlled BI runtime.
 
 ## 10. Server-owned recompute and frontend state
 
+Cell execution captures at most 1,000 rows plus one lookahead from its existing
+preview query. Before publication it applies the shared 2 MiB serialized-row
+budget and stores an immutable positional JSON sample in `__renart_preview_rows`
+inside the existing notebook DuckDB session. Cell-run metadata and preview
+publication share a transaction. The initial response normally shows 100 rows.
+No extra remote query, Python run, or import is performed on expansion.
+
+Retention is at most four previews / 8 MiB of row payload per notebook, excluding
+small metadata and DuckDB's reusable allocated pages. Entries expire after 30
+minutes; publication purges expired/evicted entries, and session removal reclaims
+the database. This is not a full result archive or a peak driver-memory bound.
+Restoration uses saved bytes or an expired-preview explanation, never a SELECT
+against the cell view. Results predating this feature have metadata but no saved
+rows until the next explicit run.
+
+`POST /api/notebooks/{id}/cells/{cellID}/preview` validates result generation,
+process epoch, environment, current cell/ancestor published fingerprints,
+parameters and object presence under the existing session lock. Lock waits honor
+cancellation; reset never creates a missing database through this read path.
+Rerunning a cell invalidates its and descendants' previews before execution,
+including failed runs. Restart, eviction, expiry and replaced results return
+recoverable 409 errors. Tokens are result identities, not authorization grants.
+The endpoint returns a larger prefix of saved bytes under the same ID, preserving
+duplicate column names, numeric wire values and selection. It never calls Run,
+queries a cell view, or changes visualization/presentation limits.
+
 The runtime snapshot, `notebook.runtime` event, and cell-run result wire shapes
 are generated from their Go DTOs by `internal/tools/apitypes`, including nested
 import, snapshot, performance, and visualization records. `api-notebooks.ts`
@@ -648,7 +674,7 @@ and time until a Python wrapper starts. The browser adds its preview render
 duration and mounted-row count. These measurements are shown in the selected
 result's **Performance** hover card, are never authored into the notebook, and
 are not sent to an external telemetry service. Restart restoration can recompute session
-size, source transfer size, and preview query time; ephemeral request, Python
+size, source transfer size, and saved-preview read time; ephemeral request, Python
 startup, and materialization observations are intentionally absent after
 restart.
 

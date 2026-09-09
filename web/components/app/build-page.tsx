@@ -97,7 +97,9 @@ import { InspectWarningCard } from "@/components/inspect-warning-card";
 import { InspectInfoCard } from "@/components/inspect-info-card";
 import { WorkspaceMaterializeOutputView } from "@/components/workspace-materialize-output-view";
 import { Spinner } from "@/components/ui/spinner";
-import { runSQLQuery } from "@/lib/api-sql-discovery";
+import { runSQLQuery, loadSQLPreview } from "@/lib/api-sql-discovery";
+import { useResultPreview } from "@/hooks/use-result-preview";
+import { workspaceConnectionSequenceAtom } from "@/lib/atoms/domains/workspace";
 import type { PipelineRunSource } from "@/lib/api-scheduler";
 import {
   typeCheckPipeline,
@@ -127,7 +129,6 @@ import {
 } from "@/lib/atoms/domains/workspace";
 import { renderJinjaAsset } from "@/lib/jinja-intellisense";
 import { effectiveConnectionForAsset } from "@/lib/sql-schema";
-import { withSQLPreviewLimit } from "@/lib/sql-query-preview";
 import { awaitWorkspaceSaves } from "@/lib/workspace-save-barrier";
 import { getPinnedProjectId } from "@/lib/project-context";
 import type {
@@ -685,6 +686,8 @@ export function AppBuildPage({
   const [adhocResult, setAdhocResult] = useState<SqlQueryResponse | null>(null);
   const [adhocRenderedQuery, setAdhocRenderedQuery] = useState<string | null>(null);
   const [adhocLoading, setAdhocLoading] = useState(false);
+  const adhocRunController = useRef<AbortController | null>(null);
+  const adhocWorkspaceSequence = useAtomValue(workspaceConnectionSequenceAtom);
   const [assetRenderResult, setAssetRenderResult] = useState<AssetRenderResult | null>(null);
   const [assetRenderLoading, setAssetRenderLoading] = useState(false);
   const [assetRenderError, setAssetRenderError] = useState<string | null>(null);
@@ -1385,10 +1388,38 @@ export function AppBuildPage({
     },
     [storeAdhocConnection],
   );
+  const adhocScope = JSON.stringify([
+    adhocWorkspaceSequence,
+    adhocConnection?.name,
+    pipelineId,
+    selectedEnvironment,
+    selectedExecutionTimeWindow,
+  ]);
+  const adhocScopeRef = useRef(adhocScope);
+  adhocScopeRef.current = adhocScope;
   useEffect(() => {
     setAdhocRenderedQuery(null);
     setAdhocResult(null);
-  }, [adhocConnection?.name, pipelineId]);
+    setAdhocLoading(false);
+    return () => adhocRunController.current?.abort();
+  }, [adhocScope]);
+  const adhocPreview = useResultPreview(
+    JSON.stringify([adhocScope, adhocResult?.preview?.result_id, adhocLoading]),
+    adhocLoading ? null : adhocResult,
+    async (limit, signal) => {
+      if (!adhocConnection || !adhocRenderedQuery)
+        throw new Error("Run a query to create a preview first.");
+      const result = await loadSQLPreview({
+        connection: adhocConnection.name,
+        environment: selectedEnvironment,
+        query: adhocRenderedQuery,
+        limit,
+        signal,
+      });
+      if (result.status === "error") throw new Error(result.error || "Could not load more rows.");
+      return result;
+    },
+  );
   const runAdhocQuery = async () => {
     if (!activePipeline) {
       return;
@@ -1405,6 +1436,10 @@ export function AppBuildPage({
       });
       return;
     }
+    adhocRunController.current?.abort();
+    const controller = new AbortController();
+    adhocRunController.current = controller;
+    const isCurrent = () => !controller.signal.aborted && adhocScopeRef.current === adhocScope;
     setAdhocLoading(true);
     try {
       // Ad hoc queries are Jinja templates: render them with the pipeline's
@@ -1416,6 +1451,7 @@ export function AppBuildPage({
           content: adhocQuery,
           timeWindow: selectedExecutionTimeWindow,
         });
+        if (!isCurrent()) return;
         if (rendered.status === "error") {
           setAdhocRenderedQuery(null);
           setAdhocResult({
@@ -1432,23 +1468,26 @@ export function AppBuildPage({
       } catch {
         // Rendering is best-effort; fall back to the raw query text.
       }
+      if (!isCurrent()) return;
       setAdhocRenderedQuery(queryText);
       const result = await runSQLQuery({
         connection,
         environment: selectedEnvironment,
         query: queryText,
         limit: adhocQueryLimit,
+        signal: controller.signal,
       });
-      setAdhocResult(result);
+      if (isCurrent()) setAdhocResult(result);
     } catch (error) {
-      setAdhocResult({
-        status: "error",
-        columns: [],
-        rows: [],
-        error: String(error),
-      });
+      if (isCurrent())
+        setAdhocResult({
+          status: "error",
+          columns: [],
+          rows: [],
+          error: String(error),
+        });
     } finally {
-      setAdhocLoading(false);
+      if (isCurrent()) setAdhocLoading(false);
     }
   };
   const selectAsset = (assetId: string) => {
@@ -2046,9 +2085,12 @@ export function AppBuildPage({
                 selectedMaterializeEntry={assetResults.selectedMaterializeEntry}
                 materializeOutputHtml={assetResults.materializeOutputHtml}
                 pipelineMaterializeLoading={assetResults.pipelineMaterializeLoading}
-                adhocResult={adhocResult}
+                adhocResult={adhocPreview.result ?? adhocResult}
                 adhocRenderedQuery={adhocRenderedQuery}
                 adhocLoading={adhocLoading}
+                adhocPreviewLoading={adhocPreview.loading}
+                adhocPreviewError={adhocPreview.error}
+                onLoadMoreQueryRows={() => void adhocPreview.loadMore()}
               />
             </Panel>
           </PanelGroup>
@@ -3665,6 +3707,9 @@ function ResultsPanel({
   adhocResult,
   adhocRenderedQuery,
   adhocLoading,
+  adhocPreviewLoading,
+  adhocPreviewError,
+  onLoadMoreQueryRows,
 }: {
   pipelineId: string;
   activeTab: AppResultTab;
@@ -3692,6 +3737,9 @@ function ResultsPanel({
   adhocResult: SqlQueryResponse | null;
   adhocRenderedQuery: string | null;
   adhocLoading: boolean;
+  adhocPreviewLoading: boolean;
+  adhocPreviewError?: string;
+  onLoadMoreQueryRows: () => void;
 }) {
   return (
     <AppPanel className="flex h-full min-h-0 flex-col">
@@ -3809,22 +3857,20 @@ function ResultsPanel({
             </div>
           ) : adhocResult ? (
             <>
-              <RenderedQueryDisclosure
-                query={
-                  adhocResult.truncated && adhocRenderedQuery
-                    ? withSQLPreviewLimit(adhocRenderedQuery, adhocQueryLimit)
-                    : adhocRenderedQuery
-                }
-                warning={
-                  adhocResult.truncated
-                    ? `Result limited to the first ${adhocQueryLimit} rows`
-                    : undefined
-                }
-              />
+              <RenderedQueryDisclosure query={adhocRenderedQuery} />
+              {adhocPreviewError ? (
+                <div role="alert" className="border-b px-3 py-2 text-xs text-destructive">
+                  {adhocPreviewError}
+                </div>
+              ) : null}
               <div className="min-h-0 flex-1">
                 <AssetInspectView
                   columns={adhocResult.columns ?? []}
                   rows={(adhocResult.rows ?? []) as Record<string, unknown>[]}
+                  preview={adhocResult.preview}
+                  loading={adhocPreviewLoading}
+                  canLoadMore={Boolean(adhocResult.preview?.next_limit)}
+                  onLoadMore={onLoadMoreQueryRows}
                   frameless
                 />
               </div>

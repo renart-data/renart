@@ -11,6 +11,7 @@ import (
 )
 
 type SQLHandlers interface {
+	Preview(ctx context.Context, connectionName, environment, query string, limit int) service.SQLQueryResult
 	ColumnValues(ctx context.Context, connectionName, environment, query string) service.SQLColumnValuesResult
 	Query(ctx context.Context, connectionName, environment, query string, limit int) service.SQLQueryResult
 	Databases(ctx context.Context, connectionName, environment string) (service.SQLDatabaseDiscoveryResult, *service.APIError)
@@ -38,6 +39,7 @@ type SQLQueryRequest struct {
 func RegisterSQLRoutes(router chi.Router, handlers *SQLAPI) {
 	router.Post("/api/sql/column-values", handlers.HandleSQLColumnValues)
 	router.Post("/api/sql/query", handlers.HandleSQLQuery)
+	router.Post("/api/sql/preview", handlers.HandleSQLPreview)
 	router.Get("/api/sql/databases", handlers.HandleGetSQLDatabases)
 	router.Get("/api/sql/tables", handlers.HandleGetSQLTables)
 	router.Get("/api/sql/table-columns", handlers.HandleGetSQLTableColumns)
@@ -67,6 +69,14 @@ func (h *SQLAPI) HandleSQLColumnValues(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SQLAPI) HandleSQLQuery(w http.ResponseWriter, r *http.Request) {
+	h.handleSQLQuery(w, r, false)
+}
+
+func (h *SQLAPI) HandleSQLPreview(w http.ResponseWriter, r *http.Request) {
+	h.handleSQLQuery(w, r, true)
+}
+
+func (h *SQLAPI) handleSQLQuery(w http.ResponseWriter, r *http.Request, previewOnly bool) {
 	req, err := decodeJSONObject[SQLQueryRequest](w, r, 0)
 	if err != nil {
 		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
@@ -90,7 +100,13 @@ func (h *SQLAPI) HandleSQLQuery(w http.ResponseWriter, r *http.Request) {
 		limit = 1000
 	}
 
-	result := h.Service.Query(r.Context(), connectionName, req.Environment, query, limit)
+	w.Header().Set("Cache-Control", "no-store")
+	var result service.SQLQueryResult
+	if previewOnly {
+		result = h.Service.Preview(r.Context(), connectionName, req.Environment, query, limit)
+	} else {
+		result = h.Service.Query(r.Context(), connectionName, req.Environment, query, limit)
+	}
 	webapi.WriteJSON(w, http.StatusOK, result)
 }
 

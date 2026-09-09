@@ -9,11 +9,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	webapi "renart/internal/web/api"
 	"renart/internal/web/model"
+	"renart/internal/web/notebook"
 	"renart/internal/web/service"
 )
 
 // NotebookHandlers is the service surface the notebook routes need.
 type NotebookHandlers interface {
+	PreviewCell(ctx context.Context, notebookID, cellID string, req service.NotebookPreviewRequest) (notebook.CellPreviewResult, *service.APIError)
 	Get(notebookID string) (model.Notebook, *service.APIError)
 	Create(req service.CreateNotebookRequest) (model.Notebook, *service.APIError)
 	Delete(notebookID string) *service.APIError
@@ -62,6 +64,7 @@ func RegisterNotebookRoutes(router chi.Router, handlers *NotebookAPI) {
 	router.Post("/api/notebooks/{id}/cells/{cellID}/promote/plan", handlers.HandlePlanPromoteCell)
 	router.Post("/api/notebooks/{id}/cells/{cellID}/promote", handlers.HandlePromoteCell)
 	router.Get("/api/notebooks/{id}/cells/{cellID}/export", handlers.HandleExportCell)
+	router.Post("/api/notebooks/{id}/cells/{cellID}/preview", handlers.HandlePreviewCell)
 	router.Post("/api/notebooks/{id}/run", handlers.HandleRun)
 	router.Get("/api/notebooks/{id}/runtime", handlers.HandleRuntime)
 	router.Post("/api/notebooks/{id}/controls/{controlID}/options/refresh", handlers.HandleRefreshControlOptions)
@@ -320,6 +323,21 @@ func (h *NotebookAPI) HandleExportCell(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": export.Filename}))
 	w.Header().Set("Cache-Control", "no-store")
 	http.ServeContent(w, r, export.Filename, info.ModTime(), file)
+}
+
+func (h *NotebookAPI) HandlePreviewCell(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	req, err := decodeJSONObject[service.NotebookPreviewRequest](w, r, 0)
+	if err != nil {
+		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
+		return
+	}
+	result, apiErr := h.Service.PreviewCell(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "cellID"), req)
+	if apiErr != nil {
+		writeNotebookError(w, apiErr)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, result)
 }
 
 func (h *NotebookAPI) HandleRun(w http.ResponseWriter, r *http.Request) {

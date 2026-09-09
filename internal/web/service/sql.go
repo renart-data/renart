@@ -7,11 +7,14 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/tablename"
 
+	"renart/internal/sqlintelligence"
 	webmodel "renart/internal/web/model"
+	"renart/internal/web/preview"
 	"renart/internal/web/sqlnamespace"
 )
 
@@ -24,11 +27,12 @@ type SQLColumnValuesResult struct {
 // renart:web
 // renart:web-name SqlQueryResponse
 type SQLQueryResult struct {
-	Status    string           `json:"status"`
-	Columns   []string         `json:"columns"`
-	Rows      []map[string]any `json:"rows"`
-	Truncated bool             `json:"truncated,omitempty"`
-	Error     string           `json:"error,omitempty"`
+	Status    string                    `json:"status"`
+	Columns   []string                  `json:"columns"`
+	Rows      []map[string]any          `json:"rows"`
+	Truncated bool                      `json:"truncated,omitempty"`
+	Preview   *webmodel.PreviewMetadata `json:"preview,omitempty"`
+	Error     string                    `json:"error,omitempty"`
 }
 
 // renart:web
@@ -114,9 +118,16 @@ func (s *SQLService) ColumnValues(ctx context.Context, connectionName, environme
 	return SQLColumnValuesResult{Status: "ok", Values: values}
 }
 
-// Query runs an ad hoc statement against a named connection and returns the
-// full result set, capped at limit rows (0 means no cap).
+// Query explicitly runs an ad hoc statement. Safe SELECTs get bounded query
+// execution; other statements keep Run semantics with a bounded response only.
 func (s *SQLService) Query(ctx context.Context, connectionName, environment, query string, limit int) SQLQueryResult {
+	// Explicit Run retains its statement semantics. Only positively validated
+	// SELECTs use the separate bounded adapter and advertise continuation.
+	if s.deps.NewConnectionManager != nil {
+		if body, connectionType, err := s.previewQuery(ctx, connectionName, environment, query); err == nil {
+			return s.runPreview(ctx, connectionName, environment, body, connectionType, limit)
+		}
+	}
 	columns, rows, err := s.deps.RunConnectionQuery(ctx, connectionName, environment, query)
 	if err != nil {
 		return SQLQueryResult{Status: "error", Columns: []string{}, Rows: []map[string]any{}, Error: err.Error()}
@@ -134,7 +145,70 @@ func (s *SQLService) Query(ctx context.Context, connectionName, environment, que
 		rows = []map[string]any{}
 	}
 
-	return SQLQueryResult{Status: "ok", Columns: columns, Rows: rows, Truncated: truncated}
+	rows, metadata := preview.Bound(rows, limit, truncated)
+	if metadata.Continuation != "none" {
+		metadata.Continuation, metadata.Reason, metadata.NextLimit = "none", "unsupported", 0
+	}
+	return SQLQueryResult{Status: "ok", Columns: columns, Rows: rows, Truncated: metadata.HasMore, Preview: metadata}
+}
+
+func (s *SQLService) previewQuery(ctx context.Context, connectionName, environment, query string) (string, string, error) {
+	if s.deps.NewConnectionManager == nil {
+		return "", "", fmt.Errorf("query preview is unavailable")
+	}
+	manager, err := s.deps.NewConnectionManager(ctx, environment)
+	if err != nil {
+		return "", "", err
+	}
+	if manager == nil || manager.GetConnectionType(connectionName) == "" {
+		return "", "", fmt.Errorf("query connection not found")
+	}
+	body, err := sqlintelligence.ReadOnlyQueryBody(query, brokerQueryDialect(manager, connectionName))
+	if err == nil && usesNativePreviewTop(manager.GetConnectionType(connectionName)) {
+		_, err = sqlintelligence.LimitUnboundedSelect(body, 1, "tsql")
+	}
+	return body, manager.GetConnectionType(connectionName), err
+}
+
+// Preview independently validates every continuation; it cannot execute writes.
+func (s *SQLService) Preview(ctx context.Context, connectionName, environment, query string, limit int) SQLQueryResult {
+	body, connectionType, err := s.previewQuery(ctx, connectionName, environment, query)
+	if err != nil {
+		return SQLQueryResult{Status: "error", Columns: []string{}, Rows: []map[string]any{}, Error: "Cannot load this preview: " + err.Error()}
+	}
+	return s.runPreview(ctx, connectionName, environment, body, connectionType, limit)
+}
+
+func (s *SQLService) runPreview(ctx context.Context, connectionName, environment, body, connectionType string, limit int) SQLQueryResult {
+	limit = preview.NormalizeLimit(limit)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	boundedSQL := wrapReadOnlySampleQuery(body, connectionType, "renart_preview", limit+1)
+	if usesNativePreviewTop(connectionType) {
+		var err error
+		boundedSQL, err = sqlintelligence.LimitUnboundedSelect(body, limit+1, "tsql")
+		if err != nil {
+			return SQLQueryResult{Status: "error", Columns: []string{}, Rows: []map[string]any{}, Error: err.Error()}
+		}
+	}
+	columns, rows, err := s.deps.RunConnectionQuery(ctx, connectionName, environment, boundedSQL)
+	if err != nil {
+		return SQLQueryResult{Status: "error", Columns: []string{}, Rows: []map[string]any{}, Error: err.Error()}
+	}
+	rows, metadata := preview.Bound(rows, limit, false)
+	if columns == nil {
+		columns = []string{}
+	}
+	return SQLQueryResult{Status: "ok", Columns: columns, Rows: rows, Preview: metadata, Truncated: metadata.HasMore}
+}
+
+func usesNativePreviewTop(connectionType string) bool {
+	switch normalizeConnectionType(connectionType) {
+	case "mssql", "synapse", "fabric":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *SQLService) Databases(ctx context.Context, connectionName, environment string) (SQLDatabaseDiscoveryResult, *APIError) {
