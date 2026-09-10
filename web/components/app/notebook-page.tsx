@@ -2,6 +2,12 @@
 import { ResourceLink } from "./resource-link";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 import { useNavigationArrival, useArrivalHighlight } from "@/hooks/use-navigation-arrival";
+import {
+  useNotebookBrowserDrop,
+  type NotebookBrowserDrop,
+} from "@/hooks/use-notebook-browser-drop";
+import { NotebookBrowserDropReview } from "./notebook-browser-drop-review";
+import { DATA_BROWSER_MIME } from "@/lib/data-browser-transfer";
 
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -1171,6 +1177,21 @@ export function AppNotebookLivePage({
   }, []);
   const linkedCellAvailable =
     notebook?.cells.filter((cell) => cell.cell_id === linkedCell).length === 1;
+  const [insertedSourceId, setInsertedSourceId] = useState<string | null>(null);
+  const browserDrop = useNotebookBrowserDrop({
+    notebookId,
+    environment: selectedEnvironment || "default",
+    awaitSavedChanges,
+    mutateOrThrow,
+    onCreated: setInsertedSourceId,
+  });
+  useEffect(() => {
+    if (!insertedSourceId || !notebook?.cells.some((cell) => cell.cell_id === insertedSourceId))
+      return;
+    const element = revealCell(insertedSourceId);
+    if (element) highlightArrival(element);
+    setInsertedSourceId(null);
+  }, [insertedSourceId, notebook, revealCell, highlightArrival]);
   useEffect(() => {
     if (arrival && linkedCell && linkedCellAvailable) {
       const element = revealCell(linkedCell);
@@ -1517,6 +1538,8 @@ export function AppNotebookLivePage({
             {activeWorkbenchTool === "data" ? (
               <Suspense fallback={<DataBrowserLoading label="Loading data browser…" />}>
                 <NotebookDataBrowser
+                  destination={{ kind: "notebook", id: notebookId }}
+                  onChooseForPlacement={() => setMobileNavigationOpen(false)}
                   onNavigateObject={async (target) => {
                     try {
                       await awaitSavedChanges();
@@ -1617,6 +1640,7 @@ export function AppNotebookLivePage({
         onSave={updateDependencies}
       />
       <NewNotebookDialog open={newNotebookOpen} onOpenChange={setNewNotebookOpen} />
+      <NotebookBrowserDropReview controller={browserDrop} />
 
       <NotebookParametersDialog
         open={parametersOpen}
@@ -1700,8 +1724,9 @@ export function AppNotebookLivePage({
           >
             {unplacedControls.map((control) => renderNotebookControl(control))}
             <NotebookInsertionPoint
+              browserDrop={browserDrop}
               placement={{ position: "start" }}
-              disabled={pendingBlock !== null}
+              disabled={pendingBlock !== null || Boolean(browserDrop.review)}
               pendingKind={
                 pendingBlock &&
                 notebookPlacementKey(pendingBlock.placement) ===
@@ -1946,8 +1971,9 @@ export function AppNotebookLivePage({
                   {renderedBlock}
                   {stableID ? (
                     <NotebookInsertionPoint
+                      browserDrop={browserDrop}
                       placement={placement}
-                      disabled={pendingBlock !== null}
+                      disabled={pendingBlock !== null || Boolean(browserDrop.review)}
                       pendingKind={
                         pendingBlock &&
                         notebookPlacementKey(pendingBlock.placement) ===
@@ -2292,11 +2318,13 @@ function NotebookAddPalette({
 }
 
 function NotebookInsertionPoint({
+  browserDrop,
   placement,
   disabled,
   pendingKind,
   onInsert,
 }: {
+  browserDrop: NotebookBrowserDrop;
   placement: NotebookBlockPlacement;
   disabled: boolean;
   pendingKind?: PendingNotebookBlockKind;
@@ -2305,6 +2333,14 @@ function NotebookInsertionPoint({
   const [dropActive, setDropActive] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerCategory, setPickerCategory] = useState<"control" | "visualization" | null>(null);
+  const browserActive = Boolean(browserDrop.active && !disabled);
+  const acceptsBrowserDrag = (event: React.DragEvent) =>
+    browserActive &&
+    browserDrop.active?.method === "drag" &&
+    Array.from(event.dataTransfer.types).includes(DATA_BROWSER_MIME);
+  useEffect(() => {
+    if (!browserActive) setDropActive(false);
+  }, [browserActive]);
   const closePicker = () => {
     setPickerOpen(false);
     setPickerCategory(null);
@@ -2325,16 +2361,16 @@ function NotebookInsertionPoint({
       data-notebook-insertion-point={notebookPlacementKey(placement)}
       className={cn(
         "group/notebook-insert relative flex h-8 items-center justify-center transition-colors",
-        dropActive && "h-12 rounded-lg bg-primary/5 ring-1 ring-primary/25",
+        (dropActive || browserActive) && "h-12 rounded-lg bg-primary/5 ring-1 ring-primary/25",
       )}
       onDragEnter={(event) => {
-        if (disabled || !hasAuthoringDragItem(event)) return;
+        if (disabled || (!acceptsBrowserDrag(event) && !hasAuthoringDragItem(event))) return;
         event.preventDefault();
         event.stopPropagation();
         setDropActive(true);
       }}
       onDragOver={(event) => {
-        if (disabled || !hasAuthoringDragItem(event)) return;
+        if (disabled || (!acceptsBrowserDrag(event) && !hasAuthoringDragItem(event))) return;
         event.preventDefault();
         event.stopPropagation();
         event.dataTransfer.dropEffect = "copy";
@@ -2344,6 +2380,11 @@ function NotebookInsertionPoint({
         setDropActive(false);
       }}
       onDrop={(event) => {
+        if (acceptsBrowserDrag(event)) {
+          browserDrop.drop(placement, event);
+          setDropActive(false);
+          return;
+        }
         const item = readAuthoringDragItem(event);
         if (disabled || !item) return;
         event.preventDefault();
@@ -2360,144 +2401,156 @@ function NotebookInsertionPoint({
     >
       <div
         className={cn(
-          "absolute inset-x-2 top-1/2 h-px bg-border opacity-0 transition-opacity group-hover/notebook-insert:opacity-100 group-focus-within/notebook-insert:opacity-100",
+          "pointer-events-none absolute inset-x-2 top-1/2 h-px bg-border opacity-0 transition-opacity group-hover/notebook-insert:opacity-100 group-focus-within/notebook-insert:opacity-100",
           dropActive && "opacity-100",
         )}
       />
-      <Popover
-        open={pickerOpen}
-        onOpenChange={(open) => {
-          setPickerOpen(open);
-          if (!open) setPickerCategory(null);
-        }}
-      >
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            size="icon-xs"
-            variant="outline"
-            disabled={disabled}
-            aria-label="Insert notebook block here"
-            className={cn(
-              "relative z-10 rounded-full bg-background opacity-100 shadow-xs transition-opacity lg:opacity-0 lg:group-hover/notebook-insert:opacity-100 lg:group-focus-within/notebook-insert:opacity-100 [@media(hover:none)]:opacity-100",
-              dropActive && "opacity-100",
-            )}
-          >
-            <Plus />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="center"
-          sideOffset={-12}
-          data-testid="notebook-insert-picker"
-          className="w-[min(32rem,calc(100vw-2rem))] gap-1.5 p-1.5 data-[side=bottom]:-translate-y-1/2 data-[side=top]:translate-y-1/2"
+      {browserActive ? (
+        <Button
+          variant="outline"
+          size="sm"
+          data-testid="notebook-source-drop-target"
+          onClick={() => browserDrop.drop(placement)}
         >
-          <div className="grid min-w-0 grid-cols-[repeat(3,minmax(0,1fr))_auto_repeat(2,minmax(0,1fr))_auto_auto] items-stretch">
-            <ToggleGroup
-              type="single"
-              spacing={0}
-              value=""
-              aria-label="Cell type"
-              className="contents"
-              onValueChange={(value) => {
-                if (value) insert(value as NotebookBlockType);
-              }}
-            >
-              {NOTEBOOK_BLOCK_TYPE_OPTIONS.map((option) => (
-                <ToggleGroupItem
-                  key={option.value}
-                  value={option.value}
-                  aria-label={option.label}
-                  className="h-14 min-w-0 basis-0 flex-1 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
-                >
-                  <NotebookBlockTypePreview type={option.value} className="h-6 max-w-10" />
-                  <span>{option.label}</span>
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-            <Separator orientation="vertical" className="mx-1.5" />
+          <Plus data-icon="inline-start" />
+          Add source here
+        </Button>
+      ) : (
+        <Popover
+          open={pickerOpen}
+          onOpenChange={(open) => {
+            setPickerOpen(open);
+            if (!open) setPickerCategory(null);
+          }}
+        >
+          <PopoverTrigger asChild>
             <Button
               type="button"
-              variant={pickerCategory === "control" ? "secondary" : "ghost"}
-              aria-expanded={pickerCategory === "control"}
-              className="h-14 min-w-0 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
-              onClick={() =>
-                setPickerCategory((current) => (current === "control" ? null : "control"))
-              }
+              size="icon-xs"
+              variant="outline"
+              disabled={disabled}
+              aria-label="Insert notebook block here"
+              className={cn(
+                "relative z-10 rounded-full bg-background opacity-100 shadow-xs transition-opacity lg:opacity-0 lg:group-hover/notebook-insert:opacity-100 lg:group-focus-within/notebook-insert:opacity-100 [@media(hover:none)]:opacity-100",
+                dropActive && "opacity-100",
+              )}
             >
-              <ControlTypePreview type="slider" className="h-6 max-w-10" />
-              Control
+              <Plus />
             </Button>
-            <Button
-              type="button"
-              variant={pickerCategory === "visualization" ? "secondary" : "ghost"}
-              aria-expanded={pickerCategory === "visualization"}
-              className="h-14 min-w-0 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
-              onClick={() =>
-                setPickerCategory((current) =>
-                  current === "visualization" ? null : "visualization",
-                )
-              }
-            >
-              <ChartTypePreview type="line" className="h-6 max-w-10" />
-              Chart
-            </Button>
-            <Separator orientation="vertical" className="mx-1.5" />
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Close cell type selector"
-              className="my-auto"
-              onClick={closePicker}
-            >
-              <X />
-            </Button>
-          </div>
-          {pickerCategory ? (
-            <div className="border-t pt-1.5">
+          </PopoverTrigger>
+          <PopoverContent
+            align="center"
+            sideOffset={-12}
+            data-testid="notebook-insert-picker"
+            className="w-[min(32rem,calc(100vw-2rem))] gap-1.5 p-1.5 data-[side=bottom]:-translate-y-1/2 data-[side=top]:translate-y-1/2"
+          >
+            <div className="grid min-w-0 grid-cols-[repeat(3,minmax(0,1fr))_auto_repeat(2,minmax(0,1fr))_auto_auto] items-stretch">
               <ToggleGroup
                 type="single"
+                spacing={0}
                 value=""
-                aria-label={pickerCategory === "control" ? "Control type" : "Chart type"}
-                className="grid w-full grid-cols-4"
+                aria-label="Cell type"
+                className="contents"
                 onValueChange={(value) => {
-                  if (!value) return;
-                  if (pickerCategory === "control") {
-                    insert("control", { controlType: value as AuthoredControlType });
-                  } else {
-                    insert("visualization", { visualizationType: value as ChartType });
-                  }
+                  if (value) insert(value as NotebookBlockType);
                 }}
               >
-                {pickerCategory === "control"
-                  ? AUTHORED_CONTROL_TYPES.map((value) => (
-                      <ToggleGroupItem
-                        key={value}
-                        value={value}
-                        aria-label={AUTHORED_CONTROL_TYPE_LABELS[value]}
-                        className="h-12 min-w-0 flex-col gap-0.5 px-1 py-1 text-[10px] font-normal"
-                      >
-                        <ControlTypePreview type={value} className="h-6 max-w-10" />
-                        <span className="truncate">{AUTHORED_CONTROL_TYPE_LABELS[value]}</span>
-                      </ToggleGroupItem>
-                    ))
-                  : CHART_TYPE_OPTIONS.map((option) => (
-                      <ToggleGroupItem
-                        key={option.value}
-                        value={option.value}
-                        aria-label={option.label}
-                        className="h-12 min-w-0 flex-col gap-0.5 px-1 py-1 text-[10px] font-normal"
-                      >
-                        <ChartTypePreview type={option.value} className="h-6 max-w-10" />
-                        <span className="truncate">{option.label}</span>
-                      </ToggleGroupItem>
-                    ))}
+                {NOTEBOOK_BLOCK_TYPE_OPTIONS.map((option) => (
+                  <ToggleGroupItem
+                    key={option.value}
+                    value={option.value}
+                    aria-label={option.label}
+                    className="h-14 min-w-0 basis-0 flex-1 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
+                  >
+                    <NotebookBlockTypePreview type={option.value} className="h-6 max-w-10" />
+                    <span>{option.label}</span>
+                  </ToggleGroupItem>
+                ))}
               </ToggleGroup>
+              <Separator orientation="vertical" className="mx-1.5" />
+              <Button
+                type="button"
+                variant={pickerCategory === "control" ? "secondary" : "ghost"}
+                aria-expanded={pickerCategory === "control"}
+                className="h-14 min-w-0 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
+                onClick={() =>
+                  setPickerCategory((current) => (current === "control" ? null : "control"))
+                }
+              >
+                <ControlTypePreview type="slider" className="h-6 max-w-10" />
+                Control
+              </Button>
+              <Button
+                type="button"
+                variant={pickerCategory === "visualization" ? "secondary" : "ghost"}
+                aria-expanded={pickerCategory === "visualization"}
+                className="h-14 min-w-0 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
+                onClick={() =>
+                  setPickerCategory((current) =>
+                    current === "visualization" ? null : "visualization",
+                  )
+                }
+              >
+                <ChartTypePreview type="line" className="h-6 max-w-10" />
+                Chart
+              </Button>
+              <Separator orientation="vertical" className="mx-1.5" />
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Close cell type selector"
+                className="my-auto"
+                onClick={closePicker}
+              >
+                <X />
+              </Button>
             </div>
-          ) : null}
-        </PopoverContent>
-      </Popover>
+            {pickerCategory ? (
+              <div className="border-t pt-1.5">
+                <ToggleGroup
+                  type="single"
+                  value=""
+                  aria-label={pickerCategory === "control" ? "Control type" : "Chart type"}
+                  className="grid w-full grid-cols-4"
+                  onValueChange={(value) => {
+                    if (!value) return;
+                    if (pickerCategory === "control") {
+                      insert("control", { controlType: value as AuthoredControlType });
+                    } else {
+                      insert("visualization", { visualizationType: value as ChartType });
+                    }
+                  }}
+                >
+                  {pickerCategory === "control"
+                    ? AUTHORED_CONTROL_TYPES.map((value) => (
+                        <ToggleGroupItem
+                          key={value}
+                          value={value}
+                          aria-label={AUTHORED_CONTROL_TYPE_LABELS[value]}
+                          className="h-12 min-w-0 flex-col gap-0.5 px-1 py-1 text-[10px] font-normal"
+                        >
+                          <ControlTypePreview type={value} className="h-6 max-w-10" />
+                          <span className="truncate">{AUTHORED_CONTROL_TYPE_LABELS[value]}</span>
+                        </ToggleGroupItem>
+                      ))
+                    : CHART_TYPE_OPTIONS.map((option) => (
+                        <ToggleGroupItem
+                          key={option.value}
+                          value={option.value}
+                          aria-label={option.label}
+                          className="h-12 min-w-0 flex-col gap-0.5 px-1 py-1 text-[10px] font-normal"
+                        >
+                          <ChartTypePreview type={option.value} className="h-6 max-w-10" />
+                          <span className="truncate">{option.label}</span>
+                        </ToggleGroupItem>
+                      ))}
+                </ToggleGroup>
+              </div>
+            ) : null}
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   );
 }

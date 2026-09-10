@@ -45,11 +45,12 @@ var excludedLocalDirectories = map[string]struct{}{
 }
 
 type ConnectionConfig struct {
-	AccessMode string
-	Name       string
-	Type       string
-	Queryable  bool
-	Storage    bool
+	NotebookSource bool
+	AccessMode     string
+	Name           string
+	Type           string
+	Queryable      bool
+	Storage        bool
 }
 
 type Table struct {
@@ -122,7 +123,7 @@ func (s *Service) Connections(ctx context.Context, environment string) (Connecti
 	for _, config := range configs {
 		if config.Storage && s.deps.ListStorage != nil {
 			ref := objectRef{Kind: "connection", SourceKind: "storage", Connection: config.Name, ConnectionType: config.Type, Environment: resolvedEnvironment, Revision: revision}
-			connections = append(connections, Connection{AccessMode: config.AccessMode, ID: encodeRef(ref), Name: config.Name, Type: config.Type, Environment: resolvedEnvironment, Revision: revision, SourceKind: "storage", DiscoveryStatus: "idle", Capabilities: Capabilities{ListNamespaces: true, ListObjects: true, LoadDestination: config.AccessMode != "read_only"}})
+			connections = append(connections, Connection{AccessMode: config.AccessMode, ID: encodeRef(ref), Name: config.Name, Type: config.Type, Environment: resolvedEnvironment, Revision: revision, SourceKind: "storage", DiscoveryStatus: "idle", Capabilities: Capabilities{NotebookSource: config.Type == "s3", ListNamespaces: true, ListObjects: true, LoadDestination: config.AccessMode != "read_only"}})
 			continue
 		}
 		if !config.Queryable {
@@ -151,6 +152,7 @@ func (s *Service) Connections(ctx context.Context, environment string) (Connecti
 				DescribeColumns: s.deps.ListColumns != nil,
 				PreviewRows:     s.deps.RunQuery != nil,
 				Query:           true,
+				NotebookSource:  config.NotebookSource,
 			},
 		})
 	}
@@ -174,6 +176,7 @@ func (s *Service) Connections(ctx context.Context, environment string) (Connecti
 				ListObjects:     true,
 				DescribeColumns: duckDBAvailable && s.deps.RunQuery != nil,
 				PreviewRows:     duckDBAvailable && s.deps.RunQuery != nil,
+				NotebookSource:  true,
 			},
 		})
 	}

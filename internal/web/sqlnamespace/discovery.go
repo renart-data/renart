@@ -186,6 +186,12 @@ func name(value any) (string, error) {
 }
 func literal(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
 func Quote(engine, value string) string {
+	if engine == "bigquery" || engine == "google_cloud_platform" {
+		return "`" + strings.NewReplacer("\\", "\\\\", "`", "\\`").Replace(value) + "`"
+	}
+	if engine == "mssql" || engine == "synapse" || engine == "fabric" {
+		return "[" + strings.ReplaceAll(value, "]", "]]") + "]"
+	}
 	quote := `"`
 	switch engine {
 	case "starrocks", "doris", "databricks", "mysql":

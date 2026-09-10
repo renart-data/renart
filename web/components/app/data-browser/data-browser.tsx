@@ -58,6 +58,8 @@ import {
 } from "../connection-type-icon";
 import { WorkspaceConnectionDialog } from "../workspace-connection-dialog-lazy";
 import { DataBrowserTransferItem } from "./data-browser-transfer-item";
+import type { DataBrowserDestination } from "@/lib/data-browser-transfer";
+import { notebookBrowserDropReason } from "@/lib/notebook-browser-drop";
 import { DataBrowserLoading } from "./data-browser-loading";
 import { SqlPreview } from "../sql-preview";
 import { AppContextSidebarTransition } from "../workbench/workbench-context-sidebar";
@@ -87,19 +89,19 @@ export function AppDataBrowserPage() {
 }
 
 export function AppDataBrowserSidebar({
-  pipelineId,
-  onChooseForCanvas,
+  destination,
+  onChooseForPlacement,
   onNavigateObject,
 }: {
-  pipelineId?: string;
-  onChooseForCanvas?: () => void;
+  destination?: DataBrowserDestination;
+  onChooseForPlacement?: () => void;
   onNavigateObject?: (target: DataTarget) => void | Promise<void>;
 }) {
   return (
     <DataBrowserWorkspace
       presentation="sidebar-dialog"
-      pipelineId={pipelineId}
-      onChooseForCanvas={onChooseForCanvas}
+      destination={destination}
+      onChooseForPlacement={onChooseForPlacement}
       onNavigateObject={onNavigateObject}
     />
   );
@@ -107,13 +109,13 @@ export function AppDataBrowserSidebar({
 
 function DataBrowserWorkspace({
   presentation,
-  pipelineId,
-  onChooseForCanvas,
+  destination,
+  onChooseForPlacement,
   onNavigateObject,
 }: {
   presentation: "page" | "sidebar-dialog";
-  pipelineId?: string;
-  onChooseForCanvas?: () => void;
+  destination?: DataBrowserDestination;
+  onChooseForPlacement?: () => void;
   onNavigateObject?: (target: DataTarget) => void | Promise<void>;
 }) {
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
@@ -154,9 +156,9 @@ function DataBrowserWorkspace({
   const navigator = (
     <DataBrowserNavigator
       key={JSON.stringify([getPinnedProjectId(), environment])}
-      pipelineId={pipelineId}
+      destination={destination}
       environment={environment}
-      onChooseForCanvas={onChooseForCanvas}
+      onChooseForPlacement={onChooseForPlacement}
       onNavigateObject={onNavigateObject}
       browser={browser}
       quickWarehouseTypes={quickWarehouseTypes.map((item) => item.type_name)}
@@ -250,18 +252,18 @@ function useDataBrowser(environment: string, enabled: boolean) {
 type DataBrowserController = ReturnType<typeof useDataBrowser>;
 
 function DataBrowserNavigator({
-  pipelineId,
+  destination,
   environment,
-  onChooseForCanvas,
+  onChooseForPlacement,
   onNavigateObject,
   browser,
   quickWarehouseTypes,
   quickFileSystemTypes,
   onAddConnection,
 }: {
-  pipelineId?: string;
+  destination?: DataBrowserDestination;
   environment: string;
-  onChooseForCanvas?: () => void;
+  onChooseForPlacement?: () => void;
   onNavigateObject?: (target: DataTarget) => void | Promise<void>;
   browser: DataBrowserController;
   quickWarehouseTypes: string[];
@@ -298,6 +300,13 @@ function DataBrowserNavigator({
     if (browser.createdConnection) setQuery(connectionSearchPrefix(browser.createdConnection));
   }, [browser.createdConnection, setQuery]);
   const search = useDataBrowserSearch(query, browser.connections, undefined, environment);
+  const retriedStaleQuery = useRef<string | null>(null);
+  useEffect(() => {
+    const key = JSON.stringify([searchScope, query]);
+    if (!search.stale || retriedStaleQuery.current === key) return;
+    retriedStaleQuery.current = key;
+    void browser.reloadConnections();
+  }, [search.stale, searchScope, query, browser.reloadConnections]);
   const activeSearch = query.length > 0;
   const selectedConnection = search.connection;
   const filteredConnections = search.connections;
@@ -466,10 +475,11 @@ function DataBrowserNavigator({
             ) : error ? null : selectedConnection ? (
               <NodeList
                 nodes={filteredNodes}
+                supportsNotebookSources={Boolean(selectedConnection.capabilities.notebook_source)}
                 onOpen={openSearchNode}
-                pipelineId={pipelineId}
+                destination={destination}
                 environment={environment}
-                onChooseForCanvas={onChooseForCanvas}
+                onChooseForPlacement={onChooseForPlacement}
                 onNavigateObject={onNavigateObject}
               />
             ) : (
@@ -478,10 +488,11 @@ function DataBrowserNavigator({
                   {filteredConnections.map((connection) => (
                     <DataBrowserTransferItem
                       key={connection.id}
-                      pipelineId={pipelineId}
+                      destination={destination}
                       environment={environment}
-                      onChoose={onChooseForCanvas}
+                      onChoose={onChooseForPlacement}
                       item={
+                        destination?.kind !== "notebook" &&
                         (connection.source_kind === "warehouse" ||
                           connection.source_kind === "storage") &&
                         connection.access_mode !== "read_only"
@@ -572,17 +583,19 @@ function DataBrowserNavigator({
 
 function NodeList({
   nodes,
+  supportsNotebookSources,
   onOpen,
-  pipelineId,
+  destination,
   environment,
-  onChooseForCanvas,
+  onChooseForPlacement,
   onNavigateObject,
 }: {
   nodes: DataBrowserNode[];
+  supportsNotebookSources: boolean;
   onOpen: (node: DataBrowserNode) => void | Promise<void>;
-  pipelineId?: string;
+  destination?: DataBrowserDestination;
   environment: string;
-  onChooseForCanvas?: () => void;
+  onChooseForPlacement?: () => void;
   onNavigateObject?: (target: DataTarget) => void | Promise<void>;
 }) {
   if (nodes.length === 0) {
@@ -648,9 +661,16 @@ function NodeList({
         return (
           <DataBrowserTransferItem
             key={node.id}
-            pipelineId={pipelineId}
+            destination={destination}
+            disabledReason={
+              destination?.kind === "notebook"
+                ? supportsNotebookSources
+                  ? notebookBrowserDropReason(node)
+                  : "This connection does not support typed notebook snapshots yet."
+                : undefined
+            }
             environment={environment}
-            onChoose={onChooseForCanvas}
+            onChoose={onChooseForPlacement}
             item={
               node.address?.source_kind === "warehouse" &&
               node.object_kind === "table" &&

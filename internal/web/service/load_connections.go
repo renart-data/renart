@@ -72,3 +72,9 @@ func loadConnectionCategory(connectionType string) string {
 	}
 	return ""
 }
+
+// SupportsNotebookWarehouseSource advertises only query connections with an
+// existing typed snapshot transport, independent of their write permissions.
+func SupportsNotebookWarehouseSource(connectionType string) bool {
+	return IsQueryableConnectionType(connectionType) && loadConnectionCategory(connectionType) == LoadCategoryDatabase
+}

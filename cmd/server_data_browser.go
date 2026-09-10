@@ -29,11 +29,12 @@ func configureDataBrowserService(server *webServer, workspaceRoot string) {
 			}
 			for name, connectionType := range summaries {
 				connections = append(connections, databrowser.ConnectionConfig{
-					AccessMode: string(modes[name]),
-					Name:       name,
-					Type:       connectionType,
-					Queryable:  service.IsQueryableConnectionType(connectionType),
-					Storage:    connectionType == "s3" || connectionType == "sftp",
+					AccessMode:     string(modes[name]),
+					Name:           name,
+					Type:           connectionType,
+					Queryable:      service.IsQueryableConnectionType(connectionType),
+					NotebookSource: service.SupportsNotebookWarehouseSource(connectionType),
+					Storage:        connectionType == "s3" || connectionType == "sftp",
 				})
 			}
 			state := server.currentState()

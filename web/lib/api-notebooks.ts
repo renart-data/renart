@@ -28,6 +28,7 @@ import type {
   NotebookChangeApplyResult,
   NotebookChangePlan,
   NotebookChangeSet,
+  NotebookBrowserSourceRequest,
   NotebookParameter,
   NotebookSourceDefinition,
   PresentationDatasetResult,
@@ -492,6 +493,30 @@ export async function applyNotebookChangeSet(notebookId: string, changeSet: Note
     `/api/notebooks/${notebookId}/changes/apply`,
     "POST",
     changeSet,
+  );
+}
+
+export function prepareNotebookBrowserSource(
+  notebookId: string,
+  request: NotebookBrowserSourceRequest,
+  signal?: AbortSignal,
+) {
+  return fetchJSONWithBody<NotebookChangePlan>(
+    `/api/notebooks/${notebookId}/data-browser/prepare`,
+    "POST",
+    request,
+    { signal },
+  );
+}
+
+export function applyNotebookBrowserSource(
+  notebookId: string,
+  request: NotebookBrowserSourceRequest,
+) {
+  return fetchJSONWithBody<NotebookChangeApplyResult>(
+    `/api/notebooks/${notebookId}/data-browser/apply`,
+    "POST",
+    request,
   );
 }
 

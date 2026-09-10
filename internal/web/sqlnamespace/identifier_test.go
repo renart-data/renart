@@ -24,3 +24,17 @@ func TestQuoteReferencePreservesIndividualIdentifiers(t *testing.T) {
 		require.Error(t, err, invalid)
 	}
 }
+
+func TestQuoteReferenceForNotebookSourceDialects(t *testing.T) {
+	for _, tt := range []struct{ engine, input, want string }{
+		{"mysql", `sales."order.items"`, "`sales`.`order.items`"},
+		{"bigquery", "my-project.analytics.orders", "`my-project.analytics.orders`"},
+		{"google_cloud_platform", "my-project.analytics.orders", "`my-project.analytics.orders`"},
+		{"mssql", `db.dbo."order]items"`, "[db].[dbo].[order]]items]"},
+		{"postgres", `public."Order.Items"`, `"public"."Order.Items"`},
+	} {
+		got, err := QuoteReference(tt.engine, tt.input)
+		require.NoError(t, err)
+		require.Equal(t, tt.want, got)
+	}
+}

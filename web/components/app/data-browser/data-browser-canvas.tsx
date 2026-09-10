@@ -56,7 +56,12 @@ export function DataBrowserCanvas({
 }) {
   const [transfer, setTransfer] = useAtom(dataBrowserTransferAtom);
   const environment = useAtomValue(selectedEnvironmentAtom) ?? "default";
-  const active = acceptsDataBrowserTransfer(transfer, pipelineId, getPinnedProjectId(), environment)
+  const active = acceptsDataBrowserTransfer(
+    transfer,
+    { kind: "pipeline", id: pipelineId },
+    getPinnedProjectId(),
+    environment,
+  )
     ? transfer
     : null;
   const isLoadObject = active?.kind === "storage" || active?.kind === "file";

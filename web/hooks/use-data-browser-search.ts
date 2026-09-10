@@ -8,6 +8,7 @@ import {
 } from "@/lib/data-browser-search";
 import type { DataBrowserChildrenResponse, DataBrowserConnection } from "@/lib/generated/api-types";
 import { getPinnedProjectId } from "@/lib/project-context";
+import { APIError } from "@/lib/api-core";
 
 // Disposable metadata only, bounded to this mounted browser and revision scope.
 // Complete listings are shared across leaf edits. Capped S3 listings include a
@@ -23,7 +24,12 @@ export function useDataBrowserSearch(
     scope,
     entries: new Map<string, DataBrowserChildrenResponse>(),
   });
-  const [failure, setFailure] = useState<{ scope: string; key: string; message: string }>();
+  const [failure, setFailure] = useState<{
+    scope: string;
+    key: string;
+    message: string;
+    stale: boolean;
+  }>();
   const [revision, setRevision] = useState(0);
   const plan = planDataBrowserSearch(
     query,
@@ -69,6 +75,7 @@ export function useDataBrowserSearch(
               scope,
               key,
               message: cause instanceof Error ? cause.message : "Could not browse this path.",
+              stale: cause instanceof APIError && cause.code === "data_browser_revision_stale",
             });
         });
     }, 180);
@@ -81,6 +88,7 @@ export function useDataBrowserSearch(
   return {
     ...plan,
     error,
+    stale: failure?.scope === scope && failure.key === key && failure.stale,
     loading: Boolean(key && !error),
     refresh: () => {
       setCache({ scope, entries: new Map() });

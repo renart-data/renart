@@ -467,6 +467,7 @@ export type CreateProjectResponse = {
 };
 
 export type DataBrowserCapabilities = {
+  notebook_source?: boolean;
   load_source?: boolean;
   load_destination?: boolean;
   list_namespaces: boolean;
@@ -667,6 +668,18 @@ export type MaterializationCapability = {
   supports_cluster_by?: boolean;
 };
 
+export type NotebookBrowserSourceRequest = {
+  object_id: string;
+  environment: string;
+  base_revision?: string;
+  position?: string;
+  after_block_id?: string;
+  name?: string;
+  snapshot_mode?: string;
+  row_limit?: number;
+  change_set?: NotebookChangeSet;
+};
+
 export type NotebookCellPreviewResult = {
   columns: string[];
   column_types?: string[];
@@ -726,6 +739,7 @@ export type NotebookChangeSet = {
 };
 
 export type NotebookOperation = {
+  environment?: string;
   kind: string;
   cell_id?: string;
   block_id?: string;

@@ -30,6 +30,18 @@ Python cells can join it with snapshots from other connections. Source cards
 show the connection, environment, snapshot age, rows, bytes, and whether the
 snapshot is complete or intentionally sampled.
 
+You can also open the **Data Browser** while editing a notebook and drag a table
+or supported project/S3 file into a gap between blocks. On a phone or with the
+keyboard, use the item's **Add to notebook** (+) action, then choose **Add source
+here**. Review the block name and full/sample snapshot setting before confirming.
+Nothing is queried or copied until you run the new source block. Read-only
+warehouse connections can be used as sources too.
+
+Drops currently accept individual CSV, JSON, JSONL and Parquet files. Choose a
+file inside a storage prefix; prefix/pattern drops and SFTP notebook transfers
+are not supported yet. The Data Browser stays open on desktop, so you can add
+another source without leaving the notebook.
+
 Database transfers use typed Parquet snapshots. Renart does not fall back to
 JSON rows or guess physical column types when a connection cannot provide that
 transport; the source run fails and keeps its previous complete snapshot. Local

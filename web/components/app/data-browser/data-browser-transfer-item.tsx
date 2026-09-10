@@ -6,6 +6,7 @@ import {
   DATA_BROWSER_MIME,
   dataBrowserTransferAtom,
   type DataBrowserTransfer,
+  type DataBrowserDestination,
 } from "@/lib/data-browser-transfer";
 import { getPinnedProjectId } from "@/lib/project-context";
 
@@ -14,23 +15,25 @@ let transferSequence = 0;
 export function DataBrowserTransferItem({
   children,
   item,
-  pipelineId,
+  destination,
+  disabledReason,
   environment,
   onChoose,
 }: {
   children: ReactNode;
   item?: Pick<DataBrowserTransfer, "kind" | "id" | "label" | "referenceText">;
-  pipelineId?: string;
+  destination?: DataBrowserDestination;
+  disabledReason?: string;
   environment: string;
   onChoose?: () => void;
 }) {
   const setTransfer = useSetAtom(dataBrowserTransferAtom);
-  const enabled = Boolean(pipelineId && item);
+  const enabled = Boolean(destination && item && !disabledReason);
   const pickUp = (method: DataBrowserTransfer["method"]) => {
-    if (!pipelineId || !item) return null;
+    if (!destination || !item || disabledReason) return null;
     const transfer: DataBrowserTransfer = {
       ...item,
-      pipelineId,
+      destination,
       environment,
       projectId: getPinnedProjectId(),
       method,
@@ -42,6 +45,7 @@ export function DataBrowserTransferItem({
   return (
     <div
       className="group/transfer flex min-w-0 items-center gap-1"
+      title={disabledReason}
       draggable={enabled}
       data-testid={enabled ? "data-browser-transfer-item" : undefined}
       data-transfer-label={enabled ? item?.label : undefined}
@@ -84,13 +88,23 @@ export function DataBrowserTransferItem({
       }
     >
       <div className="min-w-0 flex-1">{children}</div>
-      {enabled ? (
+      {destination && item ? (
         <Button
           variant="ghost"
           size="icon-xs"
           className="shrink-0 text-muted-foreground md:opacity-0 md:group-hover/transfer:opacity-100 md:focus-visible:opacity-100"
-          aria-label={`Use ${item?.label} in canvas`}
-          title="Use in canvas, or drag onto it"
+          disabled={!enabled}
+          aria-label={
+            destination.kind === "notebook"
+              ? `Add ${item.label} to notebook`
+              : `Use ${item.label} in canvas`
+          }
+          title={
+            disabledReason ||
+            (destination.kind === "notebook"
+              ? "Add to notebook, or drag between blocks"
+              : "Use in canvas, or drag onto it")
+          }
           onClick={() => {
             pickUp("choose");
             onChoose?.();

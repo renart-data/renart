@@ -10,6 +10,7 @@ import (
 
 // renart:web-name DataBrowserCapabilities
 type Capabilities struct {
+	NotebookSource  bool `json:"notebook_source,omitempty"`
 	LoadSource      bool `json:"load_source,omitempty"`
 	LoadDestination bool `json:"load_destination,omitempty"`
 	ListNamespaces  bool `json:"list_namespaces"`

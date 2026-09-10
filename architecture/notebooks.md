@@ -1,6 +1,6 @@
 # Notebooks — current architecture
 
-Status: current state, August 2026. A notebook is
+Status: current state, September 2026. A notebook is
 a Git-native ordered document whose data-producing blocks share one local
 DuckDB integration warehouse. Remote systems are read-only sources; Renart
 transfers typed snapshots into the local session before downstream work runs.
@@ -91,6 +91,55 @@ stay visible on narrow and non-hover layouts, where hover-only discovery is
 unavailable. Both paths use the same positional semantic operations. Insertion
 anchors are durable raw
 cell/block IDs, while prefixed React keys remain UI-only.
+
+### Data Browser source insertion
+
+The notebook Data Browser shares the canvas's `DataBrowserTransfer` interaction:
+a tagged pipeline/notebook destination, a same-window nonce-only drag payload,
+and project/environment checks. Tables and supported project/S3 files can be
+dropped into the existing Add-rail insertion points. The item action uses those
+same points for keyboard/touch placement; Escape cancels placement. No notebook
+destination is advertised for the library page, unsupported transports or
+formats. Connection capabilities restrict warehouse handoff to existing typed
+snapshot transports, independently of read-only/write permissions.
+
+`useNotebookBrowserDrop` crosses the existing save barrier, loads a current
+notebook revision and opens a shadcn review dialog. The review shows the source,
+environment, block name and full/sample policy; generated source text is a
+disclosure rather than permanent editor chrome. Changing the name or policy
+requires preparing a fresh normalized plan. Preparation writes only disposable
+staging; cancellation writes no authored files. The exact reviewed change set
+is applied only on confirmation, then the ordinary mutation projection/SSE
+reconciles the document and reveals/highlights the new durable cell. No source
+query, preview or transfer is triggered by authoring; sources remain excluded
+from auto-recompute and run only through explicit notebook execution.
+
+The thin `/api/notebooks/{id}/data-browser/{prepare,apply}` adapter resolves the
+revision-bound browser ID again at both boundaries. `databrowser.NotebookSource`
+reuses exact address discovery and file containment with row previews, column
+inspection and view-definition reads disabled. Table SQL uses the discovered
+qualified identity and shared dialect quoting. Local files retain project-relative
+paths; S3 files use the server-discovered connection/URI. Wildcards and template
+delimiters in literal source paths are rejected rather than promoted to executable
+selectors. Apply rebuilds the source operation and checks the exact normalized
+change set before using the existing CAS/journal transaction. Missing objects,
+changed environments/connections, stale notebooks and missing anchors require
+another review; there is no silent append or fallback source.
+
+Semantic operations accept an optional environment for source validation.
+Explicit environments resolve credential-free configuration summaries without
+switching global execution state; legacy operations without one retain their
+current-workspace validation behavior. The environment is operation context, not
+a new fixed environment binding in authored notebook files.
+
+Data Browser search retries an expired metadata listing once per search query by
+refreshing connection references. This handles a workspace refresh between listing
+connections and their children. It never retries an authored apply or rebinds an
+already reviewed source. Further stale failures retain the explicit Refresh action.
+
+Prefix/pattern imports, dropping a connection to open a source picker, GCS browser
+coverage and typed SFTP notebook transport remain follow-ups, not advertised drop
+capabilities. Existing manual GCS notebook sources are unchanged.
 
 ## 3. Run graph and execution roles
 

@@ -1722,8 +1722,8 @@ export function AppBuildPage({
   const dataBrowserSidebar = (
     <Suspense fallback={<DataBrowserSidebarLoading />}>
       <DataBrowserSidebar
-        pipelineId={pipelineId}
-        onChooseForCanvas={() =>
+        destination={pipelineId ? { kind: "pipeline", id: pipelineId } : undefined}
+        onChooseForPlacement={() =>
           afterMobileNavigationCloses(() => {
             if (view === "code" && effectiveSelectedAssetId)
               void navigate({

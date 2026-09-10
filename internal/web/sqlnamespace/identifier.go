@@ -69,6 +69,9 @@ func QuoteReference(engine, value string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if engine == "bigquery" || engine == "google_cloud_platform" {
+		return Quote(engine, strings.Join(parts, ".")), nil
+	}
 	for i, part := range parts {
 		parts[i] = Quote(engine, part)
 	}

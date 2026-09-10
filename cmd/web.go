@@ -374,6 +374,7 @@ func (s *webServer) registerRoutes(router chi.Router) {
 	webhttpapi.RegisterPipelineExecutionRoutes(router, &webhttpapi.PipelineExecutionAPI{Service: s.executionSvc})
 	webhttpapi.RegisterSQLRoutes(router, &webhttpapi.SQLAPI{Service: s.sqlSvc})
 	webhttpapi.RegisterDataBrowserRoutes(router, &webhttpapi.DataBrowserAPI{Service: s.dataBrowserSvc, Sources: s.pipelineSvc, Publisher: s})
+	webhttpapi.RegisterNotebookBrowserSourceRoutes(router, &webhttpapi.NotebookBrowserSourceAPI{Browser: s.dataBrowserSvc, Notebooks: s.notebookSvc})
 	webhttpapi.RegisterLoadRoutes(router, &webhttpapi.LoadAPI{Service: s.loadSvc})
 	webhttpapi.RegisterSuggestionRoutes(router, &webhttpapi.SuggestionsAPI{Service: s.suggestionsSvc})
 	webhttpapi.RegisterParseContextRoutes(router, &webhttpapi.ParseContextAPI{Service: s.parseContextSvc})

@@ -2,6 +2,8 @@ import { atom } from "jotai";
 
 export const DATA_BROWSER_MIME = "application/x-renart-data-browser";
 
+export type DataBrowserDestination = { kind: "pipeline" | "notebook"; id: string };
+
 // Disposable same-window interaction state. Only the nonce enters DataTransfer:
 // no credentials, SQL, file paths, or reusable cross-project authority.
 export type DataBrowserTransfer = {
@@ -11,7 +13,7 @@ export type DataBrowserTransfer = {
   // Display hint from the server's listing; creation still revalidates the ID.
   referenceText?: string;
   token: string;
-  pipelineId: string;
+  destination: DataBrowserDestination;
   projectId: string | null;
   environment: string;
   method: "drag" | "choose";
@@ -21,14 +23,15 @@ export const dataBrowserTransferAtom = atom<DataBrowserTransfer | null>(null);
 
 export function acceptsDataBrowserTransfer(
   transfer: DataBrowserTransfer | null,
-  pipelineId: string | undefined,
+  destination: DataBrowserDestination | undefined,
   projectId: string | null,
   environment: string,
 ): transfer is DataBrowserTransfer {
   return Boolean(
     transfer &&
-    pipelineId &&
-    transfer.pipelineId === pipelineId &&
+    destination &&
+    transfer.destination.kind === destination.kind &&
+    transfer.destination.id === destination.id &&
     transfer.projectId === projectId &&
     transfer.environment === environment,
   );
