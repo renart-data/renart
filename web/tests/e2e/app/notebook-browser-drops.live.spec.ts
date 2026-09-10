@@ -108,7 +108,115 @@ test("reviews table drops, cancels without writing, inserts in order and runs on
   expect(
     results.find((result: { cell_id: string }) => result.cell_id === source.cell_id),
   ).toMatchObject({ status: "ok", columns: ["order_id"] });
+  for (const reference of ['"local"."raw"."drop_orders"', '"raw"."drop_orders"']) {
+    const response = await page.request.post(`${liveApp.baseURL}/api/sql/lsp/diagnostics`, {
+      data: {
+        asset_id: source.id,
+        content: `select * from ${reference}`,
+        connection: source.connection,
+        environment: "default",
+      },
+    });
+    expect(response.ok(), await response.text()).toBe(true);
+    const { diagnostics } = await response.json();
+    expect(
+      (diagnostics ?? []).filter(
+        (diagnostic: { code: string }) => diagnostic.code === "unresolved-relation",
+      ),
+    ).toEqual([]);
+  }
+  await page.waitForFunction(
+    (id) =>
+      (window as any).monaco?.editor
+        .getModels()
+        .some((model: any) => model.uri.toString().includes(`/notebook/${id}.`)),
+    source.cell_id,
+  );
+  await expect
+    .poll(() =>
+      page.evaluate((id) => {
+        const monaco = (window as any).monaco;
+        const model = monaco.editor
+          .getModels()
+          .find((model: any) => model.uri.toString().includes(`/notebook/${id}.`));
+        return monaco.editor
+          .getModelMarkers({ resource: model.uri })
+          .filter((marker: any) => (marker.code?.value ?? marker.code) === "unresolved-relation");
+      }, source.cell_id),
+    )
+    .toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test("cached table drops survive notebook autosaves and earlier source insertions", async ({
+  page,
+  liveApp,
+  isMobile,
+}) => {
+  for (const query of [
+    "create schema if not exists raw",
+    "create table raw.first_source as select 1::integer as id",
+    "create table raw.second_source as select 2::integer as id",
+  ]) {
+    const response = await page.request.post(`${liveApp.baseURL}/api/sql/query`, {
+      data: { connection: "duckdb-default", environment: "default", query },
+    });
+    expect((await response.json()).status).toBe("ok");
+  }
+  const nb = await notebook(page, liveApp);
+  await page.goto(`${liveApp.baseURL}/notebooks/${nb.id}`);
+  const cellId = nb.cells[0].cell_id!;
+  await page.waitForFunction(
+    (id) =>
+      (window as any).monaco?.editor
+        .getModels()
+        .some((model: any) => model.uri.toString().includes(`/notebook/${id}.`)),
+    cellId,
+  );
+  const input = await openBrowser(page, isMobile);
+  await input.fill("duckdb-default.local.raw.");
+  await expect(
+    page.getByRole("button", { name: "Add first_source to notebook", exact: true }),
+  ).toBeVisible();
+  // Finish a real editor autosave after the browser listed the tables. The
+  // source reference must remain valid after crossing the notebook save barrier.
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/cells/${cellId}`) && response.request().method() === "PUT",
+  );
+  await page.evaluate((id) => {
+    const monaco = (window as any).monaco;
+    const model = monaco.editor
+      .getModels()
+      .find((model: any) => model.uri.toString().includes(`/notebook/${id}.`));
+    monaco.editor
+      .getEditors()
+      .find((editor: any) => editor.getModel() === model)
+      .setValue("select 314 as saved_before_drop");
+  }, cellId);
+  expect((await saved).ok()).toBe(true);
+  const dialog = page.getByRole("dialog", { name: "Add source to notebook" });
+  for (const label of ["first_source", "second_source"]) {
+    if (label === "second_source" && isMobile) await openBrowser(page, true);
+    if (isMobile) await choose(page, label, `after:${cellId}`);
+    else {
+      const row = page.locator(
+        `[data-testid="data-browser-transfer-item"][data-transfer-label="${label}"]`,
+      );
+      const target = page.locator(`[data-notebook-insertion-point="after:${cellId}"]`);
+      await target.scrollIntoViewIfNeeded();
+      await row.dragTo(target);
+    }
+    await expect(dialog.getByRole("button", { name: "Add source", exact: true })).toBeEnabled();
+    await dialog.getByRole("button", { name: "Add source", exact: true }).click();
+    await expect(dialog).toBeHidden();
+  }
+  const result = await current(page, liveApp, nb.id);
+  expect(result.cells).toHaveLength(3);
+  expect(result.cells.find((cell) => cell.cell_id === cellId)?.content).toContain(
+    "saved_before_drop",
+  );
+  expect(result.cells.filter((cell) => cell.connection === "duckdb-default")).toHaveLength(2);
 });
 
 test("project file placement survives a new tab and rejects a notebook changed during review", async ({

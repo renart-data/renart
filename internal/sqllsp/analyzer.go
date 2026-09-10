@@ -47,10 +47,13 @@ const (
 	semanticTokenAlias  = 3
 )
 
+const relationIdentifierPattern = `(?:"(?:""|[^"])+"|` + "`(?:``|[^`])+`" + `|[A-Za-z_][\w$-]*)`
+const relationNamePattern = `(?:` + relationIdentifierPattern + `|'(?:''|[^'])+')(?:\s*\.\s*` + relationIdentifierPattern + `)*`
+
 var (
 	wordPattern          = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_$]*`)
-	relationPattern      = regexp.MustCompile(`(?i)\b(from|join|into|update|table|describe)\s+((?:"[^"]+"|'(?:''|[^'])+'|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)(?:\s+as\s+([A-Za-z_][\w$]*))?`)
-	commaRelationPattern = regexp.MustCompile(`(?i),\s*((?:"[^"]+"|'(?:''|[^'])+'|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)(?:\s+as\s+([A-Za-z_][\w$]*))?`)
+	relationPattern      = regexp.MustCompile(`(?i)\b(from|join|into|update|table|describe)\s+(` + relationNamePattern + `)(?:\s+as\s+([A-Za-z_][\w$]*))?`)
+	commaRelationPattern = regexp.MustCompile(`(?i),\s*(` + relationNamePattern + `)(?:\s+as\s+([A-Za-z_][\w$]*))?`)
 	insertValuesPattern  = regexp.MustCompile(`(?is)\binsert\s+into\s+((?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)\s*(?:\(([^)]*)\))?\s*values\s*\(`)
 	dotColumnPattern     = regexp.MustCompile(`([A-Za-z_][\w$]*)\s*\.\s*([A-Za-z_][\w$]*)`)
 	refCallPattern       = regexp.MustCompile(`(?is)\{\{\s*(ref|source)\s*\(\s*['"]([^'"]*)`)
@@ -2391,8 +2394,8 @@ type semanticToken struct {
 
 func relationSemanticTokens(sql string, relation relationUse) []semanticToken {
 	// Derive the schema/table token spans from the original source slice, not
-	// from relation.name: normalizeRelation strips spaces and surrounding
-	// quotes, so its offsets no longer line up with source coordinates for
+	// from relation.name: normalizeRelation decodes each identifier's quotes,
+	// so its offsets no longer line up with source coordinates for
 	// qualifiers written as `"schema"."table"` or `schema . table`.
 	if relation.start < 0 || relation.end > len(sql) || relation.end <= relation.start {
 		return []semanticToken{{rng: byteRange{start: relation.start, end: relation.end}, tokenType: semanticTokenTable}}
@@ -3868,10 +3871,20 @@ func sortCompletionItems(items []CompletionItem) {
 }
 
 func normalizeRelation(value string) string {
-	value = strings.ReplaceAll(value, " ", "")
-	value = strings.Trim(value, "`\"'")
-	value = strings.ReplaceAll(value, "''", "'")
-	return value
+	// Decode each qualified segment, not just the outermost quotes of the
+	// entire reference. Preserve spaces/dots inside identifiers and DuckDB
+	// file literals; only whitespace surrounding a segment is insignificant.
+	spans := splitQualifiedIdentifier(value)
+	parts := make([]string, 0, len(spans))
+	for _, span := range spans {
+		part := value[span.start:span.end]
+		if len(part) >= 2 && (part[0] == '"' || part[0] == '`' || part[0] == '\'') && part[len(part)-1] == part[0] {
+			quote := part[:1]
+			part = strings.ReplaceAll(part[1:len(part)-1], quote+quote, quote)
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, ".")
 }
 
 func shortName(value string) string {

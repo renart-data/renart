@@ -132,9 +132,10 @@ switching global execution state; legacy operations without one retain their
 current-workspace validation behavior. The environment is operation context, not
 a new fixed environment binding in authored notebook files.
 
-Data Browser search retries an expired metadata listing once per search query by
-refreshing connection references. This handles a workspace refresh between listing
-connections and their children. It never retries an authored apply or rebinds an
+Data Browser references use the selected environment's connection configuration
+revision, independent of notebook autosaves and previous source insertions. Search
+retries an expired metadata listing once per search query by refreshing connection
+references. It never retries an authored apply or rebinds an
 already reviewed source. Further stale failures retain the explicit Refresh action.
 
 Prefix/pattern imports, dropping a connection to open a source picker, GCS browser

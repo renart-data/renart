@@ -68,7 +68,9 @@ type QueryResult struct {
 }
 
 type Dependencies struct {
-	WorkspaceRoot        string
+	WorkspaceRoot string
+	// ListConnections returns an opaque connection-configuration revision,
+	// never the broader workspace revision. Edits do not retarget sources.
 	ListConnections      func(context.Context, string) (string, []ConnectionConfig, int64, error)
 	ListDatabases        func(context.Context, string, string) ([]string, error)
 	ListTables           func(context.Context, string, string, string) ([]Table, error)
@@ -113,11 +115,11 @@ func New(deps Dependencies) *Service {
 }
 
 func (s *Service) Connections(ctx context.Context, environment string) (ConnectionsResponse, *apperror.Error) {
-	resolvedEnvironment, configs, stateRevision, err := s.listConnections(ctx, environment)
+	resolvedEnvironment, configs, configRevision, err := s.listConnections(ctx, environment)
 	if err != nil {
 		return ConnectionsResponse{}, internalError("data_browser_connections_failed", err)
 	}
-	revision := revisionToken(resolvedEnvironment, stateRevision, configs)
+	revision := revisionToken(resolvedEnvironment, configRevision, configs)
 	duckDBAvailable := hasDuckDBConnection(configs)
 	connections := make([]Connection, 0, len(configs)+1)
 	for _, config := range configs {
@@ -419,11 +421,11 @@ func (s *Service) resolveScope(ctx context.Context, connectionID, environment st
 	if requestedEnvironment == "" {
 		requestedEnvironment = ref.Environment
 	}
-	resolvedEnvironment, configs, stateRevision, listErr := s.listConnections(ctx, requestedEnvironment)
+	resolvedEnvironment, configs, configRevision, listErr := s.listConnections(ctx, requestedEnvironment)
 	if listErr != nil {
 		return resolvedScope{}, internalError("data_browser_connections_failed", listErr)
 	}
-	revision := revisionToken(resolvedEnvironment, stateRevision, configs)
+	revision := revisionToken(resolvedEnvironment, configRevision, configs)
 	if requestedEnvironment != resolvedEnvironment || ref.Environment != resolvedEnvironment || ref.Revision != revision {
 		return resolvedScope{}, &apperror.Error{
 			Status:  http.StatusConflict,
@@ -802,8 +804,8 @@ func mapStringValue(row map[string]any, keys ...string) string {
 	return ""
 }
 
-func revisionToken(environment string, stateRevision int64, connections []ConnectionConfig) string {
-	parts := []string{environment, strconv.FormatInt(stateRevision, 10)}
+func revisionToken(environment string, configRevision int64, connections []ConnectionConfig) string {
+	parts := []string{environment, strconv.FormatInt(configRevision, 10)}
 	for _, connection := range connections {
 		parts = append(parts, connection.Name+"\x00"+connection.Type+"\x00"+strconv.FormatBool(connection.Queryable)+"\x00"+strconv.FormatBool(connection.Storage)+"\x00"+connection.AccessMode)
 	}

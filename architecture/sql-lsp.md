@@ -193,6 +193,12 @@ coordinator's `WorkspaceState` rather than the filesystem:
   DuckDB relation syntax without becoming an unknown-table error.
 - No parser artifact is downloaded or initialized lazily. The first request
   runs the same native engine as every later request.
+- The scope-analysis layer decodes quotes per identifier segment, matching
+  the native parser's names: `"catalog"."schema"."table"` resolves as
+  `catalog.schema.table`, including in generated notebook source SQL. It
+  preserves quoted spaces and escaped quotes, keeps explicit catalog identity,
+  and derives diagnostic/token ranges from the original SQL rather than the
+  decoded name.
 
 ## 3. Notebook cells
 

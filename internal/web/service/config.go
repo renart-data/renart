@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -154,6 +155,7 @@ type ConfigService struct {
 	configPath     string
 	secretResolver *secretstore.Resolver
 	secretVault    *secretstore.LocalVaultProvider
+	discoveryKey   string
 	mu             sync.Mutex
 }
 
@@ -186,6 +188,7 @@ func NewConfigService(workspaceRoot, configPath string, options ...ConfigService
 		configPath:     configPath,
 		secretResolver: secretstore.NewDefaultResolverWithLocalVault(vault),
 		secretVault:    vault,
+		discoveryKey:   rand.Text(),
 	}
 	for _, option := range options {
 		if option != nil {
@@ -351,9 +354,17 @@ func (s *ConfigService) LoadReadOnly() (*config.Config, string, error) {
 // environment. It deliberately avoids resolving or exposing connection values,
 // making it suitable for discovery UIs such as the Data Browser.
 func (s *ConfigService) ConnectionSummaries(environment string) (string, map[string]string, error) {
-	cfg, _, err := s.LoadReadOnly()
+	cfg, resolvedEnvironment, err := s.connectionDiscoveryConfig(environment)
 	if err != nil {
 		return "", nil, err
+	}
+	return resolvedEnvironment, selectedConnectionSummaries(cfg), nil
+}
+
+func (s *ConfigService) connectionDiscoveryConfig(environment string) (*config.Config, string, error) {
+	cfg, _, err := s.LoadReadOnly()
+	if err != nil {
+		return nil, "", err
 	}
 
 	resolvedEnvironment := strings.TrimSpace(environment)
@@ -371,21 +382,12 @@ func (s *ConfigService) ConnectionSummaries(environment string) (string, map[str
 		}
 	}
 	if resolvedEnvironment == "" {
-		return "", map[string]string{}, nil
+		return cfg, "", nil
 	}
 	if err := cfg.SelectEnvironment(resolvedEnvironment); err != nil {
-		return "", nil, err
+		return nil, "", err
 	}
-	if cfg.SelectedEnvironment == nil || cfg.SelectedEnvironment.Connections == nil {
-		return resolvedEnvironment, map[string]string{}, nil
-	}
-
-	connections := cfg.SelectedEnvironment.Connections.ConnectionsSummaryList()
-	result := make(map[string]string, len(connections))
-	for name, connectionType := range connections {
-		result[name] = connectionType
-	}
-	return resolvedEnvironment, result, nil
+	return cfg, resolvedEnvironment, nil
 }
 
 func (s *ConfigService) Persist(cfg *config.Config) (string, error) {

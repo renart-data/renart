@@ -91,6 +91,18 @@ or preview request. Preview SQL is constructed and quoted by the backend from
 the resolved object reference, capped at 1,000 rows, and never accepted from the
 browser as arbitrary SQL.
 
+Browser revisions describe the selected environment's connection configuration,
+not the workspace revision. Notebook autosaves, source creation and independent
+execution-environment changes leave existing browser references valid. The
+configuration service reads the effective (possibly parent-owned or environment-
+supplied) config, access policy and secret bindings and fingerprints that scope
+with a private per-service HMAC key. Only names, types, access modes and an opaque
+token leave the service. Raw field projection avoids Bruin transport serializers
+that read credential files; discovery never resolves credentials. Connection
+retargeting, policy/binding changes and a new server lifetime invalidate old
+references. Object/path revalidation and notebook revision-checked apply remain
+separate checks; a stable connection token is not a cached source snapshot.
+
 Data Browser and asset Inspect share `internal/web/preview` and the generated
 `model.PreviewMetadata` contract. Initial Data Browser samples request 100 rows;
 Inspect keeps its existing per-view initial bounds. Each adapter asks for one
@@ -1681,8 +1693,9 @@ from the parent path. S3 handoff uses an internal exact-name, one-result listing
 does not fall back to the original 500-entry parent listing.
 The workspace watcher excludes Sling's generated `.renart/config/.sling/` files
 from both polling snapshots and fsnotify relevance checks. Bootstrapping Sling
-therefore does not advance the workspace revision and invalidate its own browser
-references. Authored connection, secret and environment declarations remain watched.
+therefore avoids spurious workspace refreshes. Authored connection, secret and
+environment declarations remain watched; browser references independently track
+the connection-configuration fingerprint rather than the workspace refresh counter.
 
 The prefix endpoint also accepts a separate `pattern` for metadata-only wildcard
 search. `databrowser.SearchStorage` matches case-sensitive `*` and `?` within

@@ -18,29 +18,21 @@ func configureDataBrowserService(server *webServer, workspaceRoot string) {
 	server.dataBrowserSvc = databrowser.New(databrowser.Dependencies{
 		WorkspaceRoot: workspaceRoot,
 		ListConnections: func(_ context.Context, environment string) (string, []databrowser.ConnectionConfig, int64, error) {
-			resolvedEnvironment, summaries, err := server.configSvc.ConnectionSummaries(environment)
+			resolvedEnvironment, summaries, revision, err := server.configSvc.ConnectionDiscovery(environment)
 			if err != nil {
 				return "", nil, 0, err
 			}
 			connections := make([]databrowser.ConnectionConfig, 0, len(summaries))
-			modes, err := server.configSvc.ConnectionAccessModes(resolvedEnvironment)
-			if err != nil {
-				return "", nil, 0, err
-			}
-			for name, connectionType := range summaries {
+			for _, summary := range summaries {
+				connectionType := summary.Type
 				connections = append(connections, databrowser.ConnectionConfig{
-					AccessMode:     string(modes[name]),
-					Name:           name,
+					AccessMode:     string(summary.AccessMode),
+					Name:           summary.Name,
 					Type:           connectionType,
 					Queryable:      service.IsQueryableConnectionType(connectionType),
 					NotebookSource: service.SupportsNotebookWarehouseSource(connectionType),
 					Storage:        connectionType == "s3" || connectionType == "sftp",
 				})
-			}
-			state := server.currentState()
-			revision := int64(0)
-			if state.SelectedEnvironment == resolvedEnvironment {
-				revision = state.Revision
 			}
 			return resolvedEnvironment, connections, revision, nil
 		},

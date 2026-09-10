@@ -28,6 +28,7 @@ test.describe("Data Browser authoring", () => {
     for (const query of [
       "create schema if not exists raw",
       "create table raw.browser_orders as select 42::integer as order_id",
+      "create table raw.browser_customers as select 7::integer as customer_id",
     ]) {
       const setup = await page.request.post(`${liveApp.baseURL}/api/sql/query`, {
         data: { connection: "duckdb-default", environment: "default", query },
@@ -125,6 +126,22 @@ test.describe("Data Browser authoring", () => {
     expect(commands).toEqual([]);
     expect(errors).toEqual([]);
     await page.screenshot({ path: info.outputPath("source-created.png") });
+
+    // Keep the mounted browser's cached listing: creating the first source
+    // advances workspace state, but does not change the warehouse connection.
+    if (info.project.name.includes("mobile")) await openBrowser(page, "raw");
+    await page
+      .getByRole("button", { name: "Use browser_customers in canvas", exact: true })
+      .click();
+    await page.getByTestId("data-browser-drop-target").click();
+    await expect(dialog.getByText("customer_id", { exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "Create source asset", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(
+      page.getByTestId("lineage-asset").filter({ hasText: "browser_customers" }),
+    ).toBeVisible();
+    expect(commands).toEqual([]);
+    expect(errors).toEqual([]);
   });
 
   test("prefills a downstream Load from a destination connection", async ({
