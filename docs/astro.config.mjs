@@ -4,8 +4,8 @@ import starlightThemeRapide from 'starlight-theme-rapide';
 
 const site = 'https://getrenart.com';
 const socialImage = `${site}/landing/og-image.png`;
-const siteDescription = 'Renart is the git-native data pipeline IDE: a visual canvas, editor, inspect, and execution workflow for version-controlled pipelines.';
-const docsDescription = 'Documentation for Renart, the git-native data pipeline IDE for visually editing, inspecting, running, and understanding data pipelines.';
+const siteDescription = 'Renart is an open source data platform for moving, transforming and analyzing data, with SQL and Python pipelines, notebooks and dashboards defined in Git.';
+const docsDescription = 'Learn to move, transform and analyze data with Renart: SQL and Python pipelines, notebooks, dashboards and scheduling, with definitions kept as code in Git.';
 
 const docsStructuredData = JSON.stringify({
   '@context': 'https://schema.org',
@@ -76,7 +76,7 @@ export default defineConfig({
         { tag: 'meta', attrs: { name: 'application-name', content: 'Renart' } },
         { tag: 'meta', attrs: { name: 'apple-mobile-web-app-title', content: 'Renart' } },
         { tag: 'meta', attrs: { name: 'theme-color', content: '#0f172a' } },
-        { tag: 'meta', attrs: { name: 'keywords', content: 'Renart, data pipeline IDE, git-native data pipelines, data engineering, analytics engineering, lineage canvas' } },
+        { tag: 'meta', attrs: { name: 'keywords', content: 'Renart, open source data platform, ETL, ELT, SQL, Python, data pipelines, notebooks, dashboards, data engineering' } },
         { tag: 'meta', attrs: { name: 'author', content: 'Renart' } },
         { tag: 'meta', attrs: { property: 'og:type', content: 'website' } },
         { tag: 'meta', attrs: { property: 'og:site_name', content: 'Renart Docs' } },

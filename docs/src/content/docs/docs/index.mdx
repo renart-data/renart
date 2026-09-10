@@ -1,12 +1,16 @@
 ---
 title: Overview
-description: Renart is the all-in-one data pipeline IDE — open source, running entirely inside your git repository.
+description: Renart is an open source data platform for moving, transforming and analyzing data, with workflows defined as code in Git.
 ---
 
-Renart is the all-in-one data pipeline IDE. It combines the editor, notebooks,
-presentations, scheduler, and freshness monitor in one open-source tool that
-runs entirely inside your git repository — your work is plain files, running
-on the warehouse you already use.
+Renart is an open source data platform for moving, transforming and analyzing
+data across your data stack. Build and run SQL and Python pipelines alongside
+notebooks and dashboards in one visual workspace, with type checking,
+scheduling and everything defined as code in Git.
+
+The goal is to bring a first-class developer experience to the entire data
+workflow. Renart runs in your environment and connects to the databases,
+warehouses, files, object storage and HTTP APIs you use.
 
 <img
   src="/docs-media/workspace-overview.webp"
@@ -17,12 +21,15 @@ on the warehouse you already use.
 
 ## What you get
 
+- **Data movement as part of the pipeline.** [Load assets](/docs/asset-types/load-assets/)
+  move data between supported sources and destinations;
+  [HTTP API assets](/docs/asset-types/http-api-assets/) bring API data into the workflow.
 - **A pipeline canvas** that shows assets, dependencies, and freshness at a
   glance instead of making you reconstruct them from files by hand.
-- **An editor that knows your pipeline.** IntelliSense suggests columns from
-  upstream assets and validation flags unresolved references while you type.
-- **Preview, then materialize.** Inspect any asset with no side effects, and
-  materialize it explicitly when you're sure.
+- **SQL and Python with development context.** Type checking and intelligent
+  completion use known schemas and dependencies to help you edit and review code.
+- **Preview, then materialize.** Preview SQL results with Inspect, then
+  review and run materialization explicitly.
 - **Catalog-aware SQL.** Complete against authored assets and observed remote
   tables, then review an import when an external relation should become part of
   the project.
@@ -36,8 +43,9 @@ on the warehouse you already use.
   fresh, edited, stale, or never built, while external source assets remain
   explicitly neutral.
 
-Everything Renart does ends up as an ordinary file change in your repository
-— diffable, reviewable, revertible.
+Authored definitions stay in your repository as plain, reviewable files.
+Credentials, warehouse data and machine-local run history are separate from
+those definitions. See [how Renart stores your work](/docs/how-it-works/).
 
 :::note[Public alpha]
 Renart is in public alpha. The core workflow is available, but expect rough

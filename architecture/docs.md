@@ -9,6 +9,12 @@ checklist.
 
 The locked decisions (§0) are the non-negotiable part. The rest is craft guidance.
 
+Product descriptions follow the positioning in `AGENTS.md`: **open source
+data platform** for moving, transforming and analyzing data, with a
+first-class developer experience across the workflow. The landing page,
+docs overview and metadata use this category. The editor and workspace are
+individual surfaces; Jinja, lineage and staleness support the wider story.
+
 ---
 
 ## 0. Locked decisions
@@ -38,12 +44,13 @@ a PR; change them here first if they need to change.
    nudge, an inline validation message). If you're tempted to document a single
    field's meaning in prose, that's an in-app tooltip, not a docs page. If you're
    tempted to put a five-step flow in a tooltip, that's a how-to.
-4. **Screenshots are scripted.** `make docs-media` regenerates every docs
-   screenshot from scratch against a staged demo workspace (the acme project
+4. **Screenshots are scripted.** `make docs-media` regenerates the shared docs
+   screenshots from scratch against a staged demo workspace (the acme project
    from `web/scripts/landing-media-workspace.mjs`), and `make landing-media`
-   does the same for the landing page. Never hand-capture: a shipped image is
-   always the verbatim output of the script, so it can be regenerated after
-   any UI change. See §5.
+   regenerates the landing-specific screenshots. The landing page can reuse a
+   shared shot from `docs/public/docs-media/` when it shows the same product
+   state. Never hand-capture: a shipped image is always the verbatim output of
+   one of those scripts, so it can be regenerated after any UI change. See §5.
 5. **Versioning: unversioned for now.** Docs track `main`. No Starlight versioning
    yet. Revisit when releases stabilise (the trigger lives in the concept doc, not
    here).
@@ -175,12 +182,17 @@ every shipped image is the verbatim output of a script.
   materialized data, run history including one failed run, schedules, a
   notebook, dashboard, report, and staleness states — so no shot is ever empty
   or half-loaded.
-- **Adding a shot** means adding a capture block to
-  `web/scripts/capture-docs-media.mjs` (viewport, navigation, interactions,
-  `shot(page, "name")`), not opening a browser by hand. If the shot needs
-  state the staged demo lacks (an asset type, a dialog), the script creates
-  it through the same HTTP API the UI uses, after the DAG-wide shots so the
-  canvas captures stay stable.
+- **Reuse the right shot.** Landing-only compositions live under `/landing/`;
+  product-state screenshots shared with the docs live under `/docs-media/`.
+  Referencing a shared shot from the landing page does not make it part of the
+  landing-media capture pipeline.
+- **Adding a shot** means adding a capture block to the matching script:
+  `web/scripts/capture-docs-media.mjs` for shared product-state media or
+  `web/scripts/capture-landing-media.mjs` for a landing-only composition. Each
+  block owns its viewport, navigation, interactions, and `shot(page, "name")`
+  call; never open a browser by hand. If a shot needs state the staged demo
+  lacks (an asset type, a dialog), the script creates it through the same HTTP
+  API the UI uses, after the DAG-wide shots so the canvas captures stay stable.
 - **One look.** Dark theme, `deviceScaleFactor: 2`, webp output; pages embed
   images with explicit `width`/`height` matching the emitted file.
 - **Few and high-value.** A screenshot earns its place by orienting the reader
@@ -246,8 +258,9 @@ Before approving a docs PR, confirm:
 - [ ] **Task-titled** (how-tos) and ends in a verifiable result.
 - [ ] **Frontmatter** `title` + `description` present and reader-useful.
 - [ ] **Runnable** code/CLI against the example project.
-- [ ] **Screenshots** (if any) come out of `make docs-media`, are alt-texted,
-      and their capture block lives in the script.
+- [ ] **Screenshots** (if any) come out of `make docs-media` or, for a
+      landing-only composition, `make landing-media`; they are alt-texted and
+      their capture block lives in the matching script.
 - [ ] **Cross-links** to Diátaxis siblings + the resting concept.
 - [ ] **Right place / right scope** — not a tooltip masquerading as a page, nor a
       flow crammed into reference.
@@ -267,22 +280,28 @@ shipped (July 2026; git history keeps the full plans).
   dead links, `grep -ri bruin docs/src` empty). The Introduction group includes
   a concise **Alpha status** page that distinguishes shipped workflows from
   release-stage caveats without becoming a roadmap.
-- **The landing page** (`docs/src/pages/index.astro`) tells one story —
-  "the all-in-one, git-native data pipeline IDE" — as hero → logo marquee →
-  four lifecycle rows (Build / Explore / Run / Trust) → bento (runs, catalog,
-  diffs, quality) → manifesto → principles → CTA. While the product is in
+- **The landing page** (`docs/src/pages/index.astro`) introduces an open source
+  data platform through a single product screenshot → Move / Transform /
+  Analyze overview → editor proof and maintainability principles → workspace
+  tour → local infrastructure and reviewable definitions → quickstart/install.
+  Cream surfaces, ink text and restrained green accents keep the focus on the
+  product. It does not simulate live runtime status or promise an exact rebuild
+  count in a decorative diagram. The Load / Build / Lineage / Notebook /
+  Dashboard / Report / Schedule / Runs tour uses a plain tablist with keyboard
+  navigation, a labeled panel and links to full-size scripted screenshots.
+  Small vanilla-JavaScript enhancements handle tabs, command copy and mobile
+  navigation; the initial product view and links remain available without a
+  client framework. While the product is in
   public alpha, the page title/description, hero badge, visible expectation
   note, and footer say so directly; the repository README carries the same
   status. Alpha is a release-stage disclosure, not a substitute for describing
   what currently works.
-- **Landing media** comes from `make landing-media` only (same staged acme
-  demo as `make docs-media`, §5): hero at 1920×1080; focused lifecycle crops
-  at 910×585 (Build), 1008×648 (Explore), 1120×720 (Run), and 1176×756
-  (Trust); bento at 1200×675. The shared 2× device scale emits retina webp
-  source files, responsive 480/768/1280-pixel variants (plus 1920-pixel
-  variants for wide media), and a 1200×675 PNG og-image under
-  `docs/public/landing/`. The landing page selects them with `srcset` and
-  `sizes`; if a capture changes dimensions, update the matching dimensions
+- **Landing media** combines landing-specific shots from `make landing-media`
+  with existing product-state shots from `make docs-media` (§5). The hero and
+  editor proof use responsive images under `docs/public/landing/`; the
+  workspace tour points at the corresponding generated images
+  under `docs/public/docs-media/`. The landing page selects them with `srcset`
+  and `sizes`; if a capture changes dimensions, update the matching dimensions
   and source descriptors in `index.astro`.
 
 ## 10. Production privacy and legal configuration

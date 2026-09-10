@@ -5,7 +5,7 @@ description: Commands, flags, output modes, and exit behavior for the Renart CLI
 
 # CLI reference
 
-The `renart` binary contains the IDE and its command-line workflows. Run
+The `renart` binary contains the workspace and its command-line workflows. Run
 `renart --help` or `renart <command> --help` for the exact reference shipped
 with your installed version.
 
@@ -14,7 +14,7 @@ with your installed version.
 | Command | Purpose |
 | --- | --- |
 | `renart` | Start the desktop app; fall back to the browser when the native helper is unavailable. |
-| `renart web` | Start the browser-based IDE. |
+| `renart web` | Start the browser workspace. |
 | `renart standalone` | Start the desktop app explicitly. |
 | `renart mcp` | Serve workspace-scoped notebook tools to a local coding agent over stdio. |
 | `renart run` | Execute a pipeline or asset. |
@@ -109,7 +109,7 @@ renart run [options] [pipeline, asset name, or path]
 ```
 
 Without a target, the command runs the pipeline enclosing the current
-directory. When the IDE already has the same project open, the command delegates
+directory. When the workspace already has the same project open, the command delegates
 to that local server; `--local` bypasses it.
 
 ```bash
@@ -130,7 +130,7 @@ renart run analytics.customer_orders --downstream
 | `--full-refresh` | off | Rebuild from scratch instead of using the saved incremental strategy. |
 | `--sensor-mode` | `once` | Sensor behavior: `once`, `wait`, or `skip`. |
 | `--confirm-environment` | | Supply the environment name when its policy requires explicit confirmation. |
-| `--local` | off | Execute in-process even when the IDE is open. `RENART_NO_SERVER` provides the same override. |
+| `--local` | off | Execute in-process even when the workspace is open. `RENART_NO_SERVER` provides the same override. |
 | `--json` | off | Emit JSON Lines events. |
 | `--quiet`, `-q` | off | Suppress streamed output and print only the final status. |
 
@@ -168,7 +168,7 @@ renart plan analytics.daily_revenue --upstream
 | `--backfill` | off | Mark an explicit single-asset window as a backfill. |
 | `--sensor-mode` | `once` | Sensor behavior: `once`, `wait`, or `skip`. |
 | `--include-stage-content` | off | Include rendered operation bodies in human output. |
-| `--local` | off | Plan in-process even when the IDE is open. `RENART_NO_SERVER` provides the same override. |
+| `--local` | off | Plan in-process even when the workspace is open. `RENART_NO_SERVER` provides the same override. |
 | `--json` | off | Emit the structured plan response as JSON. |
 
 ## `renart render`
@@ -198,7 +198,7 @@ renart render raw.customers --json
 | `--full-refresh` | off | Preview the full-refresh form when policy permits it. |
 | `--source` | working tree | Saved source: `working-tree` or `snapshot`. |
 | `--snapshot` | | Exact deployment version; implies `--source snapshot`. |
-| `--local` | off | Render in-process even when the IDE is open. `RENART_NO_SERVER` provides the same override. |
+| `--local` | off | Render in-process even when the workspace is open. `RENART_NO_SERVER` provides the same override. |
 | `--json` | off | Emit the structured render response as JSON. |
 
 ## `renart ls`

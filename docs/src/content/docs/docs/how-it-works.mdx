@@ -1,12 +1,16 @@
 ---
 title: How it works
-description: Everything you do in the UI is stored as plain files in your git repository.
+description: How Renart keeps your pipelines, notebooks, dashboards and schedules in reviewable files.
 ---
 
-Renart looks and feels like a visual tool — a canvas, an editor, forms for
-metadata. Underneath, there is no application database holding your work.
-Everything you create in the UI is stored as ordinary files in your git
-repository, and those files are the single source of truth.
+Renart brings data movement, transformation, execution and analysis into a
+visual workspace. The definitions you author are ordinary files in your Git
+repository: pipelines, notebooks, dashboards, reports and schedules. Those
+files are the source of truth, so visual edits can be reviewed and versioned
+alongside code.
+
+Renart stores run history and deployment pins in a local database. Credentials
+and warehouse data stay separate from the definitions you commit.
 
 ## Assets are files
 
