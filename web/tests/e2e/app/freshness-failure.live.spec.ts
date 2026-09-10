@@ -494,6 +494,7 @@ print("sentinel ok")
     expect(failedRun).toBeTruthy();
     const badge = sentinelNode.getByRole("button", {
       name: "Build failed: run details for analytics.sentinel_check",
+      exact: true,
     });
     await badge.click();
     expect(new URL(page.url()).pathname).toBe("/catalog");

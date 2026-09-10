@@ -1,8 +1,11 @@
 ---
 import { execSync } from 'node:child_process';
 import { Font } from 'astro:assets';
+import { publicMediaUrl } from '../lib/public-media.mjs';
 import DiscordInvite from '../components/DiscordInvite.astro';
 import PrivacyConsent from '../components/PrivacyConsent.astro';
+import MarketingHeader from '../components/MarketingHeader.astro';
+import MarketingFooter from '../components/MarketingFooter.astro';
 import '../styles/landing.css';
 
 const repoUrl = 'https://github.com/renart-data/renart';
@@ -11,7 +14,7 @@ const installCommand = 'curl -LsSf getrenart.com/install.sh | sh';
 const siteUrl = 'https://getrenart.com';
 const pageTitle = 'Renart — Open source data platform · Public alpha';
 const pageDescription = 'An open source data platform for moving, transforming and analyzing data. SQL and Python pipelines, notebooks and dashboards, defined as code in Git. Public alpha.';
-const socialImage = siteUrl + '/landing/og-image.png';
+const socialImage = siteUrl + publicMediaUrl('/landing/og-image.png');
 
 function readGitValue(command: string, fallback: string) {
   try {
@@ -70,7 +73,6 @@ async function readLatestPublishedVersion() {
 
 const explicitVersion = normalizeVersion(process.env.RENART_VERSION);
 const latestVersion = explicitVersion ?? await readLatestPublishedVersion();
-const currentYear = new Date().getFullYear();
 const landingStructuredData = JSON.stringify({
   '@context': 'https://schema.org',
   '@graph': [
@@ -264,31 +266,7 @@ const platforms = [
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
-    <header class="landing-nav">
-      <div class="landing-container landing-nav__inner">
-        <a href="#top" class="landing-brand" aria-label="Renart home">
-          <img src="/icons/icon-64.png" alt="" width="64" height="64" />
-          <span>renart</span>
-        </a>
-        <nav class="landing-nav__desktop" aria-label="Primary navigation">
-          <a href="#product">Why Renart</a>
-          <a href="#lifecycle">The workspace</a>
-          <a href="/docs/">Docs</a>
-          <a href={repoUrl}>GitHub</a>
-          <a class="landing-button landing-button--small" href="/docs/quickstart/">Get started <span aria-hidden="true">↗</span></a>
-        </nav>
-        <details class="landing-nav__mobile">
-          <summary aria-label="Navigation menu">Menu <span aria-hidden="true">+</span></summary>
-          <nav class="landing-nav__menu" aria-label="Mobile navigation">
-            <a href="#product">Why Renart</a>
-            <a href="#lifecycle">The workspace</a>
-            <a href="/docs/">Docs</a>
-            <a href={repoUrl}>GitHub</a>
-            <a href="/docs/quickstart/">Get started</a>
-          </nav>
-        </details>
-      </div>
-    </header>
+    <MarketingHeader />
 
     <main id="main">
       <section id="top" class="landing-hero">
@@ -301,6 +279,12 @@ const platforms = [
                 <a class="landing-button" href="/docs/quickstart/">Build your first pipeline <span aria-hidden="true">↗</span></a>
                 <a class="landing-text-link" href={repoUrl}>View on GitHub <span aria-hidden="true">↗</span></a>
               </div>
+              <div class="hero-install" aria-label="Install Renart">
+                <code>{installCommand}</code>
+                <button class="hero-install__copy" type="button" data-copy-command={installCommand} aria-label="Copy Renart install command">
+                  <svg viewBox="0 0 20 20" width="17" height="17" fill="none" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.5" /><path d="M12 4V3H3v9h1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                </button>
+              </div>
               <p class="landing-status"><span>Public alpha</span> Apache 2.0 · Runs locally</p>
             </div>
             <div class="landing-hero__description">
@@ -312,10 +296,10 @@ const platforms = [
 
           <figure class="workspace-hero">
             <div class="workspace-hero__bar"><span>The Renart workspace</span><span>Code, dependencies and results</span></div>
-            <a href="/landing/hero-workspace.webp" target="_blank" rel="noopener noreferrer" aria-label="Open the Renart workspace image at full size">
+            <a href={publicMediaUrl('/landing/hero-workspace.webp')} target="_blank" rel="noopener noreferrer" aria-label="Open the Renart workspace image at full size">
               <img
-                src="/landing/hero-workspace.webp"
-                srcset="/landing/hero-workspace-480.webp 480w, /landing/hero-workspace-768.webp 768w, /landing/hero-workspace-1280.webp 1280w, /landing/hero-workspace-1920.webp 1920w, /landing/hero-workspace.webp 3840w"
+                src={publicMediaUrl('/landing/hero-workspace.webp')}
+                srcset={`${publicMediaUrl('/landing/hero-workspace-480.webp')} 480w, ${publicMediaUrl('/landing/hero-workspace-768.webp')} 768w, ${publicMediaUrl('/landing/hero-workspace-1280.webp')} 1280w, ${publicMediaUrl('/landing/hero-workspace-1920.webp')} 1920w, ${publicMediaUrl('/landing/hero-workspace.webp')} 3840w`}
                 sizes="(max-width: 48rem) calc(100vw - 2.5rem), (max-width: 78rem) calc(100vw - 5rem), 1168px"
                 alt="Renart showing the SQL editor, connected pipeline assets and a table of inspected results in one workspace"
                 width="3840" height="2160" loading="eager" fetchpriority="high" decoding="async"
@@ -367,11 +351,11 @@ const platforms = [
             </div>
             <figure class="editor-proof">
               <img
-                src="/landing/lifecycle-build.webp"
-                srcset="/landing/lifecycle-build-480.webp 480w, /landing/lifecycle-build-768.webp 768w, /landing/lifecycle-build-1280.webp 1280w, /landing/lifecycle-build.webp 1820w"
+                src={publicMediaUrl('/landing/lifecycle-build.webp')}
+                srcset={`${publicMediaUrl('/landing/lifecycle-build-480.webp')} 480w, ${publicMediaUrl('/landing/lifecycle-build-768.webp')} 768w, ${publicMediaUrl('/landing/lifecycle-build-1280.webp')} 1280w, ${publicMediaUrl('/landing/lifecycle-build.webp')} 1820w`}
                 sizes="(max-width: 48rem) calc(100vw - 2.5rem), (max-width: 78rem) 58vw, 700px"
                 alt="SQL completion in Renart suggesting customer columns and their types from an upstream asset"
-                width="1820" height="1170" loading="lazy" decoding="async"
+                width="1820" height="880" loading="lazy" decoding="async"
               />
               <figcaption>Completion uses the tables and columns your pipeline knows about.</figcaption>
             </figure>
@@ -493,22 +477,7 @@ const platforms = [
       </section>
     </main>
 
-    <footer class="landing-footer">
-      <div class="landing-container">
-        <p class="landing-mission">Bring a first-class developer experience to the entire data workflow.</p>
-        <div class="landing-footer__main">
-          <a href="#top" class="landing-brand" aria-label="Renart home"><img src="/icons/icon-64.png" alt="" width="64" height="64" /><span>renart</span></a>
-          <span class="landing-footer__version">{latestVersion} · public alpha · Apache 2.0</span>
-          <nav class="landing-footer__nav" aria-label="Footer navigation">
-            <a href="/docs/">Docs</a><a href={repoUrl}>GitHub</a><a href={discordUrl}>Discord</a><a href="#install">Install</a>
-          </nav>
-        </div>
-        <div class="landing-footer__legal">
-          <span>© {currentYear} Renart</span>
-          <div class="landing-footer__meta"><a href="/legal-notice/">Legal notice</a><a href="/privacy/">Privacy policy</a><button type="button" data-open-privacy-settings hidden>Privacy settings</button></div>
-        </div>
-      </div>
-    </footer>
+    <MarketingFooter version={latestVersion} />
     <div class="copy-toast" role="status" aria-live="polite" data-copy-toast></div>
     <PrivacyConsent />
     <DiscordInvite />
@@ -539,9 +508,10 @@ const platforms = [
           try {
             await copyText(button.dataset.copyCommand ?? '');
             const label = button.querySelector<HTMLElement>('[data-copy-label]');
+            const initialLabel = label?.textContent ?? '';
             if (label) label.textContent = 'Copied';
             if (toast) toast.textContent = 'Install command copied';
-            window.setTimeout(() => { if (label) label.textContent = 'Copy command'; }, 1800);
+            window.setTimeout(() => { if (label) label.textContent = initialLabel; }, 1800);
           } catch {
             if (toast) toast.textContent = 'Copy unavailable. Select the command to copy it manually.';
           }
@@ -596,23 +566,7 @@ const platforms = [
           if (tabs[next]) selectTab(tabs[next]);
         });
       });
-      const navigation = document.querySelector<HTMLDetailsElement>('.landing-nav__mobile');
-      if (navigation) {
-        navigation.querySelectorAll<HTMLAnchorElement>('a').forEach((link) => {
-          link.addEventListener('click', () => { navigation.open = false; });
-        });
-        navigation.addEventListener('keydown', (event) => {
-          if (event.key !== 'Escape' || !navigation.open) return;
-          event.preventDefault();
-          navigation.open = false;
-          navigation.querySelector('summary')?.focus();
-        });
-        document.addEventListener('click', (event) => {
-          if (navigation.open && event.target instanceof Node && !navigation.contains(event.target)) {
-            navigation.open = false;
-          }
-        });
-      }
+
     </script>
   </body>
 </html>

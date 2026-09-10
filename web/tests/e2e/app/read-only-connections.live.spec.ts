@@ -156,7 +156,12 @@ test.describe("Read-only connections", () => {
     );
     await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
     expect((await conflict).status()).toBe(409);
-    await expect(dialog.getByText(/access settings changed/)).toBeVisible();
+    await expect(
+      page.getByRole("alert").filter({ hasText: /access settings changed/ }),
+    ).toBeVisible();
+    await expect(dialog.getByRole("textbox", { name: "Name", exact: true })).toHaveValue(
+      "unsaved-source",
+    );
     expect(errors).toEqual([]);
     await page.screenshot({ path: info.outputPath("read-only-settings.png") });
   });

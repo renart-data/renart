@@ -259,6 +259,40 @@ h3 {
   gap: 1.5rem;
   margin-top: 2rem;
 }
+.hero-install {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: 30rem;
+  min-width: 0;
+  margin-top: 1.4rem;
+  padding: 0.3rem 0.35rem 0.3rem 0.85rem;
+  border: 1px solid var(--landing-line);
+  border-radius: 0.3rem;
+  background: var(--landing-tint);
+}
+.hero-install code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: 0.75rem/1.8 var(--landing-mono);
+  user-select: all;
+}
+.hero-install__copy {
+  display: grid;
+  flex: 0 0 2.5rem;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.2rem;
+  color: var(--landing-accent);
+  background: transparent;
+}
+.hero-install__copy:hover {
+  background: #dce5d9;
+}
 .landing-status {
   display: flex;
   align-items: center;

@@ -22,12 +22,14 @@ individual surfaces; Jinja, lineage and staleness support the wider story.
 These were decided with the user and govern every page. Don't re-litigate them in
 a PR; change them here first if they need to change.
 
-1. **No bruin, anywhere.** The docs — and the landing page, and the site
-   metadata — never mention bruin: not as a compatibility promise, not as
-   "built on". There is no guaranteed bruin compatibility, so we don't imply
-   one. We teach **Renart's own model** in Renart's own words. `grep -ri bruin
-   docs/src` must come back empty (per decision 2, code samples don't show raw
-   metadata headers, so the `@bruin` marker never appears either).
+1. **Teach Renart's own model.** Tutorials, reference pages, the landing page
+   and their metadata use Renart's own UI vocabulary. They do not imply
+   guaranteed compatibility with Bruin. The user-requested comparisons under
+   `docs/src/pages/compare/` are a narrow exception: they may name Bruin,
+   explain the actual engine relationship and compare documented editions.
+   Never turn that relationship into an untested migration or round-trip
+   promise. `rg -i bruin docs/src/content/docs docs/src/pages/index.astro`
+   remains empty; UI-authored examples do not expose raw metadata headers.
 2. **Web-UI-first.** Nothing in the docs may require — or suggest — editing an
    asset's metadata encoding by hand. Users see the SQL editor, the Python
    editor, the Load form, the API editor, and the workbench; the docs describe
@@ -277,7 +279,7 @@ shipped (July 2026; git history keeps the full plans).
   as their features stabilise, at the position the rollout IA assigned them.
   The sidebar in `docs/astro.config.mjs` is the authoritative list; every
   entry must be a real page (verification: `pnpm build` in `docs/` green, no
-  dead links, `grep -ri bruin docs/src` empty). The Introduction group includes
+  dead links, no Bruin references in tutorials or reference pages). The Introduction group includes
   a concise **Alpha status** page that distinguishes shipped workflows from
   release-stage caveats without becoming a roadmap.
 - **The landing page** (`docs/src/pages/index.astro`) introduces an open source
@@ -302,7 +304,9 @@ shipped (July 2026; git history keeps the full plans).
   workspace tour points at the corresponding generated images
   under `docs/public/docs-media/`. The landing page selects them with `srcset`
   and `sizes`; if a capture changes dimensions, update the matching dimensions
-  and source descriptors in `index.astro`.
+  and source descriptors in `index.astro`. Landing and social image URLs use
+  content hashes from `docs/src/lib/public-media.mjs`, evaluated during the
+  docs package build, so refreshed files bypass older immutable browser caches.
 
 ## 10. Production privacy and legal configuration
 
@@ -359,3 +363,24 @@ local storage; both legal-language versions disclose that preference.
 delete Umami rows by itself. The deployment owner must configure and verify a
 matching cleanup policy in the self-hosted Umami database before enabling the
 tracker.
+
+## Comparison pages
+
+`/compare/` and its three authored guides share the marketing header, footer
+and typography with the landing page. They are decision guides, separate from
+the task-oriented Starlight docs. Each identifies the product editions, shows
+the documentation review date, credits the other product's strengths and links
+its factual claims to primary sources. Renart screenshots come from the same
+scripted media pipeline. Do not describe these documentation-based comparisons
+as hands-on benchmarks or tested migrations. Changing CSS does not advance the
+content review date. Add further guides only when there is a distinct decision
+and enough evidence to help the reader.
+
+The comparison index includes a four-product feature matrix; each guide shows
+the same data for its pair above the detailed workflow comparison.
+`docs/src/data/comparison-features.ts` owns the product editions, short feature
+labels, availability and per-cell source links. `FeatureMatrix.astro` renders
+the shared semantic table. Keep included capabilities, separate tools or paid
+offerings, and unavailable features distinct without assigning scores. The
+four-product table scrolls with sticky feature names; paired tables fit small
+screens. New claims require source review, not just a copied checkmark.

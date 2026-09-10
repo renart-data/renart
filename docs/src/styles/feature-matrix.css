@@ -1,0 +1,151 @@
+.feature-matrix {
+  margin: 0 0 3rem;
+  scroll-margin-top: 2rem;
+}
+.feature-matrix__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 1rem 2rem;
+  margin-bottom: 1.2rem;
+}
+.feature-matrix__heading h2 {
+  font: 600 1.15rem/1.5 var(--landing-sans);
+  letter-spacing: -0.02em;
+}
+.feature-matrix__heading p {
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--landing-muted);
+}
+.feature-matrix__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.2rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--landing-muted);
+}
+.feature-matrix__legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.feature-mark {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  font: 600 0.85rem/1 var(--landing-sans);
+}
+.feature-mark--included { color: #30634f; background: #e8f0eb; }
+.feature-mark--additional { color: #775724; background: #f4eddf; }
+.feature-mark--unavailable { color: #66706b; background: #eef0ed; }
+.feature-matrix__scroll {
+  position: relative;
+  overflow-x: auto;
+  border: 1px solid var(--landing-line);
+  border-radius: 0.45rem;
+  background: var(--landing-paper);
+  scrollbar-width: thin;
+}
+.feature-matrix__scroll:focus-visible,
+.feature-matrix__cell:focus-visible {
+  outline: 2px solid var(--landing-accent);
+  outline-offset: 3px;
+}
+.feature-matrix__table {
+  width: 100%;
+  min-width: 58rem;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.feature-matrix__table th,
+.feature-matrix__table td {
+  padding: 0.8rem 1rem;
+  vertical-align: middle;
+}
+.feature-matrix__table th { font-weight: 500; }
+.feature-matrix__table thead th {
+  padding-block: 1.2rem;
+  vertical-align: top;
+  background: var(--landing-tint);
+}
+.feature-matrix__table tr > :first-child { width: 18%; }
+.feature-matrix__table thead th:first-child { vertical-align: bottom; }
+.feature-matrix__table tbody th,
+.feature-matrix__table td { border-top: 1px solid var(--landing-line); }
+.feature-matrix__table tr > th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  box-shadow: 1px 0 var(--landing-line);
+}
+.feature-matrix__table tbody th { background: var(--landing-paper); }
+.feature-matrix__product,
+.feature-matrix__focus,
+.feature-matrix__edition { display: block; }
+.feature-matrix__product { font-size: 1rem; font-weight: 600; }
+.feature-matrix__focus { margin-top: 0.3rem; }
+.feature-matrix__edition {
+  margin-top: 0.4rem;
+  color: var(--landing-muted);
+  font-size: 0.68rem;
+  font-weight: 400;
+}
+.feature-matrix__cell {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: fit-content;
+  max-width: 100%;
+  color: var(--landing-text);
+  text-decoration: underline;
+  text-decoration-color: var(--landing-line);
+  text-underline-offset: 0.22em;
+}
+.feature-matrix__cell:hover { text-decoration-color: currentColor; }
+.feature-matrix__note,
+.feature-matrix__scroll-hint {
+  margin-top: 0.85rem;
+  max-width: 56rem;
+  color: var(--landing-muted);
+  font-size: 0.73rem;
+  line-height: 1.7;
+}
+.feature-matrix__scroll-hint { display: none; }
+.feature-matrix--pair .feature-matrix__table { min-width: 0; }
+.feature-matrix--pair .feature-matrix__table tr > :first-child { width: 28%; }
+.feature-matrix__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 64rem) {
+  .feature-matrix__scroll-hint { display: block; }
+}
+@media (max-width: 40rem) {
+  .feature-matrix--pair .feature-matrix__table { font-size: 0.75rem; }
+  .feature-matrix--pair .feature-matrix__table th,
+  .feature-matrix--pair .feature-matrix__table td { padding: 0.7rem 0.55rem; }
+  .feature-matrix--pair .feature-matrix__table tr > :first-child { width: 30%; }
+  .feature-matrix--pair .feature-matrix__cell { flex-direction: column; align-items: flex-start; gap: 0.35rem; }
+  .feature-matrix--pair .feature-matrix__focus { font-size: 0.72rem; }
+  .feature-matrix--pair .feature-matrix__edition { font-size: 0.65rem; }
+}

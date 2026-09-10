@@ -1,0 +1,51 @@
+---
+import ComparisonLayout from '../../layouts/ComparisonLayout.astro';
+import FeatureMatrix from '../../components/FeatureMatrix.astro';
+import ComparisonTable from '../../components/ComparisonTable.astro';
+const rows = [
+  { criterion: 'Authoring', renart: { text: 'A local visual workspace with code, the pipeline canvas and data previews together.', href: '/docs/workspace/interface-tour/' }, other: { text: 'The open-source CLI works with your editor; Bruin also offers a VS Code extension.', href: 'https://bruin-data.github.io/bruin/getting-started/introduction/installation.html' } },
+  { criterion: 'Pipeline scope', renart: { text: 'Load data, build SQL and Python assets, and inspect their dependencies and results.', href: '/docs/asset-types/load-assets/' }, other: { text: 'Ingestion, SQL and Python transformations, quality checks and lineage are part of the Bruin workflow.', href: 'https://bruin-data.github.io/bruin/' } },
+  { criterion: 'Source control', renart: { text: 'Visual edits update authored files directly in your Git repository. Run history is stored separately.', href: '/docs/how-it-works/' }, other: { text: 'Pipelines and asset definitions are code in a project, suitable for source control and CI.', href: 'https://bruin-data.github.io/bruin/getting-started/introduction/quickstart.html' } },
+  { criterion: 'Analysis', renart: { text: 'Local notebooks, dashboards and reports sit alongside pipeline development.', href: '/docs/presentations/overview/' }, other: { text: 'Bruin Cloud adds an analytical layer with agents and dashboards to its managed pipeline platform.', href: 'https://getbruin.com/docs/bruin/cloud/overview.html' } },
+  { criterion: 'Scheduled operation', renart: { text: 'Review and deploy a snapshot to an environment. Renart runs its schedules while your server is running.', href: '/docs/scheduling/overview/' }, other: { text: 'Run the CLI on infrastructure you operate, or use Bruin Cloud for managed scheduling and monitoring.', href: 'https://getbruin.com/docs/bruin/deployment/overview.html' } },
+];
+---
+<ComparisonLayout name="Bruin" title="Renart vs Bruin: choosing your data workflow" description="Compare Renart's local visual workspace with the Bruin CLI, VS Code extension and Bruin Cloud. Understand the shared foundations and practical tradeoffs.">
+  <header class="comparison-hero">
+    <p class="landing-eyebrow">Pipeline development and operation</p>
+    <h1>Renart vs Bruin</h1>
+    <p class="comparison-hero__lede">Choose how you want to work with your pipelines. Renart brings development, execution and analysis into a local visual workspace. Bruin offers a CLI and editor extension, with Bruin Cloud as a separate managed platform.</p>
+    <p class="comparison-scope">Scope: local, open source Renart · Bruin CLI and VS Code extension · Bruin Cloud where named</p>
+  </header>
+  <FeatureMatrix competitor="bruin" />
+  <section class="comparison-choices" aria-label="Which workflow fits">
+    <div><h2>Choose Renart when…</h2><p>You want the code, dependency canvas, data previews, notebooks and dashboards in one workspace, with the definitions you author kept in your repository.</p></div>
+    <div><h2>Choose Bruin when…</h2><p>You prefer its CLI and VS Code workflow, or want to evaluate Bruin Cloud for managed operation. A visual workspace is a workflow preference, not a prerequisite for building good pipelines.</p></div>
+  </section>
+  <div class="comparison-article">
+    <h2>Start with the relationship.</h2>
+    <p>Renart uses open-source Bruin components for pipeline execution and works with a related pipeline model. You can inspect that relationship in <a href="https://github.com/renart-data/renart/blob/main/go.mod">Renart's dependencies</a>. Renart's contribution is the integrated workspace and the development, execution and analysis workflows around it.</p>
+    <p>That relationship is not a guarantee that every feature or file will work interchangeably across versions. Renart-specific notebooks, presentations and schedules have their own behavior. Evaluate the actual project and tool versions before mixing workflows.</p>
+  </div>
+  <ComparisonTable competitor="Bruin" rows={rows} />
+  <div class="comparison-article">
+    <h2>Follow one change through the workflow.</h2>
+    <p>Suppose your orders model needs a new customer field. In Renart, open the asset beside its canvas, use the known schema while editing, inspect the result, and review the source change. The dependencies stay visible while you decide what to rebuild.</p>
+    <ol>
+      <li><strong>Edit with context.</strong> The <a href="/docs/editing-assets/asset-editor/">asset editor</a> brings SQL and Python feedback into the pipeline workspace.</li>
+      <li><strong>Review the effect.</strong> Follow the <a href="/docs/workspace/pipeline-canvas/">dependency canvas</a> and its staleness states. These help you reason about changed definitions; they do not guarantee that every business-logic mistake is detected.</li>
+      <li><strong>Choose the run.</strong> Review the materialization or <a href="/docs/scheduling/overview/">deployment</a>, then inspect its run history.</li>
+    </ol>
+    <p>If you already do this comfortably from Bruin's CLI, your editor and existing CI, the question is whether Renart's combined view helps you maintain the project. Shared capabilities such as SQL, Python, Git and lineage are not reasons on their own to switch.</p>
+  </div>
+  <figure class="comparison-figure">
+    <a href="/docs-media/workspace-overview.webp" target="_blank" rel="noopener noreferrer" aria-label="Open the Renart workspace image at full size"><img src="/docs-media/workspace-overview.webp" alt="Renart's SQL editor, dependency canvas, asset properties and inspected results in the same workspace" width="3200" height="2000" loading="lazy" /></a>
+    <figcaption>Renart keeps the model, dependencies and inspected data in view together.</figcaption>
+  </figure>
+  <div class="comparison-article">
+    <h2>Decide who operates the runtime.</h2>
+    <p>Local Renart does not require a hosted account, but you operate the server, connections and scheduled execution. Bruin's <a href="https://getbruin.com/docs/bruin/deployment/overview.html">deployment guides</a> also cover self-managed options; its <a href="https://getbruin.com/docs/bruin/cloud/overview.html">Cloud offering</a> provides managed scheduling, run monitoring and connection management.</p>
+    <p>If hosted team operation is the requirement, compare that requirement directly. Renart's current public alpha is not an equivalent managed service. If the priority is a local development experience spanning pipelines and analysis, the <a href="/docs/quickstart/">Renart quickstart</a> is a practical place to evaluate it.</p>
+    <p>Also considering an analysis-first workspace? Read <a href="/compare/hex/">Renart vs Hex</a>.</p>
+  </div>
+</ComparisonLayout>

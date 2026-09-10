@@ -1,9 +1,10 @@
 import { defineConfig, fontProviders } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import starlightThemeRapide from 'starlight-theme-rapide';
+import { publicMediaUrl } from './src/lib/public-media.mjs';
 
 const site = 'https://getrenart.com';
-const socialImage = `${site}/landing/og-image.png`;
+const socialImage = site + publicMediaUrl('/landing/og-image.png');
 const siteDescription = 'Renart is an open source data platform for moving, transforming and analyzing data, with SQL and Python pipelines, notebooks and dashboards defined in Git.';
 const docsDescription = 'Learn to move, transform and analyze data with Renart: SQL and Python pipelines, notebooks, dashboards and scheduling, with definitions kept as code in Git.';
 

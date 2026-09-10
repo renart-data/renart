@@ -271,7 +271,8 @@ test.describe("multi-warehouse pipeline live", () => {
                 name:
                   variant.name === "trino"
                     ? "memory.analytics.final_report"
-                    : "analytics.final_report",
+                    : "default_catalog.analytics.final_report",
+                catalog_name: variant.name === "trino" ? "memory" : "default_catalog",
               }),
             ]),
           );

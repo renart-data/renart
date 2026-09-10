@@ -118,8 +118,13 @@ test.describe("cross-pipeline dependencies live", () => {
       timeout: 15_000,
     });
     await expect(producerNode.getByText("Running", { exact: true })).toHaveCount(0);
-    await expect(producerNode.locator('[title^="Last built:"]')).toHaveCount(1);
-    await expect(producerNode.locator('[title*="date unknown"]')).toHaveCount(0);
+    const lastBuilt = producerNode.getByRole("button", { name: /run details for raw\.orders$/ });
+    await expect(lastBuilt).toBeVisible();
+    await lastBuilt.click();
+    await expect(page.getByText(/^Last built:/)).toBeVisible();
+    await expect(page.getByText(/date unknown/)).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Open run", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
     await expect(page.locator(".react-flow__edge.asset-edge-provisional")).toHaveCount(1);
 
     await page.getByRole("tab", { name: /Type check/ }).click();
@@ -168,7 +173,7 @@ test.describe("cross-pipeline dependencies live", () => {
     await expect(page.locator(".react-flow__edge.asset-edge")).toHaveCount(1);
     await expect(producerNode.locator('[title="Staleness: Edited"]')).toBeVisible();
     await expect(producerNode.getByText("Running", { exact: true })).toHaveCount(0);
-    await expect(producerNode.locator('[title^="Last built:"]')).toHaveCount(1);
+    await expect(lastBuilt).toBeVisible();
     expect(
       await readFile(
         join(liveApp.workspaceDir, "cross-consumer", "assets", "analytics", "orders.sql"),

@@ -1,0 +1,44 @@
+---
+import ComparisonLayout from '../../layouts/ComparisonLayout.astro';
+import FeatureMatrix from '../../components/FeatureMatrix.astro';
+import ComparisonTable from '../../components/ComparisonTable.astro';
+const rows = [
+  { criterion: 'How you work', renart: { text: 'Build loading, transformation and analysis workflows in a visual workspace backed by Git.', href: '/docs/' }, other: { text: 'Use a Python ingestion library in your own code and deployment environment.', href: 'https://dlthub.com/docs/hub/getting-started/oss-and-dlthub' } },
+  { criterion: 'Getting data in', renart: { text: 'Configure Load assets or HTTP API assets alongside the transformations that use their output.', href: '/docs/asset-types/load-assets/' }, other: { text: 'Extract, normalize and load data, including nested structures and inferred schemas.', href: 'https://dlthub.com/docs/reference/explainers/how-dlt-works' } },
+  { criterion: 'Schema feedback', renart: { text: 'Editor diagnostics and completion use known columns and types as you develop SQL and Python.', href: '/docs/editing-assets/asset-editor/' }, other: { text: 'Schema inference, evolution and contracts manage data arriving through the ingestion pipeline.', href: 'https://dlthub.com/docs/intro' } },
+  { criterion: 'Analysis', renart: { text: 'Notebooks, dashboards and reports are authored in the same workspace as your pipelines.', href: '/docs/notebooks/overview/' }, other: { text: 'Inspect loaded data with the library and CLI; its docs also cover SQL/Python access and Marimo notebooks.', href: 'https://dlthub.com/docs/intro' } },
+  { criterion: 'Operating the workflow', renart: { text: 'Local scheduling and run history are included. You operate the Renart server and data systems.', href: '/docs/scheduling/overview/' }, other: { text: 'Deploy the OSS library in your Python environment or orchestrator. Commercial dltHub offers managed operation.', href: 'https://dlthub.com/docs/hub/getting-started/oss-and-dlthub' } },
+];
+---
+<ComparisonLayout name="dlt" title="Renart vs dlt: ingestion and the workflow around it" description="Compare Renart with dlt, the Python data load tool. Decide between a composable ingestion library and a local workspace for pipelines and analysis.">
+  <header class="comparison-hero">
+    <p class="landing-eyebrow">Data loading and what comes next</p>
+    <h1>Renart vs dlt</h1>
+    <p class="comparison-hero__lede">Choose dlt when you want an ingestion library inside your Python stack. Consider Renart when you want to connect loading, transformations, scheduled runs and analysis in one visual workspace.</p>
+    <p class="comparison-scope">Scope: local, open source Renart · the open-source dlt Python library (data load tool) · commercial dltHub where named</p>
+  </header>
+  <FeatureMatrix competitor="dlt" />
+  <section class="comparison-choices" aria-label="Which workflow fits">
+    <div><h2>Choose Renart when…</h2><p>You want to configure data movement, develop SQL and Python assets, follow their dependencies and explore their output together. The surrounding development workflow is part of what you need.</p></div>
+    <div><h2>Choose dlt when…</h2><p>You want a composable Python ingestion tool and already have a preferred editor, runtime and orchestration setup. Keeping that stack can be the better choice when loading is the part you need to solve.</p></div>
+  </section>
+  <ComparisonTable competitor="dlt" rows={rows} />
+  <div class="comparison-article">
+    <h2>Follow the data past the first load.</h2>
+    <p>Suppose you need to bring an orders source into your database, turn it into a revenue model, and inspect the result. The loading step is one part of the job. Someone also owns the transformation, its dependencies and its next run.</p>
+    <p>In Renart, configure a <a href="/docs/asset-types/load-assets/">Load asset</a> with a supported source, destination and mode. For an HTTP source, use the <a href="/docs/asset-types/http-api-assets/">API asset editor</a>. Add the SQL or Python transformation to the pipeline, inspect its result and review what will run.</p>
+    <p>Then use a notebook or dashboard to work with the output. Renart's value is keeping that development and analysis context together. Check the actual <a href="/docs/reference/supported-platforms/">platform support</a> and loading behavior for your source; a broad workflow does not mean every connector or load mode is interchangeable.</p>
+  </div>
+  <figure class="comparison-figure">
+    <a href="/docs-media/load-asset.webp" target="_blank" rel="noopener noreferrer" aria-label="Open the Renart Load asset image at full size"><img src="/docs-media/load-asset.webp" alt="Renart's Load asset editor showing source, destination and load mode beside the pipeline" width="2800" height="1800" loading="lazy" /></a>
+    <figcaption>A data transfer is an asset in the pipeline, with its configuration visible in the workspace.</figcaption>
+  </figure>
+  <div class="comparison-article">
+    <h2>Two kinds of schema feedback.</h2>
+    <p>The feedback you want while authoring a SQL expression is different from handling a new field in incoming data. Renart's editor helps with known names and types during development. dlt's <a href="https://dlthub.com/docs/intro">schema inference and contracts</a> address ingestion behavior. Evaluate both needs; one is not a substitute for the other.</p>
+    <h2>Separate dlt from dltHub.</h2>
+    <p>dltHub's documentation distinguishes its <a href="https://dlthub.com/docs/hub/getting-started/oss-and-dlthub">open-source library and commercial platform</a>. The latter includes managed runtime and additional transformation, quality and team capabilities. A comparison with the library alone should not be read as a claim that the wider dltHub offering lacks these features.</p>
+    <p>You do not need to replace a working ingestion pipeline to evaluate Renart. One possible starting point is to work with its output in a supported database, with each workflow's ownership and scheduling kept explicit. This is a pattern to validate for your project, not a native dlt integration or automatic migration.</p>
+    <p>For a closer comparison between pipeline-development environments, read <a href="/compare/bruin/">Renart vs Bruin</a>.</p>
+  </div>
+</ComparisonLayout>

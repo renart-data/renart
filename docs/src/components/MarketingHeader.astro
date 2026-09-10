@@ -1,0 +1,50 @@
+---
+const repoUrl = "https://github.com/renart-data/renart";
+const isHome = Astro.url.pathname === "/";
+---
+    <header class="landing-nav">
+      <div class="landing-container landing-nav__inner">
+        <a href="/" class="landing-brand" aria-label="Renart home">
+          <img src="/icons/icon-64.png" alt="" width="64" height="64" />
+          <span>renart</span>
+        </a>
+        <nav class="landing-nav__desktop" aria-label="Primary navigation">
+          <a href={isHome ? "#product" : "/#product"}>Why Renart</a>
+          <a href={isHome ? "#lifecycle" : "/#lifecycle"}>The workspace</a>
+          <a href="/compare/" aria-current={Astro.url.pathname.startsWith("/compare/") ? "page" : undefined}>Compare</a>
+          <a href="/docs/">Docs</a>
+          <a href={repoUrl}>GitHub</a>
+          <a class="landing-button landing-button--small" href="/docs/quickstart/">Get started <span aria-hidden="true">↗</span></a>
+        </nav>
+        <details class="landing-nav__mobile">
+          <summary aria-label="Navigation menu">Menu <span aria-hidden="true">+</span></summary>
+          <nav class="landing-nav__menu" aria-label="Mobile navigation">
+            <a href={isHome ? "#product" : "/#product"}>Why Renart</a>
+            <a href={isHome ? "#lifecycle" : "/#lifecycle"}>The workspace</a>
+            <a href="/compare/" aria-current={Astro.url.pathname.startsWith("/compare/") ? "page" : undefined}>Compare</a>
+          <a href="/docs/">Docs</a>
+            <a href={repoUrl}>GitHub</a>
+            <a href="/docs/quickstart/">Get started</a>
+          </nav>
+        </details>
+      </div>
+    </header>
+<script>
+      const navigation = document.querySelector<HTMLDetailsElement>('.landing-nav__mobile');
+      if (navigation) {
+        navigation.querySelectorAll<HTMLAnchorElement>('a').forEach((link) => {
+          link.addEventListener('click', () => { navigation.open = false; });
+        });
+        navigation.addEventListener('keydown', (event) => {
+          if (event.key !== 'Escape' || !navigation.open) return;
+          event.preventDefault();
+          navigation.open = false;
+          navigation.querySelector('summary')?.focus();
+        });
+        document.addEventListener('click', (event) => {
+          if (navigation.open && event.target instanceof Node && !navigation.contains(event.target)) {
+            navigation.open = false;
+          }
+        });
+      }
+</script>

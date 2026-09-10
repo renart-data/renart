@@ -1,0 +1,23 @@
+---
+import ComparisonLayout from '../../layouts/ComparisonLayout.astro';
+import FeatureMatrix from '../../components/FeatureMatrix.astro';
+---
+<ComparisonLayout title="Compare Renart with Bruin, Hex and dlt" description="Choose the right workflow for your data: compare Renart with Bruin, Hex and dlt across pipeline development, ingestion, notebooks and operations.">
+  <header class="comparison-hero">
+    <p class="landing-eyebrow">Choose your data workflow</p>
+    <h1>Different tools.<br />Different starting points.</h1>
+    <p class="comparison-hero__lede">Renart brings data movement, SQL and Python pipelines, notebooks and dashboards into one local workspace. These guides explain where that approach fits, where another tool fits better, and what to evaluate before switching.</p>
+  </header>
+  <FeatureMatrix />
+  <div class="comparison-cards">
+    <article class="comparison-card"><h2>Renart vs Bruin</h2><p>A visual workspace, a CLI and editor extension, or a managed platform: choose how you want to build and operate pipelines.</p><a class="landing-text-link" href="/compare/bruin/">Compare the workflows <span aria-hidden="true">↗</span></a></article>
+    <article class="comparison-card"><h2>Renart vs Hex</h2><p>Explore the tradeoffs between pipelines and analysis in your repository and a shared analytical workspace in Hex.</p><a class="landing-text-link" href="/compare/hex/">Compare pipelines and analysis <span aria-hidden="true">↗</span></a></article>
+    <article class="comparison-card"><h2>Renart vs dlt</h2><p>Decide whether you need a Python ingestion library or a workspace that connects loading, transformation and analysis.</p><a class="landing-text-link" href="/compare/dlt/">Compare ingestion workflows <span aria-hidden="true">↗</span></a></article>
+  </div>
+  <div class="comparison-article">
+    <h2>Start with the work you need to do.</h2>
+    <p>Replacing one tool rarely means replacing an entire data stack. Start with the part that is difficult today: authoring a pipeline, bringing in a new source, reviewing a change, keeping a job running, or sharing an answer with your team.</p>
+    <p>If you want to move between those tasks in a visual workspace with definitions kept in Git, <a href="/#lifecycle">take a look inside Renart</a>. If you mainly need a particular connector or managed team service, use the comparisons to check that requirement directly.</p>
+    <p>These guides are written by Renart, with links to the other products' documentation. They distinguish local and hosted editions and explain Renart's <a href="/docs/alpha-status/">public-alpha status</a>.</p>
+  </div>
+</ComparisonLayout>

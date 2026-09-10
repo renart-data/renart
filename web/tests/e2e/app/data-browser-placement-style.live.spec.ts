@@ -55,7 +55,11 @@ test("expanded destination drops stack above asset cards and drag-end cleans up 
     "/* @bruin\nname: landing.anchor\ntype: duckdb.sql\nconnection: duckdb-default\n@bruin */\nselect 1 as id\n",
   );
   await prepare(page, liveApp, false);
-  await page.getByTestId("lineage-asset").filter({ hasText: "anchor" }).click();
+  await page
+    .getByTestId("lineage-asset")
+    .filter({ hasText: "anchor" })
+    .getByText("anchor", { exact: true })
+    .click();
   await expect(page).toHaveURL(
     new RegExp(Buffer.from("analytics/assets/landing.sql").toString("base64url")),
   );
