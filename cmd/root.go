@@ -6,9 +6,9 @@ import (
 
 // Command categories shown in the root help. chi of urfave/cli sorts
 // categories alphabetically, so the names are chosen to read well in that
-// order: IDE, Pipeline, Project.
+// order: App, Pipeline, Project.
 const (
-	categoryIDE      = "IDE"
+	categoryApp      = "App"
 	categoryPipeline = "Pipeline"
 	categoryProject  = "Project"
 )
@@ -27,7 +27,7 @@ func Root(version string) *cli.Command {
 	return &cli.Command{
 		Name:    "renart",
 		Version: buildVersion,
-		Usage:   "the data pipeline IDE — build, run, and schedule pipelines from one binary",
+		Usage:   "the open source data platform — move, transform, and analyze data across your stack",
 		Commands: []*cli.Command{
 			Web(),
 			Standalone(),

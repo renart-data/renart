@@ -97,9 +97,9 @@ type webServer struct {
 func Web() *cli.Command {
 	return &cli.Command{
 		Name:      "web",
-		Usage:     "start the Renart IDE in your browser",
+		Usage:     "start the Renart workspace in your browser",
 		ArgsUsage: "[workspace root]",
-		Category:  categoryIDE,
+		Category:  categoryApp,
 		Flags: append(serverFlags(),
 			&cli.StringFlag{
 				Name:  "host",

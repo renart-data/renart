@@ -48,7 +48,7 @@ const renartASCII = ` ____  _____ _   _    _    ____ _____
 
 func printRenartWelcome(out io.Writer, appURL, detail string) {
 	_, _ = fmt.Fprintln(out, renartASCII)
-	_, _ = fmt.Fprintln(out, "Welcome to Renart, your local data pipeline IDE.")
+	_, _ = fmt.Fprintln(out, "Welcome to Renart, your open source data platform.")
 	_, _ = fmt.Fprintf(out, "Renart listening on %s%s\n", appURL, detail)
 }
 

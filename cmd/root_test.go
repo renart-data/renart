@@ -11,14 +11,14 @@ import (
 func TestRootSurface(t *testing.T) {
 	root := Root("test")
 
-	if root.Usage != "the data pipeline IDE — build, run, and schedule pipelines from one binary" {
+	if root.Usage != "the open source data platform — move, transform, and analyze data across your stack" {
 		t.Errorf("root usage changed: %q", root.Usage)
 	}
 
 	wantVisible := map[string]string{
-		"web":        categoryIDE,
-		"standalone": categoryIDE,
-		"mcp":        categoryIDE,
+		"web":        categoryApp,
+		"standalone": categoryApp,
+		"mcp":        categoryApp,
 		"run":        categoryPipeline,
 		"plan":       categoryPipeline,
 		"render":     categoryPipeline,

@@ -7,13 +7,16 @@
   <a href="https://github.com/renart-data/renart/actions/workflows/e2e-live.yml"><img alt="Live end-to-end test status" src="https://github.com/renart-data/renart/actions/workflows/e2e-live.yml/badge.svg" /></a>
 </p>
 
-Renart is an open-source, local-first, all-in-one IDE for building and running
-data pipelines from a Git repository.
+**Bring a first-class developer experience to the entire data workflow.**
 
-Build pipelines on a visual canvas, edit SQL and Python with pipeline-aware
-IntelliSense, explore data in notebooks, compose checked dashboards and
-reports, and inspect or materialize assets from one workspace. Renart runs on
-your machine and keeps your work as plain, reviewable files.
+Renart is an open source data platform for moving, transforming and analyzing
+data across your data stack. Build and run SQL and Python pipelines alongside
+notebooks and dashboards in one visual workspace, with type checking,
+scheduling and everything defined as code in Git.
+
+Renart runs on your machine and connects to the databases, warehouses, files
+and APIs you already use. Your authored definitions stay in your repository
+as plain, reviewable files.
 
 > [!IMPORTANT]
 > **Renart is currently in public alpha.** The core build, inspect, run,
@@ -27,8 +30,11 @@ your machine and keeps your work as plain, reviewable files.
 
 ## Highlights
 
+- Move data between databases, warehouses, files and object storage, and ingest
+  data from HTTP APIs.
 - See assets, dependencies, lineage, and staleness on a visual pipeline canvas.
-- Get pipeline-aware SQL completion and type-checking while you edit.
+- Get pipeline-aware SQL completion and type checking, plus Python diagnostics,
+  completion, hover and go-to-definition while you edit.
 - Inspect data safely before materializing an asset or building a pipeline.
 - Combine warehouse, file, object-storage, and HTTP data in typed notebooks,
   then promote useful work into pipeline assets.
@@ -49,9 +55,9 @@ Start Renart inside a Git repository:
 renart
 ```
 
-This opens the Renart IDE in a native window, with an automatic browser fallback
-when the platform webview is unavailable. The matching native-window helper is
-included in each release archive and installed by the one-line installer.
+This opens the Renart workspace in a native window, with an automatic browser
+fallback when the platform webview is unavailable. The matching native-window
+helper is included in each release archive and installed by the one-line installer.
 
 Release archives support Linux x86-64/ARM64 (glibc 2.31+), macOS
 Intel/Apple silicon, and Windows x86-64. See the

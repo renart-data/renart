@@ -7,14 +7,30 @@ non-trivial changes.
 
 ## Positioning
 
-Renart is the all-in-one **data pipeline IDE**, and it runs entirely inside the
-user's Git repository. It gives version-controlled data pipelines a visual
-editing environment — a pipeline canvas, DAG-aware SQL intelligence, notebooks,
-inspect/materialize, and per-environment schedules — while keeping the
-filesystem and Git as the source of truth. It is local-first: no hosted control
-plane, no sign-up, no data leaving the user's environment. Pipelines run against
-the user's own platform (DuckDB, Postgres, Snowflake, BigQuery, Redshift, …) via
-the open-source Bruin execution engine.
+**Mission:** Bring a first-class developer experience to the entire data workflow.
+
+Use **open source data platform** as Renart's primary product category. The
+canonical high-level description is:
+
+> Renart is an open source data platform for moving, transforming and analyzing
+> data across your data stack. Build and run SQL and Python pipelines alongside
+> notebooks and dashboards in one visual workspace, with type checking,
+> scheduling and everything defined as code in Git.
+
+Renart covers data movement, transformation, execution and analysis. Loading
+data into and out of databases and warehouses is part of that workflow, as are
+files, object storage and HTTP API ingestion. Use **workspace** or **editor**
+for individual UI surfaces; keep the product description broader than its
+editing tools. Explain features such as Jinja, lineage and staleness tracking
+as supporting examples of the developer experience.
+
+The platform is local-first and works inside the user's Git repository. It
+requires no sign-up or hosted Renart control plane, and connects to systems
+the user controls or chooses. Authored pipeline, notebook, dashboard, report
+and schedule definitions are plain, reviewable files; run history, deployment
+pins and other machine-local state remain separate from those definitions.
+Pipelines run against the user's own platform (DuckDB, Postgres, Snowflake,
+BigQuery, Redshift, …) via the open-source Bruin execution engine.
 
 When making product or UX decisions, preserve this direction:
 
@@ -22,6 +38,9 @@ When making product or UX decisions, preserve this direction:
   forcing users to reason only from YAML and SQL files.
 - Be a fast visual way to build pipelines that stay version-controllable — every
   visual change is a plain, reviewable diff.
+- Connect development, execution and analysis through the same definitions,
+  dependencies and schemas. Make type checking and intelligent completion
+  useful throughout that workflow.
 - Help users move quickly; don't add ceremony, and don't collapse the product
   into a generic CRUD dashboard.
 - Keep it legible for data engineers, analytics engineers, and technical data
@@ -31,12 +50,13 @@ Renart and the Bruin CLI work on the same project files; the CLI stays the
 right tool for terminal-first, code-first work. Don't position Renart as a
 replacement project format or a separate runtime.
 
-### Where it's headed
+### Claims and product direction
 
-The longer-term goal is for Renart to be not just the IDE but a complete,
-local-first data platform: pipelines, notebooks, pipeline documentation,
-dashboards, reports, and AI agents, all grounded in the same version-controlled
-files. Let this direction inform architecture and internal design decisions.
+Build on the shared workflow across pipelines, scheduling, notebooks,
+dashboards and reports. Keep new capabilities grounded in the same
+version-controlled definitions and first-class developer experience. These
+existing surfaces are part of the platform today; proposals and partially
+working features remain in `plans/` until established.
 
 **But be humble — underpromise and overdeliver.** User-facing surfaces (the
 landing page, `docs/`, `README.md`, in-app copy) describe **only** what already

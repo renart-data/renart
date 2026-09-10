@@ -76,7 +76,7 @@ func Init() *cli.Command {
 			if target != "." {
 				fmt.Printf("  cd %s\n", target)
 			}
-			fmt.Println("  renart web    # open the IDE")
+			fmt.Println("  renart web    # open the workspace")
 			fmt.Println("  renart run    # or run the pipeline right here")
 			return nil
 		},

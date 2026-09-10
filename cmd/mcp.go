@@ -25,7 +25,7 @@ func MCP() *cli.Command {
 	return &cli.Command{
 		Name:     "mcp",
 		Usage:    "serve workspace-scoped notebook tools over MCP stdio",
-		Category: categoryIDE,
+		Category: categoryApp,
 		Flags: []cli.Flag{
 			workspaceFlag(),
 			&cli.StringFlag{Name: "notebook", Hidden: true},
