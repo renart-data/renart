@@ -229,14 +229,9 @@ test.describe("Sling storage browser", () => {
       if (!info.project.name.includes("mobile"))
         await page.getByRole("link", { name: "Canvas view", exact: true }).click();
       await openData(page);
-      // Creating an asset advances the workspace revision. Refresh the
-      // explicitly revision-bound operation tokens before the next handoff.
-      await page.getByRole("button", { name: "Refresh data sources", exact: true }).click();
-      await page
-        .getByRole("button", {
-          name: new RegExp(`${name}.*${provider === "s3" ? "S3" : "SFTP"}`),
-        })
-        .click();
+      // The browser retains its path after authoring, and source references
+      // survive asset creation. Navigate up without refreshing connection IDs.
+      await page.getByRole("textbox", { name: "Search data browser" }).fill(`${name}./`);
       await page.getByRole("button", { name: "Use outgoing in canvas", exact: true }).click();
       await page
         .getByRole("button", {
