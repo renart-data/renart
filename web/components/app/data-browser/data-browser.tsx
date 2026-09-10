@@ -62,7 +62,10 @@ import type { DataBrowserDestination } from "@/lib/data-browser-transfer";
 import { notebookBrowserDropReason } from "@/lib/notebook-browser-drop";
 import { DataBrowserLoading } from "./data-browser-loading";
 import { SqlPreview } from "../sql-preview";
-import { AppContextSidebarTransition } from "../workbench/workbench-context-sidebar";
+import {
+  AppContextSidebarTransition,
+  type AppContextSidebarTransitionDirection,
+} from "../workbench/workbench-context-sidebar";
 import { WorkbenchPortal } from "../workbench/workbench-slots";
 import { useDataBrowserSearch } from "@/hooks/use-data-browser-search";
 import { connectionSearchPrefix, nodeSearchCompletion } from "@/lib/data-browser-search";
@@ -285,14 +288,17 @@ function DataBrowserNavigator({
   };
   const searchScope = JSON.stringify([getPinnedProjectId(), environment]);
   const [query, updateQuery] = useState(() => browserSearchCache.get(searchScope) ?? "");
+  const [navigationDirection, setNavigationDirection] =
+    useState<AppContextSidebarTransitionDirection>("replace");
   const setQuery = useCallback(
-    (value: string) => {
+    (value: string, direction: AppContextSidebarTransitionDirection = "replace") => {
       // Persist synchronously before a leaf link can unmount this navigator.
       browserSearchCache.delete(searchScope);
       if (value) browserSearchCache.set(searchScope, value);
       if (browserSearchCache.size > 12)
         browserSearchCache.delete(browserSearchCache.keys().next().value!);
       updateQuery(value);
+      setNavigationDirection(direction);
     },
     [searchScope],
   );
@@ -321,6 +327,7 @@ function DataBrowserNavigator({
         node,
         selectedConnection?.source_kind === "warehouse" ? "." : "/",
       ).value,
+      "forward",
     );
   };
   const viewKey = search.prefix || "sources";
@@ -374,7 +381,7 @@ function DataBrowserNavigator({
         } else if (event.key === "ArrowLeft" && selectedConnection) {
           event.preventDefault();
           keyboardNavigation.current = false;
-          setQuery(search.back);
+          setQuery(search.back, "back");
           focusFilter();
         }
       }}
@@ -388,7 +395,7 @@ function DataBrowserNavigator({
             variant="ghost"
             size="icon-sm"
             aria-label="Back"
-            onClick={() => setQuery(search.back)}
+            onClick={() => setQuery(search.back, "back")}
           >
             <ArrowLeft />
           </Button>
@@ -426,7 +433,11 @@ function DataBrowserNavigator({
           placeholder={selectedConnection ? "Filter objects…" : "Filter sources…"}
         />
       </div>
-      <AppContextSidebarTransition viewKey={viewKey} className="min-h-0 flex-1">
+      <AppContextSidebarTransition
+        viewKey={viewKey}
+        direction={navigationDirection}
+        className="min-h-0 flex-1"
+      >
         <ScrollArea className="min-h-0 flex-1" showHorizontalScrollBar={false}>
           <div className="p-2">
             {error ? (
@@ -516,7 +527,7 @@ function DataBrowserNavigator({
                             <ChevronRight className="size-3.5" />
                           </span>
                         }
-                        onClick={() => setQuery(connectionSearchPrefix(connection))}
+                        onClick={() => setQuery(connectionSearchPrefix(connection), "forward")}
                       />
                     </DataBrowserTransferItem>
                   ))}

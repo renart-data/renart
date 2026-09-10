@@ -52,11 +52,17 @@ test("focuses the filter and navigates sources and namespaces with the keyboard"
   await page.keyboard.press("Enter");
   const catalog = page.getByRole("button", { name: "local Default", exact: true });
   await expect(catalog).toBeFocused();
+  const transition = page.locator('[data-slot="workbench-context-transition"]');
+  await expect(transition).toHaveAttribute("data-direction", "forward");
   await page.keyboard.press("ArrowRight");
   await expect(page.getByRole("button", { name: "main", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowLeft");
   await expect(filter).toBeFocused();
   await expect(catalog).toBeVisible();
+  await expect(transition).toHaveAttribute("data-direction", "back");
+  await filter.fill("duckdb-default.local.");
+  await expect(transition).toHaveAttribute("data-direction", "replace");
+  await expect(filter).toBeFocused();
   expect(new URL(page.url()).searchParams.get("result")).toBe("inspect");
 });
 

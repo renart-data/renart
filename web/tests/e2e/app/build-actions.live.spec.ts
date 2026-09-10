@@ -65,6 +65,7 @@ test.describe("app build actions live", () => {
 
     await page
       .locator(`[data-testid="lineage-asset"][data-asset-id="${customersAssetId}"]`)
+      .getByText("customers", { exact: true })
       .click();
     await expect(page).toHaveURL(
       new RegExp(`/pipelines/${pipelineId}/assets/${customersAssetId}/split(?:[?].*)?$`),
@@ -94,7 +95,7 @@ test.describe("app build actions live", () => {
     const ordersNode = splitFlow.locator(
       `[data-testid="lineage-asset"][data-asset-id="${ordersAssetId}"]`,
     );
-    await ordersNode.click();
+    await ordersNode.getByText("orders", { exact: true }).click();
     await expect(page.locator(".view-lines").first()).toContainText("order_id", {
       timeout: 15000,
     });
@@ -102,7 +103,7 @@ test.describe("app build actions live", () => {
       new RegExp(`/pipelines/${pipelineId}/assets/${ordersAssetId}/split(?:[?].*)?$`),
     );
 
-    await selectedNode.click();
+    await selectedNode.getByText("customers", { exact: true }).click();
     await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
       timeout: 15000,
     });
@@ -114,7 +115,10 @@ test.describe("app build actions live", () => {
     await expect(page).toHaveURL(
       new RegExp(`/pipelines/${pipelineId}/assets/${customersAssetId}/canvas(?:[?].*)?$`),
     );
-    await page.locator(`[data-testid="lineage-asset"][data-asset-id="${ordersAssetId}"]`).click();
+    await page
+      .locator(`[data-testid="lineage-asset"][data-asset-id="${ordersAssetId}"]`)
+      .getByText("orders", { exact: true })
+      .click();
     await expect(page).toHaveURL(
       new RegExp(`/pipelines/${pipelineId}/assets/${ordersAssetId}/canvas(?:[?].*)?$`),
     );

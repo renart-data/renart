@@ -284,6 +284,8 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   hierarchy transition keys so lazy result updates cannot remount it. Search
   state is disposable, bounded and project/environment-scoped across mobile
   Sheet transitions, separate from the routed object, editor and result tabs.
+  Row activation and Back preserve forward/back hierarchy motion; editing the
+  search path uses replacement motion without moving focus out of the input.
 
   In a pipeline, table rows and warehouse connections support native drag and
   the equivalent **Use in canvas** action (keyboard/touch). A table reveals a
