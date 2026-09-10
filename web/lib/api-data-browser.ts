@@ -77,11 +77,17 @@ export function getDataBrowserChildren(
 }
 
 export function getDataBrowserPrefix(
-  options: { connectionId: string; prefix: string; namePrefix?: string; environment: string },
+  options: {
+    connectionId: string;
+    prefix: string;
+    namePrefix?: string;
+    pattern?: string;
+    environment: string;
+  },
   signal?: AbortSignal,
 ) {
   return fetchMetadata<DataBrowserChildrenResponse>(
-    `/api/data-browser/connections/${encodeURIComponent(options.connectionId)}/prefix${buildQueryString({ path: options.prefix, name_prefix: options.namePrefix, environment: options.environment })}`,
+    `/api/data-browser/connections/${encodeURIComponent(options.connectionId)}/prefix${buildQueryString({ path: options.prefix, name_prefix: options.namePrefix, pattern: options.pattern, environment: options.environment })}`,
     signal,
   );
 }

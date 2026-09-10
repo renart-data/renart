@@ -9,6 +9,7 @@ export type BrowserSearchRequest = {
   parentId?: string;
   prefix?: string;
   namePrefix?: string;
+  pattern?: string;
 };
 export type BrowserSearchBase = {
   connection: DataBrowserConnection;
@@ -30,6 +31,7 @@ export type BrowserSearchPlan = {
   truncated?: boolean;
   request?: BrowserSearchRequest;
   error?: string;
+  wildcard?: boolean;
 };
 
 export const searchRequestKey = (request: BrowserSearchRequest) => JSON.stringify(request);
@@ -213,6 +215,73 @@ export function planDataBrowserSearch(
   if (connection.source_kind === "storage") {
     remaining = remaining.replace(/^\//, "");
     const path = [...initialParts, remaining].join("/");
+    if (/[?*]/.test(path)) {
+      if (
+        path.includes("**") ||
+        /[\\[\]{}|:\p{Cc}]/u.test(path) ||
+        path.length > 4096 ||
+        path
+          .split("/")
+          .some(
+            (part, index, all) =>
+              part === "." || part === ".." || (!part && index < all.length - 1),
+          )
+      )
+        return {
+          ...plan,
+          error:
+            "Use * and ? within path segments, without recursive **, parent traversal or URL options.",
+        };
+      const firstWildcard = path.search(/[?*]/);
+      const literalParent = path.slice(0, path.lastIndexOf("/", firstWildcard) + 1);
+      const pattern = path.endsWith("/") ? path + "*" : path;
+      const leaf = pattern.slice(literalParent.length);
+      plan.wildcard = true;
+      plan.prefix = root + literalParent;
+      plan.back = plan.prefix;
+      plan.label = "Matching objects";
+      // A complete one-level listing answers leaf globs without any new I/O.
+      if (!leaf.includes("/")) {
+        const literalName = leaf.slice(0, leaf.search(/[?*]/));
+        const available =
+          [...cache].find(([key, result]) => {
+            const request = JSON.parse(key) as BrowserSearchRequest;
+            return (
+              !request.pattern &&
+              request.connectionId === connection.id &&
+              request.prefix === literalParent &&
+              !result.truncated &&
+              literalName.startsWith(request.namePrefix ?? "")
+            );
+          })?.[1] ??
+          (!explicit &&
+          base &&
+          literalParent === (initialParts.length ? initialParts.join("/") + "/" : "") &&
+          !base.truncated
+            ? base
+            : undefined);
+        if (available) {
+          const expression = new RegExp(
+            "^" +
+              Array.from(leaf)
+                .map((char) =>
+                  char === "*"
+                    ? "[^/]*"
+                    : char === "?"
+                      ? "[^/]"
+                      : char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                )
+                .join("") +
+              "$",
+            "u",
+          );
+          plan.nodes = available.nodes.filter((node) => expression.test(node.label));
+          return plan;
+        }
+      }
+      listing({ connectionId: connection.id, prefix: literalParent, pattern });
+      return plan;
+    }
     if (
       /[\\*?[\]{}|:\p{Cc}]/u.test(path) ||
       path
@@ -244,6 +313,7 @@ export function planDataBrowserSearch(
       const cached = JSON.parse(key) as BrowserSearchRequest;
       if (
         cached.connectionId === connection.id &&
+        !cached.pattern &&
         cached.prefix === parent &&
         filter.startsWith(cached.namePrefix ?? "")
       )

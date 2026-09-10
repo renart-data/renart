@@ -139,6 +139,7 @@ export function AppCatalogPage({
         return {
           ...asset,
           status: materializationStatusByAssetId[asset.id]?.status ?? asset.status,
+          runId: materializationStatusByAssetId[asset.id]?.runId,
           materializedAt:
             assetStaleness?.status === "external"
               ? "freshness not tracked"

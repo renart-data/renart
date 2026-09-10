@@ -76,6 +76,15 @@ its dependents, but it is not an atomic swap and keeps the table's existing
 schema. If the schema needs to change, update the dependent objects before
 using **Table (replace)** again.
 
+## Tune a large transfer
+
+For a large transfer, open the Load asset and set **Load parallelism** to allow
+more transfer workers. Start with a small increase and compare run duration and
+resource use. Higher values consume more memory and connections; destinations
+may limit the effective parallelism. This does not split a source SQL query or
+change how many pipeline assets run at once. Leave it empty to keep the automatic
+behavior.
+
 ## Columns and lineage
 
 The upstream dependency is inferred from the source when you save, so the Load

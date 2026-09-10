@@ -6,6 +6,11 @@ import { getPinnedProjectId } from "@/lib/project-context";
 import { useWorkspaceSettingsData } from "./use-workspace-settings-data";
 import { detailSearch, parseDetail, type ResourceSearch } from "@/lib/resource-navigation";
 import { LocalResourceReflection } from "@/lib/local-resource-reflection";
+import {
+  navigationArrivalState,
+  navigationDocument,
+  navigationToken,
+} from "@/lib/navigation-arrival";
 import { resourceDestination } from "@/lib/ui-navigation";
 import type { ResourceTarget } from "@/lib/generated/api-types";
 
@@ -57,12 +62,17 @@ export function useResourceNavigation() {
         environment: environment || selectedEnvironment || workspaceConfig?.default_environment,
         target,
       });
-      const token = crypto.randomUUID();
+      const token = navigationToken();
       reflection.current.begin(token);
       return navigate({
         to: ".",
         search: (search) => detailSearch(search, project, nextDetail),
-        state: (state) => ({ ...state, resourceReflection: token }),
+        state: (state) => ({
+          ...state,
+          resourceReflection: token,
+          resourceArrival: undefined,
+          resourceDocument: navigationDocument,
+        }),
         replace: true,
         resetScroll: false,
       });
@@ -73,7 +83,7 @@ export function useResourceNavigation() {
         return navigate({
           to: next.pathname,
           search: next.search,
-          state: (state) => ({ ...state, resourceReflection: undefined }),
+          state: (state) => ({ ...state, ...navigationArrivalState() }),
           replace,
         });
     },

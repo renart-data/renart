@@ -6,6 +6,7 @@ import { useAtomValue } from "jotai";
 import { ArrowUpRight, Check, Database, HardDrive, Plug } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Command,
   CommandEmpty,
@@ -104,7 +105,7 @@ export function LoadParametersEditor({
     );
   }, [asset.upstreams, params.source_table, pipelineId, workspace?.pipelines]);
 
-  const setParam = (key: string, value: string) => {
+  const setParam = async (key: string, value: string) => {
     const next: Record<string, string> = { ...params };
     const trimmed = value.trim();
     if (trimmed) {
@@ -112,7 +113,7 @@ export function LoadParametersEditor({
     } else {
       delete next[key];
     }
-    void updateAsset(pipelineId, asset.id, { parameters: next });
+    await updateAsset(pipelineId, asset.id, { parameters: next });
   };
 
   return (
@@ -200,7 +201,76 @@ export function LoadParametersEditor({
           <span className="truncate text-foreground">{asset.name}</span>
         </Line>
       )}
+      <LoadParallelismField
+        key={`${asset.id}:${params.parallelism ?? ""}`}
+        value={params.parallelism ?? ""}
+        onSave={(value) => setParam("parallelism", value)}
+      />
     </div>
+  );
+}
+
+function LoadParallelismField({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (value: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async () => {
+    if (busy || draft.trim() === value) return;
+    if (draft.trim() && (!/^\d+$/.test(draft.trim()) || Number(draft) < 1 || Number(draft) > 32)) {
+      setError("Use a whole number between 1 and 32, or leave empty for automatic.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave(draft.trim());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save parallelism.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Line depth={1}>
+        <Key>parallelism</Key>
+        <Input
+          aria-label="Load parallelism"
+          aria-describedby="load-parallelism-help"
+          aria-invalid={Boolean(error)}
+          type="number"
+          min={1}
+          max={32}
+          step={1}
+          placeholder="Automatic"
+          value={draft}
+          disabled={busy}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setError(null);
+          }}
+          onBlur={() => void save()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
+        />
+      </Line>
+      <p id="load-parallelism-help" className="mt-2 text-xs text-muted-foreground">
+        Parallel transfer workers for this asset. Higher values use more memory and connections; the
+        destination may impose a lower limit. Does not split a source SQL query.
+      </p>
+      {error ? (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      ) : null}
+    </>
   );
 }
 

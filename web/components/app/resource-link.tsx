@@ -3,6 +3,7 @@ import type { ReactNode, MouseEventHandler } from "react";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 import type { ResourceTarget } from "@/lib/generated/api-types";
 import { resourceLabel } from "@/lib/resource-navigation";
+import { navigationArrivalState } from "@/lib/navigation-arrival";
 
 // Real navigation, not a resolution command. The generated href carries all
 // context required by a fresh tab; ordinary clicks reveal the existing owner UI.
@@ -37,6 +38,7 @@ export function ResourceLink({
     <Link
       to={next.pathname}
       search={next.search}
+      state={(state) => ({ ...state, ...navigationArrivalState() })}
       replace={
         JSON.stringify((location.search as { detail?: unknown }).detail) === JSON.stringify(detail)
       }

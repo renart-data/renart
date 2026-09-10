@@ -437,12 +437,13 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 			return AssetMutationResponse{}, newAPIError(400, "invalid_load_target_connection", connectionErr.Error())
 		}
 		var renderErr error
-		content, renderErr = renderLoadAssetContent(
+		content, renderErr = renderLoadAssetContentWithParallelism(
 			req.Connection,
 			sourceConnection,
 			sourceTable,
 			req.Parameters[loadParamDestinationObject],
 			depends,
+			req.Parameters[loadParamParallelism],
 		)
 		if renderErr != nil {
 			return AssetMutationResponse{}, newAPIError(400, "invalid_load_asset", renderErr.Error())
@@ -783,6 +784,11 @@ func (s *AssetService) Update(ctx context.Context, assetID string, req AssetUpda
 				nextParameters[key] = rawValue
 			}
 			asset.Parameters = nextParameters
+			if isLoadAsset(asset) {
+				if _, err := loadParallelism(asset); err != nil {
+					return AssetMutationResponse{}, badRequestError("invalid_load_parallelism", err.Error())
+				}
+			}
 		}
 		if (req.Type != nil || req.Connection != nil || req.Parameters != nil) &&
 			(strings.HasSuffix(strings.ToLower(string(asset.Type)), ".seed") || isSensorAssetType(asset.Type)) {

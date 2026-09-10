@@ -150,6 +150,7 @@ function AssetFlowNode({ data }: NodeProps<AssetNodeData>) {
       ) : (
         <AssetNode
           asset={displayAsset}
+          runAssetName={data.asset.name}
           selected={data.selected}
           actions={actions}
           onOpenConnection={

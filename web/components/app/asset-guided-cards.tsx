@@ -103,6 +103,7 @@ import { MultiValueInput } from "./multi-value-input";
 import { SchemaSyncDialog } from "./schema-sync-dialog";
 import { AssetDependencyPicker } from "./asset-dependency-picker";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
+import { useNavigationArrival, useArrivalHighlight } from "@/hooks/use-navigation-arrival";
 import { resolveColumn, type ColumnTarget } from "@/lib/resource-navigation";
 
 const AssetUnitTests = lazy(() =>
@@ -136,6 +137,8 @@ export function AssetGuidedCards({
     getAssetColumnRefreshMode(asset.type, asset.parameters) !== "none";
   const navigation = useResourceNavigation();
   const linked = navigation.detail;
+  const arrival = useNavigationArrival(linked);
+  const highlightSection = useArrivalHighlight(arrival);
   const target = linked?.target;
   const addressed =
     target &&
@@ -169,7 +172,7 @@ export function AssetGuidedCards({
   );
   const sectionFocus = useCallback(
     (node: HTMLDivElement | null) => {
-      if (!node || section !== "materialization") return;
+      if (!node || !arrival || section !== "materialization") return;
       const frame = requestAnimationFrame(() => {
         if (!node.isConnected || node.getClientRects().length === 0) return;
         node.focus({ preventScroll: true });
@@ -177,10 +180,11 @@ export function AssetGuidedCards({
         if (viewport)
           viewport.scrollTop +=
             node.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+        highlightSection(node);
       });
       return () => cancelAnimationFrame(frame);
     },
-    [section],
+    [section, arrival],
   );
   const routeCheck: QualityCheckFocus | undefined =
     linkedCheckColumn && linkedCheck?.length === 1
@@ -292,9 +296,9 @@ export function AssetGuidedCards({
                 environmentOverride={addressed ? linked?.environment : undefined}
                 focusedColumn={linkedColumn?.name}
                 focusedField={addressed?.kind === "asset-column" ? addressed.field : undefined}
-                focusToken={linkedColumn ? JSON.stringify(addressed) : undefined}
+                focusToken={linkedColumn ? arrival : undefined}
                 onFocusColumn={(column, field = "type") =>
-                  void navigation.open(
+                  void navigation.reflect(
                     { kind: "asset-column", asset_id: asset.id, column, field },
                     linked?.environment,
                   )
@@ -1775,26 +1779,30 @@ function ColumnRow({
   const updateOnMergeInputId = `${fieldIdPrefix}-update-on-merge`;
   const mergeSQLInputId = `${fieldIdPrefix}-merge-sql`;
   const [open, setOpen] = useState(Boolean(focusToken));
+  const [localReveal, setLocalReveal] = useState(0);
+  const revealToken = focusToken ?? (localReveal ? `local:${localReveal}` : undefined);
   const focusedToken = useRef<string | undefined>(undefined);
+  const highlight = useArrivalHighlight(focusToken);
   useEffect(() => {
     if (focusToken) setOpen(true);
     else focusedToken.current = undefined;
   }, [focusToken]);
   const focusType = useCallback(
     (input: HTMLElement | null) => {
-      if (!input || !focusToken || focusedToken.current === focusToken) return;
+      if (!input || !revealToken || focusedToken.current === revealToken) return;
       const frame = requestAnimationFrame(() => {
         if (!input.isConnected || input.getClientRects().length === 0) return;
-        focusedToken.current = focusToken;
+        focusedToken.current = revealToken;
         input.focus({ preventScroll: true });
         const viewport = input.closest('[data-slot="scroll-area-viewport"]');
         if (viewport)
           viewport.scrollTop +=
             input.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 48;
+        highlight(input);
       });
       return () => cancelAnimationFrame(frame);
     },
-    [focusToken],
+    [revealToken, highlight],
   );
   const focusField = (field: ColumnTarget["field"]) =>
     field === focusedField ? focusType : undefined;
@@ -1807,7 +1815,10 @@ function ColumnRow({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next) onReveal?.();
+        if (next) {
+          setLocalReveal((value) => value + 1);
+          onReveal?.();
+        }
       }}
     >
       <CollapsibleTrigger asChild>

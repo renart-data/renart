@@ -1,6 +1,7 @@
 "use client";
 import { ResourceLink } from "./resource-link";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
+import { useNavigationArrival, useArrivalHighlight } from "@/hooks/use-navigation-arrival";
 
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -226,7 +227,6 @@ import {
 // How long to wait after the last keystroke before auto-committing a cell's
 // draft. The save marks the cell stale on the server, which drives recompute.
 const AUTO_COMMIT_DEBOUNCE_MS = 350;
-const NOTEBOOK_CELL_JUMP_HIGHLIGHT_MS = 1600;
 const NOTEBOOK_BLOCK_ENTER_ANIMATION =
   "animate-in fade-in-0 slide-in-from-bottom-2 duration-300 motion-reduce:animate-none";
 const NOTEBOOK_BLOCK_CARD_CLASS =
@@ -507,6 +507,8 @@ export function AppNotebookLivePage({
   libraryOpen?: boolean;
 }) {
   const resource = useResourceNavigation();
+  const arrival = useNavigationArrival(resource.detail);
+  const highlightArrival = useArrivalHighlight(arrival);
   const cellElements = useRef(new Map<string, HTMLDivElement>());
   const linkedCell =
     resource.detail?.target.kind === "notebook-cell" &&
@@ -586,7 +588,6 @@ export function AppNotebookLivePage({
     placement: NotebookBlockPlacement;
   } | null>(null);
   const [enteringBlockKey, setEnteringBlockKey] = useState<string | null>(null);
-  const [jumpHighlightedCellId, setJumpHighlightedCellId] = useState<string | null>(null);
   const [scrollRevision, setScrollRevision] = useState(0);
   const [cellToDelete, setCellToDelete] = useState<NotebookCellDeleteTarget | null>(null);
   const [deletingCell, setDeletingCell] = useState(false);
@@ -604,8 +605,6 @@ export function AppNotebookLivePage({
     useState<HTMLDivElement | null>(null);
   const notebookViewportRef = useRef<HTMLDivElement>(null);
   const pendingBlockSequenceRef = useRef(0);
-  const jumpHighlightFrameRef = useRef<number | null>(null);
-  const jumpHighlightTimerRef = useRef<number | null>(null);
   const parameterSaveTimerRef = useRef<number | null>(null);
   const parameterValuesRef = useRef<Record<string, unknown>>({});
   const [autoRecompute, setAutoRecompute] = useState(
@@ -632,7 +631,6 @@ export function AppNotebookLivePage({
     setNotebookScrolled(false);
     setPendingBlock(null);
     setEnteringBlockKey(null);
-    setJumpHighlightedCellId(null);
     setCellToDelete(null);
     setDeletingCell(false);
     setAddDataOpen(false);
@@ -649,14 +647,6 @@ export function AppNotebookLivePage({
     if (parameterSaveTimerRef.current !== null) {
       window.clearTimeout(parameterSaveTimerRef.current);
       parameterSaveTimerRef.current = null;
-    }
-    if (jumpHighlightFrameRef.current !== null) {
-      window.cancelAnimationFrame(jumpHighlightFrameRef.current);
-      jumpHighlightFrameRef.current = null;
-    }
-    if (jumpHighlightTimerRef.current !== null) {
-      window.clearTimeout(jumpHighlightTimerRef.current);
-      jumpHighlightTimerRef.current = null;
     }
   }, [notebookId]);
 
@@ -697,12 +687,6 @@ export function AppNotebookLivePage({
 
   useEffect(
     () => () => {
-      if (jumpHighlightFrameRef.current !== null) {
-        window.cancelAnimationFrame(jumpHighlightFrameRef.current);
-      }
-      if (jumpHighlightTimerRef.current !== null) {
-        window.clearTimeout(jumpHighlightTimerRef.current);
-      }
       if (parameterSaveTimerRef.current !== null) {
         window.clearTimeout(parameterSaveTimerRef.current);
       }
@@ -1183,32 +1167,18 @@ export function AppNotebookLivePage({
       viewport.scrollTop +=
         target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 32;
 
-    // Toggle the attribute off for one frame so jumping to the same definition
-    // twice restarts the animation instead of leaving an already-finished one.
-    setJumpHighlightedCellId(null);
-    if (jumpHighlightFrameRef.current !== null) {
-      window.cancelAnimationFrame(jumpHighlightFrameRef.current);
-    }
-    if (jumpHighlightTimerRef.current !== null) {
-      window.clearTimeout(jumpHighlightTimerRef.current);
-    }
-    jumpHighlightFrameRef.current = window.requestAnimationFrame(() => {
-      setJumpHighlightedCellId(cellId);
-      jumpHighlightFrameRef.current = null;
-      jumpHighlightTimerRef.current = window.setTimeout(() => {
-        setJumpHighlightedCellId(null);
-        jumpHighlightTimerRef.current = null;
-      }, NOTEBOOK_CELL_JUMP_HIGHLIGHT_MS);
-    });
+    return target;
   }, []);
   const linkedCellAvailable =
     notebook?.cells.filter((cell) => cell.cell_id === linkedCell).length === 1;
   useEffect(() => {
-    if (linkedCell && linkedCellAvailable && !resource.isLocalReflection) revealCell(linkedCell);
-  }, [linkedCell, linkedCellAvailable, resource.isLocalReflection, revealCell]);
+    if (arrival && linkedCell && linkedCellAvailable) {
+      const element = revealCell(linkedCell);
+      if (element) highlightArrival(element);
+    }
+  }, [linkedCell, linkedCellAvailable, arrival, revealCell, highlightArrival]);
   const goToCell = (cellId: string) => {
     void resource.open({ kind: "notebook-cell", notebook_id: notebookId, cell_id: cellId });
-    revealCell(cellId);
   };
   const goToBlock = useCallback(
     (block: WebNotebookBlock) => {
@@ -1765,9 +1735,6 @@ export function AppNotebookLivePage({
                         else cellElements.current.delete(block.cell!);
                       }}
                       data-notebook-block-entering={entering || undefined}
-                      data-notebook-cell-jump-highlight={
-                        jumpHighlightedCellId === block.cell || undefined
-                      }
                       data-notebook-block-selected={selectedBlockID === blockKey || undefined}
                       className={cn(entering && NOTEBOOK_BLOCK_ENTER_ANIMATION)}
                       onPointerDown={() => selectContentBlock(blockKey)}

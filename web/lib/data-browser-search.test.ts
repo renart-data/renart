@@ -30,6 +30,40 @@ const put = (request: BrowserSearchRequest, nodes: DataBrowserNode[], truncated 
 const plan = (query: string) => planDataBrowserSearch(query, [duck, lake], undefined, cache);
 
 describe("lazy Data Browser path search", () => {
+  it("matches leaf wildcards locally only for complete listings", () => {
+    cache.clear();
+    put({ connectionId: lake.id, prefix: "table/" }, [
+      table("part-01.parquet"),
+      table("part-02.csv"),
+      table("Part-03.parquet"),
+    ]);
+    const result = plan("my-s3-connection./table/part-??.parquet");
+    expect(result.request).toBeUndefined();
+    expect(result.nodes.map((node) => node.label)).toEqual(["part-01.parquet"]);
+    put({ connectionId: lake.id, prefix: "table/" }, [], true);
+    expect(plan("my-s3-connection./table/part*.parquet").request).toEqual({
+      connectionId: lake.id,
+      prefix: "table/",
+      pattern: "table/part*.parquet",
+    });
+  });
+  it("keeps wildcard paths distinct from literal cached parent listings", () => {
+    cache.clear();
+    const request = {
+      connectionId: lake.id,
+      prefix: "table/",
+      pattern: "table/day=*/part*.parquet",
+    };
+    expect(plan("my-s3-connection./table/day=*/part*.parquet").request).toEqual(request);
+    put(request, [table("day=2026/part-01.parquet")]);
+    expect(plan("my-s3-connection./table/day=*/part*.parquet").nodes).toHaveLength(1);
+    expect(plan("my-s3-connection./table/").request).toEqual({
+      connectionId: lake.id,
+      prefix: "table/",
+    });
+    expect(plan("my-s3-connection./table/**/x").error).toContain("recursive **");
+    expect(plan("my-s3-connection./../*").error).toContain("parent traversal");
+  });
   it("uses the same canonical paths for clicked items and Tab completion", () => {
     expect(nodeSearchCompletion('"warehouse.prod".', namespace('sales."eu'), ".").value).toBe(
       '"warehouse.prod"."sales.""eu".',
@@ -206,7 +240,7 @@ describe("lazy Data Browser path search", () => {
     for (const path of [
       "../secret/",
       "foo//bar/",
-      "foo/*/",
+      "foo/**/",
       "s3://elsewhere/",
       "foo\\bar/",
       "foo\nbar/",

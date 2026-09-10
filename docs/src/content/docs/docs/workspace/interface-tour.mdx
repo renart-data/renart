@@ -52,6 +52,18 @@ limit, further filtering uses the loaded list without another request. You can
 also enter a storage prefix ending in `/` to open it directly. Clearing the
 search returns to the folder you were browsing.
 
+### Match storage paths
+
+For S3-compatible storage and SFTP, `*` matches any number of characters within
+one path segment and `?` matches one character. For example,
+`my-s3-connection./events/day=2026-09-??/part*.parquet` finds matching files in
+the matching day folders. Matching is case-sensitive. A trailing `/` browses
+the matching folders' children. Recursive `**` and character classes are not supported.
+
+Search only reads metadata. Selecting a result opens its exact path; it does not
+turn a Load source into a wildcard. If you see **Partial matches**, narrow the
+literal prefix: the search reached a listing or traversal limit.
+
 ### View SQL in the Data Browser
 
 For views whose warehouse exposes the definition, the **SQL** tab shows the

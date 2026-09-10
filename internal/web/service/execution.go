@@ -117,6 +117,7 @@ type ExecutionDependencies struct {
 // executions.
 type InlineRunLedger interface {
 	AdmitInlineRun(context.Context, webscheduler.InlineRunAdmission) (webscheduler.PipelineRun, error)
+	RegisterInlineRunCancellation(string, context.CancelFunc) func()
 	StartInlineRun(context.Context, string, time.Time) error
 	BindInlineRunExecutionUnits(context.Context, string, []webscheduler.RunSelectionUnit) error
 	SetInlineRunExecutionTargetSnapshot(context.Context, string, webscheduler.ExecutionTargetSnapshot) error
@@ -822,9 +823,17 @@ func (s *ExecutionService) MaterializeAssetStreamWithSensorMode(ctx context.Cont
 		}
 		inlineRunID = admitted.ID
 		completionID = admitted.ID
+		var cancelInline context.CancelFunc
+		ctx, cancelInline = context.WithCancel(ctx)
+		defer cancelInline()
+		defer inlineLedger.RegisterInlineRunCancellation(admitted.ID, cancelInline)()
 		if startErr := inlineLedger.StartInlineRun(ctx, admitted.ID, time.Now().UTC()); startErr != nil {
-			startErr = errors.Join(startErr, finishInline(webscheduler.RunStatusFailed, startErr))
-			return MaterializeResult{Status: "error", Operation: operation, Error: "start durable inline run: " + startErr.Error(), ExitCode: 1, Warnings: warnings.snapshot()}
+			status := "error"
+			if webexecution.ExecutionWasCancelled(ctx, startErr) {
+				status = "cancelled"
+			}
+			startErr = errors.Join(startErr, finishInline(schedulerRunStatus(status), startErr))
+			return MaterializeResult{Status: status, Operation: operation, Error: "start durable inline run: " + startErr.Error(), ExitCode: 1, Warnings: warnings.snapshot()}
 		}
 		defer func() {
 			if !inlineFinalized {
@@ -1506,14 +1515,22 @@ func (s *ExecutionService) MaterializePipelineRun(ctx context.Context, spec Pipe
 			}
 			inlineRunID = admitted.ID
 			spec.RunID = admitted.ID
+			var cancelInline context.CancelFunc
+			ctx, cancelInline = context.WithCancel(ctx)
+			defer cancelInline()
+			defer inlineLedger.RegisterInlineRunCancellation(admitted.ID, cancelInline)()
 			spec.PipelineUUID = pipelineUUID
 			if strings.TrimSpace(spec.CompletionID) == "" {
 				spec.CompletionID = admitted.ID
 			}
 			if startErr := inlineLedger.StartInlineRun(ctx, admitted.ID, time.Now().UTC()); startErr != nil {
-				startErr = errors.Join(startErr, finishInline(webscheduler.RunStatusFailed, startErr))
+				status := "error"
+				if webexecution.ExecutionWasCancelled(ctx, startErr) {
+					status = "cancelled"
+				}
+				startErr = errors.Join(startErr, finishInline(schedulerRunStatus(status), startErr))
 				return MaterializeResult{
-					Status: "error", Operation: operation, Error: "start durable inline run: " + startErr.Error(),
+					Status: status, Operation: operation, Error: "start durable inline run: " + startErr.Error(),
 					ExitCode: 1, Warnings: warnings.snapshot(),
 				}
 			}

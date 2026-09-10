@@ -714,6 +714,7 @@ export function AppBuildPage({
       return {
         ...asset,
         status: materializationStatusByAssetId[asset.id]?.status ?? asset.status,
+        runId: materializationStatusByAssetId[asset.id]?.runId,
         materializedAt: sourceAsset
           ? ""
           : labelForAppMaterializationState(materializationStatusByAssetId[asset.id]),

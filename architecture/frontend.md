@@ -261,6 +261,13 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   broadening outside them requires a new request. Refined subsets use literal
   starts-with matching, not incomplete fuzzy results. SFTP stays local-only.
 
+  Storage wildcard searches use case-sensitive `*`/`?` path segments. Complete
+  cached one-level listings answer leaf patterns locally; otherwise the existing
+  debounced/abortable prefix request carries a separate bounded-search pattern.
+  Pattern results never masquerade as complete literal-parent cache entries.
+  Selecting a match completes its exact path. A partial-match notice explains
+  listing/traversal limits instead of presenting an empty subset as exhaustive.
+
   The shadcn InputGroup renders a shadow completion; Tab or its touch button
   accepts the canonical name and namespace separator, while a leaf adds no
   separator. The shadow omits the appended separator; the completion button and
@@ -685,8 +692,14 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   asset inspect, and table visualizations in notebooks, dashboards, and reports.
   Its controlled-capable logical-coordinate selection model survives virtual
   row mounting, supports pointer ranges and keyboard navigation/toggling, and
-  copies selected cells as TSV and HTML. Hover alone never expands a value;
-  only the active selected cell can open its complete content. Tables whose
+  disables native scroll anchoring so browser adjustments cannot fight virtual spacers.
+  It copies selected cells as TSV and HTML. `useDataGridRangeResize` adds pointer-captured
+  rectangle edges/corners with touch targets, logical row/column hit testing and
+  viewport-edge auto-scroll. Sparse selections retain their holes and omit range
+  handles. Corner handles also support arrow keys. An explicit toolbar action,
+  double-click or Enter opens `DataGridSelectionDialog` full screen; it pages full
+  selected values locally without executing or expanding a query. Hover popovers
+  and mobile directional resize buttons are not used. Tables whose
   row-action semantics do not fit this spreadsheet contract remain separate.
 - Data Browser, asset Inspect, notebook cells and ad-hoc queries use that table's compact preview footer: row
   count, an explicit **Load more rows** action, or a row/size-limit explanation.
@@ -760,6 +773,10 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   helpers have separate components. No duplicate hidden forms or settings state
   in AppShell. Quick-create adapters still use `WorkspaceConnectionFormFields`;
   main-pane editors additionally fold Credentials and Advanced sections.
+  Both editors share `SettingsEditorHeader` and the installed shadcn Field/FieldGroup
+  hierarchy: a 16px page title, 14px sections, 12px labels and descriptions, standard
+  input surfaces, and a bounded 3xl content width. The navigator uses compact 12px
+  rows with connection icons; it does not duplicate the main editor's form fields.
 
   `/project/connections?environment=…&connection=…` preserves existing bookmarks
   and field `detail` locators. `/project/environments?environment=…` selects the
@@ -831,8 +848,9 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   a timeline row selects the asset
   and scrolls the counterpart view to its matching row; timeline clicks also
   return the lower panel to its Events tab.
-  Queue-backed active runs expose a destructive, confirmed Abort run action.
-  A running cancellation shows `Stopping` from River's durable request state
+  Queue-backed and currently owned foreground runs expose the same destructive,
+  confirmed Abort run action. A running cancellation shows `Stopping` from the
+  backend's cancellation request state
   until the terminal SSE event replaces it; queued cancellation becomes
   terminal immediately.
   Runs admitted from a reviewed plan add a Plan tab with the immutable final

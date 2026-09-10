@@ -1,4 +1,5 @@
 import { useAtomValue } from "jotai";
+import { useLayoutEffect, useRef } from "react";
 import { BookOpen, Terminal, X, type LucideIcon } from "lucide-react";
 
 import { assetPresentationFields } from "@/lib/asset-presentation";
@@ -108,8 +109,21 @@ function BuildDocumentTab({
   onSelect: () => void;
   onClose: () => void;
 }) {
+  const tab = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!active || !tab.current) return;
+    const item = tab.current;
+    const strip = item.parentElement;
+    if (!strip) return;
+    const selected = item.getBoundingClientRect();
+    const viewport = strip.getBoundingClientRect();
+    // Scroll only this strip, never a page/canvas ancestor, and do not steal focus.
+    if (selected.left < viewport.left) strip.scrollLeft -= viewport.left - selected.left;
+    else if (selected.right > viewport.right) strip.scrollLeft += selected.right - viewport.right;
+  }, [active]);
   return (
     <div
+      ref={tab}
       className={cn(
         "group flex h-8 min-w-28 max-w-48 shrink-0 items-center rounded-lg border text-xs transition-colors",
         active

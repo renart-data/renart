@@ -13,6 +13,7 @@ import (
 )
 
 type DataBrowserHandlers interface {
+	SearchStorage(ctx context.Context, connectionID, pattern, environment string) (databrowser.ChildrenResponse, *apperror.Error)
 	Prefix(ctx context.Context, connectionID, prefix, namePrefix, environment string) (databrowser.ChildrenResponse, *apperror.Error)
 	Resolve(ctx context.Context, request databrowser.ResolveRequest) (databrowser.ObjectResponse, *apperror.Error)
 	Connections(ctx context.Context, environment string) (databrowser.ConnectionsResponse, *apperror.Error)
@@ -117,6 +118,15 @@ func (h *DataBrowserAPI) HandleChildren(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *DataBrowserAPI) HandlePrefix(w http.ResponseWriter, r *http.Request) {
+	if pattern := r.URL.Query().Get("pattern"); pattern != "" {
+		response, apiErr := h.Service.SearchStorage(r.Context(), chi.URLParam(r, "connectionID"), pattern, strings.TrimSpace(r.URL.Query().Get("environment")))
+		if apiErr != nil {
+			writeDataBrowserError(w, apiErr)
+			return
+		}
+		webapi.WriteJSON(w, http.StatusOK, response)
+		return
+	}
 	response, apiErr := h.Service.Prefix(r.Context(), chi.URLParam(r, "connectionID"), r.URL.Query().Get("path"), r.URL.Query().Get("name_prefix"), strings.TrimSpace(r.URL.Query().Get("environment")))
 	if apiErr != nil {
 		writeDataBrowserError(w, apiErr)

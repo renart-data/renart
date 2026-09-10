@@ -656,7 +656,8 @@ test.describe("app notebooks live", () => {
     await expect(table).toHaveAttribute("aria-rowcount", "101");
     await expect(table.locator("tbody")).toHaveAttribute("data-virtualized", "true");
     await expect(table.locator("[data-row-index]")).toHaveCount(17);
-    await expect(page.getByText("showing 100 of 1,000 rows", { exact: true })).toBeVisible();
+    await expect(page.getByText("Showing 100 rows", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Load more rows", exact: true })).toBeVisible();
 
     const cell = page.locator(`[data-notebook-cell-id="${cellId}"]`);
     const card = cell.locator(':scope > [data-slot="delimited-card"]');
@@ -744,9 +745,10 @@ test.describe("app notebooks live", () => {
     if (test.info().project.name.includes("mobile")) {
       const selectionControls = page.getByTestId("mobile-table-selection-controls");
       await expect(selectionControls).toBeVisible();
-      await selectionControls.getByRole("button", { name: "Adjust selection down" }).click();
+      const endHandle = cell.getByRole("button", { name: "Resize selection end", exact: true });
+      await endHandle.press("ArrowDown");
       await expect(table.locator('td[aria-selected="true"]')).toHaveCount(2);
-      await selectionControls.getByRole("button", { name: "Adjust selection up" }).click();
+      await endHandle.press("ArrowUp");
       await expect(table.locator('td[aria-selected="true"]')).toHaveCount(1);
       await selectionControls.getByRole("button", { name: "Clear selection" }).click();
       await expect(table.locator('td[aria-selected="true"]')).toHaveCount(0);
@@ -756,8 +758,13 @@ test.describe("app notebooks live", () => {
       await page.waitForTimeout(150);
       await expect(page.locator('[data-slot="hover-card-content"]')).toBeHidden();
       await cell50.hover();
-      await expect(page.locator('[data-slot="hover-card-content"]')).toBeVisible();
+      await expect(page.locator('[data-slot="hover-card-content"]')).toBeHidden();
     }
+
+    await cell.getByRole("button", { name: "View selection full screen" }).click();
+    const selectedValues = page.getByRole("dialog", { name: "Selected cells" });
+    await expect(selectedValues).toBeVisible();
+    await selectedValues.getByRole("button", { name: "Close", exact: true }).click();
 
     await cell52.click({ modifiers: ["Shift"] });
     await expect(table.locator('td[aria-selected="true"]')).toHaveCount(3);
@@ -771,9 +778,8 @@ test.describe("app notebooks live", () => {
     await expect(table.locator('td[aria-selected="true"]')).toHaveCount(0);
     await cell52.click();
     await page.keyboard.press("Control+a");
-    await expect(page.getByRole("button", { name: "Copy selected cells" })).toContainText(
-      "Copy 100",
-    );
+    await expect(page.getByRole("button", { name: "Copy selection", exact: true })).toBeVisible();
+    await expect(page.getByTestId("mobile-table-selection-controls")).toContainText("100 selected");
     await page.keyboard.press("Escape");
     await expect(table.locator('td[aria-selected="true"]')).toHaveCount(0);
 
@@ -945,6 +951,11 @@ test.describe("app notebooks live", () => {
     ).toBeVisible({
       timeout: 15000,
     });
+    // The shared document header can put the third cell below the viewport.
+    // Reveal the editor before converting its model position to screen coordinates.
+    await page
+      .locator(`[data-notebook-cell-id="${readerCell}"] .monaco-editor`)
+      .scrollIntoViewIfNeeded();
     const relationPoint = await page.evaluate(() => {
       const monaco = (window as typeof window & { monaco?: any }).monaco;
       const editor = monaco?.editor
@@ -989,10 +1000,10 @@ test.describe("app notebooks live", () => {
     await page.mouse.click(relationPoint.x, relationPoint.y);
     await page.keyboard.up(modifier);
     await definitionResponse;
-    await expect(targetCard).toHaveAttribute("data-notebook-cell-jump-highlight", "true", {
+    await expect(targetCard).toHaveAttribute("data-navigation-arrival", "true", {
       timeout: timeoutForRetry(test.info(), 3000),
     });
-    await expect(targetCard).not.toHaveAttribute("data-notebook-cell-jump-highlight", "true", {
+    await expect(targetCard).not.toHaveAttribute("data-navigation-arrival", "true", {
       timeout: timeoutForRetry(test.info(), 3000),
     });
   });

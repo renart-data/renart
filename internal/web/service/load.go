@@ -542,6 +542,8 @@ const (
 	loadParamSourceConnection  = "source_connection"
 	loadParamSourceTable       = "source_table"
 	loadParamDestinationObject = "destination_object"
+	loadParamParallelism       = "parallelism"
+	maxLoadParallelism         = 32
 )
 
 // loadRunParams is the resolved, flat replication intent of a Load asset.
@@ -551,6 +553,7 @@ type loadRunParams struct {
 	DestinationConnection string
 	DestinationObject     string
 	AssetName             string
+	Parallelism           int
 }
 
 // loadParamsFromAsset reads the flat replication parameters off an asset.
@@ -573,12 +576,40 @@ func loadParamsFromAsset(asset *pipeline.Asset) loadRunParams {
 
 func resolvedLoadParams(asset *pipeline.Asset, pl *pipeline.Pipeline) (loadRunParams, error) {
 	params := loadParamsFromAsset(asset)
+	parallelism, err := loadParallelism(asset)
+	if err != nil {
+		return params, err
+	}
+	params.Parallelism = parallelism
 	connectionName, err := loadConnectionNameForAsset(asset, pl)
 	if err != nil {
 		return params, err
 	}
 	params.DestinationConnection = connectionName
 	return params, nil
+}
+
+func parseLoadParallelism(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 || value > maxLoadParallelism {
+		return 0, fmt.Errorf("load parallelism must be a whole number between 1 and %d", maxLoadParallelism)
+	}
+	return value, nil
+}
+
+func loadParallelism(asset *pipeline.Asset) (int, error) {
+	if asset == nil {
+		return 0, nil
+	}
+	value, scalar := asset.Parameters.GetString(loadParamParallelism)
+	if !scalar && asset.Parameters[loadParamParallelism] != nil {
+		return 0, fmt.Errorf("load parallelism must be a whole number between 1 and %d", maxLoadParallelism)
+	}
+	return parseLoadParallelism(value)
 }
 
 // loadLocalConnectionName is the synthetic "connection" that marks a Load
@@ -696,6 +727,7 @@ type loadAssetParametersYAML struct {
 	SourceConnection  string `yaml:"source_connection"`
 	SourceTable       string `yaml:"source_table"`
 	DestinationObject string `yaml:"destination_object,omitempty"`
+	Parallelism       string `yaml:"parallelism,omitempty"`
 }
 
 type loadAssetMaterializationYAML struct {
@@ -704,6 +736,13 @@ type loadAssetMaterializationYAML struct {
 }
 
 func renderLoadAssetContent(connection, sourceConnection, sourceTable, destinationObject string, depends []string) (string, error) {
+	return renderLoadAssetContentWithParallelism(connection, sourceConnection, sourceTable, destinationObject, depends, "")
+}
+
+func renderLoadAssetContentWithParallelism(connection, sourceConnection, sourceTable, destinationObject string, depends []string, parallelism string) (string, error) {
+	if _, err := parseLoadParallelism(parallelism); err != nil {
+		return "", err
+	}
 	if strings.TrimSpace(sourceConnection) == "" {
 		return "", errors.New("load asset requires a source connection")
 	}
@@ -721,6 +760,7 @@ func renderLoadAssetContent(connection, sourceConnection, sourceTable, destinati
 			SourceConnection:  strings.TrimSpace(sourceConnection),
 			SourceTable:       strings.TrimSpace(sourceTable),
 			DestinationObject: strings.TrimSpace(destinationObject),
+			Parallelism:       strings.TrimSpace(parallelism),
 		},
 		Materialization: loadAssetMaterializationYAML{
 			Type:     "table",
@@ -1122,7 +1162,11 @@ func (e *HybridBruinExecutor) runLoadAsset(ctx context.Context, pl *pipeline.Pip
 		return writer.buffer.Bytes(), err
 	}
 	args = append(args, modeArgs...)
-	targetOptions, err := slingTargetOptionsArgs(manager, params.DestinationConnection, nil)
+	extraTargetOptions := map[string]any{}
+	if params.Parallelism > 0 {
+		extraTargetOptions["concurrency"] = params.Parallelism
+	}
+	targetOptions, err := slingTargetOptionsArgs(manager, params.DestinationConnection, extraTargetOptions)
 	if err != nil {
 		return writer.buffer.Bytes(), err
 	}
@@ -1135,6 +1179,11 @@ func (e *HybridBruinExecutor) runLoadAsset(ctx context.Context, pl *pipeline.Pip
 	}
 	cmd := newStreamingCommand(ctx, cmdName, cmdArgs, e.workspaceRoot, writer)
 	cmd.Env = append(cmd.Env, connectionEnv...)
+	if params.Parallelism > 0 {
+		// This controls transfer workers inside this one Load, not concurrent
+		// assets/replication streams. Never mutate the server's global environment.
+		cmd.Env = append(cmd.Env, "CONCURRENCY="+strconv.Itoa(params.Parallelism))
+	}
 	lease, err := e.acquireDuckDBConnections(ctx, manager, []string{params.SourceConnection, params.DestinationConnection}, directTaskLeaseOwner(ctx, pl, asset), writer)
 	if err != nil {
 		return writer.buffer.Bytes(), err

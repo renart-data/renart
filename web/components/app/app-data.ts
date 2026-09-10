@@ -89,6 +89,7 @@ export type AppAsset = {
   dir?: string;
   status: "ok" | "overdue" | "unknown" | "pending" | "success" | "failed";
   materializedAt: string;
+  runId?: string;
   staleness?: AssetStaleness;
   // Set when the asset file failed to parse; the node renders an error state and
   // the editor shows the message so the user can fix it in place.

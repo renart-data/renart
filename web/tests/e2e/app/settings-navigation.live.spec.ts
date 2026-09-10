@@ -220,7 +220,8 @@ test("opens a cold field link inside a collapsed section without a settings dial
   page,
   liveApp,
   context,
-}) => {
+}, info) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const detail = {
     v: 1,
     environment: "default",
@@ -237,10 +238,24 @@ test("opens a cold field link inside a collapsed section without a settings dial
       .getByLabel("max_concurrent_assets", { exact: true }),
   ).toBeFocused();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator('[data-navigation-arrival="true"]')).toHaveCount(1);
+  await expect(page.locator('[data-navigation-arrival="true"]')).toHaveCSS(
+    "animation-name",
+    "none",
+  );
+  await page.screenshot({ path: info.outputPath("connection-arrival.png") });
+  await expect(page.locator('[data-navigation-arrival="true"]')).toHaveCount(0);
   const cold = await context.newPage();
   await cold.goto(page.url());
   await expect(cold.getByLabel("max_concurrent_assets", { exact: true })).toBeFocused();
   await cold.close();
+  // Local focus only reflects a bookmark; it must not animate or focus back.
+  const path = page
+    .getByRole("region", { name: "duckdb-default", exact: true })
+    .getByLabel("path", { exact: true });
+  await path.focus();
+  await expect(path).toBeFocused();
+  await expect(page.locator('[data-navigation-arrival="true"]')).toHaveCount(0);
 });
 
 test("reports ambiguous and missing identities without selecting another connection", async ({

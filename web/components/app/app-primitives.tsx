@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Circle,
-  History,
   Loader2,
   MoreHorizontal,
   XCircle,
@@ -26,7 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getPinnedProjectId } from "@/lib/project-context";
 import { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
 import {
@@ -315,78 +314,82 @@ export function LastRunBadge({ staleness }: { staleness?: AssetStaleness }) {
   ) {
     return null;
   }
-  const label = lastRunLabel(staleness);
-  if (staleness.last_run_id) {
-    return <LastRunLinkBadge staleness={staleness} runId={staleness.last_run_id} />;
-  }
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Badge
-          size="xs"
-          variant={staleness.last_run_status === "failed" ? "destructive" : "muted"}
-          data-last-run={staleness.last_run_status}
-          aria-label={label}
-          tabIndex={0}
-          className="max-w-full shrink-0 truncate"
-        >
-          {label}
-        </Badge>
-      </TooltipTrigger>
-      <TooltipContent>{lastRunTooltip(staleness)}</TooltipContent>
-    </Tooltip>
+    <RunInfoBadge
+      label={lastRunLabel(staleness)}
+      description={lastRunTooltip(staleness)}
+      runId={staleness.last_run_id}
+      assetName={staleness.asset_name}
+      variant={staleness.last_run_status === "failed" ? "destructive" : "muted"}
+      lastRunStatus={staleness.last_run_status}
+    />
   );
 }
 
-function LastRunLinkBadge({ staleness, runId }: { staleness: AssetStaleness; runId: string }) {
+function RunInfoBadge({
+  label,
+  description,
+  runId,
+  assetName,
+  variant = "muted",
+  lastRunStatus,
+}: {
+  label: string;
+  description: string;
+  runId?: string;
+  assetName: string;
+  variant?: "muted" | "destructive" | "secondary";
+  lastRunStatus?: string;
+}) {
   const { workspaceConfig } = useWorkspaceSettingsData();
-  const label = lastRunLabel(staleness);
-  const params = { runId };
   const search = {
     project: getPinnedProjectId() ?? workspaceConfig?.project_id,
-    run_asset: staleness.asset_name,
+    run_asset: assetName,
     run_tab: "events" as const,
     run_focus: "events" as const,
   };
   return (
-    <HoverCard openDelay={250}>
-      <HoverCardTrigger asChild>
+    <Popover>
+      <PopoverTrigger asChild>
         <Badge
           asChild
           size="xs"
-          variant={staleness.last_run_status === "failed" ? "destructive" : "muted"}
-          data-last-run={staleness.last_run_status}
+          variant={variant}
+          data-last-run={lastRunStatus}
           className="nodrag nopan max-w-full shrink-0 truncate"
         >
-          <Link
-            to="/runs/$runId"
-            params={params}
-            search={search}
-            preload={false}
-            aria-label={`${label}: open run for ${staleness.asset_name}`}
+          <button
+            type="button"
+            aria-label={`${label}: run details for ${assetName}`}
             onClick={(event) => event.stopPropagation()}
             onDoubleClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
           >
             {label}
-          </Link>
+          </button>
         </Badge>
-      </HoverCardTrigger>
-      <HoverCardContent
+      </PopoverTrigger>
+      <PopoverContent
         className="nodrag nopan flex flex-col gap-2"
         onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
       >
-        <p>{lastRunTooltip(staleness)}</p>
-        <Link
-          to="/runs/$runId"
-          params={params}
-          search={search}
-          preload={false}
-          className="text-primary underline underline-offset-2"
-        >
-          Open run
-        </Link>
-      </HoverCardContent>
-    </HoverCard>
+        <p>{description}</p>
+        {runId ? (
+          <Link
+            to="/runs/$runId"
+            params={{ runId }}
+            search={search}
+            preload={false}
+            className="text-primary underline underline-offset-2"
+          >
+            Open run
+          </Link>
+        ) : (
+          <p className="text-muted-foreground">Run details are not available yet.</p>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -465,12 +468,14 @@ export type AssetNodeAction = {
 
 export function AssetNode({
   asset,
+  runAssetName = asset.name,
   selected,
   actions,
   onOpenConnection,
   onReviewFailedCheck,
 }: {
   asset: AppAsset;
+  runAssetName?: string;
   selected?: boolean;
   actions?: AssetNodeAction[];
   onOpenConnection?: () => void;
@@ -586,23 +591,25 @@ export function AssetNode({
                   <QualityFailureBadge staleness={asset.staleness} onReview={onReviewFailedCheck} />
                 ) : null}
                 {showTransientRunStatus ? (
-                  <span
-                    className={cn(
-                      "min-w-0 shrink-0 truncate rounded px-1.5 py-0.5 text-[10px]",
-                      statusMeta.className,
-                    )}
-                    title={asset.materializedAt ? `Last build: ${asset.materializedAt}` : undefined}
-                  >
-                    {statusMeta.label}
-                  </span>
+                  <RunInfoBadge
+                    label={statusMeta.label}
+                    description={`${statusMeta.label}: ${runAssetName}`}
+                    assetName={runAssetName}
+                    runId={asset.runId}
+                    variant={asset.status === "pending" ? "secondary" : "destructive"}
+                  />
                 ) : !showLastRun && !showQualityFailure && asset.materializedAt ? (
-                  <span
-                    className="inline-flex min-w-0 items-center gap-1 truncate text-[10px] text-muted-foreground"
-                    title={`Last built: ${asset.materializedAt}`}
-                  >
-                    <History className="size-2.5 shrink-0" />
-                    <span className="truncate">{asset.materializedAt}</span>
-                  </span>
+                  <RunInfoBadge
+                    label={asset.materializedAt}
+                    description={`Last built: ${asset.materializedAt}`}
+                    assetName={runAssetName}
+                    runId={
+                      asset.staleness?.latest_output?.run_id ??
+                      (asset.staleness?.last_run_status === "succeeded"
+                        ? asset.staleness.last_run_id
+                        : undefined)
+                    }
+                  />
                 ) : null}
               </>
             )}

@@ -21,7 +21,16 @@ import {
   useComboboxAnchor,
 } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
-import { Field, FieldGroup, FieldLabel, FieldLegend, FieldSet } from "@/components/ui/field";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+  FieldDescription,
+  FieldSeparator,
+} from "@/components/ui/field";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -31,6 +40,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useArrivalHighlight } from "@/hooks/use-navigation-arrival";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { ConnectionFormState, ConnectionMode } from "@/hooks/use-workspace-connection-form";
 import type {
@@ -43,6 +53,7 @@ import type {
 export function WorkspaceConnectionFormFields({
   busy,
   focusedField,
+  focusToken,
   onFieldFocus,
   canValidate,
   connectionForm,
@@ -72,6 +83,7 @@ export function WorkspaceConnectionFormFields({
 }: {
   busy: boolean;
   focusedField?: string;
+  focusToken?: string;
   onFieldFocus?: (field: string) => void;
   canValidate: boolean;
   connectionForm: ConnectionFormState;
@@ -100,6 +112,7 @@ export function WorkspaceConnectionFormFields({
   onValidate: () => void;
 }) {
   const lastFocus = useRef<string | undefined>(undefined);
+  const highlight = useArrivalHighlight(focusToken);
   const nativeReadOnly =
     connectionForm.type === "duckdb" &&
     (connectionForm.values.read_only === true ||
@@ -107,19 +120,23 @@ export function WorkspaceConnectionFormFields({
         .get("access_mode")
         ?.toLowerCase() === "read_only");
   const focusField = (name: string) => (element: HTMLDivElement | null) => {
-    if (!element || name !== focusedField || lastFocus.current === name) return;
-    lastFocus.current = name;
-    requestAnimationFrame(() => {
+    if (!element || !focusToken || name !== focusedField || lastFocus.current === focusToken)
+      return;
+    const frame = requestAnimationFrame(() => {
       if (!element.isConnected) return;
       const details = element.closest("details");
       if (details) details.open = true;
+      if (!element.getClientRects().length) return;
+      lastFocus.current = focusToken;
       const input = element.querySelector<HTMLElement>('input,button,[role="combobox"]');
       input?.focus({ preventScroll: true });
       const viewport = element.closest('[data-slot="scroll-area-viewport"]');
       if (viewport)
         viewport.scrollTop +=
           element.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 32;
+      highlight(element);
     });
+    return () => cancelAnimationFrame(frame);
   };
   const renderField = (field: WorkspaceConfigConnectionType["fields"][number]) => {
     const fieldValue = connectionForm.values[field.name];
@@ -129,7 +146,7 @@ export function WorkspaceConnectionFormFields({
           <summary className="cursor-pointer text-xs text-muted-foreground">
             Native driver restriction{fieldValue === true ? " · active" : ""}
           </summary>
-          <div ref={focusField(field.name)} className="mt-3 space-y-2">
+          <div ref={focusField(field.name)} className="mt-3 flex flex-col gap-2">
             <label className="flex items-center justify-between gap-4 text-xs">
               Always open DuckDB read-only
               <Switch
@@ -171,24 +188,18 @@ export function WorkspaceConnectionFormFields({
           ref={focusField(field.name)}
           data-focused-field={field.name === focusedField || undefined}
           onFocusCapture={() => onFieldFocus?.(field.name)}
-          className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
+          className="flex min-w-0 flex-col gap-2"
         >
-          <div className="flex min-w-0 items-center justify-between gap-2 bg-muted/30 px-4 py-2">
-            <span
-              className="truncate text-xs text-muted-foreground"
-              style={{
-                fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace',
-              }}
-            >
-              {field.name}
-            </span>
+          <div className="flex min-w-0 items-center gap-2">
+            <FieldLabel htmlFor={`connection-field-${field.name}`}>{field.name}</FieldLabel>
             <Badge variant={display.variant} size="xs">
               {display.label}
             </Badge>
           </div>
-          <div className="grid gap-1 px-4 py-2 transition-colors focus-within:bg-primary/5">
+          <FieldGroup className="gap-2">
             <div className="flex min-w-0 items-center gap-2">
               <Input
+                id={`connection-field-${field.name}`}
                 aria-label={field.name}
                 aria-invalid={environmentNameInvalid || undefined}
                 type={storageMode === "env" || field.is_sensitive_file ? "text" : "password"}
@@ -227,7 +238,7 @@ export function WorkspaceConnectionFormFields({
                           ? "Enter a credential file path"
                           : "Enter a value"
                 }
-                className="h-7 min-w-0 font-mono text-xs"
+                className="min-w-0"
               />
               {descriptor?.status === "configured" ? (
                 <Button
@@ -284,9 +295,7 @@ export function WorkspaceConnectionFormFields({
                 ) : null}
                 <ToggleGroupItem value="env">Environment</ToggleGroupItem>
               </ToggleGroup>
-              <p className="min-w-0 text-[0.6875rem] leading-relaxed text-muted-foreground">
-                {help}
-              </p>
+              <FieldDescription>{help}</FieldDescription>
             </div>
             {environmentNameInvalid ? (
               <p className="text-[0.6875rem] leading-relaxed text-destructive">
@@ -298,106 +307,87 @@ export function WorkspaceConnectionFormFields({
                 {descriptor.message}
               </p>
             ) : null}
-          </div>
+          </FieldGroup>
         </div>
       );
     }
     if (field.type === "bool") {
       return (
-        <div
+        <Field
           key={field.name}
           ref={focusField(field.name)}
           data-focused-field={field.name === focusedField || undefined}
           onFocusCapture={() => onFieldFocus?.(field.name)}
-          className="flex items-center justify-between gap-4 border-t px-4 py-3 first:border-t-0"
+          orientation="horizontal"
         >
           <div>
-            <div className="font-medium">{field.name}</div>
-            <div className="text-xs text-muted-foreground">
-              {field.is_required ? "Required" : "Optional"}
-            </div>
+            <FieldLabel htmlFor={`connection-field-${field.name}`}>{field.name}</FieldLabel>
           </div>
           <Switch
+            id={`connection-field-${field.name}`}
             checked={Boolean(fieldValue)}
             onCheckedChange={(checked) => onFieldValueChange(field.name, checked)}
           />
-        </div>
+        </Field>
       );
     }
 
     if (field.type === "string_array") {
       const values = Array.isArray(fieldValue) ? fieldValue : [];
       return (
-        <div
+        <Field
           key={field.name}
           ref={focusField(field.name)}
           data-focused-field={field.name === focusedField || undefined}
           onFocusCapture={() => onFieldFocus?.(field.name)}
-          className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
         >
-          <div
-            className="bg-muted/30 px-4 py-2 text-xs text-muted-foreground"
-            style={{ fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace' }}
-          >
-            {field.name}
-          </div>
-          <div className="px-4 py-1.5 transition-colors focus-within:bg-emerald-500/10 dark:focus-within:bg-emerald-500/15">
-            <StringArrayCombobox
-              value={values}
-              suggestions={field.default_value?.split(",") ?? []}
-              placeholder="Add values..."
-              onChange={(nextValues) => onFieldValueChange(field.name, nextValues)}
-            />
-          </div>
-        </div>
+          <FieldLabel>{field.name}</FieldLabel>
+          <StringArrayCombobox
+            value={values}
+            suggestions={field.default_value?.split(",") ?? []}
+            placeholder="Add values..."
+            onChange={(nextValues) => onFieldValueChange(field.name, nextValues)}
+          />
+        </Field>
       );
     }
 
     return (
-      <div
+      <Field
         key={field.name}
         ref={focusField(field.name)}
         data-focused-field={field.name === focusedField || undefined}
         onFocusCapture={() => onFieldFocus?.(field.name)}
-        className="grid border-t first:border-t-0 sm:grid-cols-[160px_minmax(0,1fr)]"
       >
-        <div
-          className="bg-muted/30 px-4 py-2 text-xs text-muted-foreground"
-          style={{ fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace' }}
-        >
-          {field.name}
-        </div>
-        <div className="px-4 py-1.5 transition-colors focus-within:bg-emerald-500/10 dark:focus-within:bg-emerald-500/15">
-          <Input
-            aria-label={field.name}
-            disabled={busy}
-            type={field.type === "int" ? "number" : "text"}
-            value={
-              fieldValue === undefined || fieldValue === null
-                ? ""
-                : Array.isArray(fieldValue)
-                  ? fieldValue.join(", ")
-                  : String(fieldValue)
-            }
-            onChange={(event) =>
-              onFieldValueChange(
-                field.name,
-                field.type === "string_array"
+        <FieldLabel htmlFor={`connection-field-${field.name}`}>{field.name}</FieldLabel>
+        <Input
+          id={`connection-field-${field.name}`}
+          aria-label={field.name}
+          disabled={busy}
+          type={field.type === "int" ? "number" : "text"}
+          value={
+            fieldValue === undefined || fieldValue === null
+              ? ""
+              : Array.isArray(fieldValue)
+                ? fieldValue.join(", ")
+                : String(fieldValue)
+          }
+          onChange={(event) =>
+            onFieldValueChange(
+              field.name,
+              field.type === "string_array"
+                ? event.target.value
+                    .split(",")
+                    .map((item) => item.trim())
+                    .filter(Boolean)
+                : field.type === "int"
                   ? event.target.value
-                      .split(",")
-                      .map((item) => item.trim())
-                      .filter(Boolean)
-                  : field.type === "int"
-                    ? event.target.value
-                    : event.target.value,
-              )
-            }
-            placeholder={field.default_value || (field.is_required ? "Required" : "Optional")}
-            className="h-6 border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
-            style={{ fontFamily: '"Geist Mono", ui-monospace, SFMono-Regular, monospace' }}
-          />
-        </div>
-      </div>
+                  : event.target.value,
+            )
+          }
+          placeholder={field.default_value || (field.is_required ? "Required" : "Optional")}
+        />
+      </Field>
     );
   };
   const fields = selectedConnectionType?.fields ?? [];
@@ -522,10 +512,9 @@ export function WorkspaceConnectionFormFields({
               focusedField={
                 group.fields.some((field) => field.name === focusedField) ? focusedField : undefined
               }
+              focusToken={focusToken}
             >
-              <div className="overflow-hidden rounded-lg border">
-                {group.fields.map(renderField)}
-              </div>
+              <FieldGroup>{group.fields.map(renderField)}</FieldGroup>
             </ConnectionFieldSection>
           ))}
 
@@ -622,10 +611,7 @@ function StringArrayCombobox({
         onChange(Array.isArray(nextValue) ? compactUnique(nextValue as string[]) : [])
       }
     >
-      <ComboboxChips
-        ref={anchor}
-        className="min-h-7 w-full border-0 bg-transparent px-0 py-0 shadow-none focus-within:ring-0"
-      >
+      <ComboboxChips ref={anchor} className="w-full">
         <ComboboxValue>
           {(values) => (
             <>
@@ -810,18 +796,20 @@ function ConnectionFieldSection({
   collapsible,
   initiallyOpen,
   focusedField,
+  focusToken,
   children,
 }: {
   title: string;
   collapsible: boolean;
   initiallyOpen: boolean;
   focusedField?: string;
+  focusToken?: string;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(initiallyOpen || Boolean(focusedField));
   useEffect(() => {
     if (focusedField) setOpen(true);
-  }, [focusedField]);
+  }, [focusedField, focusToken]);
   if (!collapsible)
     return (
       <FieldSet>
@@ -830,14 +818,25 @@ function ConnectionFieldSection({
       </FieldSet>
     );
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <Button variant="ghost" size="sm" className="w-full justify-start">
-          <ChevronRight data-icon="inline-start" className={open ? "rotate-90" : undefined} />
-          {title}
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="pt-3">{children}</CollapsibleContent>
-    </Collapsible>
+    <>
+      <FieldSeparator />
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-2 rounded-sm text-left text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {title}
+            <ChevronRight
+              className={cn(
+                "size-4 text-muted-foreground transition-transform",
+                open && "rotate-90",
+              )}
+            />
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-3">{children}</CollapsibleContent>
+      </Collapsible>
+    </>
   );
 }

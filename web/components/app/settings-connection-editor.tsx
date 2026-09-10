@@ -1,8 +1,9 @@
-import { CheckCircle2, LoaderCircle, Plug } from "lucide-react";
+import { CheckCircle2, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSettingsSource } from "./settings-source";
 import { useSettingsLeaveGuard } from "./settings-leave-guard";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
+import { useNavigationArrival } from "@/hooks/use-navigation-arrival";
 import { WorkspaceConnectionFormFields } from "@/components/workspace-connection-form-fields";
 import { ConnectionAccessPreview } from "@/components/app/connection-access-preview";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -15,7 +16,7 @@ import {
   buildConnectionFieldDefaults,
   buildConnectionSecretChanges,
 } from "@/lib/settings-form-utils";
-import { SettingsStatus, SecretBindingsAlert, ConfirmDeleteButton } from "./settings-form-parts";
+import { ConfirmDeleteButton, SettingsEditorHeader } from "./settings-form-parts";
 
 export type ConnectionEditorState =
   | { mode: "create"; environment: string | null }
@@ -41,10 +42,9 @@ export function ConnectionEditor({
     normalizedConfigEnvironments,
     workspaceConfig,
     workspaceConfigBusy,
-    workspaceConfigStatusMessage,
-    workspaceConfigStatusTone,
   } = settings;
   const resource = useResourceNavigation();
+  const arrival = useNavigationArrival(resource.detail);
   const mode = state?.mode ?? "edit";
   const [dirty, setDirty] = useState(false);
   const [snapshot] = useState(normalizedConfigEnvironments);
@@ -195,31 +195,24 @@ export function ConnectionEditor({
             ? state.connection
             : "Connection"
       }
-      className="grid min-w-0 gap-6 rounded-xl border bg-card p-4 sm:p-6"
+      className="mx-auto grid w-full min-w-0 max-w-3xl gap-6 p-4 sm:p-6"
     >
       {guard.dialog}
       {source.notice}
-      <header className="grid gap-2">
-        <h1 className="flex items-center gap-2 text-lg font-medium">
-          <Plug className="size-4 text-primary" />
-          {mode === "create" ? "New connection" : (form.activeConnection?.name ?? "Connection")}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {mode === "create"
+      <SettingsEditorHeader
+        title={mode === "create" ? "New connection" : (form.activeConnection?.name ?? "Connection")}
+        description={
+          mode === "create"
             ? "Sensitive values are write-only and scoped to this environment."
-            : `Connection in ${state.environment}.`}
-        </p>
-      </header>
+            : `${form.connectionForm.type} · ${state.environment}`
+        }
+      />
       <div className="grid min-w-0 gap-4">
         {focusedField &&
         focusedField !== "access_mode" &&
         !form.selectedConnectionType?.fields.some((f) => f.name === focusedField) ? (
           <p role="alert">The linked field no longer exists.</p>
         ) : null}
-        {workspaceConfigStatusTone === "error" ? (
-          <SettingsStatus message={workspaceConfigStatusMessage} tone={workspaceConfigStatusTone} />
-        ) : null}
-        <SecretBindingsAlert message={workspaceConfig?.secret_bindings_error} />
         {state?.mode === "edit" && form.connectionForm.accessMode === "read_only" ? (
           <ConnectionAccessPreview
             environment={form.connectionForm.environmentName}
@@ -229,12 +222,12 @@ export function ConnectionEditor({
         <WorkspaceConnectionFormFields
           compactSections
           focusedField={focusedField}
+          focusToken={arrival}
           onFieldFocus={(field) => {
             if (state?.mode === "edit" && field !== focusedField)
-              void resource.open(
+              void resource.reflect(
                 { kind: "connection", connection: state.connection, field },
                 state.environment,
-                true,
               );
           }}
           busy={workspaceConfigBusy}

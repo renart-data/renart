@@ -60,6 +60,7 @@ type Service struct {
 	lock                                   *flock.Flock
 	riverClient                            *river.Client[*sql.Tx]
 	activeRunCancels                       map[string]context.CancelFunc
+	inlineRunCancels                       map[string]*inlineRunCancellation
 	mu                                     sync.Mutex
 	schedulerOn                            bool
 	ownershipState                         SchedulerOwnershipState

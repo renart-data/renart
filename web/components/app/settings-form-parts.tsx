@@ -2,6 +2,7 @@ import { Check, Trash2 } from "lucide-react";
 import { HTMLAttributes, ReactNode, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Field, FieldGroup } from "@/components/ui/field";
 import {
   DelimitedCard,
   DelimitedCardAction,
@@ -10,7 +11,6 @@ import {
   DelimitedCardHeader,
   DelimitedCardTitle,
 } from "@/components/ui/delimited-card";
-import { cn } from "@/lib/utils";
 
 export function SettingsCard({
   title,
@@ -110,9 +110,27 @@ export function ConfirmDeleteButton({
 }
 
 export function PlainFieldGroup({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("grid gap-4", className)} {...props} />;
+  return <FieldGroup className={className} {...props} />;
 }
 
 export function PlainField({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("grid gap-2", className)} {...props} />;
+  return <Field className={className} {...props} />;
+}
+
+export function SettingsEditorHeader({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children?: ReactNode;
+}) {
+  return (
+    <header className="flex flex-col gap-2">
+      <h1 className="text-base font-semibold tracking-tight">{title}</h1>
+      <p className="text-xs leading-relaxed text-muted-foreground">{description}</p>
+      {children}
+    </header>
+  );
 }

@@ -2,6 +2,7 @@
 
 import { useAtomValue } from "jotai";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useNavigationArrival, useArrivalHighlight } from "@/hooks/use-navigation-arrival";
 import { ResourceLink } from "../resource-link";
 import { resolveColumn, type DataTarget, type ResourceSearch } from "@/lib/resource-navigation";
 import {
@@ -440,12 +441,18 @@ function DataBrowserNavigator({
             ) : null}
             {truncated && !loading ? (
               <p role="status" className="mb-2 px-2 text-xs text-muted-foreground">
-                Showing the first 500 objects.
-                {selectedConnection?.type === "s3"
-                  ? " Keep typing the name prefix to narrow the S3 results (case-sensitive)."
-                  : selectedConnection?.source_kind === "storage"
-                    ? " Enter a more specific prefix ending in / to browse it directly."
-                    : " Choose a smaller namespace to see more specific results."}
+                {search.wildcard ? (
+                  "Partial matches: this pattern reached a listing or search limit. Narrow the literal prefix or use fewer wildcard segments."
+                ) : (
+                  <>
+                    Showing the first 500 objects.
+                    {selectedConnection?.type === "s3"
+                      ? " Keep typing the name prefix to narrow the S3 results (case-sensitive)."
+                      : selectedConnection?.source_kind === "storage"
+                        ? " Enter a more specific prefix ending in / to browse it directly."
+                        : " Choose a smaller namespace to see more specific results."}
+                  </>
+                )}
               </p>
             ) : null}
             {loading ? (
@@ -716,6 +723,7 @@ function DataBrowserDetail({
   section = "schema",
   onSectionChange,
   focusedColumn,
+  focusToken,
 }: {
   browser: {
     selectedObject: DataBrowserObject | null;
@@ -729,10 +737,13 @@ function DataBrowserDetail({
   section?: DataTarget["section"];
   onSectionChange?: (section: DataTarget["section"]) => void;
   focusedColumn?: string;
+  focusToken?: string;
 }) {
   const object = browser.selectedObject;
   const lastFocus = useRef("");
-  const focusKey = `${object?.id}:${focusedColumn}:${section}`;
+  const focusKey = `${object?.id}:${focusedColumn}:${section}:${focusToken}`;
+  const highlight = useArrivalHighlight(focusToken);
+  const schemaViewport = useRef<HTMLDivElement>(null);
   return (
     <section className={cn("flex min-h-0 min-w-0 flex-col bg-background", className)}>
       {browser.objectLoading ? (
@@ -878,7 +889,11 @@ function DataBrowserDetail({
                   </Empty>
                 )}
               </TabsContent>
-              <TabsContent value="schema" className="min-h-0 flex-1 overflow-auto p-0">
+              <TabsContent
+                ref={schemaViewport}
+                value="schema"
+                className="min-h-0 flex-1 overflow-auto p-0"
+              >
                 {object.columns.length > 0 ? (
                   <div className="divide-y">
                     {object.columns.map((column, index) => (
@@ -889,15 +904,24 @@ function DataBrowserDetail({
                         ref={(element) => {
                           if (
                             element &&
+                            focusToken &&
                             focusedColumn === column.name &&
                             lastFocus.current !== focusKey
                           ) {
                             lastFocus.current = focusKey;
                             element.focus({ preventScroll: true });
-                            element.scrollIntoView({ block: "nearest" });
+                            // Child refs can attach before the owning viewport's ref.
+                            const viewport =
+                              schemaViewport.current ??
+                              element.closest<HTMLElement>('[data-slot="tabs-content"]');
+                            if (viewport)
+                              viewport.scrollTop +=
+                                element.getBoundingClientRect().top -
+                                viewport.getBoundingClientRect().top;
+                            highlight(element);
                           }
                         }}
-                        className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,auto)] gap-3 px-4 py-2 text-xs data-[focused-column=true]:bg-primary/10 data-[focused-column=true]:ring-inset data-[focused-column=true]:ring-1 data-[focused-column=true]:ring-primary"
+                        className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,auto)] gap-3 px-4 py-2 text-xs"
                       >
                         <span className="truncate font-mono">
                           {object.address ? (
@@ -965,6 +989,7 @@ export function DataObjectDetail({
   const [error, setError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
   const addressKey = JSON.stringify(target.address);
+  const arrival = useNavigationArrival((useLocation().search as ResourceSearch).detail);
   useEffect(() => {
     const controller = new AbortController();
     request.current = controller;
@@ -1039,6 +1064,7 @@ export function DataObjectDetail({
         }}
         section={target.section}
         focusedColumn={column?.name}
+        focusToken={arrival}
         onSectionChange={(section) =>
           void navigate({
             to: ".",

@@ -118,9 +118,31 @@ connection/environment/object identity and creates a fresh operation token.
 Old tokens still become stale. Local path containment and quoted-identifier
 boundaries remain enforced; previews are explicit and capped.
 
+## Arrival feedback
+
+`NavigationArrivalProvider` distinguishes a committed visit from its durable
+locator. Explicit opens and ResourceLinks carry fresh ephemeral intent tokens;
+local reflection is silent in the originating document, while cold links and
+history traversal reveal normally. Legacy bookmarks wait until owner-route
+normalization has committed. Same-target clicks can therefore highlight again
+without changing unrelated panels or inventing an extra route.
+Arrival identity includes the project and validated locator, independent of JSON
+property order. Unrelated route normalization retains a pending arrival while
+its owner loads; it neither cancels it nor emits another arrival.
+
+Owners acknowledge readiness through their existing refs/reveal lifecycles.
+`useNavigationArrival` supplies an arrival ID and `useArrivalHighlight` owns the
+short DOM treatment and generation-safe cleanup. Asset source ranges use Monaco
+decorations after model-identity, range and fingerprint validation. The shared CSS fades once; reduced
+motion keeps a temporary static inset outline. Focus-visible indicators remain
+independent. No document-wide selector registry, polling or hidden editor is added.
+Connection fields, asset columns/materialization, source ranges, notebook cells
+and Data Browser columns are migrated; remaining adapters are tracked in
+`plans/navigation-arrival-feedback.md`.
+
 ## Coverage and extension rule
 
-The shared contract currently covers the families above. Column fields include
+The routing contract currently covers the families in the table above. Column fields include
 type, description, primary key and supported merge fields. Presentation targets
 cover artifact, dataset, filter, visualization and report-section selection.
 This is a reusable foundation, not a claim that every pre-existing local UI

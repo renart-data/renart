@@ -492,10 +492,11 @@ print("sentinel ok")
     await expect(sentinelNode.locator('[data-last-run="failed"]')).toHaveText("Build failed");
     const failedRun = (await sentinelStaleness())?.last_run_id;
     expect(failedRun).toBeTruthy();
-    const badge = sentinelNode.getByRole("link", {
-      name: "Build failed: open run for analytics.sentinel_check",
+    const badge = sentinelNode.getByRole("button", {
+      name: "Build failed: run details for analytics.sentinel_check",
     });
-    await badge.hover();
+    await badge.click();
+    expect(new URL(page.url()).pathname).toBe("/catalog");
     const openRun = page.getByRole("link", { name: "Open run", exact: true });
     await expect(openRun).toBeVisible();
     const href = await openRun.getAttribute("href");

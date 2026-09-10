@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
+import { ConnectionTypeIcon } from "./connection-type-icon";
 import type { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
 import { filterSettingsEnvironments, settingsEditorIdentity } from "@/lib/settings-navigation";
 import { cn } from "@/lib/utils";
 import { ResourceLink } from "./resource-link";
-import { IntegrationBadge } from "./app-primitives";
 import { AppContextSidebarFrame } from "./workbench/workbench-context-sidebar";
 import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
 
@@ -54,7 +55,6 @@ export function SettingsNavigator({
   const rows = (
     <AppContextSidebarFrame
       title={section === "connections" ? "Connections" : "Environments"}
-      subtitle="Project configuration"
       actions={
         <Button
           size="icon-sm"
@@ -110,7 +110,7 @@ export function SettingsNavigator({
                 })}
                 aria-current={environment === item.name ? "page" : undefined}
                 className={cn(
-                  "flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted",
+                  "flex min-h-8 min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted",
                   environment === item.name && "bg-accent text-accent-foreground",
                 )}
               >
@@ -184,14 +184,14 @@ export function SettingsNavigator({
                       target={{ kind: "connection", connection: candidate.name }}
                       environment={item.name}
                       className={cn(
-                        "my-0.5 flex min-w-0 items-center gap-2 rounded-md px-2 py-2 text-sm hover:bg-muted",
+                        "my-0.5 flex min-h-8 min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted",
                         item.name === environment &&
                           candidate.name === connection &&
                           "bg-accent text-accent-foreground",
                       )}
                     >
+                      <ConnectionTypeIcon connectionType={candidate.type} className="size-5" />
                       <span className="min-w-0 flex-1 truncate">{candidate.name}</span>
-                      <IntegrationBadge name={candidate.type} />
                       {candidate.access_mode === "read_only" ? (
                         <LockKeyhole
                           role="img"
@@ -226,21 +226,24 @@ export function SettingsNavigator({
           ) : null}
         </nav>
         {section === "connections" ? (
-          <Button variant="ghost" size="sm" className="justify-start" asChild>
-            <Link
-              to="/project/connections"
-              search={(search) => ({
-                ...search,
-                connection: undefined,
-                environment: undefined,
-                detail: undefined,
-                action: "vault",
-              })}
-            >
-              <KeyRound data-icon="inline-start" />
-              Encrypted vault
-            </Link>
-          </Button>
+          <>
+            <Separator />
+            <Button variant="ghost" size="sm" className="justify-start" asChild>
+              <Link
+                to="/project/connections"
+                search={(search) => ({
+                  ...search,
+                  connection: undefined,
+                  environment: undefined,
+                  detail: undefined,
+                  action: "vault",
+                })}
+              >
+                <KeyRound data-icon="inline-start" />
+                Encrypted vault
+              </Link>
+            </Button>
+          </>
         ) : null}
       </div>
     </AppContextSidebarFrame>

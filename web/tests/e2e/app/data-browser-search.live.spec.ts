@@ -79,6 +79,23 @@ storageTest.describe("capped S3 listings", () => {
         await page.waitForTimeout(400);
         expect(requests).toHaveLength(initial + 4);
       }
+      const wildcard = page.waitForResponse(
+        (r) => new URL(r.url()).searchParams.get("pattern") === "my_table/day=2026-09-??/*",
+      );
+      await input.fill("s3-search./my_table/day=2026-09-??/*");
+      const matches = await (await wildcard).json();
+      expect(matches.truncated).toBeFalsy();
+      expect(matches.nodes.length).toBeGreaterThan(0);
+      expect(
+        matches.nodes.every((node: { label: string }) => node.label.startsWith("day=2026-09-")),
+      ).toBe(true);
+      const beforeLocalGlob = requests.length;
+      await input.fill("s3-search./many-files/part-2026-09-??.csv");
+      await expect(
+        page.getByRole("link", { name: "part-2026-09-20.csv csv", exact: true }),
+      ).toBeVisible();
+      await page.waitForTimeout(400);
+      expect(requests).toHaveLength(beforeLocalGlob);
     },
   );
 });
@@ -313,5 +330,18 @@ storageTest(
     await expect(page.getByRole("link", { name: /orders.csv/ })).toBeHidden();
     expect(requests.at(-1)!.searchParams.get("path")).toBe("not-in-root-list/nested/");
     expect(requests).toHaveLength(4);
+    const wildcard = page.waitForResponse(
+      (response) => new URL(response.url()).searchParams.get("pattern") === "in*/ord*.csv",
+    );
+    await input.fill("sftp-search./in*/ord*.csv");
+    const matches = await (await wildcard).json();
+    expect(matches.truncated).toBeFalsy();
+    expect(matches.nodes.map((node: { label: string }) => node.label)).toEqual([
+      "incoming/orders.csv",
+    ]);
+    await expect(
+      page.getByRole("link", { name: "incoming/orders.csv csv", exact: true }),
+    ).toBeVisible();
+    await page.screenshot({ path: info.outputPath("sftp-wildcard.png") });
   },
 );

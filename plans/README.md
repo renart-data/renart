@@ -13,6 +13,8 @@ decisions and dependencies in each plan; there is no global questions scratchpad
 
 | Plan | Remaining boundary / prerequisite |
 | --- | --- |
+| [Navigation arrival feedback](navigation-arrival-feedback.md) | Shared lifecycle and initial owners implemented; presentation/run and further section adapters remain |
+| [Notebook Data Browser drops](notebook-data-browser-drops.md) | Reviewed source-block insertion using existing notebook transactions; plan only |
 | [Shared preview row loading](preview-row-loading.md) | Inspect, Data Browser, notebook and query previews implemented; authored table presentation adapters remain |
 | [Workspace command handoff](workspace-command-handoff.md) | Stateful CLI delegation, short-lived authority, safe launcher handoff; highest-priority correctness boundary |
 | [Local secret lifecycle](secret-management.md) | Sensitive-file leases, migration/crash evidence, remaining subprocess boundaries; local vault already exists |

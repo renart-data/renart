@@ -61,6 +61,7 @@ import { AppWorkbenchLayout } from "./workbench/workbench-layout";
 import { AppWorkbenchMobileToolTabs } from "./workbench/workbench-mobile-tool-tabs";
 import { WorkbenchProvider } from "./workbench/workbench-slots";
 import { ResourceNavigation } from "./resource-navigation";
+import { NavigationArrivalProvider } from "@/hooks/use-navigation-arrival";
 
 // Stage/unstage row actions reveal on hover on pointer devices, but touch
 // devices have no hover state — so always show them where hover isn't
@@ -99,46 +100,48 @@ export function AppShell() {
   }, [workspaceConfig?.project_id]);
 
   return (
-    <WorkbenchProvider navigation={routeNavigation} projectId={projectId}>
-      {/* h-dvh (not h-screen): 100vh is the *largest* mobile viewport, so the
+    <NavigationArrivalProvider>
+      <WorkbenchProvider navigation={routeNavigation} projectId={projectId}>
+        {/* h-dvh (not h-screen): 100vh is the *largest* mobile viewport, so the
           bottom nav slides out of sight while the browser chrome is visible. */}
-      <div
-        className="flex h-dvh min-h-0 flex-col bg-muted/40 text-foreground"
-        data-app-mode={activeMode?.id}
-        data-workbench-route={routeNavigation?.workbench ? "workbench" : "redirect"}
-      >
-        <ServerOfflineOverlay />
-        <AppHeader sourceControl={sourceControl} activeMode={activeMode?.id ?? null} />
-        <AppWorkbenchMobileToolTabs />
-        <ResourceNavigation />
-
-        <main className="min-h-0 flex-1 overflow-hidden">
-          <AppWorkbenchLayout>
-            <Outlet />
-          </AppWorkbenchLayout>
-        </main>
-
-        <nav
-          aria-label="Primary navigation"
-          className="grid h-[calc(3.5rem+env(safe-area-inset-bottom))] shrink-0 grid-cols-3 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
+        <div
+          className="flex h-dvh min-h-0 flex-col bg-muted/40 text-foreground"
+          data-app-mode={activeMode?.id}
+          data-workbench-route={routeNavigation?.workbench ? "workbench" : "redirect"}
         >
-          {appNavigationModes.map((mode) => (
-            <Link
-              key={mode.id}
-              to={mode.to}
-              aria-current={activeMode?.id === mode.id ? "page" : undefined}
-              className={cn(
-                "flex flex-col items-center justify-center gap-0.5 text-[10px] text-muted-foreground",
-                activeMode?.id === mode.id && "text-primary",
-              )}
-            >
-              <mode.icon className="size-4" />
-              {mode.label}
-            </Link>
-          ))}
-        </nav>
-      </div>
-    </WorkbenchProvider>
+          <ServerOfflineOverlay />
+          <AppHeader sourceControl={sourceControl} activeMode={activeMode?.id ?? null} />
+          <AppWorkbenchMobileToolTabs />
+          <ResourceNavigation />
+
+          <main className="min-h-0 flex-1 overflow-hidden">
+            <AppWorkbenchLayout>
+              <Outlet />
+            </AppWorkbenchLayout>
+          </main>
+
+          <nav
+            aria-label="Primary navigation"
+            className="grid h-[calc(3.5rem+env(safe-area-inset-bottom))] shrink-0 grid-cols-3 border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
+          >
+            {appNavigationModes.map((mode) => (
+              <Link
+                key={mode.id}
+                to={mode.to}
+                aria-current={activeMode?.id === mode.id ? "page" : undefined}
+                className={cn(
+                  "flex flex-col items-center justify-center gap-0.5 text-[10px] text-muted-foreground",
+                  activeMode?.id === mode.id && "text-primary",
+                )}
+              >
+                <mode.icon className="size-4" />
+                {mode.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+      </WorkbenchProvider>
+    </NavigationArrivalProvider>
   );
 }
 

@@ -78,4 +78,17 @@ func TestDataBrowserPrefixHTTPBoundary(t *testing.T) {
 		require.Equal(t, status, response.Code, response.Body.String())
 	}
 	require.Equal(t, []string{"", "day=2026-09", " space"}, filters, "literal name filters must not be trimmed or interpreted as paths")
+	for _, test := range []struct {
+		pattern string
+		status  int
+	}{
+		{"events/day=2026-??/*.csv", 200},
+		{"../*.csv", 400},
+		{"events/**/*.csv", 400},
+	} {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest("GET", "/api/data-browser/connections/"+connections.Connections[0].ID+"/prefix?environment=dev&pattern="+url.QueryEscape(test.pattern), nil))
+		require.Equal(t, test.status, response.Code, response.Body.String())
+	}
+	require.Equal(t, []string{"", "day=2026-09", " space", "day=2026-"}, filters, "wildcards must never reach provider queries")
 }

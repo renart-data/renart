@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Boxes, Copy } from "lucide-react";
+import { Copy } from "lucide-react";
 import { useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { selectedEnvironmentAtom, selectedEnvironmentOverrideAtom } from "@/lib/atoms/workspace";
@@ -14,6 +14,9 @@ import {
   FieldDescription,
   FieldGroup,
   FieldTitle,
+  FieldSet,
+  FieldLegend,
+  FieldSeparator,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,10 +33,10 @@ import { useWorkspaceEnvironmentForm } from "@/hooks/use-workspace-environment-f
 import { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
 import type { EnvironmentPolicy } from "@/lib/generated/api-types";
 import {
-  SettingsStatus,
   ConfirmDeleteButton,
   PlainFieldGroup,
   PlainField,
+  SettingsEditorHeader,
 } from "./settings-form-parts";
 
 const emptyPolicy: EnvironmentPolicy = {
@@ -75,7 +78,6 @@ export function EnvironmentEditor({
     normalizedConfigEnvironments,
     workspaceConfig,
     workspaceConfigBusy,
-    workspaceConfigStatusMessage,
     workspaceConfigStatusTone,
     workspaceEnvironmentPolicies,
   } = settings;
@@ -174,15 +176,10 @@ export function EnvironmentEditor({
         : "Rename, set defaults, and adjust guardrails.";
 
   return (
-    <section aria-label={title} className="grid min-w-0 gap-6 rounded-xl border bg-card p-4 sm:p-6">
+    <section aria-label={title} className="mx-auto grid w-full min-w-0 max-w-3xl gap-6 p-4 sm:p-6">
       {guard.dialog}
       {source.notice}
-      <header className="grid gap-2">
-        <h1 className="flex items-center gap-2 text-lg font-medium">
-          <Boxes className="size-4 text-primary" />
-          {title}
-        </h1>
-        <p className="text-sm text-muted-foreground">{description}</p>
+      <SettingsEditorHeader title={title} description={description}>
         {mode === "edit" && activeEnvironment ? (
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>Editing does not switch execution.</span>
@@ -198,7 +195,7 @@ export function EnvironmentEditor({
             </Button>
           </div>
         ) : null}
-      </header>
+      </SettingsEditorHeader>
       <div className="min-w-0">
         <PlainFieldGroup>
           {partialSave && workspaceConfigStatusTone === "error" ? (
@@ -209,12 +206,6 @@ export function EnvironmentEditor({
                 retry to finish.
               </AlertDescription>
             </Alert>
-          ) : null}
-          {workspaceConfigStatusTone === "error" ? (
-            <SettingsStatus
-              message={workspaceConfigStatusMessage}
-              tone={workspaceConfigStatusTone}
-            />
           ) : null}
           {mode === "clone" ? (
             <PlainField>
@@ -298,59 +289,65 @@ export function EnvironmentEditor({
             />
           </Field>
           {mode === "edit" ? (
-            <div className="grid gap-3 border-t pt-4">
-              <div>
-                <h3 className="text-sm font-medium">Execution policy</h3>
-                <p className="text-sm text-muted-foreground">
-                  renart-only guardrails stored in .renart/environments.yml, applied on save.
-                </p>
-              </div>
-              <EnvironmentPolicyFields
-                policy={policyDraft}
-                disabled={workspaceConfigBusy}
-                onChange={(value) => {
-                  guard.protectNavigation();
-                  setDirty(true);
-                  setPolicyDraft(value);
-                }}
-              />
-            </div>
+            <>
+              <FieldSeparator />
+              <FieldSet>
+                <FieldLegend>Execution policy</FieldLegend>
+                <FieldDescription>
+                  Guardrails for runs in this environment. Applied on save.
+                </FieldDescription>
+                <EnvironmentPolicyFields
+                  policy={policyDraft}
+                  disabled={workspaceConfigBusy}
+                  onChange={(value) => {
+                    guard.protectNavigation();
+                    setDirty(true);
+                    setPolicyDraft(value);
+                  }}
+                />
+              </FieldSet>
+            </>
           ) : null}
           {mode === "edit" && activeEnvironment ? (
-            <div className="grid gap-2 border-t pt-4">
-              <h3 className="text-sm font-medium">Connections</h3>
-              {activeEnvironment.connections.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No connections in this environment.</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {activeEnvironment.connections.map((connection) => (
-                    <ResourceLink
-                      key={connection.name}
-                      target={{ kind: "connection", connection: connection.name }}
-                      environment={activeEnvironment.name}
-                    >
-                      {connection.name}
-                    </ResourceLink>
-                  ))}
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Manage them in the{" "}
-                <Link
-                  to="/project/connections"
-                  search={(search) => ({
-                    ...search,
-                    environment: activeEnvironment.name,
-                    action: undefined,
-                    detail: undefined,
-                  })}
-                  className="underline underline-offset-2"
-                >
-                  Connections
-                </Link>{" "}
-                tab.
-              </p>
-            </div>
+            <>
+              <FieldSeparator />
+              <FieldSet>
+                <FieldLegend>Connections</FieldLegend>
+                {activeEnvironment.connections.length === 0 ? (
+                  <FieldDescription>No connections in this environment.</FieldDescription>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {activeEnvironment.connections.map((connection) => (
+                      <Button key={connection.name} variant="outline" size="sm" asChild>
+                        <ResourceLink
+                          key={connection.name}
+                          target={{ kind: "connection", connection: connection.name }}
+                          environment={activeEnvironment.name}
+                        >
+                          {connection.name}
+                        </ResourceLink>
+                      </Button>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Manage them in the{" "}
+                  <Link
+                    to="/project/connections"
+                    search={(search) => ({
+                      ...search,
+                      environment: activeEnvironment.name,
+                      action: undefined,
+                      detail: undefined,
+                    })}
+                    className="underline underline-offset-2"
+                  >
+                    Connections
+                  </Link>{" "}
+                  tab.
+                </p>
+              </FieldSet>
+            </>
           ) : null}
         </PlainFieldGroup>
       </div>

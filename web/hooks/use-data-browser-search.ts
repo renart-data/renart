@@ -48,6 +48,7 @@ export function useDataBrowserSearch(
                 connectionId: request.connectionId,
                 prefix: request.prefix,
                 namePrefix: request.namePrefix,
+                pattern: request.pattern,
                 environment,
               },
               controller.signal,

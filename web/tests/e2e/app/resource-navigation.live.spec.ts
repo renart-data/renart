@@ -366,6 +366,20 @@ select 1 as total_amount
     await expect(detail).toBeVisible();
     await expect(detail.getByRole("textbox", { name: "Type", exact: true })).toBeFocused();
     await expect(detail.getByRole("textbox", { name: "Type", exact: true })).toHaveValue("VARCHAR");
+    await expect(detail.getByRole("textbox", { name: "Type", exact: true })).toHaveAttribute(
+      "data-navigation-arrival",
+      "true",
+    );
+    await expect(detail.locator('[data-navigation-arrival="true"]')).toHaveCount(0);
+    if (!test.info().project.name.includes("mobile")) {
+      const beforeRepeat = page.url();
+      await link.click();
+      await expect(detail.getByRole("textbox", { name: "Type", exact: true })).toHaveAttribute(
+        "data-navigation-arrival",
+        "true",
+      );
+      expect(page.url()).toBe(beforeRepeat);
+    }
     expect(new URL(page.url()).pathname).toContain(`/assets/${diagnosticId}/code`);
     expect(new URL(page.url()).searchParams.get("result")).toBe("typecheck");
     await expect(page.getByTestId("routed-column-definition")).toHaveCount(0);

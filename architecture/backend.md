@@ -1144,8 +1144,18 @@ linked River job rather than duplicating queue state in the run row.
 `cancelled`; for a running job it records River's durable cancellation request,
 cancels the in-process execution context, and leaves the run active until the
 ordinary context-detached finalizer closes its steps, units, occurrence, and
-resource claims. Inline streaming runs have no River job and therefore do not
-advertise this queue-owned abort action.
+resource claims. Inline streaming runs register their real request-owned cancel
+function with the project scheduler immediately after admission. Their capability
+and pending request timestamp come from that bounded process-local registration,
+not historical rows; registration is removed after the ordinary finalizer runs.
+The same endpoint cancels the foreground context without prematurely releasing
+slots or inventing a River job. Repeated pending requests are idempotent. After
+restart, stale inline rows have no cancel handle and remain recovery's responsibility.
+Sensor wait mode uses the pinned warehouse-specific single-probe operators inside
+a Renart-owned, context-aware polling loop. Cancellation interrupts the poll
+interval; only the pinned unready sentinel is retried, not query/authentication
+errors. Overall sensor timeout remains a failure. No detached probe goroutine
+can outlive the run's cleanup or release its resource claims early.
 New periodic/catch-up jobs use the distinct `renart-schedule-signal-v2` kind and
 snooze for 30 seconds while another run holds the slot. River jobs persisted
 under the older combined kind still decode and execute through the legacy path
@@ -1277,6 +1287,15 @@ itself. `RENART_SLING_BINARY` remains the explicit outer-launcher override, so a
 Nix wrapper can safely point `SLING_BINARY` at its distinct patched native
 binary. A process-wide gate also caps concurrent Sling launchers at the workspace
 execution limit, with a hard ceiling of eight.
+
+Load assets may explicitly set `parameters.parallelism` to an integer from 1 to
+32. Authoring, validation and semantic rendering share the parser; an omitted
+value preserves existing runtime defaults. The main Load editor exposes this as
+**Load parallelism**, without transport branding. At the Sling boundary it sets
+per-process `CONCURRENCY` and merges `concurrency` into target options, retaining
+destination-specific options such as Databricks `use_bulk: false`. It changes
+transfer workers, not the pipeline scheduler or launcher gate. Destination caps
+still apply, and no source SQL chunking or automatic partitioning is implied.
 
 Every materialization and discovery launcher runs in a dedicated process group.
 Cancelling a request kills the complete uv/Python/Sling descendant tree. Output
@@ -1664,6 +1683,19 @@ The workspace watcher excludes Sling's generated `.renart/config/.sling/` files
 from both polling snapshots and fsnotify relevance checks. Bootstrapping Sling
 therefore does not advance the workspace revision and invalidate its own browser
 references. Authored connection, secret and environment declarations remain watched.
+
+The prefix endpoint also accepts a separate `pattern` for metadata-only wildcard
+search. `databrowser.SearchStorage` matches case-sensitive `*` and `?` within
+segments, begins at the literal parent before the first wildcard and expands
+only matching directories. Providers receive literal paths and, for S3, the
+literal name prefix before the first wildcard. Patterns never enter action IDs,
+Load selectors or connection URLs. Returned nodes retain exact IDs/addresses;
+their labels include the relative path needed to distinguish matches.
+Work is bounded by one 30-second deadline, 32 directory listings, 32 path levels
+and 500 returned nodes. Any capped provider listing or unvisited matching branch
+marks the response truncated. Recursive `**`, character classes, traversal,
+controls and URL/selector options are rejected. The traversal is provider-neutral
+over the existing S3-compatible/SFTP adapters; it does not add a GCS browser.
 
 The same payloads feed Load. `slingCommandConnectionEnv` pins named source and
 target connections with URL streams/objects in SLING_TASK_CONFIG after CLI flag

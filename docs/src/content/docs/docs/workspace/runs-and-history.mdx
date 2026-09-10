@@ -35,6 +35,14 @@ Open a run to see its detail page:
   execution. Task output is timestamped and labeled with its asset name, so
   interleaved tool output remains attributable.
 
+## Stop an active run
+
+Open its detail page and choose **Abort run**, then confirm. This works for
+background runs and foreground materializations still owned by this Renart
+process. Queued work is cancelled before execution; active work stops and finishes
+cleanup before the run becomes **Cancelled**. Completed events and output remain
+in history. Aborting does not roll back writes that already completed.
+
 ## Re-run
 
 When the original execution plan is retained, **Re-execute exact plan** reuses
