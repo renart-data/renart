@@ -48,10 +48,9 @@ from renart import context, query
 
 def materialize():
     orders = query(
-        "select customer_id, order_total from mart.orders "
-        "where order_date >= current_date - interval '30 days'",
+        "select customer_id, total_amount from staging.orders",
     ).to_pandas()
-    return orders.groupby("customer_id", as_index=False)["order_total"].sum()
+    return orders.groupby("customer_id", as_index=False)["total_amount"].sum()
 ```
 
 `query()` accepts one read-only `SELECT` and returns a PyArrow Table. Call
@@ -67,7 +66,7 @@ asset name, and full-refresh state.
 ## Dependencies and lineage
 
 Renart can't infer upstreams from Python the way it does from SQL. Declare
-them in the workbench's **Dependencies** card; the asset then runs after
+them in the properties panel's **Lineage** tab; the asset then runs after
 its upstreams and appears in the lineage like every other node. If a literal
 `query()` reads another project asset without a matching dependency, **Type
 check** warns about it. During a run, `query()` waits when a declared upstream
@@ -81,6 +80,12 @@ it to the project's dependencies with one click — the same flow notebooks
 use.
 
 ## Editing support
+
+:::caution[Python previews execute code]
+Inspect does not materialize the destination table, but it still runs your
+Python code. File writes, network calls, and other side effects in that code
+are not undone. Review an unfamiliar script before previewing it.
+:::
 
 The editor gives Python assets diagnostics, completions, hover, and
 go-to-definition, alongside the usual Inspect/Materialize flow in the

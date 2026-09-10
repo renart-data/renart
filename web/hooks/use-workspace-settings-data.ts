@@ -79,10 +79,10 @@ export function useWorkspaceSettingsData() {
   ]);
 
   useEffect(() => {
-    if (!workspaceConfig && !workspaceConfigLoading) {
+    if (!workspaceConfig && !workspaceConfigLoading && workspaceConfigStatusTone !== "error") {
       void loadWorkspaceConfig();
     }
-  }, [loadWorkspaceConfig, workspaceConfig, workspaceConfigLoading]);
+  }, [loadWorkspaceConfig, workspaceConfig, workspaceConfigLoading, workspaceConfigStatusTone]);
 
   const normalizedConfigEnvironments = useMemo(
     () =>
@@ -196,6 +196,8 @@ export function useWorkspaceSettingsData() {
       type: string;
       values: Record<string, unknown>;
       secret_changes?: WorkspaceConnectionSecretChanges;
+      access_mode?: "read_only" | "read_write";
+      policy_revision?: string;
     }) =>
       runWorkspaceConfigMutation(
         () => createWorkspaceConnection(input),
@@ -212,6 +214,8 @@ export function useWorkspaceSettingsData() {
       type: string;
       values: Record<string, unknown>;
       secret_changes?: WorkspaceConnectionSecretChanges;
+      access_mode?: "read_only" | "read_write";
+      policy_revision?: string;
     }) =>
       runWorkspaceConfigMutation(
         () => updateWorkspaceConnection(input),

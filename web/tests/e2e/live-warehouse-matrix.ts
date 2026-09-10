@@ -518,7 +518,7 @@ async function waitForCommand(args: string[]) {
   throw lastError ?? new Error(`Timed out waiting for ${args.join(" ")}`);
 }
 
-async function waitForHTTP(url: string) {
+export async function waitForHTTP(url: string) {
   const deadline = Date.now() + 180_000;
   let lastError: unknown;
   while (Date.now() < deadline) {
@@ -534,7 +534,7 @@ async function waitForHTTP(url: string) {
   throw lastError ?? new Error(`Timed out waiting for ${url}`);
 }
 
-function getAvailablePort() {
+export function getAvailablePort() {
   return new Promise<number>((resolvePort, reject) => {
     const server = net.createServer();
     server.listen(0, "127.0.0.1", () => {
@@ -550,7 +550,7 @@ function getAvailablePort() {
   });
 }
 
-function runCommand(args: string[], allowFailure = false) {
+export function runCommand(args: string[], allowFailure = false) {
   return new Promise<void>((resolveRun, rejectRun) => {
     const child = spawn(args[0], args.slice(1), {
       cwd: repoRoot,

@@ -1,0 +1,1125 @@
+"use client";
+
+import { useAtomValue } from "jotai";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useNavigationArrival, useArrivalHighlight } from "@/hooks/use-navigation-arrival";
+import { ResourceLink } from "../resource-link";
+import { resolveColumn, type DataTarget, type ResourceSearch } from "@/lib/resource-navigation";
+import {
+  AlertCircle,
+  ArrowLeft,
+  ChevronRight,
+  Columns3,
+  Database,
+  File,
+  FileCode2,
+  Folder,
+  Plus,
+  RefreshCw,
+  Rows3,
+  Table2,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+
+import { VirtualDataTable } from "@/components/virtual-data-table";
+import { PreviewRequests } from "@/lib/preview";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { selectedEnvironmentAtom } from "@/lib/atoms/domains/workspace";
+import {
+  getDataBrowserConnections,
+  resolveDataBrowserObject,
+  previewDataBrowserObject,
+} from "@/lib/api-data-browser";
+import type {
+  DataBrowserConnection,
+  DataBrowserNode,
+  DataBrowserObject,
+  DataBrowserPreviewResponse,
+} from "@/lib/generated/api-types";
+import { cn } from "@/lib/utils";
+import { getPinnedProjectId } from "@/lib/project-context";
+import { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
+
+import {
+  ConnectionTypeIcon,
+  friendlyConnectionType,
+  normalizeConnectionType,
+} from "../connection-type-icon";
+import { WorkspaceConnectionDialog } from "../workspace-connection-dialog-lazy";
+import { DataBrowserTransferItem } from "./data-browser-transfer-item";
+import type { DataBrowserDestination } from "@/lib/data-browser-transfer";
+import { notebookBrowserDropReason } from "@/lib/notebook-browser-drop";
+import { DataBrowserLoading } from "./data-browser-loading";
+import { SqlPreview } from "../sql-preview";
+import {
+  AppContextSidebarTransition,
+  type AppContextSidebarTransitionDirection,
+} from "../workbench/workbench-context-sidebar";
+import { WorkbenchPortal } from "../workbench/workbench-slots";
+import { useDataBrowserSearch } from "@/hooks/use-data-browser-search";
+import { connectionSearchPrefix, nodeSearchCompletion } from "@/lib/data-browser-search";
+import { DataBrowserSearchInput } from "./data-browser-search-input";
+
+// A mobile Sheet unmounts its content. Preserve only the qualified search path,
+// never revision-bound nodes or credentials, across same-tab transitions.
+const browserSearchCache = new Map<string, string>();
+
+const preferredWarehouseTypes = [
+  "postgres",
+  "duckdb",
+  "trino",
+  "bigquery",
+  "snowflake",
+  "databricks",
+  "clickhouse",
+  "mysql",
+];
+const preferredFileSystemTypes = ["s3", "gcs", "sftp"];
+
+export function AppDataBrowserPage() {
+  return <DataBrowserWorkspace presentation="page" />;
+}
+
+export function AppDataBrowserSidebar({
+  destination,
+  onChooseForPlacement,
+  onNavigateObject,
+}: {
+  destination?: DataBrowserDestination;
+  onChooseForPlacement?: () => void;
+  onNavigateObject?: (target: DataTarget) => void | Promise<void>;
+}) {
+  return (
+    <DataBrowserWorkspace
+      presentation="sidebar-dialog"
+      destination={destination}
+      onChooseForPlacement={onChooseForPlacement}
+      onNavigateObject={onNavigateObject}
+    />
+  );
+}
+
+function DataBrowserWorkspace({
+  presentation,
+  destination,
+  onChooseForPlacement,
+  onNavigateObject,
+}: {
+  presentation: "page" | "sidebar-dialog";
+  destination?: DataBrowserDestination;
+  onChooseForPlacement?: () => void;
+  onNavigateObject?: (target: DataTarget) => void | Promise<void>;
+}) {
+  const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
+  const detail = (useLocation().search as ResourceSearch).detail;
+  const settings = useWorkspaceSettingsData();
+  const environment = selectedEnvironment || settings.fallbackConfigEnvironment || "default";
+  const browser = useDataBrowser(environment, true);
+  const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
+  const [requestedConnectionType, setRequestedConnectionType] = useState<string>();
+  const connectionTypes = settings.workspaceConfig?.connection_types ?? [];
+  const quickWarehouseTypes = useMemo(() => {
+    const warehouseTypes = connectionTypes.filter((item) => item.category === "warehouse");
+    return preferredWarehouseTypes
+      .map((preferred) =>
+        warehouseTypes.find((item) => normalizeConnectionType(item.type_name) === preferred),
+      )
+      .filter((item): item is (typeof warehouseTypes)[number] => Boolean(item));
+  }, [connectionTypes]);
+  const quickFileSystemTypes = useMemo(
+    () =>
+      preferredFileSystemTypes
+        .map((preferred) =>
+          connectionTypes.find(
+            (item) =>
+              normalizeConnectionType(item.type_name) === preferred &&
+              (item.category === "storage" || preferred === "sftp"),
+          ),
+        )
+        .filter((item): item is (typeof connectionTypes)[number] => Boolean(item)),
+    [connectionTypes],
+  );
+
+  const beginConnectionCreation = (connectionType?: string) => {
+    setRequestedConnectionType(connectionType);
+    setConnectionDialogOpen(true);
+  };
+
+  const navigator = (
+    <DataBrowserNavigator
+      key={JSON.stringify([getPinnedProjectId(), environment])}
+      destination={destination}
+      environment={environment}
+      onChooseForPlacement={onChooseForPlacement}
+      onNavigateObject={onNavigateObject}
+      browser={browser}
+      quickWarehouseTypes={quickWarehouseTypes.map((item) => item.type_name)}
+      quickFileSystemTypes={quickFileSystemTypes.map((item) => item.type_name)}
+      onAddConnection={beginConnectionCreation}
+    />
+  );
+
+  return (
+    <>
+      {presentation === "page" ? (
+        <>
+          <WorkbenchPortal slot="context">{navigator}</WorkbenchPortal>
+          <div className="flex h-full min-h-0 min-w-0 bg-muted/30 p-1.5 md:p-2">
+            {detail?.target.kind === "data-object" ? (
+              <DataObjectDetail target={detail.target} environment={detail.environment} />
+            ) : (
+              <DataBrowserDetail
+                browser={{
+                  selectedObject: null,
+                  objectLoading: false,
+                  preview: null,
+                  previewLoading: false,
+                  runPreview: async () => {},
+                }}
+              />
+            )}
+          </div>
+        </>
+      ) : (
+        navigator
+      )}
+      {connectionTypes.length > 0 ? (
+        <WorkspaceConnectionDialog
+          key={`${environment}:${requestedConnectionType ?? "any"}:${connectionDialogOpen}`}
+          open={connectionDialogOpen}
+          onOpenChange={setConnectionDialogOpen}
+          environment={environment}
+          connectionTypes={connectionTypes}
+          requestedConnectionType={requestedConnectionType}
+          onCreated={async (connectionName) => {
+            await browser.reloadConnections(connectionName);
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function useDataBrowser(environment: string, enabled: boolean) {
+  const requestID = useRef(0);
+  const pending = useRef<AbortController | null>(null);
+  const [connections, setConnections] = useState<DataBrowserConnection[]>([]);
+  const [createdConnection, setCreatedConnection] = useState<DataBrowserConnection | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const reloadConnections = useCallback(
+    async (selectName?: string) => {
+      const id = ++requestID.current;
+      pending.current?.abort();
+      const controller = new AbortController();
+      pending.current = controller;
+      setLoading(true);
+      setError(null);
+      setConnections([]);
+      try {
+        const response = await getDataBrowserConnections(environment, controller.signal);
+        if (id !== requestID.current) return;
+        setConnections(response.connections);
+        if (selectName)
+          setCreatedConnection(response.connections.find((c) => c.name === selectName) ?? null);
+      } catch (cause) {
+        if (id === requestID.current)
+          setError(cause instanceof Error ? cause.message : "Could not load data sources.");
+      } finally {
+        if (id === requestID.current) setLoading(false);
+      }
+    },
+    [environment],
+  );
+  useEffect(() => {
+    if (enabled) void reloadConnections();
+    return () => {
+      ++requestID.current;
+      pending.current?.abort();
+    };
+  }, [enabled, reloadConnections]);
+  return { connections, createdConnection, loading, error, reloadConnections };
+}
+
+type DataBrowserController = ReturnType<typeof useDataBrowser>;
+
+function DataBrowserNavigator({
+  destination,
+  environment,
+  onChooseForPlacement,
+  onNavigateObject,
+  browser,
+  quickWarehouseTypes,
+  quickFileSystemTypes,
+  onAddConnection,
+}: {
+  destination?: DataBrowserDestination;
+  environment: string;
+  onChooseForPlacement?: () => void;
+  onNavigateObject?: (target: DataTarget) => void | Promise<void>;
+  browser: DataBrowserController;
+  quickWarehouseTypes: string[];
+  quickFileSystemTypes: string[];
+  onAddConnection: (connectionType?: string) => void;
+}) {
+  const navigator = useRef<HTMLDivElement>(null);
+  const keyboardNavigation = useRef(false);
+  const rows = () => [
+    ...(navigator.current?.querySelectorAll<HTMLElement>("[data-browser-row]") ?? []),
+  ];
+  const focusFilter = () =>
+    navigator.current
+      ?.querySelector<HTMLInputElement>('input[aria-label="Search data browser"]')
+      ?.focus({ preventScroll: true });
+  const focusRow = (direction: "first" | "last") => {
+    const targets = rows();
+    (direction === "first" ? targets[0] : targets.at(-1))?.focus();
+  };
+  const searchScope = JSON.stringify([getPinnedProjectId(), environment]);
+  const [query, updateQuery] = useState(() => browserSearchCache.get(searchScope) ?? "");
+  const [navigationDirection, setNavigationDirection] =
+    useState<AppContextSidebarTransitionDirection>("replace");
+  const setQuery = useCallback(
+    (value: string, direction: AppContextSidebarTransitionDirection = "replace") => {
+      // Persist synchronously before a leaf link can unmount this navigator.
+      browserSearchCache.delete(searchScope);
+      if (value) browserSearchCache.set(searchScope, value);
+      if (browserSearchCache.size > 12)
+        browserSearchCache.delete(browserSearchCache.keys().next().value!);
+      updateQuery(value);
+      setNavigationDirection(direction);
+    },
+    [searchScope],
+  );
+  useEffect(() => {
+    if (browser.createdConnection) setQuery(connectionSearchPrefix(browser.createdConnection));
+  }, [browser.createdConnection, setQuery]);
+  const search = useDataBrowserSearch(query, browser.connections, undefined, environment);
+  const retriedStaleQuery = useRef<string | null>(null);
+  useEffect(() => {
+    const key = JSON.stringify([searchScope, query]);
+    if (!search.stale || retriedStaleQuery.current === key) return;
+    retriedStaleQuery.current = key;
+    void browser.reloadConnections();
+  }, [search.stale, searchScope, query, browser.reloadConnections]);
+  const activeSearch = query.length > 0;
+  const selectedConnection = search.connection;
+  const filteredConnections = search.connections;
+  const filteredNodes = search.nodes;
+  const loading = browser.loading || (activeSearch && search.loading);
+  const error = search.error ?? browser.error;
+  const truncated = search.truncated;
+  const openSearchNode = (node: DataBrowserNode) => {
+    setQuery(
+      nodeSearchCompletion(
+        search.prefix,
+        node,
+        selectedConnection?.source_kind === "warehouse" ? "." : "/",
+      ).value,
+      "forward",
+    );
+  };
+  const viewKey = search.prefix || "sources";
+
+  useEffect(() => {
+    if (!keyboardNavigation.current || loading) return;
+    keyboardNavigation.current = false;
+    if (error || rows().length === 0) focusFilter();
+    else focusRow("first");
+  }, [loading, error, viewKey, query, filteredNodes, filteredConnections]);
+
+  return (
+    <div
+      ref={navigator}
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-card"
+      onKeyDown={(event) => {
+        if (
+          event.nativeEvent.isComposing ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.shiftKey
+        )
+          return;
+        const target =
+          event.target instanceof Element
+            ? event.target.closest<HTMLElement>("[data-browser-row]")
+            : null;
+        if (!target) return;
+        const items = rows();
+        const index = items.indexOf(target);
+        if (index < 0) return;
+        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          if (event.key === "ArrowUp" && index === 0) focusFilter();
+          else
+            items[
+              event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? items.length - 1
+                  : Math.max(
+                      0,
+                      Math.min(items.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
+                    )
+            ]?.focus();
+        } else if (event.key === "Enter" || event.key === "ArrowRight") {
+          event.preventDefault();
+          keyboardNavigation.current = true;
+          target.click();
+        } else if (event.key === "ArrowLeft" && selectedConnection) {
+          event.preventDefault();
+          keyboardNavigation.current = false;
+          setQuery(search.back, "back");
+          focusFilter();
+        }
+      }}
+    >
+      <div
+        data-slot="workbench-context-header"
+        className="flex h-10 shrink-0 items-center gap-2 border-b px-3 pr-12 md:pr-3"
+      >
+        {selectedConnection ? (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Back"
+            onClick={() => setQuery(search.back, "back")}
+          >
+            <ArrowLeft />
+          </Button>
+        ) : (
+          <Database className="size-4 text-primary" />
+        )}
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-xs font-semibold">{search.label}</h2>
+          <p className="truncate text-[10px] text-muted-foreground">
+            {selectedConnection
+              ? friendlyConnectionType(selectedConnection.type)
+              : "Warehouses and local files"}
+          </p>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Refresh data sources"
+          onClick={() => {
+            search.refresh();
+            void browser.reloadConnections();
+          }}
+          disabled={loading}
+        >
+          <RefreshCw />
+        </Button>
+      </div>
+      <div className="shrink-0 border-b p-2">
+        <DataBrowserSearchInput
+          value={query}
+          onChange={setQuery}
+          completions={loading || error ? [] : search.completions}
+          pathSyntax={search.pathSyntax}
+          onNavigateResults={focusRow}
+          placeholder={selectedConnection ? "Filter objects…" : "Filter sources…"}
+        />
+      </div>
+      <AppContextSidebarTransition
+        viewKey={viewKey}
+        direction={navigationDirection}
+        className="min-h-0 flex-1"
+      >
+        <ScrollArea className="min-h-0 flex-1" showHorizontalScrollBar={false}>
+          <div className="p-2">
+            {error ? (
+              <Alert variant="destructive" className="mb-2">
+                <AlertCircle />
+                <AlertTitle>Data Browser needs attention</AlertTitle>
+                <AlertDescription>
+                  {error}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      search.refresh();
+                      void browser.reloadConnections();
+                    }}
+                  >
+                    Retry
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            {truncated && !loading ? (
+              <p role="status" className="mb-2 px-2 text-xs text-muted-foreground">
+                {search.wildcard ? (
+                  "Partial matches: this pattern reached a listing or search limit. Narrow the literal prefix or use fewer wildcard segments."
+                ) : (
+                  <>
+                    Showing the first 500 objects.
+                    {selectedConnection?.type === "s3"
+                      ? " Keep typing the name prefix to narrow the S3 results (case-sensitive)."
+                      : selectedConnection?.source_kind === "storage"
+                        ? " Enter a more specific prefix ending in / to browse it directly."
+                        : " Choose a smaller namespace to see more specific results."}
+                  </>
+                )}
+              </p>
+            ) : null}
+            {loading ? (
+              <DataBrowserLoading
+                label={
+                  selectedConnection
+                    ? `Loading ${selectedConnection.name}…`
+                    : "Loading data sources…"
+                }
+              />
+            ) : error ? null : selectedConnection ? (
+              <NodeList
+                nodes={filteredNodes}
+                supportsNotebookSources={Boolean(selectedConnection.capabilities.notebook_source)}
+                onOpen={openSearchNode}
+                destination={destination}
+                environment={environment}
+                onChooseForPlacement={onChooseForPlacement}
+                onNavigateObject={onNavigateObject}
+              />
+            ) : (
+              <>
+                <NavigatorSection label="Connected sources">
+                  {filteredConnections.map((connection) => (
+                    <DataBrowserTransferItem
+                      key={connection.id}
+                      destination={destination}
+                      environment={environment}
+                      onChoose={onChooseForPlacement}
+                      item={
+                        destination?.kind !== "notebook" &&
+                        (connection.source_kind === "warehouse" ||
+                          connection.source_kind === "storage") &&
+                        connection.access_mode !== "read_only"
+                          ? { kind: "connection", id: connection.name, label: connection.name }
+                          : undefined
+                      }
+                    >
+                      <NavigatorRow
+                        icon={<ConnectionTypeIcon connectionType={connection.type} />}
+                        label={connection.name}
+                        description={
+                          connection.source_kind === "local_files"
+                            ? "Files inside this project"
+                            : friendlyConnectionType(connection.type)
+                        }
+                        trailing={
+                          <span className="flex items-center gap-1">
+                            {connection.access_mode === "read_only" ? (
+                              <span className="text-[10px] text-muted-foreground">Read-only</span>
+                            ) : null}
+                            <ChevronRight className="size-3.5" />
+                          </span>
+                        }
+                        onClick={() => setQuery(connectionSearchPrefix(connection), "forward")}
+                      />
+                    </DataBrowserTransferItem>
+                  ))}
+                  {filteredConnections.length === 0 ? (
+                    <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+                      No matching data sources.
+                    </p>
+                  ) : null}
+                </NavigatorSection>
+                {!activeSearch && quickWarehouseTypes.length > 0 ? (
+                  <NavigatorSection label="Add a warehouse">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {quickWarehouseTypes.map((connectionType) => (
+                        <button
+                          key={connectionType}
+                          type="button"
+                          className="flex min-w-0 items-center gap-2 rounded-lg border bg-background px-2 py-2 text-left transition-colors hover:border-primary/30 hover:bg-accent"
+                          onClick={() => onAddConnection(connectionType)}
+                        >
+                          <ConnectionTypeIcon connectionType={connectionType} className="size-7" />
+                          <span className="truncate text-[11px] font-medium">
+                            {friendlyConnectionType(connectionType)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="mt-1 w-full justify-start"
+                      onClick={() => onAddConnection()}
+                    >
+                      <Plus /> Other connection
+                    </Button>
+                  </NavigatorSection>
+                ) : null}
+                {!activeSearch && quickFileSystemTypes.length > 0 ? (
+                  <NavigatorSection label="Add a file system">
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {quickFileSystemTypes.map((connectionType) => (
+                        <button
+                          key={connectionType}
+                          type="button"
+                          className="flex min-w-0 items-center gap-2 rounded-lg border bg-background px-2 py-2 text-left transition-colors hover:border-primary/30 hover:bg-accent"
+                          onClick={() => onAddConnection(connectionType)}
+                        >
+                          <ConnectionTypeIcon connectionType={connectionType} className="size-7" />
+                          <span className="truncate text-[11px] font-medium">
+                            {friendlyConnectionType(connectionType)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </NavigatorSection>
+                ) : null}
+              </>
+            )}
+          </div>
+        </ScrollArea>
+      </AppContextSidebarTransition>
+    </div>
+  );
+}
+
+function NodeList({
+  nodes,
+  supportsNotebookSources,
+  onOpen,
+  destination,
+  environment,
+  onChooseForPlacement,
+  onNavigateObject,
+}: {
+  nodes: DataBrowserNode[];
+  supportsNotebookSources: boolean;
+  onOpen: (node: DataBrowserNode) => void | Promise<void>;
+  destination?: DataBrowserDestination;
+  environment: string;
+  onChooseForPlacement?: () => void;
+  onNavigateObject?: (target: DataTarget) => void | Promise<void>;
+}) {
+  if (nodes.length === 0) {
+    return <p className="px-2 py-10 text-center text-xs text-muted-foreground">No objects here.</p>;
+  }
+  return (
+    <div className="space-y-0.5">
+      {nodes.map((node) => {
+        const Icon =
+          node.node_type === "namespace" ? Folder : node.object_kind === "file" ? File : Table2;
+        const content = (
+          <>
+            <Icon className="size-4 shrink-0 text-muted-foreground group-hover:text-primary" />
+            <span className="min-w-0 flex-1 truncate text-xs font-medium">{node.label}</span>
+            {node.is_default ? <Badge variant="outline">Default</Badge> : null}
+            {node.format ? <Badge variant="secondary">{node.format}</Badge> : null}
+            {node.has_children ? <ChevronRight className="size-3.5 text-muted-foreground" /> : null}
+          </>
+        );
+        const className =
+          "group flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+        const row =
+          node.address && node.node_type !== "namespace" ? (
+            <ResourceLink
+              data-browser-row
+              key={node.id}
+              target={{ kind: "data-object", address: node.address, section: "schema" }}
+              className={className}
+              draggable={false}
+              onClick={(event) => {
+                if (
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                void onOpen(node);
+                if (onNavigateObject && node.address) {
+                  event.preventDefault();
+                  void onNavigateObject({
+                    kind: "data-object",
+                    address: node.address,
+                    section: "schema",
+                  });
+                }
+              }}
+            >
+              {content}
+            </ResourceLink>
+          ) : (
+            <button
+              data-browser-row
+              key={node.id}
+              type="button"
+              className={className}
+              onClick={() => void onOpen(node)}
+            >
+              {content}
+            </button>
+          );
+        return (
+          <DataBrowserTransferItem
+            key={node.id}
+            destination={destination}
+            disabledReason={
+              destination?.kind === "notebook"
+                ? supportsNotebookSources
+                  ? notebookBrowserDropReason(node)
+                  : "This connection does not support typed notebook snapshots yet."
+                : undefined
+            }
+            environment={environment}
+            onChoose={onChooseForPlacement}
+            item={
+              node.address?.source_kind === "warehouse" &&
+              node.object_kind === "table" &&
+              node.reference_text
+                ? {
+                    kind: "table",
+                    id: node.id,
+                    label: node.label,
+                    referenceText: node.reference_text,
+                  }
+                : node.address?.source_kind === "storage"
+                  ? { kind: "storage", id: node.id, label: node.label }
+                  : node.address?.source_kind === "local_files" && node.object_kind === "file"
+                    ? { kind: "file", id: node.id, label: node.label }
+                    : undefined
+            }
+          >
+            {row}
+          </DataBrowserTransferItem>
+        );
+      })}
+    </div>
+  );
+}
+
+function NavigatorSection({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <section className="mb-4 last:mb-0">
+      <h3 className="mb-1.5 px-2 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+        {label}
+      </h3>
+      <div className="space-y-1">{children}</div>
+    </section>
+  );
+}
+
+function NavigatorRow({
+  icon,
+  label,
+  description,
+  trailing,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  description: string;
+  trailing?: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      data-browser-row
+      type="button"
+      className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      onClick={onClick}
+    >
+      {icon}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-medium">{label}</span>
+        <span className="block truncate text-[10px] text-muted-foreground">{description}</span>
+      </span>
+      <span className="text-muted-foreground">{trailing}</span>
+    </button>
+  );
+}
+
+function DataBrowserDetail({
+  browser,
+  className,
+  section = "schema",
+  onSectionChange,
+  focusedColumn,
+  focusToken,
+}: {
+  browser: {
+    selectedObject: DataBrowserObject | null;
+    objectLoading: boolean;
+    preview: DataBrowserPreviewResponse | null;
+    previewLoading: boolean;
+    runPreview: (limit?: number) => Promise<void>;
+    previewError?: string | null;
+  };
+  className?: string;
+  section?: DataTarget["section"];
+  onSectionChange?: (section: DataTarget["section"]) => void;
+  focusedColumn?: string;
+  focusToken?: string;
+}) {
+  const object = browser.selectedObject;
+  const lastFocus = useRef("");
+  const focusKey = `${object?.id}:${focusedColumn}:${section}:${focusToken}`;
+  const highlight = useArrivalHighlight(focusToken);
+  const schemaViewport = useRef<HTMLDivElement>(null);
+  return (
+    <section className={cn("flex min-h-0 min-w-0 flex-col bg-background", className)}>
+      {browser.objectLoading ? (
+        <DataBrowserLoading label="Describing object…" table />
+      ) : !object ? (
+        <Empty className="border-0">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Database />
+            </EmptyMedia>
+            <EmptyTitle>Choose a table or file</EmptyTitle>
+            <EmptyDescription>
+              Select a data source, browse its namespaces, and choose an object to inspect its
+              schema. Rows are fetched only after you request a preview.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <>
+          <div className="flex shrink-0 items-start gap-3 border-b py-3 pr-12 pl-4">
+            <ConnectionTypeIcon connectionType={object.connection_type} className="mt-0.5 size-8" />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="truncate text-sm font-semibold">{object.name}</h2>
+                <Badge variant="secondary">{object.view_definition ? "view" : object.kind}</Badge>
+                {object.format ? <Badge variant="outline">{object.format}</Badge> : null}
+              </div>
+              <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
+                {object.reference_text}
+              </p>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                {object.connection_name}
+                {object.size_bytes ? ` · ${formatBytes(object.size_bytes)}` : ""}
+                {object.modified_at ? ` · Updated ${formatDate(object.modified_at)}` : ""}
+              </p>
+            </div>
+          </div>
+          {object.warning ? (
+            <Alert variant="destructive" className="m-3 mb-0">
+              <AlertCircle />
+              <AlertTitle>Some metadata is unavailable</AlertTitle>
+              <AlertDescription>{object.warning}</AlertDescription>
+            </Alert>
+          ) : null}
+          {object.address?.source_kind === "storage" ? (
+            <div className="p-4 text-sm text-muted-foreground">
+              {object.kind === "prefix" ? "Storage prefix" : "Storage object"} · metadata only. Use
+              it in the pipeline canvas to create a Load asset. Browsing does not read or transfer
+              its contents.
+            </div>
+          ) : (
+            <Tabs
+              value={section}
+              onValueChange={(value) => onSectionChange?.(value as DataTarget["section"])}
+              className="min-h-0 flex-1 gap-0"
+            >
+              <div className="flex min-h-11 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3">
+                <TabsList variant="line" className="h-10 rounded-none p-0">
+                  <TabsTrigger value="rows" className="rounded-none">
+                    <Rows3 /> Preview
+                  </TabsTrigger>
+                  <TabsTrigger value="schema" className="rounded-none">
+                    <Columns3 /> Columns
+                    <Badge variant="secondary" className="ml-0.5">
+                      {object.columns.length}
+                    </Badge>
+                  </TabsTrigger>
+                  {object.view_definition || section === "definition" ? (
+                    <TabsTrigger value="definition" className="rounded-none">
+                      <FileCode2 /> SQL
+                    </TabsTrigger>
+                  ) : null}
+                </TabsList>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    onSectionChange?.("rows");
+                    void browser.runPreview();
+                  }}
+                  disabled={!object.capabilities.preview_rows || browser.previewLoading}
+                >
+                  <Rows3 />
+                  Preview rows
+                </Button>
+              </div>
+              <TabsContent value="definition" className="min-h-0 flex-1 overflow-auto p-0">
+                {object.view_definition ? (
+                  <div data-testid="data-browser-view-definition" className="h-full">
+                    <SqlPreview
+                      query={object.view_definition}
+                      className="h-full max-h-none border-0 p-4"
+                    />
+                  </div>
+                ) : (
+                  <p className="p-4 text-sm text-muted-foreground">
+                    No view definition is available. This may be a table, an unsupported warehouse,
+                    or a definition hidden by database permissions.
+                  </p>
+                )}
+              </TabsContent>
+              <TabsContent value="rows" className="min-h-0 flex-1 p-0">
+                {browser.previewError ? (
+                  <Alert variant="destructive">
+                    <AlertCircle />
+                    <AlertTitle>Could not load preview rows</AlertTitle>
+                    <AlertDescription>
+                      {browser.previewError} Try again; any previous rows are still available.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
+                {browser.previewLoading && !browser.preview ? (
+                  <DataBrowserLoading label="Loading preview rows…" table />
+                ) : browser.preview ? (
+                  <div className="flex h-full min-h-0 flex-col">
+                    <div className="min-h-0 flex-1">
+                      <VirtualDataTable
+                        ariaLabel={`${object.name} preview`}
+                        columns={browser.preview.columns}
+                        rows={browser.preview.rows}
+                        preview={browser.preview.preview}
+                        loading={browser.previewLoading}
+                        canLoadMore={browser.preview.preview?.continuation === "replace"}
+                        onLoadMore={() =>
+                          void browser.runPreview(browser.preview?.preview?.next_limit)
+                        }
+                        scrollKey={`data-preview:${object.id}`}
+                        height="100%"
+                        frameless
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <Empty className="border-0">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <Rows3 />
+                      </EmptyMedia>
+                      <EmptyTitle>No rows loaded</EmptyTitle>
+                      <EmptyDescription>
+                        Preview up to 100 rows. Renart builds the read-only query on the server.
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                )}
+              </TabsContent>
+              <TabsContent
+                ref={schemaViewport}
+                value="schema"
+                className="min-h-0 flex-1 overflow-auto p-0"
+              >
+                {object.columns.length > 0 ? (
+                  <div className="divide-y">
+                    {object.columns.map((column, index) => (
+                      <div
+                        key={`${column.name}:${index}`}
+                        tabIndex={focusedColumn === column.name ? -1 : undefined}
+                        data-focused-column={focusedColumn === column.name || undefined}
+                        ref={(element) => {
+                          if (
+                            element &&
+                            focusToken &&
+                            focusedColumn === column.name &&
+                            lastFocus.current !== focusKey
+                          ) {
+                            lastFocus.current = focusKey;
+                            element.focus({ preventScroll: true });
+                            // Child refs can attach before the owning viewport's ref.
+                            const viewport =
+                              schemaViewport.current ??
+                              element.closest<HTMLElement>('[data-slot="tabs-content"]');
+                            if (viewport)
+                              viewport.scrollTop +=
+                                element.getBoundingClientRect().top -
+                                viewport.getBoundingClientRect().top;
+                            highlight(element);
+                          }
+                        }}
+                        className="grid grid-cols-[minmax(0,1fr)_minmax(7rem,auto)] gap-3 px-4 py-2 text-xs"
+                      >
+                        <span className="truncate font-mono">
+                          {object.address ? (
+                            <ResourceLink
+                              target={{
+                                kind: "data-object",
+                                address: object.address,
+                                section: "schema",
+                                column: column.name,
+                              }}
+                              environment={object.environment}
+                              className="hover:underline"
+                            >
+                              {column.name}
+                            </ResourceLink>
+                          ) : (
+                            column.name
+                          )}
+                        </span>
+                        <span className="truncate text-right font-mono text-muted-foreground">
+                          {column.type || "unknown"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Empty className="border-0">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <Columns3 />
+                      </EmptyMedia>
+                      <EmptyTitle>No schema available</EmptyTitle>
+                      <EmptyDescription>
+                        This connection could not provide column metadata for the selected object.
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                )}
+              </TabsContent>
+            </Tabs>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+// Independent from the navigator: opening a bookmark must not reset its tree,
+// connection selection or the primary editor. Late responses cannot win.
+export function DataObjectDetail({
+  target,
+  environment,
+}: {
+  target: DataTarget;
+  environment: string;
+}) {
+  const navigate = useNavigate();
+  const [retry, setRetry] = useState(0);
+  const [object, setObject] = useState<DataBrowserObject | null>(null);
+  const [preview, setPreview] = useState<DataBrowserPreviewResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewRequests = useRef(new PreviewRequests<DataBrowserPreviewResponse>());
+  const [error, setError] = useState<string | null>(null);
+  const request = useRef<AbortController | null>(null);
+  const addressKey = JSON.stringify(target.address);
+  const arrival = useNavigationArrival((useLocation().search as ResourceSearch).detail);
+  useEffect(() => {
+    const controller = new AbortController();
+    request.current = controller;
+    setObject(null);
+    setPreview(null);
+    setError(null);
+    setLoading(true);
+    setPreviewLoading(false);
+    setPreviewError(null);
+    const requests = previewRequests.current;
+    void resolveDataBrowserObject(
+      { address: JSON.parse(addressKey), environment },
+      controller.signal,
+    )
+      .then((response) => {
+        if (!controller.signal.aborted) setObject(response.object);
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted)
+          setError(cause instanceof Error ? cause.message : "Could not resolve this data object.");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => {
+      controller.abort();
+      requests.cancel("preview");
+    };
+  }, [addressKey, environment, retry]);
+  const runPreview = async (limit = preview?.preview?.limit ?? 100) => {
+    const controller = request.current;
+    if (!object || !controller || previewLoading) return;
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const result = await previewRequests.current.run("preview", limit, (bound, signal) =>
+        previewDataBrowserObject({ object_id: object.id, environment, limit: bound }, signal),
+      );
+      if (result && !controller.signal.aborted) setPreview(result.value);
+    } catch (cause) {
+      if (!controller.signal.aborted)
+        setPreviewError(cause instanceof Error ? cause.message : "Could not preview this object.");
+    } finally {
+      if (!controller.signal.aborted) setPreviewLoading(false);
+    }
+  };
+  const column = target.column ? resolveColumn(object?.columns ?? [], target.column) : undefined;
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col" data-testid="routed-data-object">
+      {error ? (
+        <div role="alert" className="p-3 text-sm">
+          {error}
+          <Button variant="outline" size="sm" onClick={() => setRetry((v) => v + 1)}>
+            Refresh metadata
+          </Button>
+        </div>
+      ) : null}
+      {object && target.column && !column ? (
+        <p role="alert" className="p-3 text-sm">
+          The linked column is missing or ambiguous. No other column has been selected.
+        </p>
+      ) : null}
+      <DataBrowserDetail
+        className="flex-1"
+        browser={{
+          selectedObject: object,
+          objectLoading: loading,
+          preview,
+          previewLoading,
+          previewError,
+          runPreview,
+        }}
+        section={target.section}
+        focusedColumn={column?.name}
+        focusToken={arrival}
+        onSectionChange={(section) =>
+          void navigate({
+            to: ".",
+            search: (search) => ({
+              ...search,
+              detail: { v: 1, environment, target: { ...target, section } },
+            }),
+          })
+        }
+      />
+    </div>
+  );
+}
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
+    date,
+  );
+}

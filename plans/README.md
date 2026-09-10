@@ -1,38 +1,68 @@
 # Plans
 
-Ephemeral design documents: proposals, evaluations, and implementation plans
-for work that has **not shipped** (or only partially). The current state of
-what *is* built lives in [`../architecture/`](../architecture/).
+Plans contain only unfinished work. Current implementation belongs in
+[architecture](../architecture/); Git history retains completed designs and
+release scratchpads. Reviewed against the local working tree on 9 September
+2026. Implemented does not mean release-certified.
 
-When a plan is implemented, fold the as-built reality (including deviations)
-into the relevant `architecture/` doc and delete the plan — git history keeps
-the original.
+The groups below distinguish follow-ups, evidence collection, and unselected
+ideas. They are not authorization to implement every item. Keep required
+decisions and dependencies in each plan; there is no global questions scratchpad.
 
-| Doc | Status |
+## Active follow-ups
+
+| Plan | Remaining boundary / prerequisite |
 | --- | --- |
-| [architecture-maintainability-audit.md](architecture-maintainability-audit.md) | investigation — prioritized convergence, boundary, test-cost, and scaling cleanup roadmap |
-| [asset-name-path-independence.md](asset-name-path-independence.md) | design plan — make Bruin's explicit asset name independent from the Git definition path, without introducing a physical-output alias |
-| [dbt-assets.md](dbt-assets.md) | evaluation — enabling renart intelligence on existing dbt projects |
-| [distributed-freshness-log.md](distributed-freshness-log.md) | investigated proposal — opt-in append-only warehouse receipt journals for recovery and trusted cross-installation freshness |
-| [execution-parallelism.md](execution-parallelism.md) | core + native DuckDB concurrency implemented — operator audits and wait telemetry remain |
-| [materialization-reach.md](materialization-reach.md) | proposed reach — guided advanced SQL modes, coverage timeline, Python pre-run diagnostic |
-| [materialization-target-lifecycle.md](materialization-target-lifecycle.md) | runtime target safety implemented for DuckDB/Postgres/Snowflake/BigQuery/Databricks — rename/orphan workflow pending asset-name/path independence |
-| [notebook-platform.md](notebook-platform.md) | core platform implemented — focused release evidence for transfer fidelity, restart/concurrency, performance, accessibility, and authenticated agent-client corpus remains |
-| [open-project-links.md](open-project-links.md) | investigation — safe docs-to-local open intents, native protocol registration, and hosted routing |
-| [object-storage-assets.md](object-storage-assets.md) | partial support + proposal — existing Load S3/GCS browsing, upstream-compatible Seed sources, schema preview, lineage, and storage write safety |
-| [secret-management.md](secret-management.md) | local/env provider core and CLI administration implemented — file leases, team providers, and hosted run-scoped access remain |
-| [python-asset-sdk.md](python-asset-sdk.md) | phases 1–2 + upstream refresh + PyPI publication implemented — credential-free `query()`, ingestr-free uploads, editor/notebook parity; policy and protocol reach items open |
-| [python-cross-connection-policy.md](python-cross-connection-policy.md) | proposal — opt-in per-environment connection scopes for Python SDK queries |
-| [questions.md](questions.md) | open questions for the maintainer |
-| [workspace-command-handoff.md](workspace-command-handoff.md) | focused follow-up — launcher handoff, remaining stateful CLI delegation, and eventual legacy-job retirement |
+| [Navigation arrival feedback](navigation-arrival-feedback.md) | Shared lifecycle and initial owners implemented; presentation/run and further section adapters remain |
+| [Notebook Data Browser drops](notebook-data-browser-drops.md) | Table/project-file/S3-file insertion implemented; prefix review, connection picker and further transports remain |
+| [Shared preview row loading](preview-row-loading.md) | Inspect, Data Browser, notebook and query previews implemented; authored table presentation adapters remain |
+| [Workspace command handoff](workspace-command-handoff.md) | Stateful CLI delegation, short-lived authority, safe launcher handoff; highest-priority correctness boundary |
+| [Local secret lifecycle](secret-management.md) | Sensitive-file leases, migration/crash evidence, remaining subprocess boundaries; local vault already exists |
+| [Data Browser](data-browser.md) | Positive Usage matching, notebook handoff, pagination/cache provenance, shared observations; browsing/search/drops already exist |
+| [Object-storage assets](object-storage-assets.md) | Richer discovery, schema preview, URI freshness/write claims, GCS tree; Seed requires a Bruin-compatible source contract |
+| [Asset name/path independence](asset-name-path-independence.md) | Consistent create/rename/file identity; does not alias or rename a physical Source table |
+| [Materialization rename safety](materialization-target-lifecycle.md) | Collision preflight and separately confirmed orphan cleanup after name/path work |
+| [Advanced materialization](materialization-reach.md) | Guided advanced strategies, coverage-gap UX, static Python materialize diagnostic |
+| [Execution operator audits](execution-parallelism.md) | Additional proven resource families and meaningful wait visibility; shared unit scheduling already exists |
+| [Semantic deployment impact](semantic-deployment-impact.md) | Component facts, exact producer-pinned worlds, compatibility policy, retained reports and inference evidence |
 
-Recently folded away (git history keeps them): `docs-alpha.md` and
-`landing-page.md` → `architecture/docs.md`; `notebook-intellisense.md` →
-`architecture/sql-lsp.md`; `ingestr-feature-flag.md`,
-`project-settings-and-workspaces.md`, and `cli-v1.md` →
-`architecture/backend.md` + `architecture/frontend.md`; `schema-derivation.md` →
-`architecture/asset-editing.md` + `architecture/sql-lsp.md`;
-`remote-table-intellisense.md` → `architecture/sql-lsp.md`;
-`cross-pipeline-dependencies.md` → `architecture/backend.md`,
-`architecture/staleness.md`, `architecture/sql-lsp.md`, and
-`architecture/asset-editing.md`.
+## Verification and measurement
+
+These need evidence or a selected bottleneck, not another implementation of
+their already-built core.
+
+| Plan | Required evidence |
+| --- | --- |
+| [Notebook release evidence](notebook-platform.md) | Transfer fidelity, restart/concurrency, platform budgets, accessibility, version-specific authenticated clients |
+| [Performance evidence](performance-evidence.md) | E2E timings, workspace/SSE size and fan-out, runtime resources, cold interactions, broker/lineage profiles before optimization |
+
+Use [the local verification workflow](../architecture/testing.md) for durable,
+scoped results. Record failures, skips and interruptions; a focused pass is not
+the full release gate.
+
+## Parked proposals
+
+These need an explicit product, policy, or trust decision before implementation.
+Revalidate historical external research when selecting one.
+
+| Plan | Decision / dependency |
+| --- | --- |
+| [Python query connection policy](python-cross-connection-policy.md) | Opt-in read scopes; separate from preventing writes on read-only connections |
+| [Team and hosted secret providers](secret-providers.md) | Select provider and identity/lease model; hosted work requires a separate trust architecture |
+| [Open-project links](open-project-links.md) | Safe launcher, reviewed clone/trust model, then native protocol packaging |
+| [Distributed freshness journal](distributed-freshness-log.md) | Accept receipt/trust/divergence contract; local state remains authoritative |
+| [dbt assets](dbt-assets.md) | Select dbt project support; refresh compilation/artifact assumptions and use native Golyglot |
+
+## Closing a plan
+
+1. Verify implementation and evidence against current code, not old checkboxes.
+2. Fold only missing as-built contracts and decisions into architecture.
+3. Keep unresolved work in a focused plan with prerequisites and acceptance.
+4. Delete the completed plan; do not create a permanent plans archive.
+
+Completed connection/environment navigation, navigation/migration studies, the broad architecture audit, the Python
+SDK implementation plan, empty questions, and v0.5.1 release scratchpads have
+been retired. Navigation rationale is in frontend architecture, SDK/runtime
+contracts are in backend/notebook architecture, and retained local release
+evidence is described in testing. Prototype-code removal is verified separately
+from documentation cleanup; the semantic impact playground is not retired.

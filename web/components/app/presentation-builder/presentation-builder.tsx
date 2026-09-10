@@ -34,6 +34,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   previewPresentation,
   type PresentationArtifact,
@@ -56,6 +57,7 @@ import type { ChartType } from "../chart-type-picker";
 import { DocumentAuthoringCommandBar, DocumentAuthoringShell } from "../document-authoring-shell";
 import { datasetColumns, nextID, workspaceAssetChoices } from "../presentation-visual-editor";
 import { initialFilterValues } from "../presentation-viewer";
+import { WorkbenchPortal, useWorkbench } from "../workbench/workbench-slots";
 import { AddVisualizationDialog } from "./add-visualization-dialog";
 import { AddFilterDialog } from "./add-filter-dialog";
 import { DashboardCanvas } from "./dashboard-canvas";
@@ -72,6 +74,7 @@ import { PresentationInspector } from "./presentation-inspector";
 import { PresentationSidebar } from "./presentation-sidebar";
 import { ReportCanvas } from "./report-canvas";
 import { usePresentationDraft } from "./use-presentation-draft";
+import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 
 type FilterValues = Record<string, unknown>;
 
@@ -80,6 +83,7 @@ export function PresentationBuilder({
   artifact: externalArtifact,
   workspace,
   paused = false,
+  autoPreview = true,
   navigation,
   modeControl,
   documentActions,
@@ -90,6 +94,7 @@ export function PresentationBuilder({
   artifact: PresentationArtifact;
   workspace: WorkspaceState | null;
   paused?: boolean;
+  autoPreview?: boolean;
   navigation: ReactNode;
   modeControl: ReactNode;
   documentActions: ReactNode;
@@ -100,7 +105,33 @@ export function PresentationBuilder({
     externalArtifact,
     onChange,
   );
-  const [selection, setSelection] = useState<PresentationBuilderSelection>({ kind: "artifact" });
+  const resource = useResourceNavigation();
+  const [selection, setLocalSelection] = useState<PresentationBuilderSelection>({
+    kind: "artifact",
+  });
+  const linked =
+    resource.detail?.target.kind === "presentation" &&
+    resource.detail.target.presentation_id === presentationId
+      ? resource.detail.target
+      : undefined;
+  const linkedToken = JSON.stringify(linked);
+  const linkedSelection: PresentationBuilderSelection = linked?.block_id
+    ? ({
+        kind: linked.section ?? "visualization",
+        id: linked.block_id,
+      } as PresentationBuilderSelection)
+    : { kind: "artifact" };
+  const linkedSelectionAvailable = !linked || selectionExists(artifact, linkedSelection);
+  const setSelection = (next: PresentationBuilderSelection) => {
+    setLocalSelection(next);
+    void resource.reflect({
+      kind: "presentation",
+      presentation_id: presentationId,
+      section: next.kind,
+      ...(next.kind === "artifact" ? {} : { block_id: next.id }),
+    });
+  };
+
   const [previewMode, setPreviewMode] = useState<PresentationPreviewMode>("desktop");
   const [dataOpen, setDataOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -121,7 +152,31 @@ export function PresentationBuilder({
   const [previewError, setPreviewError] = useState("");
   const [previewStale, setPreviewStale] = useState(true);
   const [pendingFindingPath, setPendingFindingPath] = useState<string | null>(null);
+  const { navigation: workbenchNavigation, setMobileNavigationOpen } = useWorkbench();
+  const workbenchEnabled = Boolean(workbenchNavigation?.workbench);
+  const isMobile = useIsMobile();
   const wideBuilder = useWideBuilder();
+  useEffect(() => {
+    if (!linked || !linkedSelectionAvailable) return;
+    const next = linkedSelection;
+    setLocalSelection((current) =>
+      JSON.stringify(current) === JSON.stringify(next) ? current : next,
+    );
+    if (resource.isLocalReflection) return;
+    if (next.kind === "visualization") {
+      const index = (artifact.visualizations ?? []).findIndex((v) => v.id === next.id);
+      setPendingFindingPath(`visualizations[${index}].id`);
+    }
+    if (next.kind !== "artifact" && !wideBuilder && (!workbenchEnabled || isMobile))
+      setInspectorOpen(true);
+  }, [
+    linkedToken,
+    linkedSelectionAvailable,
+    resource.isLocalReflection,
+    isMobile,
+    wideBuilder,
+    workbenchEnabled,
+  ]);
   const selectedEnvironment = workspace?.selected_environment || "default";
   const assetChoices = useMemo(() => workspaceAssetChoices(workspace), [workspace]);
   const artifactRef = useRef(artifact);
@@ -151,7 +206,8 @@ export function PresentationBuilder({
 
   useEffect(() => {
     if (selectionExists(artifact, selection)) return;
-    setSelection({ kind: "artifact" });
+    // Keep a now-stale address visible; only an explicit selection replaces it.
+    setLocalSelection({ kind: "artifact" });
   }, [artifact, selection]);
 
   const runPreview = useCallback(
@@ -263,7 +319,7 @@ export function PresentationBuilder({
     setLoadingIDs(new Set());
   }, [paused]);
   useEffect(() => {
-    if (paused) return;
+    if (paused || !autoPreview) return;
     setPreviewStale(true);
     setPreviewResolved(false);
     const timer = window.setTimeout(
@@ -271,14 +327,14 @@ export function PresentationBuilder({
       550,
     );
     return () => window.clearTimeout(timer);
-  }, [dataSignature, paused, runPreview]);
+  }, [autoPreview, dataSignature, paused, runPreview]);
   useEffect(() => () => previewAbort.current?.abort(), []);
 
   useEffect(() => {
-    if (!wideBuilder) return;
+    if (!wideBuilder && !(workbenchEnabled && !isMobile)) return;
     setDataOpen(false);
     setInspectorOpen(false);
-  }, [wideBuilder]);
+  }, [isMobile, wideBuilder, workbenchEnabled]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -308,9 +364,13 @@ export function PresentationBuilder({
     (next: PresentationArtifact, options?: { coalesceKey?: string }) => replace(next, options),
     [replace],
   );
-  const showInspector = () => {
-    if (wideBuilder) return;
+  const closeDataPane = () => {
     setDataOpen(false);
+    if (workbenchEnabled && isMobile) setMobileNavigationOpen(false);
+  };
+  const showInspector = () => {
+    if (wideBuilder || (workbenchEnabled && !isMobile)) return;
+    closeDataPane();
     setInspectorOpen(true);
   };
 
@@ -355,7 +415,7 @@ export function PresentationBuilder({
 
   const openAddFilter = () => {
     if (!wideBuilder) {
-      setDataOpen(false);
+      closeDataPane();
       setInspectorOpen(false);
     }
     setAddFilterOpen(true);
@@ -363,7 +423,7 @@ export function PresentationBuilder({
 
   const openAddVisualization = (nextPreferredType?: string, reportIndex?: number) => {
     if (!wideBuilder) {
-      setDataOpen(false);
+      closeDataPane();
       setInspectorOpen(false);
     }
     setPreferredType(nextPreferredType);
@@ -591,8 +651,8 @@ export function PresentationBuilder({
     const target = presentationFindingTarget(artifact, finding);
     setSelection(target.selection);
     setPendingFindingPath(target.path);
-    if (!wideBuilder) {
-      setDataOpen(false);
+    if (!wideBuilder && (!workbenchEnabled || isMobile)) {
+      closeDataPane();
       setInspectorOpen(true);
     }
   };
@@ -604,8 +664,8 @@ export function PresentationBuilder({
       selection={selection}
       onSelect={(next) => {
         setSelection(next);
-        if (!wideBuilder) {
-          setDataOpen(false);
+        if (!wideBuilder && (!workbenchEnabled || isMobile)) {
+          closeDataPane();
           if (next.kind === "dataset") setInspectorOpen(true);
         }
       }}
@@ -616,20 +676,21 @@ export function PresentationBuilder({
       onAddText={() => addTextSection()}
     />
   );
-  const renderInspector = () => (
-    <PresentationInspector
-      artifact={artifact}
-      workspace={workspace}
-      assetChoices={assetChoices}
-      selection={selection}
-      findings={activeFindings}
-      focusPath={pendingFindingPath}
-      onFocusPathHandled={() => setPendingFindingPath(null)}
-      onSelect={setSelection}
-      onChange={changeArtifact}
-      onDeleteVisualization={deleteVisualization}
-    />
-  );
+  const renderInspector = () =>
+    linkedSelectionAvailable ? (
+      <PresentationInspector
+        artifact={artifact}
+        workspace={workspace}
+        assetChoices={assetChoices}
+        selection={selection}
+        findings={activeFindings}
+        focusPath={pendingFindingPath}
+        onFocusPathHandled={() => setPendingFindingPath(null)}
+        onSelect={setSelection}
+        onChange={changeArtifact}
+        onDeleteVisualization={deleteVisualization}
+      />
+    ) : null;
 
   const commandBar = (
     <DocumentAuthoringCommandBar
@@ -639,9 +700,12 @@ export function PresentationBuilder({
           <Button
             size="icon-sm"
             variant="ghost"
-            className="xl:hidden"
+            className={workbenchEnabled ? "md:hidden" : "xl:hidden"}
             aria-label="Open builder tools"
-            onClick={() => setDataOpen(true)}
+            onClick={() => {
+              if (workbenchEnabled) setMobileNavigationOpen(true);
+              else setDataOpen(true);
+            }}
           >
             <PanelLeft data-icon="inline-start" />
           </Button>
@@ -759,7 +823,7 @@ export function PresentationBuilder({
           <Button
             size="icon-sm"
             variant="ghost"
-            className="xl:hidden"
+            className={workbenchEnabled ? "md:hidden" : "xl:hidden"}
             aria-label="Open inspector"
             onClick={() => setInspectorOpen(true)}
           >
@@ -773,9 +837,17 @@ export function PresentationBuilder({
 
   return (
     <div data-testid="presentation-builder" className="h-full min-h-0 overflow-hidden">
+      {workbenchEnabled ? (
+        <>
+          <WorkbenchPortal slot="context">{renderSidebar()}</WorkbenchPortal>
+          <WorkbenchPortal slot="inspector">
+            <ScrollArea className="h-full">{renderInspector()}</ScrollArea>
+          </WorkbenchPortal>
+        </>
+      ) : null}
       <DocumentAuthoringShell commandBar={commandBar} banner={banner} className="bg-muted/30">
         <div className="flex h-full min-h-0 flex-1 overflow-hidden">
-          {wideBuilder ? (
+          {!workbenchEnabled && wideBuilder ? (
             <aside className="w-60 shrink-0 border-r bg-background">{renderSidebar()}</aside>
           ) : null}
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -790,6 +862,14 @@ export function PresentationBuilder({
                   backgroundSize: artifact.kind === "dashboard" ? "18px 18px" : undefined,
                 }}
               >
+                {!linkedSelectionAvailable ? (
+                  <Alert className="mx-auto mb-3 max-w-5xl">
+                    <TriangleAlert />
+                    <AlertDescription>
+                      The linked presentation component is missing or ambiguous.
+                    </AlertDescription>
+                  </Alert>
+                ) : null}
                 {previewError ? (
                   <Alert className="mx-auto mb-3 max-w-5xl border-amber-500/35 bg-background/95">
                     <TriangleAlert />
@@ -893,7 +973,7 @@ export function PresentationBuilder({
               </div>
             </ScrollArea>
           </main>
-          {wideBuilder ? (
+          {!workbenchEnabled && wideBuilder ? (
             <aside className="w-[clamp(22rem,25vw,28rem)] min-w-0 shrink-0 overflow-hidden border-l bg-background">
               <ScrollArea className="h-full">{renderInspector()}</ScrollArea>
             </aside>
@@ -902,33 +982,39 @@ export function PresentationBuilder({
       </DocumentAuthoringShell>
       {!wideBuilder ? (
         <>
-          <Sheet open={dataOpen} onOpenChange={setDataOpen}>
-            <SheetContent side="left" className="w-[min(22rem,90vw)] p-0">
-              <SheetHeader className="border-b p-4">
-                <SheetTitle>
-                  {artifact.kind === "report" ? "Report outline" : "Builder tools"}
-                </SheetTitle>
-                <SheetDescription>
-                  Add components and manage presentation datasets.
-                </SheetDescription>
-              </SheetHeader>
-              <div className="min-h-0 flex-1">{dataOpen ? renderSidebar() : null}</div>
-            </SheetContent>
-          </Sheet>
-          <Sheet open={inspectorOpen} onOpenChange={setInspectorOpen}>
-            <SheetContent
-              side="right"
-              className="w-[min(26rem,92vw)] max-w-full overflow-hidden p-0"
-            >
-              <SheetHeader className="border-b p-4">
-                <SheetTitle>Inspector</SheetTitle>
-                <SheetDescription>Edit only the selected presentation component.</SheetDescription>
-              </SheetHeader>
-              <ScrollArea className="min-h-0 flex-1">
-                {inspectorOpen ? renderInspector() : null}
-              </ScrollArea>
-            </SheetContent>
-          </Sheet>
+          {!workbenchEnabled ? (
+            <Sheet open={dataOpen} onOpenChange={setDataOpen}>
+              <SheetContent side="left" className="w-[min(22rem,90vw)] p-0">
+                <SheetHeader className="border-b p-4">
+                  <SheetTitle>
+                    {artifact.kind === "report" ? "Report outline" : "Builder tools"}
+                  </SheetTitle>
+                  <SheetDescription>
+                    Add components and manage presentation datasets.
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="min-h-0 flex-1">{dataOpen ? renderSidebar() : null}</div>
+              </SheetContent>
+            </Sheet>
+          ) : null}
+          {!workbenchEnabled || isMobile ? (
+            <Sheet open={inspectorOpen} onOpenChange={setInspectorOpen}>
+              <SheetContent
+                side="right"
+                className="w-[min(26rem,92vw)] max-w-full overflow-hidden p-0"
+              >
+                <SheetHeader className="border-b p-4">
+                  <SheetTitle>Inspector</SheetTitle>
+                  <SheetDescription>
+                    Edit only the selected presentation component.
+                  </SheetDescription>
+                </SheetHeader>
+                <ScrollArea className="min-h-0 flex-1">
+                  {inspectorOpen ? renderInspector() : null}
+                </ScrollArea>
+              </SheetContent>
+            </Sheet>
+          ) : null}
         </>
       ) : null}
       <AddVisualizationDialog
@@ -1000,14 +1086,15 @@ function previewDefinitionSignature(definition: Record<string, unknown>) {
 function selectionExists(artifact: PresentationArtifact, selection: PresentationBuilderSelection) {
   if (selection.kind === "artifact") return true;
   if (selection.kind === "dataset")
-    return (artifact.datasets ?? []).some((dataset) => dataset.id === selection.id);
+    return (artifact.datasets ?? []).filter((dataset) => dataset.id === selection.id).length === 1;
   if (selection.kind === "filter")
-    return (artifact.filters ?? []).some((filter) => filter.id === selection.id);
+    return (artifact.filters ?? []).filter((filter) => filter.id === selection.id).length === 1;
   if (selection.kind === "visualization")
-    return (artifact.visualizations ?? []).some(
-      (visualization) => visualization.id === selection.id,
+    return (
+      (artifact.visualizations ?? []).filter((visualization) => visualization.id === selection.id)
+        .length === 1
     );
-  return (artifact.sections ?? []).some((section) => section.id === selection.id);
+  return (artifact.sections ?? []).filter((section) => section.id === selection.id).length === 1;
 }
 
 function selectionID(selection: PresentationBuilderSelection) {

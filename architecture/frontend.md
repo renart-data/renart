@@ -49,7 +49,7 @@ File-based routes under [src/routes](../web/src/routes):
 - [__root.tsx](../web/src/routes/__root.tsx) → [_shell.tsx](../web/src/routes/_shell.tsx),
   a pathless layout route that renders the app shell.
 - Pages live under [src/routes/_shell](../web/src/routes/_shell): the build IDE at
-  `/pipelines/$pipelineId/...`, plus `catalog`, `notebooks`, `dashboards`,
+  `/pipelines/$pipelineId/...`, plus `data`, `catalog`, `notebooks`, `dashboards`,
   `reports`, `runs`, `schedules`, and `project` (settings). `/` waits for the
   workspace, then redirects to the
   first pipeline's canvas — or to `/welcome` when the workspace has no
@@ -93,11 +93,62 @@ For hierarchical URLs that should not visually nest parent pages, use pathful
 layout routes (`route.tsx` renders `<Outlet />`) with leaf `index.tsx` files —
 not underscore-flattened route hacks.
 
+### Workbench design decisions
+
+Build, Run, and Explore describe the product workflow; connection management,
+data discovery, and settings stay close to the work that needs them rather than
+becoming additional global modes. The rail selects a contextual hierarchy,
+the center owns the active document/canvas, and the inspector edits the actual
+selected resource. Independent regions change only when navigation requires it.
+Ad-hoc Query and notebooks are peer documents, not hidden duplicate overlays.
+
+The chosen workbench design replaced the experimental Lifecycle and Project
+Studio variants. Their isolated `/navigation-lab` routes, mock data, and UI are
+retired; Git history preserves the study. There is one production workbench,
+not a permanent migration allowlist or selectable alternate shell. The
+intentional `/redesign/*` bookmark redirects remain. The separate semantic
+impact playground is retained.
+
+Keep the interface lean: one primary review/action flow, contextual controls,
+and progressive disclosure of diagnostics. Data Browser observations are not
+authored pipeline assets until a reviewed import is confirmed. New expansions
+are tracked in [Data Browser follow-ups](../plans/data-browser.md), not in a
+second shell migration plan.
+
+### Addressable UI places
+
+The existing page routes own their UI. web/lib/ui-navigation.ts maps structured
+targets to those routes and applies only the search changes needed to reveal the
+target. ResourceLink and Monaco hrefs use that same mapping. The v1 detail search
+value is now a locator inside the ordinary owner page, not an auxiliary panel.
+The former ResourceDetailOutlet and duplicate forms/read-only document views
+have been removed. See [UI navigation](diagnostic-navigation.md) for the complete
+contract, state ownership, migration compatibility and remaining coverage.
+
+Asset Properties tabs/fields, Connection fields, Data Browser objects, notebook
+cells and presentation component selection are addressed through this common
+path. Presentation Visual/Definition mode and run tabs/event/timeline targets
+use the existing route search contracts. Normal interactions update those
+addresses too. Required owner/view changes do not reset unrelated result tabs,
+collapsed panels or compatible sidebar selection. Actual asset changes use the
+normal editor lifecycle and existing draft store, not hidden duplicate editors.
+
+Root bootstrap validates explicit project scope before workspace consumers/SSE;
+cold tabs work without session storage and explicit scope overrides a stale pin.
+Only project scope is retained across unrelated routes, not an old focus target.
+Missing identities fail visibly. Save, deploy, verify and preview are commands
+and never inferred from a location URL. Bundle gates remain unchanged.
+
 ### App shell + primary views
 
 - [components/app/app-shell.tsx](../web/components/app/app-shell.tsx) (`AppShell`):
-  top nav (Build / Catalog / Notebooks / Present / Runs / Schedules, from
-  [app-data.ts](../web/components/app/app-data.ts)), the
+  the global header exposes only the three product modes **Build**, **Run**, and
+  **Explore**, defined together with their destinations and route ownership in
+  [app-navigation-model.ts](../web/components/app/app-navigation-model.ts). The
+  deepest matched TanStack route selects the mode, rail tool, contextual
+  sidebar, and mobile label; nested destinations therefore keep their parent
+  mode visibly active without pathname checks in page components. The shell
+  also owns the
   [project switcher](../web/components/app/project-switcher.tsx), including the
   persisted Light / Dark / System appearance selector, the
   [command palette](../web/components/app/app-command-palette.tsx), and the routed
@@ -114,13 +165,196 @@ not underscore-flattened route hacks.
   remain one review unit but render one inline diff per changed cell/file. Each
   file or notebook row makes its complete non-action area the diff target, so
   the path, icon, and status behave as one control rather than as separate
-  click hotspots. The mobile navigation keeps a fixed 3.5rem content row and
-  adds the device safe-area inset outside that row, so Android/iOS system UI
-  cannot compress or push its icons out of alignment.
+  click hotspots.
+
+  Below the header,
+  [components/app/workbench/](../web/components/app/workbench) renders one
+  rounded desktop surface containing the narrow mode-aware rail and its
+  collapsible contextual sidebar. The main page surface and optional right
+  inspector use the same bounded height and small shell gap. Build's canvas and
+  result cards sit on a transparent page wrapper, so their rounded corners are
+  not filled by a rectangular backdrop. Rail state is
+  disposable, project-scoped session state: selecting an inactive tool opens
+  its context, selecting it again collapses the wide sidebar. Stateful pages
+  keep ownership of their editors, canvases, result models, and forms; they
+  contribute existing contextual navigation and inspectors through named React
+  portals rather than lifting domain state into `AppShell` or keeping hidden
+  pages mounted. On mobile, Build, Run, and Explore remain the only three bottom
+  destinations. The desktop rail becomes a horizontally scrollable shadcn
+  `Tabs` strip directly below the global header; selecting a contextual tab
+  opens one Sheet that contains only that tool's hierarchy. Direct destinations
+  navigate in place, and selecting the active contextual tab toggles its Sheet.
+  That Sheet composes its close button at the compact navigation header's
+  alignment, without changing close-button placement for other Sheets.
+  The fixed 3.5rem bottom row keeps the device safe-area inset outside the row
+  so Android/iOS system UI cannot compress or displace its icons.
+  Mobile tool tabs use one click activation path (including Enter/Space) rather
+  than combining a tab value-change event with another active-tab click action.
+  Selecting the already-active Query tab is idempotent; contextual tabs can
+  still toggle their navigation sheet.
+
+- [components/app/data-browser/](../web/components/app/data-browser): one shared
+  object view powers the `/data` workbench route and the in-place Data Browser
+  beside pipeline and notebook documents. Selecting the rail or mobile tab swaps
+  only the contextual sidebar, so the active editor/canvas remains mounted; selecting a table or file
+  navigates to its schema/preview in the existing `/data` page. Direct `/data`
+  navigation renders that same object view as the primary workspace. Navigator state remains
+  separate from the addressed object and its preview. It loads configured
+  query-capable connections as credential-free summaries and navigates their
+  catalogs, databases, schemas, and objects lazily through the server Data Browser
+  API. Catalog-aware engines add a native catalog level, with the known default
+  marked by the existing outline Badge. Other engines retain their current
+  hierarchy. Catalog expansion and path completion reuse the same namespace
+  state/search planner; there is no parallel catalog selector or session switch.
+  Object addresses and SQL/Source references retain the catalog, including in
+  links opened in a new tab. Empty schemas do not require table discovery.
+  **Project files** is a first-class source on desktop and mobile; it lists only
+  visible supported tabular files inside the project root. Selecting an object
+  describes its columns, while rows remain unloaded until the explicit bounded
+  Preview action. The connection shortcuts are split into query warehouses and
+  Load-supported file systems (currently S3, GCS, and SFTP) from the server's
+  advertised connection types. Preview results reuse `VirtualDataTable`, including its
+  keyboard selection and copy behavior. Connection setup reuses
+  `WorkspaceConnectionDialog` with a preselected type and returns to the newly
+  created source without putting credentials in Data Browser state.
+
+  Loading connections, namespaces, columns and preview rows uses the shared
+  `DataBrowserLoading` skeleton, with a screen-reader status and reduced-motion
+  support. A pending namespace replaces the previous list instead of presenting
+  stale children as the current folder. Connection, child and typed-prefix
+  discovery requests have a 30-second deadline with a visible Retry action.
+  Back, replacement navigation and unmount abort obsolete requests; request
+  identities prevent delayed replies from reopening a source or leaving its
+  loading state active. Only the qualified search path is retained across sidebar
+  mounts; metadata is revalidated against the fetched connection revision. Failed
+  path expansion leaves Back available to return to the source list.
+
+  Opening the navigator focuses its filter once, including through the mobile
+  Sheet; metadata updates do not steal focus. Up/Down move between native source
+  and object rows (Up from the first returns to the filter), Home/End choose the
+  first/last row, Enter/Right open and Left returns one level. Namespace expansion
+  transfers keyboard focus to its first result, or back to the filter on an empty
+  result/error. Native links, modifier keys and Tab navigation stay intact.
+
+  Clicking a source, namespace or object updates the search field using the same
+  completion formatter as Tab. One lazy planner owns typed and clicked paths,
+  not a parallel folder stack. Namespace completion includes its separator;
+  object completion does not. Ordinary object links synchronously retain the
+  path before navigating; modifier clicks keep native new-tab behavior without
+  changing the originating filter. Leaf links participate in keyboard navigation.
+
+  The search field accepts connection-qualified paths. Warehouse levels use
+  dots (quoted names preserve literal dots); storage and project-file paths use
+  slashes after the connection name. `lib/data-browser-search.ts` is a pure
+  incremental planner: it requests only the next missing level on the typed
+  branch, never recursively searches siblings. `use-data-browser-search.ts`
+  debounces requests, shares listings across leaf-filter edits, bounds its
+  mounted metadata cache to 32 levels, and cancels obsolete requests. Project,
+  environment and revision IDs scope that cache. Refresh discards it. Storage
+  prefixes use a direct server lookup, so a pasted prefix does not require its
+  ancestors to fit within their listing caps. An exactly matched storage folder
+  also reveals its children without a trailing slash.
+  For a truncated S3 level, a nonempty leaf filter becomes a debounced
+  `name_prefix` lookup. Complete cached parents
+  and complete cached prefix subsets answer further edits locally. Subsets are
+  reused only for case-sensitive extensions on the same connection and parent;
+  broadening outside them requires a new request. Refined subsets use literal
+  starts-with matching, not incomplete fuzzy results. SFTP stays local-only.
+
+  Storage wildcard searches use case-sensitive `*`/`?` path segments. Complete
+  cached one-level listings answer leaf patterns locally; otherwise the existing
+  debounced/abortable prefix request carries a separate bounded-search pattern.
+  Pattern results never masquerade as complete literal-parent cache entries.
+  Selecting a match completes its exact path. A partial-match notice explains
+  listing/traversal limits instead of presenting an empty subset as exhaustive.
+
+  The shadcn InputGroup renders a shadow completion; Tab or its touch button
+  accepts the canonical name and namespace separator, while a leaf adds no
+  separator. The shadow omits the appended separator; the completion button and
+  screen-reader hint retain the full target. Accepting completion commits the
+  caret in a layout effect, so a delayed animation frame cannot insert subsequent
+  typing before the new caret. Completed path segments get subtle bordered
+  badge decorations behind the native input; compensated inline padding keeps
+  text advances and caret positions unchanged. Grammar and
+  connection boundaries come from the search planner, preserving quoted names and
+  literal storage dots. Native caret, selection, clipboard and IME remain intact.
+  Abbreviations only suggest names, never select an ambiguous path.
+  Escape dismisses and Shift+Tab retains normal focus navigation. Mid-input
+  selection and IME composition suppress completion. The input stays outside
+  hierarchy transition keys so lazy result updates cannot remount it. Search
+  state is disposable, bounded and project/environment-scoped across mobile
+  Sheet transitions, separate from the routed object, editor and result tabs.
+  Row activation and Back preserve forward/back hierarchy motion; editing the
+  search path uses replacement motion without moving focus out of the input.
+
+  In a pipeline, table rows and warehouse connections support native drag and
+  the equivalent **Use in canvas** action (keyboard/touch). A table reveals a
+  matching prefix group as its Source creation target; when absent, a temporary
+  group card appears inside the canvas. The server-supplied relation name is a
+  display-only hint, so targets appear without a warehouse round trip. Source
+  names stay unchanged: they identify physical tables, not arbitrary aliases.
+  A destination reveals Load targets beside the output
+  of compatible local assets, based on the Go creation profile's source/destination roles.
+  A drop opens the existing review/creation dialog. It never runs a pipeline,
+  materializes data, or writes an asset before confirmation. Source creation
+  also works in empty pipelines. Project-file rows support drag and the same
+  keyboard/touch placement action without losing ordinary navigation. Their
+  server-validated object ID opens a reviewed Load draft with source `local`
+  and a project-relative file path. Only supported tabular files are offered;
+  local folders and existing files are not overwrite destinations. This source
+  capability does not depend on DuckDB column discovery being available.
+  Load-source files/objects from local storage, S3 and SFTP reveal all existing
+  prefix groups as drop targets. The chosen group seeds the Load asset name,
+  never the source object's path or physical name. The standalone creation target
+  remains available for empty canvases. Compatible downstream destination targets
+  remain above group overlays, so choosing a prefix does not hide destination
+  placement. Warehouse Source assets still target only their physical-name prefix.
+
+  Table and project-file drags capture the existing row in a compact themed card; nested resource
+  links disable native URL dragging but keep ordinary navigation. Compatible Load
+  targets, including the standalone storage-source target, grow as the pointer
+  approaches. Screen-space proximity is measured from
+  fixed anchors, so zoom/pan is accounted for without relaying out the DAG; the
+  expanded hit area stays open until the pointer leaves it. Capture-phase drag
+  tracking observes transitions even when a target stops event propagation.
+  The nearest expanded target is elevated above asset cards, including selected
+  cards, without changing layout. React Flow's automatic selected-node elevation
+  is suspended for this placement layer and restored when placement ends.
+  Vertical alignment belongs to the anchor, not the button's translate property,
+  so its pressed-state animation cannot move the touch target away from a finger.
+
+  View SQL lives in the object's existing, routable `definition` section and
+  uses `SqlPreview` syntax highlighting. It is read-only and does not execute
+  the definition. Supported catalog definitions remain visible when reading the
+  view for column discovery fails; ordinary table-discovery errors still fail.
+
+  `lib/data-browser-transfer.ts` holds disposable same-window interaction state,
+  scoped to project, pipeline, and environment. Native DataTransfer carries only
+  a one-drag nonce, not serialized credentials or SQL. Foreign/stale transfers
+  do not activate targets. Escape, Cancel and drag-end clear placement. The
+  Cancel button is shown only for the persistent keyboard/touch **Use in canvas**
+  mode; native drags clean up on drag-end and need no close control. The
+  canvas does not change independent result/inspector/sidebar selection; only
+  an explicit keyboard/touch placement from Code reveals the required canvas.
+  A bounded, project/environment-scoped navigation cache preserves the browser
+  folder when the mobile sheet closes. Restoring it rechecks the connection
+  revision against the server; stale references still fail server-side validation.
+
 - [components/app/build-page.tsx](../web/components/app/build-page.tsx): the primary
-  IDE — the interactive lineage canvas
+  IDE. Its pipeline-only project explorer and asset metadata inspector occupy the
+  shared Workbench slots; Ad-hoc Query and Notebooks are accessed from their
+  dedicated rail/mobile tabs instead of being duplicated in the pipeline tree.
+  The editor/canvas/result controller remains page-owned. A
+  single rounded command surface contains project-scoped document tabs and
+  compact Code/Split/Canvas plus run/deploy actions. Asset files, Ad-hoc Query,
+  and notebooks participate in that document model without mounting inactive
+  Monaco or notebook runtimes. The central work area retains the interactive
+  lineage canvas
   ([lineage-canvas.tsx](../web/components/app/lineage-canvas.tsx), React Flow)
-  beside the asset editor. Bare asset URLs default to this split view; ad-hoc
+  beside the asset editor. After creating an asset, source navigation waits for
+  the canonical workspace/SSE update to expose its owner. This pending reveal
+  is cancelled if the user changes route or project first. Bare asset URLs
+  default to this split view; ad-hoc
   queries preserve code/split layout and add the editor beside a canvas-only
   view. The ad-hoc editor can copy its current draft into a new or existing
   notebook cell, or open the New asset dialog as a SQL asset with the draft
@@ -133,9 +367,10 @@ not underscore-flattened route hacks.
   mutation APIs and keep the in-memory draft intact. Ad-hoc mode clears the
   route/global canvas selection while retaining the previous asset only as
   graph/Jinja context. Selecting any asset, including that same asset, restores
-  the repository editor and changes a Query result selection back to Inspect;
-  selecting the Query result tab conversely opens ad-hoc mode (and changes a
-  canvas-only route to split). A lightly tinted workspace/header and dedicated
+  the repository editor without changing the independent result selection;
+  explicitly selecting the Query result tab opens ad-hoc mode (and changes a
+  canvas-only route to split). Restoring a Query-tab URL does not switch the
+  editor. A lightly tinted workspace/header and dedicated
   Monaco background distinguish the scratch document visually without adding
   another explanatory panel. Ad-hoc results keep the
   effective rendered query in a compact disclosure above the table. When the
@@ -147,7 +382,12 @@ not underscore-flattened route hacks.
   the route, later selections
   preserve the explicit code/split/canvas layout. A DAG that fits at the default
   zoom is horizontally centered on initial render, while a wider DAG keeps its layout
-  origin so it remains predictable to pan. Layer-band layout assigns acyclic
+  origin so it remains predictable to pan. Selection, hover, and lineage-highlight
+  updates reuse the topology's computed layout and prefix-group geometry so opening
+  another asset does not put graph layout work in Monaco's display path. The selected
+  card highlight and route reconciliation are deferred renders: the local selection
+  lets Monaco paint the newly selected repository content first, then the URL and
+  canvas catch up. Layer-band layout assigns acyclic
   prefix dependencies complete horizontal blocks: every asset in an upstream
   prefix stays left of every asset in its downstream prefix, while dependency
   depth still orders assets inside each block. Independent prefixes may share
@@ -212,7 +452,7 @@ not underscore-flattened route hacks.
   review is one linear reading path: readiness issues and code-check findings,
   followed by a shared, initially collapsed Execution details section containing
   the exact ordered asset/window units and their rendered operation/check sequence. The
-  deployment review uses the same section for representative execution.
+  deployment review nests that section inside Deployment details for representative execution.
   Runtime-only Python notices are aggregated across affected assets. The happy
   path is summarized as one readiness result; successful code checks do not
   repeat as a separate section. Run options start collapsed behind a summary;
@@ -225,7 +465,7 @@ not underscore-flattened route hacks.
   competing with the decision. The dialog heading, context, options, and review
   body share one vertical ScrollArea so the scrollbar never changes the width
   between its upper and middle sections; confirmation remains fixed beneath it.
-  Assets with code-check findings retain their expanded messages. Opening
+  In run review, assets with code-check findings retain their expanded messages. Opening
   Execution details lazily
   requests redacted
   stage content and shows compiled queries, generated materialization SQL,
@@ -251,14 +491,41 @@ not underscore-flattened route hacks.
   **Deploy** opens the same dialog in a definition-only deployment mode rather
   than mutating immediately. It reviews the entire saved working tree, keeps
   execution policy/data freshness out of the gate, and follows one linear
-  reading path instead of dividing the decision across tabs: source changes and
-  code checks come first, followed by compact disclosures for deployment
-  contents, runtime checks, plan identities, representative execution, and
-  schedules. Exact added/changed/removed files are collapsible rows whose
+  reading path instead of dividing the decision across tabs. Its compact header
+  names the pipeline, environment, and baseline deployment; execution windows
+  and modes appear only under Deployment details. Changes & impact merges
+  source files, asset-scoped code-check/readiness findings, and backend semantic
+  impact into one collapsible list, including unchanged assets with propagated
+  output-contract changes. Workspace asset IDs map to pipeline-relative paths;
+  unknown/removed asset paths remain separate named rows rather than guessed
+  file associations. Duplicate code-check warnings appear only at their asset,
+  while global blockers stay visible above the list. Missing baselines and
+  unavailable/incomplete semantic coverage remain explicit, never a green
+  safety verdict. SQL comparisons stay read-only; semantic explanations are
+  disclosed at the affected file, with output contracts from the backend, not
+  the playground's curated analyzer or what-if presets.
+  SQL diff views explicitly switch to inline mode below 768px. Source-backed
+  type/contract changes and mapped code-check diagnostics get targeted amber/red
+  underlines and compact inline labels; full messages are available on hover.
+  Query-only changes keep the `Query changed` row summary and Monaco's native
+  text diff, without a statement-wide warning decoration. Pure output additions
+  have a `New column` category (with a count for multiple columns) and a green
+  projection lens rather than a warning underline. Real code-check warnings
+  remain independent and take lens priority when they share the same line.
+  Source anchors use separate before/after output positions so inserting a
+  column cannot misplace a neighboring type-change annotation.
+  Annotation identities are checked against the displayed file before use
+  (UTF-8 FNV-1a, CRLF-normalized, only a stale-display guard, never a deployment
+  integrity digest). Unmapped/template/wildcard findings remain in the asset
+  explanation instead of guessing positions. Runtime-only Python
+  notices, included assets, runtime checks, source identities, and representative
+  execution live under Deployment details. Exact added/changed/removed files are collapsible rows whose
   deployed/workspace comparison opens directly beneath that file. Each
   comparison uses Monaco's real DiffEditor, including its native
   inserted/deleted line and character highlighting, and the final write remains
-  bound to the reviewed source Merkle. Afterward the schedules disclosure opens
+  bound to the reviewed source Merkle. A comparison is keyed by file, source,
+  and baseline identity; switching files cannot display the previous file's
+  contents while a new request is pending. Afterward the schedules disclosure opens
   and offers an
   unchecked list of older schedule pins; only explicitly selected rows move.
   Type-check does the same; transport/save failures remain visible in the bell
@@ -296,10 +563,16 @@ not underscore-flattened route hacks.
   response associates the run ID with the Build result, then reconciled with
   the canonical stored log; this also covers runs that finish before the trigger
   response arrives.
+
 - [components/app/asset-editor.tsx](../web/components/app/asset-editor.tsx): the
   Monaco editor plus guided metadata cards
   ([asset-guided-cards.tsx](../web/components/app/asset-guided-cards.tsx)); the
-  metadata inspector currently keeps its raw YAML view hidden. It wires intellisense through
+  metadata inspector currently keeps its raw YAML view hidden. The guided
+  surface is divided into **General**, **Lineage**, **Columns**, and **Checks**
+  tabs (with Columns and Checks omitted for assets that cannot produce a
+  relation). Failed quality-check focus opens the matching tab automatically;
+  changing assets resets the default to General. All tabs remain views over the
+  same semantic transaction APIs rather than independent drafts. It wires intellisense through
   [use-asset-monaco.ts](../web/hooks/use-asset-monaco.ts). Load, seed, and
   non-query sensor assets replace Monaco with compact YAML-like parameter
   editors in the same main pane. Query sensors project `parameters.query` into
@@ -341,6 +614,7 @@ not underscore-flattened route hacks.
   Each saved column is scan-first: its collapsed row summarizes name, type,
   description, key status, and provenance, then expands into labeled type,
   description, merge, and removal controls without leaving the card.
+
 - The Build view's **New pipeline** dialog loads the backend template catalog
   and presents the blank option plus feature-focused runnable starters in the
   same compact catalog used by onboarding. Category headings organize one
@@ -412,20 +686,60 @@ not underscore-flattened route hacks.
   provides consistent type recognition with semantic per-engine color (for
   example PostgreSQL blue and DuckDB amber). Exact engine marks come from the
   bundled Simple Icons Iconify set; local glyphs cover file storage and engines
-  without a matching mark. Icon data is compiled into the web bundle and never
+  without a matching mark. StarRocks uses a local symbol from its official logo,
+  with the same monochrome sizing and theme-aware color as the other brands.
+  Icon data is compiled into the web bundle and never
   fetched from a third-party API at runtime.
 - Bounded analytical results share `VirtualDataTable` across notebook outputs,
   asset inspect, and table visualizations in notebooks, dashboards, and reports.
   Its controlled-capable logical-coordinate selection model survives virtual
   row mounting, supports pointer ranges and keyboard navigation/toggling, and
-  copies selected cells as TSV and HTML. Hover alone never expands a value;
-  only the active selected cell can open its complete content. Tables whose
+  disables native scroll anchoring so browser adjustments cannot fight virtual spacers.
+  It copies selected cells as TSV and HTML. `useDataGridRangeResize` adds pointer-captured
+  rectangle edges/corners with touch targets, logical row/column hit testing and
+  viewport-edge auto-scroll. Sparse selections retain their holes and omit range
+  handles. Corner handles also support arrow keys. An explicit toolbar action,
+  double-click or Enter opens `DataGridSelectionDialog` full screen; it pages full
+  selected values locally without executing or expanding a query. Hover popovers
+  and mobile directional resize buttons are not used. Tables whose
   row-action semantics do not fit this spreadsheet contract remain separate.
+- Data Browser, asset Inspect, notebook cells and ad-hoc queries use that table's compact preview footer: row
+  count, an explicit **Load more rows** action, or a row/size-limit explanation.
+  Backend lookahead metadata replaces the old row-count heuristic; Inspect no
+  longer auto-fetches on scrolling. Larger samples replace rows, clear stale
+  selection and retain the table/scroll position. Failures retain the prior
+  sample and retry the same bound. `PreviewRequests` coalesces pending bounds,
+  rejects cancelled replies even for adapters that ignore abort signals, and
+  releases shared Inspect requests only when their last consumer leaves. It
+  stores no results: existing domain state remains authoritative. Inspect scope
+  includes workspace connection sequence, environment and execution window;
+  explicit refresh/source-change invalidation cancels prior in-flight reads.
+  No preview rows, SQL or result identities enter persisted browser state.
+  `useResultPreview` is the small notebook/query display adapter over that same
+  admission helper, not another execution owner or shared result cache. Notebook
+  expansions replace the array with a longer immutable prefix under the same
+  result ID, preserving selection; 409 expiry keeps visible rows and disables
+  continuation with an explanation. Query expansion freezes the last rendered
+  SQL/connection, never rerenders the editor draft, and uses `/api/sql/preview`,
+  not Run. Workspace/environment/window/pipeline changes, new results, explicit
+  Run and unmount invalidate pending requests. The rendered-query disclosure
+  keeps the original SQL; the shared footer owns preview-bound information.
 - Dashboard/report authoring keeps one explicit shrink-safe height chain from
   the routed page through the tabs and builder. The visual canvas ScrollArea
   owns overflow for tall content while the command bar and desktop sidebars
   remain fixed; definition Monaco and audience viewers retain their own scroll
   owners.
+- Notebook authoring has an **All notebooks** navigation step in the contextual
+  sidebar. It changes `notebook_nav=library` on the existing notebook route,
+  leaving the active document and its editor mounted. Selecting another notebook
+  uses the existing project-scoped Build document tabs and notebook save barrier;
+  inactive notebook runtimes are not mounted. Returning to the selected notebook
+  removes the locator. The library and open notebook both register the shared
+  Data Browser as an in-place tool; switching tools does not import data or run a
+  cell. Object navigation waits for pending notebook saves and retains a failed
+  draft instead of leaving its owner. Desktop and mobile use the same controller
+  through their existing workbench portals.
+
 - Other pages: [catalog-page.tsx](../web/components/app/catalog-page.tsx),
   [notebook-page.tsx](../web/components/app/notebook-page.tsx),
   [runs-page.tsx](../web/components/app/runs-page.tsx),
@@ -439,7 +753,7 @@ not underscore-flattened route hacks.
   facts, schedule history, deployments, and abandoned temporary directories,
   plus the per-pipeline run/log/deployment floors. Integer validation happens
   in both the form and Go service; saving replaces the complete policy.
-  Connection sheets consume backend-provided `is_sensitive` and
+  Connection editors consume backend-provided `is_sensitive` and
   `is_sensitive_file` metadata. Sensitive inputs never populate browser state
   with a saved value. They show configured/missing/unavailable status and the
   safe provider/reference descriptor, with explicit keep, replace, and clear
@@ -452,6 +766,47 @@ not underscore-flattened route hacks.
   Provider/manifest parse failures remain visible as shadcn alerts instead of
   silently resetting the form. The same write-only form contract is used by
   inline asset connection creation and onboarding database import.
+
+  Connections and environments use the existing owner routes with a searchable
+  `SettingsNavigator` in the Workbench context slot and a single main-pane editor.
+  `workspace-settings-pages.tsx` owns route selection; the connection/environment
+  editors reuse `useWorkspaceConnectionForm`, `useWorkspaceEnvironmentForm` and
+  the shared `useWorkspaceSettingsData` API boundary. The vault and presentation
+  helpers have separate components. No duplicate hidden forms or settings state
+  in AppShell. Quick-create adapters still use `WorkspaceConnectionFormFields`;
+  main-pane editors additionally fold Credentials and Advanced sections.
+  Both editors share `SettingsEditorHeader` and the installed shadcn Field/FieldGroup
+  hierarchy: a 16px page title, 14px sections, 12px labels and descriptions, standard
+  input surfaces, and a bounded 3xl content width. The navigator uses compact 12px
+  rows with connection icons; it does not duplicate the main editor's form fields.
+
+  `/project/connections?environment=…&connection=…` preserves existing bookmarks
+  and field `detail` locators. `/project/environments?environment=…` selects the
+  environment; validated `action=create|clone|vault` is limited to the relevant
+  owner. Missing or ambiguous identities never select a different environment's
+  connection. Field-only navigation keeps the draft. `useSettingsLeaveGuard`
+  shares Save / Discard / Stay handling across both editors and browser history;
+  beforeunload uses the native prompt. Snapshots are replaced after successful
+  saves, not by background config/policy loads. Environment guardrails save before
+  metadata, so renaming migrates them; a partial failure explicitly retains the
+  unfinished draft. Settings load failures stop until explicit Retry.
+
+  Sidebar filter/expansion preferences are bounded, disposable and project-scoped;
+  only existing Workbench width/visibility state is persisted. Mobile uses the
+  existing navigation Sheet, which closes after committed selection, not when
+  an unsaved-changes prompt is cancelled. Editing environment selection never
+  sets execution state; **Use for execution** is explicit. A retained `editor=adhoc`
+  parameter affects the Build tool only on pipeline/resource owners, not settings.
+  Rail and mobile-tab selection is committed only after routed navigation succeeds;
+  cancelling a leave prompt does not change the active tool or sidebar visibility.
+
+  Config DTOs expose the effective project-relative `configuration_path` and
+  `configuration_inherited` flag, while retaining the legacy `path` basename.
+  Editing a shared external configuration requires an explicit per-editor opt-in
+  before Save/Delete. The notice explains that definitions affect the shared file
+  while guardrails and secret bindings remain project-local. No write path or
+  credential resolution behavior was changed. This is a UI confirmation, not a
+  replacement for the Go service's access and secret enforcement.
   Pipeline settings are lazy-loaded behind a stable fixed-size shell. They use
   an icon-labelled vertical shadcn tab menu at desktop widths and the same tabs
   in a horizontally scrollable rail on mobile. The dialog has one fixed
@@ -495,8 +850,9 @@ not underscore-flattened route hacks.
   a timeline row selects the asset
   and scrolls the counterpart view to its matching row; timeline clicks also
   return the lower panel to its Events tab.
-  Queue-backed active runs expose a destructive, confirmed Abort run action.
-  A running cancellation shows `Stopping` from River's durable request state
+  Queue-backed and currently owned foreground runs expose the same destructive,
+  confirmed Abort run action. A running cancellation shows `Stopping` from the
+  backend's cancellation request state
   until the terminal SSE event replaces it; queued cancellation becomes
   terminal immediately.
   Runs admitted from a reviewed plan add a Plan tab with the immutable final
@@ -519,7 +875,7 @@ not underscore-flattened route hacks.
   Schedule rows keep cadence, timezone, last-run result, deployment, catch-up,
   and runtime-window context in a wrapping metadata area rather than one
   truncated status line. Timeline and actions have dedicated columns: `Run
-  pinned #N` is the primary action, reviewed deployment repair/update is
+pinned #N` is the primary action, reviewed deployment repair/update is
   secondary, and edit/archive are in the row's overflow menu. The edit dialog
   keeps pipeline/environment identity fixed, edits the version-controlled
   cadence and lifecycle fields, and defaults to preserving server-private
@@ -541,7 +897,7 @@ not underscore-flattened route hacks.
   that the project file must be re-added instead of presenting a nonfunctional
   Restore action. A due interval waiting for planning or the pipeline slot is
   exposed as `Run waiting`; after a failed/cancelled attempt it becomes `Retry
-  waiting`. Its tooltip shows only the retained interval, and a dedicated
+waiting`. Its tooltip shows only the retained interval, and a dedicated
   `schedule.occurrence` SSE event refreshes the schedule response without
   polling or exposing the private occurrence key. `Run pinned #N` calls the
   row-owned endpoint, so the browser never has to resend private values.
@@ -571,9 +927,9 @@ Project connection routes accept an environment/connection search target so
 pipeline default-connection links can open the exact editable connection sheet.
 
 All feature UI lives under `components/app/`; shared primitives under
-`components/ui/`. Prefer the shared shadcn card primitives
-([components/ui/card.tsx](../web/components/ui/card.tsx)) for panelized UI rather
-than hand-rolled `div` shells.
+`components/ui/`. Reuse the existing
+[DelimitedCard](../web/components/ui/delimited-card.tsx) for panelized workbench
+surfaces rather than inventing another card shell.
 
 ## 4. Key hooks
 
@@ -581,7 +937,16 @@ than hand-rolled `div` shells.
   `/api/workspace`, subscribes to `/api/events` (SSE), reconciles workspace state,
   preserves asset `content` on lite SSE updates when appropriate, and dispatches
   run, schedule, staleness, and per-notebook runtime events to their Jotai
-  domains. The app shell owns this single browser SSE connection.
+  domains. The app shell owns this single browser SSE connection. Both HTTP
+  snapshots and SSE workspace events enter through `receiveWorkspaceUpdateAtom`:
+  state and accepted-update provenance change atomically, older revisions are
+  rejected within a connection, and responses from previous connections are
+  ignored. Each successful connection starts a revision epoch so a server
+  restart can reset its revision counter. A full HTTP snapshot is requested
+  after every subscription (including the first); an equal-revision HTTP
+  response may hydrate content omitted by a lite event. The pure lite merge
+  lives in `web/lib/workspace-reconciliation.ts`. This boundary does not reset
+  navigation, panel, or explicit environment selections.
 - [use-asset-content-editing.ts](../web/hooks/use-asset-content-editing.ts): editor
   draft state, display-value sync, and the Ctrl/Cmd+S save path.
 - [use-debounced-asset-save.ts](../web/hooks/use-debounced-asset-save.ts): debounced
@@ -629,6 +994,12 @@ than hand-rolled `div` shells.
   running, result, cancel, and session-reset transitions; the hook waits for the
   notebook save barrier before executing and delegates durable runtime truth to
   the server.
+- [use-notebook-control-options.ts](../web/hooks/use-notebook-control-options.ts):
+  owns dataset-backed control option snapshots, loading, and notebook-scoped
+  latest-request admission. Pure helpers select newly successful producers;
+  initial/state-only events do not issue queries. The page retains authored
+  definitions, parameter values, selection, and layout state. See
+  [notebook runtime ownership](notebooks.md#10-server-owned-recompute-and-frontend-state).
 - [use-app-asset-materialization-status.ts](../web/hooks/use-app-asset-materialization-status.ts):
   freshness / materialization enrichment with a post-terminal event guard.
 - [use-pipeline-staleness.ts](../web/hooks/use-pipeline-staleness.ts): per-pipeline
@@ -651,6 +1022,9 @@ than hand-rolled `div` shells.
   generated API types. The generated types come from the Go DTOs via
   `internal/tools/apitypes` (see [backend.md](backend.md) §5) — don't hand-edit
   `web/lib/generated/api-types.ts`.
+- [lib/api-notebooks.ts](../web/lib/api-notebooks.ts): notebook runtime events,
+  snapshots, and cell results also derive from generated Go wire contracts.
+  Local aliases refine UI unions/nullability without duplicating entire DTOs.
 - [lib/atoms/](../web/lib/atoms): Jotai atoms split by domain (`workspace`,
   `selection`, `editor`, `results`, `materialization`, `sql-discovery`, suggestion
   catalog).
@@ -666,12 +1040,19 @@ than hand-rolled `div` shells.
 - [lib/features.ts](../web/lib/features.ts): project-scoped feature flags.
   Warehouse and S3/GCS object-storage connection types stay configurable in
   project settings. Ingestr-only source connection types and asset kinds render
-  only when `.renart/project.yml` sets `features.ingestr` or the workspace
-  already contains ingestr assets (see [backend.md](backend.md) §2).
+  only when `.renart/project.yml` explicitly sets `features.ingestr`. The shared
+  New connection dialog enforces the same filter as project settings, including
+  caller-supplied/preselected types. Existing Ingestr assets remain editable and
+  an existing connection's own type stays available in its edit form; their
+  presence does not enable new Ingestr recommendations. Loaded config overrides
+  stale workspace flags (see [backend.md](backend.md) §2).
 - [lib/sql-schema.ts](../web/lib/sql-schema.ts): schema context for SQL
   intellisense. It scopes tables using only the effective connection resolved by
   the backend; it never guesses a connection from an asset type or selects an
-  arbitrary same-platform connection.
+  arbitrary same-platform connection. The suggestion catalog indexes remote
+  table names per connection before enriching workspace schemas; switching
+  assets therefore scales with catalog size rather than comparing every table
+  with every other table.
 - [lib/api-asset-templates.ts](../web/lib/api-asset-templates.ts): the four
   pattern-focused HTTP API starters used by the New asset dialog. The default
   starter accepts the user's OpenAPI URL rather than embedding a demo service;
@@ -725,3 +1106,6 @@ entry, measures lazy route families after subtracting that initial closure,
 records raw and gzip bytes, and enforces the reviewed limits in
 `bundle-budgets.json`. CI always uploads the generated JSON/Markdown bundle
 report; a budget change is therefore an explicit source diff.
+The deployment-impact review and SQL playground add about 7.2 KiB of initial
+CSS over `v0.5.0` (213.3 → 220.5 KiB with the same toolchain); the reviewed
+initial CSS ceiling is 230,000 bytes. JavaScript budgets remain unchanged.

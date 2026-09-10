@@ -1,0 +1,60 @@
+---
+title: Supported platforms
+description: Databases supported by SQL assets, materialization limits, and other data sources.
+---
+
+Renart supports the following databases for SQL pipeline assets. Support for a
+connection does not mean that every database has the same write strategies,
+catalog features, or data-transfer capabilities.
+
+## SQL pipeline assets
+
+| Database | Notes |
+| --- | --- |
+| Amazon Athena | Table layout depends on the selected catalog and table format. |
+| Amazon Redshift | SQL execution and table/view materialization. |
+| Azure Synapse | SQL execution and table/view materialization. |
+| ClickHouse | No guided **Merge by key** mode. Replace and delete/insert require primary-key columns. |
+| Databricks | SQL execution and table/view materialization. |
+| DuckDB | Embedded database; the local demo needs no warehouse account. |
+| Google BigQuery | Supports partitioning and clustering fields for table materialization. |
+| Microsoft Fabric | No guided time-interval materialization mode. |
+| Microsoft SQL Server | SQL execution and table/view materialization. |
+| MotherDuck | Uses the DuckDB SQL workflow with a MotherDuck connection. |
+| MySQL | SQL execution and table/view materialization. |
+| Oracle | Query-only execution; Renart's direct SQL runner does not materialize tables or views. |
+| PostgreSQL | SQL execution and table/view materialization. |
+| Snowflake | Supports clustering fields for table materialization. |
+| StarRocks | SQL execution and table/view materialization. |
+| Trino | No guided **Merge by key** mode. Write behavior also depends on the connector and table format. |
+| Vertica | SQL execution and table/view materialization. |
+
+The asset's **General → Materialization** control shows the modes available for
+its type and connection. Database permissions, existing objects, and primary
+keys can impose further requirements. Review **Render** before executing a new
+strategy, particularly **Full refresh**.
+
+These are implemented integrations, not a promise of identical behavior or
+equal production coverage. Test your database version and materialization
+strategy against non-critical data during the [public alpha](/docs/alpha-status/).
+
+## Files, object storage, and APIs
+
+- [Load assets](/docs/asset-types/load-assets/) copy data between databases,
+  local files, and supported object storage. Configured S3-compatible storage
+  and Google Cloud Storage can be browsed from the source picker.
+- [HTTP API assets](/docs/asset-types/http-api-assets/) extract JSON records,
+  follow pagination, and load a destination table.
+- [Notebooks](/docs/notebooks/overview/) bring source snapshots into local
+  DuckDB. A database source needs a supported typed transfer path; being able
+  to execute SQL against a connection alone is not sufficient.
+
+The connection and asset creation dialogs filter the choices available for the
+operation. A connection used for storage or source discovery is not necessarily
+a SQL materialization target.
+
+## Related
+
+- [Add a connection](/docs/connections-environments/managing-connections/)
+- [SQL assets](/docs/asset-types/sql-assets/)
+- [Connection credentials](/docs/connections-environments/managing-credentials/)

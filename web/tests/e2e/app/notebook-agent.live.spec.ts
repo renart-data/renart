@@ -7,7 +7,7 @@ const fakeCodex = resolve(__dirname, "..", "..", "fixtures", "fake-codex-noteboo
 
 async function openNotebookAssistant(page: Page) {
   if ((page.viewportSize()?.width ?? 0) < 1280) {
-    await page.getByRole("button", { name: "Notebook tools" }).click();
+    await page.getByRole("tab", { name: "Notebooks", exact: true }).click();
   }
   await page.getByRole("tab", { name: "AI", exact: true }).click();
 }
@@ -83,7 +83,7 @@ test.describe("notebook agent chat live", () => {
     ).toBeVisible();
 
     await page.goto(`${liveApp.baseURL}/notebooks`);
-    await page.getByText("Agent workspace", { exact: true }).click();
+    await page.getByRole("button", { name: /^Agent workspace .* 1 cell$/ }).click();
     await openNotebookAssistant(page);
 
     await expect(page.getByText("Summarize this notebook.")).toBeVisible();
@@ -118,7 +118,7 @@ test.describe("notebook agent chat live", () => {
     await expect(composer).toBeDisabled();
 
     await page.goto(`${liveApp.baseURL}/notebooks`);
-    await page.getByText("Questionnaire workspace", { exact: true }).click();
+    await page.getByRole("button", { name: /^Questionnaire workspace .* 1 cell$/ }).click();
     await openNotebookAssistant(page);
     await expect(questionnaire.getByText("Choose a metric", { exact: true })).toBeVisible();
 

@@ -110,6 +110,17 @@ func (s *AssetService) inferGraphSchemaFromDefinition(
 		})
 	}
 	graph := sqllsp.GraphFromRenartAssets(sqllsp.FileURI(s.deps.WorkspaceRoot), nodes, declared)
+	if !s.deps.DisableFilesystemAccess {
+		fileSchemas := sqllsp.NewDuckDBFileSchemaCache()
+		for _, candidate := range inferenceAssets {
+			if !strings.EqualFold(candidate.Dialect, "duckdb") {
+				continue
+			}
+			graph = sqllsp.EnrichDuckDBFileRelations(ctx, graph, sqllsp.TextDocumentItem{
+				URI: candidate.URI, LanguageID: "sql", Text: candidate.SQL,
+			}, s.deps.WorkspaceRoot, fileSchemas)
+		}
+	}
 	graph = resolveAuthoringSchemaGraph(ctx, graph, inferencePipeline, inferenceAssets)
 	columns, completeness, confidence := authoringGraphRelationSchema(graph, asset.Name)
 	if len(columns) == 0 {

@@ -79,6 +79,10 @@ func (e *HybridBruinExecutor) dryRunPipeline(ctx context.Context, foundPipeline 
 func renartDryRunRules(rules []lint.Rule) []lint.Rule {
 	result := make([]lint.Rule, 0, len(rules)+1)
 	for _, rule := range rules {
+		if rule.Name() == "asset-name-component-count" {
+			result = append(result, &lint.SimpleRule{Identifier: "asset-name-component-count", Fast: true, Severity: lint.ValidatorSeverityCritical, AssetValidator: ensureCatalogSourceName, ApplicableLevels: []lint.Level{lint.LevelAsset}})
+			continue
+		}
 		if rule.Name() != "valid-task-type" {
 			result = append(result, rule)
 		}
@@ -91,6 +95,17 @@ func renartDryRunRules(rules []lint.Rule) []lint.Rule {
 		ApplicableLevels: []lint.Level{lint.LevelAsset},
 	})
 	return result
+}
+
+func ensureCatalogSourceName(ctx context.Context, p *pipeline.Pipeline, asset *pipeline.Asset) ([]*lint.Issue, error) {
+	if asset != nil && (asset.Type == "starrocks.source" || asset.Type == "doris.source") {
+		capability, _ := warehouseTableCapability(pipeline.AssetTypeConnectionMapping[asset.Type])
+		if err := capability.CheckName(asset.Name); err != nil {
+			return []*lint.Issue{{Task: asset, Description: err.Error()}}, nil
+		}
+		return nil, nil
+	}
+	return lint.EnsureAssetNameComponentCountIsValid(ctx, p, asset)
 }
 
 func ensureRenartAssetType(_ context.Context, _ *pipeline.Pipeline, asset *pipeline.Asset) ([]*lint.Issue, error) {

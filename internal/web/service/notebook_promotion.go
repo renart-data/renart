@@ -10,12 +10,14 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
 	"renart/internal/bruincompat"
 	"renart/internal/web/model"
 	"renart/internal/web/notebook"
+	"renart/internal/web/policy"
 )
 
 // PromoteCellRequest selects a reviewed notebook-to-pipeline promotion. A
@@ -245,6 +247,32 @@ func (s *NotebookService) prepareCellPromotion(notebookID, cellID string, req Pr
 			Path: relPath, AssetType: assetType, Connection: connection,
 			SourceConnection: sourceConnection, Materialization: materialization,
 		})
+	}
+	configPath := s.deps.ConfigPath
+	if configPath == "" {
+		configPath = filepath.Join(s.deps.WorkspaceRoot, ".bruin.yml")
+	}
+	var accessConfig *config.Config
+	if _, err := os.Stat(configPath); err == nil {
+		environment := s.deps.CurrentState().SelectedEnvironment
+		accessConfig, err = loadSelectedConfigReadOnlyFS(afero.NewOsFs(), configPath, environment)
+		if err != nil {
+			return nil, apiErrorFromConnectionAccess(policy.InvalidError(err.Error()))
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, apiErrorFromConnectionAccess(policy.InvalidError(err.Error()))
+	}
+	var requirements []policy.Requirement
+	for _, asset := range previewAssets {
+		if asset.Connection != "" && !isLocalLoadConnection(asset.Connection) {
+			requirements = append(requirements, policy.Requirement{Connection: asset.Connection, Effect: policy.Write, Operation: "notebook_promotion"})
+		}
+		if asset.SourceConnection != "" && !isLocalLoadConnection(asset.SourceConnection) {
+			requirements = append(requirements, policy.Requirement{Connection: asset.SourceConnection, Effect: policy.Read, Operation: "load_source"})
+		}
+	}
+	if err := checkConnectionRequirements(s.deps.WorkspaceRoot, accessConfig, requirements); err != nil {
+		return nil, apiErrorFromConnectionAccess(err)
 	}
 
 	before, after, promotedIDs, apiErr := s.promotionFileSets(nb, plan)

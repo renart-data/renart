@@ -42,6 +42,14 @@ func queryAssetTypeForConnectionType(connectionType string) (pipeline.AssetType,
 	return bruincompat.QueryAssetTypeForConnectionType(connectionType)
 }
 
+// IsQueryableConnectionType reports whether a configured connection can run
+// read-only SQL through Renart's shared query service. Discovery surfaces use
+// this instead of duplicating Bruin's connection-type mapping.
+func IsQueryableConnectionType(connectionType string) bool {
+	_, ok := queryAssetTypeForConnectionType(connectionType)
+	return ok
+}
+
 func sourceAssetTypeForConnectionType(connectionType string) (pipeline.AssetType, bool) {
 	return bruincompat.SourceAssetTypeForConnectionType(connectionType)
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -56,10 +57,12 @@ type WorkspaceLocalVault struct {
 }
 
 type WorkspaceConfigConnection struct {
-	Name         string                                `json:"name"`
-	Type         string                                `json:"type"`
-	Values       map[string]any                        `json:"values"`
-	SecretFields map[string]WorkspaceConfigSecretField `json:"secret_fields,omitempty"`
+	AccessMode          policy.AccessMode                     `json:"access_mode,omitempty"`
+	EffectiveAccessMode policy.AccessMode                     `json:"effective_access_mode,omitempty"`
+	Name                string                                `json:"name"`
+	Type                string                                `json:"type"`
+	Values              map[string]any                        `json:"values"`
+	SecretFields        map[string]WorkspaceConfigSecretField `json:"secret_fields,omitempty"`
 	// LoadCategory is "database", "storage", "file" for connections a Load
 	// asset can move data between, or "" for connections that are not Load-movable
 	// data stores. The asset editor's source/target pickers filter on it.
@@ -88,20 +91,24 @@ type WorkspaceRetentionSettings struct {
 
 // renart:web
 type WorkspaceConfigResponse struct {
-	Status              string                          `json:"status"`
-	Path                string                          `json:"path"`
-	WorkspacePath       string                          `json:"workspace_path,omitempty"`
-	ProjectID           string                          `json:"project_id,omitempty"`
-	ProjectName         string                          `json:"project_name,omitempty"`
-	DefaultEnvironment  string                          `json:"default_environment,omitempty"`
-	SelectedEnvironment string                          `json:"selected_environment,omitempty"`
-	Environments        []WorkspaceConfigEnvironment    `json:"environments"`
-	ConnectionTypes     []WorkspaceConfigConnectionType `json:"connection_types"`
-	Features            map[string]bool                 `json:"features,omitempty"`
-	Retention           WorkspaceRetentionSettings      `json:"retention"`
-	SecretVault         WorkspaceLocalVault             `json:"secret_vault"`
-	ParseError          string                          `json:"parse_error,omitempty"`
-	SecretBindingsError string                          `json:"secret_bindings_error,omitempty"`
+	Status                   string                          `json:"status"`
+	Path                     string                          `json:"path"`
+	ConfigurationPath        string                          `json:"configuration_path,omitempty"`
+	ConfigurationInherited   bool                            `json:"configuration_inherited,omitempty"`
+	WorkspacePath            string                          `json:"workspace_path,omitempty"`
+	ProjectID                string                          `json:"project_id,omitempty"`
+	ProjectName              string                          `json:"project_name,omitempty"`
+	DefaultEnvironment       string                          `json:"default_environment,omitempty"`
+	SelectedEnvironment      string                          `json:"selected_environment,omitempty"`
+	Environments             []WorkspaceConfigEnvironment    `json:"environments"`
+	ConnectionTypes          []WorkspaceConfigConnectionType `json:"connection_types"`
+	Features                 map[string]bool                 `json:"features,omitempty"`
+	Retention                WorkspaceRetentionSettings      `json:"retention"`
+	SecretVault              WorkspaceLocalVault             `json:"secret_vault"`
+	ParseError               string                          `json:"parse_error,omitempty"`
+	SecretBindingsError      string                          `json:"secret_bindings_error,omitempty"`
+	ConnectionPolicyError    string                          `json:"connection_policy_error,omitempty"`
+	ConnectionPolicyRevision string                          `json:"connection_policy_revision,omitempty"`
 }
 
 // renart:web
@@ -112,6 +119,8 @@ type WorkspaceEnvironmentPolicyResponse struct {
 }
 
 type UpsertWorkspaceConnectionParams struct {
+	AccessMode      *policy.AccessMode
+	PolicyRevision  string
 	EnvironmentName string
 	CurrentName     string
 	Name            string
@@ -121,6 +130,7 @@ type UpsertWorkspaceConnectionParams struct {
 }
 
 type TestWorkspaceConnectionParams struct {
+	AccessMode      *policy.AccessMode
 	EnvironmentName string
 	CurrentName     string
 	Name            string
@@ -145,6 +155,7 @@ type ConfigService struct {
 	configPath     string
 	secretResolver *secretstore.Resolver
 	secretVault    *secretstore.LocalVaultProvider
+	discoveryKey   string
 	mu             sync.Mutex
 }
 
@@ -177,6 +188,7 @@ func NewConfigService(workspaceRoot, configPath string, options ...ConfigService
 		configPath:     configPath,
 		secretResolver: secretstore.NewDefaultResolverWithLocalVault(vault),
 		secretVault:    vault,
+		discoveryKey:   rand.Text(),
 	}
 	for _, option := range options {
 		if option != nil {
@@ -338,6 +350,46 @@ func (s *ConfigService) LoadReadOnly() (*config.Config, string, error) {
 	return cfg, s.configPath, nil
 }
 
+// ConnectionSummaries returns only connection names and types for one
+// environment. It deliberately avoids resolving or exposing connection values,
+// making it suitable for discovery UIs such as the Data Browser.
+func (s *ConfigService) ConnectionSummaries(environment string) (string, map[string]string, error) {
+	cfg, resolvedEnvironment, err := s.connectionDiscoveryConfig(environment)
+	if err != nil {
+		return "", nil, err
+	}
+	return resolvedEnvironment, selectedConnectionSummaries(cfg), nil
+}
+
+func (s *ConfigService) connectionDiscoveryConfig(environment string) (*config.Config, string, error) {
+	cfg, _, err := s.LoadReadOnly()
+	if err != nil {
+		return nil, "", err
+	}
+
+	resolvedEnvironment := strings.TrimSpace(environment)
+	if resolvedEnvironment == "" {
+		resolvedEnvironment = strings.TrimSpace(cfg.SelectedEnvironmentName)
+	}
+	if resolvedEnvironment == "" {
+		resolvedEnvironment = strings.TrimSpace(cfg.DefaultEnvironmentName)
+	}
+	if resolvedEnvironment == "" {
+		environments := cfg.GetEnvironmentNames()
+		sort.Strings(environments)
+		if len(environments) > 0 {
+			resolvedEnvironment = environments[0]
+		}
+	}
+	if resolvedEnvironment == "" {
+		return cfg, "", nil
+	}
+	if err := cfg.SelectEnvironment(resolvedEnvironment); err != nil {
+		return nil, "", err
+	}
+	return cfg, resolvedEnvironment, nil
+}
+
 func (s *ConfigService) Persist(cfg *config.Config) (string, error) {
 	if err := afero.NewOsFs().MkdirAll(filepath.Dir(s.configPath), 0o755); err != nil {
 		return "", err
@@ -361,25 +413,51 @@ func (s *ConfigService) Persist(cfg *config.Config) (string, error) {
 }
 
 func (s *ConfigService) BuildResponse(configPath string, cfg *config.Config) WorkspaceConfigResponse {
+	configurationPath, pathErr := filepath.Rel(s.workspaceRoot, configPath)
+	inherited := pathErr != nil || configurationPath == ".." || strings.HasPrefix(configurationPath, ".."+string(filepath.Separator))
+	if pathErr != nil {
+		configurationPath = filepath.Clean(configPath)
+	}
 	project := s.ProjectIdentity()
 	manifest, manifestErr := secretstore.LoadManifest(filepath.Join(s.workspaceRoot, ".renart", "secrets.yml"))
 	response := WorkspaceConfigResponse{
-		Status:              "ok",
-		Path:                filepath.Base(configPath),
-		WorkspacePath:       filepath.Clean(s.workspaceRoot),
-		ProjectID:           project.ID,
-		ProjectName:         project.Name,
-		DefaultEnvironment:  cfg.DefaultEnvironmentName,
-		SelectedEnvironment: cfg.SelectedEnvironmentName,
-		Environments:        []WorkspaceConfigEnvironment{},
-		ConnectionTypes:     BuildWorkspaceConfigConnectionTypes(),
-		Features:            project.Features,
-		Retention:           workspaceRetentionSettings(project.Retention),
-		SecretVault:         workspaceLocalVaultStatus(s.secretVault.Status(project.ID)),
+		Status:                 "ok",
+		Path:                   filepath.Base(configPath),
+		ConfigurationPath:      filepath.ToSlash(configurationPath),
+		ConfigurationInherited: inherited,
+		WorkspacePath:          filepath.Clean(s.workspaceRoot),
+		ProjectID:              project.ID,
+		ProjectName:            project.Name,
+		DefaultEnvironment:     cfg.DefaultEnvironmentName,
+		SelectedEnvironment:    cfg.SelectedEnvironmentName,
+		Environments:           []WorkspaceConfigEnvironment{},
+		ConnectionTypes:        BuildWorkspaceConfigConnectionTypes(),
+		Features:               project.Features,
+		Retention:              workspaceRetentionSettings(project.Retention),
+		SecretVault:            workspaceLocalVaultStatus(s.secretVault.Status(project.ID)),
 	}
 	if manifestErr != nil {
 		response.SecretBindingsError = manifestErr.Error()
 		manifest = secretstore.NewManifest()
+	}
+	policySnapshot, policyErr := policy.NewLoader(s.environmentPolicyPath()).Snapshot()
+	if policyErr != nil {
+		response.ConnectionPolicyError = policyErr.Error()
+	} else {
+		response.ConnectionPolicyRevision = policySnapshot.Revision
+		for name, p := range policySnapshot.Config.Environments {
+			env, exists := cfg.Environments[name]
+			if !exists {
+				response.ConnectionPolicyError = fmt.Sprintf("Policy environment %q does not exist; review .renart/environments.yml.", name)
+				break
+			}
+			for alias := range p.Connections {
+				if env.Connections == nil || !env.Connections.Exists(alias) {
+					response.ConnectionPolicyError = fmt.Sprintf("Policy connection %q does not exist in environment %q; review .renart/environments.yml.", alias, name)
+					break
+				}
+			}
+		}
 	}
 
 	environmentNames := cfg.GetEnvironmentNames()
@@ -387,6 +465,14 @@ func (s *ConfigService) BuildResponse(configPath string, cfg *config.Config) Wor
 	for _, envName := range environmentNames {
 		env := cfg.Environments[envName]
 		connections := buildWorkspaceConfigConnections(env.Connections)
+		for index := range connections {
+			connection := &connections[index]
+			p := policySnapshot.Config.For(envName)
+			connection.AccessMode = p.Connections[connection.Name].AccessMode
+			if policyErr == nil {
+				connection.EffectiveAccessMode = policy.EffectiveMode(p, connection.Name, nativeConnectionReadOnly(env.Connections.GetConnection(connection.Name)))
+			}
+		}
 		s.decorateWorkspaceConnectionSecrets(project.ID, envName, env.Connections, connections, manifest)
 		response.Environments = append(response.Environments, WorkspaceConfigEnvironment{
 			Name:         envName,
@@ -496,6 +582,10 @@ func (s *ConfigService) decorateWorkspaceConnectionSecrets(
 			}
 
 			descriptor = s.describeWorkspaceSecret(projectID, environmentName, binding.Reference)
+			if !hasBinding && symbol == managedSecretSymbol(item.Name, fieldDef.Name) &&
+				descriptor.Status != string(secretstore.StatusConfigured) {
+				descriptor.Message = "No binding for this placeholder was found in this project's .renart/secrets.yml, so it is treated as an environment reference. If it used a credential store, reopen the original project or restore its secret bindings. " + descriptor.Message
+			}
 			item.SecretFields[fieldDef.Name] = descriptor
 		}
 	}
@@ -696,6 +786,9 @@ func (s *ConfigService) UpdateConnection(cfg *config.Config, params UpsertWorksp
 }
 
 func (s *ConfigService) TestConnection(ctx context.Context, cfg *config.Config, params TestWorkspaceConnectionParams) (string, error) {
+	if params.AccessMode != nil && *params.AccessMode != policy.ReadOnly && *params.AccessMode != policy.ReadWrite {
+		return "", newAPIError(400, "invalid_access_mode", "Choose read_only or read_write.")
+	}
 	environmentName, err := requireEnvironmentName(cfg, params.EnvironmentName)
 	if err != nil {
 		return "", err
@@ -735,6 +828,26 @@ func (s *ConfigService) TestConnection(ctx context.Context, cfg *config.Config, 
 	selectedCfg, err := selectConfigEnvironment(cfg, environmentName)
 	if err != nil {
 		return "", err
+	}
+	// Testing a draft must honor both the requested restriction and the saved
+	// alias when the form contains a not-yet-saved rename. Never persist a draft.
+	snapshot, err := policy.NewLoader(s.environmentPolicyPath()).Snapshot()
+	if err != nil {
+		return "", policy.InvalidError(err.Error())
+	}
+	savedName := strings.TrimSpace(params.CurrentName)
+	if savedName == "" {
+		savedName = connectionName
+	}
+	restrictDraft := snapshot.Config.For(environmentName).Connections[savedName].AccessMode == policy.ReadOnly ||
+		params.AccessMode != nil && *params.AccessMode == policy.ReadOnly
+	if restrictDraft {
+		for index := range selectedCfg.SelectedEnvironment.Connections.DuckDB {
+			duck := &selectedCfg.SelectedEnvironment.Connections.DuckDB[index]
+			if duck.Name == connectionName {
+				duck.ReadOnly = true
+			}
+		}
 	}
 	factory := NewResolvedConnectionFactory(
 		s.workspaceRoot,
@@ -935,7 +1048,7 @@ func BuildWorkspaceConfigConnectionTypes() []WorkspaceConfigConnectionType {
 		category := "source"
 		if warehouse[typeName] {
 			category = "warehouse"
-		} else if loadConnectionCategory(typeName) == LoadCategoryStorage {
+		} else if loadConnectionCategory(typeName) == LoadCategoryStorage || loadConnectionCategory(typeName) == LoadCategoryFile {
 			category = "storage"
 		}
 		items = append(items, WorkspaceConfigConnectionType{

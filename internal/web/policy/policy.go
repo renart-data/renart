@@ -1,7 +1,6 @@
-// Package policy enforces per-environment execution rules at the single
-// run-dispatch chokepoint every execution path goes through (UI build, CLI,
-// scheduler). UI-side disabling mirrors these rules but is not the
-// enforcement.
+// Package policy evaluates per-environment run rules and connection effects.
+// Services enforce these rules before dispatch and at physical-task boundaries
+// (UI build, CLI and scheduler). UI-side disabling is not the enforcement.
 //
 // Locally these are guardrails — the user owns the credentials. The
 // enforced version is the cloud permission model, where protected
@@ -11,13 +10,17 @@
 package policy
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"sync"
-	"time"
+	"strings"
 
+	"github.com/gofrs/flock"
 	"gopkg.in/yaml.v3"
+	"renart/internal/web/workspacefs"
 )
 
 // EnvironmentPolicy is the per-environment rule set.
@@ -30,23 +33,37 @@ type EnvironmentPolicy struct {
 	DeployedOnly bool `yaml:"deployed_only" json:"deployed_only"`
 	// ConfirmDestructive requires a typed environment-name confirmation for
 	// destructive operations (full refresh, backfill, drop).
-	ConfirmDestructive bool `yaml:"confirm_destructive" json:"confirm_destructive"`
+	ConfirmDestructive bool                        `yaml:"confirm_destructive" json:"confirm_destructive"`
+	Connections        map[string]ConnectionPolicy `yaml:"connections,omitempty" json:"connections,omitempty"`
+	// Invalid is carried through legacy PolicyFor ports so failed reads never
+	// become a zero, unrestricted policy. It is not authored configuration.
+	Invalid string `yaml:"-" json:"-"`
 }
 
 // Zero reports whether the policy has no flags set.
 func (p EnvironmentPolicy) Zero() bool {
-	return !p.Protected && !p.DeployedOnly && !p.ConfirmDestructive
+	return !p.Protected && !p.DeployedOnly && !p.ConfirmDestructive && len(p.Connections) == 0 && p.Invalid == ""
 }
 
 // Config is the on-disk policy file (.renart/environments.yml).
 type Config struct {
 	Environments map[string]EnvironmentPolicy `yaml:"environments" json:"environments"`
+	invalid      string
 }
 
 // For returns the policy for an environment; absent environments have the
 // zero (unrestricted) policy.
 func (c Config) For(environment string) EnvironmentPolicy {
-	return c.Environments[environment]
+	p := c.Environments[environment]
+	p.Invalid = c.invalid
+	if p.Connections != nil {
+		connections := make(map[string]ConnectionPolicy, len(p.Connections))
+		for name, connection := range p.Connections {
+			connections[name] = connection
+		}
+		p.Connections = connections
+	}
+	return p
 }
 
 // Load reads the policy file; a missing file is an empty config.
@@ -58,17 +75,50 @@ func Load(path string) (Config, error) {
 		}
 		return Config{}, err
 	}
+	return decode(path, data)
+}
+
+func decode(path string, data []byte) (Config, error) {
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil && err != io.EOF {
 		return Config{}, fmt.Errorf("policy: failed to parse %s: %w", path, err)
 	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return Config{}, fmt.Errorf("policy: expected one YAML document in %s", path)
+	}
+	if err := cfg.Validate(); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+func (c Config) Validate() error {
+	for env, p := range c.Environments {
+		if strings.TrimSpace(env) == "" {
+			return fmt.Errorf("policy: environment name is empty")
+		}
+		for name, connection := range p.Connections {
+			if strings.TrimSpace(name) == "" {
+				return fmt.Errorf("policy: connection name in %q is empty", env)
+			}
+			if connection.AccessMode != ReadOnly && connection.AccessMode != ReadWrite {
+				return fmt.Errorf("policy: invalid access_mode %q for %s/%s", connection.AccessMode, env, name)
+			}
+		}
+	}
+	return nil
 }
 
 // Save writes the environment policy file, creating its parent directory when
 // needed. Zero policies are omitted so clearing every flag removes the
 // environment from the policy file without affecting Bruin config.
 func Save(path string, cfg Config) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
 	cleaned := Config{Environments: map[string]EnvironmentPolicy{}}
 	for name, envPolicy := range cfg.Environments {
 		if name == "" || envPolicy.Zero() {
@@ -81,22 +131,14 @@ func Save(path string, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0o644)
+	return workspacefs.WriteFileAtomic(path, data, 0o644)
 }
 
-// Loader caches the policy file, revalidated by stat so edits apply without
-// a restart.
+// Loader reads a small authoritative file on every authorization. Stat-only
+// caches miss same-size edits with restored mtimes, and last-good data is not
+// permission to execute after a malformed or unreadable policy update.
 type Loader struct {
 	path string
-
-	mu      sync.Mutex
-	modTime time.Time
-	size    int64
-	loaded  bool
-	cfg     Config
 }
 
 func NewLoader(path string) *Loader {
@@ -108,34 +150,69 @@ func (l *Loader) Path() string {
 }
 
 func (l *Loader) Config() Config {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	snapshot, err := l.Snapshot()
+	if err != nil {
+		return Config{invalid: err.Error()}
+	}
+	return snapshot.Config
+}
 
-	info, err := os.Stat(l.path)
+type Snapshot struct {
+	Config   Config
+	Revision string
+}
+
+func (l *Loader) Snapshot() (Snapshot, error) {
+	if err := CheckPending(l.path); err != nil {
+		return Snapshot{}, err
+	}
+	data, err := os.ReadFile(l.path)
+	if os.IsNotExist(err) {
+		data, err = nil, nil
+	}
 	if err != nil {
-		l.cfg = Config{}
-		l.loaded = true
-		l.modTime = time.Time{}
-		l.size = 0
-		return l.cfg
+		return Snapshot{}, err
 	}
-	if l.loaded && info.ModTime().Equal(l.modTime) && info.Size() == l.size {
-		return l.cfg
-	}
-	cfg, err := Load(l.path)
+	cfg, err := decode(l.path, data)
 	if err != nil {
-		// Unparseable policy fails closed only for new reads; keep the last
-		// good config rather than silently dropping protection.
-		if l.loaded {
-			return l.cfg
-		}
-		return Config{}
+		return Snapshot{}, err
 	}
-	l.cfg = cfg
-	l.loaded = true
-	l.modTime = info.ModTime()
-	l.size = info.Size()
-	return cfg
+	if err := CheckPending(l.path); err != nil {
+		return Snapshot{}, err
+	}
+	return Snapshot{Config: cfg, Revision: fmt.Sprintf("%x", sha256.Sum256(data))}, nil
+}
+
+// PendingPath records an interrupted multi-file configuration transaction.
+// It contains no credentials. Execution stays closed until the configuration
+// is reconciled, including when the policy itself did not exist before a rename.
+func PendingPath(path string) string {
+	return filepath.Join(filepath.Dir(path), "runtime", "configuration.pending")
+}
+
+func CheckPending(path string) error {
+	_, err := os.Stat(PendingPath(path))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("a configuration transaction is incomplete; reconcile .bruin.yml, .renart/secrets.yml and .renart/environments.yml before removing %s", PendingPath(path))
+}
+
+// Lock serializes configuration/policy transactions across services and CLI
+// processes. Callers must hold it from reading the old state through commit.
+func Lock(path string) (func(), error) {
+	lockPath := filepath.Join(filepath.Dir(path), "runtime", "configuration.lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
+		return nil, err
+	}
+	lock := flock.New(lockPath)
+	if err := lock.Lock(); err != nil {
+		return nil, err
+	}
+	return func() { _ = lock.Unlock() }, nil
 }
 
 func (l *Loader) For(environment string) EnvironmentPolicy {
@@ -143,8 +220,14 @@ func (l *Loader) For(environment string) EnvironmentPolicy {
 }
 
 func (l *Loader) Set(environment string, envPolicy EnvironmentPolicy) (Config, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	unlock, err := Lock(l.path)
+	if err != nil {
+		return Config{}, err
+	}
+	defer unlock()
+	if err := CheckPending(l.path); err != nil {
+		return Config{}, err
+	}
 
 	cfg, err := Load(l.path)
 	if err != nil {
@@ -152,6 +235,11 @@ func (l *Loader) Set(environment string, envPolicy EnvironmentPolicy) (Config, e
 	}
 	if cfg.Environments == nil {
 		cfg.Environments = map[string]EnvironmentPolicy{}
+	}
+	// Old clients edit environment flags only. An omitted map preserves the
+	// connection rules; an explicit empty map is an intentional replacement.
+	if envPolicy.Connections == nil {
+		envPolicy.Connections = cfg.For(environment).Connections
 	}
 	if envPolicy.Zero() {
 		delete(cfg.Environments, environment)
@@ -162,16 +250,6 @@ func (l *Loader) Set(environment string, envPolicy EnvironmentPolicy) (Config, e
 		return Config{}, err
 	}
 
-	info, statErr := os.Stat(l.path)
-	if statErr == nil {
-		l.modTime = info.ModTime()
-		l.size = info.Size()
-	} else {
-		l.modTime = time.Time{}
-		l.size = 0
-	}
-	l.cfg = cfg
-	l.loaded = true
 	return cfg, nil
 }
 
@@ -194,6 +272,9 @@ type RunRequest struct {
 // Check is the single enforcement point. Every execution path must pass
 // through it; scattered UI-side checks are hints, not enforcement.
 func Check(p EnvironmentPolicy, req RunRequest) error {
+	if p.Invalid != "" {
+		return InvalidError(p.Invalid)
+	}
 	if p.Protected && req.Interactive {
 		return fmt.Errorf("environment %q is protected: interactive execution is disabled; deploy and schedule instead", req.Environment)
 	}

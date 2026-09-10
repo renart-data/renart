@@ -59,15 +59,16 @@ available. Save the asset after changing its YAML.
 
 ## Test the response and add columns
 
-1. Open the asset's **Columns** section.
-2. Click **Test response**. Renart fetches one page and reports the record count,
-   inferred columns, and any path warnings.
-3. Click **Apply inferred columns** to write the columns into the asset.
-4. Review types and mark the stable identifier as a primary key before choosing
+1. Open **Columns** in the properties panel.
+2. Select **Live request** when you want to include a sampled response as
+   evidence, then click **Sync schema**. This makes a real request to the endpoint.
+3. Review the result. Safe additions apply directly; conflicting types or
+   removals open a resolver so you can choose which evidence to use.
+4. Mark the stable identifier as a primary key before choosing
    **Merge by key**.
 
-Column inference is explicit: testing an endpoint does not change the file until
-you apply the result.
+Do not use a state-changing endpoint merely to test inference. A sampled
+response may omit optional fields; keep declared columns you know are valid.
 
 ## Configure pagination
 
@@ -89,22 +90,17 @@ When an API can filter by update time, pass the selected run window through the
 standard Jinja values. Use **Merge by key** and at least one primary-key column
 so rerunning or overlapping a window does not duplicate rows:
 
-```yaml
-materialization:
-  type: table
-  strategy: merge
+Set **Merge by key** in **General → Materialization** and mark the identifier
+with the key control under **Columns**. In the API editor, pass the window in
+the request parameters:
 
+```yaml
 parameters:
   request:
     url: https://api.example.com/records
     params:
       updated_since: "{{ start_timestamp }}"
       updated_before: "{{ end_timestamp }}"
-
-columns:
-  - name: id
-    type: integer
-    primary_key: true
 ```
 
 The materialization time window controls these values. You can rerun the same

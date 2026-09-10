@@ -20,6 +20,7 @@ import (
 	"renart/internal/sqlintelligence"
 	"renart/internal/sqllsp"
 	"renart/internal/web/model"
+	"renart/internal/web/navigationtarget"
 )
 
 type SQLLSPRequest struct {
@@ -35,18 +36,19 @@ type SQLLSPRequest struct {
 }
 
 type SQLLSPResponse struct {
-	Status      string                       `json:"status"`
-	Diagnostics []sqllsp.Diagnostic          `json:"diagnostics,omitempty"`
-	Completions []sqllsp.CompletionItem      `json:"completions,omitempty"`
-	Locations   []sqllsp.Location            `json:"locations,omitempty"`
-	Hover       *sqllsp.Hover                `json:"hover,omitempty"`
-	Edit        *sqllsp.WorkspaceEdit        `json:"edit,omitempty"`
-	CodeActions []sqllsp.CodeAction          `json:"code_actions,omitempty"`
-	Tokens      *sqllsp.SemanticTokens       `json:"tokens,omitempty"`
-	TokenLegend *sqllsp.SemanticTokensLegend `json:"token_legend,omitempty"`
-	Symbols     []sqllsp.DocumentSymbol      `json:"symbols,omitempty"`
-	Signature   *sqllsp.SignatureHelp        `json:"signature,omitempty"`
-	Error       string                       `json:"error,omitempty"`
+	DiagnosticLinks []navigationtarget.DiagnosticLink `json:"diagnostic_links,omitempty"`
+	Status          string                            `json:"status"`
+	Diagnostics     []sqllsp.Diagnostic               `json:"diagnostics,omitempty"`
+	Completions     []sqllsp.CompletionItem           `json:"completions,omitempty"`
+	Locations       []sqllsp.Location                 `json:"locations,omitempty"`
+	Hover           *sqllsp.Hover                     `json:"hover,omitempty"`
+	Edit            *sqllsp.WorkspaceEdit             `json:"edit,omitempty"`
+	CodeActions     []sqllsp.CodeAction               `json:"code_actions,omitempty"`
+	Tokens          *sqllsp.SemanticTokens            `json:"tokens,omitempty"`
+	TokenLegend     *sqllsp.SemanticTokensLegend      `json:"token_legend,omitempty"`
+	Symbols         []sqllsp.DocumentSymbol           `json:"symbols,omitempty"`
+	Signature       *sqllsp.SignatureHelp             `json:"signature,omitempty"`
+	Error           string                            `json:"error,omitempty"`
 }
 
 const sqlLSPDocumentContextPresentationQuery = "presentation_query"
@@ -120,7 +122,26 @@ func (s *SQLLSPService) Diagnostics(ctx context.Context, req SQLLSPRequest) (SQL
 			}
 		}
 	}
-	return SQLLSPResponse{Status: "ok", Diagnostics: diagnostics}, nil
+	response := SQLLSPResponse{Status: "ok", Diagnostics: diagnostics}
+	if !sqlLSPDocumentSkipsAssetContract(documentContext) {
+		// Borrowed ad-hoc/custom-check IDs are not editable asset ownership.
+		ownerExists := false
+		for _, p := range s.deps.CurrentState().Pipelines {
+			for _, a := range p.Assets {
+				if a.ID == req.AssetID && (a.Class == "" || a.Class == "pipeline") {
+					ownerExists = true
+				}
+			}
+		}
+		if ownerExists {
+			for i, d := range diagnostics {
+				if target := navigationtarget.ForDiagnostic(req.AssetID, authoringdiag.Diagnostic{Code: d.Code, Subject: d.Subject}); target != nil {
+					response.DiagnosticLinks = append(response.DiagnosticLinks, navigationtarget.DiagnosticLink{Index: i, Target: target})
+				}
+			}
+		}
+	}
+	return response, nil
 }
 
 func sqlLSPDocumentSkipsAssetContract(documentContext string) bool {

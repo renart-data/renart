@@ -10,6 +10,7 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/mask"
+	"renart/internal/web/policy"
 	"renart/internal/web/secretstore"
 )
 
@@ -168,6 +169,22 @@ func (f *ResolvedConnectionFactory) resolveConfig(
 			Config:   selected,
 			Redactor: mask.New(nil),
 		}, nil
+	}
+	snapshot, policyErr := policy.NewLoader(filepath.Join(f.workspaceRoot, ".renart", "environments.yml")).Snapshot()
+	if policyErr != nil {
+		return nil, policy.InvalidError(policyErr.Error())
+	}
+	envPolicy := snapshot.Config.For(selected.SelectedEnvironmentName)
+	// This is a native driver restriction, not an interpretation of the
+	// materialize secret purpose: Load still reads its source in that purpose.
+	for index := range selected.SelectedEnvironment.Connections.DuckDB {
+		duck := &selected.SelectedEnvironment.Connections.DuckDB[index]
+		if policy.EffectiveMode(envPolicy, duck.Name, nativeConnectionReadOnly(*duck)) == policy.ReadOnly {
+			if duck.Lakehouse != nil {
+				return nil, policy.CheckAccess(envPolicy, selected.SelectedEnvironmentName, policy.Requirement{Connection: duck.Name, Effect: policy.Unknown, Operation: "DuckLake native read-only adapter (unsupported)"}, true)
+			}
+			duck.ReadOnly = true
+		}
 	}
 
 	manifest, err := secretstore.LoadManifest(filepath.Join(f.workspaceRoot, ".renart", "secrets.yml"))

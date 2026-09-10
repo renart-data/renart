@@ -15,6 +15,36 @@ export type DataGridSelection = {
 };
 
 export type DataGridSelectionMode = "replace" | "extend" | "toggle";
+export type DataGridSelectionEdge = "start" | "end" | "top" | "bottom" | "left" | "right";
+
+// Resizing is based on the rectangle captured at pointer-down, not the moving
+// active cell. That makes shrinking and crossing either edge deterministic.
+export function resizeDataGridSelection(
+  initial: DataGridSelection,
+  edge: DataGridSelectionEdge,
+  cell: DataGridCell,
+  bounds: DataGridBounds,
+): DataGridSelection {
+  const rectangle = selectedDataGridBounds(initial);
+  if (!rectangle || bounds.rows <= 0 || bounds.columns <= 0) return EMPTY_DATA_GRID_SELECTION;
+  const next = {
+    row: clamp(cell.row, 0, bounds.rows - 1),
+    column: clamp(cell.column, 0, bounds.columns - 1),
+  };
+  const { start, end } = rectangle;
+  const anchor = edge === "start" || edge === "top" || edge === "left" ? end : start;
+  const active =
+    edge === "top"
+      ? { row: next.row, column: start.column }
+      : edge === "bottom"
+        ? { row: next.row, column: end.column }
+        : edge === "left"
+          ? { row: start.row, column: next.column }
+          : edge === "right"
+            ? { row: end.row, column: next.column }
+            : next;
+  return { anchor, active, selected: dataGridRectangle(anchor, active) };
+}
 
 export const EMPTY_DATA_GRID_SELECTION: DataGridSelection = {
   anchor: null,

@@ -146,6 +146,45 @@ func TestEngineReportsGolyglotExpressionTypeMismatch(t *testing.T) {
 	t.Fatalf("expected sql-type-mismatch diagnostic, got %#v", diagnostics)
 }
 
+func TestEngineAcceptsDuckDBValuesSeedCTE(t *testing.T) {
+	const uri = URI("file:///notebooks/release-demo/seed.sql")
+	engine := NewEngine(CanonicalGraph{
+		Version: 1,
+		Assets: []AssetNode{{
+			ID:      "release-demo-seed",
+			URI:     uri,
+			Dialect: "duckdb",
+		}},
+	})
+
+	valid := TextDocumentItem{URI: uri, Text: `WITH seed(day, channel, revenue, orders) AS (
+  VALUES
+    (DATE '2026-08-18', 'Organic', 12400, 182),
+    (DATE '2026-08-18', 'Paid', 8150, 104),
+    (DATE '2026-08-19', 'Organic', 13150, 191),
+    (DATE '2026-08-19', 'Paid', 9025, 119)
+)
+SELECT day, channel, revenue, orders
+FROM seed
+ORDER BY day, channel`}
+	for _, diagnostic := range engine.Diagnostics(valid) {
+		if diagnostic.Severity == diagnosticSeverityError {
+			t.Fatalf("valid VALUES-backed seed CTE produced an error: %#v", diagnostic)
+		}
+	}
+
+	invalid := engine.Diagnostics(TextDocumentItem{
+		URI:  uri,
+		Text: "SELECT FROM seed ORDER BY",
+	})
+	for _, diagnostic := range invalid {
+		if diagnostic.Severity == diagnosticSeverityError {
+			return
+		}
+	}
+	t.Fatalf("invalid SELECT produced no error diagnostics: %#v", invalid)
+}
+
 func TestEngineCompletesColumnsInsideCTEs(t *testing.T) {
 	engine := NewEngine(CanonicalGraph{
 		Version: 1,

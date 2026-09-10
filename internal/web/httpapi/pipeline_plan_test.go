@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"renart/internal/web/execution"
+	"renart/internal/web/policy"
 	"renart/internal/web/scheduler"
 	"renart/internal/web/service"
 )
@@ -166,6 +168,10 @@ func TestHandleConfirmPipelinePlanRegeneratesAndTriggersExactPlan(t *testing.T) 
 	assert.Equal(t, plan.Selection.DataStateToken, runs.req.ConfirmedPlan.Selection.DataStateToken)
 	require.Len(t, runs.req.ConfirmedPlan.ExecutionContracts, 1)
 	assert.Equal(t, "asset-1", runs.req.ConfirmedPlan.ExecutionContracts[0].AssetID)
+	assert.True(t, execution.EqualExecutionContracts(plan.ExecutionContracts, runs.req.ConfirmedPlan.ExecutionContracts), "durable binding must retain every reviewed access requirement")
+	var artifact service.PipelinePlan
+	require.NoError(t, json.Unmarshal(runs.req.ConfirmedPlan.Artifact, &artifact))
+	assert.True(t, execution.EqualExecutionContracts(artifact.ExecutionContracts, runs.req.ConfirmedPlan.ExecutionContracts))
 	require.Len(t, runs.req.ConfirmedPlan.ExecutionUnits, 1)
 	assert.Equal(t, "analytics.orders", runs.req.ConfirmedPlan.ExecutionUnits[0].AssetName)
 	assert.NotContains(t, string(runs.req.ConfirmedPlan.Artifact), `"content":"select`)
@@ -448,7 +454,9 @@ func confirmablePipelinePlan() service.PipelinePlan {
 		},
 		ExecutionContracts: []service.PipelinePlanExecutionContract{{
 			AssetID: "asset-1", AssetName: "analytics.orders",
-			ConnectionKeys: []string{strings.Repeat("c", 64)},
+			AccessPolicyIdentity: strings.Repeat("e", 64),
+			AccessRequirements:   []execution.AccessRequirement{{ConnectionKey: strings.Repeat("c", 64), Effect: policy.Write, Operation: "materialization"}},
+			ConnectionKeys:       []string{strings.Repeat("c", 64)},
 			MutationResources: service.PipelinePlanResources{
 				Isolation: service.PipelinePlanResourceIsolationResources,
 				Claims:    []service.PipelinePlanResourceClaim{},

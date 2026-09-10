@@ -16,6 +16,11 @@ func validateLoaderMaterialization(asset *pipeline.Asset) error {
 	if asset == nil || (!isAPIAsset(asset) && !isLoadAsset(asset)) {
 		return nil
 	}
+	if isLoadAsset(asset) {
+		if _, err := loadParallelism(asset); err != nil {
+			return err
+		}
+	}
 	materializationType := strings.ToLower(strings.TrimSpace(string(asset.Materialization.Type)))
 	if materializationType != "" && materializationType != "table" {
 		return fmt.Errorf("materialization type %q is not supported for %s assets", materializationType, asset.Type)

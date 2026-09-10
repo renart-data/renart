@@ -132,7 +132,7 @@ func newConnectionManagerFromConfig(ctx context.Context, cfg *config.Config) (co
 	if len(errs) > 0 {
 		return nil, errs[0]
 	}
-	return manager, nil
+	return withStarRocksCatalogs(manager, cfg)
 }
 
 // JSON-schema defaults populate the settings UI, but hand-authored Bruin

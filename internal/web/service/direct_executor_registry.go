@@ -77,7 +77,14 @@ func buildDirectMainExecutors(manager config.ConnectionAndDetailsGetter, rendere
 	assignSeedExecutor := func(assetType pipeline.AssetType) {
 		assignExecutor(assetType, seedOperator)
 	}
+	waitForSensors := sensorMode == sensorModeWait
+	if waitForSensors {
+		sensorMode = sensorModeOnce
+	}
 	assignSensorExecutor := func(assetType pipeline.AssetType, main bruinexecutor.Operator) {
+		if waitForSensors {
+			main = &cancellableSensorWait{probe: main}
+		}
 		assignExecutor(assetType, main)
 	}
 

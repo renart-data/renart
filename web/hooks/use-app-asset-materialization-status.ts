@@ -10,6 +10,7 @@ import type { PipelineRunStep } from "@/lib/types";
 export type AppAssetMaterializationStatus = "unknown" | "pending" | "success" | "failed";
 
 export type AppAssetMaterializationDisplayState = {
+  runId?: string;
   status: AppAssetMaterializationStatus;
   materializedAt?: string;
   loading: boolean;
@@ -283,6 +284,7 @@ export function useAppAssetMaterializationStatus(assets: AppMaterializationAsset
             ? "success"
             : "unknown";
       result[asset.id] = {
+        runId: entry?.runId,
         status: entry?.status ?? canonicalStatus,
         materializedAt,
         loading,

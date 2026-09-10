@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useAtomValue } from "jotai";
+
+import { workspaceConnectionSequenceAtom } from "@/lib/atoms/domains/workspace";
 
 import {
   cancelNotebookRun,
@@ -131,6 +134,33 @@ export function deriveNotebookRuntime(state: NotebookRuntimeState) {
   };
 }
 
+export function reconcileInitialNotebookRuntime(
+  notebookId: string,
+  snapshot: NotebookRuntimeSnapshot,
+  eventAtRequest: NotebookRuntimeEvent | null,
+  latestEvent: NotebookRuntimeEvent | null,
+): NotebookRuntimeSnapshot {
+  if (latestEvent === eventAtRequest || latestEvent?.notebook_id !== notebookId) {
+    return snapshot;
+  }
+  // SSE carries deltas, not necessarily the results that predate subscription.
+  // The atom retains object identity for cached results: only results received
+  // after this request may override the fresh HTTP snapshot.
+  const updatedResults = Object.fromEntries(
+    Object.entries(latestEvent.results ?? {}).filter(
+      ([cellId, result]) => result !== eventAtRequest?.results?.[cellId],
+    ),
+  );
+  return {
+    auto_recompute: latestEvent.auto_recompute,
+    parameter_values: latestEvent.parameter_values,
+    stale: latestEvent.stale,
+    auto_pending: latestEvent.auto_pending,
+    running: latestEvent.running,
+    results: { ...snapshot.results, ...updatedResults },
+  };
+}
+
 export function useNotebookRuntime({
   notebookId,
   runtimeEvent,
@@ -150,6 +180,7 @@ export function useNotebookRuntime({
   onParameterValues: (values: Record<string, unknown>) => void;
   onError: (message: string) => void;
 }) {
+  const connectionSequence = useAtomValue(workspaceConnectionSequenceAtom);
   const [state, dispatch] = useReducer(
     notebookRuntimeReducer,
     createNotebookRuntimeState(notebookId),
@@ -159,22 +190,36 @@ export function useNotebookRuntime({
   runtimeEventRef.current = runtimeEvent;
   onParameterValuesRef.current = onParameterValues;
   const runAbortRef = useRef<{ notebookId: string; controller: AbortController } | null>(null);
+  const initialRuntimeGenerationRef = useRef(0);
 
   useEffect(() => {
     dispatch({ type: "notebook_changed", notebookId });
+  }, [notebookId]);
+
+  useEffect(() => {
+    // Subscribe, then reconcile: events completed before SSE connected are not
+    // replayed. A reconnect refreshes the projection without clearing output or
+    // interrupting request-local run/cancel state.
     let cancelled = false;
+    const generation = ++initialRuntimeGenerationRef.current;
     const runtimeEventAtRequest = runtimeEventRef.current;
     void getNotebookRuntime(notebookId)
       .then((snapshot) => {
-        if (cancelled || runtimeEventRef.current !== runtimeEventAtRequest) return;
-        dispatch({ type: "runtime_received", notebookId, runtime: snapshot });
-        onParameterValuesRef.current(snapshot.parameter_values);
+        if (cancelled || generation !== initialRuntimeGenerationRef.current) return;
+        const initial = reconcileInitialNotebookRuntime(
+          notebookId,
+          snapshot,
+          runtimeEventAtRequest,
+          runtimeEventRef.current,
+        );
+        dispatch({ type: "runtime_received", notebookId, runtime: initial });
+        onParameterValuesRef.current(initial.parameter_values);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [notebookId]);
+  }, [notebookId, connectionSequence]);
 
   useEffect(() => {
     if (runtimeEvent?.notebook_id !== notebookId) return;
@@ -236,8 +281,14 @@ export function useNotebookRuntime({
 
   const resetSession = useCallback(async () => {
     onError("");
+    const generation = initialRuntimeGenerationRef.current;
     try {
       await closeNotebookSession(notebookId);
+      // A delayed initial response must not resurrect a cleared session, or
+      // invalidate a different notebook opened while this reset was pending.
+      if (generation === initialRuntimeGenerationRef.current) {
+        initialRuntimeGenerationRef.current++;
+      }
       dispatch({ type: "session_reset", notebookId, cellIds });
     } catch (error) {
       onError(String(error));

@@ -10,14 +10,14 @@ CI verifies that the checked-in inventory is current.
 - [shadcn/ui generated components](https://github.com/shadcn-ui/ui) shadcn CLI 4.13.1 — [license](third_party/licenses/1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f.txt)
 - [Ruff Python intelligence engine](https://github.com/astral-sh/ruff) commit 7287ad8623d11935a64d65ce0eb0a0755a5d87ca — [license](third_party/licenses/2597d854122b77ddc71971564ca2350a37608575ce324adc5650a2b2051c8f18.txt)
 - [Inconsolata variable font](https://fontsource.org/fonts/inconsolata) @fontsource-variable/inconsolata 5.3.0 — [license](third_party/licenses/11527366bb615a5246481b961bcc1f4e51cf5d44294a0bea01f59b61f400e299.txt)
-- [SQLGlot embedded SQL engine](https://github.com/tobymao/sqlglot) 30.7.0 (Bruin v0.11.691) — [license](third_party/licenses/b0bf909b472ddf9bd4eab30f6e6fd8b33bf3997ce038b882fe0663f291958d2d.txt)
-- [CPython embedded runtime](https://www.python.org/) 3.14.5 (v0.0.0-3.14.5-20260510-2) — [license](third_party/licenses/b0e25a78cffb43f4d92de8b61ccfa1f1f98ecbc22330b54b5251e7b6ba010231.txt)
+- [SQLGlot embedded SQL engine](https://github.com/tobymao/sqlglot) 30.13.0 (Bruin v0.11.700) — [license](third_party/licenses/b0bf909b472ddf9bd4eab30f6e6fd8b33bf3997ce038b882fe0663f291958d2d.txt)
+- [CPython embedded runtime](https://www.python.org/) 3.14.6 (v0.0.0-3.14.6-20260610-1) — [license](third_party/licenses/b0e25a78cffb43f4d92de8b61ccfa1f1f98ecbc22330b54b5251e7b6ba010231.txt)
 
 ## Go modules
 
 | Module | Version | License and notice texts |
 | --- | --- | --- |
-| cel.dev/expr | v0.25.1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| cel.dev/expr | v0.25.2 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | cloud.google.com/go | v0.123.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | cloud.google.com/go/auth | v0.18.2 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | cloud.google.com/go/auth/oauth2adapt | v0.2.8 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
@@ -40,7 +40,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/apache/arrow-go/v18 | v18.6.0 | [license](third_party/licenses/ff2fe52b8dfd2574c6ea7f0c407948c857f62672c2a3a9a17083ee10af8067ef.txt), [license](third_party/licenses/c02e3dc1587f49e4876c8b75ae9e534739a00e834b609395cc2bb2fd24452dfe.txt) |
 | github.com/apache/arrow/go/v12 | v12.0.1 | [license](third_party/licenses/44d90a666995d20b37141973bf1193685cc9a5eb39ffa9492f53fd8b65b7ebd1.txt) |
 | github.com/apache/arrow/go/v15 | v15.0.2 | [license](third_party/licenses/bd939b3a0ca7ffedd7444240915f4f297f09739fa9d07bac8c85ec4ea8c94c35.txt) |
-| github.com/apache/thrift | v0.23.0 | [license](third_party/licenses/89aa7b27868669299bd8a6c53b72ec4beadce42dad6c8336797cc26e1e8df98d.txt), [license](third_party/licenses/c2534e065069887565f871f0648b013a7e5f4a422809faf4ae3c590b7c0bf561.txt) |
+| github.com/apache/thrift | v0.24.0 | [license](third_party/licenses/89aa7b27868669299bd8a6c53b72ec4beadce42dad6c8336797cc26e1e8df98d.txt), [license](third_party/licenses/c2534e065069887565f871f0648b013a7e5f4a422809faf4ae3c590b7c0bf561.txt) |
 | github.com/aws/aws-sdk-go | v1.55.6 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/a6e830174d62dafad3a718384772ea1f4c0e27989f050932dc442a5e3ddad080.txt) |
 | github.com/aws/aws-sdk-go-v2 | v1.42.1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/a6e830174d62dafad3a718384772ea1f4c0e27989f050932dc442a5e3ddad080.txt) |
 | github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream | v1.7.14 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
@@ -70,7 +70,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/AzureAD/microsoft-authentication-library-for-go | v1.6.0 | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | github.com/bahlo/generic-list-go | v0.2.0 | [license](third_party/licenses/2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067.txt) |
 | github.com/bluele/gcache | v0.0.2 | [license](third_party/licenses/e847927b342ecf2e2385073a5658bf5a912d004cb368466063d07e4280284a19.txt) |
-| github.com/bruin-data/bruin | v0.11.691 | [license](third_party/licenses/fa2159f05be688666ac49461030f82aa2fcb62ae52c6bb78579e8e04b4a388cd.txt) |
+| github.com/bruin-data/bruin | v0.11.700 | [license](third_party/licenses/fa2159f05be688666ac49461030f82aa2fcb62ae52c6bb78579e8e04b4a388cd.txt) |
 | github.com/buger/jsonparser | v1.1.2 | [license](third_party/licenses/632b59709152e1b5bfd3e2794848bcd2f4c70e3e175646726dbf53439ea1dbe1.txt) |
 | github.com/BurntSushi/toml | v1.6.0 | [license](third_party/licenses/d21cb1c60785d6d3a84a7059323ccafc45c645b1bbda281c76a62d66ad2d7dc3.txt) |
 | github.com/cenkalti/backoff/v5 | v5.0.3 | [license](third_party/licenses/5c0476add4c38b55d0ed5ac11b85e00c38f26e1caee20dfe3ab58190103d1fbc.txt) |
@@ -87,7 +87,6 @@ CI verifies that the checked-in inventory is current.
 | github.com/danieljoos/wincred | v1.2.3 | [license](third_party/licenses/2a3d157da1fe64fcb6c62aa72e936cb400e2b246bdfb5428cd24aa8079c44e9a.txt) |
 | github.com/DATA-DOG/go-sqlmock | v1.5.2 | [license](third_party/licenses/e3a6ae97f6eef8ce17e44d5f22adba594c4ea2b592c4be7ee9b387c441ef34d6.txt) |
 | github.com/databricks/databricks-sql-go | v1.14.0 | [license](third_party/licenses/5a0566d95a5f6770ac51f3e7743d8d782ac421c140e1407e6279d6e1e8f171b1.txt) |
-| github.com/davecgh/go-spew | v1.1.2-0.20180830191138-d8f796af33cc | [license](third_party/licenses/1b93a317849ee09d3d7e4f1d20c2b78ddb230b4becb12d7c224c927b9d470251.txt) |
 | github.com/denisbrodbeck/machineid | v1.0.1 | [license](third_party/licenses/1b5036318126618111b864b7707db0bd80cbb6be4fb43b846b4454edf7d0e939.txt) |
 | github.com/dlclark/regexp2 | v1.11.5 | [license](third_party/licenses/9be5d04bb4d706914d5bf943710da4afeb42048f7c529902fb57c82762a991a9.txt) |
 | github.com/dustin/go-humanize | v1.0.1 | [license](third_party/licenses/a973b4498c13eb74baa2a8e5c351426a6826f2fcdd909916dbe53ee2e755fd71.txt) |
@@ -130,7 +129,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/google/uuid | v1.6.0 | [license](third_party/licenses/0a8d61ed3cbfd5312326e8126c31ce9c627a283adc99131b56896d29ada04b2d.txt) |
 | github.com/googleapis/enterprise-certificate-proxy | v0.3.14 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/googleapis/gax-go/v2 | v2.19.0 | [license](third_party/licenses/b95218cd9607855a6536384c0262922b30a0c2bf56e4ced790240f3a3bac4722.txt) |
-| github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp | v1.32.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp | v1.33.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric | v0.54.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping | v0.54.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/grpc-ecosystem/grpc-gateway/v2 | v2.29.0 | [license](third_party/licenses/a15b1d1b168954c92ff7fb1620382418f7c72f4f4d251ee791d1098ad68ab0c4.txt) |
@@ -154,15 +153,15 @@ CI verifies that the checked-in inventory is current.
 | github.com/jmoiron/sqlx | v1.4.0 | [license](third_party/licenses/49e443076c19384a2566592a52a7537cdcc7c39a11ef2d7c2de59e2c50d84e5c.txt) |
 | github.com/json-iterator/go | v1.1.12 | [license](third_party/licenses/3247931083f058b00760a3c32a9ca0962c05e4d562ad2ffcc1753451fa8d4486.txt) |
 | github.com/kevinburke/ssh_config | v1.2.0 | [license](third_party/licenses/a15a6f732df3a033a71853ce1d255bd671f00fbc537fa629b78d71baecda0ace.txt) |
-| github.com/klauspost/compress | v1.18.6 | [license](third_party/licenses/0d9e582ee4bff57bf1189c9e514e6da7ce277f9cd3bc2d488b22fbb39a6d87cf.txt) |
+| github.com/klauspost/compress | v1.18.7 | [license](third_party/licenses/0d9e582ee4bff57bf1189c9e514e6da7ce277f9cd3bc2d488b22fbb39a6d87cf.txt) |
 | github.com/klauspost/cpuid/v2 | v2.3.0 | [license](third_party/licenses/52e4fc775654aae603e3bcef474e4c34b94d8e14577372b05e48f5a96ffb46d8.txt) |
-| github.com/kluctl/go-embed-python | v0.0.0-3.14.5-20260510-2 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/kluctl/go-embed-python | v0.0.0-3.14.6-20260610-1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/kylelemons/godebug | v1.1.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/mailru/easyjson | v0.9.0 | [license](third_party/licenses/87baa92c3100cf37441761262d622db99492ee386a063460d4676143db49af57.txt) |
 | github.com/manifoldco/promptui | v0.9.0 | [license](third_party/licenses/05a3af14dd6f2e357727c4d445660072be70b11e7c27b9dc735c9de4bb65ddcb.txt) |
 | github.com/Masterminds/semver/v3 | v3.4.0 | [license](third_party/licenses/2db9097f7b3750c1c9426996d21fe443d339131fb758c2167d2d5fabe8e6cbf9.txt) |
 | github.com/mattn/go-colorable | v0.1.14 | [license](third_party/licenses/88a2379b3ca34bf5c57127aff9dcb802bbb60ece0805cdbda65b3bd115f971d9.txt) |
-| github.com/mattn/go-isatty | v0.0.21 | [license](third_party/licenses/08eab1118c80885fa1fa6a6dd7303f65a379fcb3733e063d20d1bbc2c76e6fa1.txt) |
+| github.com/mattn/go-isatty | v0.0.24 | [license](third_party/licenses/08eab1118c80885fa1fa6a6dd7303f65a379fcb3733e063d20d1bbc2c76e6fa1.txt) |
 | github.com/mattn/go-runewidth | v0.0.20 | [license](third_party/licenses/88a2379b3ca34bf5c57127aff9dcb802bbb60ece0805cdbda65b3bd115f971d9.txt) |
 | github.com/mfridman/interpolate | v0.0.2 | [license](third_party/licenses/21408182c12c98d402fa38a8b678560dc63fd6bada5a0017722883e4b79e6620.txt) |
 | github.com/microsoft/go-mssqldb | v1.10.0 | [license](third_party/licenses/7d0793489653bfe020de7ea32047bad266f5e2e204ba12025d5300f39555addc.txt) |
@@ -181,18 +180,17 @@ CI verifies that the checked-in inventory is current.
 | github.com/pjbgf/sha1cd | v0.6.0 | [license](third_party/licenses/c75aacd1e1f49bc504e3f00e7cfa58cb55d3bc7ff3d3c23f38e485da1906e0ad.txt) |
 | github.com/pkg/browser | v0.0.0-20240102092130-5ac0b6a4141c | [license](third_party/licenses/4801bb0c5d70b980b3e1f63d1d2df8d84fec22548e3d73f03a68df1fb808791f.txt) |
 | github.com/pkg/errors | v0.9.1 | [license](third_party/licenses/8d427fd87bc9579ea368fde3d49f9ca22eac857f91a9dec7e3004bdfab7dee86.txt) |
-| github.com/pmezard/go-difflib | v1.0.1-0.20181226105442-5d4384ee4fb2 | [license](third_party/licenses/2eb550be6801c1ea434feba53bf6d12e7c71c90253e0a9de4a4f46cf88b56477.txt) |
 | github.com/pressly/goose/v3 | v3.27.2 | [license](third_party/licenses/f23985556a879c0e68bb4e136ee4b88a550d26fa33db77a65d76b721c93093ef.txt) |
 | github.com/prometheus/procfs | v0.20.1 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt), [license](third_party/licenses/497fcdb9fae55924c12f55f05cbe83a096662e5c591d79b74e4a8f23bab5ffee.txt) |
 | github.com/ProtonMail/go-crypto | v1.3.0 | [license](third_party/licenses/2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067.txt) |
 | github.com/ProtonMail/gopenpgp/v3 | v3.3.0 | [license](third_party/licenses/503bdcb689e2033376caa35eb66f170920221e96706da77be941804bc4f36422.txt) |
 | github.com/remyoudompheng/bigfft | v0.0.0-20230129092748-24d4a6f8daec | [license](third_party/licenses/dd26a7abddd02e2d0aba97805b31f248ef7835d9e10da289b22e3b8ab78b324d.txt) |
-| github.com/renart-data/golyglot | v0.1.0-alpha.4 | [license](third_party/licenses/3a611f35963a65b984b2ea4e7b53c697cd47dea0628bd8189e8bfa5b4f9cedef.txt) |
-| github.com/riverqueue/river | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
-| github.com/riverqueue/river/riverdriver | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
-| github.com/riverqueue/river/riverdriver/riversqlite | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
-| github.com/riverqueue/river/rivershared | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
-| github.com/riverqueue/river/rivertype | v0.40.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
+| github.com/renart-data/golyglot | v0.1.0-alpha.5 | [license](third_party/licenses/3a611f35963a65b984b2ea4e7b53c697cd47dea0628bd8189e8bfa5b4f9cedef.txt) |
+| github.com/riverqueue/river | v0.44.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
+| github.com/riverqueue/river/riverdriver | v0.44.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
+| github.com/riverqueue/river/riverdriver/riversqlite | v0.44.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
+| github.com/riverqueue/river/rivershared | v0.44.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
+| github.com/riverqueue/river/rivertype | v0.44.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
 | github.com/robfig/cron/v3 | v3.0.1 | [license](third_party/licenses/8f650581478707182f3306d9a86676d4e03e2d4edc868344378cf4d6fe6c927a.txt) |
 | github.com/rs/zerolog | v1.28.0 | [license](third_party/licenses/1b8f6b05dd66f6eec835515706886cb01bf00358cb9312301ed6ad23d6b2d008.txt) |
 | github.com/rudderlabs/analytics-go/v4 | v4.2.1 | [license](third_party/licenses/196aa08cdc2af593026238a8dec52f49b0ccc65e26ecffee7a206556cb72c827.txt) |
@@ -210,8 +208,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/snowflakedb/gosnowflake | v1.19.0 | [license](third_party/licenses/3376624f734322a3be32be001dab57cdfe2e414cec7a3babbb64bd7854db5f95.txt) |
 | github.com/sourcegraph/conc | v0.3.0 | [license](third_party/licenses/e3dfc7ac698a5b64eefc720531595b9d6e3f6c5da7f741ef15e453709e173ee2.txt) |
 | github.com/spf13/afero | v1.15.0 | [license](third_party/licenses/5e3400b93bbb099e83e52bab885e7441750673c21f97988ca3f1240639b63283.txt) |
-| github.com/spiffe/go-spiffe/v2 | v2.6.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
-| github.com/stretchr/testify | v1.11.1 | [license](third_party/licenses/f8e536c1c7b695810427095dc85f5f80d44ff7c10535e8a9486cf393e2599189.txt) |
+| github.com/spiffe/go-spiffe/v2 | v2.7.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
 | github.com/tetratelabs/wazero | v1.12.0 | [license](third_party/licenses/c46f033d017a5af71a1de0105ec56c41bd47f81a0bbdf779fffe316336dc7c1f.txt), [license](third_party/licenses/e6f0c5c151a3ff1eba8f5930a31ec084ca6d7adda43c8675ab81f7d36af50b4f.txt) |
 | github.com/tidwall/gjson | v1.19.0 | [license](third_party/licenses/be83ad53208d03a9fe08c7fac231cabf79422989ef5706bff217bd35104ebf07.txt) |
 | github.com/tidwall/match | v1.2.0 | [license](third_party/licenses/be83ad53208d03a9fe08c7fac231cabf79422989ef5706bff217bd35104ebf07.txt) |
@@ -239,7 +236,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/zeroshade/machine-id | v0.0.0-20251223181436-930511047eef | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
 | go.mongodb.org/mongo-driver | v1.17.7 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
 | go.opentelemetry.io/auto/sdk | v1.2.1 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
-| go.opentelemetry.io/contrib/detectors/gcp | v1.43.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
+| go.opentelemetry.io/contrib/detectors/gcp | v1.44.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc | v0.63.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp | v0.68.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/otel | v1.44.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
@@ -252,34 +249,33 @@ CI verifies that the checked-in inventory is current.
 | go.opentelemetry.io/otel/sdk/metric | v1.44.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/otel/trace | v1.44.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/proto/otlp | v1.10.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
-| go.uber.org/goleak | v1.3.0 | [license](third_party/licenses/cea390bdf643a06fbdd99fbab18c50e82c34e7bead0d55bf1168bd0d65b9fa32.txt) |
 | go.uber.org/multierr | v1.11.0 | [license](third_party/licenses/dcdabe03bef2382a130640d1c3a4cd5ec42aba1035095c38272fde694eb72405.txt) |
 | go.uber.org/zap | v1.28.0 | [license](third_party/licenses/c2b97b3281be272711909076c8402499b4b5a3216196af47a25b1d3674d86152.txt) |
 | go.yaml.in/yaml/v3 | v3.0.4 | [license](third_party/licenses/d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b.txt), [license](third_party/licenses/f6c2dd3a67b576eafb89b80200b8b1627230bf3821a0c14cb99a22ac19107d00.txt) |
-| golang.org/x/crypto | v0.54.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
+| golang.org/x/crypto | v0.56.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
 | golang.org/x/exp | v0.0.0-20260410095643-746e56fc9e2f | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
-| golang.org/x/mod | v0.37.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
-| golang.org/x/net | v0.57.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
+| golang.org/x/mod | v0.40.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
+| golang.org/x/net | v0.58.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
 | golang.org/x/oauth2 | v0.36.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
 | golang.org/x/sync | v0.22.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
 | golang.org/x/sys | v0.47.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
 | golang.org/x/term | v0.45.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
-| golang.org/x/text | v0.40.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
+| golang.org/x/text | v0.41.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
 | golang.org/x/time | v0.15.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
 | golang.org/x/xerrors | v0.0.0-20240903120638-7835f813f4da | [license](third_party/licenses/f9a2df4fb1d45cef691b8bc2e35776f8bee5af5b3696d48d4547635d7858bf91.txt) |
 | google.golang.org/api | v0.273.1 | [license](third_party/licenses/110244b02140866ee37d17fa7449436a377ec3b85a481fbb208f4c87964382de.txt) |
 | google.golang.org/genproto | v0.0.0-20260316180232-0b37fe3546d5 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | google.golang.org/genproto/googleapis/api | v0.0.0-20260526163538-3dc84a4a5aaa | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | google.golang.org/genproto/googleapis/rpc | v0.0.0-20260526163538-3dc84a4a5aaa | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| google.golang.org/grpc | v1.82.1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/693ff28ec216d5112ac1bbfe64ef539005867d1c7bd427b57d579683293b947f.txt) |
+| google.golang.org/grpc | v1.83.1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/693ff28ec216d5112ac1bbfe64ef539005867d1c7bd427b57d579683293b947f.txt) |
 | google.golang.org/protobuf | v1.36.11 | [license](third_party/licenses/4835612df0098ca95f8e7d9e3bffcb02358d435dbb38057c844c99d7f725eb20.txt) |
 | gopkg.in/warnings.v0 | v0.1.2 | [license](third_party/licenses/986175a94c6ab7f33be5d3b5018797147a6cc740c357597fdb1ca679b72206a8.txt) |
 | gopkg.in/yaml.v3 | v3.0.1 | [license](third_party/licenses/d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b.txt), [license](third_party/licenses/f6c2dd3a67b576eafb89b80200b8b1627230bf3821a0c14cb99a22ac19107d00.txt) |
 | howett.net/plist | v1.0.2-0.20250314012144-ee69052608d9 | [license](third_party/licenses/cf6faa1af902823f1e1718d2c467ded1d9c301972ebda3867d15a7673342a844.txt) |
-| modernc.org/libc | v1.73.4 | [license](third_party/licenses/95ff867eb55a56935fa7492406cfa953fb7c13ca73f4c0a86ae05756b4605600.txt), [license](third_party/licenses/f597097efe3d97021f89170746bd3a0fb9a8b6fb26b82043ed68a4e0283bee6c.txt) |
+| modernc.org/libc | v1.74.1 | [license](third_party/licenses/95ff867eb55a56935fa7492406cfa953fb7c13ca73f4c0a86ae05756b4605600.txt), [license](third_party/licenses/f597097efe3d97021f89170746bd3a0fb9a8b6fb26b82043ed68a4e0283bee6c.txt) |
 | modernc.org/mathutil | v1.7.1 | [license](third_party/licenses/bfa9bf72a72ca009fd62a8f84fca3dca67e51d93af96352723646599898b6cf5.txt) |
 | modernc.org/memory | v1.11.0 | [license](third_party/licenses/59895e669f48f168b6b858358f6005779cdf40a265f7828813061b56af67b496.txt), [license](third_party/licenses/2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067.txt), [license](third_party/licenses/5ae5bee3072a841376451b48d8cfcec7188e10543926d5870828d36c8a750dc5.txt), [license](third_party/licenses/121d4529907b7d822d7665bde14ae142dc8a119356991fbc759ed562444dc02f.txt) |
-| modernc.org/sqlite | v1.53.0 | [license](third_party/licenses/c6fe05491a60ae13bcd223088d2705e36dede24e5587226231d2459ada5c4822.txt) |
+| modernc.org/sqlite | v1.55.0 | [license](third_party/licenses/c6fe05491a60ae13bcd223088d2705e36dede24e5587226231d2459ada5c4822.txt) |
 
 ## Web application packages
 
@@ -386,40 +382,40 @@ CI verifies that the checked-in inventory is current.
 | @standard-schema/spec | 1.1.0 | MIT | [license](third_party/licenses/6c19f173cf807e59ad48df621b2840bd2e2d7194d948d3cb1766f17b63335030.txt) |
 | @standard-schema/utils | 0.3.0 | MIT | [license](third_party/licenses/13dc70601979b9f8bb3f3c080e7b0aa67f947c852f3fcc5f5a97e45870f52353.txt) |
 | @tanstack/history | 1.162.0 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
-| @tanstack/react-router | 1.170.17 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
+| @tanstack/react-router | 1.170.18 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
 | @tanstack/react-store | 0.9.3 | MIT | [license](third_party/licenses/cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7.txt) |
-| @tanstack/router-core | 1.171.14 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
+| @tanstack/router-core | 1.171.15 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
 | @tanstack/store | 0.9.3 | MIT | [license](third_party/licenses/cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7.txt) |
-| @tiptap/core | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-blockquote | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-bold | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-bubble-menu | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-bullet-list | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-code | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-code-block | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-document | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-dropcursor | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-floating-menu | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-gapcursor | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-hard-break | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-heading | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-horizontal-rule | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-italic | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-link | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-list | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-list-item | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-list-keymap | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-ordered-list | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-paragraph | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-strike | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-table | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-text | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extension-underline | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/extensions | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/markdown | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/pm | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/react | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
-| @tiptap/starter-kit | 3.30.1 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/core | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-blockquote | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-bold | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-bubble-menu | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-bullet-list | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-code | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-code-block | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-document | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-dropcursor | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-floating-menu | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-gapcursor | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-hard-break | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-heading | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-horizontal-rule | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-italic | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-link | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-list | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-list-item | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-list-keymap | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-ordered-list | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-paragraph | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-strike | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-table | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-text | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extension-underline | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/extensions | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/markdown | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/pm | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/react | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
+| @tiptap/starter-kit | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
 | @types/d3 | 7.4.3 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @types/d3-array | 3.2.2 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @types/d3-axis | 3.0.6 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
@@ -464,12 +460,13 @@ CI verifies that the checked-in inventory is current.
 | @types/unist | 2.0.11, 3.0.3 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @types/use-sync-external-store | 0.0.6 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @ungap/structured-clone | 1.3.3 | ISC | [license](third_party/licenses/dc6d4961d8b6ee747231582ae9c53ce1d66bf76bc9f5a28f554c0e97210953bf.txt) |
+| @vscode/l10n | 0.0.18 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | ansi-to-html | 0.7.2 | MIT | [license](third_party/licenses/f76b01518da28afcbd249c6aa4c03c6ff08cdefb40db4d6d9b5929627980cb9c.txt) |
 | aria-hidden | 1.2.6 | MIT | [license](third_party/licenses/30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9.txt) |
 | bail | 2.0.2 | MIT | [license](third_party/licenses/63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf.txt) |
-| baseline-browser-mapping | 2.10.42 | Apache-2.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
-| browserslist | 4.28.5 | MIT | [license](third_party/licenses/21c2679a63d7699c0e644409e2f17d0adbc7a965003feb06b3ff4b833d21f722.txt) |
-| caniuse-lite | 1.0.30001803 | CC-BY-4.0 | [license](third_party/licenses/7e7170e3cebf88a9f60c7b8421418323c09304da1af4d5e90f4da1dc1c8a2661.txt) |
+| baseline-browser-mapping | 2.11.20 | Apache-2.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
+| browserslist | 4.28.8 | MIT | [license](third_party/licenses/21c2679a63d7699c0e644409e2f17d0adbc7a965003feb06b3ff4b833d21f722.txt) |
+| caniuse-lite | 1.0.30001810 | CC-BY-4.0 | [license](third_party/licenses/7e7170e3cebf88a9f60c7b8421418323c09304da1af4d5e90f4da1dc1c8a2661.txt) |
 | ccount | 2.0.1 | MIT | [license](third_party/licenses/63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf.txt) |
 | character-entities | 2.0.2 | MIT | [license](third_party/licenses/63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf.txt) |
 | character-entities-html4 | 2.1.0 | MIT | [license](third_party/licenses/63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf.txt) |
@@ -506,7 +503,7 @@ CI verifies that the checked-in inventory is current.
 | detect-node-es | 1.1.0 | MIT | [license](third_party/licenses/54b32293ea560d22cd9b62af9b2cda1a030d910a48c6601d227c5ff2338d95f8.txt) |
 | devlop | 1.1.0 | MIT | [license](third_party/licenses/6f296a5eccc1dc96714bb94ebaa9cac25b0a1467d74cc5263ac4d0646ab01f62.txt) |
 | dompurify | 3.4.13 | (MPL-2.0 OR Apache-2.0) | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
-| electron-to-chromium | 1.5.389 | ISC | [license](third_party/licenses/25ba5c59dad3e0dd8f9540beaa0f0a86a10e3aec35af5fdc8e88c5f6a5c0d8c6.txt) |
+| electron-to-chromium | 1.5.419 | ISC | [license](third_party/licenses/25ba5c59dad3e0dd8f9540beaa0f0a86a10e3aec35af5fdc8e88c5f6a5c0d8c6.txt) |
 | entities | 2.2.0 | BSD-2-Clause | [license](third_party/licenses/cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164.txt) |
 | es-toolkit | 1.49.0 | MIT | [license](third_party/licenses/51f3674294d988d89dbebd31273baaeb3c697a15482d9699b14d1fded2e132a7.txt) |
 | escalade | 3.2.0 | MIT | [license](third_party/licenses/9a9edad7baae52622bddf3c15b2ef8a33d2c89f2d25408ad13e8a7481c6b0c97.txt) |
@@ -527,11 +524,12 @@ CI verifies that the checked-in inventory is current.
 | is-decimal | 2.0.1 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
 | is-hexadecimal | 2.0.1 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
 | is-plain-obj | 4.1.0 | MIT | [license](third_party/licenses/5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3.txt) |
-| isbot | 5.2.0 | Unlicense | [license](third_party/licenses/472f8bb212250d2b07f2484f2bee03d65eec36a52902b80244e2e52f1990b090.txt) |
-| jotai | 2.20.1 | MIT | [license](third_party/licenses/0530d5d58026f4bb73367d195946f6a516a648ea62dd8b84763318f64d3cb3e2.txt) |
+| isbot | 5.2.2 | Unlicense | [license](third_party/licenses/472f8bb212250d2b07f2484f2bee03d65eec36a52902b80244e2e52f1990b090.txt) |
+| jotai | 2.20.2 | MIT | [license](third_party/licenses/0530d5d58026f4bb73367d195946f6a516a648ea62dd8b84763318f64d3cb3e2.txt) |
 | js-tokens | 4.0.0 | MIT | [license](third_party/licenses/2213d91c606205c71eb051a199478cdc2adde945893404d7f1421436dd6d5cc1.txt) |
 | jsesc | 3.1.0 | MIT | [license](third_party/licenses/483acb265f182907d1caf6cff9c16c96f31325ed23792832cc5d8b12d5f88c8a.txt) |
 | json5 | 2.2.3 | MIT | [license](third_party/licenses/53e59feb13058722d977c699eb0407c7bce2f93c949b681bbd2ff31698535927.txt) |
+| jsonc-parser | 3.3.1 | MIT | [license](third_party/licenses/d0e26984080b12c7830983ef4de2ec522e1aa94047f2753347953b278e9c66e0.txt) |
 | linkifyjs | 4.3.3 | MIT | [license](third_party/licenses/58e6f3677452cca096ce5328ebf7de37a1406bbeeb2f263c1b2ededc8c7d0228.txt) |
 | longest-streak | 3.1.0 | MIT | [license](third_party/licenses/9f084fac69d8cf1e6ce983ba5a3499c7695ed74a26ec625c38f0fd19fddd5e10.txt) |
 | loose-envify | 1.4.0 | MIT | [license](third_party/licenses/4eb7543b08d955a6d23fcc224601d43ff566e775be918805e26210d7f6eb4893.txt) |
@@ -568,12 +566,19 @@ CI verifies that the checked-in inventory is current.
 | micromark-util-symbol | 2.0.1 | MIT | [license](third_party/licenses/dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb.txt) |
 | micromark-util-types | 2.0.2 | MIT | [license](third_party/licenses/dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb.txt) |
 | monaco-editor | 0.56.0 | MIT | [license](third_party/licenses/33e4ff1a06ef62ba21788ea162564ee8165269a24a9ce6ef301837447eab0ac6.txt) |
+| monaco-languageserver-types | 0.4.1 | MIT | [license](third_party/licenses/2dfbe68133c7e886b8711f4012d67eeab02f44852409f2d35b9c8c9a46d591b0.txt) |
+| monaco-marker-data-provider | 1.2.5 | MIT | [license](third_party/licenses/5cfd57aac48343d56af97fa97028cb107e50de822559891c46cb5742ca804714.txt) |
+| monaco-types | 0.1.2 | MIT | [license](third_party/licenses/5a849276d2f24e8604bbcaabab2b3350de2a82a969f438e9ae1ad52f6c8eef52.txt) |
+| monaco-worker-manager | 2.0.1 | MIT | [license](third_party/licenses/d87a73b164875987b85954e6bf940543e937479ccd725f0138764f97f97b70ef.txt) |
+| monaco-yaml | 5.5.1 | MIT | [license](third_party/licenses/d6a010f8689777efb5a57f6298a374f5cd2849fde423b6f7879c3308f528d890.txt) |
 | ms | 2.1.3 | MIT | [license](third_party/licenses/1662fae9b5314d11cf51284e2dcd1f006a354f7343f08712a730fcff9a359801.txt) |
-| node-releases | 2.0.51 | MIT | [license](third_party/licenses/3706296ed611888111ceccc1dff4712844dea4bde0b185c82d718c3b69895abe.txt) |
+| node-releases | 2.0.54 | MIT | [license](third_party/licenses/3706296ed611888111ceccc1dff4712844dea4bde0b185c82d718c3b69895abe.txt) |
 | object-assign | 4.1.1 | MIT | [license](third_party/licenses/6fb9754611c20f6649f68805e8c990e83261f29316e29de9e6cedae607b8634c.txt) |
 | orderedmap | 2.1.1 | MIT | [license](third_party/licenses/869c30f368eb08735e779027b9f4bc9fea2f39624351856aebe42741f0bc0884.txt) |
 | parse-entities | 4.0.2 | MIT | [license](third_party/licenses/5d0698266086f217bb11ea0499d33453e401fe479fb9126ad04e625e63d3557b.txt) |
+| path-browserify | 1.0.1 | MIT | [license](third_party/licenses/a22b9d5763f574e5db347c30acc0b33eaf4846767c03d2e27d012e864e79a824.txt) |
 | picocolors | 1.1.1 | ISC | [license](third_party/licenses/6582629e2979466878f6014313dcc2f3756c9616148682227ce3063dde310750.txt) |
+| prettier | 3.9.5 | MIT | [license](third_party/licenses/b0f2417199889f1c0d28ec4e0244eacf1a15de5819d61f641dd7d8f45153ac9c.txt) |
 | prop-types | 15.8.1 | MIT | [license](third_party/licenses/f657f99d3fb9647db92628e96007aabb46e5f04f33e49999075aab8e250ca7ce.txt) |
 | property-information | 7.2.0 | MIT | [license](third_party/licenses/5d0698266086f217bb11ea0499d33453e401fe479fb9126ad04e625e63d3557b.txt) |
 | prosemirror-changeset | 2.4.1 | MIT | [license](third_party/licenses/7543dfe82fa61d5bb2478c78cbd9dfb2cbd500b6ac2893b24ed925773b67fb70.txt) |
@@ -589,6 +594,7 @@ CI verifies that the checked-in inventory is current.
 | prosemirror-tables | 1.8.5 | MIT | [license](third_party/licenses/d1d2046ebbe6362f9ad8fd4d62e9074f2553f289c0e1de895a650f10ba5f4239.txt) |
 | prosemirror-transform | 1.12.0 | MIT | [license](third_party/licenses/ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8.txt) |
 | prosemirror-view | 1.42.2 | MIT | [license](third_party/licenses/ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8.txt) |
+| proxy-disposable | 1.0.0 | MIT | [license](third_party/licenses/c7e2620a17241e03c13daf7799e6cce99f406b00fd571a680d8364fa4c61b888.txt) |
 | radix-ui | 1.6.2 | MIT | [license](third_party/licenses/0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138.txt) |
 | react | 19.2.7 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
 | react-dom | 19.2.7 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
@@ -600,7 +606,7 @@ CI verifies that the checked-in inventory is current.
 | react-remove-scroll | 2.7.2 | MIT | [license](third_party/licenses/30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9.txt) |
 | react-remove-scroll-bar | 2.3.8 | MIT | [license](third_party/licenses/a79aae0c0f21990d9d963bb3c5a79cdcea9a46f8523ba55c58d7fe776b6ebc84.txt) |
 | react-resizable | 3.2.0 | MIT | [license](third_party/licenses/dfbf6bbccb9fe67c1cf0d7721605ab81b2f2adce68ee4becf02292d899d0001c.txt) |
-| react-resizable-panels | 4.12.1 | MIT | [license](third_party/licenses/a8f1e0280bf14adcf5d017547db85eb5c3bac0feb1690ca98650874002eaa8ea.txt) |
+| react-resizable-panels | 4.12.2 | MIT | [license](third_party/licenses/a8f1e0280bf14adcf5d017547db85eb5c3bac0feb1690ca98650874002eaa8ea.txt) |
 | react-style-singleton | 2.2.3 | MIT | [license](third_party/licenses/30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9.txt) |
 | reactflow | 11.11.4 | MIT | [license](third_party/licenses/9f495bcaa7577b0aa3853402d6d7748987c754d3af9170a5bab1f325a90fc1ae.txt) |
 | recharts | 3.9.2 | MIT | [license](third_party/licenses/e65e92a0a65f60ce02250fabb81a3211a77289c2ca097b209b4a3e3448ca6f91.txt) |
@@ -613,8 +619,8 @@ CI verifies that the checked-in inventory is current.
 | rope-sequence | 1.3.4 | MIT | [license](third_party/licenses/530424aebdd0e73f53238d1f89df250057bc8d8ce090cf5954197fadce5bf226.txt) |
 | scheduler | 0.27.0 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
 | semver | 6.3.1 | ISC | [license](third_party/licenses/4ec3d4c66cd87f5c8d8ad911b10f99bf27cb00cdfcff82621956e379186b016b.txt) |
-| seroval | 1.5.5 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
-| seroval-plugins | 1.5.5 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
+| seroval | 1.6.4 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
+| seroval-plugins | 1.6.4 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
 | space-separated-tokens | 2.0.2 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
 | state-local | 1.0.7 | MIT | [license](third_party/licenses/3154651e339acde2858130fb40566eb80ced1b03508c57fcb52bb709ab0a0cea.txt) |
 | stringify-entities | 4.0.4 | MIT | [license](third_party/licenses/9f084fac69d8cf1e6ce983ba5a3499c7695ed74a26ec625c38f0fd19fddd5e10.txt) |
@@ -632,14 +638,20 @@ CI verifies that the checked-in inventory is current.
 | unist-util-stringify-position | 4.0.0 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
 | unist-util-visit | 5.1.0 | MIT | [license](third_party/licenses/63cb98b3f6abfb3c3592c16f88253c1bdc834087bf52671e8ce5609e4eb693cf.txt) |
 | unist-util-visit-parents | 6.0.2 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
-| update-browserslist-db | 1.2.3 | MIT | [license](third_party/licenses/c414dde36704bd9c8a76c7aa2921b19270ff9abeb478ea0050250d16cf29b0f6.txt) |
+| update-browserslist-db | 1.3.2 | MIT | [license](third_party/licenses/9877e90da14aa8c931a1f9d07cc2a20ce119106e5dab1ebb41af865266d0cd2a.txt) |
 | use-callback-ref | 1.3.3 | MIT | [license](third_party/licenses/30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9.txt) |
 | use-sidecar | 1.1.3 | MIT | [license](third_party/licenses/30f0cfddf483d1128e3610205020f2041a6c5e837aa999e0aa82e5576187d4a9.txt) |
 | use-sync-external-store | 1.6.0 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
 | vfile | 6.0.3 | MIT | [license](third_party/licenses/05811400116ed61f1a7693b78fe8ca6598c155a12f3978e609db4df648a4cb3d.txt) |
 | vfile-message | 4.0.3 | MIT | [license](third_party/licenses/dd1081884a92952802f4803110a6bb543acea9a814c786d58605b4c1219b5ebb.txt) |
 | victory-vendor | 37.3.6 | MIT AND ISC | [license](third_party/licenses/ada0c4e0c2adbdbe22d6a44a2f762b038fa7e664be9ab023438cb0e76872b0bc.txt) |
+| vscode-jsonrpc | 9.0.2 | MIT | [license](third_party/licenses/ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0.txt) |
+| vscode-languageserver-protocol | 3.18.3 | MIT | [license](third_party/licenses/ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0.txt) |
+| vscode-languageserver-textdocument | 1.0.14 | MIT | [license](third_party/licenses/ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0.txt) |
+| vscode-languageserver-types | 3.18.3 | MIT | [license](third_party/licenses/ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0.txt) |
+| vscode-uri | 3.2.0 | MIT | [license](third_party/licenses/5bf78228f68c7cd7811974f8e98a4c9bec9fdf4adf5c2a3f222184898c669f5b.txt) |
 | w3c-keyname | 2.2.8 | MIT | [license](third_party/licenses/869c30f368eb08735e779027b9f4bc9fea2f39624351856aebe42741f0bc0884.txt) |
 | yallist | 3.1.1 | ISC | [license](third_party/licenses/4ec3d4c66cd87f5c8d8ad911b10f99bf27cb00cdfcff82621956e379186b016b.txt) |
+| yaml | 2.9.0 | ISC | [license](third_party/licenses/5bba27375d93e9119f76c1015f7672cf9ad5f70952296e0842fb2243d6376869.txt) |
 | zustand | 4.5.7 | MIT | [license](third_party/licenses/c1e6e266563517467b1bf874817d23e426f3149252bd7d42758cd697514b8417.txt) |
 | zwitch | 2.0.4 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |

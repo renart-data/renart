@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { CheckCircle2, Plug, TestTube2 } from "lucide-react";
 
 import { WorkspaceConnectionFormFields } from "@/components/workspace-connection-form-fields";
@@ -19,6 +19,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useWorkspaceConnectionForm } from "@/hooks/use-workspace-connection-form";
 import { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
 import { testWorkspaceConnection } from "@/lib/api-config";
+import { useIngestrEnabled, visibleConnectionTypes } from "@/lib/features";
 import {
   buildConnectionFieldDefaults,
   buildConnectionSecretChanges,
@@ -29,7 +30,7 @@ export function WorkspaceConnectionDialog({
   open,
   onOpenChange,
   environment,
-  connectionTypes,
+  connectionTypes: availableConnectionTypes,
   requestedConnectionType,
   requestedConnectionName,
   onCreated,
@@ -43,12 +44,18 @@ export function WorkspaceConnectionDialog({
   onCreated: (connectionName: string) => void | Promise<void>;
 }) {
   const settings = useWorkspaceSettingsData();
+  const ingestrEnabled = useIngestrEnabled(settings.workspaceConfig);
+  const connectionTypes = useMemo(
+    () => visibleConnectionTypes(availableConnectionTypes, ingestrEnabled),
+    [availableConnectionTypes, ingestrEnabled],
+  );
   const [validateBusy, setValidateBusy] = useState(false);
   const [validateMessage, setValidateMessage] = useState<string | null>(null);
   const [validateTone, setValidateTone] = useState<"error" | "success" | null>(null);
   const [saveError, setSaveError] = useState("");
 
   const form = useWorkspaceConnectionForm({
+    policyRevision: settings.workspaceConfig?.connection_policy_revision,
     connectionTypes,
     defaultEnvironment: environment,
     environments: settings.normalizedConfigEnvironments,
@@ -59,7 +66,11 @@ export function WorkspaceConnectionDialog({
     onSelectedConnectionChange: () => {},
     onSelectedEnvironmentChange: () => {},
     onUpdateConnection: settings.handleUpdateWorkspaceConnection,
-    requestedConnectionType,
+    requestedConnectionType: connectionTypes.some(
+      (type) => type.type_name === requestedConnectionType,
+    )
+      ? requestedConnectionType
+      : undefined,
     requestedConnectionName,
     selectedConnectionName: null,
     selectedEnvironmentName: environment,
@@ -68,11 +79,12 @@ export function WorkspaceConnectionDialog({
   const canValidate = Boolean(
     form.connectionForm.environmentName &&
     form.connectionForm.name.trim() &&
-    form.connectionForm.type &&
+    connectionTypes.some((type) => type.type_name === form.connectionForm.type) &&
     form.secretFieldsReady,
   );
 
   const validate = async () => {
+    if (!canValidate) return;
     setValidateBusy(true);
     setValidateMessage(null);
     setValidateTone(null);
@@ -83,6 +95,7 @@ export function WorkspaceConnectionDialog({
         type: form.connectionForm.type,
         values: form.connectionForm.values,
         secret_changes: form.connectionForm.secretChanges,
+        access_mode: form.connectionForm.accessMode,
       });
       setValidateMessage(response.message ?? "Connection validated.");
       setValidateTone("success");
@@ -95,6 +108,7 @@ export function WorkspaceConnectionDialog({
   };
 
   const save = async () => {
+    if (!canValidate) return;
     setSaveError("");
     try {
       const connectionName = form.connectionForm.name.trim();
@@ -140,6 +154,9 @@ export function WorkspaceConnectionDialog({
               validateMessage={validateMessage}
               validateTone={validateTone}
               showActions={false}
+              onAccessModeChange={(accessMode) =>
+                form.setConnectionForm((current) => ({ ...current, accessMode }))
+              }
               onEnvironmentChange={() => {}}
               onFieldValueChange={(fieldName, value) =>
                 form.setConnectionForm((current) => ({

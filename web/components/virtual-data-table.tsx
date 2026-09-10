@@ -1,16 +1,6 @@
 "use client";
 
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Check,
-  Copy,
-  Loader2,
-  Maximize2,
-  X,
-} from "lucide-react";
+import { Scan, Check, Copy, Loader2, Maximize2, X } from "lucide-react";
 import {
   KeyboardEvent,
   PointerEvent,
@@ -23,8 +13,11 @@ import {
   useState,
 } from "react";
 
+import type { PreviewMetadata } from "@/lib/generated/api-types";
+import { previewStatus } from "@/lib/preview";
 import { Button } from "@/components/ui/button";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { DataGridSelectionDialog } from "@/components/data-grid-selection-dialog";
+import { useDataGridRangeResize } from "@/hooks/use-data-grid-range-resize";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import {
@@ -91,6 +84,7 @@ export function virtualRowWindow({
 }
 
 type Props = {
+  preview?: PreviewMetadata;
   columns: string[];
   columnKeys?: string[];
   rows: Record<string, unknown>[];
@@ -110,6 +104,7 @@ type Props = {
 };
 
 export function VirtualDataTable({
+  preview,
   columns,
   columnKeys,
   rows,
@@ -127,6 +122,9 @@ export function VirtualDataTable({
   viewportClassName,
   onRenderMeasured,
 }: Props) {
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  const [selectionOpen, setSelectionOpen] = useState(false);
+  const selectionTriggerRef = useRef<HTMLButtonElement>(null);
   const fillAvailableHeight = typeof height === "string";
   const rowHeight = dense ? 23 : 27;
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -199,6 +197,17 @@ export function VirtualDataTable({
   }, [fallbackColumns.length, rows.length]);
 
   useEffect(() => {
+    if (preview?.result_id) {
+      setSelection(EMPTY_DATA_GRID_SELECTION);
+      setSelectionOpen(false);
+    }
+  }, [preview?.result_id]);
+
+  useEffect(() => {
+    if (selection.selected.size === 0) setSelectionOpen(false);
+  }, [selection.selected.size]);
+
+  useEffect(() => {
     const stopDragging = () => {
       draggingRef.current = false;
       dragAnchorRef.current = null;
@@ -263,16 +272,6 @@ export function VirtualDataTable({
         cellRefs.current.get(dataGridCellKey(cell))?.focus({ preventScroll: true });
       });
     });
-  };
-
-  const adjustSelection = (movement: { row: number; column: number }) => {
-    const bounds = { rows: rows.length, columns: fallbackColumns.length };
-    const current = selectionRef.current.active
-      ? selectionRef.current
-      : selectDataGridCell(selectionRef.current, { row: 0, column: 0 });
-    const next = moveDataGridSelection(current, movement, bounds, true);
-    selectionRef.current = next;
-    setSelection(next);
   };
 
   const selectAllCells = () => {
@@ -471,6 +470,71 @@ export function VirtualDataTable({
     return () => window.cancelAnimationFrame(frame);
   }, [rows, visibleRows.length]);
 
+  const selectionControls =
+    selection.selected.size > 0 ? (
+      <div
+        aria-label="Table selection controls"
+        className={cn(
+          "flex flex-wrap items-center justify-end gap-1 border-t bg-background px-2 py-1",
+        )}
+        data-testid="mobile-table-selection-controls"
+        role="toolbar"
+      >
+        <span className="px-1.5 text-[10px] tabular-nums text-muted-foreground" aria-live="polite">
+          {copied ? "Copied" : `${selection.selected.size} selected`}
+        </span>
+        <Button
+          aria-label="View selection full screen"
+          ref={selectionTriggerRef}
+          onClick={() => setSelectionOpen(true)}
+          size="icon-sm"
+          variant="ghost"
+        >
+          <Maximize2 />
+        </Button>
+        <Button
+          aria-label="Select all cells"
+          onClick={selectAllCells}
+          size="icon-sm"
+          type="button"
+          variant="ghost"
+        >
+          <Scan />
+        </Button>
+        <Button
+          aria-label="Copy selection"
+          onClick={() => void copyTable(true)}
+          size="icon-sm"
+          type="button"
+          variant="ghost"
+        >
+          {copied ? <Check /> : <Copy />}
+        </Button>
+        <Button
+          aria-label="Clear selection"
+          onClick={clearSelection}
+          size="icon-sm"
+          type="button"
+          variant="ghost"
+        >
+          <X />
+        </Button>
+      </div>
+    ) : null;
+
+  const selectionHandles = useDataGridRangeResize({
+    selection,
+    table: tableRef,
+    viewport: scrollContainerRef,
+    rows: rows.length,
+    columns: fallbackColumns.length,
+    rowHeight,
+    onChange: (next) => {
+      selectionRef.current = next;
+      setSelection(next);
+    },
+  });
+
   const showLoadMoreControl = Boolean(
     onLoadMore && (canLoadMore || loading) && (nearBottom || loading),
   );
@@ -483,7 +547,7 @@ export function VirtualDataTable({
         fillAvailableHeight && "flex h-full min-h-0 flex-col",
       )}
     >
-      {rows.length > 0 && fallbackColumns.length > 0 ? (
+      {rows.length > 0 && fallbackColumns.length > 0 && selection.selected.size === 0 ? (
         <Button
           aria-label={selection.selected.size > 0 ? "Copy selected cells" : "Copy table"}
           className="absolute right-2 top-2 z-30 h-7 gap-1.5 bg-background/90 px-2 text-[11px] opacity-0 shadow-sm backdrop-blur transition-opacity group-hover/table:opacity-100 focus-visible:opacity-100"
@@ -503,92 +567,13 @@ export function VirtualDataTable({
         </Button>
       ) : null}
 
-      {selection.selected.size > 0 ? (
-        <div
-          aria-label="Table selection controls"
-          className="mobile-data-grid-selection-controls absolute bottom-2 right-2 z-30 items-center gap-0.5 rounded-lg border bg-background/95 p-1 shadow-md backdrop-blur"
-          data-testid="mobile-table-selection-controls"
-          role="toolbar"
-        >
-          <span
-            className="px-1.5 text-[10px] tabular-nums text-muted-foreground"
-            aria-live="polite"
-          >
-            {selection.selected.size} selected
-          </span>
-          <Button
-            aria-label="Adjust selection up"
-            onClick={() => adjustSelection({ row: -1, column: 0 })}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <ArrowUp />
-          </Button>
-          <Button
-            aria-label="Adjust selection down"
-            onClick={() => adjustSelection({ row: 1, column: 0 })}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <ArrowDown />
-          </Button>
-          <Button
-            aria-label="Adjust selection left"
-            onClick={() => adjustSelection({ row: 0, column: -1 })}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <ArrowLeft />
-          </Button>
-          <Button
-            aria-label="Adjust selection right"
-            onClick={() => adjustSelection({ row: 0, column: 1 })}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <ArrowRight />
-          </Button>
-          <Button
-            aria-label="Select all cells"
-            onClick={selectAllCells}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <Maximize2 />
-          </Button>
-          <Button
-            aria-label="Copy selection"
-            onClick={() => void copyTable(true)}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            {copied ? <Check /> : <Copy />}
-          </Button>
-          <Button
-            aria-label="Clear selection"
-            onClick={clearSelection}
-            size="icon-xs"
-            type="button"
-            variant="ghost"
-          >
-            <X />
-          </Button>
-        </div>
-      ) : null}
-
-      {loading ? (
+      {loading && !preview ? (
         <div className="pointer-events-none absolute right-2 top-10 z-20 rounded bg-background/90 p-1 text-muted-foreground shadow-sm">
           <Loader2 className="size-3.5 animate-spin" />
         </div>
       ) : null}
 
-      {showLoadMoreControl ? (
+      {showLoadMoreControl && !preview ? (
         <Button
           className="absolute bottom-3 left-1/2 z-30 h-8 -translate-x-1/2 gap-2 bg-background/95 px-3 text-[11px] shadow-md backdrop-blur disabled:opacity-70"
           disabled={!canLoadMore || loading}
@@ -609,148 +594,213 @@ export function VirtualDataTable({
           !fillAvailableHeight && !viewportClassName && "max-h-56",
           viewportClassName,
         )}
-        viewportStyle={
-          !fillAvailableHeight && typeof height === "number" ? { maxHeight: height } : undefined
-        }
+        viewportStyle={{
+          // The virtual row window owns scroll geometry. Native anchoring can
+          // otherwise double-adjust the offset when spacer rows change on touch.
+          overflowAnchor: "none",
+          ...(!fillAvailableHeight && typeof height === "number" ? { maxHeight: height } : {}),
+        }}
         viewportRef={scrollContainerRef}
         onViewportScroll={handleScroll}
         onWheelCapture={onWheelCapture}
       >
-        <table
-          aria-label={ariaLabel}
-          aria-multiselectable="true"
-          aria-rowcount={rows.length + 1}
-          className="min-w-full border-collapse text-xs"
-          role="grid"
-        >
-          <thead className="sticky top-0 z-10 bg-muted/70 backdrop-blur">
-            <tr aria-rowindex={1}>
-              <th
-                className={cn(
-                  "sticky left-0 z-30 w-12 min-w-12 border-b border-r bg-muted/95 text-right font-medium text-muted-foreground backdrop-blur",
-                  dense ? "px-2 py-1" : "px-2 py-1.5",
-                )}
-              >
-                #
-              </th>
-              {fallbackColumns.map((column, columnIndex) => (
+        <div className="relative min-w-full">
+          {selectionHandles}
+          <table
+            ref={tableRef}
+            aria-label={ariaLabel}
+            aria-multiselectable="true"
+            aria-rowcount={rows.length + 1}
+            className="min-w-full border-collapse text-xs"
+            role="grid"
+          >
+            <thead className="sticky top-0 z-30 bg-muted/70 backdrop-blur">
+              <tr aria-rowindex={1}>
                 <th
                   className={cn(
-                    "sticky top-0 z-20 w-56 min-w-32 max-w-56 border-b border-r bg-muted/90 text-left font-medium whitespace-nowrap backdrop-blur last:border-r-0",
+                    "sticky left-0 z-30 w-12 min-w-12 border-b border-r bg-muted/95 text-right font-medium text-muted-foreground backdrop-blur",
                     dense ? "px-2 py-1" : "px-2 py-1.5",
                   )}
-                  key={`${column}-${columnIndex}`}
                 >
-                  <div className="w-56 max-w-56 truncate">{column}</div>
+                  #
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody data-virtualized={shouldVirtualize || undefined}>
-            {rows.length > 0 ? (
-              <>
-                {rowWindow.topSpacerHeight > 0 ? (
-                  <tr aria-hidden="true" role="presentation">
-                    <td
-                      className="border-0 p-0"
-                      colSpan={Math.max(1, fallbackColumns.length + 1)}
-                      style={{ height: rowWindow.topSpacerHeight }}
-                    />
-                  </tr>
-                ) : null}
-                {visibleRows.map((row, visibleRowIndex) => {
-                  const rowIndex = rowWindow.start + visibleRowIndex;
-                  return (
-                    <tr
-                      aria-rowindex={rowIndex + 2}
-                      className={cn(rowIndex % 2 === 0 && "bg-muted/20")}
-                      data-row-index={rowIndex}
-                      key={rowIndex}
-                      style={{ height: rowHeight }}
-                    >
-                      <td
-                        className={cn(
-                          "sticky left-0 z-10 w-12 min-w-12 border-b border-r bg-muted/75 text-right font-mono text-[11px] text-muted-foreground backdrop-blur",
-                          dense ? "px-2 py-0.5" : "px-2 py-1",
-                        )}
-                      >
-                        {rowIndex + 1}
-                      </td>
-                      {fallbackColumns.map((column, columnIndex) => {
-                        const cell = formatCell(row[resolvedColumnKeys[columnIndex]]);
-                        const coordinate = { row: rowIndex, column: columnIndex };
-                        const selected = dataGridCellSelected(selection, coordinate);
-                        const active =
-                          selection.active?.row === rowIndex &&
-                          selection.active.column === columnIndex;
-
-                        return (
-                          <td
-                            aria-selected={selected}
-                            data-grid-cell-selected={selected || undefined}
-                            key={`${rowIndex}-${columnIndex}`}
-                            className={cn(
-                              "w-56 min-w-32 max-w-56 border-b border-r p-0 align-top last:border-r-0",
-                              selected && "bg-primary/10 ring-1 ring-inset ring-primary/35",
-                            )}
-                            role="gridcell"
-                          >
-                            <TableCellContent
-                              active={active}
-                              cell={cell}
-                              column={column}
-                              coordinate={coordinate}
-                              dense={dense}
-                              selected={selected}
-                              setRef={(element) => {
-                                const key = dataGridCellKey(coordinate);
-                                if (element) cellRefs.current.set(key, element);
-                                else cellRefs.current.delete(key);
-                              }}
-                              tabIndex={
-                                active || (!selection.active && rowIndex === 0 && columnIndex === 0)
-                                  ? 0
-                                  : -1
-                              }
-                              onFocus={() => {
-                                if (selectionRef.current.selected.size > 0) return;
-                                const next = selectDataGridCell(selectionRef.current, coordinate);
-                                selectionRef.current = next;
-                                setSelection(next);
-                              }}
-                              onKeyDown={(event) => handleCellKeyDown(event, coordinate)}
-                              onPointerDown={(event) => handleCellPointerDown(event, coordinate)}
-                              onPointerEnter={(event) => handleCellPointerEnter(event, coordinate)}
-                            />
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-                {rowWindow.bottomSpacerHeight > 0 ? (
-                  <tr aria-hidden="true" role="presentation">
-                    <td
-                      className="border-0 p-0"
-                      colSpan={Math.max(1, fallbackColumns.length + 1)}
-                      style={{ height: rowWindow.bottomSpacerHeight }}
-                    />
-                  </tr>
-                ) : null}
-              </>
-            ) : (
-              <tr>
-                <td
-                  className="p-3 text-xs text-muted-foreground"
-                  colSpan={Math.max(1, fallbackColumns.length + 1)}
-                >
-                  {emptyLabel}
-                </td>
+                {fallbackColumns.map((column, columnIndex) => (
+                  <th
+                    className={cn(
+                      "sticky top-0 z-20 w-56 min-w-32 max-w-56 border-b border-r bg-muted/90 text-left font-medium whitespace-nowrap backdrop-blur last:border-r-0",
+                      dense ? "px-2 py-1" : "px-2 py-1.5",
+                    )}
+                    key={`${column}-${columnIndex}`}
+                  >
+                    <div className="w-56 max-w-56 truncate">{column}</div>
+                  </th>
+                ))}
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody data-virtualized={shouldVirtualize || undefined}>
+              {rows.length > 0 ? (
+                <>
+                  {rowWindow.topSpacerHeight > 0 ? (
+                    <tr aria-hidden="true" role="presentation">
+                      <td
+                        className="border-0 p-0"
+                        colSpan={Math.max(1, fallbackColumns.length + 1)}
+                        style={{ height: rowWindow.topSpacerHeight }}
+                      />
+                    </tr>
+                  ) : null}
+                  {visibleRows.map((row, visibleRowIndex) => {
+                    const rowIndex = rowWindow.start + visibleRowIndex;
+                    return (
+                      <tr
+                        aria-rowindex={rowIndex + 2}
+                        className={cn(rowIndex % 2 === 0 && "bg-muted/20")}
+                        data-row-index={rowIndex}
+                        key={rowIndex}
+                        style={{ height: rowHeight }}
+                      >
+                        <td
+                          className={cn(
+                            "sticky left-0 z-10 w-12 min-w-12 border-b border-r bg-muted/75 text-right font-mono text-[11px] text-muted-foreground backdrop-blur",
+                            dense ? "px-2 py-0.5" : "px-2 py-1",
+                          )}
+                        >
+                          {rowIndex + 1}
+                        </td>
+                        {fallbackColumns.map((column, columnIndex) => {
+                          const cell = formatCell(row[resolvedColumnKeys[columnIndex]]);
+                          const coordinate = { row: rowIndex, column: columnIndex };
+                          const selected = dataGridCellSelected(selection, coordinate);
+                          const active =
+                            selection.active?.row === rowIndex &&
+                            selection.active.column === columnIndex;
+
+                          return (
+                            <td
+                              aria-selected={selected}
+                              data-grid-cell-selected={selected || undefined}
+                              key={`${rowIndex}-${columnIndex}`}
+                              className={cn(
+                                "w-56 min-w-32 max-w-56 border-b border-r p-0 align-top last:border-r-0",
+                                selected && "bg-primary/10 ring-1 ring-inset ring-primary/35",
+                              )}
+                              role="gridcell"
+                            >
+                              <TableCellContent
+                                active={active}
+                                cell={cell}
+                                column={column}
+                                coordinate={coordinate}
+                                dense={dense}
+                                setRef={(element) => {
+                                  const key = dataGridCellKey(coordinate);
+                                  if (element) cellRefs.current.set(key, element);
+                                  else cellRefs.current.delete(key);
+                                }}
+                                tabIndex={
+                                  active ||
+                                  (!selection.active && rowIndex === 0 && columnIndex === 0)
+                                    ? 0
+                                    : -1
+                                }
+                                onFocus={() => {
+                                  if (selectionRef.current.selected.size > 0) return;
+                                  const next = selectDataGridCell(selectionRef.current, coordinate);
+                                  selectionRef.current = next;
+                                  setSelection(next);
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    setSelectionOpen(true);
+                                  } else handleCellKeyDown(event, coordinate);
+                                }}
+                                onDoubleClick={() => setSelectionOpen(true)}
+                                onPointerDown={(event) => handleCellPointerDown(event, coordinate)}
+                                onPointerEnter={(event) =>
+                                  handleCellPointerEnter(event, coordinate)
+                                }
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                  {rowWindow.bottomSpacerHeight > 0 ? (
+                    <tr aria-hidden="true" role="presentation">
+                      <td
+                        className="border-0 p-0"
+                        colSpan={Math.max(1, fallbackColumns.length + 1)}
+                        style={{ height: rowWindow.bottomSpacerHeight }}
+                      />
+                    </tr>
+                  ) : null}
+                </>
+              ) : (
+                <tr>
+                  <td
+                    className="p-3 text-xs text-muted-foreground"
+                    colSpan={Math.max(1, fallbackColumns.length + 1)}
+                  >
+                    {emptyLabel}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </ScrollArea>
+      {selectionControls}
+      {selectionOpen && selection.selected.size > 0 ? (
+        <DataGridSelectionDialog
+          selection={selection}
+          columns={fallbackColumns}
+          columnKeys={resolvedColumnKeys}
+          rows={rows}
+          copied={copied}
+          onCopy={() => void copyTable(true)}
+          onClose={() => setSelectionOpen(false)}
+          onRestoreFocus={() => {
+            const active = selectionRef.current.active;
+            const cell = active ? cellRefs.current.get(dataGridCellKey(active)) : null;
+            (cell ?? selectionTriggerRef.current)?.focus({ preventScroll: true });
+          }}
+          renderValue={(value) => {
+            const cell = formatCell(value);
+            return cell.detailKind === "json" ? (
+              <JsonPreview value={cell.detailValue} />
+            ) : (
+              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
+                {cell.detailValue}
+              </pre>
+            );
+          }}
+        />
+      ) : null}
+      {preview ? (
+        <div className="relative flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-3 py-1.5">
+          <span role="status" className="text-xs text-muted-foreground">
+            {previewStatus(preview)}
+          </span>
+          {["replace", "snapshot"].includes(preview.continuation) && onLoadMore ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={loading || !canLoadMore}
+              title={
+                preview.continuation === "snapshot"
+                  ? "Shows more saved rows. Does not run the cell again."
+                  : "Refreshes a larger sample. Rows may change if the source changes."
+              }
+              onClick={triggerLoadMore}
+            >
+              {loading ? "Loading more rows…" : "Load more rows"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -768,36 +818,30 @@ function TableCellContent({
   column,
   coordinate,
   dense,
-  selected,
   setRef,
   tabIndex,
   onFocus,
   onKeyDown,
   onPointerDown,
   onPointerEnter,
+  onDoubleClick,
 }: {
   active: boolean;
   cell: FormattedCell;
   column: string;
   coordinate: DataGridCell;
   dense: boolean;
-  selected: boolean;
   setRef: (element: HTMLButtonElement | null) => void;
   tabIndex: number;
   onFocus: () => void;
+  onDoubleClick: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
   onPointerDown: (event: PointerEvent<HTMLButtonElement>) => void;
   onPointerEnter: (event: PointerEvent<HTMLButtonElement>) => void;
 }) {
-  const [detailOpen, setDetailOpen] = useState(false);
-
-  useEffect(() => {
-    if (!selected) setDetailOpen(false);
-  }, [selected]);
-
-  const trigger = (
+  return (
     <button
-      aria-label={`${column}, row ${coordinate.row + 1}: ${cell.value}`}
+      aria-label={column + ", row " + (coordinate.row + 1) + ": " + cell.value}
       className={cn(
         "block w-full min-w-0 select-none truncate text-left outline-none",
         dense ? "px-2 py-0.5" : "px-2 py-1",
@@ -814,37 +858,10 @@ function TableCellContent({
       onKeyDown={onKeyDown}
       onPointerDown={onPointerDown}
       onPointerEnter={onPointerEnter}
+      onDoubleClick={onDoubleClick}
     >
       {cell.value}
     </button>
-  );
-
-  return (
-    <HoverCard
-      closeDelay={80}
-      open={selected && detailOpen}
-      openDelay={350}
-      onOpenChange={(open) => setDetailOpen(selected && open)}
-    >
-      <HoverCardTrigger asChild>{trigger}</HoverCardTrigger>
-      <HoverCardContent
-        align="start"
-        className="w-max min-w-32 max-w-[min(36rem,calc(100vw-2rem))] p-0"
-      >
-        <ScrollArea
-          className="max-h-[min(24rem,calc(100vh-4rem))]"
-          viewportClassName="max-h-[min(24rem,calc(100vh-4rem))] p-3"
-        >
-          {cell.detailKind === "json" ? (
-            <JsonPreview value={cell.detailValue} />
-          ) : (
-            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed">
-              {cell.detailValue}
-            </pre>
-          )}
-        </ScrollArea>
-      </HoverCardContent>
-    </HoverCard>
   );
 }
 

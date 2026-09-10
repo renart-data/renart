@@ -54,6 +54,15 @@ async function dragWithDataTransfer(page: Page, source: Locator, target: Locator
   }
 }
 
+function builderToolsDialog(page: Page, kind: "dashboard" | "report") {
+  return page.getByRole("dialog", {
+    name:
+      kind === "dashboard"
+        ? /^(Builder tools|Dashboards navigation)$/
+        : /^(Report outline|Reports navigation)$/,
+  });
+}
+
 function tallDashboardDefinition() {
   const visualizations = Array.from(
     { length: 12 },
@@ -159,7 +168,7 @@ test.describe("app presentations live", () => {
 
   test("creates and visually edits a Git-native dashboard", async ({ liveApp, page }) => {
     await page.goto(`${liveApp.baseURL}/dashboards`);
-    await expect(page.getByRole("heading", { name: "Dashboards" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Dashboards", level: 1 })).toBeVisible();
 
     await page.getByRole("button", { name: "New dashboard" }).first().click();
     const dialog = page.getByRole("dialog");
@@ -180,7 +189,7 @@ test.describe("app presentations live", () => {
     if (narrowBuilder) {
       await page.getByRole("button", { name: "Open builder tools" }).click();
       await page
-        .getByRole("dialog", { name: "Builder tools" })
+        .getByRole("dialog", { name: /^(Builder tools|Dashboards navigation)$/ })
         .getByRole("button", { name: "Add dataset", exact: true })
         .click();
       const inspector = page.getByRole("dialog", { name: "Inspector" });
@@ -188,7 +197,7 @@ test.describe("app presentations live", () => {
       await expectInspectorToFit(page);
       await inspector.getByRole("button", { name: "Close" }).click();
       await page.getByRole("button", { name: "Open builder tools" }).click();
-      const builderTools = page.getByRole("dialog", { name: "Builder tools" });
+      const builderTools = builderToolsDialog(page, "dashboard");
       await builderTools.getByRole("tab", { name: "Add", exact: true }).click();
       await builderTools.getByRole("button", { name: "Add visualization", exact: true }).click();
     } else {
@@ -220,7 +229,7 @@ test.describe("app presentations live", () => {
     if (narrowBuilder) await visualizationInspector.getByRole("button", { name: "Close" }).click();
     if (narrowBuilder) {
       await page.getByRole("button", { name: "Open builder tools" }).click();
-      const builderTools = page.getByRole("dialog", { name: "Builder tools" });
+      const builderTools = builderToolsDialog(page, "dashboard");
       await builderTools.getByRole("tab", { name: "Add" }).click();
       await builderTools.getByRole("button", { name: "Add control", exact: true }).click();
     } else {
@@ -296,7 +305,7 @@ test.describe("app presentations live", () => {
     await expect(leaveDialog).toBeVisible();
     await leaveDialog.getByRole("button", { name: "Keep editing" }).click();
     await expect(page).toHaveURL(
-      new RegExp(`/dashboards/${created.document.artifact.workspace_id}$`),
+      (url) => url.pathname === `/dashboards/${created.document.artifact.workspace_id}`,
     );
     await page.getByRole("button", { name: "Discard", exact: true }).click();
     await expect(page.getByLabel("Presentation title")).toHaveValue("Keyboard-saved title");
@@ -333,7 +342,7 @@ test.describe("app presentations live", () => {
     if (narrowBuilder) {
       await page.getByRole("button", { name: "Open builder tools" }).click();
       await page
-        .getByRole("dialog", { name: "Builder tools" })
+        .getByRole("dialog", { name: /^(Builder tools|Dashboards navigation)$/ })
         .getByRole("button", { name: "Add dataset", exact: true })
         .click();
     } else {
@@ -673,6 +682,8 @@ layout:
     await expect(markdown).toHaveAttribute("contenteditable", "true");
     await expect(markdown).toHaveAttribute("spellcheck", "false");
     await markdown.focus();
+    await expect(markdown).toBeFocused();
+    await expect(page.getByRole("dialog", { name: "Inspector", exact: true })).toBeHidden();
     await expect(markdown).toHaveAttribute("spellcheck", "true");
     await page.getByLabel("Section title").focus();
     await expect(markdown).toHaveAttribute("spellcheck", "false");
@@ -692,14 +703,14 @@ layout:
 
     if (narrowBuilder) {
       await page.getByRole("button", { name: "Open builder tools" }).click();
-      const tools = page.getByRole("dialog", { name: "Report outline" });
+      const tools = builderToolsDialog(page, "report");
       await tools.getByRole("tab", { name: "Data" }).click();
       await tools.getByRole("button", { name: "Add dataset", exact: true }).click();
       const inspector = page.getByRole("dialog", { name: "Inspector" });
       await expect(inspector.getByLabel("Dataset ID")).toHaveValue("dataset");
       await inspector.getByRole("button", { name: "Close" }).click();
       await page.getByRole("button", { name: "Open builder tools" }).click();
-      const addTools = page.getByRole("dialog", { name: "Report outline" });
+      const addTools = builderToolsDialog(page, "report");
       await addTools.getByRole("tab", { name: "Add", exact: true }).click();
       await addTools.getByRole("button", { name: "Add visualization", exact: true }).click();
     } else {
@@ -769,11 +780,17 @@ layout:
     ]);
 
     await page.reload();
-    await expect(page.getByRole("heading", { name: "Executive summary" })).toBeVisible();
+    if (narrowBuilder) {
+      const restoredInspector = page.getByRole("dialog", { name: "Inspector" });
+      await expect(restoredInspector.getByLabel("Section ID")).toHaveValue("text");
+      await restoredInspector.getByRole("button", { name: "Close" }).click();
+    }
+    await expect(page.getByLabel("Section title")).toHaveValue("Executive summary");
     await expect(page.getByText("Revenue remained healthy")).toBeVisible();
 
     await page.goto(`${liveApp.baseURL}/reports/${presentationId}/view`);
     const report = page.getByRole("article");
+    await expect(report.getByRole("heading", { name: "Executive summary" })).toBeVisible();
     await expect(report.getByText("New subscriptions")).toBeVisible({ timeout: 15000 });
     await expect(report.locator("ul > li")).toHaveCount(2);
     await expect(report.locator("ol > li")).toHaveCount(2);

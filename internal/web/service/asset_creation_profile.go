@@ -8,6 +8,7 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/pipeline"
+	"renart/internal/web/policy"
 )
 
 const (
@@ -19,6 +20,7 @@ const (
 	assetCreationKindSensor = "sensor"
 
 	assetCreationRoleTarget      = "target"
+	assetCreationRoleReadTarget  = "read_target"
 	assetCreationRoleSource      = "source"
 	assetCreationRoleDestination = "destination"
 )
@@ -57,6 +59,7 @@ type AssetCreationRoleProfile struct {
 }
 
 type AssetCreationConnection struct {
+	AccessMode          policy.AccessMode                 `json:"access_mode,omitempty"`
 	Name                string                            `json:"name"`
 	ConnectionType      string                            `json:"connection_type"`
 	Category            string                            `json:"category,omitempty"`
@@ -120,6 +123,10 @@ func (s *AssetService) assetCreationProfileForPath(ctx context.Context, pipeline
 
 	connectionTypes := BuildWorkspaceConfigConnectionTypes()
 	connections := selectedConnectionSummaries(cfg)
+	accessPolicy, _, accessErr := connectionEnvironmentPolicy(s.deps.WorkspaceRoot, cfg)
+	if accessErr != nil {
+		return AssetCreationProfile{}, apiErrorFromConnectionAccess(accessErr)
+	}
 	profile := AssetCreationProfile{
 		Status:      "ok",
 		Environment: environment,
@@ -136,6 +143,19 @@ func (s *AssetService) assetCreationProfileForPath(ctx context.Context, pipeline
 				ConnectionTypes:          compatibleConnectionTypes,
 				ConnectionTypeCandidates: assetCreationConnectionTypeCandidates(compatibleConnectionTypes, kind, role),
 			}
+			eligible := roleProfile.Connections[:0]
+			for _, connection := range roleProfile.Connections {
+				details, _ := selectedConfigurationConnection(cfg, connection.Name)
+				connection.AccessMode = policy.EffectiveMode(accessPolicy, connection.Name, nativeConnectionReadOnly(details))
+				effect := policy.Write
+				if role == assetCreationRoleSource || role == assetCreationRoleReadTarget || kind == assetCreationKindSensor {
+					effect = policy.Read
+				}
+				if policy.CheckAccess(accessPolicy, environment, policy.Requirement{Connection: connection.Name, Effect: effect, Operation: "asset_creation"}, nativeConnectionReadOnly(details)) == nil {
+					eligible = append(eligible, connection)
+				}
+			}
+			roleProfile.Connections = eligible
 			roleProfile.Default = resolveAssetCreationDefault(parsedPipeline, connections, roleProfile)
 			kindProfile.Roles = append(kindProfile.Roles, roleProfile)
 		}
@@ -157,6 +177,9 @@ func assetCreationConnectionTypeCandidates(connectionTypes []WorkspaceConfigConn
 }
 
 func assetCreationRoles(kind string) []string {
+	if kind == assetCreationKindSQL {
+		return []string{assetCreationRoleTarget, assetCreationRoleReadTarget}
+	}
 	if kind == assetCreationKindLoad {
 		return []string{assetCreationRoleSource, assetCreationRoleDestination}
 	}
@@ -527,6 +550,8 @@ func (s *AssetService) resolveAssetConnectionSelection(ctx context.Context, pipe
 	roleName := assetCreationRoleTarget
 	if kind == assetCreationKindLoad {
 		roleName = assetCreationRoleDestination
+	} else if kind == assetCreationKindSQL && asset.Materialization.Type == pipeline.MaterializationTypeNone {
+		roleName = assetCreationRoleReadTarget
 	}
 	role, ok := findAssetCreationRoleProfile(kindProfile, roleName)
 	if !ok {

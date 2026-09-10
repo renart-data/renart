@@ -9,16 +9,24 @@ or Google Cloud Storage. An **environment** is a named set of connections (for
 example `default` and `production`) so the same pipeline can run against
 different targets.
 
-Both live in the project config file in your repository, and both are
-editable in the UI: open the project switcher and choose **Project
-settings**, then the **Environments** and **Connections** sections.
+Manage both from the **Connections** and **Environments** tools in **Build**.
+They are also available through **Project settings**.
 
 ## Add a connection
 
-In **Project settings → Connections**, add a connection with a name (for
-example `duckdb-default` or `pg-prod`) and its credentials. Assets refer to
-connections by name — the workbench shows which connection an asset runs
-against, and the pipeline's defaults live in `pipeline.yml`.
+1. Open **Build → Connections** and click **New connection**, or the **+** beside an environment.
+2. Choose its environment, database or storage type, and a name such as `pg-analytics`.
+3. Enter the connection details. Open **Credentials** for secret fields and **Advanced** for tuning options.
+4. Choose **Access → Read-only** if Renart should only read from this connection.
+5. Click **Verify** to test the draft, then **Create connection**. The saved connection stays open.
+
+Assets refer to connections by name. Choose the connection in the asset's
+**General** properties; set defaults through **Pipeline settings**.
+
+New projects offer the normal database and storage connections. Ingestr-only
+types are hidden unless creation is explicitly enabled in project settings.
+Existing legacy connections remain editable; their presence does not enable
+Ingestr suggestions for new assets or connections.
 
 Sensitive values are write-only. By default Renart stores a replacement in the
 operating system's credential store and keeps only a symbolic placeholder in
@@ -28,24 +36,76 @@ bindings for CI and unattended runs. See
 [Manage connection credentials](/docs/connections-environments/managing-credentials/)
 for the complete setup, rotation, and recovery guidance.
 
+## Find and edit a connection
+
+The sidebar groups connections by environment. Filter by connection name, type,
+or environment, then select a row to open its editor in the main area. On a
+phone, tap **Connections** again to reopen the navigator; selecting a row closes it.
+
+Click **Save changes** when ready. If you navigate away with a draft, choose
+**Save and continue**, **Discard**, or **Stay**. A failed save keeps your draft.
+Links from diagnostics open the relevant field in this same editor, including
+when you open the link in a new tab.
+
+:::caution[Shared configuration]
+A nested project can inherit its connection definitions from another directory.
+Renart shows the destination and asks you to **Allow editing shared configuration**
+before saving there. Those changes can affect other projects using that configuration.
+:::
+
 ## Environments
 
-In **Project settings → Environments**, define one entry per target. Each
-environment maps connection names to concrete credentials, so switching the
-environment picker in the top bar swaps the whole workspace — previews,
-materializations, and ad-hoc queries — onto that target. Schedules are also
-per environment: the same pipeline can run nightly against `default` and on
-weekday mornings against `production`.
+In **Build → Environments**, select an environment in the sidebar or click
+**New environment**. Edit its name, schema prefix, default status and execution
+guardrails in the main area. **Clone** copies an environment's connections and
+guardrails. Its connection links open the corresponding connection editors.
+
+Selecting an environment here does not change where queries or pipelines run.
+Use **Use for execution**, or the execution picker in the top bar, to switch the
+active target. **Default environment** is a separate saved setting, used when no
+explicit environment is selected. Schedules remain per environment: the same
+pipeline can run nightly against `default` and on weekday mornings against `production`.
+
+## Read-only connections
+
+Use **Access → Read-only** for a production database that Renart should read
+without changing. The setting belongs to the connection in the selected
+environment: the same name can remain writable in development.
+
+You can browse its tables, preview data, and add tables to the canvas as
+**Source** assets. Source assets describe existing tables; you can still edit
+their columns and descriptions. To transform the data elsewhere, add a
+[Load asset](/docs/asset-types/load-assets/) downstream and choose a writable
+destination.
+
+Read-only connections are not offered as materialization or Load destinations.
+Existing assets that write there are blocked rather than moved to another
+connection. Code checks explain the conflict and link to the connection's
+Access setting. Verified single-query reads are allowed; DDL, DML, scripts,
+write hooks, and opaque operators are not.
+
+When editing an existing connection, choosing Read-only shows a collapsible
+preview of affected saved assets. Deployed versions are checked when they run,
+too. New tasks use the saved access mode, but operations already in progress
+may finish. Review and cancel active runs separately if necessary.
+
+:::caution[Use database permissions as well]
+This setting restricts operations managed by Renart. It does not change your
+database account's grants or sandbox arbitrary code. Use credentials with
+read-only database permissions when the source must be protected outside
+Renart too. Another writable connection to the same database can still change it.
+:::
+
+Existing native DuckDB read-only settings remain effective even if Access is
+set to Read and write. Read-only DuckLake connections are not supported yet;
+Renart refuses to initialize them rather than opening them in a writable mode.
 
 ## Supported platforms
 
-Renart executes against supported warehouses including DuckDB, Postgres,
-Snowflake, BigQuery, Redshift, and Databricks. Configured S3-compatible and GCS
-connections are available to Load assets even when no connector-specific asset
-integration is enabled; their object browser is explicit, bounded, and keeps
-credential values on the server. The demo projects use DuckDB, which needs no
-credentials at all — a good way to try the workflow before pointing at shared
-infrastructure.
+SQL targets include DuckDB, PostgreSQL, ClickHouse, StarRocks, Trino, Snowflake,
+BigQuery, and others. See the [platform reference](/docs/reference/supported-platforms/)
+for the complete SQL list and materialization limits. Storage connections such
+as S3 and GCS are separate from SQL targets.
 
 :::caution[Keep legacy inline credentials private]
 Newly replaced sensitive values use a write-only credential source. Existing

@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
 
 	"github.com/bruin-data/bruin/pkg/config"
+	"github.com/spf13/afero"
 
+	"renart/internal/web/policy"
 	"renart/internal/web/secretstore"
 )
 
@@ -32,6 +36,7 @@ type resolvedConnectionEntry struct {
 	connection any
 	details    any
 	err        error
+	accessMode policy.AccessMode
 }
 
 func newResolvedConnectionManager(
@@ -65,9 +70,32 @@ func (m *resolvedConnectionManager) ResolveConnection(name string) (any, error) 
 	if entry == nil {
 		return nil, nil
 	}
+	snapshot, err := policy.NewLoader(filepath.Join(m.factory.workspaceRoot, ".renart", "environments.yml")).Snapshot()
+	if err != nil {
+		return nil, policy.InvalidError(err.Error())
+	}
+	details, _ := selectedConfigurationConnection(m.cfg, name)
+	current := m.cfg
+	currentPath := filepath.Join(m.factory.workspaceRoot, ".bruin.yml")
+	if _, statErr := os.Stat(currentPath); !os.IsNotExist(statErr) {
+		current, err = loadSelectedConfigReadOnlyFS(afero.NewOsFs(), currentPath, m.cfg.SelectedEnvironmentName)
+		if err != nil {
+			return nil, policy.InvalidError(err.Error())
+		}
+		currentDetails, exists := selectedConfigurationConnection(current, name)
+		if !exists || nativeConnectionReadOnly(currentDetails) != nativeConnectionReadOnly(details) {
+			return nil, newAPIError(409, "connection_policy_stale", "Connection access changed during this operation. Start a new operation to load the current connection configuration.")
+		}
+		details = currentDetails
+	}
+	mode := policy.EffectiveMode(snapshot.Config.For(current.SelectedEnvironmentName), name, nativeConnectionReadOnly(details))
 	entry.once.Do(func() {
+		entry.accessMode = mode
 		entry.connection, entry.details, entry.err = m.resolve(name)
 	})
+	if entry.accessMode != mode {
+		return nil, newAPIError(409, "connection_policy_stale", "Connection access changed during this operation. Start a new operation to open a compatible connection.")
+	}
 	return entry.connection, entry.err
 }
 
@@ -76,7 +104,9 @@ func (m *resolvedConnectionManager) GetConnectionDetails(name string) any {
 	if entry == nil {
 		return nil
 	}
-	_, _ = m.ResolveConnection(name)
+	if _, err := m.ResolveConnection(name); err != nil {
+		return nil
+	}
 	return entry.details
 }
 

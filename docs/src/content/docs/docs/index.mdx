@@ -8,9 +8,9 @@ data across your data stack. Build and run SQL and Python pipelines alongside
 notebooks and dashboards in one visual workspace, with type checking,
 scheduling and everything defined as code in Git.
 
-The goal is to bring a first-class developer experience to the entire data
-workflow. Renart runs in your environment and connects to the databases,
-warehouses, files, object storage and HTTP APIs you use.
+Bring a first-class developer experience to the entire data workflow: connect
+your databases, warehouses, files, object storage and HTTP APIs, then build on
+their data in the same workspace.
 
 <img
   src="/docs-media/workspace-overview.webp"
@@ -19,33 +19,22 @@ warehouses, files, object storage and HTTP APIs you use.
   height="2000"
 />
 
-## What you get
+## Find your next task
 
-- **Data movement as part of the pipeline.** [Load assets](/docs/asset-types/load-assets/)
-  move data between supported sources and destinations;
-  [HTTP API assets](/docs/asset-types/http-api-assets/) bring API data into the workflow.
-- **A pipeline canvas** that shows assets, dependencies, and freshness at a
-  glance instead of making you reconstruct them from files by hand.
-- **SQL and Python with development context.** Type checking and intelligent
-  completion use known schemas and dependencies to help you edit and review code.
-- **Preview, then materialize.** Preview SQL results with Inspect, then
-  review and run materialization explicitly.
-- **Catalog-aware SQL.** Complete against authored assets and observed remote
-  tables, then review an import when an external relation should become part of
-  the project.
-- **Notebooks** that combine warehouses, files, object storage, and HTTP data
-  in local DuckDB, with SQL, Python, text, controls, and checked charts.
-- **Dashboards and reports** composed visually from typed datasets and stored
-  as version-controlled definitions.
-- **Reviewed deployments and schedules.** Pin a pipeline snapshot to each
-  environment, run it on a cron, and inspect its timeline and logs.
-- **Freshness you can see.** Renart fingerprints every asset and shows what's
-  fresh, edited, stale, or never built, while external source assets remain
-  explicitly neutral.
+- **Try Renart:** [install it](/docs/installation/) and follow the
+  [local DuckDB quickstart](/docs/quickstart/).
+- **Build a pipeline:** use the [asset editor](/docs/editing-assets/asset-editor/)
+  and follow dependencies on the [canvas](/docs/workspace/pipeline-canvas/).
+- **Connect your data:** check [supported platforms](/docs/reference/supported-platforms/)
+  and [add a connection](/docs/connections-environments/managing-connections/).
+- **Explore results:** combine sources in a [notebook](/docs/notebooks/overview/)
+  or build a [dashboard or report](/docs/presentations/overview/).
+- **Run on a schedule:** [review a deployment](/docs/scheduling/overview/),
+  choose a cadence, and inspect [run history](/docs/workspace/runs-and-history/).
 
-Authored definitions stay in your repository as plain, reviewable files.
-Credentials, warehouse data and machine-local run history are separate from
-those definitions. See [how Renart stores your work](/docs/how-it-works/).
+Authored definitions are version-controlled files. Run history, deployment
+pins, and other machine-local state are stored separately; see
+[How it works](/docs/how-it-works/).
 
 :::note[Public alpha]
 Renart is in public alpha. The core workflow is available, but expect rough
@@ -53,9 +42,5 @@ edges and changes before the first stable release. Read [what public alpha
 means](/docs/alpha-status/) before relying on Renart for critical workloads.
 :::
 
-## Start here
-
-1. [Installation](/docs/installation/)
-2. [Quickstart](/docs/quickstart/) — from install to a scheduled pipeline
-3. [Concepts](/docs/concepts/) — the model behind the UI
-4. [Tour of the interface](/docs/workspace/interface-tour/)
+For orientation, start with [the interface tour](/docs/workspace/interface-tour/)
+and [the main concepts](/docs/concepts/).

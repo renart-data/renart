@@ -38,6 +38,50 @@ func IsReadOnlySingleQuery(sql, dialectName string) (bool, error) {
 	return true, nil
 }
 
+// ReadOnlyQueryBody returns only the SELECT's source span, excluding a trailing
+// terminator and comments, so an authored query can safely be wrapped unchanged.
+func ReadOnlyQueryBody(sql, dialectName string) (string, error) {
+	ok, err := IsReadOnlySingleQuery(sql, dialectName)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("preview requires exactly one read-only SELECT")
+	}
+	dialect, err := rewriteDialect(dialectName)
+	if err != nil {
+		return "", err
+	}
+	parsed, err := golyglot.ParseStrict(sql, dialect)
+	if err != nil {
+		return "", err
+	}
+	body, ok := parsed.SourceSlice(parsed.Statements[0].Node.SourceSpan())
+	if !ok {
+		return "", fmt.Errorf("could not locate SELECT source")
+	}
+	return strings.TrimRight(strings.TrimSpace(body), ";"), nil
+}
+
+// LimitUnboundedSelect adds a preview bound only when it cannot enlarge or
+// reinterpret an authored bound. T-SQL CTEs, ORDER BY and unnamed projections
+// cannot generally be wrapped in a derived table, so use native TOP there.
+func LimitUnboundedSelect(sql string, limit int, dialectName string) (string, error) {
+	dialect, err := rewriteDialect(dialectName)
+	if err != nil {
+		return "", err
+	}
+	parsed, err := golyglot.ParseStrict(sql, dialect)
+	if err != nil || len(parsed.Statements) != 1 {
+		return "", fmt.Errorf("cannot safely bound this query")
+	}
+	query, ok := parsed.Statements[0].Node.(*golyglot.SelectStmt)
+	if !ok || len(query.Into) > 0 || query.Top != nil || query.Limit != nil || query.Offset != nil || query.Fetch != nil || query.SetOperator != "" {
+		return "", fmt.Errorf("continuation for this authored SQL Server bound or set query is unavailable")
+	}
+	return AddLimit(sql, limit, dialectName)
+}
+
 // RenameTables applies relation renames as source-span edits. Unchanged SQL,
 // including comments, whitespace, quoting, and keyword case, is retained byte
 // for byte. When the destination leaf changes, the source leaf is kept as an

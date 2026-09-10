@@ -131,6 +131,13 @@ changed atomically after the dependency is added.
 
 ## 6. UI (`web/components/app/`)
 
+Diagnostic links navigate to the actual asset workbench and reveal its existing
+Properties tabs/fields or Monaco source. Normal tab and column-field navigation
+also updates the URL. Only the required view changes: result selection, panel
+collapse and independent sidebar context remain intact. Connection links use the
+normal settings Sheet and guard unsaved changes. See
+[UI navigation](diagnostic-navigation.md) for identity and coverage rules.
+
 - **Asset creation:** the Build view's creation dialog presents SQL, Python,
   HTTP API, Seed, Sensor, and Load as equal-size intent choices. The second axis
   is always a backend-profiled connection role rather than another platform or
@@ -186,8 +193,15 @@ changed atomically after the dependency is added.
   Seeds can also be pasted as CSV, TSV, JSON, JSON Lines, or plain text. Auto
   detection remains an explicit, overridable format choice; TSV and text are
   normalized to CSV while JSON and JSON Lines keep their native formats.
+
 - **Guided cards** (`asset-guided-cards.tsx`), rendered in the inspector
-  sidebar next to the SQL editor: identity, materialization, dependencies
+  sidebar next to the SQL editor, are grouped into four task-oriented tabs:
+  **General** (identity, materialization, and SQL hooks), **Lineage**
+  (dependencies), **Columns**, and **Checks**. Columns and Checks are omitted
+  for non-relation assets, and a failed-check deep link selects the Checks tab
+  before focusing the exact row. Switching tabs never creates a second draft or
+  source of truth; every field still uses the same semantic transactions.
+  The underlying editors cover dependencies
   (inferred / manual / ignored, with ignore/restore/remove actions), a column
   workbench (status markers for inferred/manual/stale/type-overridden,
   checks, descriptions, and direct manual-column creation), custom SQL checks,
@@ -368,6 +382,43 @@ changed atomically after the dependency is added.
   relation resolution is a typed server action rather than an asset transaction:
   it opens a preview of the native single-table source-asset import, defaults to
   persisting observed columns, and writes only after confirmation.
+
+## SQL unit test editing and execution
+
+`AssetUnitTests` is mounted on the existing SQL asset Properties → Tests tab,
+addressed by the ordinary `asset-section` target with `section: tests`. It uses
+the current navigation intent machinery; changing the tab does not switch
+Inspect to Output or change an unrelated sidebar. There is no separate editor route.
+The test panel is keyed by asset identity so drafts and late mutation responses
+cannot migrate to another asset while the surrounding workbench stays mounted.
+
+The context endpoint (`GET /api/assets/{id}/unit-tests`) reads canonical
+`unit_tests`, reusable fixture names, upstream schemas and inferred output columns.
+`sql-unit-test-schema.ts` derives a per-document Monaco JSON schema for field
+completion and scalar value checking. The editor uses YAML 1.2 and a locally
+bundled monaco-yaml worker; JSON is only the API transport. The plugin's legacy
+worker handshake is adapted to Monaco 0.56 without changing MonacoEnvironment.
+Providers and marker-model events are scoped to fixture URIs, and no remote
+schemas are fetched. The language service is disposed on editor unmount.
+Fixture model identities use React IDs, not secure-context-only browser UUIDs,
+so authoring also works over plain HTTP on a LAN host.
+Unknown schemas and CTE rows stay untyped. Duplicate keys, custom tags, multiple
+documents, nonfinite numbers and unsafe integers are rejected before transport.
+Dirty dialogs have navigation/close guards. Incoming SSE updates never replace
+an open fixture draft; `unit_tests.set` compares its captured revision under the
+existing asset transaction lock and rejects stale saves with 409.
+
+`POST /api/assets/{id}/unit-tests/run` checks the saved revision, compiles fixture
+relations with Bruin's pure-Go compiler/comparator and a native Golyglot Rewriter,
+then uses the existing connection query port. All physical relations must be
+replaced before execution; known unmocked inputs can become typed empty relations,
+but unknown unmocked inputs fail. SELECT-only validation rejects scripts, INTO
+and external table functions. This is not a sandbox for database UDFs.
+The runner does not materialize assets or write fixture tables. It caps elapsed
+time at 60 seconds, 50 tests, fixture JSON at 256 KiB, fixture/assertion rows at
+500 each and query output at 5,000 rows (overflow is an error). Original ORDER BY
+and smaller row limits are preserved. Supported SQL clocks and Jinja dates can
+be frozen; CTE assertions use the same native rewrite/query path.
 
 ## 7. Not built (still intent, from the original concept)
 

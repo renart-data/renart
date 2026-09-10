@@ -10,10 +10,13 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WelcomeRouteImport } from './routes/welcome'
+import { Route as SemanticDiffRouteImport } from './routes/semantic-diff'
 import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as RedesignIndexRouteImport } from './routes/redesign.index'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
 import { Route as RedesignSplatRouteImport } from './routes/redesign.$'
+import { Route as ShellRunRouteImport } from './routes/_shell/run'
+import { Route as ShellDataRouteImport } from './routes/_shell/data'
 import { Route as ShellCatalogRouteImport } from './routes/_shell/catalog'
 import { Route as ShellSchedulesRouteRouteImport } from './routes/_shell/schedules/route'
 import { Route as ShellRunsRouteRouteImport } from './routes/_shell/runs/route'
@@ -54,6 +57,11 @@ const WelcomeRoute = WelcomeRouteImport.update({
   path: '/welcome',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SemanticDiffRoute = SemanticDiffRouteImport.update({
+  id: '/semantic-diff',
+  path: '/semantic-diff',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ShellRoute = ShellRouteImport.update({
   id: '/_shell',
   getParentRoute: () => rootRouteImport,
@@ -72,6 +80,16 @@ const RedesignSplatRoute = RedesignSplatRouteImport.update({
   id: '/redesign/$',
   path: '/redesign/$',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ShellRunRoute = ShellRunRouteImport.update({
+  id: '/run',
+  path: '/run',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellDataRoute = ShellDataRouteImport.update({
+  id: '/data',
+  path: '/data',
+  getParentRoute: () => ShellRoute,
 } as any)
 const ShellCatalogRoute = ShellCatalogRouteImport.update({
   id: '/catalog',
@@ -266,11 +284,14 @@ const ShellPipelinesPipelineIdAssetsAssetIdCanvasRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof ShellIndexRoute
+  '/semantic-diff': typeof SemanticDiffRoute
   '/welcome': typeof WelcomeRoute
   '/project': typeof ShellProjectRouteRouteWithChildren
   '/runs': typeof ShellRunsRouteRouteWithChildren
   '/schedules': typeof ShellSchedulesRouteRouteWithChildren
   '/catalog': typeof ShellCatalogRoute
+  '/data': typeof ShellDataRoute
+  '/run': typeof ShellRunRoute
   '/redesign/$': typeof RedesignSplatRoute
   '/redesign/': typeof RedesignIndexRoute
   '/pipelines/$pipelineId': typeof ShellPipelinesPipelineIdRouteRouteWithChildren
@@ -304,9 +325,12 @@ export interface FileRoutesByFullPath {
   '/pipelines/$pipelineId/assets/$assetId/': typeof ShellPipelinesPipelineIdAssetsAssetIdIndexRoute
 }
 export interface FileRoutesByTo {
+  '/semantic-diff': typeof SemanticDiffRoute
   '/welcome': typeof WelcomeRoute
   '/': typeof ShellIndexRoute
   '/catalog': typeof ShellCatalogRoute
+  '/data': typeof ShellDataRoute
+  '/run': typeof ShellRunRoute
   '/redesign/$': typeof RedesignSplatRoute
   '/redesign': typeof RedesignIndexRoute
   '/notebooks/$notebookId': typeof ShellNotebooksNotebookIdRoute
@@ -338,12 +362,15 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_shell': typeof ShellRouteWithChildren
+  '/semantic-diff': typeof SemanticDiffRoute
   '/welcome': typeof WelcomeRoute
   '/_shell/_presentations': typeof ShellPresentationsRouteRouteWithChildren
   '/_shell/project': typeof ShellProjectRouteRouteWithChildren
   '/_shell/runs': typeof ShellRunsRouteRouteWithChildren
   '/_shell/schedules': typeof ShellSchedulesRouteRouteWithChildren
   '/_shell/catalog': typeof ShellCatalogRoute
+  '/_shell/data': typeof ShellDataRoute
+  '/_shell/run': typeof ShellRunRoute
   '/redesign/$': typeof RedesignSplatRoute
   '/_shell/': typeof ShellIndexRoute
   '/redesign/': typeof RedesignIndexRoute
@@ -381,11 +408,14 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/semantic-diff'
     | '/welcome'
     | '/project'
     | '/runs'
     | '/schedules'
     | '/catalog'
+    | '/data'
+    | '/run'
     | '/redesign/$'
     | '/redesign/'
     | '/pipelines/$pipelineId'
@@ -419,9 +449,12 @@ export interface FileRouteTypes {
     | '/pipelines/$pipelineId/assets/$assetId/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/semantic-diff'
     | '/welcome'
     | '/'
     | '/catalog'
+    | '/data'
+    | '/run'
     | '/redesign/$'
     | '/redesign'
     | '/notebooks/$notebookId'
@@ -452,12 +485,15 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_shell'
+    | '/semantic-diff'
     | '/welcome'
     | '/_shell/_presentations'
     | '/_shell/project'
     | '/_shell/runs'
     | '/_shell/schedules'
     | '/_shell/catalog'
+    | '/_shell/data'
+    | '/_shell/run'
     | '/redesign/$'
     | '/_shell/'
     | '/redesign/'
@@ -494,6 +530,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   ShellRoute: typeof ShellRouteWithChildren
+  SemanticDiffRoute: typeof SemanticDiffRoute
   WelcomeRoute: typeof WelcomeRoute
   RedesignSplatRoute: typeof RedesignSplatRoute
   RedesignIndexRoute: typeof RedesignIndexRoute
@@ -506,6 +543,13 @@ declare module '@tanstack/react-router' {
       path: '/welcome'
       fullPath: '/welcome'
       preLoaderRoute: typeof WelcomeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/semantic-diff': {
+      id: '/semantic-diff'
+      path: '/semantic-diff'
+      fullPath: '/semantic-diff'
+      preLoaderRoute: typeof SemanticDiffRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_shell': {
@@ -535,6 +579,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/redesign/$'
       preLoaderRoute: typeof RedesignSplatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_shell/run': {
+      id: '/_shell/run'
+      path: '/run'
+      fullPath: '/run'
+      preLoaderRoute: typeof ShellRunRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/data': {
+      id: '/_shell/data'
+      path: '/data'
+      fullPath: '/data'
+      preLoaderRoute: typeof ShellDataRouteImport
+      parentRoute: typeof ShellRoute
     }
     '/_shell/catalog': {
       id: '/_shell/catalog'
@@ -935,6 +993,8 @@ interface ShellRouteChildren {
   ShellRunsRouteRoute: typeof ShellRunsRouteRouteWithChildren
   ShellSchedulesRouteRoute: typeof ShellSchedulesRouteRouteWithChildren
   ShellCatalogRoute: typeof ShellCatalogRoute
+  ShellDataRoute: typeof ShellDataRoute
+  ShellRunRoute: typeof ShellRunRoute
   ShellIndexRoute: typeof ShellIndexRoute
   ShellPipelinesPipelineIdRouteRoute: typeof ShellPipelinesPipelineIdRouteRouteWithChildren
   ShellNotebooksNotebookIdRoute: typeof ShellNotebooksNotebookIdRoute
@@ -947,6 +1007,8 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellRunsRouteRoute: ShellRunsRouteRouteWithChildren,
   ShellSchedulesRouteRoute: ShellSchedulesRouteRouteWithChildren,
   ShellCatalogRoute: ShellCatalogRoute,
+  ShellDataRoute: ShellDataRoute,
+  ShellRunRoute: ShellRunRoute,
   ShellIndexRoute: ShellIndexRoute,
   ShellPipelinesPipelineIdRouteRoute:
     ShellPipelinesPipelineIdRouteRouteWithChildren,
@@ -958,6 +1020,7 @@ const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   ShellRoute: ShellRouteWithChildren,
+  SemanticDiffRoute: SemanticDiffRoute,
   WelcomeRoute: WelcomeRoute,
   RedesignSplatRoute: RedesignSplatRoute,
   RedesignIndexRoute: RedesignIndexRoute,

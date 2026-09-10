@@ -23,9 +23,10 @@ type JinjaRenderService struct {
 }
 
 type JinjaRenderRequest struct {
-	Content   string `json:"content"`
-	StartDate string `json:"start_date,omitempty"`
-	EndDate   string `json:"end_date,omitempty"`
+	Content         string         `json:"content"`
+	StartDate       string         `json:"start_date,omitempty"`
+	EndDate         string         `json:"end_date,omitempty"`
+	ParameterValues map[string]any `json:"parameter_values,omitempty"`
 }
 
 type JinjaRenderSpan struct {
@@ -78,7 +79,7 @@ func (s *JinjaRenderService) Render(ctx context.Context, assetID string, req Jin
 		content = asset.ExecutableFile.Content
 	}
 
-	renderer, err := s.previewRenderer(ctx, assetID, parsed, asset, req.StartDate, req.EndDate)
+	renderer, err := s.previewRenderer(ctx, assetID, parsed, asset, req.StartDate, req.EndDate, req.ParameterValues)
 	if err != nil {
 		return JinjaRenderResult{}, &APIError{Status: 400, Code: "renderer_failed", Message: err.Error()}
 	}
@@ -109,6 +110,7 @@ func (s *JinjaRenderService) previewRenderer(
 	asset *pipeline.Asset,
 	start string,
 	end string,
+	parameterValues map[string]any,
 ) (jinja.RendererInterface, error) {
 	if s.deps.ResolveNotebookJinjaContext != nil {
 		notebookContext, found, err := s.deps.ResolveNotebookJinjaContext(ctx, assetID)
@@ -116,6 +118,11 @@ func (s *JinjaRenderService) previewRenderer(
 			return nil, err
 		}
 		if found {
+			values := cloneNotebookParameterValues(notebookContext.Values)
+			for id, value := range parameterValues {
+				values[id] = cloneJSONValue(value)
+			}
+			notebookContext.Values = values
 			return buildNotebookJinjaPreviewRenderer(start, end, notebookContext)
 		}
 	}

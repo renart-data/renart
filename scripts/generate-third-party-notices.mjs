@@ -40,6 +40,7 @@ const allowedWebLicenseExpressions = new Set([
 ]);
 
 const npmLicenseOverrides = new Map([
+  ["@vscode/l10n", path.join(root, "third_party", "npm", "vscode-l10n", "LICENSE")],
   ["react-remove-scroll-bar", path.join(root, "third_party", "npm", "react-remove-scroll-bar", "LICENSE")],
   ["victory-vendor", path.join(root, "third_party", "npm", "victory-vendor", "LICENSE")],
 ]);

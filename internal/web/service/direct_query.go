@@ -18,6 +18,7 @@ import (
 	"renart/internal/bruincompat"
 	"renart/internal/sqlintelligence"
 	"renart/internal/web/duckcoord"
+	"renart/internal/web/policy"
 	"renart/internal/web/secretstore"
 )
 
@@ -53,6 +54,13 @@ func (e *HybridBruinExecutor) QueryAsset(ctx context.Context, req QueryAssetRequ
 			return nil, err
 		}
 		return output, err
+	}
+	accessConfig, err := e.currentAccessConfig(ctx, req.Environment)
+	if err != nil {
+		return nil, policy.InvalidError(err.Error())
+	}
+	if err := checkConnectionRequirements(e.workspaceRoot, accessConfig, []policy.Requirement{{Connection: connName, Effect: sqlAccessEffect(queryStr, pp.Asset.Type), Operation: "inspect"}}); err != nil {
+		return nil, err
 	}
 
 	dialect, err := bruincompat.AssetTypeToDialect(pp.Asset.Type)
@@ -182,6 +190,18 @@ func (e *HybridBruinExecutor) QueryConnection(ctx context.Context, req QueryConn
 
 	manager, err := e.newConnectionManager(ctx, req.Environment)
 	if err != nil {
+		return nil, err
+	}
+
+	accessConfig, err := e.currentAccessConfig(ctx, req.Environment)
+	if err != nil {
+		return nil, policy.InvalidError(err.Error())
+	}
+	effect := policy.Unknown
+	if readOnly, parseErr := sqlintelligence.IsReadOnlySingleQuery(req.Query, brokerQueryDialect(manager, req.ConnectionName)); parseErr == nil && readOnly {
+		effect = policy.Read
+	}
+	if err := checkConnectionRequirements(e.workspaceRoot, accessConfig, []policy.Requirement{{Connection: req.ConnectionName, Effect: effect, Operation: "query"}}); err != nil {
 		return nil, err
 	}
 

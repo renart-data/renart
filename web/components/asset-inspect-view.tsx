@@ -21,9 +21,12 @@ import {
   getTableDenseMode,
 } from "@/lib/asset-visualization";
 
+import type { PreviewMetadata } from "@/lib/generated/api-types";
+
 const ReactMarkdown = lazy(() => import("react-markdown"));
 
 type Props = {
+  preview?: PreviewMetadata;
   columns: string[];
   rows: Record<string, unknown>[];
   meta?: Record<string, string>;
@@ -35,6 +38,7 @@ type Props = {
 };
 
 export function AssetInspectView({
+  preview,
   columns,
   rows,
   meta,
@@ -155,7 +159,7 @@ export function AssetInspectView({
         loading={loading}
         canLoadMore={canLoadMore}
         onLoadMore={onLoadMore}
-        autoLoadMore
+        preview={preview}
         frameless={frameless}
       />
       <InspectWarningBanner warning={warning} />

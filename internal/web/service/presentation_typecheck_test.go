@@ -85,6 +85,14 @@ layout:
 	)
 
 	require.Len(t, report.Presentations, 1)
+	for _, finding := range report.Presentations[0].Findings {
+		require.NotNil(t, finding.Target)
+		require.Equal(t, "presentation", finding.Target.Kind)
+		require.Equal(t, report.Presentations[0].WorkspaceID, finding.Target.PresentationID)
+		if finding.Field == "missing_total" {
+			require.Equal(t, "total", finding.Target.BlockID)
+		}
+	}
 	assert.Equal(t, "orders", report.Presentations[0].ID)
 	assert.Equal(t, typeCheckStatusError, report.Presentations[0].Status)
 	assert.Equal(t, 1, report.Summary.Presentations)

@@ -70,7 +70,7 @@ func (s *Service) Create(req CreateRequest) (model.Notebook, *apperror.Error) {
 	exampleID := notebook.NewCellID()
 	exampleName := NextCellAutoname(&notebook.Notebook{}, s.pipelineAssetNames())
 	exampleContent := fmt.Sprintf(
-		"/* @bruin\nid: %s\ntype: %s\nclass: %s\n@bruin */\n\nselect 'hello' as greeting, 42 as answer\n",
+		"/* @bruin\nid: %q\ntype: %s\nclass: %s\n@bruin */\n\nselect 'hello' as greeting, 42 as answer\n",
 		exampleID, notebook.DefaultCellType, notebook.ClassNotebook,
 	)
 	if err := os.WriteFile(filepath.Join(absDir, exampleName+".sql"), []byte(exampleContent), 0o644); err != nil {

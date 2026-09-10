@@ -1,6 +1,7 @@
 import { AlertTriangle, ArrowUpRight, Download, Play, Plus, Trash2 } from "lucide-react";
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -49,6 +50,13 @@ import { assetNameParts } from "@/lib/asset-presentation";
 import { cn } from "@/lib/utils";
 
 import { kindMeta, type AppAsset } from "./app-data";
+import {
+  DataBrowserLoadDropTarget,
+  DataBrowserSourceDropTarget,
+  useDataBrowserDropGroups,
+  useDataBrowserLoadTargets,
+  useDataBrowserExpandedTarget,
+} from "./data-browser/data-browser-canvas";
 import { AssetNode, AssetNodeMenuItems, type AssetNodeAction } from "./app-primitives";
 
 export type AppLineageCanvasAsset = AppAsset & {
@@ -107,12 +115,14 @@ function PrefixGroupFlowNode({ data }: NodeProps<PrefixGroupNodeData>) {
           </span>
         </div>
       ) : null}
+      <DataBrowserSourceDropTarget group={data.label} />
     </div>
   );
 }
 
 function AssetFlowNode({ data }: NodeProps<AssetNodeData>) {
   const overview = useStore((state) => state.transform[2] < overviewZoomThreshold);
+  const placingInGroup = useDataBrowserDropGroups().has(assetGroupName(data.asset));
   const displayAsset = {
     ...data.asset,
     name: assetDisplayName(data.asset),
@@ -125,6 +135,7 @@ function AssetFlowNode({ data }: NodeProps<AssetNodeData>) {
       tabIndex={0}
       data-testid="lineage-asset"
       data-asset-id={data.asset.id}
+      inert={placingInGroup || undefined}
       className="cursor-pointer text-left outline-none"
       onClick={() => data.onSelect?.(data.asset.id)}
       onKeyDown={(event) => {
@@ -139,6 +150,7 @@ function AssetFlowNode({ data }: NodeProps<AssetNodeData>) {
       ) : (
         <AssetNode
           asset={displayAsset}
+          runAssetName={data.asset.name}
           selected={data.selected}
           actions={actions}
           onOpenConnection={
@@ -181,7 +193,8 @@ function AssetFlowNode({ data }: NodeProps<AssetNodeData>) {
         card
       )}
       <Handle className="asset-node-hidden-handle" type="source" position={Position.Right} />
-      {data.onCreateDownstream ? (
+      <DataBrowserLoadDropTarget assetId={data.asset.id} label={data.asset.name} />
+      {data.onCreateDownstream && !placingInGroup ? (
         <button
           type="button"
           title="Create downstream asset"
@@ -392,6 +405,13 @@ export function AppLineageCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [paneMenu, setPaneMenu] = useState<{ x: number; y: number; prefix?: string } | null>(null);
+  // The editor content is the primary response to asset navigation. Let React
+  // paint that urgent update before reconciling the selected canvas card; the
+  // graph remains interactive and catches up immediately afterward.
+  const deferredSelectedAssetId = useDeferredValue(selectedAssetId);
+  const dropGroups = useDataBrowserDropGroups();
+  const loadTargets = useDataBrowserLoadTargets();
+  const expandedTarget = useDataBrowserExpandedTarget();
 
   useEffect(() => {
     setLineageAssetId((current) => (current && current !== selectedAssetId ? null : current));
@@ -459,10 +479,11 @@ export function AppLineageCanvas({
   const hasDelete = Boolean(onDeleteAsset);
   const hasExternalImport = Boolean(onImportExternalRelation);
 
-  const { nodes, edges } = useMemo(() => {
+  // Selection, hover, and lineage highlighting update frequently while the
+  // graph topology does not. Keep the comparatively expensive layered layout
+  // and prefix-group geometry out of that interaction path.
+  const graphGeometry = useMemo(() => {
     const graphEdges = derivedEdges(assets, links);
-    const lineage = lineageAssetId ? lineageFor(lineageAssetId, graphEdges) : null;
-    const visuallySelectedAssetId = selectedAssetId ?? lineageAssetId ?? undefined;
     const layout = computeAppLineageLayout({
       nodes: assets.map((asset) => ({
         id: asset.id,
@@ -558,9 +579,9 @@ export function AppLineageCanvas({
         height: measured?.height ?? assetNodeHeight,
         data: {
           asset,
-          selected: asset.id === visuallySelectedAssetId,
-          highlighted: asset.id === highlightAssetId,
-          dimmed: Boolean(lineage && !lineage.all.has(asset.id)),
+          selected: false,
+          highlighted: false,
+          dimmed: false,
           onSelect: asset.readOnly
             ? () => setLineageAssetId((current) => (current === asset.id ? null : asset.id))
             : handleSelect,
@@ -574,39 +595,26 @@ export function AppLineageCanvas({
       };
     });
 
-    const edges: Edge[] = graphEdges.map((edge) => {
-      const active = Boolean(
-        lineage && lineage.all.has(edge.source) && lineage.all.has(edge.target),
-      );
-      const dimmed = Boolean(lineage && !active);
-      return {
-        id: `${edge.source}-${edge.target}`,
-        source: edge.source,
-        target: edge.target,
-        type: "default",
-        className: edge.provisional
-          ? "asset-edge-provisional"
-          : active
-            ? "asset-edge-active"
-            : "asset-edge",
-        animated: active && !edge.provisional,
-        style: {
-          stroke: active || edge.provisional ? undefined : "#a1a1aa",
-          strokeWidth: active || edge.provisional ? undefined : 1.5,
-          opacity: dimmed ? 0.12 : 1,
-        },
-      };
-    });
+    const edges: Edge[] = graphEdges.map((edge) => ({
+      id: `${edge.source}-${edge.target}`,
+      source: edge.source,
+      target: edge.target,
+      type: "default",
+      className: edge.provisional ? "asset-edge-provisional" : "asset-edge",
+      animated: false,
+      style: {
+        stroke: edge.provisional ? undefined : "#a1a1aa",
+        strokeWidth: edge.provisional ? undefined : 1.5,
+        opacity: 1,
+      },
+    }));
 
-    return { nodes: [...groupNodes, ...assetNodes], edges };
+    return { graphEdges, nodes: [...groupNodes, ...assetNodes], edges };
   }, [
     assets,
     goToLabel,
-    highlightAssetId,
-    lineageAssetId,
-    links,
-    selectedAssetId,
     flowInstance,
+    links,
     hasCreateDownstream,
     hasConnectionClick,
     hasQualityReview,
@@ -619,6 +627,46 @@ export function AppLineageCanvas({
     handleOpenConnection,
     handleReviewFailedCheck,
   ]);
+
+  const { nodes, edges } = useMemo(() => {
+    const lineage = lineageAssetId ? lineageFor(lineageAssetId, graphGeometry.graphEdges) : null;
+    const visuallySelectedAssetId = deferredSelectedAssetId ?? lineageAssetId ?? undefined;
+    const nodes = graphGeometry.nodes.map((node) => {
+      if (node.type !== "lineageAsset") {
+        return node;
+      }
+      const data = node.data as AssetNodeData;
+      const selected = data.asset.id === visuallySelectedAssetId;
+      const highlighted = data.asset.id === highlightAssetId;
+      const dimmed = Boolean(lineage && !lineage.all.has(data.asset.id));
+      if (!selected && !highlighted && !dimmed) {
+        return node;
+      }
+      return { ...node, data: { ...data, selected, highlighted, dimmed } };
+    });
+    const edges = !lineage
+      ? graphGeometry.edges
+      : graphGeometry.edges.map((edge) => {
+          const provisional = edge.className === "asset-edge-provisional";
+          const active = lineage.all.has(edge.source) && lineage.all.has(edge.target);
+          return {
+            ...edge,
+            className: provisional
+              ? "asset-edge-provisional"
+              : active
+                ? "asset-edge-active"
+                : "asset-edge",
+            animated: active && !provisional,
+            style: {
+              stroke: active || provisional ? undefined : "#a1a1aa",
+              strokeWidth: active || provisional ? undefined : 1.5,
+              opacity: active ? 1 : 0.12,
+            },
+          };
+        });
+
+    return { nodes, edges };
+  }, [deferredSelectedAssetId, graphGeometry, highlightAssetId, lineageAssetId]);
 
   const centeredGraphRef = useRef<string | null>(null);
   useEffect(() => {
@@ -699,7 +747,31 @@ export function AppLineageCanvas({
   return (
     <div ref={containerRef} className="relative h-full min-h-0 bg-muted/40">
       <ReactFlow
-        nodes={nodes}
+        nodes={
+          dropGroups.size === 0 && !expandedTarget
+            ? nodes
+            : nodes.map((node) => {
+                if (node.type === "prefixGroup") {
+                  const group = (node.data as PrefixGroupNodeData).label;
+                  return dropGroups.has(group)
+                    ? { ...node, zIndex: expandedTarget === `source:${group}` ? 1002 : 1000 }
+                    : node;
+                }
+                const expanded = expandedTarget === `load:${node.id}`;
+                if (!loadTargets.has(node.id) || (!dropGroups.size && !expanded)) return node;
+                // The nearest expanded target wins stacking, without moving
+                // cards. For file placement, only destination handles catch
+                // pointers above a group's source drop area, not the card body.
+                return {
+                  ...node,
+                  zIndex: expanded ? 1003 : 1001,
+                  ...(dropGroups.size
+                    ? { focusable: false, style: { ...node.style, pointerEvents: "none" as const } }
+                    : {}),
+                };
+              })
+        }
+        elevateNodesOnSelect={dropGroups.size === 0 && !expandedTarget}
         edges={edges}
         nodeTypes={nodeTypes}
         nodesDraggable={false}

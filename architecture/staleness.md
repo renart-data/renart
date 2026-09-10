@@ -413,7 +413,7 @@ instead of being joined from retained run history, so pruning old runs cannot
 erase the explanation.
 
 Each `AssetStatus` also carries the last run attempt (`last_run_status`,
-`last_run_at`, `last_run_on_current_content` — the latter true when the run's
+`last_run_id`, `last_run_at`, `last_run_on_current_content` — the latter true when the run's
 fingerprint matches the asset's current one) from `renart_asset_runs`,
 orthogonal to the base `status`. The frontend renders both dimensions instead
 of allowing one to replace the other: for example, unchanged built content can
@@ -422,7 +422,10 @@ current version failed shows its base **Edited**/**Never built** badge + **Build
 failed**. A cancelled attempt is likewise separate. This preserves the answer
 to "can I use the existing data?" while also answering "what happened when I
 last tried to build it?" and distinguishes an untested edit from one that was
-run and failed.
+run and failed. Failed/cancelled badges and their hover cards link to that exact
+attempt's existing run route, including the project and asset-event locator.
+The badge itself is a real keyboard/touch/new-tab link; legacy attempts without
+a stored run ID remain informational rather than guessing a run from time.
 
 Running state is transient and asset-scoped. The UI derives materialization
 state from scheduler steps (initial active-run hydration plus `run.step` SSE
@@ -514,6 +517,27 @@ withholding binary/oversized contents. The immutable snapshot-file endpoint
 remains `/api/snapshots/{versionId}/file`; status also reports whether the latest
 snapshot is executable so identical-but-corrupt content can be repaired by a
 new Deploy instead of dead-ending the UI.
+
+Deployment planning additionally performs a read-only semantic comparison with
+the latest deployed snapshot. The planner materializes that exact baseline,
+builds the same filesystem SQL graph and bounded output-schema fixpoint for
+baseline and saved working tree, and compares SQL assets by stable name.
+Byte-level and canonical query fingerprints are separate: presentation
+formatting and ordinary comments are shown as formatting-only, while optimizer
+directive comments remain behavior-bearing. Ordered inferred output contracts
+make an unchanged downstream query visible when an upstream schema change
+propagates into its output type. Assets with declared schemas additionally use
+the shared SQL output inference for their own comparison, so stale declarations
+cannot hide a newly selected column. Declared nullability metadata is retained
+by output name, and the canonical graph's downstream-resolution rules are not
+changed. Output matching preserves named columns across insertions/removals;
+unmatched pairs describe contract renames, and relative-order changes remain
+explicit. Each impact carries its before/after output ordinal for source-backed
+annotations. Unknown schemas and parse failures mark the
+report incomplete instead of claiming equivalence. The report is warning-only,
+contains no SQL text, and its stable digest is part of the reviewed plan
+identity, so confirmation must reproduce the exact semantic evidence displayed
+by the UI. A first deployment has an explicit no-baseline result.
 
 Schedule promotion validates every selected consumer deployment's URI manifest
 against the same-environment producer pins before changing any row. A missing

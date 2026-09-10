@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useWorkspaceSettingsData } from "@/hooks/use-workspace-settings-data";
+import { parseDetail } from "@/lib/resource-navigation";
+import { uiResourceHref } from "@/lib/ui-navigation";
 import type * as MonacoNS from "monaco-editor";
 import { useAtomValue } from "jotai";
 
@@ -68,6 +71,9 @@ export function useSQLLSP(
 ) {
   const workspace = useAtomValue(workspaceAtom);
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
+  const { workspaceConfig } = useWorkspaceSettingsData();
+  const linkProject = workspaceConfig?.project_id;
+  const linkEnvironment = selectedEnvironment || workspaceConfig?.default_environment;
   const catalogReady = useAtomValue(sqlCatalogReadyEventAtom);
   const connectionName = asset && workspace ? effectiveConnectionForAsset(asset) : null;
   const parseContext = useSQLParseContext(
@@ -618,9 +624,29 @@ export function useSQLLSP(
         monaco.editor.setModelMarkers(
           model,
           SQL_LSP_MARKER_OWNER,
-          (response.diagnostics ?? []).map((diagnostic) => ({
+          (response.diagnostics ?? []).map((diagnostic, index) => ({
             message: diagnostic.message,
-            code: diagnostic.code,
+            code: (() => {
+              const target = response.diagnostic_links?.find(
+                (link) => link.index === index,
+              )?.target;
+              if (!target || !linkProject || !linkEnvironment) return diagnostic.code;
+              try {
+                return {
+                  value: diagnostic.code ?? "Open definition",
+                  target: monaco.Uri.parse(
+                    uiResourceHref(
+                      window.location.href,
+                      linkProject,
+                      parseDetail({ v: 1, environment: linkEnvironment, target }),
+                      providerStateRef.current.workspace ?? undefined,
+                    ),
+                  ),
+                };
+              } catch {
+                return diagnostic.code;
+              }
+            })(),
             source: diagnostic.source,
             severity:
               diagnostic.severity === 1
@@ -642,6 +668,8 @@ export function useSQLLSP(
   }, [
     asset,
     catalogReady.sequence,
+    linkProject,
+    linkEnvironment,
     connectionName,
     documentContext,
     editor,

@@ -3,8 +3,6 @@ title: CLI reference
 description: Commands, flags, output modes, and exit behavior for the Renart CLI.
 ---
 
-# CLI reference
-
 The `renart` binary contains the workspace and its command-line workflows. Run
 `renart --help` or `renart <command> --help` for the exact reference shipped
 with your installed version.
@@ -14,7 +12,7 @@ with your installed version.
 | Command | Purpose |
 | --- | --- |
 | `renart` | Start the desktop app; fall back to the browser when the native helper is unavailable. |
-| `renart web` | Start the browser workspace. |
+| `renart web` | Start the browser-based IDE. |
 | `renart standalone` | Start the desktop app explicitly. |
 | `renart mcp` | Serve workspace-scoped notebook tools to a local coding agent over stdio. |
 | `renart run` | Execute a pipeline or asset. |
@@ -48,7 +46,7 @@ renart web [options] [workspace root]
 | `--static-dir` | `web/dist` | Override the directory containing static web assets. |
 | `--watch-mode` | `auto` | Workspace watcher: `auto`, `fsnotify`, or `poll`. |
 | `--watch-poll-interval` | `2s` | Poll interval used by `poll` and by the polling fallback in `auto`. |
-| `--scheduler` | off | Run the local in-process scheduler. |
+| `--scheduler` | on | Run the local in-process scheduler; use `--scheduler=false` to disable it. |
 | `--scheduler-state` | `.renart/state.db` | Scheduler SQLite state path. |
 | `--notebook-snapshot-max-bytes` | `2147483648` | Maximum staged size for one notebook source snapshot. |
 | `--notebook-snapshot-timeout` | `30m` | Maximum runtime for one notebook source snapshot. |
@@ -74,7 +72,7 @@ platform webview is unavailable, it opens the browser instead.
 | `--static-dir` | `web/dist` | Override the directory containing static web assets. |
 | `--watch-mode` | `auto` | Workspace watcher: `auto`, `fsnotify`, or `poll`. |
 | `--watch-poll-interval` | `2s` | Poll interval used by `poll` and by the polling fallback in `auto`. |
-| `--scheduler` | off | Run the local in-process scheduler. |
+| `--scheduler` | on | Run the local in-process scheduler; use `--scheduler=false` to disable it. |
 | `--scheduler-state` | `.renart/state.db` | Scheduler SQLite state path. |
 | `--notebook-snapshot-max-bytes` | `2147483648` | Maximum staged size for one notebook source snapshot. |
 | `--notebook-snapshot-timeout` | `30m` | Maximum runtime for one notebook source snapshot. |
@@ -109,7 +107,7 @@ renart run [options] [pipeline, asset name, or path]
 ```
 
 Without a target, the command runs the pipeline enclosing the current
-directory. When the workspace already has the same project open, the command delegates
+directory. When the IDE already has the same project open, the command delegates
 to that local server; `--local` bypasses it.
 
 ```bash
@@ -130,7 +128,7 @@ renart run analytics.customer_orders --downstream
 | `--full-refresh` | off | Rebuild from scratch instead of using the saved incremental strategy. |
 | `--sensor-mode` | `once` | Sensor behavior: `once`, `wait`, or `skip`. |
 | `--confirm-environment` | | Supply the environment name when its policy requires explicit confirmation. |
-| `--local` | off | Execute in-process even when the workspace is open. `RENART_NO_SERVER` provides the same override. |
+| `--local` | off | Execute in-process even when the IDE is open. `RENART_NO_SERVER` provides the same override. |
 | `--json` | off | Emit JSON Lines events. |
 | `--quiet`, `-q` | off | Suppress streamed output and print only the final status. |
 
@@ -168,7 +166,7 @@ renart plan analytics.daily_revenue --upstream
 | `--backfill` | off | Mark an explicit single-asset window as a backfill. |
 | `--sensor-mode` | `once` | Sensor behavior: `once`, `wait`, or `skip`. |
 | `--include-stage-content` | off | Include rendered operation bodies in human output. |
-| `--local` | off | Plan in-process even when the workspace is open. `RENART_NO_SERVER` provides the same override. |
+| `--local` | off | Plan in-process even when the IDE is open. `RENART_NO_SERVER` provides the same override. |
 | `--json` | off | Emit the structured plan response as JSON. |
 
 ## `renart render`
@@ -198,7 +196,7 @@ renart render raw.customers --json
 | `--full-refresh` | off | Preview the full-refresh form when policy permits it. |
 | `--source` | working tree | Saved source: `working-tree` or `snapshot`. |
 | `--snapshot` | | Exact deployment version; implies `--source snapshot`. |
-| `--local` | off | Render in-process even when the workspace is open. `RENART_NO_SERVER` provides the same override. |
+| `--local` | off | Render in-process even when the IDE is open. `RENART_NO_SERVER` provides the same override. |
 | `--json` | off | Emit the structured render response as JSON. |
 
 ## `renart ls`

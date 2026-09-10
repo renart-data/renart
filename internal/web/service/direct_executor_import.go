@@ -11,6 +11,7 @@ import (
 
 	"renart/internal/sqlformat"
 	"renart/internal/web/secretstore"
+	"renart/internal/web/sqlnamespace"
 
 	"github.com/bruin-data/bruin/pkg/ansisql"
 	"github.com/bruin-data/bruin/pkg/mssql"
@@ -18,7 +19,6 @@ import (
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/bruin-data/bruin/pkg/postgres"
 	"github.com/bruin-data/bruin/pkg/query"
-	"github.com/bruin-data/bruin/pkg/tablename"
 	"github.com/spf13/afero"
 )
 
@@ -48,12 +48,26 @@ func (e *HybridBruinExecutor) ImportDatabase(ctx context.Context, req ImportData
 	}
 
 	var summary *ansisql.DBDatabase
+	qualifiedImport := false
+	if sqlnamespace.Supported(normalizeConnectionType(manager.GetConnectionType(req.ConnectionName))) && req.PreferredAssetName != "" && len(req.Tables) == 1 && req.Tables[0] == req.PreferredAssetName {
+		parts, parseErr := sqlnamespace.Parts(req.PreferredAssetName)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		if len(parts) == 3 {
+			summary, err = catalogImportSummary(ctx, conn, normalizeConnectionType(manager.GetConnectionType(req.ConnectionName)), parts)
+			if err != nil {
+				return nil, err
+			}
+			qualifiedImport = true
+		}
+	}
 	schemaList := append([]string{}, req.Schemas...)
 	if strings.TrimSpace(req.Schema) != "" {
 		schemaList = []string{req.Schema}
 	}
 
-	if len(schemaList) > 0 {
+	if summary == nil && len(schemaList) > 0 {
 		if schemaSummarizer, ok := conn.(interface {
 			GetDatabaseSummaryForSchemas(context.Context, []string) (*ansisql.DBDatabase, error)
 		}); ok {
@@ -110,7 +124,7 @@ func (e *HybridBruinExecutor) ImportDatabase(ctx context.Context, req ImportData
 	candidates := make([]importCandidate, 0)
 
 	for _, schemaObj := range summary.Schemas {
-		if req.Schema != "" && !strings.EqualFold(schemaObj.Name, req.Schema) {
+		if !qualifiedImport && req.Schema != "" && !strings.EqualFold(schemaObj.Name, req.Schema) {
 			continue
 		}
 		for _, table := range schemaObj.Tables {
@@ -241,7 +255,7 @@ func validatePreferredDirectImportAssetName(preferredName, defaultName, connecti
 	if preferredName == "" {
 		return nil
 	}
-	if capability, ok := tablename.For(normalizeConnectionType(connectionType)); ok {
+	if capability, ok := warehouseTableCapability(normalizeConnectionType(connectionType)); ok {
 		if err := capability.CheckName(preferredName); err != nil {
 			return fmt.Errorf("cannot import source asset as %q for %s: %w", preferredName, capability.Platform, err)
 		}
@@ -356,6 +370,14 @@ func fillDirectAssetColumnsFromDB(ctx context.Context, asset *pipeline.Asset, co
 	}
 
 	fullTableName := schemaName + "." + tableName
+	engine := pipeline.AssetTypeConnectionMapping[asset.Type]
+	if sqlnamespace.Supported(engine) {
+		quoted, err := sqlnamespace.QuoteReference(engine, fullTableName)
+		if err != nil {
+			return err
+		}
+		fullTableName = quoted
+	}
 	if _, ok := conn.(*postgres.Client); ok {
 		fullTableName = postgres.QuoteIdentifier(fullTableName)
 	}

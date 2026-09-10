@@ -22,6 +22,7 @@ import (
 	"renart/internal/web/bus"
 	"renart/internal/web/completion"
 	"renart/internal/web/events"
+	"renart/internal/web/execution"
 	"renart/internal/web/fingerprint"
 	"renart/internal/web/identity"
 	"renart/internal/web/matlog"
@@ -290,6 +291,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 	configureExecutionService(server, absRoot, executionCoordinator)
 
 	server.assetSvc = service.NewAssetService(service.AssetDependencies{
+		RunUnitTestQuery:             server.executionSvc.RunConnectionQueryForEnvironment,
 		Fs:                           afero.NewOsFs(),
 		WorkspaceRoot:                absRoot,
 		ConfigPath:                   resolveConfigFilePath(absRoot),
@@ -305,8 +307,9 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		ConnectionTypeFor: func(connectionName string) string {
 			return server.currentState().Connections[connectionName]
 		},
-		SelectedEnvironment: func() string { return server.currentState().SelectedEnvironment },
-		CurrentState:        func() service.WorkspaceState { return server.currentState() },
+		SelectedEnvironment:     func() string { return server.currentState().SelectedEnvironment },
+		CurrentState:            func() service.WorkspaceState { return server.currentState() },
+		DisableFilesystemAccess: cfg.disableFilesystemAccess,
 		MaterializedSchemaFresh: func(ctx context.Context, assetID, assetName, environment string) (bool, error) {
 			if server.stalenessSvc == nil {
 				return false, nil
@@ -350,6 +353,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		NewConnectionManager: server.newConnectionManager,
 		RunConnectionQuery:   server.executionSvc.RunConnectionQueryForEnvironment,
 	})
+	configureDataBrowserService(server, absRoot)
 	remoteCatalog := service.NewRemoteCatalogCache(service.RemoteCatalogDependencies{
 		DiscoverDatabases: func(ctx context.Context, connection, environment string) ([]string, error) {
 			result, apiErr := server.sqlSvc.Databases(ctx, connection, environment)
@@ -1196,13 +1200,7 @@ func servicePrerequisiteFromScheduler(item webscheduler.PipelineRunPrerequisite)
 func schedulerExecutionContractFromService(
 	contract service.PipelinePlanExecutionContract,
 ) webscheduler.PipelineRunExecutionContract {
-	return webscheduler.PipelineRunExecutionContract{
-		AssetID:               contract.AssetID,
-		AssetName:             contract.AssetName,
-		ConnectionKeys:        append([]string(nil), contract.ConnectionKeys...),
-		MutationResources:     schedulerResourcesFromService(contract.MutationResources),
-		CoordinationResources: schedulerResourcesFromService(contract.CoordinationResources),
-	}
+	return execution.CloneExecutionContract(contract)
 }
 
 func schedulerResourcesFromService(
@@ -1225,13 +1223,7 @@ func serviceExecutionContractsFromScheduler(
 ) []service.PipelinePlanExecutionContract {
 	result := make([]service.PipelinePlanExecutionContract, 0, len(contracts))
 	for _, contract := range contracts {
-		result = append(result, service.PipelinePlanExecutionContract{
-			AssetID:               contract.AssetID,
-			AssetName:             contract.AssetName,
-			ConnectionKeys:        append([]string(nil), contract.ConnectionKeys...),
-			MutationResources:     serviceResourcesFromScheduler(contract.MutationResources),
-			CoordinationResources: serviceResourcesFromScheduler(contract.CoordinationResources),
-		})
+		result = append(result, execution.CloneExecutionContract(contract))
 	}
 	return result
 }

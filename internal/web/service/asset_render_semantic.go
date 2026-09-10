@@ -217,6 +217,10 @@ func renderSeedSemanticAsset(asset *pipeline.Asset, renderer *jinja.Renderer, co
 }
 
 func renderLoadSemanticAsset(asset *pipeline.Asset, cfg *config.Config, renderCtx context.Context, connectionName string) assetRenderSemanticOutcome {
+	parallelism, err := loadParallelism(asset)
+	if err != nil {
+		return semanticRenderError("materialization", "load_parallelism_invalid", err.Error())
+	}
 	params := loadParamsFromAsset(asset)
 	params.DestinationConnection = connectionName
 	if params.SourceConnection == "" {
@@ -261,6 +265,9 @@ func renderLoadSemanticAsset(asset *pipeline.Asset, cfg *config.Config, renderCt
 			"object":     displayTarget,
 		},
 		"materialization": semanticMaterialization(asset, contextFullRefresh(renderCtx), modeArgs),
+	}
+	if parallelism > 0 {
+		operation["parallelism"] = parallelism
 	}
 	outcome := assetRenderSemanticOutcome{
 		handled: true,

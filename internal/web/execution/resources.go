@@ -1,9 +1,21 @@
 package execution
 
 import (
+	"slices"
 	"sort"
 	"strings"
 )
+
+// CloneExecutionContract keeps review and durable execution bindings identical.
+// Copy the complete value first so added scalar fields cannot silently disappear
+// at transport boundaries, then detach every mutable slice.
+func CloneExecutionContract(contract ExecutionContract) ExecutionContract {
+	contract.AccessRequirements = slices.Clone(contract.AccessRequirements)
+	contract.ConnectionKeys = slices.Clone(contract.ConnectionKeys)
+	contract.MutationResources.Claims = slices.Clone(contract.MutationResources.Claims)
+	contract.CoordinationResources.Claims = slices.Clone(contract.CoordinationResources.Claims)
+	return contract
+}
 
 // PipelineExclusiveResources returns the conservative admission contract used
 // whenever an operator cannot prove a stable write-resource identity.
@@ -66,10 +78,24 @@ func EqualExecutionContracts(left, right []ExecutionContract) bool {
 	}
 	for index := range left {
 		if left[index].AssetID != right[index].AssetID ||
+			left[index].AccessPolicyIdentity != right[index].AccessPolicyIdentity ||
+			!equalAccessRequirements(left[index].AccessRequirements, right[index].AccessRequirements) ||
 			left[index].AssetName != right[index].AssetName ||
 			!equalStrings(left[index].ConnectionKeys, right[index].ConnectionKeys) ||
 			!EqualResources(left[index].MutationResources, right[index].MutationResources) ||
 			!EqualResources(left[index].CoordinationResources, right[index].CoordinationResources) {
+			return false
+		}
+	}
+	return true
+}
+
+func equalAccessRequirements(left, right []AccessRequirement) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
 			return false
 		}
 	}

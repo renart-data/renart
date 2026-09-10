@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	duck "github.com/bruin-data/bruin/pkg/duckdb"
 	"github.com/bruin-data/bruin/pkg/query"
@@ -52,8 +51,7 @@ func IsDuckDBLocalFileRelation(relation string) bool {
 }
 
 type duckDBFileSchemaSignature struct {
-	size    int64
-	modTime time.Time
+	digest [sha256.Size]byte
 }
 
 type duckDBFileSchemaEntry struct {
@@ -73,14 +71,10 @@ func NewDuckDBFileSchemaCache() *DuckDBFileSchemaCache {
 }
 
 func (c *DuckDBFileSchemaCache) columns(ctx context.Context, filePath string) ([]ColumnInfo, error) {
-	info, err := os.Stat(filePath)
+	signature, err := duckDBFileSignature(filePath)
 	if err != nil {
 		return nil, err
 	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("DuckDB file relation is not a regular file: %s", filePath)
-	}
-	signature := duckDBFileSchemaSignature{size: info.Size(), modTime: info.ModTime()}
 	if c != nil {
 		c.mu.Lock()
 		entry, ok := c.entries[filePath]
@@ -117,6 +111,34 @@ func (c *DuckDBFileSchemaCache) columns(ctx context.Context, filePath string) ([
 		c.mu.Unlock()
 	}
 	return columns, nil
+}
+
+func duckDBFileSignature(filePath string) (duckDBFileSchemaSignature, error) {
+	paths := []string{filePath}
+	if strings.ContainsAny(filePath, "*?[") {
+		matches, err := filepath.Glob(filePath)
+		if err != nil {
+			return duckDBFileSchemaSignature{}, err
+		}
+		if len(matches) == 0 {
+			return duckDBFileSchemaSignature{}, &os.PathError{Op: "glob", Path: filePath, Err: os.ErrNotExist}
+		}
+		paths = matches
+	}
+	hash := sha256.New()
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			return duckDBFileSchemaSignature{}, err
+		}
+		if !info.Mode().IsRegular() {
+			return duckDBFileSchemaSignature{}, fmt.Errorf("DuckDB file relation is not a regular file: %s", path)
+		}
+		_, _ = fmt.Fprintf(hash, "%s\x00%d\x00%d\x00", filepath.Clean(path), info.Size(), info.ModTime().UnixNano())
+	}
+	var digest [sha256.Size]byte
+	copy(digest[:], hash.Sum(nil))
+	return duckDBFileSchemaSignature{digest: digest}, nil
 }
 
 // EnrichDuckDBFileRelations adds request-local relation/schema nodes for files

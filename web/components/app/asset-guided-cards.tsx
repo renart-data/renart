@@ -1,6 +1,16 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  type Ref,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { useAtomValue } from "jotai";
 import {
@@ -9,10 +19,14 @@ import {
   Check,
   ChevronRight,
   ChevronsUpDown,
+  Columns3,
+  GitBranch,
   KeyRound,
   Plus,
   RefreshCw,
   RotateCcw,
+  ShieldCheck,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
@@ -78,6 +92,7 @@ import {
 } from "@/lib/artifact-column-impact";
 import { classifyDependencies, columnStatus, parseAssetProvenance } from "@/lib/asset-provenance";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getAssetColumnRefreshMode, isSeedAssetType, isSqlAssetType } from "@/lib/asset-types";
 import { cn } from "@/lib/utils";
 import { WebAsset, WebColumn } from "@/lib/types";
@@ -87,6 +102,13 @@ import { AssetHooks } from "./asset-hooks";
 import { MultiValueInput } from "./multi-value-input";
 import { SchemaSyncDialog } from "./schema-sync-dialog";
 import { AssetDependencyPicker } from "./asset-dependency-picker";
+import { useResourceNavigation } from "@/hooks/use-resource-navigation";
+import { useNavigationArrival, useArrivalHighlight } from "@/hooks/use-navigation-arrival";
+import { resolveColumn, type ColumnTarget } from "@/lib/resource-navigation";
+
+const AssetUnitTests = lazy(() =>
+  import("./asset-unit-tests").then((module) => ({ default: module.AssetUnitTests })),
+);
 
 /**
  * Guided metadata cards for the app asset editor (§13–14 of the asset
@@ -95,6 +117,7 @@ import { AssetDependencyPicker } from "./asset-dependency-picker";
  * the asset API, and the workspace SSE stream refreshes the asset prop.
  */
 export type QualityCheckFocus = FailedQualityCheck & { token: number };
+type AssetMetadataTab = "general" | "lineage" | "columns" | "checks" | "tests";
 
 export function AssetGuidedCards({
   asset,
@@ -112,31 +135,229 @@ export function AssetGuidedCards({
   const supportsColumns =
     (asset.column_inference_sources?.length ?? 0) > 0 ||
     getAssetColumnRefreshMode(asset.type, asset.parameters) !== "none";
+  const navigation = useResourceNavigation();
+  const linked = navigation.detail;
+  const arrival = useNavigationArrival(linked);
+  const highlightSection = useArrivalHighlight(arrival);
+  const target = linked?.target;
+  const addressed =
+    target &&
+    (target.kind === "asset-column" || target.kind === "asset-section") &&
+    target.asset_id === asset.id
+      ? target
+      : undefined;
+  const section = addressed?.kind === "asset-column" ? "columns" : addressed?.section;
+  const [localTab, setActiveTab] = useState<AssetMetadataTab>(focusedCheck ? "checks" : "general");
+  const activeTab: AssetMetadataTab =
+    section === "columns" || section === "checks" || section === "tests"
+      ? section
+      : section === "dependencies"
+        ? "lineage"
+        : section === "identity" || section === "materialization"
+          ? "general"
+          : localTab;
+  useEffect(() => {
+    if (section && section !== "source") setActiveTab(activeTab);
+  }, [section, activeTab]);
+  const linkedColumn =
+    addressed?.kind === "asset-column"
+      ? resolveColumn(asset.columns ?? [], addressed.column)
+      : undefined;
+  const linkedCheckColumn =
+    addressed?.kind === "asset-section" && addressed.column
+      ? resolveColumn(asset.columns ?? [], addressed.column)
+      : undefined;
+  const linkedCheck = linkedCheckColumn?.checks?.filter(
+    (check) => check.name === addressed?.check_name,
+  );
+  const sectionFocus = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (!node || !arrival || section !== "materialization") return;
+      const frame = requestAnimationFrame(() => {
+        if (!node.isConnected || node.getClientRects().length === 0) return;
+        node.focus({ preventScroll: true });
+        const viewport = node.closest('[data-slot="scroll-area-viewport"]');
+        if (viewport)
+          viewport.scrollTop +=
+            node.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+        highlightSection(node);
+      });
+      return () => cancelAnimationFrame(frame);
+    },
+    [section, arrival],
+  );
+  const routeCheck: QualityCheckFocus | undefined =
+    linkedCheckColumn && linkedCheck?.length === 1
+      ? { kind: "column", column: linkedCheckColumn.name, name: linkedCheck[0].name, token: 0 }
+      : undefined;
   const [localFocus, setLocalFocus] = useState<QualityCheckFocus | null>(null);
   useEffect(() => setLocalFocus(null), [focusedCheck?.token]);
-  const activeFocus = localFocus ?? focusedCheck;
+  const focusedCheckToken = focusedCheck?.token;
+  useEffect(() => {
+    if (focusedCheckToken !== undefined) setActiveTab("checks");
+  }, [focusedCheckToken]);
+  const activeFocus = routeCheck ?? localFocus ?? focusedCheck;
+  const dependencyCount = asset.dependencies?.length ?? asset.upstreams?.length ?? 0;
+  const columnCount = asset.columns?.length ?? 0;
+  const checkCount =
+    (asset.custom_checks?.length ?? 0) +
+    (asset.columns ?? []).reduce((count, column) => count + (column.checks?.length ?? 0), 0);
+
   return (
-    <ScrollArea className="min-h-0 w-full flex-1">
-      <div className="divide-y px-3">
-        <IdentityCard asset={asset} pipelineId={pipelineId} />
-        <MaterializationCard asset={asset} pipelineId={pipelineId} />
-        {isSqlAssetType(asset.type) ? (
-          <GuidedCard title="SQL hooks">
-            <AssetHooks asset={asset} />
-          </GuidedCard>
-        ) : null}
-        <DependenciesCard asset={asset} onGoToAsset={onGoToAsset} />
-        {supportsColumns ? <ColumnsCard asset={asset} /> : null}
-        {supportsColumns ? (
-          <QualityChecksCard
-            asset={asset}
-            quality={quality}
-            focusedCheck={activeFocus}
-            onFocusCheck={(check) => setLocalFocus({ ...check, token: Date.now() })}
-          />
-        ) : null}
+    <Tabs
+      value={activeTab}
+      onValueChange={(value) => {
+        setActiveTab(value as AssetMetadataTab);
+        void navigation.open(
+          {
+            kind: "asset-section",
+            asset_id: asset.id,
+            section:
+              value === "general" ? "identity" : value === "lineage" ? "dependencies" : value,
+          },
+          linked?.environment,
+        );
+      }}
+      className="min-h-0 w-full flex-1 gap-0"
+    >
+      <div className="shrink-0 border-b px-2 py-1.5">
+        <TabsList
+          aria-label="Asset property sections"
+          className={cn(
+            "grid w-full",
+            isSqlAssetType(asset.type)
+              ? "grid-cols-5"
+              : supportsColumns
+                ? "grid-cols-4"
+                : "grid-cols-2",
+          )}
+        >
+          <MetadataTab value="general" label="General" icon={SlidersHorizontal} />
+          <MetadataTab value="lineage" label="Lineage" icon={GitBranch} count={dependencyCount} />
+          {supportsColumns ? (
+            <MetadataTab value="columns" label="Columns" icon={Columns3} count={columnCount} />
+          ) : null}
+          {supportsColumns ? (
+            <MetadataTab value="checks" label="Checks" icon={ShieldCheck} count={checkCount} />
+          ) : null}
+          {isSqlAssetType(asset.type) ? (
+            <MetadataTab
+              value="tests"
+              label="Tests"
+              icon={ShieldCheck}
+              count={asset.unit_tests?.length}
+            />
+          ) : null}
+        </TabsList>
       </div>
-    </ScrollArea>
+      <ScrollArea className="min-h-0 w-full flex-1">
+        {isSqlAssetType(asset.type) && activeTab === "tests" ? (
+          <TabsContent value="tests" className="m-0">
+            <Suspense
+              fallback={<p className="p-3 text-xs text-muted-foreground">Loading tests…</p>}
+            >
+              <AssetUnitTests key={asset.id} asset={asset} />
+            </Suspense>
+          </TabsContent>
+        ) : null}
+        {addressed?.kind === "asset-column" && !linkedColumn ? (
+          <p role="alert" className="p-3 text-sm">
+            The linked column is missing or ambiguous. No other column has been selected.
+          </p>
+        ) : null}
+        {addressed?.check_name && !routeCheck ? (
+          <p role="alert" className="p-3 text-sm">
+            The linked check is missing or ambiguous.
+          </p>
+        ) : null}
+        <TabsContent value="general" forceMount className="m-0 data-[state=inactive]:hidden">
+          <div className="divide-y px-3">
+            <IdentityCard asset={asset} pipelineId={pipelineId} />
+            <div tabIndex={-1} ref={sectionFocus}>
+              <MaterializationCard asset={asset} pipelineId={pipelineId} />
+            </div>
+            {isSqlAssetType(asset.type) ? (
+              <GuidedCard title="SQL hooks">
+                <AssetHooks asset={asset} />
+              </GuidedCard>
+            ) : null}
+          </div>
+        </TabsContent>
+        <TabsContent value="lineage" forceMount className="m-0 data-[state=inactive]:hidden">
+          <div className="px-3">
+            <DependenciesCard asset={asset} onGoToAsset={onGoToAsset} />
+          </div>
+        </TabsContent>
+        {supportsColumns ? (
+          <TabsContent value="columns" forceMount className="m-0 data-[state=inactive]:hidden">
+            <div className="px-3">
+              <ColumnsCard
+                asset={asset}
+                environmentOverride={addressed ? linked?.environment : undefined}
+                focusedColumn={linkedColumn?.name}
+                focusedField={addressed?.kind === "asset-column" ? addressed.field : undefined}
+                focusToken={linkedColumn ? arrival : undefined}
+                onFocusColumn={(column, field = "type") =>
+                  void navigation.reflect(
+                    { kind: "asset-column", asset_id: asset.id, column, field },
+                    linked?.environment,
+                  )
+                }
+              />
+            </div>
+          </TabsContent>
+        ) : null}
+        {supportsColumns ? (
+          <TabsContent value="checks" forceMount className="m-0 data-[state=inactive]:hidden">
+            <div className="px-3">
+              <QualityChecksCard
+                asset={asset}
+                quality={quality}
+                focusedCheck={activeFocus}
+                onFocusCheck={(check) => {
+                  setLocalFocus({ ...check, token: Date.now() });
+                  if (check.kind === "column")
+                    void navigation.open(
+                      {
+                        kind: "asset-section",
+                        asset_id: asset.id,
+                        section: "checks",
+                        column: check.column,
+                        check_name: check.name,
+                      },
+                      linked?.environment,
+                    );
+                }}
+              />
+            </div>
+          </TabsContent>
+        ) : null}
+      </ScrollArea>
+    </Tabs>
+  );
+}
+
+function MetadataTab({
+  value,
+  label,
+  icon: Icon,
+  count,
+}: {
+  value: AssetMetadataTab;
+  label: string;
+  icon: typeof SlidersHorizontal;
+  count?: number;
+}) {
+  return (
+    <TabsTrigger
+      value={value}
+      aria-label={label}
+      title={typeof count === "number" ? `${label} (${count})` : label}
+      className="min-w-0 gap-1 px-1 text-[11px]"
+    >
+      <Icon className="size-3.5" />
+      <span className="truncate">{label}</span>
+    </TabsTrigger>
   );
 }
 
@@ -169,7 +390,7 @@ function GuidedCard({
 
 // --- Identity card (§14.1) ---
 
-function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: string }) {
+export function IdentityCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: string }) {
   const fieldIdPrefix = `${useId()}-identity`;
   const fieldId = (name: string) => `${fieldIdPrefix}-${name}`;
   const workspace = useAtomValue(workspaceAtom);
@@ -497,7 +718,13 @@ export function ColumnCombobox({
   );
 }
 
-function MaterializationCard({ asset, pipelineId }: { asset: WebAsset; pipelineId: string }) {
+export function MaterializationCard({
+  asset,
+  pipelineId,
+}: {
+  asset: WebAsset;
+  pipelineId: string;
+}) {
   const fieldIdPrefix = `${useId()}-materialization`;
   const fieldId = (name: string) => `${fieldIdPrefix}-${name}`;
   const { selected, selectedValue, options, hasEditor } = materializationEditorState(asset);
@@ -638,7 +865,7 @@ function MaterializationCard({ asset, pipelineId }: { asset: WebAsset; pipelineI
 
 // --- Dependencies card (§14.3) ---
 
-function DependenciesCard({
+export function DependenciesCard({
   asset,
   onGoToAsset,
 }: {
@@ -889,10 +1116,25 @@ function fallbackColumnInferenceSources(asset: WebAsset): ColumnInferenceSource[
   ];
 }
 
-function ColumnsCard({ asset }: { asset: WebAsset }) {
+export function ColumnsCard({
+  asset,
+  environmentOverride,
+  focusedColumn,
+  focusToken,
+  onFocusColumn,
+  focusedField = "type",
+}: {
+  asset: WebAsset;
+  environmentOverride?: string;
+  focusedColumn?: string;
+  focusToken?: string;
+  onFocusColumn?: (column: string, field?: ColumnTarget["field"]) => void;
+  focusedField?: ColumnTarget["field"];
+}) {
   const schemaSourceIdPrefix = `${useId()}-schema-source`;
   const manualColumnInputId = `${schemaSourceIdPrefix}-manual-column`;
-  const environment = useAtomValue(selectedEnvironmentAtom);
+  const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
+  const environment = environmentOverride ?? selectedEnvironment;
   const workspace = useAtomValue(workspaceAtom);
   const sources = useMemo(
     () =>
@@ -1144,6 +1386,11 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
         onApply={(resolutions) => void applyResolution(resolutions)}
       />
 
+      {focusedColumn && ["update_on_merge", "merge_sql"].includes(focusedField) && !isSQLMerge ? (
+        <p role="alert" className="text-xs">
+          The linked field is not available for this materialization.
+        </p>
+      ) : null}
       {columns.length === 0 ? (
         <p className="text-[11px] text-muted-foreground">
           No columns. Add one manually or sync the schema from an available source.
@@ -1158,6 +1405,13 @@ function ColumnsCard({ asset }: { asset: WebAsset }) {
               <ColumnRow
                 key={column.name}
                 column={column}
+                focusToken={column.name === focusedColumn ? focusToken : undefined}
+                onReveal={() => onFocusColumn?.(column.name)}
+                focusedField={focusedField}
+                onFieldFocus={(field) => {
+                  if (column.name !== focusedColumn || field !== focusedField)
+                    onFocusColumn?.(column.name, field);
+                }}
                 status={columnStatus(column.name, provenance)}
                 onCommitType={(type) => commitType(column, type)}
                 onCommitDescription={(description) => setDescription(column.name, description)}
@@ -1275,7 +1529,7 @@ function columnCheckKey(column: string, name: string) {
   return `${column.trim().toLowerCase()}\u0000${name.trim().toLowerCase()}`;
 }
 
-function QualityChecksCard({
+export function QualityChecksCard({
   asset,
   quality,
   focusedCheck,
@@ -1303,7 +1557,13 @@ function QualityChecksCard({
     const key = columnCheckKey(focusedCheck.column, focusedCheck.name);
     const element = columnCheckElements.current.get(key);
     if (!element) return;
-    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    element.focus({ preventScroll: true });
+    const viewport = element.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
+    if (viewport)
+      viewport.scrollTop +=
+        element.getBoundingClientRect().top -
+        viewport.getBoundingClientRect().top -
+        viewport.clientHeight / 2;
     setHighlightedColumnCheck(key);
     const timeout = window.setTimeout(() => setHighlightedColumnCheck(""), 2200);
     return () => window.clearTimeout(timeout);
@@ -1390,6 +1650,7 @@ function QualityChecksCard({
                         else columnCheckElements.current.delete(key);
                       }}
                       data-column-check={`${col.name}:${check.name}`}
+                      tabIndex={-1}
                       data-highlighted={
                         highlightedColumnCheck === columnCheckKey(col.name, check.name)
                           ? "true"
@@ -1481,7 +1742,11 @@ function QualityChecksCard({
 }
 
 function ColumnRow({
+  focusedField,
+  onFieldFocus,
   column,
+  focusToken,
+  onReveal,
   status,
   onCommitType,
   onCommitDescription,
@@ -1493,6 +1758,10 @@ function ColumnRow({
   impacts,
 }: {
   column: WebColumn;
+  focusedField: ColumnTarget["field"];
+  onFieldFocus: (field: ColumnTarget["field"]) => void;
+  focusToken?: string;
+  onReveal?: () => void;
   status: ReturnType<typeof columnStatus>;
   onCommitType: (type: string) => void;
   onCommitDescription: (description: string) => void;
@@ -1509,11 +1778,49 @@ function ColumnRow({
   const primaryKeyInputId = `${fieldIdPrefix}-primary-key`;
   const updateOnMergeInputId = `${fieldIdPrefix}-update-on-merge`;
   const mergeSQLInputId = `${fieldIdPrefix}-merge-sql`;
+  const [open, setOpen] = useState(Boolean(focusToken));
+  const [localReveal, setLocalReveal] = useState(0);
+  const revealToken = focusToken ?? (localReveal ? `local:${localReveal}` : undefined);
+  const focusedToken = useRef<string | undefined>(undefined);
+  const highlight = useArrivalHighlight(focusToken);
+  useEffect(() => {
+    if (focusToken) setOpen(true);
+    else focusedToken.current = undefined;
+  }, [focusToken]);
+  const focusType = useCallback(
+    (input: HTMLElement | null) => {
+      if (!input || !revealToken || focusedToken.current === revealToken) return;
+      const frame = requestAnimationFrame(() => {
+        if (!input.isConnected || input.getClientRects().length === 0) return;
+        focusedToken.current = revealToken;
+        input.focus({ preventScroll: true });
+        const viewport = input.closest('[data-slot="scroll-area-viewport"]');
+        if (viewport)
+          viewport.scrollTop +=
+            input.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 48;
+        highlight(input);
+      });
+      return () => cancelAnimationFrame(frame);
+    },
+    [revealToken, highlight],
+  );
+  const focusField = (field: ColumnTarget["field"]) =>
+    field === focusedField ? focusType : undefined;
   const affectedArtifactCount = new Set(impacts.map((impact) => artifactRefKey(impact.consumer)))
     .size;
 
   return (
-    <Collapsible className="group/column">
+    <Collapsible
+      className="group/column"
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          setLocalReveal((value) => value + 1);
+          onReveal?.();
+        }
+      }}
+    >
       <CollapsibleTrigger asChild>
         <Button
           variant="ghost"
@@ -1584,6 +1891,13 @@ function ColumnRow({
             <FieldLabel htmlFor={typeInputId}>Type</FieldLabel>
             <CommitInput
               id={typeInputId}
+              inputRef={focusField("type")}
+              onFocus={() => onFieldFocus("type")}
+              className={
+                focusToken && focusedField === "type"
+                  ? "border-primary ring-2 ring-primary/20"
+                  : undefined
+              }
               mono
               value={column.type ?? ""}
               placeholder="Unknown"
@@ -1594,6 +1908,8 @@ function ColumnRow({
             <FieldLabel htmlFor={descriptionInputId}>Description</FieldLabel>
             <CommitInput
               id={descriptionInputId}
+              inputRef={focusField("description")}
+              onFocus={() => onFieldFocus("description")}
               value={column.description ?? ""}
               placeholder="Describe this column"
               onCommit={onCommitDescription}
@@ -1602,6 +1918,8 @@ function ColumnRow({
           <Field orientation="horizontal" className="w-auto gap-2">
             <Checkbox
               id={primaryKeyInputId}
+              ref={focusField("primary_key")}
+              onFocus={() => onFieldFocus("primary_key")}
               checked={Boolean(column.primary_key)}
               onCheckedChange={(checked) => {
                 if ((checked === true) !== Boolean(column.primary_key)) onTogglePrimaryKey();
@@ -1616,6 +1934,8 @@ function ColumnRow({
               <Field orientation="horizontal" className="w-auto gap-2">
                 <Checkbox
                   id={updateOnMergeInputId}
+                  ref={focusField("update_on_merge")}
+                  onFocus={() => onFieldFocus("update_on_merge")}
                   checked={Boolean(column.update_on_merge)}
                   onCheckedChange={(checked) => {
                     if ((checked === true) !== Boolean(column.update_on_merge)) {
@@ -1631,6 +1951,8 @@ function ColumnRow({
                 <FieldLabel htmlFor={mergeSQLInputId}>Merge expression</FieldLabel>
                 <CommitInput
                   id={mergeSQLInputId}
+                  inputRef={focusField("merge_sql")}
+                  onFocus={() => onFieldFocus("merge_sql")}
                   mono
                   value={column.merge_sql ?? ""}
                   placeholder="Optional SQL expression"
@@ -1738,7 +2060,9 @@ function FieldRow({
  * fire on every keystroke.
  */
 function CommitInput({
+  onFocus,
   id,
+  inputRef,
   value,
   placeholder,
   onCommit,
@@ -1748,6 +2072,8 @@ function CommitInput({
   ariaDescribedBy,
 }: {
   id?: string;
+  inputRef?: Ref<HTMLInputElement>;
+  onFocus?: () => void;
   value: string;
   placeholder?: string;
   onCommit: (value: string) => void;
@@ -1762,6 +2088,8 @@ function CommitInput({
   return (
     <Input
       id={id}
+      ref={inputRef}
+      onFocus={onFocus}
       className={cn("h-8 text-xs", mono && "font-monaco", className)}
       value={draft}
       placeholder={placeholder}

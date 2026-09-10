@@ -7,6 +7,7 @@ const webRoot = resolve(import.meta.dirname, "..");
 const repoRoot = resolve(webRoot, "..");
 const iconDir = resolve(webRoot, "public", "icons");
 const docsIconDir = resolve(repoRoot, "docs", "public", "icons");
+const desktopIconDir = resolve(repoRoot, "internal", "desktopicon");
 const sourceSvg = resolve(iconDir, "icon.svg");
 const svgMarkup = readFileSync(sourceSvg, "utf8");
 const svgDataUrl = `data:image/svg+xml;base64,${Buffer.from(svgMarkup).toString("base64")}`;
@@ -137,6 +138,12 @@ const favicon = createIcoFromPngs([
   readFileSync(resolve(iconDir, "icon-32.png")),
 ]);
 writeFileIfChanged(resolve(iconDir, "favicon.ico"), favicon);
+
+mkdirSync(desktopIconDir, { recursive: true });
+writeFileIfChanged(
+  resolve(desktopIconDir, "icon-256.png"),
+  readFileSync(resolve(iconDir, "icon-256.png")),
+);
 
 mkdirSync(docsIconDir, { recursive: true });
 for (const fileName of ["icon.svg", "icon-32.png", "icon-64.png", "apple-touch-icon.png"]) {

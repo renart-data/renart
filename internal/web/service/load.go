@@ -155,6 +155,14 @@ func resolveLoadConnectionURI(manager config.ConnectionGetter, connectionName st
 	}
 	if details, ok := manager.(config.ConnectionDetailsGetter); ok {
 		switch connection := details.GetConnectionDetails(name).(type) {
+		case *config.S3Connection:
+			return slingS3ConnectionPayload(*connection)
+		case config.S3Connection:
+			return slingS3ConnectionPayload(connection)
+		case *config.SFTPConnection:
+			return slingSFTPConnectionURI(*connection)
+		case config.SFTPConnection:
+			return slingSFTPConnectionURI(connection)
 		case *config.ClickHouseConnection:
 			return slingClickHouseConnectionURI(*connection)
 		case config.ClickHouseConnection:
@@ -164,12 +172,24 @@ func resolveLoadConnectionURI(manager config.ConnectionGetter, connectionName st
 		case config.DatabricksConnection:
 			return slingDatabricksConnectionPayload(connection)
 		case *config.DuckDBConnection:
+			if connection.Lakehouse != nil && nativeConnectionReadOnly(connection) {
+				return "", fmt.Errorf("read-only DuckLake Load sources are not supported by this adapter; use a supported read-only source connection")
+			}
 			if connection.Lakehouse != nil {
 				return slingDuckLakeConnectionURI(*connection)
 			}
+			if nativeConnectionReadOnly(connection) {
+				return slingReadOnlyDuckDBConnection(*connection)
+			}
 		case config.DuckDBConnection:
+			if connection.Lakehouse != nil && nativeConnectionReadOnly(connection) {
+				return "", fmt.Errorf("read-only DuckLake Load sources are not supported by this adapter; use a supported read-only source connection")
+			}
 			if connection.Lakehouse != nil {
 				return slingDuckLakeConnectionURI(connection)
+			}
+			if nativeConnectionReadOnly(connection) {
+				return slingReadOnlyDuckDBConnection(connection)
 			}
 		case *config.StarRocksConnection:
 			return slingStarRocksConnectionURI(*connection)
@@ -195,6 +215,14 @@ func resolveLoadConnectionURI(manager config.ConnectionGetter, connectionName st
 		return strings.TrimSpace(raw), nil
 	}
 	return "", fmt.Errorf("connection %q cannot be converted to a Load connection URI", name)
+}
+
+// Sling's DuckDB adapter uses read_only (not access_mode) to launch DuckDB
+// with -readonly. Bruin's GetIngestrURI drops the native ReadOnly field.
+func slingReadOnlyDuckDBConnection(connection config.DuckDBConnection) (string, error) {
+	path := strings.TrimPrefix(connection.Path, "duckdb://")
+	payload, err := json.Marshal(map[string]any{"type": "duckdb", "url": "duckdb://" + path, "read_only": true})
+	return string(payload), err
 }
 
 // Bruin's ingestr URI uses Databricks' HTTP path as a query option and omits
@@ -514,6 +542,8 @@ const (
 	loadParamSourceConnection  = "source_connection"
 	loadParamSourceTable       = "source_table"
 	loadParamDestinationObject = "destination_object"
+	loadParamParallelism       = "parallelism"
+	maxLoadParallelism         = 32
 )
 
 // loadRunParams is the resolved, flat replication intent of a Load asset.
@@ -523,6 +553,7 @@ type loadRunParams struct {
 	DestinationConnection string
 	DestinationObject     string
 	AssetName             string
+	Parallelism           int
 }
 
 // loadParamsFromAsset reads the flat replication parameters off an asset.
@@ -545,12 +576,40 @@ func loadParamsFromAsset(asset *pipeline.Asset) loadRunParams {
 
 func resolvedLoadParams(asset *pipeline.Asset, pl *pipeline.Pipeline) (loadRunParams, error) {
 	params := loadParamsFromAsset(asset)
+	parallelism, err := loadParallelism(asset)
+	if err != nil {
+		return params, err
+	}
+	params.Parallelism = parallelism
 	connectionName, err := loadConnectionNameForAsset(asset, pl)
 	if err != nil {
 		return params, err
 	}
 	params.DestinationConnection = connectionName
 	return params, nil
+}
+
+func parseLoadParallelism(raw string) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 1 || value > maxLoadParallelism {
+		return 0, fmt.Errorf("load parallelism must be a whole number between 1 and %d", maxLoadParallelism)
+	}
+	return value, nil
+}
+
+func loadParallelism(asset *pipeline.Asset) (int, error) {
+	if asset == nil {
+		return 0, nil
+	}
+	value, scalar := asset.Parameters.GetString(loadParamParallelism)
+	if !scalar && asset.Parameters[loadParamParallelism] != nil {
+		return 0, fmt.Errorf("load parallelism must be a whole number between 1 and %d", maxLoadParallelism)
+	}
+	return parseLoadParallelism(value)
 }
 
 // loadLocalConnectionName is the synthetic "connection" that marks a Load
@@ -668,6 +727,7 @@ type loadAssetParametersYAML struct {
 	SourceConnection  string `yaml:"source_connection"`
 	SourceTable       string `yaml:"source_table"`
 	DestinationObject string `yaml:"destination_object,omitempty"`
+	Parallelism       string `yaml:"parallelism,omitempty"`
 }
 
 type loadAssetMaterializationYAML struct {
@@ -676,6 +736,13 @@ type loadAssetMaterializationYAML struct {
 }
 
 func renderLoadAssetContent(connection, sourceConnection, sourceTable, destinationObject string, depends []string) (string, error) {
+	return renderLoadAssetContentWithParallelism(connection, sourceConnection, sourceTable, destinationObject, depends, "")
+}
+
+func renderLoadAssetContentWithParallelism(connection, sourceConnection, sourceTable, destinationObject string, depends []string, parallelism string) (string, error) {
+	if _, err := parseLoadParallelism(parallelism); err != nil {
+		return "", err
+	}
 	if strings.TrimSpace(sourceConnection) == "" {
 		return "", errors.New("load asset requires a source connection")
 	}
@@ -693,6 +760,7 @@ func renderLoadAssetContent(connection, sourceConnection, sourceTable, destinati
 			SourceConnection:  strings.TrimSpace(sourceConnection),
 			SourceTable:       strings.TrimSpace(sourceTable),
 			DestinationObject: strings.TrimSpace(destinationObject),
+			Parallelism:       strings.TrimSpace(parallelism),
 		},
 		Materialization: loadAssetMaterializationYAML{
 			Type:     "table",
@@ -860,13 +928,22 @@ func withoutSelfReferentialSlingBinary(env []string, commandPath string) []strin
 func slingCommandConnectionEnv(args []string) ([]string, []string) {
 	normalized := append([]string(nil), args...)
 	var env []string
+	var sourceConnection, sourceStream, targetConnection, targetObject string
 	for i := 0; i+1 < len(normalized); i++ {
 		var name string
 		switch normalized[i] {
 		case "--src-conn":
 			name = slingSourceConnectionEnv
+			sourceConnection = name
+		case "--src-stream":
+			sourceStream = normalized[i+1]
+			continue
 		case "--tgt-conn":
 			name = slingTargetConnectionEnv
+			targetConnection = name
+		case "--tgt-object":
+			targetObject = normalized[i+1]
+			continue
 		default:
 			continue
 		}
@@ -877,6 +954,23 @@ func slingCommandConnectionEnv(args []string) ([]string, []string) {
 		normalized[i+1] = name
 		env = append(env, name+"="+value)
 		i++
+	}
+	task := map[string]map[string]string{}
+	if sourceConnection != "" && strings.Contains(sourceStream, "://") {
+		// Sling 1.5.22 processRun renames src-conn to src_conn while iterating
+		// a map. If src-stream is visited later, its URL replaces the connection
+		// (and loses credentials). Task configuration is applied after flags.
+		task["source"] = map[string]string{
+			"conn": sourceConnection, "stream": sourceStream,
+		}
+	}
+	// The same flag-renaming bug applies to URL destinations.
+	if targetConnection != "" && strings.Contains(targetObject, "://") {
+		task["target"] = map[string]string{"conn": targetConnection, "object": targetObject}
+	}
+	if len(task) > 0 {
+		payload, _ := json.Marshal(task)
+		env = append(env, "SLING_TASK_CONFIG="+string(payload))
 	}
 	return normalized, env
 }
@@ -1035,6 +1129,9 @@ func (e *HybridBruinExecutor) runLoadAsset(ctx context.Context, pl *pipeline.Pip
 	if asset == nil {
 		return nil, errors.New("load asset is required")
 	}
+	if err := e.checkRuntimeAssetAccess(ctx, pl, asset, nil); err != nil {
+		return nil, err
+	}
 	writer := &streamCaptureWriter{buffer: bytes.NewBuffer(nil), onChunk: onChunk}
 
 	params, err := resolvedLoadParams(asset, pl)
@@ -1065,7 +1162,11 @@ func (e *HybridBruinExecutor) runLoadAsset(ctx context.Context, pl *pipeline.Pip
 		return writer.buffer.Bytes(), err
 	}
 	args = append(args, modeArgs...)
-	targetOptions, err := slingTargetOptionsArgs(manager, params.DestinationConnection, nil)
+	extraTargetOptions := map[string]any{}
+	if params.Parallelism > 0 {
+		extraTargetOptions["concurrency"] = params.Parallelism
+	}
+	targetOptions, err := slingTargetOptionsArgs(manager, params.DestinationConnection, extraTargetOptions)
 	if err != nil {
 		return writer.buffer.Bytes(), err
 	}
@@ -1078,6 +1179,11 @@ func (e *HybridBruinExecutor) runLoadAsset(ctx context.Context, pl *pipeline.Pip
 	}
 	cmd := newStreamingCommand(ctx, cmdName, cmdArgs, e.workspaceRoot, writer)
 	cmd.Env = append(cmd.Env, connectionEnv...)
+	if params.Parallelism > 0 {
+		// This controls transfer workers inside this one Load, not concurrent
+		// assets/replication streams. Never mutate the server's global environment.
+		cmd.Env = append(cmd.Env, "CONCURRENCY="+strconv.Itoa(params.Parallelism))
+	}
 	lease, err := e.acquireDuckDBConnections(ctx, manager, []string{params.SourceConnection, params.DestinationConnection}, directTaskLeaseOwner(ctx, pl, asset), writer)
 	if err != nil {
 		return writer.buffer.Bytes(), err

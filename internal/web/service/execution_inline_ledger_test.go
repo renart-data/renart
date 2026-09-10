@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,16 +18,73 @@ import (
 )
 
 type stubInlineRunLedger struct {
-	admission  webscheduler.InlineRunAdmission
-	admitErr   error
-	started    bool
-	boundUnits []webscheduler.RunSelectionUnit
-	targets    []webscheduler.ExecutionTargetSnapshot
-	steps      []webscheduler.RunStepEvent
-	units      []webscheduler.PipelineRunUnitEvent
-	logs       []string
-	status     webscheduler.RunStatus
-	finishErr  error
+	admission         webscheduler.InlineRunAdmission
+	admitErr          error
+	started           bool
+	boundUnits        []webscheduler.RunSelectionUnit
+	targets           []webscheduler.ExecutionTargetSnapshot
+	steps             []webscheduler.RunStepEvent
+	units             []webscheduler.PipelineRunUnitEvent
+	logs              []string
+	status            webscheduler.RunStatus
+	finishErr         error
+	cancel            context.CancelFunc
+	unregistered      bool
+	cancelBeforeStart bool
+}
+
+func (s *stubInlineRunLedger) RegisterInlineRunCancellation(_ string, cancel context.CancelFunc) func() {
+	s.cancel = cancel
+	return func() { s.unregistered = true }
+}
+
+type cancellationProbeExecutor struct {
+	stubExecutionExecutor
+	interrupt func()
+}
+
+func (s *cancellationProbeExecutor) RunAsset(ctx context.Context, _ RunAssetRequest, _ func([]byte)) ([]byte, error) {
+	s.interrupt()
+	return nil, ctx.Err()
+}
+
+func (s *cancellationProbeExecutor) RunPipeline(ctx context.Context, _ RunPipelineRequest, _ func([]byte)) ([]byte, error) {
+	s.interrupt()
+	return nil, ctx.Err()
+}
+
+func TestExecutionServiceRegistersInlineCancellationUntilFinalization(t *testing.T) {
+	for _, scope := range []string{"asset", "pipeline", "asset-before-start", "pipeline-before-start"} {
+		t.Run(scope, func(t *testing.T) {
+			pipelineID := EncodeID("pipelines/orders/pipeline.yml")
+			assetID := EncodeID("pipelines/orders/assets/orders.sql")
+			ledger := &stubInlineRunLedger{cancelBeforeStart: strings.HasSuffix(scope, "-before-start")}
+			executor := &cancellationProbeExecutor{interrupt: func() {
+				require.NotNil(t, ledger.cancel)
+				assert.False(t, ledger.unregistered)
+				ledger.cancel()
+			}}
+			svc := NewExecutionService(ExecutionDependencies{
+				Executor: executor, InlineRuns: ledger,
+				ResolveAssetNameByID: func(string) string { return "analytics.orders" },
+				FindInspectIDs:       func(ids ...string) []string { return ids },
+				CurrentPipelines: func() []PipelineView {
+					return []PipelineView{{ID: pipelineID, UUID: "orders-uuid", Name: "analytics", Assets: []AssetView{{ID: assetID, Name: "analytics.orders"}}}}
+				},
+			})
+			ctx := context.Background()
+			if strings.HasPrefix(scope, "asset") {
+				result := svc.MaterializeAssetStream(ctx, assetID, "prod", "asset", "", "", false, false, "", nil)
+				assert.Equal(t, "cancelled", result.Status)
+			} else {
+				result := svc.MaterializePipelineStream(ctx, pipelineID, "prod", false, false, false, "", "", "", nil)
+				assert.Equal(t, "cancelled", result.Status)
+			}
+			assert.NoError(t, ctx.Err(), "the registry owns a child context, not its caller")
+			assert.Equal(t, webscheduler.RunStatusCancelled, ledger.status)
+			assert.True(t, ledger.unregistered)
+		})
+	}
 }
 
 func (s *stubInlineRunLedger) AdmitInlineRun(_ context.Context, admission webscheduler.InlineRunAdmission) (webscheduler.PipelineRun, error) {
@@ -37,7 +95,11 @@ func (s *stubInlineRunLedger) AdmitInlineRun(_ context.Context, admission websch
 	return webscheduler.PipelineRun{ID: "inline-run-id", PipelineID: admission.PipelineID}, nil
 }
 
-func (s *stubInlineRunLedger) StartInlineRun(context.Context, string, time.Time) error {
+func (s *stubInlineRunLedger) StartInlineRun(ctx context.Context, _ string, _ time.Time) error {
+	if s.cancelBeforeStart {
+		s.cancel()
+		return ctx.Err()
+	}
 	s.started = true
 	return nil
 }

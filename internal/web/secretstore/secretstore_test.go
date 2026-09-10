@@ -296,6 +296,36 @@ func TestLocalProviderProbeAvoidsInteractiveCredentialStoreAccess(t *testing.T) 
 	})
 }
 
+func TestLocalProviderRecoversWithoutRestartOrCredentialReplacement(t *testing.T) {
+	t.Parallel()
+	request := ResolveRequest{
+		ProjectID: "project-a", Environment: "default",
+		Reference: Ref{Provider: "local", Key: "storage/secret_access_key"},
+		Purpose:   PurposeQuery,
+	}
+	store := &probingCredentialStore{value: "recovery-canary"}
+	provider := newLocalProviderWithStore(store)
+	for _, state := range []credentialStoreProbeState{
+		credentialStoreProbePermissionRequired, credentialStoreProbeUnknown,
+	} {
+		store.state = state
+		_, err := provider.Resolve(t.Context(), request)
+		require.Error(t, err)
+		store.state = credentialStoreProbeConfigured
+		status, err := provider.Stat(t.Context(), request)
+		require.NoError(t, err)
+		require.Equal(t, StatusConfigured, status.State)
+		require.Equal(t, "local", status.Provider)
+		lease, err := provider.Resolve(t.Context(), request)
+		require.NoError(t, err)
+		require.Equal(t, []byte("recovery-canary"), lease.Bytes())
+		require.NoError(t, lease.Close(t.Context()))
+	}
+	require.Equal(t, 2, store.getCalls)
+	require.Zero(t, store.setCalls)
+	require.Zero(t, store.deleteCalls)
+}
+
 func TestResolverClosesPartialBundleOnFailure(t *testing.T) {
 	t.Parallel()
 

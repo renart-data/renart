@@ -27,6 +27,8 @@ const (
 
 // NotebookRuntimeEvent is pushed on the workspace SSE stream whenever a
 // notebook's staleness, running set, or results change.
+//
+// renart:web
 type NotebookRuntimeEvent struct {
 	Type            string         `json:"type"`
 	NotebookID      string         `json:"notebook_id"`
@@ -432,6 +434,8 @@ func (s *NotebookService) publishCurrentRuntime(notebookID, uuid string) {
 
 // NotebookRuntimeSnapshot is the recompute state embedded in the notebook GET
 // payload, so a freshly opened tab renders correct staleness and results.
+//
+// renart:web
 type NotebookRuntimeSnapshot struct {
 	AutoRecompute   bool                              `json:"auto_recompute"`
 	ParameterValues map[string]any                    `json:"parameter_values"`

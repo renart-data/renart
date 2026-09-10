@@ -78,6 +78,12 @@ type PlannerSession interface {
 	Close()
 }
 
+// PlannerSemanticImpact is an optional deployment-review capability. Execution
+// planning adapters need not implement it.
+type PlannerSemanticImpact interface {
+	SemanticImpact(context.Context) SemanticImpactReport
+}
+
 type PlannerDependencies struct {
 	ResolvePipelineUUID func(string) (string, bool)
 	LoadConfiguration   func(string) (PlannerConfiguration, error)
@@ -216,7 +222,6 @@ func (p *Planner) Plan(ctx context.Context, pipelineID string, req PlanRequest) 
 	defer session.Close()
 	base.Readiness.CodeChecks = session.CodeChecks()
 	base.Readiness.CodeChecks.PipelineID = pipelineID
-	appendCodeCheckIssues(&base, purpose == PlanPurposeDeployment)
 
 	staleSnapshot := staleness.Snapshot{}
 	dataStateAvailable := false
@@ -240,6 +245,15 @@ func (p *Planner) Plan(ctx context.Context, pipelineID string, req PlanRequest) 
 	selected, err := SelectPlanAssets(parsed, selectionRequest, staleSnapshot.Assets, dataStateAvailable)
 	if err != nil {
 		return Plan{}, applicationError(400, "invalid_plan_selection", err.Error())
+	}
+	if purpose == PlanPurposeDeployment {
+		appendCodeCheckIssues(&base, true)
+	} else {
+		selectedNames := map[string]bool{}
+		for _, item := range selected {
+			selectedNames[item.Asset.Name] = true
+		}
+		appendScopedCodeCheckIssues(&base, false, selectedNames)
 	}
 	session.ApplyPrerequisites(ctx, &base, selected)
 	if req.Backfill && (selectionRequest.Mode != PlanSelectionAsset || selectionRequest.Scope != "asset") {
@@ -299,6 +313,13 @@ func (p *Planner) Plan(ctx context.Context, pipelineID string, req PlanRequest) 
 		return Plan{}, apiErr
 	}
 	base.Resources = AggregateMutationResources(base.ExecutionContracts)
+	if purpose == PlanPurposeDeployment {
+		if provider, ok := session.(PlannerSemanticImpact); ok {
+			report := provider.SemanticImpact(ctx)
+			base.SemanticImpact = &report
+			appendSemanticImpactIssues(&base, report)
+		}
+	}
 	if purpose == PlanPurposeExecution && !req.SkipActiveRunCheck {
 		p.appendActiveRunIssue(ctx, &base)
 	}
@@ -314,6 +335,37 @@ func (p *Planner) Plan(ctx context.Context, pipelineID string, req PlanRequest) 
 	}
 	finalizePlan(&base)
 	return base, nil
+}
+
+func appendSemanticImpactIssues(plan *Plan, report SemanticImpactReport) {
+	switch report.Status {
+	case SemanticImpactStatusNoBaseline:
+		return
+	case SemanticImpactStatusAvailable:
+		if !report.Complete {
+			plan.Readiness.Warnings = append(plan.Readiness.Warnings, PlanIssue{
+				Code: "semantic_impact_incomplete", Severity: "warning",
+				Message: "Semantic impact analysis is incomplete; unknown schema facts may hide additional changes.",
+			})
+		}
+		if report.Summary.Warnings > 0 {
+			plan.Readiness.Warnings = append(plan.Readiness.Warnings, PlanIssue{
+				Code: "semantic_impact_detected", Severity: "warning",
+				Message: fmt.Sprintf(
+					"Semantic impact analysis found %d potentially behavior- or schema-affecting asset changes.",
+					report.Summary.Warnings,
+				),
+			})
+		}
+	default:
+		message := strings.TrimSpace(report.Reason)
+		if message == "" {
+			message = "Semantic impact analysis could not compare this deployment with its baseline."
+		}
+		plan.Readiness.Warnings = append(plan.Readiness.Warnings, PlanIssue{
+			Code: "semantic_impact_unavailable", Severity: "warning", Message: message,
+		})
+	}
 }
 
 func newPlanBase(
@@ -350,12 +402,22 @@ func newPlanBase(
 }
 
 func appendCodeCheckIssues(plan *Plan, includePresentations bool) {
+	appendScopedCodeCheckIssues(plan, includePresentations, nil)
+}
+
+func appendScopedCodeCheckIssues(plan *Plan, includePresentations bool, selectedNames map[string]bool) {
 	for _, asset := range plan.Readiness.CodeChecks.Assets {
 		assetID := plan.PipelineUUID + ":" + asset.Name
 		for _, finding := range asset.Findings {
+			// Permission to run an explicit selection does not depend on an
+			// unselected branch's write access. Invalid global policy still blocks.
+			if selectedNames != nil && !selectedNames[asset.Name] && (finding.Code == "connection_read_only" || finding.Code == "connection_access_unknown") {
+				continue
+			}
 			issue := PlanIssue{
 				Code: "code_check_" + finding.Severity, Severity: finding.Severity,
 				Message: finding.Message, AssetID: assetID, AssetName: asset.Name,
+				DiagnosticCode: finding.Code, Target: finding.Target,
 			}
 			if finding.Severity == "error" {
 				plan.Readiness.Blockers = append(plan.Readiness.Blockers, issue)
@@ -381,6 +443,7 @@ func appendCodeCheckIssues(plan *Plan, includePresentations bool) {
 		for _, finding := range artifact.Findings {
 			issue := PlanIssue{
 				Code: "presentation_check_" + finding.Severity, Severity: finding.Severity,
+				DiagnosticCode: finding.Code, Target: finding.Target,
 				Message: fmt.Sprintf("%s %q: %s", kind, label, finding.Message),
 			}
 			if finding.Severity == "error" {

@@ -10,31 +10,58 @@ and a target.
 
 <img
   src="/docs-media/load-asset.webp"
-  alt="A Load asset open in the editor: a form with source connection, source table, destination connection, destination table, and mode"
+  alt="A Load asset with inline source connection and file controls, and General properties for its target and materialization"
   width="2800"
   height="1800"
 />
 
 ## Create one
 
-On the canvas, add an asset and choose **Load**. Instead of a code editor,
-the main pane is a form:
+On the canvas, add an asset and choose **Load**. The main pane presents
+inline source controls; target settings live in the properties panel:
 
 - **Source connection** and **source table or object** — where the data comes
   from. The connection picker is grouped into databases, storage, and files;
   once a connection is chosen, Renart browses available tables or bounded
   S3-compatible/GCS objects while still allowing an explicit path.
-- **Destination connection** and **destination table or object** — where it
-  lands. Database targets use a `schema.table` name; storage and file targets
-  use an explicit destination path and distinguish existing objects from a new
-  path you type.
-- **Mode** — how each run writes.
+- **General → Connection** selects the destination. For a database target,
+  the asset name is the target relation, such as `raw.exchange_rates`.
+  Storage and file targets use an explicit destination path.
+- **General → Materialization** controls how each run writes.
 
 Local files are a first-class source: choose the **local** entry and point
 the source at a file path (for example `data/exchange_rates.csv`) to load
 a CSV that lives in your repository.
 
+## Start from the Data Browser
+
+S3-compatible and SFTP connections can be browsed by prefix or folder in
+**Data Browser**. Configure an S3 bucket first; an optional connection path
+acts as its browsing prefix. SFTP lists folders from the server root using the
+existing Sling connection, without Ingestr or a separate FTP integration.
+
+Drag a file or prefix onto the canvas, or choose **Use … in canvas** on mobile
+or with the keyboard. The top target opens a Load source draft. Drop a writable
+prefix or connection after a database asset to create a Load destination draft.
+Review the connection, object path and write mode before saving. Cancelling
+does not create an asset, and saving does not transfer any data.
+
+Storage browsing lists metadata only, up to 500 entries per folder; it does not
+offer SQL previews for objects. Paths containing wildcard or selector characters
+are not shown because Sling would treat them as patterns. A source prefix
+prefills a wildcard; a destination prefix suggests a Parquet filename. Review
+both explicitly, especially when a destination already exists.
+
 ## Write behavior
+
+A **Read-only** connection can be the source, but not the destination. From the
+Data Browser, add an existing table as a **Source** asset, then add a Load asset
+downstream and select a writable connection in **General → Connection**.
+The Source stays externally managed; the Load asset owns the copied target.
+
+Load copies data without deleting it from the source. **Full refresh** changes
+the destination only. Add downstream SQL assets on that destination connection
+to transform the copy.
 
 | Choice | Each run… |
 | --- | --- |
@@ -48,6 +75,15 @@ it. Choose **Table (truncate)** for that shape. It preserves the relation and
 its dependents, but it is not an atomic swap and keeps the table's existing
 schema. If the schema needs to change, update the dependent objects before
 using **Table (replace)** again.
+
+## Tune a large transfer
+
+For a large transfer, open the Load asset and set **Load parallelism** to allow
+more transfer workers. Start with a small increase and compare run duration and
+resource use. Higher values consume more memory and connections; destinations
+may limit the effective parallelism. This does not split a source SQL query or
+change how many pipeline assets run at once. Leave it empty to keep the automatic
+behavior.
 
 ## Columns and lineage
 

@@ -7,11 +7,13 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"renart/internal/web/model"
 )
 
 // CellRunRecord is the restart-safe summary of one successful notebook cell
-// publication. Preview rows remain in the session relation and are queried on
-// demand instead of being duplicated in metadata.
+// publication. Bounded immutable preview bytes live in the same session DB;
+// the full relation remains available for explicit export/presentation queries.
 type CellRunRecord struct {
 	CellID            string          `json:"cell_id"`
 	CellFingerprint   string          `json:"cell_fingerprint"`
@@ -156,20 +158,27 @@ func (store *SessionStore) RestoreCellRunResults(ctx context.Context, nb *Notebo
 			continue
 		}
 		previewStartedAt := time.Now()
-		preview, queryErr := session.Query(ctx, fmt.Sprintf(
-			"select * from %s limit %d", quoteIdent(objectName), previewLimit))
-		if queryErr != nil {
-			stale[cell.ID] = true
-			continue
+		// Restore saved bytes, never re-evaluate a volatile SQL view on navigation.
+		columns, columnTypes := []string{}, []string{}
+		for _, column := range record.Schema {
+			columns = append(columns, column.Name)
+			columnTypes = append(columnTypes, column.Type)
 		}
-		columns, columnTypes, rows := stripNotebookBookkeeping(preview.Columns, preview.ColumnTypes, preview.Rows)
 		result := CellRunResult{
 			CellID: cell.ID, Name: cell.Asset.Name, ObjectName: objectName,
 			Status: CellRunOK, Columns: columns, ColumnTypes: columnTypes,
-			Rows: normalizeRows(rows), TotalRows: record.RowCount,
+			Rows: [][]any{}, TotalRows: record.RowCount,
 			Materialized: record.MaterializedAs, DurationMS: record.DurationMS,
-			Sampled:     record.Sampled,
-			Fingerprint: record.CellFingerprint,
+			Sampled: record.Sampled, Fingerprint: record.CellFingerprint,
+		}
+		if saved, err := session.savedPreview(ctx, cell.ID); err == nil {
+			retained := saved.prefix(previewLimit)
+			result.Rows, result.Preview = retained.Rows, retained.Preview
+			if saved.Epoch != store.previewEpoch {
+				result.Preview.Continuation, result.Preview.Reason, result.Preview.NextLimit = "none", "expired", 0
+			}
+		} else {
+			result.Preview = &model.PreviewMetadata{Limit: previewLimit, HasMore: record.RowCount > 0, Continuation: "none", Reason: "expired"}
 		}
 		result.observePreviewQuery(previewStartedAt)
 		result.performance().SessionBytes = sessionBytes

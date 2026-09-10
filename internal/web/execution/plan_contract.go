@@ -1,6 +1,10 @@
 package execution
 
-import webtypecheck "renart/internal/web/typecheck"
+import (
+	"renart/internal/web/navigationtarget"
+	"renart/internal/web/policy"
+	webtypecheck "renart/internal/web/typecheck"
+)
 
 const (
 	PlanStatusReady   = "ready"
@@ -77,14 +81,15 @@ type PlanConfirmRequest struct {
 
 // renart:web-name PipelinePlanReviewedIdentity
 type ReviewedIdentity struct {
-	PipelineUUID       string              `json:"pipeline_uuid"`
-	Source             RenderSource        `json:"source"`
-	Context            PlanContext         `json:"context"`
-	Selection          PlanSelection       `json:"selection"`
-	Prerequisites      []Prerequisite      `json:"prerequisites,omitempty"`
-	Resources          Resources           `json:"resources"`
-	ExecutionContracts []ExecutionContract `json:"execution_contracts"`
-	ExecutionUnits     []PlanExecutionUnit `json:"execution_units"`
+	PipelineUUID         string              `json:"pipeline_uuid"`
+	Source               RenderSource        `json:"source"`
+	Context              PlanContext         `json:"context"`
+	Selection            PlanSelection       `json:"selection"`
+	SemanticImpactDigest string              `json:"semantic_impact_digest,omitempty"`
+	Prerequisites        []Prerequisite      `json:"prerequisites,omitempty"`
+	Resources            Resources           `json:"resources"`
+	ExecutionContracts   []ExecutionContract `json:"execution_contracts"`
+	ExecutionUnits       []PlanExecutionUnit `json:"execution_units"`
 }
 
 // renart:web-name PipelinePlanContext
@@ -108,11 +113,13 @@ type PlanContext struct {
 
 // renart:web-name PipelinePlanIssue
 type PlanIssue struct {
-	Code      string `json:"code"`
-	Severity  string `json:"severity"`
-	Message   string `json:"message"`
-	AssetID   string `json:"asset_id,omitempty"`
-	AssetName string `json:"asset_name,omitempty"`
+	DiagnosticCode string                   `json:"diagnostic_code,omitempty"`
+	Target         *navigationtarget.Target `json:"target,omitempty"`
+	Code           string                   `json:"code"`
+	Severity       string                   `json:"severity"`
+	Message        string                   `json:"message"`
+	AssetID        string                   `json:"asset_id,omitempty"`
+	AssetName      string                   `json:"asset_name,omitempty"`
 }
 
 // renart:web-name PipelinePlanReadiness
@@ -220,13 +227,23 @@ type Resources struct {
 	Claims    []ResourceClaim `json:"claims"`
 }
 
+// AccessRequirement is review evidence, never an authorization input. Use the
+// existing hashed identity to keep private aliases out of persisted snapshots.
+type AccessRequirement struct {
+	ConnectionKey string        `json:"connection_key"`
+	Effect        policy.Effect `json:"effect"`
+	Operation     string        `json:"operation"`
+}
+
 // renart:web-name PipelinePlanExecutionContract
 type ExecutionContract struct {
-	AssetID               string    `json:"asset_id"`
-	AssetName             string    `json:"asset_name"`
-	ConnectionKeys        []string  `json:"connection_keys"`
-	MutationResources     Resources `json:"mutation_resources"`
-	CoordinationResources Resources `json:"coordination_resources"`
+	AccessRequirements    []AccessRequirement `json:"access_requirements,omitempty"`
+	AccessPolicyIdentity  string              `json:"access_policy_identity,omitempty"`
+	AssetID               string              `json:"asset_id"`
+	AssetName             string              `json:"asset_name"`
+	ConnectionKeys        []string            `json:"connection_keys"`
+	MutationResources     Resources           `json:"mutation_resources"`
+	CoordinationResources Resources           `json:"coordination_resources"`
 }
 
 // renart:web-name PipelinePlanSummary
@@ -243,19 +260,20 @@ type PlanSummary struct {
 // renart:web
 // renart:web-name PipelinePlan
 type Plan struct {
-	ID                 string              `json:"id"`
-	Status             string              `json:"status"`
-	PipelineID         string              `json:"pipeline_id"`
-	PipelineUUID       string              `json:"pipeline_uuid"`
-	PipelineName       string              `json:"pipeline_name"`
-	Source             RenderSource        `json:"source"`
-	Context            PlanContext         `json:"context"`
-	Readiness          PlanReadiness       `json:"readiness"`
-	Selection          PlanSelection       `json:"selection"`
-	Prerequisites      []Prerequisite      `json:"prerequisites"`
-	Resources          Resources           `json:"resources"`
-	Assets             []PlanAsset         `json:"assets"`
-	ExecutionContracts []ExecutionContract `json:"execution_contracts"`
-	ExecutionUnits     []PlanExecutionUnit `json:"execution_units"`
-	Summary            PlanSummary         `json:"summary"`
+	ID                 string                `json:"id"`
+	Status             string                `json:"status"`
+	PipelineID         string                `json:"pipeline_id"`
+	PipelineUUID       string                `json:"pipeline_uuid"`
+	PipelineName       string                `json:"pipeline_name"`
+	Source             RenderSource          `json:"source"`
+	Context            PlanContext           `json:"context"`
+	Readiness          PlanReadiness         `json:"readiness"`
+	Selection          PlanSelection         `json:"selection"`
+	SemanticImpact     *SemanticImpactReport `json:"semantic_impact,omitempty"`
+	Prerequisites      []Prerequisite        `json:"prerequisites"`
+	Resources          Resources             `json:"resources"`
+	Assets             []PlanAsset           `json:"assets"`
+	ExecutionContracts []ExecutionContract   `json:"execution_contracts"`
+	ExecutionUnits     []PlanExecutionUnit   `json:"execution_units"`
+	Summary            PlanSummary           `json:"summary"`
 }

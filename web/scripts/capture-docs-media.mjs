@@ -7,8 +7,9 @@
 //
 // Env overrides: RENART_DOCS_MEDIA_DIR (output dir), RENART_DOCS_MEDIA_PORT,
 // GO_BIN, RENART_KEEP_LANDING_WORKSPACE=1.
-import { chromium } from "@playwright/test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { chromium, expect } from "@playwright/test";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   ACME,
@@ -27,10 +28,37 @@ const port = Number(process.env.RENART_DOCS_MEDIA_PORT ?? "18184");
 
 let demo;
 let browser;
+let isolatedConfig;
 
 try {
   await mkdir(outputDir, { recursive: true });
-  demo = await launchStagedDemo({ port });
+  if (process.env.RENART_DOCS_MEDIA_SOURCE_JSON) {
+    // Reuse only a disposable stage created by intro-video/stage.mjs.
+    const source = JSON.parse(await readFile(process.env.RENART_DOCS_MEDIA_SOURCE_JSON, "utf8"));
+    if (
+      new URL(source.baseURL).hostname !== "127.0.0.1" ||
+      !path.basename(path.dirname(source.workspaceDir)).startsWith("renart-demo-media-")
+    )
+      throw new Error("Expected a local disposable media stage");
+    demo = {
+      ...source,
+      stop() {},
+      async cleanup() {},
+      async api(url, options = {}) {
+        const response = await fetch(source.baseURL + url, {
+          method: options.method ?? "GET",
+          headers: { Origin: source.baseURL, "Content-Type": "application/json" },
+          body: options.body ? JSON.stringify(options.body) : undefined,
+        });
+        if (!response.ok) throw new Error(`${url}: ${response.status} ${await response.text()}`);
+        return response.json();
+      },
+    };
+  } else {
+    isolatedConfig = await mkdtemp(path.join(tmpdir(), "renart-docs-config-"));
+    process.env.XDG_CONFIG_HOME = isolatedConfig;
+    demo = await launchStagedDemo({ port });
+  }
 
   console.log("capturing screenshots…");
   browser = await chromium.launch();
@@ -45,17 +73,14 @@ try {
 
   // pipeline-canvas: the full DAG with all four freshness badges
   await withPage({ width: 1400, height: 900 }, async (page) => {
-    await goto(page, `/pipelines/${ACME}/canvas`, 5000);
-    await page
-      .locator(`.react-flow__node`, { hasText: "customer_ltv" })
-      .first()
-      .click()
-      .catch(() => console.log("could not select customer_ltv node"));
+    await goto(
+      page,
+      `/pipelines/${ACME}/assets/${id("acme/assets/mart/customer_ltv.sql")}/canvas`,
+      5000,
+    );
     await page.waitForTimeout(1000);
-    await page
-      .getByRole("button", { name: "Hide explorer" })
-      .click()
-      .catch(() => {});
+    const properties = page.getByRole("button", { name: "Hide properties", exact: true });
+    if (await properties.isVisible()) await properties.click();
     await page.waitForTimeout(600);
     await page
       .getByRole("button", { name: "Collapse results panel" })
@@ -74,50 +99,45 @@ try {
   // asset-editor: code view with the completion popup over upstream columns.
   // Typing autosaves; the demo workspace is disposable but restore anyway so
   // later shots (if reordered) see the staged content.
-  await withPage({ width: 1400, height: 900 }, async (page) => {
-    await goto(page, `/pipelines/${ACME}/assets/${STAGING_ORDERS}/code`, 5000);
-    await page.getByText("o.total_amount").first().click();
-    await page.keyboard.press("End");
-    await page.keyboard.press("Enter");
-    await page.keyboard.type("    c.", { delay: 60 });
-    await page.waitForTimeout(400);
-    await page.keyboard.press("Control+Space");
-    await page.waitForSelector(".suggest-widget.visible", { timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(1200);
-    await page.evaluate(() => {
-      for (const el of Array.from(document.querySelectorAll("div"))) {
-        if (
-          el.textContent?.startsWith("Preview failed") &&
-          el.clientHeight > 0 &&
-          el.clientHeight < 300
-        ) {
-          el.style.visibility = "hidden";
-          break;
-        }
-      }
+  const originalOrders = (await demo.api("/api/workspace")).pipelines
+    .find((p) => p.id === ACME)
+    .assets.find((a) => a.id === STAGING_ORDERS).content;
+  try {
+    await withPage({ width: 1400, height: 900 }, async (page) => {
+      await goto(page, `/pipelines/${ACME}/assets/${STAGING_ORDERS}/code`, 5000);
+      await page.getByRole("button", { name: "Collapse results panel", exact: true }).click();
+      await page.getByText("o.total_amount").first().click();
+      await page.keyboard.press("End");
+      await page.keyboard.type(",");
+      await page.keyboard.press("Enter");
+      await page.keyboard.type("    c.", { delay: 60 });
+      await page.waitForTimeout(400);
+      await page.keyboard.press("Control+Space");
+      await page.waitForSelector(".suggest-widget.visible", { timeout: 10000 });
+      await page.waitForTimeout(1200);
+      await shot(page, "asset-editor");
     });
-    await shot(page, "asset-editor");
-    // undo the typed line so the buffer autosaves back to the staged content
-    await page.keyboard.press("Escape");
-    for (let i = 0; i < 8; i++) {
-      await page.keyboard.press("Control+Z");
-    }
-    await page.waitForTimeout(1200);
-  });
+  } finally {
+    await demo.api(`/api/pipelines/${ACME}/assets/${STAGING_ORDERS}`, {
+      method: "PUT",
+      body: { content: originalOrders },
+    });
+  }
 
   // notebook: authored text and controls, typed result blocks, a durable
   // visualization, and its shared settings inspector.
   await withPage({ width: 1500, height: 960 }, async (page) => {
     await goto(page, `/notebooks/${demo.notebookId}`, 5000);
+    const run = page.getByRole("button", { name: "Run all", exact: true });
+    await run.click();
+    await expect(run).toBeEnabled({ timeout: 60000 });
     const chart = page.locator("[data-notebook-visualization-id]", {
       hasText: "Revenue trend",
     });
     await chart.scrollIntoViewIfNeeded();
-    await chart.hover();
-    await chart
-      .getByRole("button", { name: "Edit visualization Revenue trend" })
-      .click()
-      .catch(() => {});
+    await chart.locator(".recharts-surface").first().waitFor({ timeout: 30000 });
+    await chart.getByRole("region", { name: "Visualization: Revenue trend", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Close inspector", exact: true })).toBeVisible();
     await page.waitForTimeout(1200);
     await shot(page, "notebook");
   });
@@ -126,6 +146,10 @@ try {
   // default Ask mode. No provider is invoked during media generation.
   await withPage({ width: 1500, height: 960 }, async (page) => {
     await goto(page, `/notebooks/${demo.notebookId}`, 5000);
+    const run = page.getByRole("button", { name: "Run all", exact: true });
+    await run.click();
+    await expect(run).toBeEnabled({ timeout: 60000 });
+    await page.getByRole("grid").first().waitFor({ timeout: 30000 });
     await page.getByRole("tab", { name: "AI", exact: true }).click();
     await page.getByText("Notebook assistant", { exact: true }).waitFor({ timeout: 15000 });
     await page.waitForTimeout(1200);
@@ -171,6 +195,26 @@ try {
   await withPage({ width: 1400, height: 760 }, async (page) => {
     await goto(page, "/schedules", 3500);
     await shot(page, "schedules");
+  });
+
+  // The source review uses the saved workspace, not a fabricated diff.
+  await withPage({ width: 1400, height: 900 }, async (page) => {
+    await goto(page, `/pipelines/${ACME}/assets/${STAGING_ORDERS}/code`, 3500);
+    await page
+      .getByRole("button", { name: /^(Redeploy|Deploy)/ })
+      .first()
+      .click();
+    await page.getByTestId("deployment-review").waitFor();
+    await page
+      .getByTestId("pipeline-plan-sheet")
+      .getByRole("button", { name: /assets\/staging\/orders.sql/ })
+      .click();
+    const editor = page.getByTestId("deployment-file-diff").locator(".monaco-editor").last();
+    await editor.waitFor();
+    await editor.hover();
+    await page.mouse.wheel(0, 500);
+    await page.waitForTimeout(1000);
+    await shot(page, "deployment-review");
   });
 
   // run-detail: the failed run — per-asset gantt + the error in the event log
@@ -287,7 +331,7 @@ try {
   });
 
   // The three new assets have never been built, so the results panel would
-  // show a preview-failed card; collapse it to keep the shots on the editor.
+  // have no persisted output; focus these shots on editing the definition.
   const collapseResults = async (page) => {
     await page
       .getByRole("button", { name: "Collapse results panel" })
@@ -330,6 +374,7 @@ try {
     "dashboard-builder",
     "report-builder",
     "schedules",
+    "deployment-review",
     "run-detail",
     "catalog",
     "sql-asset",
@@ -343,4 +388,5 @@ try {
   await browser?.close().catch(() => undefined);
   demo?.stop();
   await demo?.cleanup();
+  if (isolatedConfig) await rm(isolatedConfig, { recursive: true, force: true });
 }

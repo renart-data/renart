@@ -24,15 +24,12 @@ type EnvScheduleResponse = {
 test.describe("cross-pipeline dependencies live", () => {
   test.use({ fixtureName: "basic-workspace" });
 
-  test("reviews an undeclared SQL relation before adding the URI dependency", async ({
+  // Desktop-only: The canvas dependency review is covered in the desktop project.
+  test("reviews an undeclared SQL relation before adding the URI dependency @desktop-only", async ({
     liveApp,
     page,
   }) => {
     test.setTimeout(120_000);
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The canvas dependency review is covered in the desktop project.",
-    );
 
     await writeCrossPipelineWorkspace(liveApp, { includeDependency: false });
     await waitForCrossPipelineWorkspace(liveApp, page.request);
@@ -180,15 +177,11 @@ test.describe("cross-pipeline dependencies live", () => {
     ).toContain("uri: duckdb://warehouse/raw/orders");
   });
 
-  test("adds workspace dependencies directly and links resolved producers", async ({
+  // Desktop-only: The dependency picker behavior only needs one browser project.
+  test("adds workspace dependencies directly and links resolved producers @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The dependency picker behavior only needs one browser project.",
-    );
-
     await writeCrossPipelineWorkspace(liveApp, { includeDependency: false });
     await waitForCrossPipelineWorkspace(liveApp, page.request);
     const consumerAssetID = Buffer.from("cross-consumer/assets/analytics/orders.sql").toString(
@@ -203,6 +196,7 @@ test.describe("cross-pipeline dependencies live", () => {
     );
     await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 15_000 });
     const properties = await openAssetProperties(page);
+    await properties.getByRole("tab", { name: "Lineage", exact: true }).click();
 
     const dependencyInput = properties.getByRole("combobox", { name: "Add dependency" });
     await dependencyInput.fill("raw.orders");
@@ -245,15 +239,12 @@ test.describe("cross-pipeline dependencies live", () => {
     );
   });
 
-  test("reviews a single asset run with a full cross-pipeline prerequisite", async ({
+  // Desktop-only: The desktop build action covers the shared reviewed execution path.
+  test("reviews a single asset run with a full cross-pipeline prerequisite @desktop-only", async ({
     liveApp,
     page,
   }) => {
     test.setTimeout(90_000);
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The desktop build action covers the shared reviewed execution path.",
-    );
 
     await writeCrossPipelineWorkspace(liveApp);
     await waitForCrossPipelineWorkspace(liveApp, page.request);
@@ -308,15 +299,11 @@ test.describe("cross-pipeline dependencies live", () => {
     expect(directConsumerMaterializations).toBe(0);
   });
 
-  test("keeps API producer URIs after refresh and re-adds ignored relations by URI", async ({
+  // Desktop-only: The dependency picker behavior only needs one browser project.
+  test("keeps API producer URIs after refresh and re-adds ignored relations by URI @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The dependency picker behavior only needs one browser project.",
-    );
-
     await writeAPICrossPipelineWorkspace(liveApp);
     await waitForCrossPipelineWorkspace(liveApp, page.request);
     const producerAssetID = Buffer.from("cross-producer/assets/raw/orders.asset.yml").toString(
@@ -358,6 +345,7 @@ test.describe("cross-pipeline dependencies live", () => {
       `${liveApp.baseURL}/pipelines/${consumerPipelineID}/assets/${consumerAssetID}/code`,
     );
     properties = await openAssetProperties(page);
+    await properties.getByRole("tab", { name: "Lineage", exact: true }).click();
     await expect(properties.getByText("Ignored", { exact: true })).toBeVisible();
     const dependencyInput = properties.getByRole("combobox", { name: "Add dependency" });
     await dependencyInput.fill("raw.orders");
@@ -387,16 +375,13 @@ test.describe("cross-pipeline dependencies live", () => {
       );
   });
 
-  test("waits without a run and admits the consumer after a producer succeeds", async ({
+  // Desktop-only: The real scheduler lifecycle only needs one browser project; mobile presentation is covered separately.
+  test("waits without a run and admits the consumer after a producer succeeds @desktop-only", async ({
     liveApp,
     page,
     request,
   }) => {
     test.setTimeout(120_000);
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The real scheduler lifecycle only needs one browser project; mobile presentation is covered separately.",
-    );
 
     await writeCrossPipelineWorkspace(liveApp);
     await waitForCrossPipelineWorkspace(liveApp, request);

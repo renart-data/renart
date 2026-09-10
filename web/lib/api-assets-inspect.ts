@@ -10,7 +10,12 @@ import { AssetInspectResponse } from "@/lib/types";
 
 export async function inspectAsset(
   assetId: string,
-  options?: { limit?: number; environment?: string; timeWindow?: { start: string; end: string } },
+  options?: {
+    signal?: AbortSignal;
+    limit?: number;
+    environment?: string;
+    timeWindow?: { start: string; end: string };
+  },
 ) {
   const { res, text, parsed } = await fetchParsedText<AssetInspectResponse>(
     `/api/assets/${assetId}/inspect${buildQueryString({
@@ -19,7 +24,7 @@ export async function inspectAsset(
       start_date: options?.timeWindow?.start,
       end_date: options?.timeWindow?.end,
     })}`,
-    { method: "GET" },
+    { method: "GET", signal: options?.signal },
   );
 
   if (parsed) {

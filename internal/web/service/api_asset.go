@@ -467,6 +467,9 @@ func (s *AssetService) InferAPIAsset(ctx context.Context, assetID string) (int, 
 }
 
 func (e *HybridBruinExecutor) runAPIAsset(ctx context.Context, pl *pipeline.Pipeline, asset *pipeline.Asset, renderer *jinja.Renderer, manager config.ConnectionGetter, onChunk func([]byte)) ([]byte, error) {
+	if err := e.checkRuntimeAssetAccess(ctx, pl, asset, renderer); err != nil {
+		return nil, err
+	}
 	writer := &streamCaptureWriter{buffer: bytes.NewBuffer(nil), onChunk: onChunk}
 	if asset == nil {
 		return nil, errors.New("api asset is required")

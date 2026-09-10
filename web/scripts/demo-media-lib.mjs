@@ -501,6 +501,12 @@ title: Revenue overview
 datasets:
   daily_revenue:
     asset: mart.daily_revenue
+  latest_daily_revenue:
+    connection: duckdb-default
+    query: SELECT revenue FROM mart.daily_revenue ORDER BY order_date DESC LIMIT 1
+    columns:
+      - name: revenue
+        type: DOUBLE
   top_products:
     asset: mart.top_products
 filters:
@@ -527,7 +533,7 @@ visualizations:
           - field: revenue
             label: Revenue
   - id: latest_revenue
-    dataset: daily_revenue
+    dataset: latest_daily_revenue
     definition:
       version: 1
       type: kpi
@@ -715,9 +721,12 @@ export function makeCapture(browser, baseURL, outputDir) {
     const ctx = await browser.newContext({ viewport, colorScheme: "dark", deviceScaleFactor: 2 });
     await ctx.addInitScript(() => localStorage.setItem("renart-theme", "dark"));
     const page = await ctx.newPage();
-    page.on("pageerror", (err) => console.log("PAGEERROR:", err.message));
+    const pageErrors = [];
+    page.on("pageerror", (err) => pageErrors.push(err.message));
     try {
       await fn(page);
+      if (pageErrors.length)
+        throw new Error(`Product errors during media capture: ${pageErrors.join("; ")}`);
     } finally {
       await ctx.close();
     }

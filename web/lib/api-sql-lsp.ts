@@ -1,4 +1,5 @@
 import { fetchJSONWithBody } from "@/lib/api-core";
+import type { SQLDiagnosticLink } from "@/lib/generated/api-types";
 
 export type SQLLSPPosition = {
   line: number;
@@ -118,6 +119,7 @@ export type SQLLSPRequest = {
 };
 
 export type SQLLSPResponse = {
+  diagnostic_links?: SQLDiagnosticLink[];
   status: "ok" | "error";
   diagnostics?: SQLLSPDiagnostic[];
   completions?: SQLLSPCompletionItem[];

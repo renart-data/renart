@@ -378,7 +378,7 @@ export function NotebookVisualizationBlockCard({
       >
         <AppPanel
           className={cn(
-            "group/notebook-block border-border/70 bg-transparent shadow-none transition-colors hover:border-violet-500/25 focus-within:border-violet-500/25",
+            "group/notebook-block border-border/70 bg-card shadow-none transition-colors hover:border-violet-500/25 focus-within:border-violet-500/25",
             selected && "border-violet-500/35 ring-1 ring-violet-500/15",
           )}
         >

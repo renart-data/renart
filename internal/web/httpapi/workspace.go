@@ -45,7 +45,9 @@ func (h *WorkspaceHandlers) HandleEvents(w http.ResponseWriter, r *http.Request)
 	defer h.Reader.UnsubscribeWorkspaceEvents(ch)
 
 	if payload, err := json.Marshal(h.Reader.CurrentWorkspaceLite()); err == nil {
-		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+			return
+		}
 		flusher.Flush()
 	}
 
@@ -54,8 +56,13 @@ func (h *WorkspaceHandlers) HandleEvents(w http.ResponseWriter, r *http.Request)
 		select {
 		case <-ctx.Done():
 			return
-		case msg := <-ch:
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", msg)
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", msg); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}

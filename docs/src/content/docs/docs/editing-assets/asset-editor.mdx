@@ -3,10 +3,9 @@ title: The asset editor
 description: Edit an asset's code and metadata — IntelliSense, validation, previews, and the workbench.
 ---
 
-Open any asset from the canvas or the Explorer to edit it. The editor is
-pipeline-aware: it knows the asset's upstreams, their columns, and their
-types, so problems show up while you type instead of in tomorrow's failed
-run.
+Open an asset from the canvas or Explorer. The editor uses known upstream
+schemas for SQL completion and diagnostics; the properties panel holds the
+asset's connection, materialization, columns, and checks.
 
 ## Write SQL that knows your pipeline
 
@@ -23,32 +22,33 @@ run.
   confirmed remote table is a warning until an authored source asset represents
   it; the warning offers the same reviewed import as Type check.
 - **Format SQL** reformats the query in place.
-- Edits **autosave to the file on disk** — the file in your repository is
-  always what you see in the editor.
+- Code edits autosave after a short delay. **Cmd/Ctrl+S** saves explicitly.
+  Review runs and deployments use saved source, not an unsaved editor buffer;
+  resolve any save error before continuing.
 
-## Preview without side effects
+## Inspect, render, and execute
 
 The results panel under the editor follows the selected asset:
 
-- **Inspect** — preview the data the asset produces. Safe: nothing is
-  written. If the query is broken you get a quiet "Preview failed" card
-  with the engine's error.
+- **Inspect** — preview the data without materializing the destination table.
+  Failed previews show the engine's error.
+- **Render** — inspect compiled SQL and planned operations without executing them.
 - **Materialize** — execute this asset for real and stream the output.
 - **Query** — run an ad-hoc query against the same environment.
 - **Type check** — column/type problems for the asset, the same checks as
   [`renart type-check`](/docs/reference/cli/) in CI.
-- **History** — this asset's part in past runs.
+
+Open **Run → Runs** for execution history. SQL previews can consume warehouse
+resources; Python and HTTP previews execute code or requests. Only preview
+workspaces and endpoints you trust.
 
 ## The workbench
 
-To the right of the editor, the workbench shows the asset's metadata as
-editable cards:
+Use **Show properties** if the panel on the right is closed. Its tabs are:
 
-- **Identity** — name, type, owner, description, tags, and an optional stable
-  asset URL used by cross-pipeline dependencies.
-- **Materialization** — write behavior (for example view, or table with
-  replace).
-- **Dependencies** — upstreams inferred from the SQL, plus a searchable
+- **General** — identity, connection, and materialization (for example view
+  or table with replace).
+- **Lineage** — upstreams inferred from the SQL, plus a searchable
   free-text picker for manual dependencies. Picking an asset from another
   pipeline uses its URL and links back to the producer; a missing URL is shown
   before you add the dependency.
@@ -57,6 +57,10 @@ editable cards:
   optional live-response or current-table evidence. Safe additions apply
   directly; type or deletion conflicts open a source-by-source resolver, and
   you can always add a declared column manually.
+- **Checks** — column checks and custom SQL checks.
+
+A diagnostic's **Open columns** link opens the relevant declaration in this
+same panel. It does not create a separate copy of the column editor.
 
 Like everything in Renart, workbench edits land as plain file changes in
 your repository, so a form edit and a code edit look the same in review —

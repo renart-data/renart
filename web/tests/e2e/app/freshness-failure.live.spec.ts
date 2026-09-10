@@ -127,16 +127,13 @@ async function installReconnectableWorkspaceEventSource(page: Page) {
 test.describe("app freshness failure states live", () => {
   test.use({ fixtureName: "configured-workspace" });
 
-  test("tells an untested edit apart from an exact-target write that failed", async ({
+  // Desktop-only: The freshness badge is a desktop sidebar/canvas affordance.
+  test("tells an untested edit apart from an exact-target write that failed @desktop-only", async ({
     liveApp,
     page,
   }) => {
     // The freshness badge lives on the explorer sidebar / canvas node — desktop
     // chrome, the same affordance the other status specs treat as desktop-only.
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The freshness badge is a desktop sidebar/canvas affordance.",
-    );
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
@@ -186,16 +183,12 @@ test.describe("app freshness failure states live", () => {
     await expect(customersNode.locator('[data-last-run="failed"]')).toHaveText("Build failed");
   });
 
-  test("reconciles freshness after an SSE reconnect without a page refresh", async ({
+  // Desktop-only: The freshness badge is a desktop sidebar/canvas affordance.
+  test("reconciles freshness after an SSE reconnect without a page refresh @desktop-only", async ({
     liveApp,
     page,
     request,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The freshness badge is a desktop sidebar/canvas affordance.",
-    );
-
     await installReconnectableWorkspaceEventSource(page);
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
@@ -285,15 +278,11 @@ test.describe("app freshness failure states live", () => {
     });
   });
 
-  test("keeps a successful write fresh when checks fail and opens the failed check", async ({
+  // Desktop-only: The full Build canvas is a desktop affordance.
+  test("keeps a successful write fresh when checks fail and opens the failed check @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The full Build canvas is a desktop affordance.",
-    );
-
     const configureCheck = await page.request.post(
       `${liveApp.baseURL}/api/assets/${customersAssetId}/transactions`,
       {
@@ -386,15 +375,11 @@ test.describe("app freshness failure states live", () => {
     ).toBeVisible();
   });
 
-  test("keeps runtime-only Python attempts separate from physical freshness", async ({
+  // Desktop-only: The freshness badge is a desktop sidebar/canvas affordance.
+  test("keeps runtime-only Python attempts separate from physical freshness @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The freshness badge is a desktop sidebar/canvas affordance.",
-    );
-
     // A python asset that only succeeds while a sentinel file exists. Its content
     // never changes, so deleting the sentinel makes an *identical* re-run fail —
     // the only reliable way to produce "unchanged, but the last run failed". The
@@ -450,6 +435,7 @@ print("sentinel ok")
           asset_name: string;
           status: string;
           last_run_status?: string;
+          last_run_id?: string;
           last_run_on_current_content?: boolean;
           target_fidelity?: string;
         }>;
@@ -504,17 +490,51 @@ print("sentinel ok")
       timeout: 20000,
     });
     await expect(sentinelNode.locator('[data-last-run="failed"]')).toHaveText("Build failed");
+    const failedRun = (await sentinelStaleness())?.last_run_id;
+    expect(failedRun).toBeTruthy();
+    const badge = sentinelNode.getByRole("button", {
+      name: "Build failed: run details for analytics.sentinel_check",
+    });
+    await badge.click();
+    expect(new URL(page.url()).pathname).toBe("/catalog");
+    const openRun = page.getByRole("link", { name: "Open run", exact: true });
+    await expect(openRun).toBeVisible();
+    const href = await openRun.getAttribute("href");
+    const destination = new URL(href!, liveApp.baseURL);
+    expect(destination.pathname).toBe(`/runs/${failedRun}`);
+    expect(destination.searchParams.get("project")).toBeTruthy();
+    expect(destination.searchParams.get("run_asset")).toBe("analytics.sentinel_check");
+    // No inherited sessionStorage: the URL alone must identify the project/run.
+    const coldContext = await page.context().browser()!.newContext();
+    try {
+      const coldPage = await coldContext.newPage();
+      const runResponse = coldPage.waitForResponse(
+        (response) =>
+          response.url().includes(`/runs/${failedRun}`) && response.url().includes("/api/"),
+      );
+      await coldPage.goto(destination.toString());
+      expect((await runResponse).ok()).toBe(true);
+      await expect(
+        coldPage.getByRole("heading", { name: `Run ${failedRun}`, exact: true }),
+      ).toBeVisible();
+      await expect(
+        coldPage
+          .getByTestId("run-event-row")
+          .filter({ hasText: "analytics.sentinel_check" })
+          .filter({ hasText: "asset_failed" }),
+      ).toBeVisible();
+      await coldPage.getByRole("tab", { name: "Output", exact: true }).click();
+      await expect(coldPage.getByText("sentinel missing").first()).toBeVisible({ timeout: 20000 });
+    } finally {
+      await coldContext.close();
+    }
   });
 
-  test("marks a materialized Python table fresh after its confirmed write", async ({
+  // Desktop-only: The freshness badge is a desktop sidebar/canvas affordance.
+  test("marks a materialized Python table fresh after its confirmed write @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The freshness badge is a desktop sidebar/canvas affordance.",
-    );
-
     const pyAssetId = Buffer.from("analytics/assets/analytics/python_freshness.py").toString(
       "base64url",
     );

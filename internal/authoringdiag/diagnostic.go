@@ -73,6 +73,14 @@ const (
 	CodeDuckDBFilesystemAccessDisabled = "duckdb-filesystem-access-disabled"
 )
 
+// Subject identifies the semantic fact involved, not a UI route or message span.
+// Column preserves the declaration's spelling so adapters never guess identity
+// by parsing translated prose or case-folding SQL identifiers.
+type Subject struct {
+	Column string `json:"column,omitempty"`
+	Field  string `json:"field,omitempty"`
+}
+
 type Diagnostic struct {
 	Code       string
 	Source     string
@@ -83,6 +91,7 @@ type Diagnostic struct {
 	EndByte    *int
 	Scope      Scope
 	Confidence Confidence
+	Subject    *Subject
 }
 
 func (d Diagnostic) Key() string {

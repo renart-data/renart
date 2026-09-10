@@ -103,7 +103,7 @@ func TestCancelRunRequestsRunningWorkerCancellation(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond)
 }
 
-func TestCancelRunRejectsTerminalAndInlineExecutions(t *testing.T) {
+func TestCancelRunRejectsTerminalAndUnownedInlineExecutions(t *testing.T) {
 	t.Parallel()
 	store, err := OpenStore(filepath.Join(t.TempDir(), "state.db"))
 	require.NoError(t, err)
@@ -138,4 +138,45 @@ func TestCancelRunRejectsTerminalAndInlineExecutions(t *testing.T) {
 	require.NoError(t, err)
 	_, err = service.CancelRun(context.Background(), inlineID)
 	require.ErrorIs(t, err, ErrRunCancellationUnavailable)
+}
+
+func TestCancelRunRequestsOwnedInlineCancellationWithoutReleasingItsSlot(t *testing.T) {
+	store, err := OpenStore(filepath.Join(t.TempDir(), "state.db"))
+	require.NoError(t, err)
+	defer store.Close()
+	service := New(Options{Store: store, Runner: func(context.Context, RunRequest, func(string)) RunResult { return RunResult{} }})
+	service.mu.Lock()
+	service.schedulerOn = true
+	service.ownershipState = SchedulerOwnershipOwner
+	service.riverClient, err = river.NewClient(riversqlite.New(store.db), &river.Config{})
+	service.mu.Unlock()
+	ctx := context.Background()
+	row := PipelineRun{PipelineID: "inline", Pipeline: "inline", Trigger: RunTriggerAPI, Status: RunStatusQueued}
+	id, err := store.CreateWithSpec(ctx, row, inlineRunSpec(row, RunSourceWorkingTree, ""))
+	require.NoError(t, err)
+	execution, cancel := context.WithCancel(ctx)
+	defer cancel()
+	release := service.RegisterInlineRunCancellation(id, cancel)
+	defer release()
+	require.NoError(t, service.StartInlineRun(ctx, id, time.Now().UTC()))
+	before, _, _, err := service.GetRun(ctx, id)
+	require.NoError(t, err)
+	require.True(t, before.Cancellable)
+	stopping, err := service.CancelRun(ctx, id)
+	require.NoError(t, err)
+	assert.ErrorIs(t, execution.Err(), context.Canceled)
+	assert.Equal(t, RunStatusRunning, stopping.Status)
+	assert.NotNil(t, stopping.CancellationRequestedAt)
+	assert.False(t, stopping.Cancellable)
+	again, err := service.CancelRun(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, stopping.CancellationRequestedAt, again.CancellationRequestedAt)
+	assert.Positive(t, countRows(t, store, `SELECT COUNT(*) FROM pipeline_run_slots WHERE run_id = ?`, id))
+	require.NoError(t, service.FinishInlineRun(execution, id, RunStatusCancelled, execution.Err()))
+	release()
+	done, _, _, err := service.GetRun(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, RunStatusCancelled, done.Status)
+	assert.False(t, done.Cancellable)
+	assert.Zero(t, countRows(t, store, `SELECT COUNT(*) FROM pipeline_run_slots WHERE run_id = ?`, id))
 }

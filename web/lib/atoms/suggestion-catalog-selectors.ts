@@ -152,20 +152,44 @@ export function toSchemaTables(
     sourceMethods: table.sourceMethods,
   }));
 
+  const externalTablesByConnection = new Map<
+    string | undefined,
+    {
+      byName: Map<string, number[]>;
+      byShortName: Map<string, number[]>;
+    }
+  >();
+  schemaTables.forEach((table, index) => {
+    if (table.isWorkspaceAsset) {
+      return;
+    }
+
+    let connectionTables = externalTablesByConnection.get(table.connectionName);
+    if (!connectionTables) {
+      connectionTables = { byName: new Map(), byShortName: new Map() };
+      externalTablesByConnection.set(table.connectionName, connectionTables);
+    }
+    appendTableIndex(connectionTables.byName, table.name, index);
+    appendTableIndex(connectionTables.byShortName, table.shortName, index);
+  });
+
   for (const table of schemaTables) {
     if (!table.isWorkspaceAsset) {
       continue;
     }
 
-    for (const externalTable of schemaTables) {
-      if (externalTable.isWorkspaceAsset || externalTable.connectionName !== table.connectionName) {
-        continue;
-      }
-
-      if (!doTableNamesMatch(table, externalTable)) {
-        continue;
-      }
-
+    const connectionTables = externalTablesByConnection.get(table.connectionName);
+    if (!connectionTables) {
+      continue;
+    }
+    const matchingIndexes = new Set([
+      ...(connectionTables.byName.get(table.name.toLowerCase()) ?? []),
+      ...(connectionTables.byShortName.get(table.shortName.toLowerCase()) ?? []),
+    ]);
+    // Preserve catalog order when multiple observations describe the same
+    // relation; mergeSchemaColumns intentionally keeps the earliest value.
+    for (const index of [...matchingIndexes].sort((left, right) => left - right)) {
+      const externalTable = schemaTables[index];
       table.columns = mergeSchemaColumns(table.columns, externalTable.columns);
     }
   }
@@ -173,11 +197,9 @@ export function toSchemaTables(
   return schemaTables;
 }
 
-function doTableNamesMatch(left: SchemaTable, right: SchemaTable) {
-  return (
-    left.name.toLowerCase() === right.name.toLowerCase() ||
-    left.shortName.toLowerCase() === right.shortName.toLowerCase()
-  );
+function appendTableIndex(index: Map<string, number[]>, value: string, tableIndex: number) {
+  const key = value.toLowerCase();
+  index.set(key, [...(index.get(key) ?? []), tableIndex]);
 }
 
 function mergeSchemaColumns(left: SchemaColumn[], right: SchemaColumn[]) {

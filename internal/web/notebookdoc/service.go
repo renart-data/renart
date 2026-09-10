@@ -35,8 +35,8 @@ type Dependencies struct {
 	OnCellDeleted             func(notebookID, notebookUUID, cellID string)
 	OnParametersChanged       func(notebookID string, nb *notebook.Notebook)
 	CheckVisualizations       func(context.Context, *notebook.Notebook) (problems, blocking []string)
-	ValidateStorageConnection func(connection string) *apperror.Error
-	ResolveSourceAssetType    func(connection string) (string, *apperror.Error)
+	ValidateStorageConnection func(connection, environment string) *apperror.Error
+	ResolveSourceAssetType    func(connection, environment string) (string, *apperror.Error)
 }
 
 // Service is the single in-process authority for loading and locking authored

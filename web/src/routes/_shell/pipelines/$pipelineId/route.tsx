@@ -1,11 +1,11 @@
 import { createFileRoute, useLocation, useNavigate, useParams } from "@tanstack/react-router";
 
+import { AppBuildPage } from "@/components/app/build-page";
 import {
-  AppBuildPage,
   normalizeAppBuildSearch,
   appAssetViewPath,
   appBuildViewFromPath,
-} from "@/components/app/build-page";
+} from "@/components/app/build-route-model";
 
 export const Route = createFileRoute("/_shell/pipelines/$pipelineId")({
   validateSearch: normalizeAppBuildSearch,
@@ -40,7 +40,8 @@ function AppPipelineLayoutRoute() {
           params: { pipelineId, assetId },
           search: {
             ...search,
-            result: search.result === "query" ? "inspect" : search.result,
+            detail: undefined,
+            result: search.result,
             editor: "asset",
           },
         })

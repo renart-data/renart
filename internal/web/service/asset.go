@@ -235,6 +235,8 @@ type AssetDependencies struct {
 	ConnectionTypeFor                          func(string) string
 	SelectedEnvironment                        func() string
 	CurrentState                               func() WorkspaceState
+	DisableFilesystemAccess                    bool
+	RunUnitTestQuery                           func(context.Context, string, string, string) ([]string, []map[string]any, error)
 	// MaterializedSchemaFresh reports whether the selected asset's current
 	// materialized output was produced from its current source fingerprint. It
 	// is optional; schema reconciliation fails closed to advisory trust when the
@@ -435,12 +437,13 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 			return AssetMutationResponse{}, newAPIError(400, "invalid_load_target_connection", connectionErr.Error())
 		}
 		var renderErr error
-		content, renderErr = renderLoadAssetContent(
+		content, renderErr = renderLoadAssetContentWithParallelism(
 			req.Connection,
 			sourceConnection,
 			sourceTable,
 			req.Parameters[loadParamDestinationObject],
 			depends,
+			req.Parameters[loadParamParallelism],
 		)
 		if renderErr != nil {
 			return AssetMutationResponse{}, newAPIError(400, "invalid_load_asset", renderErr.Error())
@@ -470,6 +473,9 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 	// Semantic seed/sensor definitions are rendered above. Uploaded seed bytes
 	// and their definition are staged and committed together, so a failed write
 	// cannot leave a half-created asset in the workspace.
+	if apiErr := s.validateCreatedConnectionAccess(ctx, pipelinePath, absAssetPath, assetName, content, req.Environment, semanticFiles); apiErr != nil {
+		return AssetMutationResponse{}, apiErr
+	}
 	if semanticAsset {
 		s.createMu.Lock()
 		defer s.createMu.Unlock()
@@ -778,6 +784,11 @@ func (s *AssetService) Update(ctx context.Context, assetID string, req AssetUpda
 				nextParameters[key] = rawValue
 			}
 			asset.Parameters = nextParameters
+			if isLoadAsset(asset) {
+				if _, err := loadParallelism(asset); err != nil {
+					return AssetMutationResponse{}, badRequestError("invalid_load_parallelism", err.Error())
+				}
+			}
 		}
 		if (req.Type != nil || req.Connection != nil || req.Parameters != nil) &&
 			(strings.HasSuffix(strings.ToLower(string(asset.Type)), ".seed") || isSensorAssetType(asset.Type)) {
@@ -786,6 +797,11 @@ func (s *AssetService) Update(ctx context.Context, assetID string, req AssetUpda
 			}
 		}
 		materializationChanged := req.Type != nil || req.Connection != nil || req.MaterializationType != nil || req.MaterializationStrategy != nil || req.IncrementalKey != nil || req.PartitionBy != nil || req.ClusterBy != nil || req.TimeGranularity != nil
+		if materializationChanged || req.ConnectionSelection != nil || (req.Parameters != nil && isLoadAsset(asset)) {
+			if apiErr := s.validateAuthoredConnectionAccess(parsedPipeline, asset, ""); apiErr != nil {
+				return AssetMutationResponse{}, apiErr
+			}
+		}
 		if materializationChanged {
 			connectionTypes := map[string]string{}
 			if s.deps.ConnectionTypeFor != nil {

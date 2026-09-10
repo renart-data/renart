@@ -289,6 +289,7 @@ func TestConnectionTypeCategoriesExposeObjectStorageWithoutIngestr(t *testing.T)
 
 	assert.Equal(t, "storage", categories["s3"])
 	assert.Equal(t, "storage", categories["gcs"])
+	assert.Equal(t, "storage", categories["sftp"])
 	assert.Equal(t, "warehouse", categories["postgres"])
 	assert.Equal(t, "source", categories["stripe"])
 }

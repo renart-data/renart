@@ -50,6 +50,8 @@ cmd/web.go     route registration + a thin webServer adapter
   ├── internal/web/presentation               → visualization contracts,
   │                                             Git document lifecycle, and
   │                                             read-only presentation runtime
+  ├── internal/web/databrowser                → revision-bound warehouse/local
+  │                                             discovery and bounded preview
   ├── internal/web/service/assetmeta          → see asset-editing.md
   ├── internal/web/{sqlintelligence, pyintelligence, sqlformat,
   │                freshness, profiling, static}
@@ -70,6 +72,74 @@ adapters for workspace schema inference and resolving an asset-backed dataset
 to its environment-specific physical relation. Those adapters are assembled by
 `cmd/server_presentation.go`, keeping their secret-purpose and execution wiring
 out of the central server constructor.
+
+`internal/web/databrowser` is a read-only discovery boundary assembled in
+`cmd/server_data_browser.go` from the existing configuration and SQL services. Its API
+exposes only connection names, types, capabilities, revision-bound object
+references, and display metadata—never connection values. Warehouse hierarchy
+requests reuse the shared SQL discovery adapters. Catalog-aware engines use the
+lower `sqlnamespace` provider through `SQLService.NamespaceChildren`, listing
+only the addressed level. Optional typed catalog coordinates survive durable
+addresses, opaque references, columns, view queries and previews. StarRocks's
+native DSN is corrected without replacing Bruin's concrete client; configured
+catalog defaults apply to every physical connection, while browser expansion
+never changes session defaults. See [SQL discovery](sql-discovery.md) for engine
+coverage, backward compatibility and version limits. Local-file discovery accepts
+only supported tabular formats below visible project paths and rechecks path
+containment, symlinks, hidden/generated directories, and format at every object
+or preview request. Preview SQL is constructed and quoted by the backend from
+the resolved object reference, capped at 1,000 rows, and never accepted from the
+browser as arbitrary SQL.
+
+Browser revisions describe the selected environment's connection configuration,
+not the workspace revision. Notebook autosaves, source creation and independent
+execution-environment changes leave existing browser references valid. The
+configuration service reads the effective (possibly parent-owned or environment-
+supplied) config, access policy and secret bindings and fingerprints that scope
+with a private per-service HMAC key. Only names, types, access modes and an opaque
+token leave the service. Raw field projection avoids Bruin transport serializers
+that read credential files; discovery never resolves credentials. Connection
+retargeting, policy/binding changes and a new server lifetime invalidate old
+references. Object/path revalidation and notebook revision-checked apply remain
+separate checks; a stable connection token is not a cached source snapshot.
+
+Data Browser and asset Inspect share `internal/web/preview` and the generated
+`model.PreviewMetadata` contract. Initial Data Browser samples request 100 rows;
+Inspect keeps its existing per-view initial bounds. Each adapter asks for one
+lookahead row, then applies a 1,000-row and 2 MiB serialized-row budget. Exact
+limit results without a lookahead row are exhausted. Metadata distinguishes a
+larger replacement sample (`next_limit`) from completion, row cap and byte cap;
+no COUNT query or OFFSET-page append is involved. Each response receives a fresh
+result ID for UI selection invalidation, not an authorization token. Successful
+Inspect raw output is rebuilt from the bounded rows so it cannot bypass the
+budget; the executed SQL remains in operation metadata. This bounds rows returned
+to the UI, not peak driver allocation or query execution cost.
+
+Every continuation repeats the existing read-only Inspect guard or Data Browser
+reference/path/connection checks. S3/SFTP remain metadata-only.
+
+Ad-hoc SQL uses the same replacement budget. Explicit `/api/sql/query` runs
+positively validated SELECTs with a preview bound; other explicitly submitted
+statements retain their execution semantics but advertise no continuation.
+`POST /api/sql/preview` independently requires exactly one read-only SELECT on
+every request and has a 30-second timeout. The source-span wrapper excludes the
+terminating semicolon/comments and preserves authored LIMIT/FETCH semantics.
+SQL Server-family queries use native TOP for unbounded SELECTs (including CTEs,
+ORDER BY and unnamed projections); authored T-SQL bounds/set queries currently
+have no continuation, rather than rewriting their meaning or failing explicit
+Run through an invalid derived-table wrapper. Result bodies are `no-store`.
+
+Notebook continuation reads immutable bounded bytes from the existing session
+database, not a re-evaluated view; see [notebooks](notebooks.md#10-server-owned-recompute-and-frontend-state).
+Authored presentation datasets keep their existing limits; remaining work is
+tracked in [preview row loading](../plans/preview-row-loading.md).
+
+Durable `dataaddress.Address` values sit alongside those operation references.
+The scoped read-only `/api/data-browser/resolve` endpoint rediscovers the exact
+object and issues a current token without previewing rows; old token revision
+checks remain intact. `navigationtarget` is the common leaf DTO/policy boundary
+used by type checks, LSP web adapters and deployment aggregation. See
+[diagnostic navigation](diagnostic-navigation.md) for scope and coverage rules.
 
 The execution boundary lives in `internal/web/execution`. It owns the shared
 render, reviewed-plan, resource, private run, target-snapshot, and time-window
@@ -112,7 +182,7 @@ workspace root; one process can host several such runtimes. A watcher
 (`internal/web/watch`) triggers full workspace re-parses through the
 `WorkspaceCoordinator`; the resulting state is pushed to all clients over a
 single SSE endpoint (`/api/events`). The hub (`internal/web/events`) uses
-buffered per-client channels with non-blocking drop-on-slow sends,
+buffered per-client channels with non-blocking sends,
 debounce-with-coalescing for watcher noise, and `PublishImmediate` for
 handler-triggered events. Self-write suppression (a short window in
 `WorkspaceCoordinator`) prevents the server's own file writes from echoing
@@ -123,8 +193,14 @@ values cannot mutate a later read. A focused benchmark tracks clone cost at
 10, 100, and 1,000 synthetic assets. The coordinator records refresh counts,
 failures, duration, revision, and snapshot shape. The SSE hub exposes monotonic
 publish, coalescing, fan-out, payload-byte, and slow-client drop counters; debug
-logs attach those measurements to each workspace refresh/event. HTTP request
-logs include response bytes, so `/api/workspace` size and latency can be
+logs attach those measurements to each workspace refresh/event. When a client
+buffer fills, the hub counts the undelivered event, removes that subscription,
+and closes its channel. The SSE handler drains the queued prefix, returns on
+channel closure or a failed write, and unsubscribes idempotently. A slow client
+therefore cannot silently remain connected with missing deltas: ordinary
+EventSource reconnection triggers canonical workspace and runtime snapshot
+reconciliation. This is bounded-buffer recovery, not an event replay guarantee.
+HTTP request logs include response bytes, so `/api/workspace` size and latency can be
 measured without a second serialization path. Every HTTP request inherits the
 process lifecycle context. Cancelling that context therefore releases long-lived SSE handlers
 before `http.Server.Shutdown` waits for active requests, while ordinary
@@ -135,7 +211,12 @@ workspace files and execute user-authored pipeline code, `renart web` rejects
 non-loopback hosts unless the operator explicitly supplies
 `--unsafe-allow-remote`. That override logs and prints a warning; it does not
 add remote authentication and is intended only behind a trusted access layer.
-The `standalone` server always binds to loopback. Renart commands do not install
+The browser listener is bound and starts accepting connections before project
+recovery and the initial workspace parse. A startup gate holds those requests
+until the project router is fully initialized, so a large state-database check
+does not delay port discovery without exposing partially wired services. The
+browser and project discovery file are enabled only after that gate opens. The
+`standalone` server always binds to loopback. Renart commands do not install
 Bruin's command telemetry hooks, so the application itself sends no usage
 telemetry.
 
@@ -203,13 +284,38 @@ flags (`internal/web/identity`): `features.ingestr` re-enables the ingestr
 surfaces the UI hides by default. The config contract classifies SQL-capable
 connections as `warehouse`, S3/GCS as `storage`, and remaining connector/API
 types as `source`; project settings always expose warehouse and storage types,
-while the frontend (`web/lib/features.ts`) shows source types only when the flag
-is set or the workspace already contains ingestr assets. Direct execution
+while the frontend (`web/lib/features.ts`) offers new source connections only
+when the flag is set. Existing Ingestr assets and connection edit forms remain
+usable without enabling unrelated Ingestr creation choices. Direct execution
 likewise leaves Bruin's Ingestr main
 operator disabled unless the parsed pipeline already contains an Ingestr
 asset. Ordinary Renart pipelines therefore do not initialize Ingestr or cause
 its Python package to be resolved; an existing Ingestr asset enables the
 operator and the package is fetched only when that asset is executed.
+
+SFTP is classified with storage/file transports in the workspace connection
+catalog, not with Ingestr-only SaaS sources: Renart Load supports it directly.
+
+Data Browser source authoring uses
+the [shared SQL discovery adapters and audited warehouse coverage](sql-discovery.md).
+Warehouse source creation uses
+`POST /api/pipelines/{id}/data-browser/sources/preview` and the corresponding
+`/sources` confirmation. The request contains a revision-bound `object_id`, an
+explicit environment, and the optional include-columns choice. Both handlers
+revalidate the reference through the Data Browser; malformed requests, stale
+configuration and cross-environment references fail before import. The service
+accepts warehouse tables only, derives the platform's Source type, and delegates
+to the canonical database importer with `RejectExisting`. Preview is read-only;
+confirmation creates the source file and emits workspace reconciliation. Unlike
+the type-check-driven external relation import, it does not rewrite consumers.
+For a fully qualified catalog table, the importer revalidates only the selected
+namespace and carries `catalog.schema.table` (or `catalog.database.table`) into
+the source name, filesystem prefix and column query. It does not silently use
+the connection's default-catalog summary or strip a catalog to fit Bruin's old
+two-part StarRocks/Doris name limit. Those engines allow three-part Source names
+only; their SQL materialization lint contract is unchanged.
+Load drops reuse the existing semantic asset creation API, including its
+server-resolved upstream asset and connection-role validation.
 
 Inside an open project, `GET /api/pipelines/templates` exposes the
 backend-owned catalog used by the **New pipeline** dialog. Alongside a blank
@@ -273,6 +379,14 @@ unavailable credential store fails closed—there is no plaintext fallback.
 Existing inline credentials remain readable for compatibility and are migrated
 to the selected local store on replacement. Config writes use owner-only
 permissions because an untouched legacy credential may still be present.
+Provider identity comes from the binding, not availability: a locked or
+unavailable store retains its provider and can be checked again in the same
+process. An unresolved generated placeholder with no binding includes a
+diagnostic about the current project's `.renart/secrets.yml`; legacy environment
+references remain supported, without guessing or borrowing another project's
+credentials. Storage browsing distinguishes missing, locked, and unavailable
+secret providers using static messages, never underlying provider/driver errors
+that could expose a secret or connection URI.
 `sensitive_file` fields retain their write-only path behavior; provider-backed
 temporary file leases are not built yet.
 
@@ -376,6 +490,12 @@ shutdown. A missing desktop webview therefore degrades to the browser UI rather
 than taking the workspace server down. Release archives colocate the native
 helper with the CLI. Linux archives carry WebKitGTK 4.1 and 4.0 variants behind
 a small launcher that selects the variant whose shared libraries are available.
+The native Linux window embeds the same 256px PNG as the web UI and sets its
+GTK program name to `renart`. Adding Linux options retains Wails' conservative
+`WebviewGpuPolicyNever` default. The standalone helper imports the independent
+`internal/desktopicon` package, not `web`, so a fresh checkout can build it before
+the frontend bundle exists. The shared icon generator updates its checked-in PNG
+alongside the web icons; tests check byte identity and the helper dependency graph.
 
 For an asset target, `--refresh-upstreams` first invokes the server-side stale
 planner narrowed to that asset's transitive upstream closure; only non-fresh
@@ -873,6 +993,22 @@ connection/query as the requested SQL, so relative reads such as
 working directory. Notebook session clients use the same wrapper. This avoids a
 process-wide `chdir`, which would couple unrelated server filesystem operations
 to query execution; non-DuckDB connections are passed through unchanged.
+This also covers previews of saved views over relative Parquet files. Regression
+tests exercise native view discovery and the Data Browser's actual preview path.
+The base is the project root, not the asset folder or database file's directory.
+A view created elsewhere with a different historical working directory must use
+an appropriate project-relative or absolute path; Renart does not guess that
+directory or rewrite the view definition. `file_search_path` applies to reads,
+not relative output destinations such as `COPY ... TO`.
+
+Data Browser definitions are fetched separately from columns via bounded,
+exact-object catalog queries (`databrowser/view_definition.go`), not by running
+the view or reading a whole database summary. Adapters cover `duckdb_views()`,
+PostgreSQL, Redshift, MySQL, StarRocks, Trino and Snowflake information-schema
+metadata, and ClickHouse view engines in `system.tables`. Unsupported engines omit definitions;
+catalog permission failures do not block otherwise available columns. Definition
+SQL is returned verbatim. Missing DuckDB-file diagnostics include the active
+project root and explain foreign/nested-project paths without mutating the view.
 `--enable-filesystem-access` defaults to `true`. With the flag disabled, every
 web-server DuckDB connection path — resolved connection managers, native shared
 sessions, and notebook sessions — executes
@@ -1020,8 +1156,18 @@ linked River job rather than duplicating queue state in the run row.
 `cancelled`; for a running job it records River's durable cancellation request,
 cancels the in-process execution context, and leaves the run active until the
 ordinary context-detached finalizer closes its steps, units, occurrence, and
-resource claims. Inline streaming runs have no River job and therefore do not
-advertise this queue-owned abort action.
+resource claims. Inline streaming runs register their real request-owned cancel
+function with the project scheduler immediately after admission. Their capability
+and pending request timestamp come from that bounded process-local registration,
+not historical rows; registration is removed after the ordinary finalizer runs.
+The same endpoint cancels the foreground context without prematurely releasing
+slots or inventing a River job. Repeated pending requests are idempotent. After
+restart, stale inline rows have no cancel handle and remain recovery's responsibility.
+Sensor wait mode uses the pinned warehouse-specific single-probe operators inside
+a Renart-owned, context-aware polling loop. Cancellation interrupts the poll
+interval; only the pinned unready sentinel is retried, not query/authentication
+errors. Overall sensor timeout remains a failure. No detached probe goroutine
+can outlive the run's cleanup or release its resource claims early.
 New periodic/catch-up jobs use the distinct `renart-schedule-signal-v2` kind and
 snooze for 30 seconds while another run holds the slot. River jobs persisted
 under the older combined kind still decode and execute through the legacy path
@@ -1080,11 +1226,17 @@ current-settings action; a stale exact request fails with
 `409 exact_reexecution_unavailable` rather than silently changing behavior.
 
 Before applying either Renart or River migrations, `Store` runs SQLite's
-`quick_check` against the shared state database. A failed check aborts startup
-with the exact database path and instructions to preserve the database, WAL,
-and shared-memory files for recovery. Renart never treats corruption as an
-empty database: the file also contains schedules, deployments, run history,
-and freshness state that must not be silently discarded.
+`quick_check` against the shared state database unless the same database was
+closed cleanly, has not changed since, has no pending WAL, and the embedded
+Renart and River migration set is unchanged. A clean close records those facts
+in an adjacent runtime-only integrity stamp, which is invalidated before the
+database opens. Missing, stale, or malformed stamps and unclean exits therefore
+fall back to the full check, while routine restarts do not rescan every database
+page. A failed check aborts startup with the exact database path and
+instructions to preserve the database, WAL, and shared-memory files for
+recovery. Renart never treats corruption as an empty database: the file also
+contains schedules, deployments, run history, and freshness state that must not
+be silently discarded.
 
 HTTP API assets use a native streaming extractor followed by Sling for the
 warehouse write. The target DuckDB lease is acquired after extraction and held
@@ -1147,6 +1299,15 @@ itself. `RENART_SLING_BINARY` remains the explicit outer-launcher override, so a
 Nix wrapper can safely point `SLING_BINARY` at its distinct patched native
 binary. A process-wide gate also caps concurrent Sling launchers at the workspace
 execution limit, with a hard ceiling of eight.
+
+Load assets may explicitly set `parameters.parallelism` to an integer from 1 to
+32. Authoring, validation and semantic rendering share the parser; an omitted
+value preserves existing runtime defaults. The main Load editor exposes this as
+**Load parallelism**, without transport branding. At the Sling boundary it sets
+per-process `CONCURRENCY` and merges `concurrency` into target options, retaining
+destination-specific options such as Databricks `use_bulk: false`. It changes
+transfer workers, not the pipeline scheduler or launcher gate. Destination caps
+still apply, and no source SQL chunking or automatic partitioning is implied.
 
 Every materialization and discovery launcher runs in a dedicated process group.
 Cancelling a request kills the complete uv/Python/Sling descendant tree. Output
@@ -1317,6 +1478,18 @@ queries run against the notebook's already-open live session and the resulting
 Parquet file is loaded directly into that session, without input or output
 DuckDB staging databases.
 
+The SDK identity is `renart`, without a `bruin` import shim: brokered queries and
+legacy credential injection have different trust contracts. A Python pipeline
+asset may currently query any named connection in its selected environment;
+the optional read-scope policy is still a
+[proposal](../plans/python-cross-connection-policy.md), distinct from connection
+read-only/write protection. Explicit legacy Bruin `secrets:` injection remains
+compatible and is not the credential-blind SDK path. The SDK itself neither
+changes that opt-in nor makes Ingestr a Python-upload dependency. The
+`--refresh-upstreams` CLI path uses the ordinary stale-upstream plan before
+running the requested asset, as documented in staleness. Alternate broker
+transports remain [measurement-gated](../plans/performance-evidence.md).
+
 Workspace asset DTOs carry a backend-owned materialization capability profile
 derived from the concrete asset type and destination. It is the contract used by
 both metadata editors: warehouse-specific exclusions and field requirements are
@@ -1485,6 +1658,65 @@ WASM module, native parser download, FFI boundary, runtime pool, or SQL warmup.
 Python intelligence still runs ty as WASM (`pyintelligence`) under wazero with
 an on-disk compilation cache; `renart debug warm-cache` pre-warms only that
 module.
+
+## Storage Data Browser adapter
+
+S3/SFTP reuse the Data Browser's opaque revision-scoped references and durable
+connection/type/path addresses. `storage.go` adds prefix/file nodes, explicit
+load_source/load_destination capabilities and provider revalidation before
+handoff. Storage has no SQL preview capability. Read-only connections are sources
+only, including after access-mode changes invalidate prior revision tokens.
+
+`LoadService.BrowseStorage` uses bounded, metadata-only provider discovery through
+the shared Load concurrency limiter and credential resolver. SFTP invokes Sling;
+S3 uses the existing AWS SDK's `ListObjectsV2` with `Delimiter=/` and a literal
+`Prefix`, applied before `MaxKeys`. One level is listed with a 30-second deadline,
+1 MiB per-response/capture limit and 500-entry cap (501st-entry lookahead).
+Continuation pages consume the remaining budget, with a 32-page safety ceiling;
+an unfinished provider listing remains truncated, even when unsafe keys are omitted.
+Configured S3 paths scope the root. Credentials stay server-side, not in argv,
+object references or provider error text. S3 preserves custom endpoints, static
+credentials, the default AWS credential chain and bucket-region discovery.
+Native structured S3 payloads preserve custom endpoints and keys; native SFTP
+URLs preserve authentication and default port 22. Neither invokes Ingestr.
+
+`GET /api/data-browser/connections/{connectionID}/prefix?path=...` lists a typed
+storage prefix directly, without walking its parents. It checks the connection's
+current revision/environment and storage capability, applies the same relative
+path/selector validation as ordinary browsing, and issues the same scoped node
+references. The provider still enforces the configured root; this endpoint does
+not resolve SQL, preview files or bypass later object-handoff revalidation.
+The optional `name_prefix` query parameter narrows one S3 leaf name, without
+changing the directory/node identity. `StorageQuery` keeps that filter separate
+from the parent path. S3 handoff uses an internal exact-name, one-result listing
+(prefix existence for directories), so opening or loading an off-page result
+does not fall back to the original 500-entry parent listing.
+The workspace watcher excludes Sling's generated `.renart/config/.sling/` files
+from both polling snapshots and fsnotify relevance checks. Bootstrapping Sling
+therefore avoids spurious workspace refreshes. Authored connection, secret and
+environment declarations remain watched; browser references independently track
+the connection-configuration fingerprint rather than the workspace refresh counter.
+
+The prefix endpoint also accepts a separate `pattern` for metadata-only wildcard
+search. `databrowser.SearchStorage` matches case-sensitive `*` and `?` within
+segments, begins at the literal parent before the first wildcard and expands
+only matching directories. Providers receive literal paths and, for S3, the
+literal name prefix before the first wildcard. Patterns never enter action IDs,
+Load selectors or connection URLs. Returned nodes retain exact IDs/addresses;
+their labels include the relative path needed to distinguish matches.
+Work is bounded by one 30-second deadline, 32 directory listings, 32 path levels
+and 500 returned nodes. Any capped provider listing or unvisited matching branch
+marks the response truncated. Recursive `**`, character classes, traversal,
+controls and URL/selector options are rejected. The traversal is provider-neutral
+over the existing S3-compatible/SFTP adapters; it does not add a GCS browser.
+
+The same payloads feed Load. `slingCommandConnectionEnv` pins named source and
+target connections with URL streams/objects in SLING_TASK_CONFIG after CLI flag
+parsing, working around Sling 1.5.22's nondeterministic connection-key renaming
+that otherwise loses credentials.
+Canvas drops only open existing reviewed creation dialogs; execution remains an
+explicit operation. Live tests use isolated MinIO and a loopback, memory-only
+SFTP server and assert both no execution on cancel/create and real transferred data.
 
 ## 7. Open items
 

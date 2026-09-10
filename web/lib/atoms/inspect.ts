@@ -12,6 +12,7 @@ export type AssetInspectEntry = {
 };
 
 export type AssetInspectState = {
+  scope?: string;
   byAssetId: Record<string, AssetInspectEntry>;
   loadingByAssetId: Record<string, boolean>;
   requestedLimitsByAssetId: Record<string, number>;

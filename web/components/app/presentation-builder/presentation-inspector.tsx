@@ -338,7 +338,10 @@ function InspectorFrame({
     const timer = window.setTimeout(() => {
       const target = findingFocusTarget(frame, focusPath);
       if (target) {
-        target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        const viewport = target.closest('[data-slot="scroll-area-viewport"]');
+        if (viewport)
+          viewport.scrollTop +=
+            target.getBoundingClientRect().top - viewport.getBoundingClientRect().top - 32;
         target.focus({ preventScroll: true });
       }
       onFocusPathHandled?.();

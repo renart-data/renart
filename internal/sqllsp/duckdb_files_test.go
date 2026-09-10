@@ -46,6 +46,47 @@ func TestEnrichDuckDBFileRelationsProvidesParquetColumnCompletion(t *testing.T) 
 	}
 }
 
+func TestEnrichDuckDBFileRelationsExpandsPartitionedParquetGlob(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	partitionDir := filepath.Join(workspaceRoot, "my_directory", "day=2026-09-01")
+	if err := os.MkdirAll(partitionDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parquetPath := filepath.Join(partitionDir, "example.parquet")
+	client, err := duck.NewClient(duck.Config{Path: ""})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(client.Close)
+	escapedPath := strings.ReplaceAll(filepath.ToSlash(parquetPath), "'", "''")
+	if err := client.RunQueryWithoutResult(t.Context(), &query.Query{
+		Query: "copy (select 1::integer as id, 'Ada'::varchar as name) to '" + escapedPath + "' (format parquet)",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	const uri = URI("file:///workspace/query.sql")
+	doc := TextDocumentItem{URI: uri, Text: `select * from "./my_directory/day=*/example.parquet"`}
+	graph := EnrichDuckDBFileRelations(t.Context(), CanonicalGraph{
+		Version: 1,
+		Assets:  []AssetNode{{ID: "query", URI: uri, Dialect: "duckdb"}},
+	}, doc, workspaceRoot, NewDuckDBFileSchemaCache())
+
+	output := InferOutputSchema(t.Context(), graph, doc, "duckdb")
+	columnTypes := make(map[string]string, len(output.Columns))
+	for _, column := range output.Columns {
+		columnTypes[column.Name] = column.Type
+	}
+	for name, expectedType := range map[string]string{"day": "DATE", "id": "INTEGER", "name": "VARCHAR"} {
+		if columnTypes[name] != expectedType {
+			t.Fatalf("expected glob-backed column %s %s, got %#v", name, expectedType, output.Columns)
+		}
+	}
+	if output.Completeness != "complete" {
+		t.Fatalf("expected complete glob-backed output, got %q", output.Completeness)
+	}
+}
+
 func TestIsDuckDBLocalFileRelationExcludesRemoteFilesystems(t *testing.T) {
 	for _, relation := range []string{"./example.parquet", "data/example.csv", "example.jsonl", `/tmp/example.parquet`, `C:\\data\\example.parquet`} {
 		if !IsDuckDBLocalFileRelation(relation) {

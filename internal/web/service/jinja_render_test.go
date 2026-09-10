@@ -42,4 +42,21 @@ func TestJinjaRenderUsesNotebookParameterContext(t *testing.T) {
 	if len(result.Spans) != 1 || result.Spans[0].RenderedText != "'north''west'" {
 		t.Fatalf("unexpected expression previews: %+v", result.Spans)
 	}
+
+	overridden, apiErr := service.Render(context.Background(), "cell-id", JinjaRenderRequest{
+		Content:         "select {{ parameter.region }} as region{% if parameters.enabled %}, 1 as enabled{% endif %}",
+		ParameterValues: map[string]any{"region": "south", "enabled": false},
+	})
+	if apiErr != nil {
+		t.Fatalf("render with request-local values returned API error: %+v", apiErr)
+	}
+	if overridden.Status != "ok" {
+		t.Fatalf("render with request-local values failed: %+v", overridden)
+	}
+	if !strings.Contains(overridden.Rendered, "'south'") || strings.Contains(overridden.Rendered, "1 as enabled") {
+		t.Fatalf("request-local parameter values did not override runtime values: %q", overridden.Rendered)
+	}
+	if len(overridden.Spans) != 1 || overridden.Spans[0].RenderedText != "'south'" {
+		t.Fatalf("unexpected request-local expression previews: %+v", overridden.Spans)
+	}
 }

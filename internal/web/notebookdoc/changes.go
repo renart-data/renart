@@ -74,6 +74,7 @@ const (
 // paths. Create operations are normalized with generated IDs during Prepare;
 // callers must apply that returned, normalized change set.
 type NotebookOperation struct {
+	Environment   string                          `json:"environment,omitempty"`
 	Kind          string                          `json:"kind"`
 	CellID        string                          `json:"cell_id,omitempty"`
 	BlockID       string                          `json:"block_id,omitempty"`
@@ -479,7 +480,7 @@ func (s *Service) applyDraftOperation(nb *notebook.Notebook, operation *Notebook
 			return badRequestError("source_not_found", fmt.Sprintf("source %q was not found", operation.CellID))
 		}
 		operation.CellID = cell.ID
-		definition, apiErr := s.notebookSourceDefinition(operation.Source, cell.ID)
+		definition, apiErr := s.notebookSourceDefinition(operation.Source, cell.ID, operation.Environment)
 		if apiErr != nil {
 			return apiErr
 		}
@@ -968,7 +969,7 @@ func (s *Service) applyDraftCellCreate(nb *notebook.Notebook, operation *Noteboo
 		if python {
 			return badRequestError("invalid_notebook_source", "warehouse source cells must use SQL")
 		}
-		assetType, apiErr := s.resolveNotebookSourceAssetType(operation.Connection)
+		assetType, apiErr := s.resolveNotebookSourceAssetType(operation.Connection, operation.Environment)
 		if apiErr != nil {
 			return apiErr
 		}
@@ -1020,7 +1021,7 @@ func (s *Service) applyDraftSourceCreate(nb *notebook.Notebook, operation *Noteb
 	if message := notebook.ValidateCellName(nb, operation.Name, "", s.pipelineAssetNames()); message != "" {
 		return badRequestError("invalid_cell_name", message)
 	}
-	definition, apiErr := s.notebookSourceDefinition(operation.Source, operation.CellID)
+	definition, apiErr := s.notebookSourceDefinition(operation.Source, operation.CellID, operation.Environment)
 	if apiErr != nil {
 		return apiErr
 	}
@@ -1049,7 +1050,7 @@ func (s *Service) applyDraftSourceCreate(nb *notebook.Notebook, operation *Noteb
 	return nil
 }
 
-func (s *Service) notebookSourceDefinition(input *model.NotebookSourceDefinition, sourceID string) (*notebook.SourceDefinition, *APIError) {
+func (s *Service) notebookSourceDefinition(input *model.NotebookSourceDefinition, sourceID, environment string) (*notebook.SourceDefinition, *APIError) {
 	if input == nil {
 		return nil, badRequestError("invalid_notebook_source", "a notebook source definition is required")
 	}
@@ -1073,7 +1074,7 @@ func (s *Service) notebookSourceDefinition(input *model.NotebookSourceDefinition
 	definition.Kind = strings.ToLower(strings.TrimSpace(definition.Kind))
 	definition.Connection = strings.TrimSpace(definition.Connection)
 	if definition.Kind == notebook.SourceKindFile && definition.Connection != "" {
-		if apiErr := s.validateNotebookStorageConnection(definition.Connection); apiErr != nil {
+		if apiErr := s.validateNotebookStorageConnection(definition.Connection, environment); apiErr != nil {
 			return nil, apiErr
 		}
 	}
@@ -1104,18 +1105,18 @@ func notebookSourceDefinitionToModel(definition *notebook.SourceDefinition) *mod
 	}
 }
 
-func (s *Service) validateNotebookStorageConnection(connection string) *APIError {
+func (s *Service) validateNotebookStorageConnection(connection, environment string) *APIError {
 	if s == nil || s.deps.ValidateStorageConnection == nil {
 		return badRequestError("unknown_notebook_source_connection", fmt.Sprintf("storage connection %q is unavailable", connection))
 	}
-	return s.deps.ValidateStorageConnection(connection)
+	return s.deps.ValidateStorageConnection(connection, environment)
 }
 
 func (s *Service) configureDraftCellSource(cell *notebook.Cell, operation *NotebookOperation) *APIError {
 	connection := strings.TrimSpace(operation.Connection)
 	assetType := notebook.DefaultCellType
 	if connection != "" {
-		resolved, apiErr := s.resolveNotebookSourceAssetType(connection)
+		resolved, apiErr := s.resolveNotebookSourceAssetType(connection, operation.Environment)
 		if apiErr != nil {
 			return apiErr
 		}
@@ -1137,7 +1138,7 @@ func (s *Service) configureDraftCellSource(cell *notebook.Cell, operation *Noteb
 	return nil
 }
 
-func (s *Service) resolveNotebookSourceAssetType(connection string) (string, *APIError) {
+func (s *Service) resolveNotebookSourceAssetType(connection, environment string) (string, *APIError) {
 	connection = strings.TrimSpace(connection)
 	if connection == "" {
 		return notebook.DefaultCellType, nil
@@ -1145,7 +1146,7 @@ func (s *Service) resolveNotebookSourceAssetType(connection string) (string, *AP
 	if s == nil || s.deps.ResolveSourceAssetType == nil {
 		return "", badRequestError("unknown_notebook_source_connection", fmt.Sprintf("query connection %q is unavailable", connection))
 	}
-	return s.deps.ResolveSourceAssetType(connection)
+	return s.deps.ResolveSourceAssetType(connection, environment)
 }
 
 func normalizeDraftVisualization(nb *notebook.Notebook, blockID string, input *model.NotebookVisualization) (*model.NotebookVisualization, *APIError) {

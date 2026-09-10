@@ -1,35 +1,52 @@
 import { fetchJSON, fetchJSONWithBody } from "@/lib/api-core";
+import type { NotebookCellPreviewResult, NotebookPreviewRequest } from "@/lib/generated/api-types";
+
+export function loadNotebookPreview(
+  notebookId: string,
+  cellId: string,
+  request: NotebookPreviewRequest,
+  signal?: AbortSignal,
+) {
+  return fetchJSON<NotebookCellPreviewResult>(
+    `/api/notebooks/${notebookId}/cells/${cellId}/preview`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      signal,
+      body: JSON.stringify(request),
+    },
+  );
+}
 import type {
+  ImportRecord,
+  NotebookCellRunResult as GeneratedNotebookCellRunResult,
+  NotebookRuntimeEvent as GeneratedNotebookRuntimeEvent,
+  NotebookRuntimeSnapshot as GeneratedNotebookRuntimeSnapshot,
+  VizDiagnostic as GeneratedVizDiagnostic,
+  VizDirective as GeneratedVizDirective,
   NotebookChangeApplyResult,
   NotebookChangePlan,
   NotebookChangeSet,
+  NotebookBrowserSourceRequest,
   NotebookParameter,
   NotebookSourceDefinition,
   PresentationDatasetResult,
 } from "@/lib/generated/api-types";
 import { WebNotebook, WebNotebookBlock } from "@/lib/types";
 
-export type NotebookImportRecord = {
-  ref: string;
-  object_name: string;
-  imported_at: string;
-  row_count: number;
-  complete: boolean;
-};
+export type NotebookImportRecord = ImportRecord;
 
 export type VizKind = "table" | "bar" | "line" | "area" | "pie" | "kpi";
 
-export type VizDirective = {
+// Refinements describe the existing UI-supported variants; Go owns field shape.
+export type VizDirective = Omit<GeneratedVizDirective, "kind" | "options"> & {
   kind: VizKind;
   options: Record<string, string | number | boolean | string[]>;
 };
 
-export type VizDiagnostic = {
-  message: string;
+export type VizDiagnostic = Omit<GeneratedVizDiagnostic, "severity"> & {
   severity: "error" | "warning";
-  line: number;
-  col: number;
-  end_col: number;
 };
 
 export type VisualizationFieldEncoding = {
@@ -111,50 +128,12 @@ export type NotebookVisualizationCheckResult = {
   can_apply: boolean;
 };
 
-export type NotebookCellRunResult = {
-  cell_id: string;
-  name: string;
-  object_name: string;
+export type NotebookCellRunResult = Omit<
+  GeneratedNotebookCellRunResult,
+  "status" | "materialized" | "viz" | "viz_diagnostics"
+> & {
   status: "ok" | "error" | "blocked";
-  error?: string;
-  columns: string[];
-  rows: unknown[][];
-  total_rows: number;
   materialized: "view" | "table";
-  imports?: NotebookImportRecord[];
-  column_types?: string[];
-  sampled?: boolean;
-  snapshot?: {
-    block_id: string;
-    object_name: string;
-    source_kind: string;
-    environment?: string;
-    connection?: string;
-    definition_fingerprint: string;
-    imported_at: string;
-    row_count: number;
-    byte_count: number;
-    complete: boolean;
-    sampled: boolean;
-    schema: Array<{ name: string; type: string; nullable?: boolean }>;
-    warnings?: string[];
-  };
-  rewritten_sql?: string;
-  logs?: string;
-  duration_ms: number;
-  performance?: {
-    request_total_ms?: number;
-    request_setup_ms?: number;
-    batch_run_ms?: number;
-    session_open_ms?: number;
-    materialize_ms?: number;
-    preview_query_ms?: number;
-    metadata_write_ms?: number;
-    runtime_sync_ms?: number;
-    session_bytes?: number;
-    transfer_bytes?: number;
-    python_startup_ms?: number;
-  };
   viz?: VizDirective | null;
   viz_diagnostics?: VizDiagnostic[];
 };
@@ -166,24 +145,13 @@ export type RunNotebookResponse = {
 
 // The server's auto-recompute state for a notebook: which cells are stale,
 // which of those it will refresh on its own, and the last result per cell.
-export type NotebookRuntimeSnapshot = {
-  auto_recompute: boolean;
-  parameter_values: Record<string, unknown>;
-  stale: string[];
-  auto_pending: string[];
-  running: string[];
+export type NotebookRuntimeSnapshot = Omit<GeneratedNotebookRuntimeSnapshot, "results"> & {
   results: Record<string, NotebookCellRunResult>;
 };
 
 // Pushed on the SSE stream when a notebook's recompute state changes.
-export type NotebookRuntimeEvent = {
+export type NotebookRuntimeEvent = Omit<GeneratedNotebookRuntimeEvent, "type" | "results"> & {
   type: "notebook.runtime";
-  notebook_id: string;
-  auto_recompute: boolean;
-  parameter_values: Record<string, unknown>;
-  stale: string[];
-  auto_pending: string[];
-  running: string[];
   results?: Record<string, NotebookCellRunResult>;
 };
 
@@ -402,9 +370,10 @@ type NotebookEnvelope = {
   notebook: WebNotebook;
 };
 
-export async function getNotebook(notebookId: string) {
+export async function getNotebook(notebookId: string, signal?: AbortSignal) {
   const payload = await fetchJSON<NotebookEnvelope>(`/api/notebooks/${notebookId}`, {
     cache: "no-store",
+    signal,
   });
   return payload.notebook;
 }
@@ -524,6 +493,30 @@ export async function applyNotebookChangeSet(notebookId: string, changeSet: Note
     `/api/notebooks/${notebookId}/changes/apply`,
     "POST",
     changeSet,
+  );
+}
+
+export function prepareNotebookBrowserSource(
+  notebookId: string,
+  request: NotebookBrowserSourceRequest,
+  signal?: AbortSignal,
+) {
+  return fetchJSONWithBody<NotebookChangePlan>(
+    `/api/notebooks/${notebookId}/data-browser/prepare`,
+    "POST",
+    request,
+    { signal },
+  );
+}
+
+export function applyNotebookBrowserSource(
+  notebookId: string,
+  request: NotebookBrowserSourceRequest,
+) {
+  return fetchJSONWithBody<NotebookChangeApplyResult>(
+    `/api/notebooks/${notebookId}/data-browser/apply`,
+    "POST",
+    request,
   );
 }
 

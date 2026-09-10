@@ -1,6 +1,7 @@
 import { expect } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import type { PipelinePlan } from "../../../lib/generated/api-types";
 
 import { liveTest as test } from "../live-app-fixture";
 
@@ -35,15 +36,11 @@ const pythonAssetId = Buffer.from("analytics/assets/analytics/py_metric.py").toS
 test.describe("app build actions live", () => {
   test.use({ fixtureName: "configured-workspace" });
 
-  test("centers a fitting DAG and opens the first asset selection in split view", async ({
+  // Desktop-only: The full Build canvas is a desktop affordance.
+  test("centers a fitting DAG and opens the first asset selection in split view @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The full Build canvas is a desktop affordance.",
-    );
-
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/canvas`);
     const flow = page.locator(".react-flow").first();
     await expect(flow).toBeVisible({ timeout: 15000 });
@@ -68,6 +65,7 @@ test.describe("app build actions live", () => {
 
     await page
       .locator(`[data-testid="lineage-asset"][data-asset-id="${customersAssetId}"]`)
+      .getByText("customers", { exact: true })
       .click();
     await expect(page).toHaveURL(
       new RegExp(`/pipelines/${pipelineId}/assets/${customersAssetId}/split(?:[?].*)?$`),
@@ -91,17 +89,109 @@ test.describe("app build actions live", () => {
       })
       .toBe(true);
 
+    await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
+      timeout: 15000,
+    });
+    const ordersNode = splitFlow.locator(
+      `[data-testid="lineage-asset"][data-asset-id="${ordersAssetId}"]`,
+    );
+    await ordersNode.getByText("orders", { exact: true }).click();
+    await expect(page.locator(".view-lines").first()).toContainText("order_id", {
+      timeout: 15000,
+    });
+    await expect(page).toHaveURL(
+      new RegExp(`/pipelines/${pipelineId}/assets/${ordersAssetId}/split(?:[?].*)?$`),
+    );
+
+    await selectedNode.getByText("customers", { exact: true }).click();
+    await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
+      timeout: 15000,
+    });
+    await expect(page).toHaveURL(
+      new RegExp(`/pipelines/${pipelineId}/assets/${customersAssetId}/split(?:[?].*)?$`),
+    );
+
     await page.getByRole("link", { name: "Canvas view" }).click();
     await expect(page).toHaveURL(
       new RegExp(`/pipelines/${pipelineId}/assets/${customersAssetId}/canvas(?:[?].*)?$`),
     );
-    await page.locator(`[data-testid="lineage-asset"][data-asset-id="${ordersAssetId}"]`).click();
+    await page
+      .locator(`[data-testid="lineage-asset"][data-asset-id="${ordersAssetId}"]`)
+      .getByText("orders", { exact: true })
+      .click();
     await expect(page).toHaveURL(
       new RegExp(`/pipelines/${pipelineId}/assets/${ordersAssetId}/canvas(?:[?].*)?$`),
     );
   });
 
-  test("materialize and inspect buttons run the real asset", async ({ liveApp, page }) => {
+  test("keeps asset, ad-hoc, and notebook documents in the workbench tab strip", async ({
+    liveApp,
+    page,
+  }) => {
+    const mobile = test.info().project.name.includes("mobile");
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/canvas`);
+
+    const documents = page.getByRole("tablist", { name: "Open authoring documents" });
+    await expect(documents.getByRole("tab", { name: "customers.sql" })).toBeVisible({
+      timeout: 15000,
+    });
+
+    if (mobile) {
+      await page
+        .getByRole("tablist", { name: "build tools" })
+        .getByRole("tab", { name: "Query", exact: true })
+        .click();
+    } else {
+      const rail = page.getByRole("complementary", { name: "build tools" });
+      await rail.getByRole("button", { name: "Ad-hoc query", exact: true }).click();
+    }
+
+    await expect(documents.getByRole("tab", { name: "Ad-hoc query" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await expect(page.getByTestId("adhoc-editor-workspace")).toBeVisible();
+    await expect(page.locator(".react-flow")).toHaveCount(0);
+
+    const notebookResponse = await page.request.post(`${liveApp.baseURL}/api/notebooks`, {
+      data: { title: "Workbench notes" },
+    });
+    expect(notebookResponse.ok()).toBe(true);
+    const notebookId = ((await notebookResponse.json()) as { notebook: { id: string } }).notebook
+      .id;
+    await page.goto(`${liveApp.baseURL}/notebooks/${notebookId}`);
+    await expect(documents.getByRole("tab", { name: "Workbench notes" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+      { timeout: 15000 },
+    );
+    await expect(documents.getByRole("tab", { name: "customers.sql" })).toBeVisible();
+    await expect(documents.getByRole("tab", { name: "Ad-hoc query" })).toBeVisible();
+
+    await documents.getByRole("tab", { name: "customers.sql" }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/pipelines/${pipelineId}/assets/${customersAssetId}/code(?:[?].*)?$`),
+    );
+    await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
+      timeout: 15000,
+    });
+
+    if (!mobile) {
+      const rail = page.getByRole("complementary", { name: "build tools" });
+      const adHocTool = rail.getByRole("button", { name: "Ad-hoc query", exact: true });
+      await adHocTool.click();
+      await expect(documents.getByRole("tab", { name: "Ad-hoc query" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await adHocTool.click();
+      await expect(page.getByRole("complementary", { name: "Build navigation" })).toHaveCount(0);
+      await adHocTool.click();
+      await expect(page.getByRole("complementary", { name: "Build navigation" })).toBeVisible();
+    }
+  });
+
+  test("materialize action and inspect panel run the real asset", async ({ liveApp, page }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
       timeout: 15000,
@@ -139,8 +229,8 @@ test.describe("app build actions live", () => {
         response.url().includes(`/api/assets/${customersAssetId}/inspect`) && response.ok(),
       { timeout: 30000 },
     );
-    await page.getByRole("button", { name: "Inspect", exact: true }).click();
     await inspectResponse;
+    await page.getByRole("tab", { name: "Inspect", exact: true }).click();
 
     await expect(page.getByText("Ada").first()).toBeVisible({ timeout: 15000 });
 
@@ -152,12 +242,8 @@ test.describe("app build actions live", () => {
     await expect(disclosure.locator("pre")).toContainText(/select/i);
   });
 
-  test("records a canvas context-menu run as manual", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The canvas context menu is a desktop affordance.",
-    );
-
+  // Desktop-only: The canvas context menu is a desktop affordance.
+  test("records a canvas context-menu run as manual @desktop-only", async ({ liveApp, page }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/canvas`);
     const assetNode = page.locator(
       `[data-testid="lineage-asset"][data-asset-id="${customersAssetId}"]`,
@@ -234,7 +320,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
         response.url().includes(`/api/pipelines/${pipelineId}/assets/render`) && response.ok(),
       { timeout: 30000 },
     );
-    await page.getByRole("button", { name: "Render saved asset", exact: true }).click();
+    await page.getByRole("tab", { name: "Render", exact: true }).click();
     const response = await renderResponse;
     expect(response.request().postDataJSON()).toMatchObject({
       asset_name: "analytics.customers",
@@ -600,7 +686,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     const planDialog = page.getByTestId("pipeline-plan-sheet");
     await expect(planDialog).toBeVisible();
     await expect(planDialog.getByRole("tablist")).toHaveCount(0);
-    await expect(planDialog.getByRole("heading", { name: "Source changes" })).toBeVisible();
+    await expect(planDialog.getByRole("heading", { name: /^Changes & impact/ })).toBeVisible();
+    await expect(planDialog.getByText("Representative window", { exact: true })).toBeHidden();
+    await expect(planDialog.getByRole("heading", { name: "Code checks", exact: true })).toHaveCount(
+      0,
+    );
 
     const fileDisclosure = planDialog
       .locator('section[aria-labelledby="pipeline-deploy-source-changes"]')
@@ -614,6 +704,13 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(fileDiff).toContainText("Current deployment");
     await expect(fileDiff).toContainText("Saved workspace");
     await expect(fileDiff.locator(".monaco-diff-editor")).toBeVisible({ timeout: 15000 });
+    if ((page.viewportSize()?.width ?? 0) < 768) {
+      await expect(fileDiff.getByTestId("deployment-file-diff")).toHaveAttribute(
+        "data-diff-layout",
+        "inline",
+      );
+      await expect(fileDiff.locator(".monaco-diff-editor")).not.toHaveClass(/side-by-side/);
+    }
     const insertedLine = fileDiff.locator(".monaco-diff-editor .line-insert").first();
     await expect(insertedLine).toBeVisible({ timeout: 15000 });
     await expect
@@ -624,6 +721,110 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
 
     await fileDisclosure.locator('[data-slot="collapsible-trigger"]').click();
     await expect(fileDiff).toBeHidden();
+
+    await planDialog.getByRole("button", { name: /^Deployment details/ }).click();
+    await expect(planDialog.getByText("Representative window", { exact: true })).toBeVisible();
+    await expect(planDialog.getByRole("button", { name: /^Execution details/ })).toBeVisible();
+    await expect(planDialog.getByRole("button", { name: /^Deploy \d+ assets?/ })).toBeVisible();
+    const detailedPlan = page.waitForRequest(
+      (request) =>
+        request.url().endsWith(`/api/pipelines/${pipelineId}/plan`) &&
+        request.postDataJSON()?.include_stage_content === true,
+    );
+    await planDialog.getByRole("button", { name: /^Execution details/ }).click();
+    expect((await detailedPlan).postDataJSON().purpose).toBe("deployment");
+  });
+
+  test("reviews propagated output types on an unchanged SQL file", async ({ liveApp, page }) => {
+    await writeFile(
+      join(liveApp.workspaceDir, "analytics/assets/analytics/revenue.sql"),
+      "/* @bruin\nname: analytics.revenue\ntype: duckdb.sql\nmaterialization:\n  type: view\n@bruin */\nSELECT SUM(total_amount) AS total FROM analytics.orders\n",
+    );
+    await expect
+      .poll(async () => {
+        const workspace = (await (
+          await page.request.get(`${liveApp.baseURL}/api/workspace`)
+        ).json()) as WorkspaceResponse;
+        return workspace.pipelines
+          .flatMap((pipeline) => pipeline.assets)
+          .some((asset) => asset.name === "analytics.revenue");
+      })
+      .toBe(true);
+    const deployed = await page.request.post(
+      `${liveApp.baseURL}/api/pipelines/${pipelineId}/deploy`,
+      { data: {} },
+    );
+    expect(deployed.ok()).toBe(true);
+    await writeFile(
+      join(liveApp.workspaceDir, "analytics/assets/analytics/orders.sql"),
+      "/* @bruin\ntype: duckdb.sql\nmaterialization:\n  type: view\n@bruin */\nSELECT 100 AS order_id, 1 AS customer_id, CAST(42 AS DOUBLE) AS total_amount\n",
+    );
+    // Wait for fixture file discovery before mounting the editor, whose draft
+    // intentionally does not get replaced by an outside write while editing.
+    await expect
+      .poll(async () => {
+        const workspace = (await (
+          await page.request.get(`${liveApp.baseURL}/api/workspace`)
+        ).json()) as WorkspaceResponse;
+        return workspace.pipelines
+          .flatMap((pipeline) => pipeline.assets)
+          .find((asset) => asset.name === "analytics.orders")?.content;
+      })
+      .toContain("DOUBLE");
+    await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${ordersAssetId}/code`);
+    await expect(page.locator(".view-lines").first()).toContainText("DOUBLE", { timeout: 15000 });
+    const planned = page.waitForResponse(
+      (response) => response.url().endsWith(`/api/pipelines/${pipelineId}/plan`) && response.ok(),
+    );
+    await page.getByRole("button", { name: /^Redeploy/ }).click();
+    const report = (await (await planned).json()) as PipelinePlan;
+    const contract = report.semantic_impact?.assets.find(
+      (asset) => asset.name === "analytics.revenue",
+    )?.columns[0];
+    expect(contract?.before?.type).toBeTruthy();
+    expect(contract?.before?.type).not.toBe("DOUBLE");
+    expect(contract?.after?.type).toBe("DOUBLE");
+    const dialog = page.getByTestId("pipeline-plan-sheet");
+    const row = dialog.getByRole("button", {
+      name: /assets\/analytics\/revenue.sql/,
+    });
+    await expect(row).toBeVisible({ timeout: 30000 });
+    await row.click();
+    const diff = dialog.getByTestId("deployment-file-diff");
+    await expect(diff.locator(".monaco-diff-editor")).toBeVisible({ timeout: 15000 });
+    await expect
+      .poll(async () => (await diff.locator(".deployment-diff-warning").allTextContents()).join(""))
+      .toContain("SUM(total_amount)");
+    await expect
+      .poll(async () =>
+        (await diff.locator(".deployment-diff-lens").allTextContents())
+          .join("")
+          .replace(/\s+/g, " "),
+      )
+      .toContain(`${contract?.before?.type} → DOUBLE`);
+    await expect(diff.locator(".deployment-diff-warning").first()).toHaveCSS(
+      "border-bottom-style",
+      "dotted",
+    );
+    if ((page.viewportSize()?.width ?? 0) < 768) {
+      await expect(diff).toHaveAttribute("data-diff-layout", "inline");
+      await expect(diff.locator(".monaco-diff-editor")).not.toHaveClass(/side-by-side/);
+    }
+    await dialog.locator("summary").filter({ hasText: "Why this matters" }).click();
+    await expect(
+      dialog.locator("details").getByText(`total: ${contract?.before?.type}`, { exact: false }),
+    ).toBeVisible();
+    await expect(
+      dialog.locator("details").getByText("total: DOUBLE", { exact: false }),
+    ).toBeVisible();
+    await expect(dialog.getByText("What-if", { exact: false })).toHaveCount(0);
+    const viewport = dialog
+      .getByTestId("pipeline-plan-scroll")
+      .locator('[data-slot="scroll-area-viewport"]');
+    await expect
+      .poll(() => viewport.evaluate((element) => element.scrollWidth - element.clientWidth))
+      .toBeLessThanOrEqual(1);
+    await page.screenshot({ path: test.info().outputPath("deployment-impact-review.png") });
   });
 
   test("keeps valid sibling previews when an asset definition is incomplete", async ({
@@ -884,7 +1085,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     const reexecutionAccepted = await reexecutionResponse;
     expect(reexecutionAccepted.request().postDataJSON()).toEqual({});
     const reexecution = (await reexecutionAccepted.json()) as { run: { id: string } };
-    await expect(page).toHaveURL(new RegExp(`/runs/${encodeURIComponent(reexecution.run.id)}$`));
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === `/runs/${encodeURIComponent(reexecution.run.id)}` &&
+        url.searchParams.get("run_tab") === "plan",
+    );
 
     let replayDetail: typeof terminalDetail;
     await expect
@@ -983,15 +1188,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     );
   });
 
-  test("explorer creation actions live at the workspace and pipeline scopes", async ({
+  // Desktop-only: The explorer action toolbar is desktop-only.
+  test("explorer creation actions live at the workspace and pipeline scopes @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The explorer action toolbar is desktop-only.",
-    );
-
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
 
     await page.getByRole("button", { name: "New pipeline", exact: true }).click();
@@ -1020,12 +1221,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
       .click();
   });
 
-  test("creates a feature demo from the new pipeline flow", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The explorer action toolbar is desktop-only.",
-    );
-
+  // Desktop-only: The explorer action toolbar is desktop-only.
+  test("creates a feature demo from the new pipeline flow @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await page.getByRole("button", { name: "New pipeline", exact: true }).click();
 
@@ -1069,18 +1269,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(page).toHaveURL(new RegExp(`/pipelines/${createdPipelineID}/canvas`));
   });
 
-  test("ad hoc editor uses Monaco with SQL intellisense and runs queries", async ({
+  // Desktop-only: The Workbench rail ad-hoc affordance is desktop-only.
+  test("ad hoc editor uses Monaco with SQL intellisense and runs queries @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    // Asserts the explorer entry and the top-bar "Ad-hoc" link highlight in
-    // tandem; both are desktop chrome (the explorer is a drawer on mobile and the
-    // top-bar link is hidden below lg).
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Explorer + top-bar ad-hoc affordances are desktop-only.",
-    );
-
     await writeFile(
       join(liveApp.workspaceDir, ".bruin.yml"),
       `environments:
@@ -1111,47 +1304,55 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(page.locator(".react-flow").first()).toBeVisible({ timeout: 15000 });
 
     // Filtering narrows the current pipeline's assets and can be cleared.
-    const filter = page.getByRole("textbox", { name: "Filter assets" });
+    const buildNavigation = page.getByRole("complementary", { name: "Build navigation" });
+    const filter = buildNavigation.getByRole("textbox", { name: "Filter assets" });
     await filter.fill("orders");
-    await expect(page.getByRole("button", { name: /orders\.sql/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /customers\.sql/ })).toHaveCount(0);
+    await expect(buildNavigation.getByRole("button", { name: /orders\.sql/ })).toBeVisible();
+    await expect(buildNavigation.getByRole("button", { name: /customers\.sql/ })).toHaveCount(0);
     await filter.fill("no-such-asset");
-    await expect(page.getByText("No matching assets.")).toBeVisible();
-    await page.getByRole("button", { name: "Clear asset filter" }).click();
-    await expect(page.getByRole("button", { name: /customers\.sql/ })).toBeVisible();
+    await expect(buildNavigation.getByText("No matching assets.")).toBeVisible();
+    await buildNavigation.getByRole("button", { name: "Clear asset filter" }).click();
+    await expect(buildNavigation.getByRole("button", { name: /customers\.sql/ })).toBeVisible();
 
-    // Opening ad hoc from a split view keeps the split layout.
-    await page.getByRole("button", { name: "Ad-hoc query" }).click();
+    // Opening ad hoc from the Workbench rail preserves its asset context in the
+    // URL while the dedicated scratch document replaces the asset editor/canvas.
+    const adHocTool = page
+      .getByRole("complementary", { name: "build tools" })
+      .getByRole("button", { name: "Ad-hoc query", exact: true });
+    await adHocTool.click();
     await expect(page).toHaveURL(
       new RegExp(
         `/pipelines/${pipelineId}/assets/${customersAssetId}/split[?].*editor=adhoc(?:&|$)`,
       ),
     );
 
-    const canvasCustomer = page
-      .locator(`[data-testid="lineage-asset"][data-asset-id="${customersAssetId}"]`)
-      .locator('[data-slot="asset-node"]');
-    const selectedBorderClass = /(?:^|\s)border-primary(?:\s|$)/;
-    await expect(canvasCustomer).not.toHaveClass(selectedBorderClass);
-
     const scratchWorkspace = page.getByTestId("adhoc-editor-workspace");
     await expect(scratchWorkspace).toHaveClass(/bg-primary\/5/);
+    await expect(page.locator(".react-flow")).toHaveCount(0);
+    await expect(
+      page
+        .getByRole("tablist", { name: "Open authoring documents" })
+        .getByRole("tab", { name: "Ad-hoc query" }),
+    ).toHaveAttribute("aria-selected", "true");
 
     const editor = page.locator(".monaco-editor").first();
     await expect(editor).toBeVisible({ timeout: 15000 });
     await expect(page.getByText("Ad-hoc query").first()).toBeVisible();
 
-    // Both the explorer entry and the top-bar button highlight the ad hoc mode.
-    await expect(page.locator("button", { hasText: "Ad-hoc query" }).first()).toHaveClass(
-      /ring-primary/,
-    );
-    await expect(page.getByRole("link", { name: "Ad-hoc" }).first()).toHaveClass(/ring-primary/);
+    await expect(adHocTool).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      buildNavigation.getByRole("button", { name: "Ad-hoc query", exact: true }),
+    ).toHaveCount(0);
 
     // Selecting even the same context asset leaves scratch mode and restores
     // the repository-backed asset editor and canvas selection.
-    await page.getByRole("button", { name: /customers\.sql/ }).click();
+    await buildNavigation.getByRole("button", { name: /customers\.sql/ }).click();
     await expect.poll(() => new URL(page.url()).searchParams.get("editor")).toBe("asset");
     await expect(scratchWorkspace).toHaveCount(0);
+    const canvasCustomer = page
+      .locator(`[data-testid="lineage-asset"][data-asset-id="${customersAssetId}"]`)
+      .locator('[data-slot="asset-node"]');
+    const selectedBorderClass = /(?:^|\s)border-primary(?:\s|$)/;
     await expect(canvasCustomer).toHaveClass(selectedBorderClass);
 
     // Conversely, the Query result tab owns the scratch editor and opens it
@@ -1160,7 +1361,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect.poll(() => new URL(page.url()).searchParams.get("result")).toBe("query");
     await expect.poll(() => new URL(page.url()).searchParams.get("editor")).toBe("adhoc");
     await expect(scratchWorkspace).toBeVisible();
-    await expect(canvasCustomer).not.toHaveClass(selectedBorderClass);
+    await expect(page.locator(".react-flow")).toHaveCount(0);
 
     const connectionSelect = page.getByRole("combobox", { name: "Ad-hoc connection" });
     await expect(connectionSelect).toContainText("duckdb-default");
@@ -1227,7 +1428,10 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     const parseContextSeen = page.waitForResponse(
       (response) => {
         if (!response.url().includes("/api/sql/parse-context") || !response.ok()) return false;
-        const body = response.request().postDataJSON() as { connection?: string; content?: string };
+        const body = response.request().postDataJSON() as {
+          connection?: string;
+          content?: string;
+        };
         return body.connection === "duckdb-adhoc" && body.content?.includes("adhoc_ok") === true;
       },
       { timeout: 15000 },
@@ -1264,8 +1468,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(disclosure).toContainText("adhoc_ok");
     await expect(disclosure).not.toContainText("{{");
 
-    // Truncation is represented compactly in the rendered-query strip instead
-    // of obscuring the result table with a modal-style warning overlay.
+    // The shared footer owns preview bounds; the disclosure retains authored SQL.
     await editor.click();
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.insertText("select range as value from range(0, 501)");
@@ -1280,8 +1483,9 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     };
     expect(truncatedPayload.truncated).toBe(true);
     expect(truncatedPayload.rows).toHaveLength(500);
-    await expect(disclosure.getByLabel("Result limited to the first 500 rows")).toBeVisible();
-    await expect(disclosure).toContainText("LIMIT 500");
+    await expect(page.getByRole("status").filter({ hasText: "Showing 500 rows" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Load more rows", exact: true })).toBeVisible();
+    await expect(disclosure).not.toContainText("LIMIT 500");
     await expect(page.getByTestId("inspect-warning-banner")).toHaveCount(0);
 
     const queryIcon = disclosure.getByTestId("rendered-query-icon");
@@ -1290,14 +1494,16 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await expect(queryIcon).toHaveAttribute("stroke-width", "2.75");
   });
 
-  test("converts an ad hoc query to an asset and a notebook cell", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The desktop Build header exposes the ad-hoc conversion actions.",
-    );
-
+  // Desktop-only: The desktop Workbench rail exposes the ad-hoc conversion actions.
+  test("converts an ad hoc query to an asset and a notebook cell @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
-    await page.getByRole("button", { name: "Ad-hoc query" }).click();
+    const adHocTool = page
+      .getByRole("complementary", { name: "build tools" })
+      .getByRole("button", { name: "Ad-hoc query", exact: true });
+    await adHocTool.click();
     const editor = page.locator(".monaco-editor").first();
     await expect(editor).toBeVisible({ timeout: 15000 });
     const query = "select 42 as converted_marker";
@@ -1335,7 +1541,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     expect(convertedAsset?.type).toBe("duckdb.sql");
     expect(convertedAsset?.explicit_connection).toBe("duckdb-default");
 
-    await page.getByRole("button", { name: "Ad-hoc query" }).click();
+    await adHocTool.click();
     await expect(page.locator(".view-lines").first()).toContainText("converted_marker", {
       timeout: 15000,
     });
@@ -1355,17 +1561,17 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     });
   });
 
-  test("ad hoc mode adds a split editor to canvas and preserves full-size code", async ({
+  // Desktop-only: This route-preservation assertion targets the desktop Workbench rail.
+  test("ad hoc document preserves the asset route and full-size code @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The top-bar ad-hoc affordance is hidden below lg.",
-    );
-
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/canvas`);
-    await page.getByRole("link", { name: "Ad-hoc" }).click();
+    const adHocTool = page
+      .getByRole("complementary", { name: "build tools" })
+      .getByRole("button", { name: "Ad-hoc query", exact: true });
+    await expect(adHocTool).toHaveAttribute("aria-pressed", "false");
+    await adHocTool.click();
     await expect(page).toHaveURL(
       new RegExp(
         `/pipelines/${pipelineId}/assets/${customersAssetId}/split[?].*editor=adhoc(?:&|$)`,
@@ -1373,7 +1579,8 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     );
 
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
-    await page.getByRole("link", { name: "Ad-hoc" }).click();
+    await expect(adHocTool).toHaveAttribute("aria-pressed", "false");
+    await adHocTool.click();
     await expect(page).toHaveURL(
       new RegExp(
         `/pipelines/${pipelineId}/assets/${customersAssetId}/code[?].*editor=adhoc(?:&|$)`,

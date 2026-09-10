@@ -194,11 +194,16 @@ func ReviewedIdentityID(identity ReviewedIdentity) string {
 }
 
 func ReviewedIdentityFromPlan(plan Plan) ReviewedIdentity {
+	semanticImpactDigest := ""
+	if plan.SemanticImpact != nil {
+		semanticImpactDigest = plan.SemanticImpact.Digest
+	}
 	return ReviewedIdentity{
-		PipelineUUID: plan.PipelineUUID,
-		Source:       plan.Source,
-		Context:      plan.Context,
-		Selection:    plan.Selection,
+		PipelineUUID:         plan.PipelineUUID,
+		Source:               plan.Source,
+		Context:              plan.Context,
+		Selection:            plan.Selection,
+		SemanticImpactDigest: semanticImpactDigest,
 		Prerequisites: append(
 			[]Prerequisite(nil), plan.Prerequisites...,
 		),

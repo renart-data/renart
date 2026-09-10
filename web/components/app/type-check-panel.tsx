@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { ResourceLink } from "./resource-link";
 import { useState } from "react";
 import {
   AlertTriangle,
@@ -191,7 +192,10 @@ export function TypeCheckPanel({
                           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
                         )}
                         <div className="min-w-0 flex-1">
-                          <p>{finding.message}</p>
+                          <p>
+                            {finding.message}
+                            {finding.target ? <ResourceLink target={finding.target} /> : null}
+                          </p>
                           {finding.resolutions?.length ? (
                             <div className="mt-1.5 flex flex-wrap gap-1.5">
                               {finding.resolutions.map((resolution) => {
@@ -213,17 +217,17 @@ export function TypeCheckPanel({
                                 }
                                 if (resolution.action?.type === "open-asset") {
                                   return (
-                                    <Button
+                                    <ResourceLink
                                       key={resolution.id}
-                                      type="button"
-                                      variant="outline"
-                                      size="xs"
-                                      disabled={!onResolutionAction}
-                                      onClick={() => onResolutionAction?.(resolution.action!)}
+                                      target={{
+                                        kind: "asset-section",
+                                        asset_id: resolution.action.asset_id,
+                                        section: "source",
+                                      }}
                                     >
                                       <ExternalLink data-icon="inline-start" />
                                       {resolution.title}
-                                    </Button>
+                                    </ResourceLink>
                                   );
                                 }
                                 if (!asset.id || !resolution.transaction) return null;
@@ -340,7 +344,10 @@ export function TypeCheckPanel({
                           <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
                         )}
                         <div className="min-w-0 flex-1">
-                          <p>{finding.message}</p>
+                          <p>
+                            {finding.message}
+                            <ResourceLink target={finding.target} />
+                          </p>
                           {finding.path ? (
                             <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
                               {finding.path}

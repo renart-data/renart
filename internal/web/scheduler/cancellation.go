@@ -17,6 +17,31 @@ const userCancelledRunMessage = "run aborted by user"
 
 var ErrRunCancellationUnavailable = errors.New("run cancellation is unavailable")
 
+type inlineRunCancellation struct {
+	cancel      context.CancelFunc
+	requestedAt *time.Time
+}
+
+// RegisterInlineRunCancellation attaches the actual request-owned executor.
+// Historical rows alone never grant an abort capability. Registration lasts
+// until the executor's normal finalizer has released its durable resource slots.
+func (s *Service) RegisterInlineRunCancellation(runID string, cancel context.CancelFunc) func() {
+	entry := &inlineRunCancellation{cancel: cancel}
+	s.mu.Lock()
+	if s.inlineRunCancels == nil {
+		s.inlineRunCancels = make(map[string]*inlineRunCancellation)
+	}
+	s.inlineRunCancels[runID] = entry
+	s.mu.Unlock()
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.inlineRunCancels[runID] == entry {
+			delete(s.inlineRunCancels, runID)
+		}
+	}
+}
+
 // RunCancellationUnavailableError explains why an active-looking historical
 // row cannot be interrupted by this scheduler process.
 type RunCancellationUnavailableError struct {
@@ -82,6 +107,15 @@ func (s *Service) hydrateRunCancellation(ctx context.Context, run *PipelineRun) 
 	if s == nil || s.store == nil || run == nil {
 		return nil
 	}
+	if run.RiverJobID == nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if entry := s.inlineRunCancels[run.ID]; entry != nil && (run.Status == RunStatusQueued || run.Status == RunStatusRunning) {
+			run.Cancellable = entry.requestedAt == nil
+			run.CancellationRequestedAt = entry.requestedAt
+		}
+		return nil
+	}
 	state, err := s.store.runCancellationState(ctx, *run)
 	if err != nil {
 		return err
@@ -110,9 +144,6 @@ func (s *Service) CancelRun(ctx context.Context, runID string) (PipelineRun, err
 	s.mu.Lock()
 	client := s.riverClient
 	s.mu.Unlock()
-	if client == nil {
-		return PipelineRun{}, errors.New("scheduler is not running")
-	}
 
 	run, _, _, err := s.store.Get(ctx, runID)
 	if err != nil {
@@ -122,9 +153,10 @@ func (s *Service) CancelRun(ctx context.Context, runID string) (PipelineRun, err
 		return PipelineRun{}, &RunCancellationUnavailableError{Reason: "the run has already finished"}
 	}
 	if run.RiverJobID == nil {
-		return PipelineRun{}, &RunCancellationUnavailableError{
-			Reason: "this execution is not owned by the background run queue",
-		}
+		return s.cancelInlineRun(ctx, run)
+	}
+	if client == nil {
+		return PipelineRun{}, errors.New("scheduler is not running")
 	}
 	if err := s.hydrateRunCancellation(ctx, &run); err != nil {
 		return PipelineRun{}, err
@@ -202,4 +234,32 @@ func (s *Service) CancelRun(ctx context.Context, runID string) (PipelineRun, err
 			Reason: fmt.Sprintf("the background job has already reached %s", job.State),
 		}
 	}
+}
+
+func (s *Service) cancelInlineRun(ctx context.Context, run PipelineRun) (PipelineRun, error) {
+	s.mu.Lock()
+	entry := s.inlineRunCancels[run.ID]
+	if entry == nil {
+		s.mu.Unlock()
+		return PipelineRun{}, &RunCancellationUnavailableError{Reason: "this execution is not active in this Renart process"}
+	}
+	firstRequest := entry.requestedAt == nil
+	if firstRequest {
+		now := time.Now().UTC()
+		entry.requestedAt = &now
+	}
+	run.Cancellable = false
+	run.CancellationRequestedAt = entry.requestedAt
+	entry.cancel()
+	s.mu.Unlock()
+	if firstRequest {
+		line := LogLine{At: *run.CancellationRequestedAt, Line: "Cancellation requested by user."}
+		if err := s.store.AppendLog(context.WithoutCancel(ctx), run.ID, line); err != nil {
+			slog.Warn("failed to append inline cancellation diagnostic", "run_id", run.ID, "error", err)
+		} else {
+			s.publishRunEvent("run.log", map[string]any{"run_id": run.ID, "log": line})
+		}
+		s.publishRunEvent("run.cancellation_requested", run)
+	}
+	return run, nil
 }

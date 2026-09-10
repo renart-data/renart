@@ -15,6 +15,14 @@ export type APIRecordsPathSample = {
   detail?: string;
 };
 
+export type AccessMode = "read_only" | "read_write";
+
+export type AccessRequirement = {
+  connection_key: string;
+  effect: Effect;
+  operation: string;
+};
+
 export type ArtifactColumnImpact = {
   producer: ArtifactRef;
   column: string;
@@ -97,6 +105,7 @@ export type AssetCreationCandidate = {
 };
 
 export type AssetCreationConnection = {
+  access_mode?: AccessMode;
   name: string;
   connection_type: string;
   category?: string;
@@ -149,6 +158,7 @@ export type AssetDependency = {
 };
 
 export type AssetInspectResponse = {
+  preview?: PreviewMetadata;
   status: string;
   columns: string[];
   rows: Record<string, unknown>[];
@@ -311,6 +321,20 @@ export type BrowseDirsResponse = {
   entries: BrowseDirEntry[];
 };
 
+export type CellRunPerformance = {
+  request_total_ms?: number;
+  request_setup_ms?: number;
+  batch_run_ms?: number;
+  session_open_ms?: number;
+  materialize_ms?: number;
+  preview_query_ms?: number;
+  metadata_write_ms?: number;
+  runtime_sync_ms?: number;
+  session_bytes?: number;
+  transfer_bytes?: number;
+  python_startup_ms?: number;
+};
+
 export type ColumnInferencePreview = {
   status: string;
   source: ColumnInferenceSource;
@@ -395,6 +419,22 @@ export type ColumnSchemaSyncResult = {
   notes?: string[];
 };
 
+export type ConnectionAccessImpact = {
+  pipeline: string;
+  asset: string;
+  scheduled: boolean;
+  operations: string[];
+};
+
+export type ConnectionAccessPreview = {
+  assets: ConnectionAccessImpact[];
+  warnings: string[];
+};
+
+export type ConnectionPolicy = {
+  access_mode: AccessMode;
+};
+
 export type CreateDirectoryRequest = {
   parent_dir: string;
   name: string;
@@ -426,10 +466,132 @@ export type CreateProjectResponse = {
   git_initialized: boolean;
 };
 
+export type DataBrowserCapabilities = {
+  notebook_source?: boolean;
+  load_source?: boolean;
+  load_destination?: boolean;
+  list_namespaces: boolean;
+  list_objects: boolean;
+  describe_columns: boolean;
+  preview_rows: boolean;
+  query: boolean;
+};
+
+export type DataBrowserChildrenResponse = {
+  status: string;
+  connection_id: string;
+  parent_id?: string;
+  revision: string;
+  nodes: DataBrowserNode[];
+  truncated?: boolean;
+};
+
+export type DataBrowserConnection = {
+  access_mode?: string;
+  id: string;
+  name: string;
+  type: string;
+  environment: string;
+  revision: string;
+  source_kind: string;
+  discovery_status: string;
+  capabilities: DataBrowserCapabilities;
+};
+
+export type DataBrowserConnectionsResponse = {
+  status: string;
+  environment: string;
+  revision: string;
+  connections: DataBrowserConnection[];
+};
+
+export type DataBrowserNode = {
+  is_default?: boolean;
+  address?: DataObjectAddress;
+  id: string;
+  parent_id?: string;
+  node_type: string;
+  label: string;
+  namespace_kind?: string;
+  object_kind?: string;
+  has_children: boolean;
+  reference_text?: string;
+  format?: string;
+  size_bytes?: number;
+  modified_at?: string;
+};
+
+export type DataBrowserObject = {
+  view_definition?: string;
+  address?: DataObjectAddress;
+  id: string;
+  connection_id: string;
+  connection_name: string;
+  connection_type: string;
+  environment: string;
+  revision: string;
+  namespace: string[];
+  name: string;
+  kind: string;
+  reference_text: string;
+  format?: string;
+  size_bytes?: number;
+  modified_at?: string;
+  columns: SQLColumn[];
+  capabilities: DataBrowserCapabilities;
+  warning?: string;
+};
+
+export type DataBrowserObjectResponse = {
+  status: string;
+  object: DataBrowserObject;
+};
+
+export type DataBrowserPreviewRequest = {
+  object_id: string;
+  environment?: string;
+  limit?: number;
+};
+
+export type DataBrowserPreviewResponse = {
+  preview?: PreviewMetadata;
+  status: string;
+  object_id: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  truncated?: boolean;
+  elapsed_ms: number;
+};
+
+export type DataBrowserResolveRequest = {
+  environment: string;
+  address: DataObjectAddress;
+};
+
+export type DataBrowserSourceRequest = {
+  object_id: string;
+  environment: string;
+  include_columns?: boolean;
+};
+
+export type DataObjectAddress = {
+  source_kind: string;
+  connection?: string;
+  connection_type?: string;
+  catalog?: string;
+  database?: string;
+  schema?: string;
+  name?: string;
+  path?: string;
+};
+
+export type Effect = "read" | "write" | "unknown";
+
 export type EnvironmentPolicy = {
   protected: boolean;
   deployed_only: boolean;
   confirm_destructive: boolean;
+  connections?: Record<string, ConnectionPolicy>;
 };
 
 export type ExternalRelationImportAsset = {
@@ -465,6 +627,14 @@ export type FormatSQLAssetResponse = {
   error?: string;
 };
 
+export type ImportRecord = {
+  ref: string;
+  object_name: string;
+  imported_at: string;
+  row_count: number;
+  complete: boolean;
+};
+
 export type InferColumnsResponse = {
   status: string;
   columns: WebColumn[];
@@ -498,6 +668,48 @@ export type MaterializationCapability = {
   supports_cluster_by?: boolean;
 };
 
+export type NotebookBrowserSourceRequest = {
+  object_id: string;
+  environment: string;
+  base_revision?: string;
+  position?: string;
+  after_block_id?: string;
+  name?: string;
+  snapshot_mode?: string;
+  row_limit?: number;
+  change_set?: NotebookChangeSet;
+};
+
+export type NotebookCellPreviewResult = {
+  columns: string[];
+  column_types?: string[];
+  rows: unknown[][];
+  preview: PreviewMetadata;
+};
+
+export type NotebookCellRunResult = {
+  cell_id: string;
+  name: string;
+  object_name: string;
+  status: string;
+  error?: string;
+  columns: string[];
+  rows: unknown[][];
+  preview?: PreviewMetadata;
+  total_rows: number;
+  materialized: string;
+  imports?: ImportRecord[];
+  column_types?: string[];
+  snapshot?: SnapshotRecord;
+  sampled?: boolean;
+  rewritten_sql?: string;
+  logs?: string;
+  duration_ms: number;
+  performance?: CellRunPerformance;
+  viz?: VizDirective;
+  viz_diagnostics?: VizDiagnostic[];
+};
+
 export type NotebookChangeApplyResult = {
   status: string;
   notebook: WebNotebook;
@@ -527,6 +739,7 @@ export type NotebookChangeSet = {
 };
 
 export type NotebookOperation = {
+  environment?: string;
   kind: string;
   cell_id?: string;
   block_id?: string;
@@ -563,6 +776,32 @@ export type NotebookParameterOptions = {
   dataset?: string;
   value_field?: string;
   label_field?: string;
+};
+
+export type NotebookPreviewRequest = {
+  result_id: string;
+  environment: string;
+  limit: number;
+};
+
+export type NotebookRuntimeEvent = {
+  type: string;
+  notebook_id: string;
+  auto_recompute: boolean;
+  parameter_values: Record<string, unknown>;
+  stale: string[];
+  auto_pending: string[];
+  running: string[];
+  results?: Record<string, NotebookCellRunResult>;
+};
+
+export type NotebookRuntimeSnapshot = {
+  auto_recompute: boolean;
+  parameter_values: Record<string, unknown>;
+  stale: string[];
+  auto_pending: string[];
+  running: string[];
+  results: Record<string, NotebookCellRunResult>;
 };
 
 export type NotebookSQLRefactor = {
@@ -789,6 +1028,7 @@ export type PipelinePlan = {
   context: PipelinePlanContext;
   readiness: PipelinePlanReadiness;
   selection: PipelinePlanSelection;
+  semantic_impact?: PipelinePlanSemanticImpact;
   prerequisites: PipelinePlanPrerequisite[];
   resources: PipelinePlanResources;
   assets: PipelinePlanAsset[];
@@ -837,6 +1077,8 @@ export type PipelinePlanContext = {
 };
 
 export type PipelinePlanExecutionContract = {
+  access_requirements?: AccessRequirement[];
+  access_policy_identity?: string;
   asset_id: string;
   asset_name: string;
   connection_keys: string[];
@@ -855,6 +1097,8 @@ export type PipelinePlanExecutionUnit = {
 };
 
 export type PipelinePlanIssue = {
+  diagnostic_code?: string;
+  target?: ResourceTarget;
   code: string;
   severity: string;
   message: string;
@@ -937,6 +1181,7 @@ export type PipelinePlanReviewedIdentity = {
   source: AssetRenderSource;
   context: PipelinePlanContext;
   selection: PipelinePlanSelection;
+  semantic_impact_digest?: string;
   prerequisites?: PipelinePlanPrerequisite[];
   resources: PipelinePlanResources;
   execution_contracts: PipelinePlanExecutionContract[];
@@ -956,6 +1201,74 @@ export type PipelinePlanSelectionRequest = {
   asset_name?: string;
   scope?: string;
   selector?: string;
+};
+
+export type PipelinePlanSemanticAssetImpact = {
+  name: string;
+  dialect?: string;
+  change: string;
+  source_change: string;
+  origin: string;
+  severity: string;
+  complete: boolean;
+  before_canonical_fingerprint?: string;
+  after_canonical_fingerprint?: string;
+  columns: PipelinePlanSemanticColumnImpact[];
+  before_source?: PipelinePlanSemanticSourceAnchors;
+  after_source?: PipelinePlanSemanticSourceAnchors;
+};
+
+export type PipelinePlanSemanticColumnContract = {
+  name: string;
+  type?: string;
+  nullability?: string;
+};
+
+export type PipelinePlanSemanticColumnImpact = {
+  index: number;
+  before_index?: number;
+  after_index?: number;
+  position_changed?: boolean;
+  before?: PipelinePlanSemanticColumnContract;
+  after?: PipelinePlanSemanticColumnContract;
+  name_changed: boolean;
+  type_changed: boolean;
+  nullability_changed: boolean;
+};
+
+export type PipelinePlanSemanticImpact = {
+  version: string;
+  digest: string;
+  status: string;
+  baseline_version_id?: string;
+  complete: boolean;
+  reason?: string;
+  assets: PipelinePlanSemanticAssetImpact[];
+  summary: PipelinePlanSemanticImpactSummary;
+};
+
+export type PipelinePlanSemanticImpactSummary = {
+  added: number;
+  removed: number;
+  modified: number;
+  formatting_only: number;
+  behavior_changes: number;
+  schema_changes: number;
+  incomplete: number;
+  warnings: number;
+};
+
+export type PipelinePlanSemanticSourceAnchors = {
+  fingerprint: string;
+  query: PipelinePlanSemanticSourceRange;
+  projections: PipelinePlanSemanticSourceRange[];
+};
+
+export type PipelinePlanSemanticSourceRange = {
+  line: number;
+  column: number;
+  end_line: number;
+  end_column: number;
 };
 
 export type PipelinePlanSourceRequest = {
@@ -1132,6 +1445,16 @@ export type PresentationVisualization = {
   filter_bindings?: PresentationFilterBinding[];
 };
 
+export type PreviewMetadata = {
+  returned_rows: number;
+  has_more: boolean;
+  limit: number;
+  next_limit?: number;
+  continuation: string;
+  reason?: string;
+  result_id: string;
+};
+
 export type ProjectInfo = {
   id: string;
   name: string;
@@ -1171,9 +1494,110 @@ export type ReplacePresentationRequest = {
   artifact: PresentationArtifact;
 };
 
+export type ResourceTarget = {
+  notebook_id?: string;
+  cell_id?: string;
+  presentation_id?: string;
+  block_id?: string;
+  kind: string;
+  asset_id?: string;
+  column?: string;
+  field?: string;
+  section?: string;
+  address?: DataObjectAddress;
+  connection?: string;
+  source_fingerprint?: string;
+  line?: number;
+  end_line?: number;
+  check_name?: string;
+};
+
 export type SQLColumn = {
   name: string;
   type?: string;
+};
+
+export type SQLDiagnosticLink = {
+  index: number;
+  target: ResourceTarget;
+};
+
+export type SQLUnitTest = {
+  name: string;
+  description?: string;
+  inputs?: SQLUnitTestInput[];
+  fixtures?: string[];
+  variables?: Record<string, unknown>;
+  execution_time?: string;
+  expected: SQLUnitTestExpected;
+};
+
+export type SQLUnitTestCTEExpected = {
+  rows?: Record<string, unknown>[];
+  count?: number;
+  match?: string;
+  order?: string;
+};
+
+export type SQLUnitTestContext = {
+  status: string;
+  tests: SQLUnitTest[];
+  revision: string;
+  inputs: SQLUnitTestSchema[];
+  output: WebColumn[];
+  fixtures: string[];
+};
+
+export type SQLUnitTestExpected = {
+  rows?: Record<string, unknown>[];
+  count?: number;
+  match?: string;
+  order?: string;
+  ctes?: Record<string, SQLUnitTestCTEExpected>;
+};
+
+export type SQLUnitTestInput = {
+  asset: string;
+  rows: Record<string, unknown>[];
+};
+
+export type SQLUnitTestResult = {
+  name: string;
+  status: string;
+  message?: string;
+};
+
+export type SQLUnitTestRunRequest = {
+  environment?: string;
+  name?: string;
+  revision: string;
+};
+
+export type SQLUnitTestRunResponse = {
+  status: string;
+  results: SQLUnitTestResult[];
+};
+
+export type SQLUnitTestSchema = {
+  asset: string;
+  columns: WebColumn[];
+};
+
+export type SnapshotRecord = {
+  block_id: string;
+  object_name: string;
+  source_kind: string;
+  environment?: string;
+  connection?: string;
+  definition_fingerprint: string;
+  source_fingerprint?: string;
+  imported_at: string;
+  row_count: number;
+  byte_count: number;
+  complete: boolean;
+  sampled: boolean;
+  schema: TabularColumn[];
+  warnings?: string[];
 };
 
 export type SqlDiscoveryDatabasesResponse = {
@@ -1185,6 +1609,7 @@ export type SqlDiscoveryDatabasesResponse = {
 };
 
 export type SqlDiscoveryTable = {
+  catalog_name?: string;
   name: string;
   short_name: string;
   schema_name?: string;
@@ -1277,7 +1702,14 @@ export type SqlQueryResponse = {
   columns: string[];
   rows: Record<string, unknown>[];
   truncated?: boolean;
+  preview?: PreviewMetadata;
   error?: string;
+};
+
+export type TabularColumn = {
+  name: string;
+  type: string;
+  nullable?: boolean;
 };
 
 export type TransactionDependency = {
@@ -1334,7 +1766,10 @@ export type TypeCheckFinding = {
   end_column?: number;
   scope?: string;
   confidence?: string;
+  source_fingerprint?: string;
   resolutions?: TypeCheckResolution[];
+  target?: ResourceTarget;
+  navigation_unavailable_reason?: string;
 };
 
 export type TypeCheckPresentation = {
@@ -1348,6 +1783,7 @@ export type TypeCheckPresentation = {
 };
 
 export type TypeCheckPresentationFinding = {
+  target?: ResourceTarget;
   code: string;
   severity: string;
   message: string;
@@ -1405,6 +1841,19 @@ export type UpdatePresentationRequest = {
   content: string;
 };
 
+export type VizDiagnostic = {
+  message: string;
+  severity: string;
+  line: number;
+  col: number;
+  end_col: number;
+};
+
+export type VizDirective = {
+  kind: string;
+  options: Record<string, unknown>;
+};
+
 export type WebAsset = {
   id: string;
   name: string;
@@ -1420,6 +1869,8 @@ export type WebAsset = {
   meta?: Record<string, string>;
   columns?: WebColumn[];
   custom_checks?: WebCustomCheck[];
+  unit_tests?: SQLUnitTest[];
+  unit_tests_revision?: string;
   pre_hooks?: string[];
   post_hooks?: string[];
   column_inference_sources?: ColumnInferenceSource[];
@@ -1564,6 +2015,8 @@ export type WebUpdatePipelineConfigRequest = {
 };
 
 export type WorkspaceConfigConnection = {
+  access_mode?: AccessMode;
+  effective_access_mode?: AccessMode;
   name: string;
   type: string;
   values: Record<string, unknown>;
@@ -1595,6 +2048,8 @@ export type WorkspaceConfigFieldDef = {
 export type WorkspaceConfigResponse = {
   status: string;
   path: string;
+  configuration_path?: string;
+  configuration_inherited?: boolean;
   workspace_path?: string;
   project_id?: string;
   project_name?: string;
@@ -1607,6 +2062,8 @@ export type WorkspaceConfigResponse = {
   secret_vault: WorkspaceLocalVault;
   parse_error?: string;
   secret_bindings_error?: string;
+  connection_policy_error?: string;
+  connection_policy_revision?: string;
 };
 
 export type WorkspaceConfigSecretField = {

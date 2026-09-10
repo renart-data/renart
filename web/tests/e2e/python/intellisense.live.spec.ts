@@ -101,15 +101,11 @@ df = pd.DataFrame({"a": [1]})
     await expectPythonCompletion(page, "pd.", "DataFrame");
   });
 
-  test("projects plain query string literals into the SQL language server", async ({
+  // Desktop-only: Monaco suggestion and marker APIs are only stable in the desktop editor.
+  test("projects plain query string literals into the SQL language server @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco suggestion and marker APIs are only stable in the desktop editor.",
-    );
-
     await writeFile(
       join(liveApp.workspaceDir, pythonAssetPath),
       `"""@bruin
@@ -178,7 +174,10 @@ result = query("select 1")
     const projectionCompletions = page.waitForResponse(
       (response) => {
         if (!response.url().includes("/api/sql/lsp/completions") || !response.ok()) return false;
-        const body = response.request().postDataJSON() as { content?: string; position?: unknown };
+        const body = response.request().postDataJSON() as {
+          content?: string;
+          position?: unknown;
+        };
         return body.content === "select *, from analytics.orders" && body.position !== undefined;
       },
       { timeout: 15000 },
@@ -229,12 +228,11 @@ result = query("select 1")
       .toEqual([]);
   });
 
-  test("uses renart.query's explicit connection for SQL diagnostics", async ({ liveApp, page }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "Monaco marker APIs are only stable in the desktop editor.",
-    );
-
+  // Desktop-only: Monaco marker APIs are only stable in the desktop editor.
+  test("uses renart.query's explicit connection for SQL diagnostics @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
     const postgresAssetName = "analytics.postgres_orders";
     await writeFile(
       join(liveApp.workspaceDir, "analytics/assets/analytics/postgres_orders.sql"),

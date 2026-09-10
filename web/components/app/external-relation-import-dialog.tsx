@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { createDataBrowserSource } from "@/lib/api-data-browser";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   importExternalRelation,
@@ -24,11 +25,13 @@ import {
 export function ExternalRelationImportDialog({
   pipelineId,
   relationId,
+  dataBrowserSource,
   onOpenChange,
   onImported,
 }: {
   pipelineId: string;
-  relationId: string | null;
+  relationId?: string | null;
+  dataBrowserSource?: { object_id: string; environment: string } | null;
   onOpenChange: (open: boolean) => void;
   onImported?: (result: ExternalRelationImportResult) => void | Promise<void>;
 }) {
@@ -37,9 +40,10 @@ export function ExternalRelationImportDialog({
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const referenceId = dataBrowserSource?.object_id ?? relationId;
 
   useEffect(() => {
-    if (!relationId) {
+    if (!referenceId) {
       setPreview(null);
       setError(null);
       setIncludeColumns(true);
@@ -48,7 +52,14 @@ export function ExternalRelationImportDialog({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void previewExternalRelationImport(pipelineId, relationId, includeColumns)
+    const request = dataBrowserSource
+      ? createDataBrowserSource(
+          pipelineId,
+          { ...dataBrowserSource, include_columns: includeColumns },
+          true,
+        )
+      : previewExternalRelationImport(pipelineId, referenceId, includeColumns);
+    void request
       .then((result) => {
         if (!cancelled) setPreview(result);
       })
@@ -64,14 +75,19 @@ export function ExternalRelationImportDialog({
     return () => {
       cancelled = true;
     };
-  }, [includeColumns, pipelineId, relationId]);
+  }, [includeColumns, pipelineId, referenceId, dataBrowserSource]);
 
   const confirmImport = async () => {
-    if (!relationId || !preview) return;
+    if (!referenceId || !preview) return;
     setImporting(true);
     setError(null);
     try {
-      const result = await importExternalRelation(pipelineId, relationId, includeColumns);
+      const result = dataBrowserSource
+        ? await createDataBrowserSource(pipelineId, {
+            ...dataBrowserSource,
+            include_columns: includeColumns,
+          })
+        : await importExternalRelation(pipelineId, referenceId, includeColumns);
       await onImported?.(result);
       onOpenChange(false);
     } catch (cause) {
@@ -82,15 +98,21 @@ export function ExternalRelationImportDialog({
   };
 
   return (
-    <Dialog open={Boolean(relationId)} onOpenChange={onOpenChange}>
+    <Dialog
+      open={Boolean(referenceId)}
+      onOpenChange={(open) => {
+        if (!importing) onOpenChange(open);
+      }}
+    >
       <DialogContent className="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Database className="size-4 text-primary" />
-            Import external relation
+            {dataBrowserSource ? "Create source asset" : "Import external relation"}
           </DialogTitle>
           <DialogDescription>
-            Review the version-controlled source-placeholder asset before Renart writes it.
+            Review the source asset before saving. This references the existing table; no data is
+            copied or executed.
           </DialogDescription>
         </DialogHeader>
 
@@ -209,7 +231,7 @@ export function ExternalRelationImportDialog({
           </Button>
           <Button onClick={() => void confirmImport()} disabled={!preview || loading || importing}>
             {importing ? <Loader2 className="animate-spin" /> : <Download />}
-            Import asset
+            {dataBrowserSource ? "Create source asset" : "Import asset"}
           </Button>
         </DialogFooter>
       </DialogContent>

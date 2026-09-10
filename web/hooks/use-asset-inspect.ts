@@ -11,12 +11,14 @@ import {
 } from "@/lib/atoms/domains/results";
 import { normalizeInspectErrorMessage } from "@/lib/inspect-errors";
 import { registerAssetColumnsAtom } from "@/lib/atoms/domains/suggestions";
+import { PreviewRequests } from "@/lib/preview";
+import { workspaceConnectionSequenceAtom } from "@/lib/atoms/domains/workspace";
 import { selectedEnvironmentAtom } from "@/lib/atoms/domains/workspace";
 import { selectedExecutionTimeWindowAtom } from "@/lib/atoms/domains/workspace";
 import { getAssetViewMode, getTablePreviewLimit } from "@/lib/asset-visualization";
 import { AssetInspectResponse, WebAsset } from "@/lib/types";
 
-const inFlightInspectRequests = new Map<string, Promise<AssetInspectResponse>>();
+const inFlightInspectRequests = new PreviewRequests<AssetInspectResponse>();
 
 function inspectFailure(error: unknown): AssetInspectResponse {
   const message = normalizeInspectErrorMessage(String(error));
@@ -68,13 +70,30 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
   const selectedExecutionTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
 
+  const workspaceSequence = useAtomValue(workspaceConnectionSequenceAtom);
+  const scope = JSON.stringify([
+    workspaceSequence,
+    selectedEnvironment,
+    selectedExecutionTimeWindow,
+  ]);
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const activeRef = useRef(true);
+  const requestOwner = useRef(Symbol("inspect consumer"));
+  const requestKeys = useRef(new Set<string>());
+  useEffect(() => {
+    activeRef.current = true;
+    const keys = requestKeys.current;
+    return () => {
+      activeRef.current = false;
+      for (const key of keys) inFlightInspectRequests.release(key, requestOwner.current);
+      keys.clear();
+    };
+  }, [scope]);
+
   const { byAssetId, loadingByAssetId, requestedLimitsByAssetId } = inspectState;
 
   const assetIds = useMemo(() => visualAssets.map((asset) => asset.id).sort(), [visualAssets]);
-  const assetById = useMemo(
-    () => Object.fromEntries(visualAssets.map((asset) => [asset.id, asset])),
-    [visualAssets],
-  );
   const baseLimitByAssetId = useMemo(() => getBaseLimitByAssetId(visualAssets), [visualAssets]);
 
   const setChangedIdsRef = useRef(setChangedIds);
@@ -113,6 +132,7 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
 
       setInspectState((previous) => {
         const nextByAssetId = { ...previous.byAssetId };
+        if (previous.scope !== scope) return previous;
 
         for (const [assetId, result] of Object.entries(results)) {
           const previousEntry = previous.byAssetId[assetId];
@@ -154,7 +174,7 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
         });
       }
     },
-    [registerAssetColumns, setInspectState],
+    [registerAssetColumns, setInspectState, scope],
   );
 
   const setLoading = useCallback(
@@ -165,6 +185,7 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
 
       setInspectState((previous) => {
         const nextLoadingByAssetId = { ...previous.loadingByAssetId };
+        if (previous.scope !== scope) return previous;
         for (const assetId of assetIdsToUpdate) {
           if (isLoading) {
             nextLoadingByAssetId[assetId] = true;
@@ -179,7 +200,7 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
         };
       });
     },
-    [setInspectState],
+    [setInspectState, scope],
   );
 
   const fetchInspectRequests = useCallback(
@@ -199,55 +220,54 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
       try {
         const results = await Promise.all(
           requestsToFetch.map(async ({ id, limit }) => {
-            const requestKey = getInspectRequestKey(
-              id,
+            const requestKey = scope + getInspectRequestKey(id, 0);
+            requestKeys.current.add(requestKey);
+            const admitted = await inFlightInspectRequests.run(
+              requestKey,
               limit,
-              selectedEnvironment,
-              selectedExecutionTimeWindow,
+              async (bound, signal) => {
+                try {
+                  return await inspectAsset(id, {
+                    limit: bound,
+                    signal,
+                    environment: selectedEnvironment,
+                    timeWindow: selectedExecutionTimeWindow ?? undefined,
+                  });
+                } catch (error) {
+                  return inspectFailure(error);
+                }
+              },
+              requestOwner.current,
             );
-            const existingRequest = inFlightInspectRequests.get(requestKey);
-
-            if (existingRequest) {
-              return [id, await existingRequest] as const;
-            }
-
-            const request = (async () => {
-              try {
-                return await inspectAsset(id, {
-                  limit,
-                  environment: selectedEnvironment,
-                  timeWindow: selectedExecutionTimeWindow ?? undefined,
-                });
-              } catch (error) {
-                return inspectFailure(error);
-              } finally {
-                inFlightInspectRequests.delete(requestKey);
-              }
-            })();
-
-            inFlightInspectRequests.set(requestKey, request);
-
-            try {
-              const result = await request;
-              return [id, result] as const;
-            } catch (error) {
-              return [id, inspectFailure(error)] as const;
-            }
+            return admitted ? { id, ...admitted } : null;
           }),
         );
-
-        const resultByAssetId = Object.fromEntries(results);
-        const fetchedLimitByAssetId = Object.fromEntries(
-          requestsToFetch.map(({ id, limit }) => [id, limit]),
+        if (!activeRef.current || scopeRef.current !== scope) return {};
+        const admitted = results.filter((result) => result !== null);
+        const resultByAssetId = Object.fromEntries(admitted.map(({ id, value }) => [id, value]));
+        mergeInspectResults(
+          resultByAssetId,
+          Object.fromEntries(admitted.map(({ id, limit }) => [id, limit])),
         );
-
-        mergeInspectResults(resultByAssetId, fetchedLimitByAssetId);
+        // A superseded smaller request must not turn off a larger request's spinner.
+        setLoading(
+          admitted.map(({ id }) => id),
+          false,
+        );
         return resultByAssetId;
-      } finally {
-        setLoading(assetIdsToFetch, false);
+      } catch (error) {
+        if (activeRef.current && scopeRef.current === scope) setLoading(assetIdsToFetch, false);
+        throw error;
       }
     },
-    [byAssetId, mergeInspectResults, selectedEnvironment, selectedExecutionTimeWindow, setLoading],
+    [
+      byAssetId,
+      mergeInspectResults,
+      selectedEnvironment,
+      selectedExecutionTimeWindow,
+      setLoading,
+      scope,
+    ],
   );
 
   const inspectAssetById = useCallback(
@@ -269,6 +289,8 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
       if (!options?.force && cachedEntry && cachedEntry.fetchedLimit >= limit) {
         return cachedEntry.result;
       }
+
+      if (options?.force) inFlightInspectRequests.cancel(scope + getInspectRequestKey(assetId, 0));
 
       const results = await fetchInspectRequests([{ id: assetId, limit }], {
         force: true,
@@ -309,13 +331,19 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
       requestedLimitsByAssetId,
       setInspectState,
       setRequestedLimit,
+      scope,
     ],
   );
 
   useEffect(() => {
-    setInspectState(emptyAssetInspectState);
+    setInspectState((previous) =>
+      previous.scope === scope ? previous : { ...emptyAssetInspectState, scope },
+    );
     setChangedIds(new Set<string>());
   }, [
+    selectedEnvironment,
+    workspaceSequence,
+    scope,
     selectedExecutionTimeWindow?.start,
     selectedExecutionTimeWindow?.end,
     setChangedIds,
@@ -371,6 +399,8 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
     }
 
     const assetIdsToRefresh = relevantChangedKey.split(",").filter(Boolean);
+    for (const id of assetIdsToRefresh)
+      inFlightInspectRequests.cancel(scope + getInspectRequestKey(id, 0));
 
     setChangedIdsRef.current((previous: Set<string>) => {
       const next = new Set(previous);
@@ -390,7 +420,7 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
       })),
       { force: true },
     );
-  }, [baseLimitByAssetId, fetchInspectRequests, relevantChangedKey, requestLimits]);
+  }, [baseLimitByAssetId, fetchInspectRequests, relevantChangedKey, requestLimits, scope]);
 
   const inspectByAssetId = useMemo<Record<string, AssetInspectResponse>>(() => {
     const next: Record<string, AssetInspectResponse> = {};
@@ -426,6 +456,7 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
 
   const clearPreviewForAsset = useCallback(
     (assetId: string) => {
+      inFlightInspectRequests.cancel(scope + getInspectRequestKey(assetId, 0));
       setInspectState((previous) => {
         const nextByAssetId = { ...previous.byAssetId };
         const nextLoadingByAssetId = { ...previous.loadingByAssetId };
@@ -445,41 +476,38 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
         };
       });
     },
-    [setInspectState],
+    [setInspectState, scope],
   );
 
   const canLoadMoreByAssetId = useMemo<Record<string, boolean>>(() => {
     const next: Record<string, boolean> = {};
     for (const assetId of Object.keys(byAssetId)) {
-      const asset = assetById[assetId];
       const entry = byAssetId[assetId];
       if (!entry) {
         continue;
       }
 
-      if (asset && getAssetViewMode(asset.meta) !== "table") {
-        continue;
-      }
-
-      const requestedLimit = requestedLimitsByAssetId[assetId] ?? baseLimitByAssetId[assetId] ?? 25;
-      if (entry.result.rows.length >= requestedLimit) {
+      if (entry.result.preview?.continuation === "replace" && entry.result.preview.next_limit) {
         next[assetId] = true;
       }
     }
     return next;
-  }, [assetById, baseLimitByAssetId, byAssetId, requestedLimitsByAssetId]);
+  }, [byAssetId]);
 
   const loadMorePreviewRows = useCallback(
     (assetId: string) => {
-      const baseLimit = baseLimitByAssetId[assetId] ?? 25;
-      const currentLimit = requestedLimitsByAssetId[assetId] ?? baseLimit;
-      setRequestedLimit(assetId, currentLimit + baseLimit);
+      const nextLimit = byAssetId[assetId]?.result.preview?.next_limit;
+      if (!nextLimit || loadingByAssetId[assetId]) return;
+      setRequestedLimit(assetId, nextLimit);
+      void fetchInspectRequests([{ id: assetId, limit: nextLimit }], { force: true });
     },
-    [baseLimitByAssetId, requestedLimitsByAssetId, setRequestedLimit],
+    [byAssetId, loadingByAssetId, fetchInspectRequests, setRequestedLimit],
   );
 
   const refreshAssets = useCallback(
     async (assetIdsToRefresh: string[]) => {
+      for (const id of assetIdsToRefresh)
+        inFlightInspectRequests.cancel(scope + getInspectRequestKey(id, 0));
       await fetchInspectRequests(
         assetIdsToRefresh.map((assetId) => ({
           id: assetId,
@@ -488,7 +516,7 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
         { force: true },
       );
     },
-    [baseLimitByAssetId, fetchInspectRequests, requestLimits],
+    [baseLimitByAssetId, fetchInspectRequests, requestLimits, scope],
   );
 
   const getRowsForAsset = useCallback(

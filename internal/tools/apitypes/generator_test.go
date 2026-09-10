@@ -34,6 +34,7 @@ type Response struct {
 	Embedded
 	Alias EmbeddedAlias `+"`json:\"alias\"`"+`
 	Pointer *Embedded `+"`json:\"pointer,omitempty\"`"+`
+	Rows []string `+"`json:\"rows,omitzero\"`"+`
 	States map[string][]Status `+"`json:\"states\"`"+`
 	CreatedAt time.Time `+"`json:\"created_at\"`"+`
 	NoTag string
@@ -50,6 +51,7 @@ type Response struct {
 		`  id: string;`,
 		`  alias: Embedded;`,
 		`  pointer?: Embedded;`,
+		`  rows?: string[];`,
 		`  states: Record<string, Status[]>;`,
 		`  created_at: string;`,
 		`  NoTag: string;`,
@@ -84,6 +86,28 @@ type Two struct { Count int `+"`json:\"count\"`"+` }
 	_, err := generateAPITypeScript(root)
 	if err == nil || !strings.Contains(err.Error(), "incompatible Go definitions") {
 		t.Fatalf("expected incompatible-name error, got %v", err)
+	}
+}
+
+func TestNotebookRuntimeContractsFollowGoDTOs(t *testing.T) {
+	generated, err := generateAPITypeScript(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"NotebookRuntimeEvent", "NotebookRuntimeSnapshot", "NotebookCellRunResult", "CellRunPerformance", "SnapshotRecord", "ImportRecord", "VizDirective", "VizDiagnostic"} {
+		if !strings.Contains(generated, "export type "+name+" = {") {
+			t.Fatalf("notebook wire contract %s is not generated from Go", name)
+		}
+	}
+	for _, field := range []string{"results: Record<string, NotebookCellRunResult>", "results?: Record<string, NotebookCellRunResult>"} {
+		if !strings.Contains(generated, field) {
+			t.Errorf("missing runtime result contract %q", field)
+		}
+	}
+	start := strings.Index(generated, "export type NotebookCellRunResult = {")
+	end := start + strings.Index(generated[start:], "};")
+	if strings.Contains(generated[start:end], "fingerprint:") {
+		t.Fatal("private execution fingerprint leaked into the public result contract")
 	}
 }
 

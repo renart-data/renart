@@ -142,6 +142,9 @@ func TestValidateSQLReportsDeclaredOutputTypeDrift(t *testing.T) {
 	assert.Equal(t, authoringdiag.ScopeAsset, diagnostic.Scope)
 	assert.Equal(t, authoringdiag.ConfidenceHigh, diagnostic.Confidence)
 	assert.Equal(t, `Column "id" is declared as VARCHAR, but the SQL output is inferred as INTEGER.`, diagnostic.Message)
+	require.NotNil(t, diagnostic.Subject)
+	assert.Equal(t, "id", diagnostic.Subject.Column)
+	assert.Equal(t, "type", diagnostic.Subject.Field)
 }
 
 func TestValidateSQLReportsDeclaredOutputNameDrift(t *testing.T) {
@@ -221,6 +224,7 @@ func TestValidateSQLReportsUnsafeDeclaredOutputNullabilityDrift(t *testing.T) {
 	require.Len(t, result.Diagnostics, 1)
 	diagnostic := result.Diagnostics[0]
 	assert.Equal(t, authoringdiag.CodeDeclaredColumnNullabilityDrift, diagnostic.Code)
+	assert.Equal(t, &authoringdiag.Subject{Column: "id", Field: "not_null"}, diagnostic.Subject)
 	assert.Equal(t, authoringdiag.SeverityWarning, diagnostic.Severity)
 	assert.Equal(t, authoringdiag.ScopeAsset, diagnostic.Scope)
 	assert.Equal(t, authoringdiag.ConfidenceHigh, diagnostic.Confidence)

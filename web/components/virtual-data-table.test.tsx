@@ -44,6 +44,37 @@ describe("virtualRowWindow", () => {
 });
 
 describe("VirtualDataTable", () => {
+  it("uses one accessible continuation control and an honest exhaustion footer", () => {
+    const preview = {
+      returned_rows: 1,
+      has_more: true,
+      continuation: "replace",
+      limit: 1,
+      next_limit: 101,
+      result_id: "sample",
+    };
+    const markup = renderToStaticMarkup(
+      <VirtualDataTable
+        columns={["id"]}
+        rows={[{ id: 1 }]}
+        preview={preview}
+        canLoadMore
+        onLoadMore={() => {}}
+      />,
+    );
+    expect(markup.match(/>Load more rows</g)).toHaveLength(1);
+    expect(markup).toContain("Showing 1 row");
+    const exhausted = renderToStaticMarkup(
+      <VirtualDataTable
+        columns={["id"]}
+        rows={[{ id: 1 }]}
+        preview={{ ...preview, has_more: false, continuation: "none", reason: "complete" }}
+        onLoadMore={() => {}}
+      />,
+    );
+    expect(exhausted).not.toContain(">Load more rows<");
+    expect(exhausted).toContain("all rows");
+  });
   it("renders only the initial row window for a large result", () => {
     const rows = Array.from({ length: 1_000 }, (_, index) => ({ value: `row-${index}` }));
     const markup = renderToStaticMarkup(

@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-
-import { AppRunTimelinePage } from "@/components/app/run-timeline-page";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_shell/schedules/timeline")({
-  component: AppRunTimelinePage,
+  beforeLoad: () => {
+    throw redirect({ to: "/run", replace: true });
+  },
 });

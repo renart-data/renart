@@ -470,15 +470,7 @@ func notebookAgentSourceRecipe(connection NotebookAgentQueryConnection, query st
 }
 
 func wrapNotebookAgentSampleQuery(query, connectionType string, limit int) string {
-	query = strings.TrimRight(strings.TrimSpace(query), "; \n\r\t")
-	switch normalizeConnectionType(connectionType) {
-	case "mssql", "synapse", "fabric":
-		return fmt.Sprintf("SELECT TOP (%d) * FROM (\n%s\n) AS renart_agent_sample", limit, query)
-	case "oracle":
-		return fmt.Sprintf("SELECT * FROM (\n%s\n) renart_agent_sample\nFETCH FIRST %d ROWS ONLY", query, limit)
-	default:
-		return fmt.Sprintf("SELECT * FROM (\n%s\n) AS renart_agent_sample\nLIMIT %d", query, limit)
-	}
+	return wrapReadOnlySampleQuery(query, connectionType, "renart_agent_sample", limit)
 }
 
 func boundedNotebookAgentSlice[T any](values []T) ([]T, bool) {

@@ -1,50 +1,22 @@
 # Notebook release evidence and deferred extensions
 
-> **Status (2026-08-17): core platform implemented; evidence and explicitly
-> deferred extensions remain.** The shipped architecture is documented in
-> [`architecture/notebooks.md`](../architecture/notebooks.md). Git history keeps
-> the original multi-phase design that this focused closure plan replaces.
+Status: verification-only. The Git-native platform, typed transfers, runtime,
+SDK/broker, agent, and presentation contracts are implemented and documented in
+[notebooks](../architecture/notebooks.md). The evidence below is a matrix to
+maintain, not a claim that every adapter/platform/client has passed.
 
-## 1. Shipped baseline
+## 1. Baseline and evidence ownership
 
-The notebook platform now has the release architecture that the original plan
-set out to establish:
+Reuse the existing notebook model and the shared typed transfer contract.
+Source snapshots publish atomically, preserve schema/value fidelity, and share
+byte/time/cancellation budgets. Local DuckDB and process-per-run Python retain
+their role-specific lifecycles; there is no generic direct-query fallback.
 
-- Git-native versioned notebooks with durable block IDs, notebook-wide
-  revisioned semantic changes, recoverable multi-file writes, and SSE
-  reconciliation;
-- one local DuckDB integration warehouse, with explicit full/sample warehouse,
-  local/object-file, and HTTP source blocks;
-- native typed DuckDB query-to-Parquet and shared Sling-to-Parquet transfers;
-- the same typed transfer contract for implicit non-DuckDB pipeline-asset
-  references, with no JSON/map-row type reconstruction fallback;
-- atomic validation/publication of complete or explicitly sampled artifacts and
-  durable credential-free snapshot provenance;
-- configurable `--notebook-snapshot-max-bytes` and
-  `--notebook-snapshot-timeout` budgets shared by all external source roles;
-- local SQL and brokered Python transforms, result restoration/export,
-  performance observations, and DAG-aware SQL/Python intelligence;
-- ordered Markdown, typed controls, and structured checked visualization
-  blocks with shared notebook/dashboard/report rendering and inspectors;
-- Git-native dashboards and reports with static presentation checking,
-  preview/viewer/runtime/deployment integration, and one consolidated authoring
-  command bar;
-- notebook-scoped native Ask/Edit chat plus external MCP, semantic references,
-  bounded catalog search, reviewed change sets, execution policy, cancellation,
-  structured questions, turn-scoped credential-blind connection access, and a
-  scored fake/authenticated provider evaluation corpus;
-- reviewed source/transform promotion into ordinary pipeline assets.
-
-The executor boundary is intentionally role-specific. `NotebookBlockExecutor`
-covers connection-bound SQL and Renart-owned source definitions;
-`NotebookTransferService` owns their typed staging artifact. Local DuckDB SQL
-and Python stay on dedicated session/broker paths because forcing them through a
-remote-source interface would hide rather than simplify their lifecycle.
-
-There is deliberately no generic direct-query fallback today. A new adapter may
-ship only when it can preserve the source schema and values at least as
-faithfully as Parquet, enforce the same cancellation and byte/time limits, and
-prove that an error cannot publish a partial relation.
+Current tests cover local DuckDB, ephemeral Postgres, transactions/recovery,
+agents, and desktop/mobile workflows. A retained successful run proves only its
+exact adapter, platform, client version, and corpus. Use
+[the bounded local runner](../architecture/testing.md) and record commit/dirty
+state, retries, skips, failures, and completion.
 
 ## 2. Required release evidence
 

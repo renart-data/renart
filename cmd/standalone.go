@@ -35,7 +35,7 @@ func Standalone() *cli.Command {
 		Name:      "standalone",
 		Usage:     "run Renart as a desktop app",
 		ArgsUsage: "[workspace root]",
-		Category:  categoryIDE,
+		Category:  categoryApp,
 		Flags: append(serverFlags(),
 			&cli.IntFlag{
 				Name:  "port",

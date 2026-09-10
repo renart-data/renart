@@ -1,6 +1,6 @@
 # Object-storage assets and browsing
 
-Status: Load creation/edit browsing shipped — Seed and lifecycle integration proposed
+Status: Load pickers and S3/SFTP Data Browser handoffs shipped — Seed, richer metadata and lifecycle integration proposed
 
 ## Goal
 
@@ -28,6 +28,13 @@ The Load path is substantially implemented already:
 - runtime connection URIs are passed through environment variables rather than
   exposing credentials in process arguments;
 - SQL path completion can browse configured S3 paths for DuckDB.
+
+The Data Browser also has a metadata-only S3/SFTP adapter, including prefixes,
+objects, durable connection-relative addresses, revision checks, and reviewed
+canvas drops into Load sources/destinations. Read-only connections cannot be
+destinations. Native Sling credentials are shared with execution; Ingestr is not
+used. Real MinIO and in-memory SFTP import/export tests cover desktop and mobile.
+See `architecture/backend.md` for the as-built adapter and its bounds.
 
 The missing core is Seed. Renart's Sling seed operator accepts local files and
 HTTP(S) URLs only and deliberately rejects `s3://`/`gs://`. A Seed has only its
@@ -59,12 +66,14 @@ second provider-specific credential translator.
 
 ## Shared object browser
 
-The shared React picker has shipped for Load. The backend is still the
-Load/Sling stream-discovery endpoint rather than the richer provider-neutral,
-paginated object contract below; that remaining extraction is needed before
-Seed, preview, and lineage can share it safely.
+The shared React picker has shipped for Load. Separately, Data Browser consumes
+`StorageListing` through its existing capability envelope for S3/SFTP. That path
+is prefix-aware and capped, not paginated, and does not expose ETags, sizes or
+remote previews. The older Load picker still uses stream discovery. Further
+consumers should extend/converge these existing adapters, not create a second
+credential stack or another independent browser.
 
-Extract the existing Load stream picker behind a provider-neutral API:
+A richer listing contract for the remaining consumers could add:
 
 ```go
 type ObjectEntry struct {
@@ -138,8 +147,9 @@ table claim is insufficient.
 
 ## Provider reach
 
-Start with the connection types Bruin currently exposes and Renart already
-maps for Load: S3-compatible storage and GCS. S3-compatible endpoints cover
+Data Browser currently covers S3-compatible storage and Sling-backed SFTP;
+GCS remains available through the existing Load pickers, not the new tree.
+S3-compatible endpoints cover
 MinIO/R2-style deployments when their Bruin connection is configured
 accordingly. Azure Blob/ADLS and additional Sling file connectors should be
 added only after Bruin has a first-class connection type and the same secret,
@@ -153,8 +163,8 @@ Beyond the shipped Load source/target browser, complete support needs:
 - URI lineage nodes and remote-source freshness;
 - destination collision/resource-claim handling;
 - format/compression/glob/partition UX;
-- docs plus credential-safe S3/GCS live tests (MinIO and a GCS emulator where
-  feasible).
+- GCS Data Browser reach and emulator-backed tests where feasible (MinIO and
+  SFTP transfer tests and the corresponding Load docs already exist).
 
 API/Python assets writing arbitrary object files and SQL `COPY` outputs are
 separate output-target features and should not be smuggled into Seed/Load
@@ -164,9 +174,9 @@ syntax. Asset-name/path independence does not define those runtime targets.
 
 1. Land the optional Seed source-connection contract and shared Sling URI
    builder in Bruin, with CLI tests for local/HTTP/S3/GCS compatibility.
-2. **Partial:** the shared, bounded picker now covers Load create/edit sources
-   and destinations and hides raw connector output. Extract the backend into a
-   prefix-aware, paginated object contract before adding further consumers.
+2. **Partial:** bounded Load pickers and the S3/SFTP Data Browser tree/canvas
+   handoffs are implemented. Pagination, richer object metadata and convergence
+   of the two listing surfaces remain.
 3. Add Seed creation/editing, explicit schema import, and bounded preview.
 4. Add URI lineage, fingerprints, and exact storage write claims.
 5. Add emulator-backed live tests and user documentation, then fold shipped
@@ -175,7 +185,7 @@ syntax. Asset-name/path independence does not define those runtime targets.
 ## Decisions required before implementation
 
 1. The upstream Seed source-connection field and path-relative semantics.
-2. Whether a Load destination picker chooses an exact object, a prefix, or both
-   per materialization mode.
-3. Initial provider scope beyond S3/GCS.
+2. Broader prefix-replacement/write semantics: current canvas drops accept an
+   exact object or suggest an output filename inside a selected prefix.
+3. Provider scope beyond the shipped S3/SFTP tree and existing GCS Load picker.
 4. Freshness semantics for mutable prefixes and wildcard sources.

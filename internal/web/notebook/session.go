@@ -8,8 +8,10 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bruin-data/bruin/pkg/query"
+	"github.com/google/uuid"
 )
 
 // SessionStore manages the per-notebook DuckDB session files under
@@ -28,6 +30,7 @@ type SessionStore struct {
 	mu               sync.Mutex
 	locks            map[string]*sync.Mutex
 	manifestVersions map[string]int
+	previewEpoch     string
 }
 
 // NewSessionStore creates a store rooted at the given directory.
@@ -36,6 +39,7 @@ func NewSessionStore(root string, workspaceRoot ...string) *SessionStore {
 		Root:             root,
 		locks:            map[string]*sync.Mutex{},
 		manifestVersions: map[string]int{},
+		previewEpoch:     uuid.NewString(),
 	}
 	if len(workspaceRoot) > 0 {
 		store.WorkspaceRoot = workspaceRoot[0]
@@ -75,16 +79,36 @@ type Session struct {
 // Open opens (creating if needed) the session database for a notebook.
 // Access is serialized per notebook; Close releases the lock.
 func (s *SessionStore) Open(notebookUUID string) (*Session, error) {
-	if err := os.MkdirAll(s.Root, 0o755); err != nil {
-		return nil, err
+	return s.open(context.Background(), notebookUUID, false)
+}
+
+func (s *SessionStore) open(ctx context.Context, notebookUUID string, existingOnly bool) (*Session, error) {
+	if !existingOnly {
+		if err := os.MkdirAll(s.Root, 0o755); err != nil {
+			return nil, err
+		}
 	}
 	lock := s.lockFor(notebookUUID)
-	lock.Lock()
+	for !lock.TryLock() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		lock.Unlock()
+		return nil, err
+	}
 
 	path := s.DBPath(notebookUUID)
 	_, statErr := os.Stat(path)
 	databaseExists := statErr == nil
-	client, err := newNotebookDuckDBClient(context.Background(), path, s.WorkspaceRoot, s.DisableFilesystemAccess)
+	if existingOnly && !databaseExists {
+		lock.Unlock()
+		return nil, ErrPreviewExpired
+	}
+	client, err := newNotebookDuckDBClient(ctx, path, s.WorkspaceRoot, s.DisableFilesystemAccess)
 	if err != nil {
 		lock.Unlock()
 		return nil, fmt.Errorf("failed to open notebook session db: %w", err)
@@ -283,9 +307,13 @@ const cellRunManifestTable = "__renart_cell_runs"
 // sessionManifestVersion invalidates the process-local migration cache when
 // the session schema changes. Migrations remain idempotent so the first open
 // after each Renart restart also repairs databases created by older versions.
-const sessionManifestVersion = 1
+const sessionManifestVersion = 2
 
 func (s *Session) ensureManifest(ctx context.Context) error {
+	if err := s.Exec(ctx, `create table if not exists __renart_preview_rows (
+cell_id varchar primary key, created_at timestamp not null, payload varchar not null)`); err != nil {
+		return err
+	}
 	if err := s.Exec(ctx, fmt.Sprintf(
 		`create table if not exists %s (ref varchar primary key, object_name varchar, imported_at timestamp, row_count bigint, complete boolean)`,
 		importManifestTable)); err != nil {

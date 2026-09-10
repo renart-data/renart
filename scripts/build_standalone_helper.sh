@@ -30,7 +30,7 @@ linux)
 
 	builder_image="renart-standalone-linux-builder:bullseye"
 	docker build \
-		--quiet \
+		--progress=plain \
 		--file "${repo_root}/scripts/standalone-linux.Dockerfile" \
 		--tag "${builder_image}" \
 		"${repo_root}"

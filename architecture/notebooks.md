@@ -1,6 +1,6 @@
 # Notebooks — current architecture
 
-Status: current state, August 2026. A notebook is
+Status: current state, September 2026. A notebook is
 a Git-native ordered document whose data-producing blocks share one local
 DuckDB integration warehouse. Remote systems are read-only sources; Renart
 transfers typed snapshots into the local session before downstream work runs.
@@ -86,9 +86,61 @@ compound transaction is shared by multi-block UI actions and MCP rather than
 introducing a second state system. The notebook's shared **Add** rail exposes
 SQL, Python, Markdown, every typed control, and all visualization types from any
 scroll position. Clicking a rail item appends it; quiet insertion points between
-blocks accept the same items from a menu or drag operation. Both paths use the
-same positional semantic operations. Insertion anchors are durable raw
+blocks accept the same items from a menu or drag operation. Their add buttons
+stay visible on narrow and non-hover layouts, where hover-only discovery is
+unavailable. Both paths use the same positional semantic operations. Insertion
+anchors are durable raw
 cell/block IDs, while prefixed React keys remain UI-only.
+
+### Data Browser source insertion
+
+The notebook Data Browser shares the canvas's `DataBrowserTransfer` interaction:
+a tagged pipeline/notebook destination, a same-window nonce-only drag payload,
+and project/environment checks. Tables and supported project/S3 files can be
+dropped into the existing Add-rail insertion points. The item action uses those
+same points for keyboard/touch placement; Escape cancels placement. No notebook
+destination is advertised for the library page, unsupported transports or
+formats. Connection capabilities restrict warehouse handoff to existing typed
+snapshot transports, independently of read-only/write permissions.
+
+`useNotebookBrowserDrop` crosses the existing save barrier, loads a current
+notebook revision and opens a shadcn review dialog. The review shows the source,
+environment, block name and full/sample policy; generated source text is a
+disclosure rather than permanent editor chrome. Changing the name or policy
+requires preparing a fresh normalized plan. Preparation writes only disposable
+staging; cancellation writes no authored files. The exact reviewed change set
+is applied only on confirmation, then the ordinary mutation projection/SSE
+reconciles the document and reveals/highlights the new durable cell. No source
+query, preview or transfer is triggered by authoring; sources remain excluded
+from auto-recompute and run only through explicit notebook execution.
+
+The thin `/api/notebooks/{id}/data-browser/{prepare,apply}` adapter resolves the
+revision-bound browser ID again at both boundaries. `databrowser.NotebookSource`
+reuses exact address discovery and file containment with row previews, column
+inspection and view-definition reads disabled. Table SQL uses the discovered
+qualified identity and shared dialect quoting. Local files retain project-relative
+paths; S3 files use the server-discovered connection/URI. Wildcards and template
+delimiters in literal source paths are rejected rather than promoted to executable
+selectors. Apply rebuilds the source operation and checks the exact normalized
+change set before using the existing CAS/journal transaction. Missing objects,
+changed environments/connections, stale notebooks and missing anchors require
+another review; there is no silent append or fallback source.
+
+Semantic operations accept an optional environment for source validation.
+Explicit environments resolve credential-free configuration summaries without
+switching global execution state; legacy operations without one retain their
+current-workspace validation behavior. The environment is operation context, not
+a new fixed environment binding in authored notebook files.
+
+Data Browser references use the selected environment's connection configuration
+revision, independent of notebook autosaves and previous source insertions. Search
+retries an expired metadata listing once per search query by refreshing connection
+references. It never retries an authored apply or rebinds an
+already reviewed source. Further stale failures retain the explicit Refresh action.
+
+Prefix/pattern imports, dropping a connection to open a source picker, GCS browser
+coverage and typed SFTP notebook transport remain follow-ups, not advertised drop
+capabilities. Existing manual GCS notebook sources are unchanged.
 
 ## 3. Run graph and execution roles
 
@@ -182,9 +234,9 @@ while a restart or recreated database runs the migrations again.
 Versioned session tables retain source snapshot provenance and successful cell
 run summaries: fingerprints, timestamps, schemas, row counts, durations,
 materialization kind, and source snapshot IDs. On restart, Renart reconstructs
-result summaries, verifies the current definition fingerprints, and queries
-only a bounded preview from live session objects. Definitions remain Git state;
-runtime observations do not.
+result summaries, verifies the current definition fingerprints, and reads only
+bounded saved preview bytes, without re-evaluating a view. Definitions remain
+Git state; runtime observations do not.
 
 SQL fingerprints use the canonical ID-resolved query. Python fingerprints are
 deliberately conservative: they hash the exact cell bytes, typed parameter
@@ -305,6 +357,10 @@ receives the typed map through `renart.context.vars`. Warehouse SQL, local SQL,
 file/object URIs, HTTP requests, Python, and auto-recompute all receive one
 validated runtime snapshot per run.
 
+Monaco Jinja previews include the route-local typed value snapshot in each
+render request. Ghost text therefore follows control edits immediately instead
+of waiting for the debounced runtime-settings write to reach the server.
+
 ## 8. Structured visualizations
 
 A visualization block references one data-producing block and owns a versioned
@@ -326,10 +382,11 @@ and semantics apply in notebooks, dashboards, reports, and audience viewers.
 
 Notebook Markdown is visual-first: a shared Tiptap editor parses the authored
 Markdown, serializes edits back to Markdown, and keeps an explicit source mode
-for exact repair. SQL, source, control, and visualization blocks keep a
-transparent document treatment with a persistent boundary; Markdown remains
-borderless. Selection is communicated by the boundary instead of a tinted card
-background. Code and source headers keep only status, name, run, and overflow
+for exact repair. SQL, source, and control blocks keep a transparent document
+treatment with a persistent boundary; visualization blocks keep an opaque card
+surface so charts remain visually contained, and Markdown remains borderless.
+Selection is communicated by the boundary instead of a tinted card background.
+Code and source headers keep only status, name, run, and overflow
 actions at rest; type, connection, import, row-count, performance, and other
 contextual metadata fade and collapse into place when selected. SQL and Python
 editors use transparent Monaco themes without overview-ruler markers. The Add
@@ -537,6 +594,39 @@ surface, not a hosted or access-controlled BI runtime.
 
 ## 10. Server-owned recompute and frontend state
 
+Cell execution captures at most 1,000 rows plus one lookahead from its existing
+preview query. Before publication it applies the shared 2 MiB serialized-row
+budget and stores an immutable positional JSON sample in `__renart_preview_rows`
+inside the existing notebook DuckDB session. Cell-run metadata and preview
+publication share a transaction. The initial response normally shows 100 rows.
+No extra remote query, Python run, or import is performed on expansion.
+
+Retention is at most four previews / 8 MiB of row payload per notebook, excluding
+small metadata and DuckDB's reusable allocated pages. Entries expire after 30
+minutes; publication purges expired/evicted entries, and session removal reclaims
+the database. This is not a full result archive or a peak driver-memory bound.
+Restoration uses saved bytes or an expired-preview explanation, never a SELECT
+against the cell view. Results predating this feature have metadata but no saved
+rows until the next explicit run.
+
+`POST /api/notebooks/{id}/cells/{cellID}/preview` validates result generation,
+process epoch, environment, current cell/ancestor published fingerprints,
+parameters and object presence under the existing session lock. Lock waits honor
+cancellation; reset never creates a missing database through this read path.
+Rerunning a cell invalidates its and descendants' previews before execution,
+including failed runs. Restart, eviction, expiry and replaced results return
+recoverable 409 errors. Tokens are result identities, not authorization grants.
+The endpoint returns a larger prefix of saved bytes under the same ID, preserving
+duplicate column names, numeric wire values and selection. It never calls Run,
+queries a cell view, or changes visualization/presentation limits.
+
+The runtime snapshot, `notebook.runtime` event, and cell-run result wire shapes
+are generated from their Go DTOs by `internal/tools/apitypes`, including nested
+import, snapshot, performance, and visualization records. `api-notebooks.ts`
+keeps only intentional UI union/nullability refinements over those generated
+types. `check:api-types` catches wire drift; private execution fingerprints are
+not exposed by the generator.
+
 The server owns definition staleness, last results, active runs, and the
 auto-recompute closure. Editing an execution cell marks it and descendants
 stale; changing Python dependencies marks every Python cell and its descendants
@@ -564,6 +654,16 @@ Mutation responses are ignored after navigation, while the current notebook
 response remains visible until the workspace reaches its revision. Initial-load
 failures and action failures remain separate UI states.
 
+The shared save barrier drains newly queued saves as well as the requests that
+were pending when it started. Navigation uses its `awaitSavedChanges` wrapper:
+failed saves remain notebook-scoped and block leaving until a successful
+replacement save or explicit removal of the cell, so document-tab, library and Data
+Browser object navigation cannot mistake a settled failed request for a saved
+draft. The **All notebooks** sidebar step uses the existing notebook route's
+`notebook_nav=library` locator without unmounting the active document. Selecting
+another notebook reuses the existing Build document tabs; Data Browser remains
+an independent contextual tool and never imports or executes merely by opening.
+
 The frontend runtime controller models the initial snapshot, SSE deltas, manual
 run, cancellation, and session reset as notebook-scoped events. Server-reported
 running cells and request-local optimistic targets are separate sets, so an HTTP
@@ -572,6 +672,28 @@ local projection and late results from the previous notebook are ignored. A run
 still crosses the pending-save barrier before calling the server; the reducer is
 only a view projection, not runtime authority.
 
+Dataset-backed control options have a separate, notebook-scoped controller in
+`web/hooks/use-notebook-control-options.ts`. It owns option-query loading,
+definition-keyed result snapshots, and latest-request admission. Navigating away
+invalidates pending responses, including an A → B → A round trip. Manual errors
+remain visible; superseded responses and silent-refresh errors do not overwrite
+the current action state. The initial runtime projection and state-only events
+do not refresh options; a newly successful producer result does. Producer IDs
+take precedence over case-insensitive names. Parameter values, authored control
+definitions, document saves, selected cells, and independent panels retain their
+existing owners; the controller does not navigate or introduce polling.
+
+When the initial runtime GET overlaps SSE, its results form the baseline and
+only result deltas received after the request override it. State-only SSE
+events retain their newer status/parameter fields without discarding results
+that completed before subscription. A session reset invalidates an outstanding
+initial response, so that response cannot restore cleared output.
+The runtime snapshot is also refreshed once after each SSE connection opens,
+including the first connection, to recover results produced between the initial
+GET and subscription. This does not poll or reset the notebook projection,
+optimistic run state, or other UI regions; reconnect-only consumers retain their
+existing notification semantics.
+
 Preview tables stay bounded, block editors grow with short content before
 using their internal scroll area, and output panes retain user scroll position
 unless the user is already following the end. The shared result table switches
@@ -579,6 +701,10 @@ to fixed-row windowing above fifty loaded rows: only the viewport plus a small
 overscan is mounted, spacer rows retain the complete scroll geometry, and ARIA
 row counts/indexes retain the logical table position. Notebook cells show every
 row in the server's bounded preview instead of applying a second frontend cap.
+Each result table has a compact disclosure row and can be collapsed without
+discarding its result. Captured Python stdout remains collapsed by default; its
+disclosure is selection-only contextual UI and collapses out of the document
+flow when its cell is not selected.
 That table also owns the spreadsheet-style selection contract shared by asset
 inspect and structured table visualizations: click/drag/Shift extends a range,
 Ctrl/Cmd toggles cells, arrows move the active cell, and Ctrl/Cmd+C copies the
@@ -598,7 +724,7 @@ and time until a Python wrapper starts. The browser adds its preview render
 duration and mounted-row count. These measurements are shown in the selected
 result's **Performance** hover card, are never authored into the notebook, and
 are not sent to an external telemetry service. Restart restoration can recompute session
-size, source transfer size, and preview query time; ephemeral request, Python
+size, source transfer size, and saved-preview read time; ephemeral request, Python
 startup, and materialization observations are intentionally absent after
 restart.
 

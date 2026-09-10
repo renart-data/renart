@@ -2,7 +2,7 @@
 
 import type { Monaco } from "@monaco-editor/react";
 import type * as MonacoNS from "monaco-editor";
-import { Link, Outlet, useBlocker, useNavigate } from "@tanstack/react-router";
+import { Link, Outlet, useBlocker, useNavigate, useLocation } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import {
   AlertTriangle,
@@ -50,6 +50,8 @@ import { useWorkspaceTheme } from "@/hooks/use-workspace-theme";
 import { AppPage, PageHeader } from "./app-primitives";
 import { DocumentAuthoringCommandBar, DocumentAuthoringShell } from "./document-authoring-shell";
 import { PresentationBuilder } from "./presentation-builder/presentation-builder";
+import { PresentationLibrarySidebar } from "./presentation-library-sidebar";
+import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
 
 const MonacoEditor = lazy(async () => {
   const module = await loadMonacoEditorModule();
@@ -84,6 +86,8 @@ export function AppPresentationsLayout() {
 export function AppPresentationsIndexPage({ kind }: { kind: PresentationKind }) {
   const workspace = useAtomValue(workspaceAtom);
   const navigate = useNavigate();
+  const { navigation } = useWorkbench();
+  const workbenchEnabled = Boolean(navigation?.workbench);
   const [createOpen, setCreateOpen] = useState(false);
   const items = (workspace?.presentations ?? []).filter((item) => item.kind === kind);
   const meta = presentationMeta[kind];
@@ -91,46 +95,64 @@ export function AppPresentationsIndexPage({ kind }: { kind: PresentationKind }) 
 
   return (
     <AppPage>
-      <PageHeader
-        title={meta.plural}
-        subtitle={meta.description}
-        actions={
-          <>
-            <Button asChild size="icon-sm" variant="ghost" className="sm:hidden">
-              <Link
-                to={kind === "dashboard" ? "/reports" : "/dashboards"}
-                aria-label={kind === "dashboard" ? "Open reports" : "Open dashboards"}
-              >
-                {kind === "dashboard" ? (
-                  <FileText data-icon="inline-start" />
-                ) : (
-                  <LayoutDashboard data-icon="inline-start" />
-                )}
-              </Link>
-            </Button>
-            <div className="hidden items-center gap-1 sm:flex" aria-label="Presentation type">
-              <Button asChild size="sm" variant={kind === "dashboard" ? "secondary" : "ghost"}>
-                <Link to="/dashboards">
-                  <LayoutDashboard data-icon="inline-start" />
-                  Dashboards
+      {workbenchEnabled ? (
+        <WorkbenchPortal slot="context">
+          <PresentationLibrarySidebar kind={kind} onCreate={() => setCreateOpen(true)} />
+        </WorkbenchPortal>
+      ) : (
+        <PageHeader
+          title={meta.plural}
+          subtitle={meta.description}
+          actions={
+            <>
+              <Button asChild size="icon-sm" variant="ghost" className="sm:hidden">
+                <Link
+                  to={kind === "dashboard" ? "/reports" : "/dashboards"}
+                  aria-label={kind === "dashboard" ? "Open reports" : "Open dashboards"}
+                >
+                  {kind === "dashboard" ? (
+                    <FileText data-icon="inline-start" />
+                  ) : (
+                    <LayoutDashboard data-icon="inline-start" />
+                  )}
                 </Link>
               </Button>
-              <Button asChild size="sm" variant={kind === "report" ? "secondary" : "ghost"}>
-                <Link to="/reports">
-                  <FileText data-icon="inline-start" />
-                  Reports
-                </Link>
+              <div className="hidden items-center gap-1 sm:flex" aria-label="Presentation type">
+                <Button asChild size="sm" variant={kind === "dashboard" ? "secondary" : "ghost"}>
+                  <Link to="/dashboards">
+                    <LayoutDashboard data-icon="inline-start" />
+                    Dashboards
+                  </Link>
+                </Button>
+                <Button asChild size="sm" variant={kind === "report" ? "secondary" : "ghost"}>
+                  <Link to="/reports">
+                    <FileText data-icon="inline-start" />
+                    Reports
+                  </Link>
+                </Button>
+              </div>
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <Plus data-icon="inline-start" />
+                New {meta.singular}
               </Button>
-            </div>
-            <Button size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus data-icon="inline-start" />
-              New {meta.singular}
-            </Button>
-          </>
-        }
-      />
+            </>
+          }
+        />
+      )}
       <ScrollArea className="min-h-0 flex-1 px-3 pb-3">
         <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col py-6">
+          {workbenchEnabled ? (
+            <div className="mb-4 flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <h1 className="text-base font-semibold tracking-tight">{meta.plural}</h1>
+                <p className="text-xs text-muted-foreground">{meta.description}</p>
+              </div>
+              <Button size="sm" className="md:hidden" onClick={() => setCreateOpen(true)}>
+                <Plus data-icon="inline-start" />
+                New {meta.singular}
+              </Button>
+            </div>
+          ) : null}
           {items.length === 0 ? (
             <div className="m-auto w-full max-w-md rounded-xl border border-dashed bg-background p-8 text-center">
               <Icon className="mx-auto mb-3 size-8 text-muted-foreground" />
@@ -280,10 +302,24 @@ export function AppPresentationLivePage({
   presentationId: string;
 }) {
   const workspace = useAtomValue(workspaceAtom);
+  const location = useLocation();
+  const linked = (location.search as import("@/lib/resource-navigation").ResourceSearch).detail;
+  const autoPreviewOnArrival = useRef(
+    !linked &&
+      (location.search as { presentation_editor?: string }).presentation_editor !== "definition",
+  );
   const [document, setDocument] = useState<PresentationDocument | null>(null);
   const [visualDraft, setVisualDraft] = useState<PresentationArtifact | null>(null);
   const [definitionDraft, setDefinitionDraft] = useState("");
-  const [mode, setMode] = useState<"visual" | "definition">("visual");
+  const navigate = useNavigate();
+  const mode =
+    (location.search as { presentation_editor?: "visual" | "definition" }).presentation_editor ??
+    "visual";
+  const setMode = (mode: "visual" | "definition") =>
+    void navigate({
+      to: ".",
+      search: (s) => ({ ...s, detail: undefined, presentation_editor: mode }),
+    });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -356,7 +392,20 @@ export function AppPresentationLivePage({
     }
   }, [acceptDocument, definitionDraft, document, mode, presentationId, saving, visualDraft]);
 
-  const shouldBlockNavigation = useCallback(() => dirty, [dirty]);
+  const shouldBlockNavigation = useCallback(
+    ({
+      current,
+      next,
+    }: {
+      current: { pathname: string; search: Record<string, unknown> };
+      next: { pathname: string; search: Record<string, unknown> };
+    }) =>
+      dirty &&
+      (current.pathname !== next.pathname ||
+        (current.search.presentation_editor ?? "visual") !==
+          (next.search.presentation_editor ?? "visual")),
+    [dirty],
+  );
   const navigationBlocker = useBlocker({
     shouldBlockFn: shouldBlockNavigation,
     enableBeforeUnload: dirty,
@@ -510,6 +559,7 @@ export function AppPresentationLivePage({
               artifact={visualDraft}
               workspace={workspace}
               paused={saving}
+              autoPreview={autoPreviewOnArrival.current}
               navigation={renderNavigation()}
               modeControl={renderModeControl()}
               documentActions={renderDocumentActions()}

@@ -186,10 +186,19 @@ coordinator's `WorkspaceState` rather than the filesystem:
 - DuckDB documents get a request-local graph layer for direct local-file
   relations such as `"./data.parquet"`. Renart resolves relative paths from the
   workspace, asks DuckDB for the zero-row result schema, and caches columns by
-  file size and modification time. A missing or temporarily invalid file keeps
-  valid DuckDB relation syntax without becoming an unknown-table error.
+  the matched files' paths, sizes, and modification times. Partitioned glob
+  relations such as `"./events/day=*/data.parquet"` are inspected as one DuckDB
+  relation, including Hive partition columns, and invalidate the cache when any
+  matched file changes. A missing or temporarily invalid file keeps valid
+  DuckDB relation syntax without becoming an unknown-table error.
 - No parser artifact is downloaded or initialized lazily. The first request
   runs the same native engine as every later request.
+- The scope-analysis layer decodes quotes per identifier segment, matching
+  the native parser's names: `"catalog"."schema"."table"` resolves as
+  `catalog.schema.table`, including in generated notebook source SQL. It
+  preserves quoted spaces and escaped quotes, keeps explicit catalog identity,
+  and derives diagnostic/token ranges from the original SQL rather than the
+  decoded name.
 
 ## 3. Notebook cells
 
@@ -216,6 +225,11 @@ with ephemeral columns from a sibling's last notebook run, which the backend
 intentionally cannot see. The older schema-wide provider is not registered for
 notebook SQL models, so derived `VALUES`, `DESCRIBE`, CTE, and subquery scopes
 cannot be polluted by unrelated workspace columns.
+Native validation accepts query bodies represented by projections, `VALUES`
+rows, or compound-query branches. Renart does not suppress diagnostics based on
+those shapes: valid `VALUES` roots and CTEs are covered upstream in Golyglot and
+through the notebook adapter, while malformed `SELECT` statements remain
+errors.
 The Build ad-hoc editor also uses this LSP path instead of enabling the older
 global parse-context completion provider, so asset, query-sensor, and ad-hoc SQL
 agree on derived query semantics. The selected pipeline asset is borrowed for
@@ -292,6 +306,13 @@ annotations such as `range * 2` from `INTEGER` to the `BIGINT` produced by
 DuckDB's `range()` relation without overriding unresolved or non-integer
 expressions.
 
+The explicit **refresh columns from definition** action may also add that local
+DuckDB file layer before running the same canonical inference. This action is
+filesystem-gated and user-initiated, so `SELECT *` over a local Parquet/CSV
+file or partition glob can become a committed column contract without making
+the revision-cached workspace graph depend on ambient files. Disabling
+filesystem access keeps this enrichment unavailable.
+
 Non-SQL definition schemas enter that same snapshot through the schema-evidence
 provider registry and its central asset-kind policy. Explicit columns are
 authoritative contract evidence; local HTTP response fields and Load assets
@@ -342,6 +363,14 @@ type-check SQL; because declaration metadata has no honest SQL token range,
 the warnings are asset-scoped at the document header.
 
 Inference runs a **topologically ordered fixpoint** (capped at five rounds):
+
+The deployment planner reuses this filesystem graph and fixpoint for a
+semantic-impact preview. It independently builds the last deployed snapshot
+and candidate working-tree worlds, then compares their normalized SQL-asset
+outputs. This deliberately remains an offline, source-backed analysis: it does
+not execute queries or promote warehouse/runtime observations into the
+deployment contract. A complete unchanged query whose inferred output changes
+is reported as propagated schema impact; incomplete evidence remains explicit.
 
 1. Order the undeclared assets upstream-first (`topoOrderInferenceAssets`,
    Kahn's algorithm over the declared upstreams; cyclic leftovers keep their
@@ -408,6 +437,12 @@ open local files and replaces unknown-table noise with the stable
 `duckdb-filesystem-access-disabled` diagnostic on each file relation.
 
 ## 6. Completion & diagnostic surface (web editor)
+
+Structured diagnostic subjects survive core/stdin and HTTP transport. The HTTP
+adapter adds generated `SQLDiagnosticLink` records for verified asset-body
+owners using the shared navigation policy; Monaco displays real scoped hrefs in
+diagnostic codes. Borrowed ad-hoc/custom-check/hook/presentation query IDs do not
+inherit the asset-body target. See [diagnostic navigation](diagnostic-navigation.md).
 
 The app's Monaco asset editors (`web/components/app/asset-editor.tsx`), the
 query-sensor editor, dashboard/report query-dataset editor, custom-check dialog,

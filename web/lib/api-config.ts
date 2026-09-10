@@ -64,7 +64,11 @@ export async function updateWorkspaceEnvironmentPolicy(
   return fetchJSONWithBody<WorkspaceEnvironmentPolicyResponse>(
     `/api/config/environment-policies/${encodeURIComponent(environment)}`,
     "PUT",
-    policy,
+    {
+      protected: policy.protected,
+      deployed_only: policy.deployed_only,
+      confirm_destructive: policy.confirm_destructive,
+    },
   );
 }
 
@@ -108,6 +112,8 @@ export async function createWorkspaceConnection(input: {
   type: string;
   values: Record<string, unknown>;
   secret_changes?: WorkspaceConnectionSecretChanges;
+  access_mode?: "read_only" | "read_write";
+  policy_revision?: string;
 }): Promise<WorkspaceConfigResponse> {
   return fetchJSONWithBody<WorkspaceConfigResponse>("/api/config/connections", "POST", input);
 }
@@ -119,6 +125,8 @@ export async function updateWorkspaceConnection(input: {
   type: string;
   values: Record<string, unknown>;
   secret_changes?: WorkspaceConnectionSecretChanges;
+  access_mode?: "read_only" | "read_write";
+  policy_revision?: string;
 }): Promise<WorkspaceConfigResponse> {
   return fetchJSONWithBody<WorkspaceConfigResponse>("/api/config/connections", "PUT", input);
 }
@@ -137,6 +145,8 @@ export async function testWorkspaceConnection(input: {
   type?: string;
   values?: Record<string, unknown>;
   secret_changes?: WorkspaceConnectionSecretChanges;
+  access_mode?: "read_only" | "read_write";
+  policy_revision?: string;
 }): Promise<{ status: string; message?: string }> {
   return fetchJSONWithBody<{ status: string; message?: string }>(
     "/api/config/connections/test",

@@ -1,16 +1,11 @@
 ---
 title: How it works
-description: How Renart keeps your pipelines, notebooks, dashboards and schedules in reviewable files.
+description: What Renart stores in Git, what stays local, and how UI edits become reviewable files.
 ---
 
-Renart brings data movement, transformation, execution and analysis into a
-visual workspace. The definitions you author are ordinary files in your Git
-repository: pipelines, notebooks, dashboards, reports and schedules. Those
-files are the source of truth, so visual edits can be reviewed and versioned
-alongside code.
-
-Renart stores run history and deployment pins in a local database. Credentials
-and warehouse data stay separate from the definitions you commit.
+Renart stores authored definitions as files in your Git repository. The editor,
+canvas, and forms update those files. Execution history and deployment pins live
+in a separate local database; they are not part of the source you share.
 
 ## Assets are files
 
@@ -21,19 +16,10 @@ the workbench — name, description, columns, quality checks, materialization
 encoding for you: when you rename an asset, add a check, or change the
 materialization in the UI, Renart rewrites the file.
 
-You never need to manage that encoding by hand — the editor and the
-workbench are the interface. But because it lives in a plain file, every
-change you make in the UI shows up as a readable diff. Adding a `not_null`
-check to a column in the workbench, for example, produces a file change
-like:
-
-```diff
-   columns:
-     - name: order_id
-       type: INTEGER
-+      checks:
-+        - name: not_null
-```
+Use the editor and properties panel to change these settings. Adding a
+`not_null` check under **Checks**, for example, changes the asset definition in
+Git. You can review or revert it together with the query that produces the
+column; you do not need to edit the metadata encoding yourself.
 
 ## The project is a folder
 
@@ -62,9 +48,8 @@ The rest of what you see in the UI maps to files the same way:
 - **Branching works.** Pipeline work happens on branches, the same as the
   rest of your repository. Two people can work on different assets and
   merge.
-- **Nothing is trapped.** If you stop using Renart, your queries, metadata,
-  and pipeline structure are still there as readable files. There is no
-  export step because there was never an import step.
+- **Keep the source.** If you stop using Renart, your queries, metadata,
+  and pipeline structure remain readable files.
 - **Tools compose.** grep, code review, CI, backups — anything that works
   on files works on your pipelines.
 

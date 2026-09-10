@@ -55,6 +55,7 @@ export async function renderJinjaAsset(options: {
   assetId: string;
   content: string;
   timeWindow?: { start: string; end: string } | null;
+  parameterValues?: Record<string, unknown>;
   signal?: AbortSignal;
 }) {
   return fetchJSON<JinjaRenderResponse>(`/api/assets/${options.assetId}/render-jinja`, {
@@ -66,6 +67,7 @@ export async function renderJinjaAsset(options: {
       content: options.content,
       start_date: options.timeWindow?.start,
       end_date: options.timeWindow?.end,
+      parameter_values: options.parameterValues,
     }),
   });
 }

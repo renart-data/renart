@@ -31,6 +31,7 @@ type RemoteCatalogScope struct {
 // relation exists. ColumnsKnown distinguishes a confirmed empty schema from a
 // relation whose columns have not been requested yet.
 type RemoteCatalogRelation struct {
+	CatalogName       string
 	QualifiedName     string
 	ShortName         string
 	SchemaName        string
@@ -203,7 +204,7 @@ func (c *RemoteCatalogCache) RefreshColumns(ctx context.Context, scope RemoteCat
 		return
 	}
 	qualified := entry.snapshot.Relations[index].QualifiedName
-	flightKey := strings.ToLower(qualified)
+	flightKey := catalogObservationKey(qualified, entry.snapshot.Relations[index].CatalogName)
 	fresh := entry.snapshot.Relations[index].ColumnsKnown &&
 		!entry.snapshot.Relations[index].ColumnsObservedAt.IsZero() &&
 		now.Sub(entry.snapshot.Relations[index].ColumnsObservedAt) < c.deps.TTL
@@ -230,7 +231,7 @@ func (c *RemoteCatalogCache) ObserveTables(scope RemoteCatalogScope, relations [
 	entry := c.entryLocked(key)
 	byName := make(map[string]int, len(entry.snapshot.Relations))
 	for index, relation := range entry.snapshot.Relations {
-		byName[strings.ToLower(relation.QualifiedName)] = index
+		byName[catalogObservationKey(relation.QualifiedName, relation.CatalogName)] = index
 	}
 	for _, relation := range relations {
 		if len(entry.snapshot.Relations) >= c.deps.MaxRelations {
@@ -240,7 +241,7 @@ func (c *RemoteCatalogCache) ObserveTables(scope RemoteCatalogScope, relations [
 		if qualified == "" {
 			continue
 		}
-		if _, exists := byName[strings.ToLower(qualified)]; exists {
+		if _, exists := byName[catalogObservationKey(qualified, relation.CatalogName)]; exists {
 			continue
 		}
 		short := strings.TrimSpace(relation.ShortName)
@@ -248,12 +249,13 @@ func (c *RemoteCatalogCache) ObserveTables(scope RemoteCatalogScope, relations [
 			short = remoteCatalogShortName(qualified)
 		}
 		entry.snapshot.Relations = append(entry.snapshot.Relations, RemoteCatalogRelation{
+			CatalogName:   relation.CatalogName,
 			QualifiedName: qualified,
 			ShortName:     short,
 			SchemaName:    strings.TrimSpace(relation.SchemaName),
 			DatabaseName:  strings.TrimSpace(relation.DatabaseName),
 		})
-		byName[strings.ToLower(qualified)] = len(entry.snapshot.Relations) - 1
+		byName[catalogObservationKey(qualified, relation.CatalogName)] = len(entry.snapshot.Relations) - 1
 	}
 	sort.Slice(entry.snapshot.Relations, func(i, j int) bool {
 		return strings.ToLower(entry.snapshot.Relations[i].QualifiedName) < strings.ToLower(entry.snapshot.Relations[j].QualifiedName)
@@ -349,7 +351,7 @@ func (c *RemoteCatalogCache) loadSnapshot(ctx context.Context, scope RemoteCatal
 			if qualified == "" {
 				continue
 			}
-			normalized := strings.ToLower(qualified)
+			normalized := catalogObservationKey(qualified, item.CatalogName)
 			if _, exists := seen[normalized]; exists {
 				continue
 			}
@@ -359,6 +361,7 @@ func (c *RemoteCatalogCache) loadSnapshot(ctx context.Context, scope RemoteCatal
 				short = remoteCatalogShortName(qualified)
 			}
 			relations = append(relations, RemoteCatalogRelation{
+				CatalogName:   item.CatalogName,
 				QualifiedName: qualified,
 				ShortName:     short,
 				SchemaName:    strings.TrimSpace(item.SchemaName),
@@ -489,7 +492,7 @@ func remoteCatalogRelationIndex(relations []RemoteCatalogRelation, name string) 
 		return -1
 	}
 	for index := range relations {
-		if strings.EqualFold(relations[index].QualifiedName, name) {
+		if relations[index].QualifiedName == name || (relations[index].CatalogName == "" && strings.EqualFold(relations[index].QualifiedName, name)) {
 			return index
 		}
 	}
@@ -524,10 +527,10 @@ func mergeRemoteCatalogColumns(next *RemoteCatalogSnapshot, previous RemoteCatal
 	}
 	byName := make(map[string]RemoteCatalogRelation, len(previous.Relations))
 	for _, relation := range previous.Relations {
-		byName[strings.ToLower(relation.QualifiedName)] = relation
+		byName[catalogObservationKey(relation.QualifiedName, relation.CatalogName)] = relation
 	}
 	for index := range next.Relations {
-		previousRelation, ok := byName[strings.ToLower(next.Relations[index].QualifiedName)]
+		previousRelation, ok := byName[catalogObservationKey(next.Relations[index].QualifiedName, next.Relations[index].CatalogName)]
 		if !ok || !previousRelation.ColumnsKnown {
 			continue
 		}
@@ -535,6 +538,13 @@ func mergeRemoteCatalogColumns(next *RemoteCatalogSnapshot, previous RemoteCatal
 		next.Relations[index].ColumnsKnown = true
 		next.Relations[index].ColumnsObservedAt = previousRelation.ColumnsObservedAt
 	}
+}
+
+func catalogObservationKey(name, catalog string) string {
+	if catalog != "" {
+		return "catalog:" + name
+	}
+	return strings.ToLower(name)
 }
 
 func cloneRemoteCatalogSnapshot(snapshot RemoteCatalogSnapshot) RemoteCatalogSnapshot {

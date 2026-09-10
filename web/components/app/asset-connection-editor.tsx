@@ -30,7 +30,7 @@ import { workspaceAtom } from "@/lib/atoms/domains/workspace";
 import type { AssetCreationCandidate, AssetCreationRoleProfile, WebAsset } from "@/lib/types";
 
 import { AssetConnectionField, resolveAssetConnectionSelection } from "./asset-connection-field";
-import { WorkspaceConnectionDialog } from "./workspace-connection-dialog";
+import { WorkspaceConnectionDialog } from "./workspace-connection-dialog-lazy";
 
 type PendingMigration = {
   value: string;
@@ -62,7 +62,12 @@ export function AssetConnectionEditor({
     () => workspace?.asset_capabilities ?? [],
     [workspace?.asset_capabilities],
   );
-  const roleName = kind === "load" ? "destination" : "target";
+  const roleName =
+    kind === "load"
+      ? "destination"
+      : kind === "sql" && !asset.materialization_type
+        ? "read_target"
+        : "target";
   const role = useMemo(() => {
     if (!kind) return undefined;
     return roleForExistingAsset(

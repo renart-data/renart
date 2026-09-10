@@ -341,15 +341,11 @@ select 1::bigint as id
       .toBe(false);
   });
 
-  test("shows a positively observed external table and imports it after review", async ({
+  // Desktop-only: The desktop run covers the canvas node and reviewed import lifecycle.
+  test("shows a positively observed external table and imports it after review @desktop-only", async ({
     liveApp,
     page,
   }) => {
-    test.skip(
-      test.info().project.name.includes("mobile"),
-      "The desktop run covers the canvas node and reviewed import lifecycle.",
-    );
-
     const assetsDir = join(liveApp.workspaceDir, "analytics", "assets", "analytics");
     const producerPath = join(assetsDir, "external_orders.sql");
     const producerAssetId = Buffer.from("analytics/assets/analytics/external_orders.sql").toString(

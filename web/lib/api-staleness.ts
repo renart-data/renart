@@ -58,6 +58,7 @@ export type AssetStaleness = {
   // whose last run failed. `last_run_on_current_content` is true when that run was
   // on the content currently on disk.
   last_run_status?: "succeeded" | "failed" | "cancelled";
+  last_run_id?: string;
   last_run_at?: string;
   last_run_on_current_content?: boolean;
   // Post-write assertions are independent of freshness. A successful write can

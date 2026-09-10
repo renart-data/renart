@@ -16,11 +16,14 @@ in the plan.
 | --- | --- |
 | [backend.md](backend.md) | Go backend: layering, workspace authority, rendering/planning, universal execution ledger, conventions |
 | [frontend.md](frontend.md) | Web app: stack, routing, Build readiness/review/deploy UX, hooks, libraries, layout rules |
+| [diagnostic-navigation.md](diagnostic-navigation.md) | Typed error destinations, independent detail routing, cold-tab scope, durable Data Browser addresses and coverage boundaries |
+| [read-only-connections.md](read-only-connections.md) | Per-environment connection access, native restrictions, directional Load effects, runtime guards and settings UX |
 | [staleness.md](staleness.md) | Fingerprints, target-aware facts/coverage, data readiness, deploy snapshots, occurrences, per-env schedules, protected environments |
 | [notebooks.md](notebooks.md) | Notebook folder format, sessions, rename engine, `@viz`, server-driven auto-recompute, promotion |
 | [asset-editing.md](asset-editing.md) | Asset workbench: ownership model, `assetmeta` provenance keys, reconciliation, transaction API |
 | [sql-lsp.md](sql-lsp.md) | SQL language server: canonical graph, engine, web service caching, notebook cell scoping, column-inference fixpoint |
 | [docs.md](docs.md) | Authoring contract for the user docs under `docs/` |
+| [testing.md](testing.md) | Local release/focused gates, memory limits, durable live-test evidence |
 
 Agent orientation and repo-wide rules live in the top-level [`AGENTS.md`](../AGENTS.md);
 the user-facing product docs live under `docs/` (see docs.md for how

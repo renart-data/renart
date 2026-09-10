@@ -117,6 +117,7 @@ type AssetStatus struct {
 	// fingerprint matches the asset's current fingerprint (i.e. the run was on
 	// the content still on disk).
 	LastRunStatus           string     `json:"last_run_status,omitempty"` // "succeeded" | "failed" | "cancelled"
+	LastRunID               string     `json:"last_run_id,omitempty"`
 	LastRunAt               *time.Time `json:"last_run_at,omitempty"`
 	LastRunOnCurrentContent bool       `json:"last_run_on_current_content,omitempty"`
 	// Quality is the latest completed assertion outcome, independent of data
@@ -905,6 +906,7 @@ func applyLastRun(status *AssetStatus, lastRun matlog.AssetRunRecord, result fin
 		return
 	}
 	status.LastRunStatus = lastRun.Status
+	status.LastRunID = lastRun.RunID
 	if !lastRun.RanAt.IsZero() {
 		at := lastRun.RanAt
 		status.LastRunAt = &at

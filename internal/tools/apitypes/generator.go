@@ -370,7 +370,7 @@ func jsonField(field *ast.Field) (name string, optional, ignored, hasName bool) 
 		return "", false, true, true
 	}
 	for _, option := range parts[1:] {
-		if option == "omitempty" {
+		if option == "omitempty" || option == "omitzero" {
 			optional = true
 		}
 	}

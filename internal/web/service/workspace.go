@@ -166,6 +166,7 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 		state.EnvironmentPolicies = make(map[string]model.EnvironmentPolicy, len(policyConfig.Environments))
 		for name, envPolicy := range policyConfig.Environments {
 			state.EnvironmentPolicies[name] = model.EnvironmentPolicy{
+				Connections:        envPolicy.Connections,
 				Protected:          envPolicy.Protected,
 				DeployedOnly:       envPolicy.DeployedOnly,
 				ConfirmDestructive: envPolicy.ConfirmDestructive,
@@ -319,6 +320,8 @@ func (s *WorkspaceService) ComputeState(ctx context.Context) (model.WorkspaceSta
 				Meta:                        assetMeta,
 				Columns:                     PipelineColumnsToModelColumns(columns),
 				CustomChecks:                PipelineCustomChecksToModelCustomChecks(asset.CustomChecks),
+				UnitTests:                   pipelineUnitTestsToModel(asset.UnitTests),
+				UnitTestsRevision:           unitTestsRevision(asset.UnitTests),
 				PreHooks:                    pipelineHookQueries(asset.Hooks.Pre),
 				PostHooks:                   pipelineHookQueries(asset.Hooks.Post),
 				ColumnInferenceSources:      columnInferenceSourcesForAsset(asset, connectionName),

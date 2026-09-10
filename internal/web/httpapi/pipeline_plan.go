@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	webapi "renart/internal/web/api"
+	"renart/internal/web/execution"
 	"renart/internal/web/scheduler"
 	"renart/internal/web/service"
 )
@@ -257,13 +258,7 @@ func schedulerPipelineRunPrerequisite(item service.PipelinePlanPrerequisite) sch
 func schedulerPipelineRunExecutionContract(
 	contract service.PipelinePlanExecutionContract,
 ) scheduler.PipelineRunExecutionContract {
-	return scheduler.PipelineRunExecutionContract{
-		AssetID:               contract.AssetID,
-		AssetName:             contract.AssetName,
-		ConnectionKeys:        append([]string(nil), contract.ConnectionKeys...),
-		MutationResources:     schedulerPipelinePlanResources(contract.MutationResources),
-		CoordinationResources: schedulerPipelinePlanResources(contract.CoordinationResources),
-	}
+	return execution.CloneExecutionContract(contract)
 }
 
 func schedulerPipelinePlanResources(

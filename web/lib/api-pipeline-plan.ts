@@ -60,6 +60,7 @@ export function canonicalPipelinePlanReviewedIdentity(
     source: plan.source,
     context: plan.context,
     selection: plan.selection,
+    semantic_impact_digest: plan.semantic_impact?.digest,
     prerequisites: plan.prerequisites,
     resources: plan.resources,
     execution_contracts: plan.execution_contracts,

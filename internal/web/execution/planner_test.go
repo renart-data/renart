@@ -10,9 +10,23 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"renart/internal/web/apperror"
+	"renart/internal/web/navigationtarget"
 	"renart/internal/web/staleness"
 	webtypecheck "renart/internal/web/typecheck"
 )
+
+func TestCodeCheckAggregationPreservesNavigationTarget(t *testing.T) {
+	target := &navigationtarget.Target{Kind: "asset-column", AssetID: "workspace-id", Column: "Total", Field: "type"}
+	plan := &Plan{PipelineUUID: "uuid", Readiness: PlanReadiness{CodeChecks: webtypecheck.Report{
+		Assets: []webtypecheck.Asset{{Name: "orders", Findings: []webtypecheck.Finding{{
+			Code: "declared-column-type-drift", Severity: "warning", Message: "translated", Target: target,
+		}}}},
+	}}}
+	appendCodeCheckIssues(plan, false)
+	require.Len(t, plan.Readiness.Warnings, 1)
+	require.Equal(t, target, plan.Readiness.Warnings[0].Target)
+	require.Equal(t, "declared-column-type-drift", plan.Readiness.Warnings[0].DiagnosticCode)
+}
 
 func TestPlannerOwnsReviewedPlanWorkflow(t *testing.T) {
 	asset := &pipeline.Asset{Name: "analytics.orders", Type: pipeline.AssetTypeDuckDBQuery}
@@ -61,6 +75,54 @@ func TestPlannerOwnsReviewedPlanWorkflow(t *testing.T) {
 	assert.True(t, session.closed)
 }
 
+func TestPlannerAddsSemanticImpactToDeploymentReview(t *testing.T) {
+	asset := &pipeline.Asset{Name: "analytics.revenue", Type: pipeline.AssetTypeDuckDBQuery}
+	source := &plannerTestSource{parsed: &pipeline.Pipeline{
+		LegacyID: "pipeline-uuid", Name: "analytics", Assets: []*pipeline.Asset{asset},
+	}}
+	semanticImpact := CompareSemanticImpact(
+		"snapshot-7",
+		[]SemanticAssetSnapshot{semanticTestAsset("analytics.revenue", "source:a", "canonical:a", true, "HUGEINT")},
+		[]SemanticAssetSnapshot{semanticTestAsset("analytics.revenue", "source:a", "canonical:a", true, "DOUBLE")},
+	)
+	session := &plannerTestSemanticSession{
+		plannerTestSession: &plannerTestSession{},
+		semanticImpact:     semanticImpact,
+	}
+	planner := NewPlanner(PlannerDependencies{
+		ResolvePipelineUUID: func(id string) (string, bool) { return "pipeline-uuid", id == "pipeline-id" },
+		LoadConfiguration: func(string) (PlannerConfiguration, error) {
+			return plannerTestConfiguration{}, nil
+		},
+		ResolveSource: func(context.Context, string, string, PlanSourceRequest, map[string]any) (PlannerSource, bool, *apperror.Error) {
+			return source, false, nil
+		},
+		OpenSession: func(context.Context, PlannerSource, PlannerConfiguration, PlannerSessionInput) (PlannerSession, *apperror.Error) {
+			return session, nil
+		},
+		ResolveVariables: func(*pipeline.Pipeline, map[string]any, string) PlannerVariableContext {
+			return PlannerVariableContext{Digest: "variables"}
+		},
+		IsExecutable:        func(*pipeline.Asset) bool { return true },
+		EffectiveSensorMode: func(string, bool) string { return "once" },
+		Staleness:           plannerTestStaleness{},
+		Now: func() time.Time {
+			return time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+		},
+	})
+
+	plan, apiErr := planner.Plan(context.Background(), "pipeline-id", PlanRequest{
+		Purpose: PlanPurposeDeployment, Selection: PlanSelectionRequest{Mode: PlanSelectionAll},
+	})
+	require.Nil(t, apiErr)
+	require.NotNil(t, plan.SemanticImpact)
+	assert.Equal(t, semanticImpact.Digest, plan.SemanticImpact.Digest)
+	assert.Equal(t, semanticImpact.Digest, ReviewedIdentityFromPlan(plan).SemanticImpactDigest)
+	assert.Equal(t, PlanStatusWarning, plan.Status)
+	require.Len(t, plan.Readiness.Warnings, 1)
+	assert.Equal(t, "semantic_impact_detected", plan.Readiness.Warnings[0].Code)
+}
+
 type plannerTestConfiguration struct{}
 
 func (plannerTestConfiguration) EnvironmentName() string { return "default" }
@@ -105,6 +167,15 @@ func (s *plannerTestSession) BindExecutionContracts(context.Context, []PlanAsset
 	}}, nil
 }
 func (s *plannerTestSession) Close() { s.closed = true }
+
+type plannerTestSemanticSession struct {
+	*plannerTestSession
+	semanticImpact SemanticImpactReport
+}
+
+func (s *plannerTestSemanticSession) SemanticImpact(context.Context) SemanticImpactReport {
+	return s.semanticImpact
+}
 
 type plannerTestStaleness struct{ snapshot staleness.Snapshot }
 
