@@ -1,0 +1,83 @@
+---
+import { Font } from 'astro:assets';
+import { publicMediaUrl } from '../lib/public-media.mjs';
+import MarketingHeader from '../components/MarketingHeader.astro';
+import MarketingFooter from '../components/MarketingFooter.astro';
+import PrivacyConsent from '../components/PrivacyConsent.astro';
+import DiscordInvite from '../components/DiscordInvite.astro';
+import '../styles/landing.css';
+import '../styles/comparison.css';
+
+interface Props {
+  title: string;
+  description: string;
+  name?: string;
+}
+const { title, description, name } = Astro.props;
+const siteUrl = 'https://getrenart.com';
+const canonicalUrl = new URL(Astro.url.pathname, siteUrl).href;
+const breadcrumbs = [
+  { '@type': 'ListItem', position: 1, name: 'Home', item: siteUrl + '/' },
+  { '@type': 'ListItem', position: 2, name: 'Compare', item: siteUrl + '/compare/' },
+  ...(name ? [{ '@type': 'ListItem', position: 3, name: `Renart vs ${name}`, item: canonicalUrl }] : []),
+];
+const structuredData = JSON.stringify({
+  '@context': 'https://schema.org',
+  '@graph': [
+    { '@type': 'WebPage', name: title, description, url: canonicalUrl, author: { '@type': 'Organization', name: 'Renart', url: siteUrl } },
+    { '@type': 'BreadcrumbList', itemListElement: breadcrumbs },
+  ],
+});
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title} | Renart</title>
+    <meta name="description" content={description} />
+    <meta name="author" content="Renart" />
+    <meta name="theme-color" content="#f8f8f4" />
+    <link rel="canonical" href={canonicalUrl} />
+    <link rel="icon" href="/icons/icon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" sizes="180x180" />
+    <link rel="sitemap" type="application/xml" href={siteUrl + '/sitemap-index.xml'} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Renart" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={siteUrl + publicMediaUrl('/landing/og-image.png')} />
+    <meta property="og:image:alt" content="The Renart workspace with a pipeline canvas, SQL editor and results" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={siteUrl + publicMediaUrl('/landing/og-image.png')} />
+    <script is:inline type="application/ld+json" set:html={structuredData}></script>
+    <Font cssVariable="--font-geist" preload />
+    <Font cssVariable="--font-geist-mono" />
+    <Font cssVariable="--font-instrument-serif" preload />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <MarketingHeader />
+    <main id="main" class="comparison-main landing-container">
+      <nav class="comparison-breadcrumb" aria-label="Breadcrumb">
+        <a href="/">Home</a><span aria-hidden="true">/</span>
+        {name ? <><a href="/compare/">Compare</a><span aria-hidden="true">/</span><span aria-current="page">Renart vs {name}</span></> : <span aria-current="page">Compare</span>}
+      </nav>
+      <slot />
+      {name && <aside class="comparison-method" aria-label="About this comparison">
+        <p><strong>About this comparison.</strong> Written by Renart. Competitor documentation reviewed on <time datetime="2026-09-11">11 September 2026</time>. The product comparison is based on documentation; the examples show Renart's demo workspace. No cross-product performance or migration tests are claimed.</p>
+        <p>Renart is in <a href="/docs/alpha-status/">public alpha</a>. Evaluate it with a small project before depending on it for critical work.</p>
+      </aside>}
+      <section class="comparison-next" aria-labelledby="comparison-next-title">
+        <div><p class="landing-eyebrow">Try the workflow</p><h2 id="comparison-next-title">Start with one local pipeline.</h2><p>The DuckDB quickstart takes you from installation to inspected results.</p></div>
+        <a class="landing-button" href="/docs/quickstart/">Build your first pipeline <span aria-hidden="true">↗</span></a>
+      </section>
+    </main>
+    <MarketingFooter />
+    <PrivacyConsent />
+    <DiscordInvite />
+  </body>
+</html>

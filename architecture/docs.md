@@ -9,6 +9,12 @@ checklist.
 
 The locked decisions (§0) are the non-negotiable part. The rest is craft guidance.
 
+Product descriptions follow the positioning in `AGENTS.md`: **open source
+data platform** for moving, transforming and analyzing data, with a
+first-class developer experience across the workflow. The landing page,
+docs overview and metadata use this category. The editor and workspace are
+individual surfaces; Jinja, lineage and staleness support the wider story.
+
 ---
 
 ## 0. Locked decisions
@@ -16,12 +22,14 @@ The locked decisions (§0) are the non-negotiable part. The rest is craft guidan
 These were decided with the user and govern every page. Don't re-litigate them in
 a PR; change them here first if they need to change.
 
-1. **No bruin, anywhere.** The docs — and the landing page, and the site
-   metadata — never mention bruin: not as a compatibility promise, not as
-   "built on". There is no guaranteed bruin compatibility, so we don't imply
-   one. We teach **Renart's own model** in Renart's own words. `grep -ri bruin
-   docs/src` must come back empty (per decision 2, code samples don't show raw
-   metadata headers, so the `@bruin` marker never appears either).
+1. **Teach Renart's own model.** Tutorials, reference pages, the landing page
+   and their metadata use Renart's own UI vocabulary. They do not imply
+   guaranteed compatibility with Bruin. The user-requested comparisons under
+   `docs/src/pages/compare/` are a narrow exception: they may name Bruin,
+   explain the actual engine relationship and compare documented editions.
+   Never turn that relationship into an untested migration or round-trip
+   promise. `rg -i bruin docs/src/content/docs docs/src/pages/index.astro`
+   remains empty; UI-authored examples do not expose raw metadata headers.
 2. **Web-UI-first.** Nothing in the docs may require — or suggest — editing an
    asset's metadata encoding by hand. Users see the SQL editor, the Python
    editor, the Load form, the API editor, and the workbench; the docs describe
@@ -38,12 +46,13 @@ a PR; change them here first if they need to change.
    nudge, an inline validation message). If you're tempted to document a single
    field's meaning in prose, that's an in-app tooltip, not a docs page. If you're
    tempted to put a five-step flow in a tooltip, that's a how-to.
-4. **Screenshots are scripted.** `make docs-media` regenerates every docs
-   screenshot from scratch against a staged demo workspace (the acme project
+4. **Screenshots are scripted.** `make docs-media` regenerates the shared docs
+   screenshots from scratch against a staged demo workspace (the acme project
    from `web/scripts/landing-media-workspace.mjs`), and `make landing-media`
-   does the same for the landing page. Never hand-capture: a shipped image is
-   always the verbatim output of the script, so it can be regenerated after
-   any UI change. See §5.
+   regenerates the landing-specific screenshots. The landing page can reuse a
+   shared shot from `docs/public/docs-media/` when it shows the same product
+   state. Never hand-capture: a shipped image is always the verbatim output of
+   one of those scripts, so it can be regenerated after any UI change. See §5.
 5. **Versioning: unversioned for now.** Docs track `main`. No Starlight versioning
    yet. Revisit when releases stabilise (the trigger lives in the concept doc, not
    here).
@@ -175,12 +184,17 @@ every shipped image is the verbatim output of a script.
   materialized data, run history including one failed run, schedules, a
   notebook, dashboard, report, and staleness states — so no shot is ever empty
   or half-loaded.
-- **Adding a shot** means adding a capture block to
-  `web/scripts/capture-docs-media.mjs` (viewport, navigation, interactions,
-  `shot(page, "name")`), not opening a browser by hand. If the shot needs
-  state the staged demo lacks (an asset type, a dialog), the script creates
-  it through the same HTTP API the UI uses, after the DAG-wide shots so the
-  canvas captures stay stable.
+- **Reuse the right shot.** Landing-only compositions live under `/landing/`;
+  product-state screenshots shared with the docs live under `/docs-media/`.
+  Referencing a shared shot from the landing page does not make it part of the
+  landing-media capture pipeline.
+- **Adding a shot** means adding a capture block to the matching script:
+  `web/scripts/capture-docs-media.mjs` for shared product-state media or
+  `web/scripts/capture-landing-media.mjs` for a landing-only composition. Each
+  block owns its viewport, navigation, interactions, and `shot(page, "name")`
+  call; never open a browser by hand. If a shot needs state the staged demo
+  lacks (an asset type, a dialog), the script creates it through the same HTTP
+  API the UI uses, after the DAG-wide shots so the canvas captures stay stable.
 - **One look.** Dark theme, `deviceScaleFactor: 2`, webp output; pages embed
   images with explicit `width`/`height` matching the emitted file.
 - **Few and high-value.** A screenshot earns its place by orienting the reader
@@ -246,8 +260,9 @@ Before approving a docs PR, confirm:
 - [ ] **Task-titled** (how-tos) and ends in a verifiable result.
 - [ ] **Frontmatter** `title` + `description` present and reader-useful.
 - [ ] **Runnable** code/CLI against the example project.
-- [ ] **Screenshots** (if any) come out of `make docs-media`, are alt-texted,
-      and their capture block lives in the script.
+- [ ] **Screenshots** (if any) come out of `make docs-media` or, for a
+      landing-only composition, `make landing-media`; they are alt-texted and
+      their capture block lives in the matching script.
 - [ ] **Cross-links** to Diátaxis siblings + the resting concept.
 - [ ] **Right place / right scope** — not a tooltip masquerading as a page, nor a
       flow crammed into reference.
@@ -264,26 +279,34 @@ shipped (July 2026; git history keeps the full plans).
   as their features stabilise, at the position the rollout IA assigned them.
   The sidebar in `docs/astro.config.mjs` is the authoritative list; every
   entry must be a real page (verification: `pnpm build` in `docs/` green, no
-  dead links, `grep -ri bruin docs/src` empty). The Introduction group includes
+  dead links, no Bruin references in tutorials or reference pages). The Introduction group includes
   a concise **Alpha status** page that distinguishes shipped workflows from
   release-stage caveats without becoming a roadmap.
-- **The landing page** (`docs/src/pages/index.astro`) tells one story —
-  "the all-in-one, git-native data pipeline IDE" — as hero → logo marquee →
-  four lifecycle rows (Build / Explore / Run / Trust) → bento (runs, catalog,
-  diffs, quality) → manifesto → principles → CTA. While the product is in
+- **The landing page** (`docs/src/pages/index.astro`) introduces an open source
+  data platform through a single product screenshot → Move / Transform /
+  Analyze overview → editor proof and maintainability principles → workspace
+  tour → local infrastructure and reviewable definitions → quickstart/install.
+  Cream surfaces, ink text and restrained green accents keep the focus on the
+  product. It does not simulate live runtime status or promise an exact rebuild
+  count in a decorative diagram. The Load / Build / Lineage / Notebook /
+  Dashboard / Report / Schedule / Runs tour uses a plain tablist with keyboard
+  navigation, a labeled panel and links to full-size scripted screenshots.
+  Small vanilla-JavaScript enhancements handle tabs, command copy and mobile
+  navigation; the initial product view and links remain available without a
+  client framework. While the product is in
   public alpha, the page title/description, hero badge, visible expectation
   note, and footer say so directly; the repository README carries the same
   status. Alpha is a release-stage disclosure, not a substitute for describing
   what currently works.
-- **Landing media** comes from `make landing-media` only (same staged acme
-  demo as `make docs-media`, §5): hero at 1920×1080; focused lifecycle crops
-  at 910×585 (Build), 1008×648 (Explore), 1120×720 (Run), and 1176×756
-  (Trust); bento at 1200×675. The shared 2× device scale emits retina webp
-  source files, responsive 480/768/1280-pixel variants (plus 1920-pixel
-  variants for wide media), and a 1200×675 PNG og-image under
-  `docs/public/landing/`. The landing page selects them with `srcset` and
-  `sizes`; if a capture changes dimensions, update the matching dimensions
-  and source descriptors in `index.astro`.
+- **Landing media** combines landing-specific shots from `make landing-media`
+  with existing product-state shots from `make docs-media` (§5). The hero and
+  editor proof use responsive images under `docs/public/landing/`; the
+  workspace tour points at the corresponding generated images
+  under `docs/public/docs-media/`. The landing page selects them with `srcset`
+  and `sizes`; if a capture changes dimensions, update the matching dimensions
+  and source descriptors in `index.astro`. Landing and social image URLs use
+  content hashes from `docs/src/lib/public-media.mjs`, evaluated during the
+  docs package build, so refreshed files bypass older immutable browser caches.
 
 ## 10. Production privacy and legal configuration
 
@@ -340,3 +363,24 @@ local storage; both legal-language versions disclose that preference.
 delete Umami rows by itself. The deployment owner must configure and verify a
 matching cleanup policy in the self-hosted Umami database before enabling the
 tracker.
+
+## Comparison pages
+
+`/compare/` and its three authored guides share the marketing header, footer
+and typography with the landing page. They are decision guides, separate from
+the task-oriented Starlight docs. Each identifies the product editions, shows
+the documentation review date, credits the other product's strengths and links
+its factual claims to primary sources. Renart screenshots come from the same
+scripted media pipeline. Do not describe these documentation-based comparisons
+as hands-on benchmarks or tested migrations. Changing CSS does not advance the
+content review date. Add further guides only when there is a distinct decision
+and enough evidence to help the reader.
+
+The comparison index includes a four-product feature matrix; each guide shows
+the same data for its pair above the detailed workflow comparison.
+`docs/src/data/comparison-features.ts` owns the product editions, short feature
+labels, availability and per-cell source links. `FeatureMatrix.astro` renders
+the shared semantic table. Keep included capabilities, separate tools or paid
+offerings, and unavailable features distinct without assigning scores. The
+four-product table scrolls with sticky feature names; paired tables fit small
+screens. New claims require source review, not just a copied checkmark.

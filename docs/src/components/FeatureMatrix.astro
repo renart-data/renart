@@ -1,0 +1,62 @@
+---
+import '../styles/feature-matrix.css';
+import {
+  featureRows,
+  featureStatuses,
+  productIds,
+  products,
+  type CompetitorId,
+  type ProductId,
+} from '../data/comparison-features';
+
+interface Props { competitor?: CompetitorId; }
+const { competitor } = Astro.props;
+const columns: readonly ProductId[] = competitor ? ['renart', competitor] : productIds;
+const names = columns.map((id) => products[id].name).join(', ');
+---
+<section id="feature-overview" class:list={['feature-matrix', { 'feature-matrix--pair': competitor }]} aria-labelledby="feature-matrix-title">
+  <div class="feature-matrix__heading">
+    <div>
+      <h2 id="feature-matrix-title">Features at a glance.</h2>
+      <p>The main focus, and where each part of the workflow lives.</p>
+    </div>
+    <ul class="feature-matrix__legend" aria-label="Feature availability key">
+      {Object.entries(featureStatuses).map(([status, value]) => <li>
+        <span class={`feature-mark feature-mark--${status}`} aria-hidden="true">{value.icon}</span>
+        {value.label}
+      </li>)}
+    </ul>
+  </div>
+  <div class="feature-matrix__scroll" role="region" aria-label={`${names} feature matrix`} aria-describedby="feature-matrix-note" tabindex="0">
+    <table class="feature-matrix__table">
+      <caption class="feature-matrix__sr-only">Features and product focus: {names}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Feature</th>
+          {columns.map((id) => <th scope="col">
+            <span class="feature-matrix__product">{products[id].name}</span>
+            <span class="feature-matrix__focus">{products[id].focus}</span>
+            <span class="feature-matrix__edition">{products[id].edition}</span>
+          </th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {featureRows.map((row) => <tr>
+          <th scope="row">{row.name}</th>
+          {columns.map((id) => {
+            const cell = row.cells[id];
+            const status = featureStatuses[cell.status];
+            return <td>
+              <a class="feature-matrix__cell" href={cell.href}>
+                <span class={`feature-mark feature-mark--${cell.status}`} aria-hidden="true">{status.icon}</span>
+                <span><span class="feature-matrix__sr-only">{status.label}: </span>{cell.label}</span>
+              </a>
+            </td>;
+          })}
+        </tr>)}
+      </tbody>
+    </table>
+  </div>
+  {!competitor && <p class="feature-matrix__scroll-hint">Scroll across to compare all four tools. Feature names stay in view.</p>}
+  <p id="feature-matrix-note" class="feature-matrix__note">Each cell links to its documentation. Arrows name a separate tool, service or paid plan; availability does not imply equal scope. Reviewed <time datetime="2026-09-11">11 September 2026</time>.</p>
+</section>

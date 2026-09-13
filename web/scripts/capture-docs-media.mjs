@@ -68,6 +68,8 @@ try {
   // workbench in one frame (interface tour, docs landing, quickstart)
   await withPage({ width: 1600, height: 1000 }, async (page) => {
     await goto(page, `/pipelines/${ACME}/assets/${STAGING_ORDERS}/split`, 6000);
+    await page.locator(".react-flow__controls-fitview").first().click();
+    await page.waitForTimeout(800);
     await shot(page, "workspace-overview");
   });
 

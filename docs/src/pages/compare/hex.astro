@@ -1,0 +1,46 @@
+---
+import ComparisonLayout from '../../layouts/ComparisonLayout.astro';
+import FeatureMatrix from '../../components/FeatureMatrix.astro';
+import ComparisonTable from '../../components/ComparisonTable.astro';
+const rows = [
+  { criterion: 'Starting point', renart: { text: 'Pipeline development, data movement and analysis in a local Git-backed workspace.', href: '/docs/' }, other: { text: 'An analytical workspace for SQL and Python notebooks, exploration and data apps.', href: 'https://learn.hex.tech/docs' } },
+  { criterion: 'Git workflow', renart: { text: 'Editing the project updates its authored files directly. Review those changes in your repository.', href: '/docs/how-it-works/' }, other: { text: 'Git export writes project YAML when publishing. Hex documents this export as one-way.', href: 'https://learn.hex.tech/docs/explore-data/projects/git-export' } },
+  { criterion: 'Working from a terminal', renart: { text: 'Use the local workspace or Renart CLI with the project on your machine.', href: '/docs/cli/work-from-terminal/' }, other: { text: 'Hex has a CLI for authenticated projects, cells, runs and workspace resources.', href: 'https://learn.hex.tech/docs/api-integrations/cli' } },
+  { criterion: 'Working with data', renart: { text: 'Loading and SQL/Python transformations are pipeline assets; notebooks explore data alongside them.', href: '/docs/asset-types/load-assets/' }, other: { text: 'Notebooks combine SQL, Python and other cell types, including writeback to connected data systems.', href: 'https://learn.hex.tech/docs/explore-data/notebook-view/develop-your-notebook' } },
+  { criterion: 'Recurring work', renart: { text: 'Scheduled pipelines run from a reviewed deployment on a server you operate.', href: '/docs/scheduling/overview/' }, other: { text: 'Scheduled project runs refresh published results. Availability depends on the Hex plan.', href: 'https://learn.hex.tech/docs/share-insights/scheduled-runs' } },
+  { criterion: 'Sharing with a team', renart: { text: 'Share authored definitions through Git. The local app is not a hosted multi-user collaboration service.', href: '/docs/reference/security-and-privacy/' }, other: { text: 'Workspace sharing and permissions support distributing projects and published apps to other people.', href: 'https://learn.hex.tech/docs/collaborate/sharing-and-permissions/sharing-permissions' } },
+];
+---
+<ComparisonLayout name="Hex" title="Renart vs Hex: pipelines, notebooks and team analytics" description="Looking for an open source Hex alternative? Compare local pipeline development and analysis in Renart with Hex's collaborative notebooks and data apps.">
+  <header class="comparison-hero">
+    <p class="landing-eyebrow">Pipelines, notebooks and analysis</p>
+    <h1>Renart vs Hex</h1>
+    <p class="comparison-hero__lede">Renart connects pipelines and analysis in your own repository. Hex provides a collaborative analytical workspace for your team. Both support SQL and Python; the choice is about where the work lives and how you share it.</p>
+    <p class="comparison-scope">Scope: local, open source Renart · the hosted Hex product, with plan-dependent capabilities identified</p>
+  </header>
+  <FeatureMatrix competitor="hex" />
+  <section class="comparison-choices" aria-label="Which workflow fits">
+    <div><h2>Choose Renart when…</h2><p>You want to load data, build and run SQL/Python pipelines, and explore the results in notebooks and dashboards without leaving your local Git-backed project.</p></div>
+    <div><h2>Choose Hex when…</h2><p>The main requirement is an analytical workspace for a team: collaborating on notebooks, publishing data apps and controlling who can use them. Renart does not currently offer an equivalent hosted team service.</p></div>
+  </section>
+  <ComparisonTable competitor="Hex" rows={rows} />
+  <div class="comparison-article">
+    <h2>From a revenue question to a recurring workflow.</h2>
+    <p>An analyst starts by asking how revenue changed. A data engineer then needs to inspect the source, adjust a transformation and keep the result up to date. Renart brings those parts of the work into the same project.</p>
+    <p>Use a <a href="/docs/notebooks/overview/">notebook</a> to explore the data with SQL, Python, text and charts. When a useful transformation belongs in the pipeline, promote it into an asset. Review its dependencies and results in the workspace, then build a <a href="/docs/presentations/overview/">dashboard or report</a> beside the pipeline definitions.</p>
+    <p>The benefit is continuity between development and analysis. It matters most when the same technical person moves between understanding the data and maintaining the code that produces it.</p>
+  </div>
+  <figure class="comparison-figure">
+    <a href="/docs-media/notebook.webp" target="_blank" rel="noopener noreferrer" aria-label="Open the Renart notebook image at full size"><img src="/docs-media/notebook.webp" alt="A Renart notebook with a revenue query, results, controls and a chart" width="3000" height="1920" loading="lazy" /></a>
+    <figcaption>Explore the result in a notebook while keeping the analysis with the pipeline project.</figcaption>
+  </figure>
+  <div class="comparison-article">
+    <h2>Git means different things in each workflow.</h2>
+    <p>Hex supports <a href="https://learn.hex.tech/docs/explore-data/projects/import-export">project import and export</a>, including its YAML representation. Its <a href="https://learn.hex.tech/docs/explore-data/projects/git-export">Git export</a> can preserve published projects in a repository. It also has a <a href="https://learn.hex.tech/docs/api-integrations/cli">CLI</a>, so calling Hex browser-only would be inaccurate.</p>
+    <p>In Renart, the files in your repository are the definitions the local workspace edits and reads. Your normal branch, diff and review workflow applies to those files. This is a different authoring model from exporting a published analytical project; it is not a claim that Hex cannot preserve code outside its service.</p>
+    <h2>Keep the sharing requirement in view.</h2>
+    <p>If the result needs to reach many colleagues, evaluate <a href="https://learn.hex.tech/docs/collaborate/sharing-and-permissions/sharing-permissions">Hex's sharing and permissions</a> early. That may matter more to your team than having the pipeline and notebook in a local workspace.</p>
+    <p>Renart currently serves a local project and trusted environment. There is no built-in Hex importer or promise that its app layouts and permissions can be transferred. Existing Hex users can evaluate Renart for a separate pipeline task first, using a destination both workflows can access, before considering a wider change.</p>
+    <p>If ingestion is the decision you are making, continue with <a href="/compare/dlt/">Renart vs dlt</a>.</p>
+  </div>
+</ComparisonLayout>

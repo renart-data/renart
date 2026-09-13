@@ -67,6 +67,8 @@ try {
   // hero: split view of a staging asset — editor, canvas, results, workbench
   await withPage({ width: 1920, height: 1080 }, async (page) => {
     await goto(page, `/pipelines/${ACME}/assets/${STAGING_ORDERS}/split`, 6000);
+    await page.locator(".react-flow__controls-fitview").first().click();
+    await page.waitForTimeout(800);
     await shot(page, "hero-workspace");
   });
 
@@ -171,6 +173,7 @@ FROM raw.orders o`,
 
     await withPage({ width: 1400, height: 900 }, async (page) => {
       await goto(page, `/pipelines/${ACME}/assets/${STAGING_ORDERS}/code`, 5000);
+      await page.getByRole("button", { name: "Collapse results panel", exact: true }).click();
       await page
         .getByRole("button", { name: "Hide properties" })
         .click()
@@ -182,23 +185,12 @@ FROM raw.orders o`,
       await page.keyboard.type("    c.", { delay: 60 });
       await page.waitForTimeout(400);
       await page.keyboard.press("Control+Space");
-      await page.waitForSelector(".suggest-widget.visible", { timeout: 5000 }).catch(() => {});
+      await page.waitForSelector(".suggest-widget.visible", { timeout: 10000 });
       await page.waitForTimeout(1200);
-      // hide the card the half-typed query triggers
-      await page.evaluate(() => {
-        for (const el of Array.from(document.querySelectorAll("div"))) {
-          if (
-            el.textContent?.startsWith("Preview failed") &&
-            el.clientHeight > 0 &&
-            el.clientHeight < 300
-          ) {
-            el.style.visibility = "hidden";
-            break;
-          }
-        }
-      });
+      const editor = await page.locator(".monaco-editor").first().boundingBox();
+      if (!editor) throw new Error("Completion capture requires a visible SQL editor");
       await shot(page, "lifecycle-build", {
-        clip: { x: 250, y: 80, width: 910, height: 585 },
+        clip: { x: editor.x, y: editor.y, width: Math.min(910, editor.width), height: 440 },
       });
     });
   } finally {
