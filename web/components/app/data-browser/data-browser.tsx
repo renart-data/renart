@@ -475,6 +475,31 @@ function DataBrowserNavigator({
                 )}
               </p>
             ) : null}
+            {!error && search.patternSource && destination?.kind === "pipeline" ? (
+              <div className="mb-2 rounded-lg border bg-background p-1">
+                <DataBrowserTransferItem
+                  destination={destination}
+                  environment={environment}
+                  onChoose={onChooseForPlacement}
+                  item={{
+                    kind: "storage-pattern",
+                    id: search.patternSource.connectionId,
+                    pattern: search.patternSource.pattern,
+                    label: search.patternSource.pattern,
+                  }}
+                >
+                  <div className="min-w-0 px-2 py-1.5" title={search.patternSource.pattern}>
+                    <div className="text-xs font-medium">
+                      Matching files{" "}
+                      <span className="font-normal text-muted-foreground">· source only</span>
+                    </div>
+                    <div className="truncate font-monaco text-[11px] text-muted-foreground">
+                      {search.patternSource.pattern}
+                    </div>
+                  </div>
+                </DataBrowserTransferItem>
+              </div>
+            ) : null}
             {loading ? (
               <DataBrowserLoading
                 label={

@@ -13,6 +13,7 @@ import (
 )
 
 type DataBrowserHandlers interface {
+	StoragePattern(ctx context.Context, connectionID, pattern, environment string) (databrowser.ObjectResponse, *apperror.Error)
 	SearchStorage(ctx context.Context, connectionID, pattern, environment string) (databrowser.ChildrenResponse, *apperror.Error)
 	Prefix(ctx context.Context, connectionID, prefix, namePrefix, environment string) (databrowser.ChildrenResponse, *apperror.Error)
 	Resolve(ctx context.Context, request databrowser.ResolveRequest) (databrowser.ObjectResponse, *apperror.Error)
@@ -34,6 +35,7 @@ func RegisterDataBrowserRoutes(router chi.Router, handlers *DataBrowserAPI) {
 	router.Get("/api/data-browser/connections", handlers.HandleConnections)
 	router.Get("/api/data-browser/connections/{connectionID}/children", handlers.HandleChildren)
 	router.Get("/api/data-browser/connections/{connectionID}/prefix", handlers.HandlePrefix)
+	router.Get("/api/data-browser/connections/{connectionID}/pattern", handlers.HandlePattern)
 	router.Get("/api/data-browser/objects/{objectID}", handlers.HandleObject)
 	router.Post("/api/data-browser/preview", handlers.HandlePreview)
 	router.Post("/api/data-browser/resolve", handlers.HandleResolve)
@@ -141,6 +143,15 @@ func (h *DataBrowserAPI) HandleObject(w http.ResponseWriter, r *http.Request) {
 		chi.URLParam(r, "objectID"),
 		strings.TrimSpace(r.URL.Query().Get("environment")),
 	)
+	if apiErr != nil {
+		writeDataBrowserError(w, apiErr)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, response)
+}
+
+func (h *DataBrowserAPI) HandlePattern(w http.ResponseWriter, r *http.Request) {
+	response, apiErr := h.Service.StoragePattern(r.Context(), chi.URLParam(r, "connectionID"), r.URL.Query().Get("pattern"), strings.TrimSpace(r.URL.Query().Get("environment")))
 	if apiErr != nil {
 		writeDataBrowserError(w, apiErr)
 		return

@@ -107,6 +107,11 @@ func (s *AssetService) SyncAssetColumns(
 			environment,
 		)
 		if apiErr != nil {
+			_, tableSelected := selected[columnSourceMaterialized]
+			if source.Category == "definition" && isLoadAsset(asset) && tableSelected && apiErr.Code == "column_inference_failed" {
+				notes = append(notes, "No source schema is available for this Load; using the selected current table. This describes the destination, not a validation of the source files.")
+				continue
+			}
 			// API assets may intentionally omit a declarative response schema. A
 			// selected live request is then the best available primary observation.
 			_, liveSelected := selected[columnSourceLiveResponse]

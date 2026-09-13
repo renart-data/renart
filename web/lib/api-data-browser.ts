@@ -104,6 +104,16 @@ export function getDataBrowserObject(
   );
 }
 
+export function getDataBrowserPattern(
+  options: { connectionId: string; pattern: string; environment: string },
+  signal?: AbortSignal,
+) {
+  return fetchMetadata<DataBrowserObjectResponse>(
+    `/api/data-browser/connections/${encodeURIComponent(options.connectionId)}/pattern${buildQueryString({ pattern: options.pattern, environment: options.environment })}`,
+    signal,
+  );
+}
+
 export function resolveDataBrowserObject(request: DataBrowserResolveRequest, signal?: AbortSignal) {
   return fetchJSONWithBody<DataBrowserObjectResponse>(
     "/api/data-browser/resolve",

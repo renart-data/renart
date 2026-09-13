@@ -7,11 +7,13 @@ export type DataBrowserDestination = { kind: "pipeline" | "notebook"; id: string
 // Disposable same-window interaction state. Only the nonce enters DataTransfer:
 // no credentials, SQL, file paths, or reusable cross-project authority.
 export type DataBrowserTransfer = {
-  kind: "table" | "connection" | "storage" | "file";
+  kind: "table" | "connection" | "storage" | "file" | "storage-pattern";
   id: string;
   label: string;
   // Display hint from the server's listing; creation still revalidates the ID.
   referenceText?: string;
+  // Relative source selector. The server resolves the current configured root.
+  pattern?: string;
   token: string;
   destination: DataBrowserDestination;
   projectId: string | null;

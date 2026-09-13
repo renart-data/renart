@@ -829,7 +829,13 @@ func (s *AssetService) Update(ctx context.Context, assetID string, req AssetUpda
 			// api/load/ingestr/plain-yaml: overlay managed fields onto the
 			// definition file, preserving request-specific and other unmanaged
 			// content (and columns, which the old per-type writers silently dropped).
-			if apiErr := s.persistYAMLAssetPreservingInferredName(asset); apiErr != nil {
+			if isLoadAsset(asset) && renamedAsset {
+				// Load names identify the destination, independently of the file
+				// path. Preserve an explicit rename even if the old name was inferred.
+				if err := persistYAMLAssetDefinition(fs, asset); err != nil {
+					return AssetMutationResponse{}, internalError("asset_persist_failed", err.Error())
+				}
+			} else if apiErr := s.persistYAMLAssetPreservingInferredName(asset); apiErr != nil {
 				return AssetMutationResponse{}, apiErr
 			}
 			persistedViaCodec = true

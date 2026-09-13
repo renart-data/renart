@@ -97,6 +97,91 @@ test.describe("Sling storage browser", () => {
         })
         .click();
       await page.getByRole("button", { name: "incoming", exact: true }).click();
+      const verifyWildcardLoad = async () => {
+        const pattern = "incoming/order?.csv";
+        await page
+          .getByRole("textbox", { name: "Search data browser" })
+          .fill(`${name}./${pattern}`);
+        const patternRow = page.locator('[data-transfer-label="incoming/order?.csv"]');
+        await expect(patternRow).toContainText("Matching files");
+        await page.screenshot({ path: info.outputPath("wildcard-source-row.png") });
+        if (info.project.name.includes("mobile")) {
+          await patternRow
+            .getByRole("button", { name: `Use ${pattern} in canvas`, exact: true })
+            .click();
+          await expect(page).toHaveURL(/\/canvas(?:\?|$)/);
+          expect(new URL(page.url()).searchParams.has("detail")).toBe(false);
+        } else {
+          const transfer = await page.evaluateHandle(() => new DataTransfer());
+          await patternRow.dispatchEvent("dragstart", { dataTransfer: transfer });
+          const target = page.getByRole("button", {
+            name: "Create Load in landing group",
+            exact: true,
+          });
+          await expect(target).toBeEnabled();
+          await expect(page.getByRole("button", { name: /^Create Load after / })).toHaveCount(0);
+          await target.dispatchEvent("drop", { dataTransfer: transfer });
+        }
+        if (info.project.name.includes("mobile"))
+          await page
+            .getByRole("button", { name: "Create Load in landing group", exact: true })
+            .click();
+        const patternDialog = page.getByRole("dialog", { name: "New asset", exact: true });
+        await expect(patternDialog.getByLabel("Source table or object")).toHaveValue(
+          new RegExp(`^${provider}://.*incoming/order\\?.csv$`),
+        );
+        await patternDialog.getByLabel("Asset name").fill(`landing.${provider}_pattern`);
+        await patternDialog.getByLabel("Destination connection", { exact: true }).click();
+        await page.getByRole("option", { name: "duckdb-default", exact: true }).click();
+        await patternDialog.getByRole("button", { name: "Create", exact: true }).click();
+        await expect(patternDialog).toBeHidden();
+        expect(commands).toEqual([]);
+        const patternWorkspace = (await (
+          await page.request.get(`${liveApp.baseURL}/api/workspace`)
+        ).json()) as WorkspaceState;
+        const patternAsset = patternWorkspace.pipelines
+          .flatMap((p) => p.assets)
+          .find((a) => a.name === `landing.${provider}_pattern`)!;
+        expect(patternAsset.parameters?.source_table).toMatch(/incoming\/order\?\.csv$/);
+        const patternRun = await page.request.post(
+          `${liveApp.baseURL}/api/assets/${patternAsset.id}/materialize/stream?environment=default&start_date=2026-09-01T00:00:00Z&end_date=2026-09-02T00:00:00Z&full_refresh=true`,
+          { timeout: 90000 },
+        );
+        const patternOutput = await patternRun.text();
+        await info.attach("wildcard-load-output", {
+          body: patternOutput,
+          contentType: "text/plain",
+        });
+        expect(patternRun.ok(), patternOutput).toBe(true);
+        expect(
+          JSON.parse(
+            patternOutput
+              .split(/\r?\n/)
+              .reverse()
+              .find((line) => line.startsWith("data: "))!
+              .slice(6),
+          ).status,
+          patternOutput,
+        ).toBe("ok");
+        const patternQuery = await page.request.post(`${liveApp.baseURL}/api/sql/query`, {
+          data: {
+            connection: "duckdb-default",
+            environment: "default",
+            query: `select sum(amount) as total from landing.${provider}_pattern`,
+          },
+        });
+        expect(await patternQuery.json()).toMatchObject({ status: "ok", rows: [{ total: 30 }] });
+        const sync = await page.request.post(
+          `${liveApp.baseURL}/api/assets/${patternAsset.id}/columns/sync`,
+          { data: { environment: "default", additional_sources: ["materialized"] } },
+        );
+        expect(sync.ok(), await sync.text()).toBe(true);
+        const synced = await sync.json();
+        expect(synced.status).toBe("applied");
+        expect(synced.columns.some((column: { name: string }) => column.name === "amount")).toBe(
+          true,
+        );
+      };
       const useObject = page.getByRole("button", {
         name: "Use orders.csv in canvas",
         exact: true,
@@ -285,6 +370,13 @@ test.describe("Sling storage browser", () => {
         },
       );
       expect(exportedObject.ok(), await exportedObject.text()).toBe(true);
+      // Test the additional wildcard Load after the original placement checks,
+      // so its extra canvas node cannot change their drop-proximity geometry.
+      commands.length = 0;
+      if (!info.project.name.includes("mobile"))
+        await page.getByRole("link", { name: "Canvas view", exact: true }).click();
+      await openData(page);
+      await verifyWildcardLoad();
       expect(errors).toEqual([]);
       await page.screenshot({ path: info.outputPath(`${provider}-storage-canvas.png`) });
     });

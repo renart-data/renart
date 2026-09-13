@@ -2,6 +2,7 @@ package databrowser
 
 import (
 	"context"
+	"fmt"
 	"path"
 	"strings"
 	"time"
@@ -10,6 +11,25 @@ import (
 )
 
 const maxStorageSearchListings = 32
+
+// NormalizeStoragePattern is shared by search and the explicit Load-source
+// handoff. Literal object locators deliberately use ValidateStoragePath instead.
+func NormalizeStoragePattern(pattern string) (string, error) {
+	if !strings.ContainsAny(pattern, "*?") || strings.Contains(pattern, "**") || strings.ContainsAny(pattern, "[]") {
+		return "", fmt.Errorf("use * and ? within path segments; recursive ** and character classes are not supported")
+	}
+	literal := strings.NewReplacer("*", "x", "?", "x").Replace(pattern)
+	if err := ValidateStoragePath(literal, false); err != nil {
+		return "", err
+	}
+	if strings.HasSuffix(pattern, "/") {
+		pattern += "*"
+	}
+	if len(strings.Split(pattern, "/")) > 32 {
+		return "", fmt.Errorf("this path has too many levels")
+	}
+	return pattern, nil
+}
 
 // SearchStorage interprets wildcards here, never in a provider command or object
 // reference. Every provider request and every returned action target is literal.
@@ -22,20 +42,11 @@ func (s *Service) SearchStorage(ctx context.Context, connectionID, pattern, envi
 	if scope.ref.SourceKind != "storage" {
 		return ChildrenResponse{}, badRequest("data_browser_search_unsupported", "Choose a storage connection for wildcard search.")
 	}
-	if strings.Contains(pattern, "**") || strings.ContainsAny(pattern, "[]") {
-		return ChildrenResponse{}, badRequest("data_browser_pattern_invalid", "Use * and ? within a path segment; recursive ** and character classes are not supported.")
-	}
-	literal := strings.NewReplacer("*", "x", "?", "x").Replace(pattern)
-	if err := ValidateStoragePath(literal, false); err != nil {
+	pattern, err := NormalizeStoragePattern(pattern)
+	if err != nil {
 		return ChildrenResponse{}, badRequest("data_browser_pattern_invalid", err.Error())
 	}
-	if strings.HasSuffix(pattern, "/") {
-		pattern += "*"
-	}
 	parts := strings.Split(pattern, "/")
-	if len(parts) > 32 {
-		return ChildrenResponse{}, badRequest("data_browser_pattern_invalid", "This path has too many levels.")
-	}
 	first := 0
 	for first < len(parts)-1 && !strings.ContainsAny(parts[first], "*?") {
 		first++

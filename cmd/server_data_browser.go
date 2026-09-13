@@ -39,6 +39,9 @@ func configureDataBrowserService(server *webServer, workspaceRoot string) {
 		ListStorage: func(ctx context.Context, connection string, query databrowser.StorageQuery, environment string) (databrowser.StorageListing, error) {
 			return server.loadSvc.BrowseStorage(ctx, connection, query, environment)
 		},
+		StoragePatternReference: func(ctx context.Context, connection, pattern, environment string) (string, error) {
+			return server.loadSvc.StoragePatternReference(ctx, connection, pattern, environment)
+		},
 		ListWarehouse: server.sqlSvc.NamespaceChildren,
 		ListDatabases: func(ctx context.Context, connection, environment string) ([]string, error) {
 			result, apiErr := server.sqlSvc.Databases(ctx, connection, environment)

@@ -21,7 +21,7 @@ import {
   matchesDataBrowserTransfer,
 } from "@/lib/data-browser-transfer";
 import { getPinnedProjectId } from "@/lib/project-context";
-import { getDataBrowserObject } from "@/lib/api-data-browser";
+import { getDataBrowserObject, getDataBrowserPattern } from "@/lib/api-data-browser";
 import type { DataBrowserObject } from "@/lib/generated/api-types";
 import { nearestDropTarget } from "@/lib/drop-target-proximity";
 import { assetNameParts } from "@/lib/asset-presentation";
@@ -64,21 +64,33 @@ export function DataBrowserCanvas({
   )
     ? transfer
     : null;
-  const isLoadObject = active?.kind === "storage" || active?.kind === "file";
+  const isLoadObject =
+    active?.kind === "storage" || active?.kind === "file" || active?.kind === "storage-pattern";
   const { profile, loading, error } = useAssetCreationProfile(
     pipelineId,
     active?.kind === "connection" || isLoadObject,
   );
-  const [resolvedObject, setResolvedObject] = useState<DataBrowserObject | null>(null);
+  const [resolvedObject, setResolvedObject] = useState<{
+    token: string;
+    object: DataBrowserObject;
+  } | null>(null);
   const [objectError, setObjectError] = useState("");
   useEffect(() => {
     setResolvedObject(null);
     setObjectError("");
     if (!active || !isLoadObject) return;
     const abort = new AbortController();
-    void getDataBrowserObject({ objectId: active.id, environment }, abort.signal)
+    const request =
+      active.kind === "storage-pattern" && active.pattern
+        ? getDataBrowserPattern(
+            { connectionId: active.id, pattern: active.pattern, environment },
+            abort.signal,
+          )
+        : getDataBrowserObject({ objectId: active.id, environment }, abort.signal);
+    void request
       .then((response) => {
-        if (!abort.signal.aborted) setResolvedObject(response.object);
+        if (!abort.signal.aborted)
+          setResolvedObject({ token: active.token, object: response.object });
       })
       .catch((cause) => {
         if (!abort.signal.aborted)
@@ -87,8 +99,9 @@ export function DataBrowserCanvas({
           );
       });
     return () => abort.abort();
-  }, [active?.id, isLoadObject, environment]);
-  const storageObject = isLoadObject && resolvedObject?.id === active?.id ? resolvedObject : null;
+  }, [active?.id, active?.token, active?.kind, active?.pattern, isLoadObject, environment]);
+  const storageObject =
+    isLoadObject && resolvedObject?.token === active?.token ? resolvedObject?.object : null;
   // Placement must appear immediately, not wait for a warehouse schema query.
   // This is only a hint; the reviewed import resolves the opaque ID again.
   const sourceReference = active?.kind === "table" ? active.referenceText : undefined;
@@ -256,7 +269,11 @@ export function DataBrowserCanvas({
                   <Database data-icon="inline-start" />
                   <span className="min-w-0">
                     <span className="block">
-                      {active.kind === "file" ? "Create Load from file" : "Create Load from object"}
+                      {active.kind === "storage-pattern"
+                        ? "Create Load from matching files"
+                        : active.kind === "file"
+                          ? "Create Load from file"
+                          : "Create Load from object"}
                     </span>
                     <span className="block truncate text-xs font-normal text-muted-foreground">
                       {objectError ||

@@ -32,6 +32,7 @@ export type BrowserSearchPlan = {
   request?: BrowserSearchRequest;
   error?: string;
   wildcard?: boolean;
+  patternSource?: { connectionId: string; pattern: string };
 };
 
 export const searchRequestKey = (request: BrowserSearchRequest) => JSON.stringify(request);
@@ -220,6 +221,7 @@ export function planDataBrowserSearch(
         path.includes("**") ||
         /[\\[\]{}|:\p{Cc}]/u.test(path) ||
         path.length > 4096 ||
+        path.split("/").length > 32 ||
         path
           .split("/")
           .some(
@@ -237,6 +239,7 @@ export function planDataBrowserSearch(
       const pattern = path.endsWith("/") ? path + "*" : path;
       const leaf = pattern.slice(literalParent.length);
       plan.wildcard = true;
+      plan.patternSource = { connectionId: connection.id, pattern };
       plan.prefix = root + literalParent;
       plan.back = plan.prefix;
       plan.label = "Matching objects";

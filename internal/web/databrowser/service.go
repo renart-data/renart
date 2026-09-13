@@ -71,15 +71,16 @@ type Dependencies struct {
 	WorkspaceRoot string
 	// ListConnections returns an opaque connection-configuration revision,
 	// never the broader workspace revision. Edits do not retarget sources.
-	ListConnections      func(context.Context, string) (string, []ConnectionConfig, int64, error)
-	ListDatabases        func(context.Context, string, string) ([]string, error)
-	ListTables           func(context.Context, string, string, string) ([]Table, error)
-	ListWarehouse        func(context.Context, string, sqlnamespace.Scope, string) ([]sqlnamespace.Entry, error)
-	ListColumns          func(context.Context, string, string, string) ([]model.SQLColumn, error)
-	LookupViewDefinition func(context.Context, string, string, string) (string, error)
-	RunQuery             func(context.Context, string, string, string, int) (QueryResult, error)
-	ListStorage          func(context.Context, string, StorageQuery, string) (StorageListing, error)
-	Now                  func() time.Time
+	ListConnections         func(context.Context, string) (string, []ConnectionConfig, int64, error)
+	ListDatabases           func(context.Context, string, string) ([]string, error)
+	ListTables              func(context.Context, string, string, string) ([]Table, error)
+	ListWarehouse           func(context.Context, string, sqlnamespace.Scope, string) ([]sqlnamespace.Entry, error)
+	ListColumns             func(context.Context, string, string, string) ([]model.SQLColumn, error)
+	LookupViewDefinition    func(context.Context, string, string, string) (string, error)
+	RunQuery                func(context.Context, string, string, string, int) (QueryResult, error)
+	ListStorage             func(context.Context, string, StorageQuery, string) (StorageListing, error)
+	StoragePatternReference func(context.Context, string, string, string) (string, error)
+	Now                     func() time.Time
 }
 
 type Service struct {
@@ -239,7 +240,7 @@ func (s *Service) Children(ctx context.Context, connectionID, parentID, environm
 
 func (s *Service) Object(ctx context.Context, objectID, environment string) (ObjectResponse, *apperror.Error) {
 	ref, err := decodeRef(objectID)
-	if err != nil || (ref.Kind != "table" && ref.Kind != "file" && ref.Kind != "storage_object" && ref.Kind != "storage_prefix") {
+	if err != nil || (ref.Kind != "table" && ref.Kind != "file" && ref.Kind != "storage_object" && ref.Kind != "storage_prefix" && ref.Kind != "storage_pattern") {
 		return ObjectResponse{}, badRequest("data_browser_object_invalid", "The selected data object is invalid.")
 	}
 	connectionRef := ref
@@ -272,6 +273,9 @@ func (s *Service) Object(ctx context.Context, objectID, environment string) (Obj
 		return s.localObject(ctx, scope, ref, object)
 	}
 	if ref.SourceKind == "storage" {
+		if ref.Kind == "storage_pattern" {
+			return s.storagePatternObject(ctx, ref, object)
+		}
 		return s.storageObject(ctx, scope, ref, object)
 	}
 	if ref.Kind != "table" || strings.TrimSpace(ref.Name) == "" {

@@ -1009,6 +1009,19 @@ materialization:
     );
     expect(loadWithExplicitTarget.connection).toBe("duckdb-default");
 
+    const renamedLoad = "analytics.renamed_orders_copy";
+    const nameInput = loadIdentity.getByRole("textbox", { name: "Name", exact: true });
+    await nameInput.fill(renamedLoad);
+    await nameInput.press("Enter");
+    const renamed = await pollAsset(liveApp, page.request, renamedLoad, () => true);
+    expect(renamed.id).toBe(createdLoadId);
+    expect(renamed.parameters?.source_table).toBe("analytics.orders");
+    await page.reload();
+    const reloadedProperties = await openAssetProperties(page);
+    await expect(
+      reloadedProperties.getByRole("textbox", { name: "Name", exact: true }),
+    ).toHaveValue(renamedLoad);
+
     const pythonCreate = await page.request.post(
       `${liveApp.baseURL}/api/pipelines/${pipelineId}/assets`,
       { data: { name: "analytics.python_target", type: "python" } },

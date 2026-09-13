@@ -32,6 +32,9 @@ node-preserving writers already honor them. Renart also records whether a file
 originally contained `name:` so reconciliation does not add it to
 path-inferred assets unnecessarily.
 
+Load name edits now persist an explicit name without moving the file, including
+when the previous name was inferred. The cross-kind policy below remains planned.
+
 The remaining behavior is inconsistent:
 
 - creation normally derives `assets/<prefix>/<leaf>.<ext>` from the requested

@@ -39,6 +39,10 @@ describe("lazy Data Browser path search", () => {
     ]);
     const result = plan("my-s3-connection./table/part-??.parquet");
     expect(result.request).toBeUndefined();
+    expect(result.patternSource).toEqual({
+      connectionId: lake.id,
+      pattern: "table/part-??.parquet",
+    });
     expect(result.nodes.map((node) => node.label)).toEqual(["part-01.parquet"]);
     put({ connectionId: lake.id, prefix: "table/" }, [], true);
     expect(plan("my-s3-connection./table/part*.parquet").request).toEqual({

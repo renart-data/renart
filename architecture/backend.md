@@ -1701,14 +1701,24 @@ The prefix endpoint also accepts a separate `pattern` for metadata-only wildcard
 search. `databrowser.SearchStorage` matches case-sensitive `*` and `?` within
 segments, begins at the literal parent before the first wildcard and expands
 only matching directories. Providers receive literal paths and, for S3, the
-literal name prefix before the first wildcard. Patterns never enter action IDs,
-Load selectors or connection URLs. Returned nodes retain exact IDs/addresses;
+literal name prefix before the first wildcard. Search result nodes retain exact IDs/addresses;
 their labels include the relative path needed to distinguish matches.
 Work is bounded by one 30-second deadline, 32 directory listings, 32 path levels
 and 500 returned nodes. Any capped provider listing or unvisited matching branch
 marks the response truncated. Recursive `**`, character classes, traversal,
 controls and URL/selector options are rejected. The traversal is provider-neutral
 over the existing S3-compatible/SFTP adapters; it does not add a GCS browser.
+
+An explicit `GET /api/data-browser/connections/{connectionID}/pattern?pattern=...`
+prepares a source-only Load selector separately from those literal results.
+It shares search's bounded pattern grammar and revalidates the current
+connection/environment/revision, then asks `LoadService.StoragePatternReference`
+to bind the selector to the credential-free configured root. It does not list
+or read objects. A `storage_pattern` operation reference can be resolved again
+but has no durable object address, preview, notebook or destination capability.
+`*`/`?` remain Sling selectors, not URL options. The configured authority/root
+cannot be overridden through the relative pattern. The Load evaluates matches
+at execution time; a capped browser search is never serialized as the full input.
 
 The same payloads feed Load. `slingCommandConnectionEnv` pins named source and
 target connections with URL streams/objects in SLING_TASK_CONFIG after CLI flag

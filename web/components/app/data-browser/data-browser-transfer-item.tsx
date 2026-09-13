@@ -21,7 +21,7 @@ export function DataBrowserTransferItem({
   onChoose,
 }: {
   children: ReactNode;
-  item?: Pick<DataBrowserTransfer, "kind" | "id" | "label" | "referenceText">;
+  item?: Pick<DataBrowserTransfer, "kind" | "id" | "label" | "referenceText" | "pattern">;
   destination?: DataBrowserDestination;
   disabledReason?: string;
   environment: string;
@@ -57,7 +57,11 @@ export function DataBrowserTransferItem({
               event.dataTransfer.clearData();
               event.dataTransfer.effectAllowed = "copy";
               event.dataTransfer.setData(DATA_BROWSER_MIME, transfer.token);
-              if (transfer.kind === "table" || transfer.kind === "file") {
+              if (
+                transfer.kind === "table" ||
+                transfer.kind === "file" ||
+                transfer.kind === "storage-pattern"
+              ) {
                 // Links otherwise drag as a URL/text fragment. Capture the
                 // actual object row as a compact themed card, like connections.
                 const row = event.currentTarget.firstElementChild;

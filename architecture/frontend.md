@@ -44,6 +44,11 @@ Paths below are relative to `web/`.
 
 ### Routing
 
+The root route handles unmodified Alt+Left/Right through TanStack history so
+standalone webviews support the same Back/Forward behavior as browsers, including
+unsaved-change blockers. It prevents the native action to avoid double navigation
+and leaves consumed events, composition and additional modifiers alone.
+
 File-based routes under [src/routes](../web/src/routes):
 
 - [__root.tsx](../web/src/routes/__root.tsx) → [_shell.tsx](../web/src/routes/_shell.tsx),
@@ -267,6 +272,16 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   Pattern results never masquerade as complete literal-parent cache entries.
   Selecting a match completes its exact path. A partial-match notice explains
   listing/traversal limits instead of presenting an empty subset as exhaustive.
+  A valid wildcard also exposes one **Matching files · source only** transfer
+  row in pipeline context. Drag or its touch/keyboard action opens a reviewed
+  Load using the whole pattern, even when the listing is cached or truncated.
+  The server resolves its configured root on pickup; it is never offered as a
+  destination or a notebook snapshot. Ordinary matched-file rows remain literal.
+  On mobile, **Use in canvas** reveals the full canvas from either code or split
+  view, so the editor cannot cover prefix placement targets. Desktop split view
+  is preserved; unrelated results/environment context is unchanged. Switching to
+  canvas clears an old source-editor locator (which would reopen split view),
+  without clearing independent metadata locators.
 
   The shadcn InputGroup renders a shadow completion; Tab or its touch button
   accepts the canonical name and namespace separator, while a leaf adds no
@@ -775,6 +790,8 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   helpers have separate components. No duplicate hidden forms or settings state
   in AppShell. Quick-create adapters still use `WorkspaceConnectionFormFields`;
   main-pane editors additionally fold Credentials and Advanced sections.
+  The shared Name placeholder follows the selected connection type; changing
+  types never replaces a name the user has entered.
   Both editors share `SettingsEditorHeader` and the installed shadcn Field/FieldGroup
   hierarchy: a 16px page title, 14px sections, 12px labels and descriptions, standard
   input surfaces, and a bounded 3xl content width. The navigator uses compact 12px

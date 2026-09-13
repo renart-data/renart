@@ -69,6 +69,40 @@ func (r storageRoot) pattern(relative string) (string, error) {
 	return u.String(), nil
 }
 
+func (r storageRoot) loadPattern(relative string) (string, error) {
+	pattern, err := databrowser.NormalizeStoragePattern(relative)
+	if err != nil {
+		return "", err
+	}
+	// Sling parses stream paths as glob strings, not URL query parameters. Keep
+	// ? and * literal; the authority and root come only from sanitized config.
+	return r.url.Scheme + "://" + r.url.Host + "/" + r.prefix + pattern, nil
+}
+
+func (s *LoadService) StoragePatternReference(ctx context.Context, connection, pattern, environment string) (string, error) {
+	if _, err := databrowser.NormalizeStoragePattern(pattern); err != nil {
+		return "", err
+	}
+	if s.deps.NewConnectionManager == nil {
+		return "", fmt.Errorf("storage browsing is unavailable")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	manager, err := s.deps.NewConnectionManager(ctx, environment)
+	if err != nil {
+		return "", storageConnectionError(err)
+	}
+	uri, err := loadConnectionURI(manager, connection)
+	if err != nil {
+		return "", storageConnectionError(err)
+	}
+	root, err := storageBrowseRoot(uri, manager.GetConnectionType(connection))
+	if err != nil {
+		return "", err
+	}
+	return root.loadPattern(pattern)
+}
+
 // BrowseStorage uses resolved Load credentials for metadata-only S3/SFTP listing.
 // S3 filters in ListObjectsV2 before the cap; SFTP retains bounded Sling discovery.
 func (s *LoadService) BrowseStorage(ctx context.Context, connection string, query databrowser.StorageQuery, environment string) (databrowser.StorageListing, error) {

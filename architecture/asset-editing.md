@@ -240,6 +240,11 @@ normal settings Sheet and guard unsaved changes. See
   only source fields in `parameters`, derives database destinations from the
   asset name, shows `destination_object` for file/storage targets, and offers a
   go-to-source action when the source resolves to an upstream asset. Load
+  name edits persist an explicit `name:` in the existing file even when its old
+  name was inferred from the path. Later metadata/schema writes retain it; the
+  file ID and source selector do not change. This changes the authored destination
+  name, not an existing warehouse table's name.
+  Load
   creation and editing reuse one free-text stream picker: configured database,
   S3/GCS, and file connections can list existing tables/objects through Sling
   with the selected environment's backend-only credentials, while local paths
@@ -360,6 +365,14 @@ normal settings Sheet and guard unsaved changes. See
   `_sling_loaded_at` column. DuckDB observations use logical catalog types, so a
   stored `JSON` column is not presented as `VARCHAR` merely because of the query
   result transport.
+  If a Load's declaration-only graph has no source schema, selecting **Current
+  table** (or re-observing its saved provenance) allows that table observation to
+  supply the schema. The sync notes distinguish destination evidence from source
+  validation. Actual table/query errors remain visible. Existing scope/freshness
+  rules still apply: stale observations cannot override an available definition;
+  without one, an explicitly selected table may seed columns while retaining its
+  freshness flag. Without that selection, no warehouse query is made and the
+  message explains how to import or declare a schema.
   Editing SQL or API source does not implicitly rewrite column metadata; users
   choose when to run **Sync schema**, so an autosave cannot invalidate an
   already-open run or deployment review.

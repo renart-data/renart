@@ -124,6 +124,9 @@ func (s *AssetService) inferGraphSchemaFromDefinition(
 	graph = resolveAuthoringSchemaGraph(ctx, graph, inferencePipeline, inferenceAssets)
 	columns, completeness, confidence := authoringGraphRelationSchema(graph, asset.Name)
 	if len(columns) == 0 {
+		if policy.Kind == assetSchemaKindLoad {
+			return nil, SchemaUnknown, SchemaConfidenceLow, badRequestError("column_inference_failed", "No source schema is available for this Load. Select Current table to import its destination schema, or declare columns on the source asset.")
+		}
 		return nil, SchemaUnknown, SchemaConfidenceLow, badRequestError("column_inference_failed", "the canonical authoring graph could not infer an output schema")
 	}
 	return columns, completeness, confidence, nil

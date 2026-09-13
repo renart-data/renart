@@ -1,9 +1,16 @@
-import { Outlet, createRootRoute, retainSearchParams, useLocation } from "@tanstack/react-router";
+import {
+  Outlet,
+  createRootRoute,
+  retainSearchParams,
+  useLocation,
+  useRouter,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { AppProviders } from "@/src/providers";
 import { normalizeResourceSearch } from "@/lib/resource-navigation";
 import { bootstrapProjectRoute } from "@/lib/project-route-bootstrap";
+import { handleHistoryShortcut } from "@/lib/history-shortcuts";
 
 export const Route = createRootRoute({
   validateSearch: normalizeResourceSearch,
@@ -25,6 +32,13 @@ export const Route = createRootRoute({
 
 function RootComponent() {
   const location = useLocation();
+  const router = useRouter();
+
+  useEffect(() => {
+    const navigateHistory = (event: KeyboardEvent) => handleHistoryShortcut(event, router.history);
+    window.addEventListener("keydown", navigateHistory);
+    return () => window.removeEventListener("keydown", navigateHistory);
+  }, [router]);
 
   useEffect(() => {
     const title = getDocumentTitle(location.pathname);

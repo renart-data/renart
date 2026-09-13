@@ -44,3 +44,20 @@ func TestDataBrowserReferencesSurviveUnrelatedWorkspaceChanges(t *testing.T) {
 	require.NotNil(t, apiErr)
 	require.Equal(t, "data_browser_revision_stale", apiErr.Code)
 }
+
+func TestDataBrowserStoragePatternUsesLateBoundLoadService(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, ".bruin.yml")
+	require.NoError(t, os.WriteFile(configPath, []byte("default_environment: default\nenvironments:\n  default:\n    connections:\n      s3:\n        - name: lake\n          bucket_name: test-bucket\n"), 0600))
+	server := &webServer{configSvc: service.NewConfigService(root, configPath)}
+	// Production wires discovery before creating the Load service.
+	configureDataBrowserService(server, root)
+	server.loadSvc = service.NewLoadService(service.LoadDependencies{})
+	connections, apiErr := server.dataBrowserSvc.Connections(t.Context(), "default")
+	require.Nil(t, apiErr)
+	require.NotPanics(t, func() {
+		_, apiErr = server.dataBrowserSvc.StoragePattern(t.Context(), connections.Connections[0].ID, "orders/*.csv", "default")
+	})
+	require.NotNil(t, apiErr)
+	require.Contains(t, apiErr.Message, "storage browsing is unavailable")
+}

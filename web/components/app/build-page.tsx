@@ -1725,11 +1725,23 @@ export function AppBuildPage({
         destination={pipelineId ? { kind: "pipeline", id: pipelineId } : undefined}
         onChooseForPlacement={() =>
           afterMobileNavigationCloses(() => {
-            if (view === "code" && effectiveSelectedAssetId)
+            if (
+              effectiveSelectedAssetId &&
+              (view === "code" || (isMobileWorkbench && view === "split"))
+            )
               void navigate({
                 to: appAssetViewPath("canvas"),
                 params: { pipelineId, assetId: effectiveSelectedAssetId },
-                search: { ...location.search, ...buildSearch },
+                search: {
+                  ...location.search,
+                  ...buildSearch,
+                  // An old source locator would reveal split view again,
+                  // undoing this explicit move to canvas placement.
+                  ...(resourceTarget?.kind === "asset-section" &&
+                  resourceTarget.section === "source"
+                    ? { detail: undefined }
+                    : {}),
+                },
               });
           })
         }

@@ -178,6 +178,20 @@ test("creates a connection in the main editor and keeps it selected after save",
   const editor = page.getByRole("region", { name: "New connection", exact: true });
   await editor.getByLabel("Type", { exact: true }).click();
   await page.getByRole("option", { name: "duckdb", exact: true }).click();
+  await expect(editor.getByLabel("Name", { exact: true })).toHaveAttribute(
+    "placeholder",
+    "duckdb-default",
+  );
+  await editor.getByLabel("Name", { exact: true }).fill("my-lake");
+  await editor.getByLabel("Type", { exact: true }).click();
+  await page.getByRole("option", { name: "s3", exact: true }).click();
+  await expect(editor.getByLabel("Name", { exact: true })).toHaveAttribute(
+    "placeholder",
+    "s3-default",
+  );
+  await expect(editor.getByLabel("Name", { exact: true })).toHaveValue("my-lake");
+  await editor.getByLabel("Type", { exact: true }).click();
+  await page.getByRole("option", { name: "duckdb", exact: true }).click();
   await editor.getByLabel("Name", { exact: true }).fill("scratch");
   await editor.getByLabel("path", { exact: true }).fill("duckdb-files/scratch.db");
   await editor.getByRole("button", { name: "Create connection", exact: true }).click();

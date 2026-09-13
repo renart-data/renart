@@ -441,7 +441,7 @@ export function WorkspaceConnectionFormFields({
               disabled={busy}
               value={connectionForm.name}
               onChange={(event) => onNameChange(event.target.value)}
-              placeholder="postgres-default"
+              placeholder={connectionForm.type ? `${connectionForm.type}-default` : "my-connection"}
             />
           </Field>
           <Field>
