@@ -51,6 +51,75 @@ export const navigationArrivalState = () => ({
   resourceDocument: navigationDocument,
 });
 
+// A local owner ref can mount before its tab or responsive Sheet is visible.
+// Observe only that element, then disconnect as soon as it is ready. This is
+// event-driven: no document registry, DOM-wide observer or retry polling.
+export function whenNavigationElementReady(
+  element: HTMLElement,
+  ready: (element: HTMLElement) => void,
+): () => void {
+  let disposed = false;
+  let frame = 0;
+  let observer: ResizeObserver | undefined;
+  let waitingForPanel = false;
+  const cleanup = () => {
+    disposed = true;
+    cancelAnimationFrame(frame);
+    observer?.disconnect();
+  };
+  const schedule = () => {
+    if (!disposed && !frame && !waitingForPanel) frame = requestAnimationFrame(reveal);
+  };
+  const reveal = () => {
+    frame = 0;
+    if (disposed || !element.isConnected) return;
+    if (!element.getClientRects().length || getComputedStyle(element).visibility === "hidden") {
+      if (!observer) {
+        observer = new ResizeObserver(schedule);
+        observer.observe(element);
+      }
+      return;
+    }
+    const panel = element.closest<HTMLElement>(
+      '[data-slot="sheet-content"], [data-slot="dialog-content"]',
+    );
+    const entering = panel
+      ?.getAnimations()
+      .filter(
+        (animation) =>
+          animation.playState === "running" &&
+          animation.effect?.getComputedTiming().endTime !== Infinity,
+      );
+    if (entering?.length) {
+      waitingForPanel = true;
+      void Promise.all(entering.map((animation) => animation.finished.catch(() => undefined))).then(
+        () => {
+          waitingForPanel = false;
+          schedule();
+        },
+      );
+      return;
+    }
+    cleanup();
+    ready(element);
+  };
+  schedule();
+  return cleanup;
+}
+
+export function revealNavigationElement(element: HTMLElement) {
+  element.focus({ preventScroll: true });
+  const viewport = element.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
+  if (!viewport) return;
+  const target = element.getBoundingClientRect();
+  const bounds = viewport.getBoundingClientRect();
+  // Reveal only the destination's own scroll area. A tall section needs its
+  // heading, not its footer, in view; an already visible target need not move.
+  if (target.top < bounds.top || target.top >= bounds.bottom || target.height > bounds.height)
+    viewport.scrollTop += target.top - bounds.top;
+  else if (target.bottom > bounds.bottom) viewport.scrollTop += target.bottom - bounds.bottom;
+}
+
 export function highlightNavigationElement(element: HTMLElement): () => void {
   const id = navigationToken();
   element.removeAttribute("data-navigation-arrival");

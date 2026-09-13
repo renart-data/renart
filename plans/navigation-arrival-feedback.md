@@ -1,19 +1,26 @@
 # Navigation arrival feedback
 
-Status: in progress, 10 September 2026.
+Status: in progress, 13 September 2026.
 
 ## Implemented slice
 
 The shared committed-arrival provider, explicit intent tokens and silent local
-reflection are implemented. Connection fields, asset column fields and
-materialization, validated asset source ranges, notebook cells and Data Browser
+reflection are implemented. Connection fields, asset column fields/checks and
+all asset metadata sections, validated asset source ranges, notebook cells and Data Browser
 columns use the shared visual treatment. Cold/legacy links wait for their real
 owner; navigation IDs also work over plain HTTP on a LAN. The old notebook-only
 jump animation is removed. DOM cleanup is generation-safe and reduced motion
 uses a static temporary outline.
 
+The whole-section gap reported by missing-column diagnostics is closed: Columns
+(including its empty state), Identity, Dependencies, Checks, Tests and
+Materialization use the reusable owner-local arrival ref. Lazy sections wait for
+their real content, and responsive inspectors wait for their entering transition.
+Exact column/check targets never highlight a whole-section fallback. Local
+property-tab changes reflect silently; repeat links and history still highlight.
+
 Remaining: migrate presentation component/inspector reveals and run event/timeline
-locations, extend whole-section feedback beyond the pilot materialization surface,
+locations, add whole-object/connection feedback where only fields are covered,
 and finish the acceptance matrix for those adapters. Keep their existing reveal
 behavior until migrated; do not claim every addressable place highlights yet.
 
@@ -33,9 +40,11 @@ introduce another details view or overlay renderer.
 - `resourceDestination` resolves semantic targets to their existing owners.
 - `ResourceLink` emits real anchors. `useResourceNavigation.open` navigates;
   `reflect` updates a locator from local interaction without revealing anything.
-- Arrival behavior is currently distributed: connection fields remember the last
-  field name; asset column refs focus controls; Monaco reveals source ranges;
-  notebook, presentation and run owners have their own reveal lifecycles.
+- Owners still resolve their own semantic targets: connection/column refs focus
+  controls; Monaco validates and reveals source ranges; notebook, presentation
+  and run owners retain their reveal lifecycles. DOM section owners can reuse
+  `NavigationArrivalTarget` / `useNavigationArrivalRef` for readiness, scoped
+  scrolling and the shared short treatment.
 - Remembering only the target value cannot distinguish a new visit to the same
   place. A CSS selector or an effect tied only to `detail` would miss those visits
   and could highlight stale/hidden copies of an editor.

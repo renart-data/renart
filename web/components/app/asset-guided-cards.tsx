@@ -103,8 +103,13 @@ import { MultiValueInput } from "./multi-value-input";
 import { SchemaSyncDialog } from "./schema-sync-dialog";
 import { AssetDependencyPicker } from "./asset-dependency-picker";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
-import { useNavigationArrival, useArrivalHighlight } from "@/hooks/use-navigation-arrival";
+import {
+  useNavigationArrival,
+  useArrivalHighlight,
+  useNavigationArrivalRef,
+} from "@/hooks/use-navigation-arrival";
 import { resolveColumn, type ColumnTarget } from "@/lib/resource-navigation";
+import { NavigationArrivalTarget } from "./navigation-arrival-target";
 
 const AssetUnitTests = lazy(() =>
   import("./asset-unit-tests").then((module) => ({ default: module.AssetUnitTests })),
@@ -138,7 +143,6 @@ export function AssetGuidedCards({
   const navigation = useResourceNavigation();
   const linked = navigation.detail;
   const arrival = useNavigationArrival(linked);
-  const highlightSection = useArrivalHighlight(arrival);
   const target = linked?.target;
   const addressed =
     target &&
@@ -170,25 +174,13 @@ export function AssetGuidedCards({
   const linkedCheck = linkedCheckColumn?.checks?.filter(
     (check) => check.name === addressed?.check_name,
   );
-  const sectionFocus = useCallback(
-    (node: HTMLDivElement | null) => {
-      if (!node || !arrival || section !== "materialization") return;
-      const frame = requestAnimationFrame(() => {
-        if (!node.isConnected || node.getClientRects().length === 0) return;
-        node.focus({ preventScroll: true });
-        const viewport = node.closest('[data-slot="scroll-area-viewport"]');
-        if (viewport)
-          viewport.scrollTop +=
-            node.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
-        highlightSection(node);
-      });
-      return () => cancelAnimationFrame(frame);
-    },
-    [section, arrival],
-  );
-  const routeCheck: QualityCheckFocus | undefined =
+  const sectionArrival = (name: string) =>
+    addressed?.kind === "asset-section" && section === name && !addressed.check_name
+      ? arrival
+      : undefined;
+  const routeCheck =
     linkedCheckColumn && linkedCheck?.length === 1
-      ? { kind: "column", column: linkedCheckColumn.name, name: linkedCheck[0].name, token: 0 }
+      ? { column: linkedCheckColumn.name, name: linkedCheck[0].name }
       : undefined;
   const [localFocus, setLocalFocus] = useState<QualityCheckFocus | null>(null);
   useEffect(() => setLocalFocus(null), [focusedCheck?.token]);
@@ -196,7 +188,7 @@ export function AssetGuidedCards({
   useEffect(() => {
     if (focusedCheckToken !== undefined) setActiveTab("checks");
   }, [focusedCheckToken]);
-  const activeFocus = routeCheck ?? localFocus ?? focusedCheck;
+  const activeFocus = routeCheck ? undefined : (localFocus ?? focusedCheck);
   const dependencyCount = asset.dependencies?.length ?? asset.upstreams?.length ?? 0;
   const columnCount = asset.columns?.length ?? 0;
   const checkCount =
@@ -208,7 +200,7 @@ export function AssetGuidedCards({
       value={activeTab}
       onValueChange={(value) => {
         setActiveTab(value as AssetMetadataTab);
-        void navigation.open(
+        void navigation.reflect(
           {
             kind: "asset-section",
             asset_id: asset.id,
@@ -256,7 +248,13 @@ export function AssetGuidedCards({
             <Suspense
               fallback={<p className="p-3 text-xs text-muted-foreground">Loading tests…</p>}
             >
-              <AssetUnitTests key={asset.id} asset={asset} />
+              <NavigationArrivalTarget
+                arrival={sectionArrival("tests")}
+                data-navigation-section="tests"
+                aria-label="Unit tests"
+              >
+                <AssetUnitTests key={asset.id} asset={asset} />
+              </NavigationArrivalTarget>
             </Suspense>
           </TabsContent>
         ) : null}
@@ -272,10 +270,20 @@ export function AssetGuidedCards({
         ) : null}
         <TabsContent value="general" forceMount className="m-0 data-[state=inactive]:hidden">
           <div className="divide-y px-3">
-            <IdentityCard asset={asset} pipelineId={pipelineId} />
-            <div tabIndex={-1} ref={sectionFocus}>
+            <NavigationArrivalTarget
+              arrival={sectionArrival("identity")}
+              data-navigation-section="identity"
+              aria-label="Identity"
+            >
+              <IdentityCard asset={asset} pipelineId={pipelineId} />
+            </NavigationArrivalTarget>
+            <NavigationArrivalTarget
+              arrival={sectionArrival("materialization")}
+              data-navigation-section="materialization"
+              aria-label="Materialization"
+            >
               <MaterializationCard asset={asset} pipelineId={pipelineId} />
-            </div>
+            </NavigationArrivalTarget>
             {isSqlAssetType(asset.type) ? (
               <GuidedCard title="SQL hooks">
                 <AssetHooks asset={asset} />
@@ -284,13 +292,23 @@ export function AssetGuidedCards({
           </div>
         </TabsContent>
         <TabsContent value="lineage" forceMount className="m-0 data-[state=inactive]:hidden">
-          <div className="px-3">
+          <NavigationArrivalTarget
+            arrival={sectionArrival("dependencies")}
+            data-navigation-section="dependencies"
+            aria-label="Dependencies"
+            className="px-3"
+          >
             <DependenciesCard asset={asset} onGoToAsset={onGoToAsset} />
-          </div>
+          </NavigationArrivalTarget>
         </TabsContent>
         {supportsColumns ? (
           <TabsContent value="columns" forceMount className="m-0 data-[state=inactive]:hidden">
-            <div className="px-3">
+            <NavigationArrivalTarget
+              arrival={sectionArrival("columns")}
+              data-navigation-section="columns"
+              aria-label="Columns"
+              className="px-3"
+            >
               <ColumnsCard
                 asset={asset}
                 environmentOverride={addressed ? linked?.environment : undefined}
@@ -304,16 +322,22 @@ export function AssetGuidedCards({
                   )
                 }
               />
-            </div>
+            </NavigationArrivalTarget>
           </TabsContent>
         ) : null}
         {supportsColumns ? (
           <TabsContent value="checks" forceMount className="m-0 data-[state=inactive]:hidden">
-            <div className="px-3">
+            <NavigationArrivalTarget
+              arrival={sectionArrival("checks")}
+              data-navigation-section="checks"
+              aria-label="Quality checks"
+              className="px-3"
+            >
               <QualityChecksCard
                 asset={asset}
                 quality={quality}
                 focusedCheck={activeFocus}
+                navigationFocus={routeCheck ? { ...routeCheck, arrival } : undefined}
                 onFocusCheck={(check) => {
                   setLocalFocus({ ...check, token: Date.now() });
                   if (check.kind === "column")
@@ -329,7 +353,7 @@ export function AssetGuidedCards({
                     );
                 }}
               />
-            </div>
+            </NavigationArrivalTarget>
           </TabsContent>
         ) : null}
       </ScrollArea>
@@ -1533,11 +1557,13 @@ export function QualityChecksCard({
   asset,
   quality,
   focusedCheck,
+  navigationFocus,
   onFocusCheck,
 }: {
   asset: WebAsset;
   quality?: AssetStaleness;
   focusedCheck?: QualityCheckFocus | null;
+  navigationFocus?: { column?: string; name: string; arrival?: string };
   onFocusCheck: (check: FailedQualityCheck) => void;
 }) {
   const columns = asset.columns ?? [];
@@ -1547,6 +1573,7 @@ export function QualityChecksCard({
   const [value, setValue] = useState("");
   const [highlightedColumnCheck, setHighlightedColumnCheck] = useState("");
   const columnCheckElements = useRef(new Map<string, HTMLSpanElement>());
+  const arrivalRef = useNavigationArrivalRef(navigationFocus?.arrival);
   const failedChecks =
     quality?.quality_status === "failed" && quality.quality_on_current_content
       ? (quality.failed_checks ?? [])
@@ -1648,6 +1675,17 @@ export function QualityChecksCard({
                         const key = columnCheckKey(col.name, check.name);
                         if (element) columnCheckElements.current.set(key, element);
                         else columnCheckElements.current.delete(key);
+                        if (
+                          navigationFocus?.column === col.name &&
+                          navigationFocus.name === check.name
+                        ) {
+                          const cleanup = arrivalRef(element);
+                          return () => {
+                            cleanup?.();
+                            if (columnCheckElements.current.get(key) === element)
+                              columnCheckElements.current.delete(key);
+                          };
+                        }
                       }}
                       data-column-check={`${col.name}:${check.name}`}
                       tabIndex={-1}

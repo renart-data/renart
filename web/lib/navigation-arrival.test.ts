@@ -1,9 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   NavigationArrivalTracker,
   highlightNavigationElement,
   navigationArrivalState,
   navigationTargetKey,
+  whenNavigationElementReady,
+  revealNavigationElement,
 } from "./navigation-arrival";
 
 describe("committed navigation arrivals", () => {
@@ -76,5 +78,113 @@ describe("committed navigation arrivals", () => {
     expect(first.resourceArrival).not.toBe(second.resourceArrival);
     expect(first.resourceDocument).toBe(second.resourceDocument);
     expect(first.resourceReflection).toBeUndefined();
+  });
+});
+
+describe("owner-local arrival readiness", () => {
+  let resized: () => void;
+  const disconnect = vi.fn();
+  beforeEach(() => {
+    vi.useFakeTimers();
+    disconnect.mockClear();
+    vi.stubGlobal("requestAnimationFrame", (callback: () => void) => setTimeout(callback, 16));
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => clearTimeout(id));
+    vi.stubGlobal("getComputedStyle", () => ({ visibility: "visible" }));
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          resized = callback;
+        }
+        observe() {}
+        disconnect = disconnect;
+      },
+    );
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+  const element = (visible = true) =>
+    ({
+      isConnected: true,
+      getClientRects: vi.fn(() => (visible ? [{}] : [])),
+      closest: vi.fn(() => null),
+    }) as unknown as HTMLElement;
+
+  it("acknowledges once after a hidden owner becomes visible without polling", () => {
+    const target = element(false);
+    const ready = vi.fn();
+    whenNavigationElementReady(target, ready);
+    vi.runAllTimers();
+    expect(ready).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.mocked(target.getClientRects).mockReturnValue([{}] as unknown as DOMRectList);
+    resized();
+    vi.runAllTimers();
+    expect(ready).toHaveBeenCalledExactlyOnceWith(target);
+    expect(disconnect).toHaveBeenCalledOnce();
+    resized();
+    vi.runAllTimers();
+    expect(ready).toHaveBeenCalledOnce();
+  });
+  it("cancels obsolete refs before they can focus an owner", () => {
+    const ready = vi.fn();
+    const cancel = whenNavigationElementReady(element(), ready);
+    cancel();
+    vi.runAllTimers();
+    expect(ready).not.toHaveBeenCalled();
+    const cancelHidden = whenNavigationElementReady(element(false), ready);
+    vi.runAllTimers();
+    cancelHidden();
+    resized();
+    vi.runAllTimers();
+    expect(ready).not.toHaveBeenCalled();
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+  it("waits for a responsive panel to finish entering, but cancels late completion", async () => {
+    let finish!: () => void;
+    let running = true;
+    const target = element();
+    const animation = {
+      get playState() {
+        return running ? "running" : "finished";
+      },
+      finished: new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+    };
+    vi.mocked(target.closest).mockReturnValue({
+      getAnimations: () => [animation],
+    } as unknown as HTMLElement);
+    const ready = vi.fn();
+    const cancel = whenNavigationElementReady(target, ready);
+    await vi.runAllTimersAsync();
+    expect(ready).not.toHaveBeenCalled();
+    cancel();
+    running = false;
+    finish();
+    await vi.runAllTimersAsync();
+    expect(ready).not.toHaveBeenCalled();
+    whenNavigationElementReady(target, ready);
+    await vi.runAllTimersAsync();
+    expect(ready).toHaveBeenCalledExactlyOnceWith(target);
+  });
+  it("reveals only the owner's viewport and leaves already visible sections still", () => {
+    const viewport = {
+      scrollTop: 40,
+      getBoundingClientRect: () => ({ top: 100, bottom: 400, height: 300 }),
+    };
+    const target = {
+      focus: vi.fn(),
+      closest: vi.fn(() => viewport),
+      getBoundingClientRect: vi.fn(() => ({ top: 150, bottom: 350, height: 200 })),
+    };
+    revealNavigationElement(target as unknown as HTMLElement);
+    expect(target.focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(viewport.scrollTop).toBe(40);
+    target.getBoundingClientRect.mockReturnValue({ top: 500, bottom: 1500, height: 1000 });
+    revealNavigationElement(target as unknown as HTMLElement);
+    expect(viewport.scrollTop).toBe(440);
   });
 });

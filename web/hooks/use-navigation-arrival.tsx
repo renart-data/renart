@@ -18,6 +18,8 @@ import {
   navigationDocument,
   highlightNavigationElement,
   navigationTargetKey,
+  whenNavigationElementReady,
+  revealNavigationElement,
 } from "@/lib/navigation-arrival";
 
 const ArrivalContext = createContext<{ id: string; target: string } | undefined>(undefined);
@@ -125,5 +127,23 @@ export function useArrivalHighlight(token?: string) {
       lifecycle.cleanup = highlightNavigationElement(element);
     },
     [token, lifecycle],
+  );
+}
+
+// The owner supplies a token only for its exact semantic destination. Mount
+// this ref inside any Suspense boundary, after the real content has loaded.
+export function useNavigationArrivalRef(token?: string) {
+  const acknowledged = useRef<string | undefined>(undefined);
+  const highlight = useArrivalHighlight(token);
+  return useCallback(
+    (element: HTMLElement | null) => {
+      if (!element || !token || acknowledged.current === token) return;
+      return whenNavigationElementReady(element, (target) => {
+        acknowledged.current = token;
+        revealNavigationElement(target);
+        highlight(target);
+      });
+    },
+    [token, highlight],
   );
 }

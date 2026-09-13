@@ -136,7 +136,24 @@ short DOM treatment and generation-safe cleanup. Asset source ranges use Monaco
 decorations after model-identity, range and fingerprint validation. The shared CSS fades once; reduced
 motion keeps a temporary static inset outline. Focus-visible indicators remain
 independent. No document-wide selector registry, polling or hidden editor is added.
-Connection fields, asset columns/materialization, source ranges, notebook cells
+`useNavigationArrivalRef` is the reusable DOM owner adapter, with
+`NavigationArrivalTarget` as its noninteractive section wrapper. It acknowledges
+each arrival once after the element is visible and its responsive Sheet/Dialog
+has finished entering. A temporary element-local ResizeObserver handles
+display-hidden tabs; refs cancel obsolete readiness work and disconnect after
+arrival. Only the nearest owned ScrollArea is scrolled. Lazy owners mount the
+wrapper inside their Suspense boundary, not around a loading placeholder.
+
+All asset metadata sections (Identity, Materialization, Dependencies, Columns,
+Checks and Tests) use this adapter, including the empty Columns state addressed
+by missing-declaration diagnostics. Exact column/check links highlight only their
+resolved field or check; missing or ambiguous identities retain the existing
+notice without highlighting another row or the containing section. Ordinary
+property-tab changes reflect their locator silently. Noninteractive section
+wrappers have no permanent focus outline after the short treatment; child
+controls keep their normal focus indicators.
+
+Connection fields, asset column fields/checks/sections, source ranges, notebook cells
 and Data Browser columns are migrated; remaining adapters are tracked in
 `plans/navigation-arrival-feedback.md`.
 
