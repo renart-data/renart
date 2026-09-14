@@ -187,4 +187,26 @@ describe("owner-local arrival readiness", () => {
     revealNavigationElement(target as unknown as HTMLElement);
     expect(viewport.scrollTop).toBe(440);
   });
+  it("centers compact run targets in their own viewport without overscrolling the first row", () => {
+    const viewport = {
+      scrollTop: 100,
+      getBoundingClientRect: () => ({ top: 100, bottom: 400, height: 300 }),
+    };
+    const target = {
+      focus: vi.fn(),
+      closest: vi.fn(() => viewport),
+      getBoundingClientRect: vi.fn(() => ({ top: 32, bottom: 48, height: 16 })),
+    };
+    revealNavigationElement(target as unknown as HTMLElement, { block: "center" });
+    expect(viewport.scrollTop).toBe(0);
+    expect(target.focus).toHaveBeenCalledWith({ preventScroll: true });
+
+    target.getBoundingClientRect.mockReturnValue({ top: 550, bottom: 566, height: 16 });
+    revealNavigationElement(target as unknown as HTMLElement, { block: "center" });
+    expect(viewport.scrollTop).toBe(308);
+
+    target.getBoundingClientRect.mockReturnValue({ top: 500, bottom: 1500, height: 1000 });
+    revealNavigationElement(target as unknown as HTMLElement, { block: "center" });
+    expect(viewport.scrollTop).toBe(708);
+  });
 });

@@ -180,7 +180,10 @@ first recorded event for that asset; timeline links highlight its label without
 switching Output or Plan. Explicit repeat clicks carry fresh intent tokens.
 Refs wait for real rows, including delayed run-detail responses; missing targets
 in completed runs show a notice instead of choosing another row. Hover/selected
-asset styling remains separate from the temporary arrival treatment.
+asset styling remains separate from the temporary arrival treatment. Compact run
+targets opt into centering within their own ScrollArea, retaining the timeline
+axis when revealing the first row. Section destinations retain heading-first
+reveal behavior; neither mode scrolls unrelated workbench panels.
 
 The migrated families are connection fields/headers, asset column fields,
 checks/sections/source ranges, notebook cells, Data Browser objects/columns,

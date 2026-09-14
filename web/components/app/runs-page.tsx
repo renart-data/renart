@@ -1253,7 +1253,7 @@ function StepBar({
   onHighlightedChange: (highlighted: boolean) => void;
   onActivate: () => void;
 }) {
-  const arrivalRef = useNavigationArrivalRef(arrival);
+  const arrivalRef = useNavigationArrivalRef(arrival, { block: "center" });
   const start = new Date(step.started_at ?? step.finished_at ?? bounds.start).getTime();
   const end = step.finished_at ? new Date(step.finished_at).getTime() : now;
   const rawLeft = ((start - bounds.start) / (bounds.end - bounds.start)) * 100;
@@ -1365,6 +1365,7 @@ function RunEventsTable({
   const eventsScroll = useFollowOutputScroll(`${events.length}:${loading}`, run.id);
   const arrivalRef = useNavigationArrivalRef(
     scrollRequest?.target === "events" ? scrollRequest.arrival : undefined,
+    { block: "center" },
   );
   const arrivalIndex =
     scrollRequest?.target === "events"

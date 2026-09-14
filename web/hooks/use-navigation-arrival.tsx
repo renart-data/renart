@@ -21,6 +21,7 @@ import {
   navigationTargetKey,
   whenNavigationElementReady,
   revealNavigationElement,
+  type NavigationRevealOptions,
 } from "@/lib/navigation-arrival";
 
 const ArrivalContext = createContext<{ id: string; target: string } | undefined>(undefined);
@@ -146,7 +147,7 @@ export function useArrivalHighlight(token?: string) {
 
 // The owner supplies a token only for its exact semantic destination. Mount
 // this ref inside any Suspense boundary, after the real content has loaded.
-export function useNavigationArrivalRef(token?: string) {
+export function useNavigationArrivalRef(token?: string, { block }: NavigationRevealOptions = {}) {
   const [element, setElement] = useState<HTMLElement | null>(null);
   const acknowledged = useRef<string | undefined>(undefined);
   const highlight = useArrivalHighlight(token);
@@ -156,10 +157,10 @@ export function useNavigationArrivalRef(token?: string) {
     if (!element || !token || acknowledged.current === token) return;
     return whenNavigationElementReady(element, (target) => {
       acknowledged.current = token;
-      revealNavigationElement(target);
+      revealNavigationElement(target, { block });
       highlight(target);
     });
-  }, [element, token, highlight]);
+  }, [element, token, highlight, block]);
   return useCallback((node: HTMLElement | null) => {
     setElement(node);
     return node ? () => setElement((current) => (current === node ? null : current)) : undefined;
