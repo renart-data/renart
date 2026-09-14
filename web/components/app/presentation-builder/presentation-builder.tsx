@@ -75,6 +75,7 @@ import { PresentationSidebar } from "./presentation-sidebar";
 import { ReportCanvas } from "./report-canvas";
 import { usePresentationDraft } from "./use-presentation-draft";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
+import { useNavigationArrival, useNavigationArrivalRef } from "@/hooks/use-navigation-arrival";
 
 type FilterValues = Record<string, unknown>;
 
@@ -106,6 +107,7 @@ export function PresentationBuilder({
     onChange,
   );
   const resource = useResourceNavigation();
+  const arrival = useNavigationArrival(resource.detail);
   const [selection, setLocalSelection] = useState<PresentationBuilderSelection>({
     kind: "artifact",
   });
@@ -122,6 +124,15 @@ export function PresentationBuilder({
       } as PresentationBuilderSelection)
     : { kind: "artifact" };
   const linkedSelectionAvailable = !linked || selectionExists(artifact, linkedSelection);
+  // Keep acknowledgement in the editor owner, above the responsive inspector's
+  // mount boundary. Reopening local tools is not another navigation.
+  const inspectorArrivalRef = useNavigationArrivalRef(
+    linkedSelectionAvailable &&
+      linked &&
+      JSON.stringify(selection) === JSON.stringify(linkedSelection)
+      ? arrival
+      : undefined,
+  );
   const setSelection = (next: PresentationBuilderSelection) => {
     setLocalSelection(next);
     void resource.reflect({
@@ -162,21 +173,9 @@ export function PresentationBuilder({
     setLocalSelection((current) =>
       JSON.stringify(current) === JSON.stringify(next) ? current : next,
     );
-    if (resource.isLocalReflection) return;
-    if (next.kind === "visualization") {
-      const index = (artifact.visualizations ?? []).findIndex((v) => v.id === next.id);
-      setPendingFindingPath(`visualizations[${index}].id`);
-    }
-    if (next.kind !== "artifact" && !wideBuilder && (!workbenchEnabled || isMobile))
-      setInspectorOpen(true);
-  }, [
-    linkedToken,
-    linkedSelectionAvailable,
-    resource.isLocalReflection,
-    isMobile,
-    wideBuilder,
-    workbenchEnabled,
-  ]);
+    if (!arrival) return;
+    if (!wideBuilder) setInspectorOpen(true);
+  }, [linkedToken, linkedSelectionAvailable, arrival, wideBuilder]);
   const selectedEnvironment = workspace?.selected_environment || "default";
   const assetChoices = useMemo(() => workspaceAssetChoices(workspace), [workspace]);
   const artifactRef = useRef(artifact);
@@ -331,9 +330,8 @@ export function PresentationBuilder({
   useEffect(() => () => previewAbort.current?.abort(), []);
 
   useEffect(() => {
-    if (!wideBuilder && !(workbenchEnabled && !isMobile)) return;
-    setDataOpen(false);
-    setInspectorOpen(false);
+    if (wideBuilder || (workbenchEnabled && !isMobile)) setDataOpen(false);
+    if (wideBuilder) setInspectorOpen(false);
   }, [isMobile, wideBuilder, workbenchEnabled]);
 
   useEffect(() => {
@@ -369,7 +367,7 @@ export function PresentationBuilder({
     if (workbenchEnabled && isMobile) setMobileNavigationOpen(false);
   };
   const showInspector = () => {
-    if (wideBuilder || (workbenchEnabled && !isMobile)) return;
+    if (wideBuilder) return;
     closeDataPane();
     setInspectorOpen(true);
   };
@@ -651,7 +649,7 @@ export function PresentationBuilder({
     const target = presentationFindingTarget(artifact, finding);
     setSelection(target.selection);
     setPendingFindingPath(target.path);
-    if (!wideBuilder && (!workbenchEnabled || isMobile)) {
+    if (!wideBuilder) {
       closeDataPane();
       setInspectorOpen(true);
     }
@@ -664,7 +662,7 @@ export function PresentationBuilder({
       selection={selection}
       onSelect={(next) => {
         setSelection(next);
-        if (!wideBuilder && (!workbenchEnabled || isMobile)) {
+        if (!wideBuilder) {
           closeDataPane();
           if (next.kind === "dataset") setInspectorOpen(true);
         }
@@ -684,6 +682,7 @@ export function PresentationBuilder({
         assetChoices={assetChoices}
         selection={selection}
         findings={activeFindings}
+        arrivalRef={inspectorArrivalRef}
         focusPath={pendingFindingPath}
         onFocusPathHandled={() => setPendingFindingPath(null)}
         onSelect={setSelection}
@@ -823,7 +822,7 @@ export function PresentationBuilder({
           <Button
             size="icon-sm"
             variant="ghost"
-            className={workbenchEnabled ? "md:hidden" : "xl:hidden"}
+            className="xl:hidden"
             aria-label="Open inspector"
             onClick={() => setInspectorOpen(true)}
           >
@@ -840,9 +839,11 @@ export function PresentationBuilder({
       {workbenchEnabled ? (
         <>
           <WorkbenchPortal slot="context">{renderSidebar()}</WorkbenchPortal>
-          <WorkbenchPortal slot="inspector">
-            <ScrollArea className="h-full">{renderInspector()}</ScrollArea>
-          </WorkbenchPortal>
+          {wideBuilder ? (
+            <WorkbenchPortal slot="inspector">
+              <ScrollArea className="h-full">{renderInspector()}</ScrollArea>
+            </WorkbenchPortal>
+          ) : null}
         </>
       ) : null}
       <DocumentAuthoringShell commandBar={commandBar} banner={banner} className="bg-muted/30">
@@ -997,24 +998,20 @@ export function PresentationBuilder({
               </SheetContent>
             </Sheet>
           ) : null}
-          {!workbenchEnabled || isMobile ? (
-            <Sheet open={inspectorOpen} onOpenChange={setInspectorOpen}>
-              <SheetContent
-                side="right"
-                className="w-[min(26rem,92vw)] max-w-full overflow-hidden p-0"
-              >
-                <SheetHeader className="border-b p-4">
-                  <SheetTitle>Inspector</SheetTitle>
-                  <SheetDescription>
-                    Edit only the selected presentation component.
-                  </SheetDescription>
-                </SheetHeader>
-                <ScrollArea className="min-h-0 flex-1">
-                  {inspectorOpen ? renderInspector() : null}
-                </ScrollArea>
-              </SheetContent>
-            </Sheet>
-          ) : null}
+          <Sheet open={inspectorOpen} onOpenChange={setInspectorOpen}>
+            <SheetContent
+              side="right"
+              className="w-[min(26rem,92vw)] max-w-full overflow-hidden p-0"
+            >
+              <SheetHeader className="border-b p-4">
+                <SheetTitle>Inspector</SheetTitle>
+                <SheetDescription>Edit only the selected presentation component.</SheetDescription>
+              </SheetHeader>
+              <ScrollArea className="min-h-0 flex-1">
+                {inspectorOpen ? renderInspector() : null}
+              </ScrollArea>
+            </SheetContent>
+          </Sheet>
         </>
       ) : null}
       <AddVisualizationDialog

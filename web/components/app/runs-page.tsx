@@ -1,4 +1,6 @@
 import { normalizeRunLocation, runAssetLocation, type RunLocation } from "@/lib/run-navigation";
+import { navigationArrivalState } from "@/lib/navigation-arrival";
+import { useNavigationArrivalRef, useRunNavigationArrival } from "@/hooks/use-navigation-arrival";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 import {
@@ -15,7 +17,7 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AnsiOutput } from "@/components/ansi-output";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -69,7 +71,7 @@ const pageSize = 8;
 type RunScrollRequest = {
   asset: string;
   target: "events" | "timeline";
-  sequence: number;
+  arrival: string;
 };
 
 export type AppRunsSearch = RunLocation & {
@@ -402,27 +404,23 @@ export function AppRunDetailPage({
       to: ".",
       search: (s) => ({ ...s, run_tab: tab as RunLocation["run_tab"], run_focus: undefined }),
     });
-  const [scrollRequest, setScrollRequest] = useState<RunScrollRequest | null>(null);
-  const scrollSequenceRef = useRef(0);
+  const arrival = useRunNavigationArrival(runId, search);
+  const scrollRequest: RunScrollRequest | null =
+    arrival && search.run_asset && search.run_focus
+      ? { asset: search.run_asset, target: search.run_focus, arrival }
+      : null;
   useEffect(() => {
     setHoveredAsset(null);
-    setScrollRequest(null);
   }, [runId]);
   const highlightedAsset = hoveredAsset ?? selectedAsset;
-  useEffect(() => {
-    if (search.run_asset && search.run_focus)
-      setScrollRequest({
-        asset: search.run_asset,
-        target: search.run_focus,
-        sequence: ++scrollSequenceRef.current,
-      });
-  }, [runId, search.run_asset, search.run_focus]);
   const scrollToRunAsset = (asset: string, target: RunScrollRequest["target"]) => {
     void navigate({
       to: ".",
       search: (s) => ({ ...s, ...runAssetLocation(search, asset, target) }),
+      state: (state) => ({ ...state, ...navigationArrivalState() }),
+      replace: search.run_asset === asset && search.run_focus === target,
+      resetScroll: false,
     });
-    setScrollRequest({ asset, target, sequence: ++scrollSequenceRef.current });
   };
   const output = useMemo(() => combineRunOutput(logs, run?.error), [logs, run?.error]);
   const assetIdsByName = useMemo(() => {
@@ -725,6 +723,18 @@ export function AppRunDetailPage({
           </div>
         ) : null}
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3">
+          {scrollRequest &&
+          loadingRunId !== run.id &&
+          !runDetailError &&
+          ["success", "failed", "cancelled"].includes(run.status) &&
+          !(scrollRequest.target === "events" ? runEvents(run, steps) : steps).some(
+            (item) => item.asset === scrollRequest.asset,
+          ) ? (
+            <p role="alert" className="text-sm text-muted-foreground">
+              The linked asset has no {scrollRequest.target === "events" ? "events" : "timing"} in
+              this run.
+            </p>
+          ) : null}
           <RunTimelinePanel
             run={run}
             steps={steps}
@@ -1138,7 +1148,6 @@ function RunTimelinePanel({
   scrollRequest: RunScrollRequest | null;
   onActivateAsset: (asset: string) => void;
 }) {
-  const timelineRef = useRef<HTMLDivElement | null>(null);
   const timelineScroll = useFollowOutputScroll(steps.length, run.id);
   const now = useNow(run.status === "running");
   const bounds = timelineBounds(run, steps, now);
@@ -1146,19 +1155,8 @@ function RunTimelinePanel({
   const scrollable = steps.length >= 20;
   const rowHeight = timelineRowHeight(steps.length);
 
-  useEffect(() => {
-    if (scrollRequest?.target !== "timeline") return;
-    const target = Array.from(
-      timelineRef.current?.querySelectorAll<HTMLElement>(
-        '[data-testid="run-timeline-asset-label"]',
-      ) ?? [],
-    ).find((element) => element.dataset.asset === scrollRequest.asset);
-    scrollRunElementIntoView(target);
-  }, [scrollRequest]);
-
   const timeline = (
     <div
-      ref={timelineRef}
       className="grid grid-cols-[minmax(7rem,12rem)_minmax(0,1fr)] items-center gap-x-3 p-3"
       data-testid="run-timeline-grid"
       data-row-height={rowHeight}
@@ -1187,6 +1185,11 @@ function RunTimelinePanel({
           now={now}
           rowHeight={rowHeight}
           highlighted={highlightedAsset === step.asset}
+          arrival={
+            scrollRequest?.target === "timeline" && scrollRequest.asset === step.asset
+              ? scrollRequest.arrival
+              : undefined
+          }
           onHighlightedChange={(highlighted) =>
             onHoveredAssetChange(highlighted ? step.asset : null)
           }
@@ -1237,6 +1240,7 @@ function StepBar({
   now,
   rowHeight,
   highlighted,
+  arrival,
   onHighlightedChange,
   onActivate,
 }: {
@@ -1245,9 +1249,11 @@ function StepBar({
   now: number;
   rowHeight: number;
   highlighted: boolean;
+  arrival?: string;
   onHighlightedChange: (highlighted: boolean) => void;
   onActivate: () => void;
 }) {
+  const arrivalRef = useNavigationArrivalRef(arrival);
   const start = new Date(step.started_at ?? step.finished_at ?? bounds.start).getTime();
   const end = step.finished_at ? new Date(step.finished_at).getTime() : now;
   const rawLeft = ((start - bounds.start) / (bounds.end - bounds.start)) * 100;
@@ -1264,6 +1270,7 @@ function StepBar({
       <Tooltip>
         <TooltipTrigger asChild>
           <button
+            ref={arrivalRef}
             type="button"
             className={cn(
               "flex min-w-0 cursor-pointer items-center rounded-sm text-left font-mono transition-colors",
@@ -1356,15 +1363,13 @@ function RunEventsTable({
 }) {
   const events = runEvents(run, steps);
   const eventsScroll = useFollowOutputScroll(`${events.length}:${loading}`, run.id);
-  useEffect(() => {
-    if (scrollRequest?.target !== "events") return;
-    const target = Array.from(
-      eventsScroll.viewportRef.current?.querySelectorAll<HTMLElement>(
-        '[data-testid="run-event-row"]',
-      ) ?? [],
-    ).find((element) => element.dataset.asset === scrollRequest.asset);
-    scrollRunElementIntoView(target);
-  }, [scrollRequest]);
+  const arrivalRef = useNavigationArrivalRef(
+    scrollRequest?.target === "events" ? scrollRequest.arrival : undefined,
+  );
+  const arrivalIndex =
+    scrollRequest?.target === "events"
+      ? events.findIndex((event) => event.asset === scrollRequest.asset)
+      : -1;
   return (
     <ScrollArea
       className="h-full min-h-0"
@@ -1393,6 +1398,7 @@ function RunEventsTable({
             return (
               <TableRow
                 key={`${event.at}-${event.asset}-${event.type}-${index}`}
+                ref={index === arrivalIndex ? arrivalRef : undefined}
                 className={cn(
                   "cursor-pointer transition-colors",
                   highlighted && "bg-primary/10 hover:bg-primary/15",
@@ -1471,14 +1477,6 @@ function runEventBadge(type: string): {
     return { variant: "secondary", tone: "progress" };
   }
   return { variant: "default", tone: "success" };
-}
-
-function scrollRunElementIntoView(target?: HTMLElement) {
-  if (!target) return;
-  target.scrollIntoView({
-    block: "center",
-    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-  });
 }
 
 function combineRunOutput(logs: PipelineRunLogLine[], error?: string) {

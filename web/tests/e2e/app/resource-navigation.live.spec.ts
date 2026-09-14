@@ -228,7 +228,14 @@ test.describe("routed UI navigation live", () => {
       await fresh.getByRole("button", { name: "Preview rows", exact: true }).click();
       await expect(fresh.getByRole("grid", { name: "addressed.csv preview" })).toBeVisible();
       expect(queries).toHaveLength(1);
-      await fresh.goBack();
+      // Changing a local tab reflects its bookmark silently, without another
+      // history entry. A cold bookmark still opens the selected tab.
+      await fresh.reload();
+      await expect(fresh.getByRole("tab", { name: "Preview", exact: true })).toHaveAttribute(
+        "data-state",
+        "active",
+      );
+      await fresh.getByRole("tab", { name: /Columns/ }).click();
       await expect(fresh.getByRole("tab", { name: /Columns/ })).toHaveAttribute(
         "data-state",
         "active",

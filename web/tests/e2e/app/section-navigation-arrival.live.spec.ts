@@ -3,6 +3,7 @@ import { appendFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { NavigableTarget } from "../../../lib/resource-navigation";
 import { liveTest as test } from "../live-app-fixture";
+import { observeArrivals, arrivals, clearArrivals } from "../navigation-arrival-probe";
 
 test.use({ fixtureName: "configured-workspace", isolateUserConfig: true });
 test.setTimeout(90000);
@@ -12,37 +13,6 @@ const missingId = Buffer.from(missingPath).toString("base64url");
 const typedPath = "analytics/assets/analytics/typed.sql";
 const typedId = Buffer.from(typedPath).toString("base64url");
 
-type Highlight = { id: string; section: string | null; tag: string; visible: boolean };
-type ProbeWindow = Window & { arrivals: Highlight[] };
-
-async function observeArrivals(page: Page) {
-  await page.addInitScript(() => {
-    const probe = window as unknown as ProbeWindow;
-    probe.arrivals = [];
-    new MutationObserver((records) => {
-      for (const { target } of records) {
-        if (!(target instanceof HTMLElement)) continue;
-        const id = target.getAttribute("data-navigation-arrival-id");
-        if (!id || probe.arrivals.some((arrival) => arrival.id === id)) continue;
-        probe.arrivals.push({
-          id,
-          section: target.getAttribute("data-navigation-section"),
-          tag: target.tagName,
-          visible: target.getClientRects().length > 0,
-        });
-      }
-    }).observe(document, {
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["data-navigation-arrival-id"],
-    });
-  });
-}
-const arrivals = (page: Page) => page.evaluate(() => (window as unknown as ProbeWindow).arrivals);
-const clearArrivals = (page: Page) =>
-  page.evaluate(() => {
-    (window as unknown as ProbeWindow).arrivals = [];
-  });
 const inspector = (page: Page) => page.getByTestId("asset-inspector").filter({ visible: true });
 
 test("real missing-column links highlight their section on first, repeated and cold arrivals", async ({
@@ -83,7 +53,9 @@ test("real missing-column links highlight their section on first, repeated and c
     await clearArrivals(page);
     await link.click();
     const section = inspector(page).locator('[data-navigation-section="columns"]');
-    await expect(section).toHaveAttribute("data-navigation-arrival", "true");
+    await expect
+      .poll(() => arrivals(page))
+      .toEqual([expect.objectContaining({ section: "columns", visible: true })]);
     await expect(section).toBeFocused();
     await expect(section).toContainText("No columns. Add one manually");
     if (visit === 0)
@@ -103,8 +75,9 @@ test("real missing-column links highlight their section on first, repeated and c
     await fresh.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" });
     await fresh.goto(href);
     const section = inspector(fresh).locator('[data-navigation-section="columns"]');
-    await expect(section).toHaveAttribute("data-navigation-arrival", "true");
-    await expect(section).toHaveCSS("animation-name", "none");
+    await expect
+      .poll(() => arrivals(fresh))
+      .toEqual([expect.objectContaining({ section: "columns", visible: true, animation: "none" })]);
     await fresh.screenshot({ path: info.outputPath("missing-columns-reduced-motion.png") });
     await expect(section).not.toHaveAttribute("data-navigation-arrival", "true");
     await expect(section).toHaveCSS("outline-style", "none");
@@ -148,7 +121,9 @@ test("metadata sections highlight once after reveal while local tabs, SSE and mi
       "active",
     );
     const card = properties.locator(`[data-navigation-section="${section}"]`);
-    await expect(card).toHaveAttribute("data-navigation-arrival", "true");
+    await expect
+      .poll(() => arrivals(page))
+      .toEqual([expect.objectContaining({ section, visible: true })]);
     await expect(card).toBeFocused();
     await expect(card).not.toHaveAttribute("data-navigation-arrival", "true");
     expect(await arrivals(page)).toEqual([expect.objectContaining({ section, visible: true })]);
@@ -176,23 +151,19 @@ test("metadata sections highlight once after reveal while local tabs, SSE and mi
   expect(await arrivals(page)).toEqual([]);
 
   await page.goBack();
-  await expect(inspector(page).locator('[data-navigation-section="checks"]')).toHaveAttribute(
-    "data-navigation-arrival",
-    "true",
-  );
+  await expect.poll(async () => (await arrivals(page)).at(-1)?.section).toBe("checks");
+  await expect(inspector(page).locator('[data-navigation-section="checks"]')).toBeFocused();
   await page.goForward();
-  await expect(inspector(page).locator('[data-navigation-section="columns"]')).toHaveAttribute(
-    "data-navigation-arrival",
-    "true",
-  );
+  await expect.poll(async () => (await arrivals(page)).at(-1)?.section).toBe("columns");
+  await expect(inspector(page).locator('[data-navigation-section="columns"]')).toBeFocused();
 
   await page.goto(
     urlFor({ kind: "asset-column", asset_id: typedId, column: "total_amount", field: "type" }),
   );
-  await expect(inspector(page).getByRole("textbox", { name: "Type", exact: true })).toHaveAttribute(
-    "data-navigation-arrival",
-    "true",
-  );
+  await expect
+    .poll(() => arrivals(page))
+    .toEqual([expect.objectContaining({ tag: "INPUT", section: null, visible: true })]);
+  await expect(inspector(page).getByRole("textbox", { name: "Type", exact: true })).toBeFocused();
   expect(await arrivals(page)).toEqual([
     expect.objectContaining({ tag: "INPUT", section: null, visible: true }),
   ]);
@@ -206,7 +177,9 @@ test("metadata sections highlight once after reveal while local tabs, SSE and mi
     }),
   );
   const check = inspector(page).locator('[data-column-check="total_amount:not_null"]');
-  await expect(check).toHaveAttribute("data-navigation-arrival", "true");
+  await expect
+    .poll(() => arrivals(page))
+    .toEqual([expect.objectContaining({ tag: "SPAN", section: null, visible: true })]);
   await expect(check).toBeFocused();
   await expect(check).not.toHaveAttribute("data-navigation-arrival", "true");
   expect(await arrivals(page)).toEqual([
