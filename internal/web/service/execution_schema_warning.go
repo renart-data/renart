@@ -8,7 +8,6 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/pipeline"
-	"github.com/bruin-data/bruin/pkg/query"
 
 	webmodel "renart/internal/web/model"
 )
@@ -93,16 +92,7 @@ func (e *HybridBruinExecutor) observeMaterializedSchema(
 	defer lease.Release()
 
 	connectionType := normalizeConnectionType(manager.GetConnectionType(connectionName))
-	queryString := fmt.Sprintf(
-		"SELECT * FROM %s WHERE 1 = 0",
-		quoteRuntimeRelation(asset.Name, connectionType),
-	)
-	var result *query.QueryResult
-	if connectionType == "duckdb" {
-		result, err = selectDuckDBLogicalSchema(ctx, querier, queryString)
-	} else {
-		result, err = querier.SelectWithSchema(ctx, &query.Query{Query: queryString})
-	}
+	result, err := selectTableSchema(ctx, querier, connectionType, asset.Name)
 	if err != nil || result == nil {
 		return nil, err
 	}

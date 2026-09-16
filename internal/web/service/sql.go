@@ -325,11 +325,12 @@ func (s *SQLService) TableColumns(ctx context.Context, connectionName, tableName
 	if err != nil {
 		return SQLTableColumnsResult{Status: "error", Error: err.Error()}, http.StatusBadRequest
 	}
-	query := fmt.Sprintf("select * from %s limit 1", reference)
+	query := fmt.Sprintf("SELECT * FROM %s WHERE 1 = 0", reference)
 	operation := queryConnectionOperation(connectionName, query, environment)
 	output, err := s.deps.Executor.QueryConnection(ctx, QueryConnectionRequest{
 		ConnectionName: connectionName,
 		Query:          query,
+		SchemaTable:    tableName,
 		Environment:    environment,
 		Output:         "json",
 	})
@@ -345,6 +346,9 @@ func (s *SQLService) TableColumns(ctx context.Context, connectionName, tableName
 		}, http.StatusBadRequest
 	}
 
+	if executedQuery := ExtractQueryTextFromOutput(output); executedQuery != "" {
+		operation.Query = executedQuery
+	}
 	columns := InferSQLColumnsFromQueryOutput(output)
 	result := SQLTableColumnsResult{
 		Status:         "ok",

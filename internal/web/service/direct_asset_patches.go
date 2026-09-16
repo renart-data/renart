@@ -7,10 +7,7 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/config"
 	"github.com/bruin-data/bruin/pkg/jinja"
-	"github.com/bruin-data/bruin/pkg/mssql"
-	"github.com/bruin-data/bruin/pkg/oracle"
 	"github.com/bruin-data/bruin/pkg/pipeline"
-	"github.com/bruin-data/bruin/pkg/postgres"
 	"github.com/bruin-data/bruin/pkg/query"
 	"github.com/spf13/afero"
 )
@@ -89,23 +86,21 @@ func fillDirectColumnsFromDB(ctx context.Context, pp *directPipelineInfo, fs afe
 		return fillStatusFailed, fmt.Errorf("connection for asset '%s' does not support schema introspection", pp.Asset.Name)
 	}
 
-	tableName := pp.Asset.Name
-	if _, ok := conn.(*postgres.Client); ok {
-		tableName = postgres.QuoteIdentifier(tableName)
-	}
-	queryStr := fmt.Sprintf("SELECT * FROM %s WHERE 1=0 LIMIT 0", tableName)
-	if _, ok := conn.(*mssql.DB); ok {
-		queryStr = "SELECT TOP 0 * FROM " + tableName
-	}
-	if _, ok := conn.(*oracle.Client); ok {
-		queryStr = "SELECT * FROM " + tableName + " WHERE 1=0"
-	}
-	result, err := querier.SelectWithSchema(ctx, &query.Query{Query: queryStr})
+	result, err := selectTableSchema(ctx, querier, pipeline.AssetTypeConnectionMapping[pp.Asset.Type], pp.Asset.Name)
 	if err != nil {
 		return fillStatusFailed, err
 	}
-	if len(result.Columns) == 0 {
+	if result == nil || len(result.Columns) == 0 {
 		return fillStatusFailed, fmt.Errorf("no columns found for asset '%s'", pp.Asset.Name)
+	}
+
+	if len(result.ColumnTypes) != len(result.Columns) {
+		return fillStatusFailed, fmt.Errorf("database did not return types for every column")
+	}
+	for _, columnType := range result.ColumnTypes {
+		if strings.TrimSpace(columnType) == "" {
+			return fillStatusFailed, fmt.Errorf("database returned an unknown column type; existing declarations were kept")
+		}
 	}
 
 	skipColumns := map[string]bool{"_is_current": true, "_valid_until": true, "_valid_from": true}

@@ -193,6 +193,14 @@ func (e *HybridBruinExecutor) QueryConnection(ctx context.Context, req QueryConn
 		return nil, err
 	}
 
+	metadataRows := false
+	if req.SchemaTable != "" {
+		req.Query, metadataRows, err = tableSchemaQuery(manager.GetConnectionType(req.ConnectionName), req.SchemaTable)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	accessConfig, err := e.currentAccessConfig(ctx, req.Environment)
 	if err != nil {
 		return nil, policy.InvalidError(err.Error())
@@ -224,10 +232,13 @@ func (e *HybridBruinExecutor) QueryConnection(ctx context.Context, req QueryConn
 	defer lease.Release()
 
 	var result *query.QueryResult
-	if req.LogicalSchema && strings.EqualFold(strings.TrimSpace(manager.GetConnectionType(req.ConnectionName)), "duckdb") {
+	if (req.LogicalSchema || req.SchemaTable != "") && strings.EqualFold(strings.TrimSpace(manager.GetConnectionType(req.ConnectionName)), "duckdb") {
 		result, err = selectDuckDBLogicalSchema(ctx, querier, req.Query)
 	} else {
 		result, err = selectWithComplexJSONFallback(ctx, querier, req.Query)
+	}
+	if err == nil && metadataRows {
+		result, err = tableSchemaFromMetadata(result)
 	}
 	if err != nil {
 		_ = e.executionLogSink().SaveQueryLog(ctx, QueryLogRecord{

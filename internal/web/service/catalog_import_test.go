@@ -27,7 +27,7 @@ func (c *catalogImportConnection) SelectWithSchema(_ context.Context, q *query.Q
 	if strings.Contains(q.Query, "warehouse") {
 		column = "warehouse_id"
 	}
-	return &query.QueryResult{Columns: []string{column}, ColumnTypes: []string{"INTEGER"}}, nil
+	return &query.QueryResult{Columns: []string{"COLUMN_NAME", "COLUMN_TYPE"}, Rows: [][]any{{column, "INTEGER"}}}, nil
 }
 
 func TestCatalogSourceImportKeepsCatalogInFileNameAndColumns(t *testing.T) {
@@ -51,6 +51,7 @@ func TestCatalogSourceImportKeepsCatalogInFileNameAndColumns(t *testing.T) {
 		require.Len(t, preview.Assets, 1)
 		require.Equal(t, name, preview.Assets[0].Name)
 		require.Equal(t, catalog+"_id", preview.Assets[0].Columns[0].Name)
+		require.Equal(t, "INTEGER", preview.Assets[0].Columns[0].Type)
 		path := filepath.Join(root, preview.Assets[0].Path)
 		_, err = os.Stat(path)
 		require.ErrorIs(t, err, os.ErrNotExist)

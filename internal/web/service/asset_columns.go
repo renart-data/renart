@@ -34,6 +34,7 @@ func BuildInferAssetColumnsQuery(parsedPipeline *pipeline.Pipeline, asset *pipel
 		Environment:    environment,
 		Output:         "json",
 		LogicalSchema:  true,
+		SchemaTable:    targetTableName,
 	}, nil
 }
 
@@ -103,8 +104,7 @@ func (s *AssetService) FillColumnsFromDB(ctx context.Context, assetID string) (i
 	}, nil
 }
 
-// InferAssetColumns runs a single-row query against the asset's connection
-// and infers column names/types from the result.
+// InferAssetColumns reads the materialized relation's schema from the database.
 func (s *AssetService) InferAssetColumns(ctx context.Context, assetID string) (int, map[string]any, *APIError) {
 	_, parsedPipeline, asset, err := s.deps.ResolveAssetByID(ctx, assetID)
 	if err != nil {
@@ -136,6 +136,9 @@ func (s *AssetService) InferAssetColumns(ctx context.Context, assetID string) (i
 		return 0, nil, badRequestError("infer_columns_command_build_failed", buildErr.Error())
 	}
 	operation := webmodel.OperationMetadata{Type: "query_connection", ConnectionName: queryReq.ConnectionName, Query: queryReq.Query, Environment: queryReq.Environment}
+	if executedQuery := ExtractQueryTextFromOutput(output); executedQuery != "" {
+		operation.Query = executedQuery
+	}
 	if apiErr != nil {
 		return http.StatusBadRequest, map[string]any{
 			"status":     "error",

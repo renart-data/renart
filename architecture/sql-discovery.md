@@ -69,6 +69,32 @@ does not rewrite persisted settings; browser navigation uses fully qualified
 queries and leaves these defaults untouched. Physical target identity includes
 the same configured/default catalog, preventing cross-catalog collisions.
 
+## Column types
+
+Table-column discovery, materialized-asset inference, source imports, fill-columns,
+and runtime schema observations share `table_schema.go`. MySQL (including the
+Vitess/PlanetScale aliases), StarRocks and Doris read ordered `COLUMN_NAME` and
+`COLUMN_TYPE` values from `information_schema.columns`: their pinned native
+`SelectWithSchema` methods omit the result's `ColumnTypes`. This preserves the
+warehouse's precision, length and complex-type spelling even for empty tables.
+Catalog-qualified names query that catalog's metadata; identifiers and literal
+filters are escaped separately, without changing session defaults. Missing or
+inaccessible metadata is an error rather than an invented type or an empty
+successful schema. Fill-columns leaves existing declarations intact when the
+driver does not return a complete set of types.
+
+Other engines retain their native result-schema metadata using a zero-row
+`SELECT ... WHERE 1 = 0`, which does not depend on dialect-specific `LIMIT`
+syntax. DuckDB retains its logical `DESCRIBE` path so types such as `JSON` are
+not reduced to their transport representation. Browser observations pass the
+same types to the remote catalog cache for editor enrichment. Arbitrary query
+results still depend on the native client's result metadata; this adapter
+specifically describes stored relations, not arbitrary expression types.
+
+References: [StarRocks columns](https://docs.starrocks.io/docs/sql-reference/information_schema/columns/),
+[MySQL columns](https://dev.mysql.com/doc/refman/8.4/en/information-schema-columns-table.html),
+[Doris columns](https://doris.apache.org/docs/dev/admin-manual/system-tables/information_schema/columns).
+
 ## Verification
 
 Provider contract tests cover all six catalog-aware engine types, native result
