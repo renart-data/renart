@@ -1,4 +1,8 @@
 .comparison-main {
+  --comparison-renart-surface: #edf7f0;
+  --comparison-renart-header: #dcefe2;
+  --comparison-renart-border: #94bea1;
+  --comparison-renart-accent: #1f6b3c;
   padding-top: 1.6rem;
 }
 .comparison-breadcrumb {
@@ -135,6 +139,16 @@
 .comparison-table td {
   width: 39.5%;
   color: var(--landing-muted);
+}
+.comparison-table .comparison-table__renart {
+  background: var(--comparison-renart-surface);
+  box-shadow: inset 1px 0 var(--comparison-renart-border), inset -1px 0 var(--comparison-renart-border);
+}
+.comparison-table thead .comparison-table__renart {
+  color: var(--comparison-renart-accent);
+  background: var(--comparison-renart-header);
+  font-weight: 700;
+  box-shadow: inset 1px 0 var(--comparison-renart-border), inset -1px 0 var(--comparison-renart-border), inset 0 3px var(--comparison-renart-accent);
 }
 .comparison-source {
   display: block;

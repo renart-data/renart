@@ -44,9 +44,10 @@
   border-radius: 50%;
   font: 600 0.85rem/1 var(--landing-sans);
 }
-.feature-mark--included { color: #30634f; background: #e8f0eb; }
+.feature-mark--included { color: #166534; background: #d4efda; }
+.feature-mark--paid { color: #8a4b12; background: #fbe9ce; font-weight: 400; }
 .feature-mark--additional { color: #775724; background: #f4eddf; }
-.feature-mark--unavailable { color: #66706b; background: #eef0ed; }
+.feature-mark--unavailable { color: #a52c36; background: #fbe0e2; }
 .feature-matrix__scroll {
   position: relative;
   overflow-x: auto;
@@ -92,6 +93,18 @@
   box-shadow: 1px 0 var(--landing-line);
 }
 .feature-matrix__table tbody th { background: var(--landing-paper); }
+.feature-matrix__table .feature-matrix__renart {
+  background: var(--comparison-renart-surface);
+  box-shadow: inset 1px 0 var(--comparison-renart-border), inset -1px 0 var(--comparison-renart-border);
+}
+.feature-matrix__table thead .feature-matrix__renart {
+  background: var(--comparison-renart-header);
+  box-shadow: inset 1px 0 var(--comparison-renart-border), inset -1px 0 var(--comparison-renart-border), inset 0 3px var(--comparison-renart-accent);
+}
+.feature-matrix__renart .feature-matrix__product {
+  color: var(--comparison-renart-accent);
+  font-weight: 700;
+}
 .feature-matrix__product,
 .feature-matrix__focus,
 .feature-matrix__edition { display: block; }
