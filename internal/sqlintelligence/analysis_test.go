@@ -35,6 +35,28 @@ func TestAnalyzeQueryReturnsCompactSchemaAwareFacts(t *testing.T) {
 	assert.Equal(t, "amount", analysis.Projections[1].Upstream[0].Column)
 }
 
+func TestAnalyzeQueryHandlesIntervalArgumentInTableFunction(t *testing.T) {
+	analysis, err := AnalyzeQuery(
+		context.Background(),
+		`select range as time from range(
+			timestamp '2026-09-04 00:00:00',
+			timestamp '2026-09-04 01:00:00',
+			interval 1 hour
+		)`,
+		"duckdb",
+		Schema{},
+	)
+
+	require.NoError(t, err)
+	require.Len(t, analysis.OutputColumns, 1)
+	assert.Equal(t, "time", analysis.OutputColumns[0].Name)
+	assert.True(t, analysis.OutputNamesComplete)
+	require.Len(t, analysis.Projections, 1)
+	require.Len(t, analysis.Projections[0].Upstream, 1)
+	assert.Equal(t, "range", analysis.Projections[0].Upstream[0].Column)
+	assert.Equal(t, "table_function", analysis.Projections[0].Upstream[0].SourceKind)
+}
+
 func TestAnalyzeQueryClassifiesCompleteAndIncompleteProjectionNames(t *testing.T) {
 	t.Run("known star is expanded", func(t *testing.T) {
 		analysis, err := AnalyzeQuery(context.Background(), "select * from t", "duckdb", Schema{

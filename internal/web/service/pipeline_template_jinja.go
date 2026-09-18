@@ -148,13 +148,13 @@ columns:
   - name: customer_segment
     type: varchar
   - name: web_revenue
-    type: bigint
+    type: hugeint
   - name: partner_revenue
-    type: bigint
+    type: hugeint
   - name: store_revenue
-    type: bigint
+    type: hugeint
   - name: total_revenue
-    type: bigint
+    type: hugeint
 @bruin */
 
 SELECT
