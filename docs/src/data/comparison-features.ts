@@ -1,7 +1,7 @@
 export const productIds = ['renart', 'bruin', 'hex', 'dlt'] as const;
 export type ProductId = (typeof productIds)[number];
 export type CompetitorId = Exclude<ProductId, 'renart'>;
-export type FeatureStatus = 'included' | 'additional' | 'unavailable';
+export type FeatureStatus = 'included' | 'paid' | 'additional' | 'unavailable';
 
 export const products: Record<ProductId, { name: string; focus: string; edition: string }> = {
   renart: { name: 'Renart', focus: 'Pipelines + analysis', edition: 'Local · public alpha' },
@@ -12,7 +12,8 @@ export const products: Record<ProductId, { name: string; focus: string; edition:
 
 export const featureStatuses: Record<FeatureStatus, { icon: string; label: string }> = {
   included: { icon: '✓', label: 'Included' },
-  additional: { icon: '↗', label: 'Separate tool or paid offering' },
+  paid: { icon: '$', label: 'Paid offering' },
+  additional: { icon: '↗', label: 'Separate tool or service' },
   unavailable: { icon: '–', label: 'Not offered' },
 };
 
@@ -26,7 +27,8 @@ interface FeatureRow {
   cells: Record<ProductId, FeatureCell>;
 }
 
-// Reviewed 2026-09-11. Keep each label linked to the source supporting its scope.
+// Feature scope reviewed 2026-09-11; paid availability checked 2026-09-18.
+// Keep each label linked to the source supporting its scope.
 // A check denotes availability, not equivalent depth or a feature score.
 export const featureRows: FeatureRow[] = [
   {
@@ -88,7 +90,7 @@ export const featureRows: FeatureRow[] = [
     cells: {
       renart: { status: 'included', label: 'Your Renart server', href: '/docs/scheduling/overview/' },
       bruin: { status: 'additional', label: 'Cloud / scheduler', href: 'https://getbruin.com/docs/bruin/pipelines/definition.html#schedule' },
-      hex: { status: 'additional', label: 'Paid Hex plans', href: 'https://learn.hex.tech/docs/share-insights/scheduled-runs' },
+      hex: { status: 'paid', label: 'Paid Hex plans', href: 'https://learn.hex.tech/docs/share-insights/scheduled-runs' },
       dlt: { status: 'additional', label: 'Scheduler / dltHub', href: 'https://dlthub.com/docs/hub/getting-started/oss-and-dlthub' },
     },
   },
@@ -97,7 +99,7 @@ export const featureRows: FeatureRow[] = [
     cells: {
       renart: { status: 'included', label: 'Live project files', href: '/docs/how-it-works/' },
       bruin: { status: 'included', label: 'Project files', href: 'https://getbruin.com/docs/bruin/' },
-      hex: { status: 'additional', label: 'Export on publish', href: 'https://learn.hex.tech/docs/explore-data/projects/git-export' },
+      hex: { status: 'paid', label: 'Export on publish', href: 'https://learn.hex.tech/docs/explore-data/projects/git-export' },
       dlt: { status: 'included', label: 'Python project files', href: 'https://dlthub.com/docs/intro' },
     },
   },
@@ -107,7 +109,7 @@ export const featureRows: FeatureRow[] = [
       renart: { status: 'unavailable', label: 'Not offered', href: '/docs/reference/security-and-privacy/' },
       bruin: { status: 'additional', label: 'Bruin Cloud', href: 'https://getbruin.com/docs/bruin/cloud/overview.html' },
       hex: { status: 'included', label: 'Hosted workspace', href: 'https://learn.hex.tech/docs' },
-      dlt: { status: 'additional', label: 'dltHub', href: 'https://dlthub.com/docs/hub/getting-started/oss-and-dlthub' },
+      dlt: { status: 'paid', label: 'dltHub', href: 'https://dlthub.com/docs/hub/getting-started/oss-and-dlthub' },
     },
   },
 ];

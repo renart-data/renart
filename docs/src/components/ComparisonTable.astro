@@ -9,10 +9,10 @@ const { competitor, rows } = Astro.props;
 <div class="comparison-table-wrap" role="region" aria-label={`Renart and ${competitor} workflow comparison`} tabindex="0">
   <table class="comparison-table">
     <caption>How the workflows compare</caption>
-    <thead><tr><th scope="col">Your workflow</th><th scope="col">Renart</th><th scope="col">{competitor}</th></tr></thead>
+    <thead><tr><th scope="col">Your workflow</th><th scope="col" class="comparison-table__renart">Renart</th><th scope="col">{competitor}</th></tr></thead>
     <tbody>{rows.map((row) => <tr>
       <th scope="row">{row.criterion}</th>
-      <td>{row.renart.text}{row.renart.href && <a class="comparison-source" href={row.renart.href}>Renart docs <span aria-hidden="true">↗</span></a>}</td>
+      <td class="comparison-table__renart">{row.renart.text}{row.renart.href && <a class="comparison-source" href={row.renart.href}>Renart docs <span aria-hidden="true">↗</span></a>}</td>
       <td>{row.other.text}{row.other.href && <a class="comparison-source" href={row.other.href}>{competitor} docs <span aria-hidden="true">↗</span></a>}</td>
     </tr>)}</tbody>
   </table>

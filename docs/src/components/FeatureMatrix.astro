@@ -33,7 +33,7 @@ const names = columns.map((id) => products[id].name).join(', ');
       <thead>
         <tr>
           <th scope="col">Feature</th>
-          {columns.map((id) => <th scope="col">
+          {columns.map((id) => <th scope="col" class:list={{ 'feature-matrix__renart': id === 'renart' }}>
             <span class="feature-matrix__product">{products[id].name}</span>
             <span class="feature-matrix__focus">{products[id].focus}</span>
             <span class="feature-matrix__edition">{products[id].edition}</span>
@@ -46,7 +46,7 @@ const names = columns.map((id) => products[id].name).join(', ');
           {columns.map((id) => {
             const cell = row.cells[id];
             const status = featureStatuses[cell.status];
-            return <td>
+            return <td class:list={{ 'feature-matrix__renart': id === 'renart' }}>
               <a class="feature-matrix__cell" href={cell.href}>
                 <span class={`feature-mark feature-mark--${cell.status}`} aria-hidden="true">{status.icon}</span>
                 <span><span class="feature-matrix__sr-only">{status.label}: </span>{cell.label}</span>
@@ -58,5 +58,5 @@ const names = columns.map((id) => products[id].name).join(', ');
     </table>
   </div>
   {!competitor && <p class="feature-matrix__scroll-hint">Scroll across to compare all four tools. Feature names stay in view.</p>}
-  <p id="feature-matrix-note" class="feature-matrix__note">Each cell links to its documentation. Arrows name a separate tool, service or paid plan; availability does not imply equal scope. Reviewed <time datetime="2026-09-11">11 September 2026</time>.</p>
+  <p id="feature-matrix-note" class="feature-matrix__note">Each cell links to its documentation. $ marks a paid offering; ↗ marks a separate tool or service. Availability does not imply equal scope. Feature scope reviewed <time datetime="2026-09-11">11 September 2026</time>; paid availability checked <time datetime="2026-09-18">18 September 2026</time>.</p>
 </section>
