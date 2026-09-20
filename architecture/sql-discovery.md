@@ -1,7 +1,7 @@
 # SQL discovery coverage
 
-Audit of the pinned Bruin v0.11.700 clients and Renart's service adapters,
-2026-09-09. `TestSQLWarehouseDiscoveryCoverage` covers every connection type
+Audit of the pinned Bruin v0.11.755 clients and Renart's service adapters,
+2026-09-20. `TestSQLWarehouseDiscoveryCoverage` covers every connection type
 advertised for SQL assets and forces an explicit review when that set changes.
 This is a source/contract audit, not a claim that every cloud warehouse was
 tested with live credentials.
@@ -36,7 +36,8 @@ native limitations below are unchanged.
 | ClickHouse, Athena | Native | Databases and tables |
 | SQL Server, Synapse | Native shared SQL Server client | Upstream uses USE and omits table schemas; needs a non-session-mutating, schema-preserving adapter |
 | Vertica | Native | Database plus schema-qualified tables |
-| Fabric, Dremio, Oracle, Sail, Spark | Missing | Select is available, but neither database nor table discovery is implemented |
+| Fabric | Native | Configured warehouse only; schema-grouped tables from INFORMATION_SCHEMA, rejects a different database |
+| Dremio, Oracle, Sail, Spark | Missing | Select is available, but neither database nor table discovery is implemented |
 
 ## Catalog identity and connection defaults
 

@@ -20,7 +20,7 @@ export const Route = createRootRoute({
     <main className="mx-auto max-w-lg p-8">
       <h1 className="text-lg font-medium">This link could not be opened</h1>
       <p role="alert" className="mt-3 text-sm">
-        {error.message}
+        {error instanceof Error ? error.message : "An unexpected navigation error occurred."}
       </p>
       <a href="/" className="mt-4 inline-block text-sm text-primary underline">
         Open Renart home
