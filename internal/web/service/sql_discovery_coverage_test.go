@@ -42,7 +42,7 @@ func TestSQLWarehouseDiscoveryCoverage(t *testing.T) {
 		"spark": (*spark.Client)(nil), "starrocks": (*starrocks.Client)(nil),
 		"trino": (*trino.Client)(nil), "vertica": (*vertica.DB)(nil),
 	}
-	knownMissing := map[string]bool{"fabric": true, "dremio": true, "sail": true, "spark": true, "oracle": true}
+	knownMissing := map[string]bool{"dremio": true, "sail": true, "spark": true, "oracle": true}
 	warehouses := warehouseConnectionTypes()
 	require.Len(t, clients, len(warehouses), "update the discovery audit for new SQL platforms")
 	for kind := range warehouses {

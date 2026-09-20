@@ -10,7 +10,7 @@ import { NotebookBrowserDropReview } from "./notebook-browser-drop-review";
 import { DATA_BROWSER_MIME } from "@/lib/data-browser-transfer";
 
 import { useNavigate } from "@tanstack/react-router";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useAtomValueRawSync, useSetAtom } from "jotai";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -527,7 +527,7 @@ export function AppNotebookLivePage({
   const notebookRuntimeEventRef = useRef(notebookRuntimeEvent);
   notebookRuntimeEventRef.current = notebookRuntimeEvent;
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
-  const selectedExecutionTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
+  const selectedExecutionTimeWindow = useAtomValueRawSync(selectedExecutionTimeWindowAtom);
   const navigate = useNavigate();
   const [newNotebookOpen, setNewNotebookOpen] = useState(false);
   const {

@@ -11,7 +11,7 @@ import {
   Trash2,
   TriangleAlert,
 } from "lucide-react";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ReactNode, type RefCallback } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +56,7 @@ export function PresentationInspector({
   assetChoices,
   selection,
   findings,
+  arrivalRef,
   focusPath,
   onFocusPathHandled,
   onSelect,
@@ -67,6 +68,7 @@ export function PresentationInspector({
   assetChoices: AssetChoice[];
   selection: PresentationBuilderSelection;
   findings: PresentationFinding[];
+  arrivalRef?: RefCallback<HTMLDivElement>;
   focusPath?: string | null;
   onFocusPathHandled?: () => void;
   onSelect: (selection: PresentationBuilderSelection) => void;
@@ -87,6 +89,7 @@ export function PresentationInspector({
       );
       return (
         <InspectorFrame
+          arrivalRef={arrivalRef}
           icon={SlidersHorizontal}
           title="Dataset"
           subtitle="Configure the selected data source."
@@ -139,6 +142,7 @@ export function PresentationInspector({
         <InspectorFrame
           icon={SlidersHorizontal}
           title="Control"
+          arrivalRef={arrivalRef}
           subtitle="Edit its default, options, and bindings."
           findings={findingsForIndexedPath(findings, "filters", index)}
           path={`filters[${index}]`}
@@ -191,6 +195,7 @@ export function PresentationInspector({
         <InspectorFrame
           icon={SlidersHorizontal}
           title="Visualization"
+          arrivalRef={arrivalRef}
           subtitle="Data, appearance, and interaction settings."
           findings={findingsForIndexedPath(findings, "visualizations", index)}
           path={`visualizations[${index}]`}
@@ -239,6 +244,7 @@ export function PresentationInspector({
         <InspectorFrame
           icon={FileText}
           title="Report block"
+          arrivalRef={arrivalRef}
           subtitle="Identity, content source, and print behavior."
           findings={findingsForIndexedPath(findings, "sections", index)}
           path={`sections[${index}]`}
@@ -278,6 +284,7 @@ export function PresentationInspector({
     <InspectorFrame
       icon={SlidersHorizontal}
       title="Presentation"
+      arrivalRef={arrivalRef}
       subtitle="Artifact settings and checker findings."
       findings={findings}
       path=""
@@ -315,6 +322,7 @@ function InspectorFrame({
   title,
   subtitle,
   findings,
+  arrivalRef,
   path,
   focusPath,
   onFocusPathHandled,
@@ -324,6 +332,7 @@ function InspectorFrame({
   title: string;
   subtitle: string;
   findings: PresentationFinding[];
+  arrivalRef?: RefCallback<HTMLDivElement>;
   path: string;
   focusPath?: string | null;
   onFocusPathHandled?: () => void;
@@ -356,7 +365,14 @@ function InspectorFrame({
       data-testid="presentation-inspector"
       className="flex min-w-0 flex-col gap-4 overflow-x-hidden p-3"
     >
-      <div className="flex items-start gap-2">
+      <div
+        ref={arrivalRef}
+        role="group"
+        tabIndex={-1}
+        aria-label={`${title} settings`}
+        data-navigation-component={path}
+        className="flex items-start gap-2 rounded-md outline-none"
+      >
         <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
           <Icon className="size-3.5" />
         </span>

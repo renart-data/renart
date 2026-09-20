@@ -417,6 +417,17 @@ test.describe("app scheduler pages live", () => {
     await expect
       .poll(() => eventsViewport.evaluate((viewport) => viewport.scrollTop))
       .toBeGreaterThan(firstEventScrollTop + 50);
+
+    // A cold bookmark must win over the timeline's initial follow-bottom
+    // behavior without changing the independently selected Output tab.
+    await page.goto(
+      `${liveApp.baseURL}/runs/timeline-density-20?run_asset=analytics.asset_01&run_focus=timeline&run_tab=output`,
+    );
+    await expect(page.getByRole("tab", { name: "Output" })).toHaveAttribute("data-state", "active");
+    await expect(
+      page.locator('[data-testid="run-timeline-asset-label"][data-asset="analytics.asset_01"]'),
+    ).toBeFocused();
+    await expect.poll(() => timelineViewport.evaluate((viewport) => viewport.scrollTop)).toBe(0);
   });
 
   test("renders follower ownership as read-only", async ({ liveApp, page }) => {

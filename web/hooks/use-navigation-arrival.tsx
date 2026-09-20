@@ -13,6 +13,7 @@ import { useAtomValue } from "jotai";
 import { workspaceAtom } from "@/lib/atoms/workspace";
 import { resourceDestination } from "@/lib/ui-navigation";
 import { parseDetail, type ResourceSearch } from "@/lib/resource-navigation";
+import { runNavigationTargetKey, type RunLocation } from "@/lib/run-navigation";
 import {
   NavigationArrivalTracker,
   navigationDocument,
@@ -20,6 +21,7 @@ import {
   navigationTargetKey,
   whenNavigationElementReady,
   revealNavigationElement,
+  type NavigationRevealOptions,
 } from "@/lib/navigation-arrival";
 
 const ArrivalContext = createContext<{ id: string; target: string } | undefined>(undefined);
@@ -70,7 +72,9 @@ export function NavigationArrivalProvider({ children }: { children: ReactNode })
       /* Unavailable owners are reported by ResourceNavigation. */
     }
   }
-  const target = detail ? navigationTargetKey(project, detail) : "";
+  const target = detail
+    ? navigationTargetKey(project, detail)
+    : runNavigationTargetKey(project, location?.pathname ?? "", location?.search ?? {});
   const visit = JSON.stringify([
     location?.href,
     state?.__TSR_key ?? state?.key,
@@ -115,6 +119,17 @@ export function useNavigationArrival(detail: ResourceSearch["detail"]) {
     : undefined;
 }
 
+export function useRunNavigationArrival(runId: string, search: RunLocation) {
+  const arrival = useContext(ArrivalContext);
+  const location = useLocation();
+  const key = runNavigationTargetKey(
+    (location.search as ResourceSearch).project,
+    `/runs/${encodeURIComponent(runId)}`,
+    search,
+  );
+  return key && arrival?.target === key ? arrival.id : undefined;
+}
+
 // Owners call this only after their normal reveal/focus lifecycle succeeds.
 // No selectors, polling or hidden copies of editors are registered globally.
 export function useArrivalHighlight(token?: string) {
@@ -132,18 +147,22 @@ export function useArrivalHighlight(token?: string) {
 
 // The owner supplies a token only for its exact semantic destination. Mount
 // this ref inside any Suspense boundary, after the real content has loaded.
-export function useNavigationArrivalRef(token?: string) {
+export function useNavigationArrivalRef(token?: string, { block }: NavigationRevealOptions = {}) {
+  const [element, setElement] = useState<HTMLElement | null>(null);
   const acknowledged = useRef<string | undefined>(undefined);
   const highlight = useArrivalHighlight(token);
-  return useCallback(
-    (element: HTMLElement | null) => {
-      if (!element || !token || acknowledged.current === token) return;
-      return whenNavigationElementReady(element, (target) => {
-        acknowledged.current = token;
-        revealNavigationElement(target);
-        highlight(target);
-      });
-    },
-    [token, highlight],
-  );
+  // Radix Presence deliberately stabilizes composed refs. A new arrival must
+  // therefore be observed independently of whether that ref is called again.
+  useEffect(() => {
+    if (!element || !token || acknowledged.current === token) return;
+    return whenNavigationElementReady(element, (target) => {
+      acknowledged.current = token;
+      revealNavigationElement(target, { block });
+      highlight(target);
+    });
+  }, [element, token, highlight, block]);
+  return useCallback((node: HTMLElement | null) => {
+    setElement(node);
+    return node ? () => setElement((current) => (current === node ? null : current)) : undefined;
+  }, []);
 }

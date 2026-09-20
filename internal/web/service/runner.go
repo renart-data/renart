@@ -43,6 +43,9 @@ type QueryConnectionRequest struct {
 	Environment    string
 	Output         string
 	LogicalSchema  bool
+	// SchemaTable requests only this relation's schema. The executor builds the
+	// dialect-specific query from the resolved connection; Query is unused.
+	SchemaTable string
 }
 
 type FormatAssetRequest struct {

@@ -5,7 +5,7 @@ export type RunLocation = {
 };
 
 export function normalizeRunLocation(search: Record<string, unknown>): RunLocation {
-  return {
+  const location: RunLocation = {
     run_tab: ["events", "plan", "output"].includes(String(search.run_tab))
       ? (search.run_tab as RunLocation["run_tab"])
       : undefined,
@@ -20,6 +20,22 @@ export function normalizeRunLocation(search: Record<string, unknown>): RunLocati
         ? search.run_focus
         : undefined,
   };
+  if (location.run_asset && location.run_focus === "events") location.run_tab = "events";
+  return location;
+}
+
+// Runs already have their own canonical locator. Adapt it to the shared arrival
+// lifecycle without a second URL contract or coupling independent output tabs.
+export function runNavigationTargetKey(
+  project: string | undefined,
+  pathname: string,
+  search: Record<string, unknown>,
+) {
+  if (!/^\/runs\/[^/]+$/.test(pathname)) return "";
+  const { run_asset, run_focus } = normalizeRunLocation(search);
+  return run_asset && run_focus
+    ? JSON.stringify({ project, run: pathname, asset: run_asset, focus: run_focus })
+    : "";
 }
 
 export function runAssetLocation(

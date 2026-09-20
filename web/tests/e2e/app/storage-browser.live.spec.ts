@@ -2,6 +2,7 @@ import { expect, type Page } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { storageSecretChanges, storageTest as test } from "../live-storage-app-fixture";
+import { observeArrivals, arrivals } from "../navigation-arrival-probe";
 import type {
   DataBrowserConnectionsResponse,
   DataBrowserChildrenResponse,
@@ -379,6 +380,35 @@ test.describe("Sling storage browser", () => {
       await verifyWildcardLoad();
       expect(errors).toEqual([]);
       await page.screenshot({ path: info.outputPath(`${provider}-storage-canvas.png`) });
+      await observeArrivals(page);
+      const config = await (await page.request.get(`${liveApp.baseURL}/api/config`)).json();
+      const bookmark = new URL(`${liveApp.baseURL}/data`);
+      bookmark.searchParams.set("project", config.project_id);
+      bookmark.searchParams.set(
+        "detail",
+        JSON.stringify({
+          v: 1,
+          environment: "default",
+          target: {
+            kind: "data-object",
+            section: "schema",
+            address: {
+              source_kind: "storage",
+              connection: name,
+              connection_type: provider,
+              path: "incoming/orders.csv",
+            },
+          },
+        }),
+      );
+      await page.goto(bookmark.href);
+      const metadata = page.getByLabel("Data object details", { exact: true });
+      await expect(metadata).toBeFocused();
+      await expect(metadata).toContainText("orders.csv");
+      await expect
+        .poll(() => arrivals(page))
+        .toEqual([expect.objectContaining({ label: "Data object details", visible: true })]);
+      expect(commands).toEqual([]);
     });
   }
 });

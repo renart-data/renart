@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useNavigate } from "@tanstack/react-router";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useAtomValueRawSync, useSetAtom } from "jotai";
 import {
   Group as PanelGroup,
   Panel,
@@ -676,7 +676,7 @@ export function AppBuildPage({
         ? `Run ${deploymentLabel(deployState.status?.ordinal, pipelineRunSource.snapshot_version_id, "deployment")}`
         : "Deployment required"
     : "Run workspace";
-  const selectedExecutionTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
+  const selectedExecutionTimeWindow = useAtomValueRawSync(selectedExecutionTimeWindowAtom);
   const executionWindowBlockedReason = selectedExecutionTimeWindow
     ? undefined
     : "Resolving the execution window";

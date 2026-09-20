@@ -107,12 +107,26 @@ export function whenNavigationElementReady(
   return cleanup;
 }
 
-export function revealNavigationElement(element: HTMLElement) {
+export type NavigationRevealOptions = { block?: "center" };
+
+export function revealNavigationElement(
+  element: HTMLElement,
+  { block }: NavigationRevealOptions = {},
+) {
   element.focus({ preventScroll: true });
   const viewport = element.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
   if (!viewport) return;
   const target = element.getBoundingClientRect();
   const bounds = viewport.getBoundingClientRect();
+  // Compact run rows need surrounding context (including the timeline axis
+  // for the first row), without scrolling any outer workbench panels.
+  if (block === "center" && target.height < bounds.height) {
+    viewport.scrollTop = Math.max(
+      0,
+      viewport.scrollTop + target.top - bounds.top - (bounds.height - target.height) / 2,
+    );
+    return;
+  }
   // Reveal only the destination's own scroll area. A tall section needs its
   // heading, not its footer, in view; an already visible target need not move.
   if (target.top < bounds.top || target.top >= bounds.bottom || target.height > bounds.height)

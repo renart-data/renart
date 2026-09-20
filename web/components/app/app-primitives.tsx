@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { ComponentType, Fragment, ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
+import { navigationArrivalState } from "@/lib/navigation-arrival";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -380,6 +381,8 @@ function RunInfoBadge({
             to="/runs/$runId"
             params={{ runId }}
             search={search}
+            state={(state) => ({ ...state, ...navigationArrivalState() })}
+            resetScroll={false}
             preload={false}
             className="text-primary underline underline-offset-2"
           >

@@ -14,7 +14,6 @@ decisions and dependencies in each plan; there is no global questions scratchpad
 | Plan | Remaining boundary / prerequisite |
 | --- | --- |
 | [Full-file asset editor](full-file-asset-editor.md) | Proposed: isolate malformed documents, revision-checked raw saves, shared mixed-language IntelliSense; not implemented |
-| [Navigation arrival feedback](navigation-arrival-feedback.md) | Shared lifecycle and asset section/field/check feedback implemented; presentation/run and whole-object/connection adapters remain |
 | [Notebook Data Browser drops](notebook-data-browser-drops.md) | Table/project-file/S3-file insertion implemented; prefix review, connection picker and further transports remain |
 | [Shared preview row loading](preview-row-loading.md) | Inspect, Data Browser, notebook and query previews implemented; authored table presentation adapters remain |
 | [Workspace command handoff](workspace-command-handoff.md) | Stateful CLI delegation, short-lived authority, safe launcher handoff; highest-priority correctness boundary |
@@ -67,3 +66,7 @@ been retired. Navigation rationale is in frontend architecture, SDK/runtime
 contracts are in backend/notebook architecture, and retained local release
 evidence is described in testing. Prototype-code removal is verified separately
 from documentation cleanup; the semantic impact playground is not retired.
+
+The navigation arrival feedback plan was completed on 14 September 2026. Its
+owner adapters, lifecycle and extension contract are documented in
+[diagnostic navigation](../architecture/diagnostic-navigation.md).

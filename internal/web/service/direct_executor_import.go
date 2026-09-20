@@ -15,7 +15,6 @@ import (
 
 	"github.com/bruin-data/bruin/pkg/ansisql"
 	"github.com/bruin-data/bruin/pkg/mssql"
-	"github.com/bruin-data/bruin/pkg/oracle"
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"github.com/bruin-data/bruin/pkg/postgres"
 	"github.com/bruin-data/bruin/pkg/query"
@@ -371,32 +370,11 @@ func fillDirectAssetColumnsFromDB(ctx context.Context, asset *pipeline.Asset, co
 
 	fullTableName := schemaName + "." + tableName
 	engine := pipeline.AssetTypeConnectionMapping[asset.Type]
-	if sqlnamespace.Supported(engine) {
-		quoted, err := sqlnamespace.QuoteReference(engine, fullTableName)
-		if err != nil {
-			return err
-		}
-		fullTableName = quoted
-	}
-	if _, ok := conn.(*postgres.Client); ok {
-		fullTableName = postgres.QuoteIdentifier(fullTableName)
-	}
-	if _, ok := conn.(*mssql.DB); ok {
-		fullTableName = mssql.QuoteIdentifier(fullTableName)
-	}
-
-	queryStr := fmt.Sprintf("SELECT * FROM %s WHERE 1=0 LIMIT 0", fullTableName)
-	if _, ok := conn.(*mssql.DB); ok {
-		queryStr = "SELECT TOP 0 * FROM " + fullTableName
-	} else if _, ok := conn.(*oracle.Client); ok {
-		queryStr = "SELECT * FROM " + fullTableName + " WHERE 1=0"
-	}
-
-	result, err := querier.SelectWithSchema(ctx, &query.Query{Query: queryStr})
+	result, err := selectTableSchema(ctx, querier, engine, fullTableName)
 	if err != nil {
 		return err
 	}
-	if len(result.Columns) == 0 {
+	if result == nil || len(result.Columns) == 0 {
 		return fmt.Errorf("no columns found for table %s.%s", schemaName, tableName)
 	}
 

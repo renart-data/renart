@@ -14,7 +14,7 @@ import {
   Clock,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useAtomValueRawSync, useSetAtom } from "jotai";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -221,7 +221,7 @@ function AppExecutionSelector() {
   const location = useLocation();
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
   const setSelectedEnvironmentOverride = useSetAtom(selectedEnvironmentOverrideAtom);
-  const selectedExecutionTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
+  const selectedExecutionTimeWindow = useAtomValueRawSync(selectedExecutionTimeWindowAtom);
   const setSelectedExecutionTimeWindow = useSetAtom(selectedExecutionTimeWindowAtom);
   const { normalizedConfigEnvironments } = useWorkspaceSettingsData();
   const params = useParams({ strict: false }) as { pipelineId?: string };

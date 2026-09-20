@@ -1,4 +1,4 @@
-import { useAtomValue } from "jotai";
+import { useAtomValue, useAtomValueRawSync } from "jotai";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getPipelineStaleness, type AssetStaleness } from "@/lib/api-staleness";
@@ -68,7 +68,7 @@ function sameInstant(a?: string, b?: string) {
 // SSE events pushed after saves and run completions.
 export function usePipelinesStaleness(pipelineIds: string[]): PipelinesStaleness {
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
-  const selectedTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
+  const selectedTimeWindow = useAtomValueRawSync(selectedExecutionTimeWindowAtom);
   const workspaceReconnectSequence = useAtomValue(workspaceReconnectSequenceAtom);
   const stalenessEvent = useAtomValue(stalenessEventAtom);
   // Atom values retain the last push. Only consume a newly delivered value;

@@ -63,10 +63,12 @@ var connectionSpecs = []ConnectionProfile{
 // mapping fail the parity test instead of silently falling back to generic SQL.
 var unsupportedConnectionTypes = map[string]string{
 	"aws":                 "object-storage sensor connection",
+	"clevertap":           "non-SQL source connection",
 	"dataproc_serverless": "serverless Python execution connection",
 	"dynamodb":            "non-SQL source connection",
 	"elasticsearch":       "non-SQL source connection",
 	"emr_serverless":      "serverless Python execution connection",
+	"gcs":                 "object-storage sensor connection",
 	"google_sheets":       "non-SQL source connection",
 	"iceberg":             "table-format asset without a Renart SQL connection profile",
 	"mongo":               "non-SQL source connection",

@@ -1044,7 +1044,9 @@ surfaces rather than inventing another card shell.
   Local aliases refine UI unions/nullability without duplicating entire DTOs.
 - [lib/atoms/](../web/lib/atoms): Jotai atoms split by domain (`workspace`,
   `selection`, `editor`, `results`, `materialization`, `sql-discovery`, suggestion
-  catalog).
+  catalog). Execution-window consumers use `useAtomValueRawSync`: the shell
+  initializes the shared window in a mount effect, which ordinary Jotai 3
+  subscriptions can miss when they mount later in the same commit.
 - [lib/app-lineage-layout.ts](../web/lib/app-lineage-layout.ts): lineage canvas
   layout engine.
 - [lib/asset-visualization.ts](../web/lib/asset-visualization.ts): visualization

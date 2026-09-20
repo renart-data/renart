@@ -143,6 +143,11 @@ has finished entering. A temporary element-local ResizeObserver handles
 display-hidden tabs; refs cancel obsolete readiness work and disconnect after
 arrival. Only the nearest owned ScrollArea is scrolled. Lazy owners mount the
 wrapper inside their Suspense boundary, not around a loading placeholder.
+The DOM ref is stable; a separate effect observes the arrival token and mounted
+element. This also works through Radix Presence, which does not reattach an
+already-mounted child's ref on each token change. Register each tab container
+independently and supply a token only to the addressed one. Keep the hook in the
+stable editor owner when a local drawer can unmount and reopen its content.
 
 All asset metadata sections (Identity, Materialization, Dependencies, Columns,
 Checks and Tests) use this adapter, including the empty Columns state addressed
@@ -153,9 +158,40 @@ property-tab changes reflect their locator silently. Noninteractive section
 wrappers have no permanent focus outline after the short treatment; child
 controls keep their normal focus indicators.
 
-Connection fields, asset column fields/checks/sections, source ranges, notebook cells
-and Data Browser columns are migrated; remaining adapters are tracked in
-`plans/navigation-arrival-feedback.md`.
+Connection links without a field highlight the loaded connection header;
+field links still focus only their exact control. Data Browser links highlight
+the requested Columns, Preview or saved SQL pane, or the metadata header for
+S3/SFTP objects. Browsing a Preview link never runs the preview. Object metadata
+must belong to the current address/environment before it can acknowledge an
+arrival; missing columns and unavailable definitions never highlight a fallback.
+Local Data Browser tab changes reflect silently and replace the locator.
+
+Presentation links select the exact artifact, dataset, control, visualization
+or report block and highlight its real inspector header. Narrow desktop windows
+and mobile use the existing inspector Sheet; wide windows use the docked owner.
+Only one copy is mounted, and reopening local tools does not replay the old
+arrival. Missing or ambiguous component IDs retain their existing notice.
+
+Runs adapt their existing `run_asset` / `run_focus` locator to the same committed
+arrival tracker through `runNavigationTargetKey` / `useRunNavigationArrival`.
+Identity includes the project, run, asset and Events/Timeline destination, not
+independent filters or output tabs. Event links reveal Events and highlight the
+first recorded event for that asset; timeline links highlight its label without
+switching Output or Plan. Explicit repeat clicks carry fresh intent tokens.
+Refs wait for real rows, including delayed run-detail responses; missing targets
+in completed runs show a notice instead of choosing another row. Hover/selected
+asset styling remains separate from the temporary arrival treatment. Compact run
+targets opt into centering within their own ScrollArea, retaining the timeline
+axis when revealing the first row. Section destinations retain heading-first
+reveal behavior; neither mode scrolls unrelated workbench panels.
+
+The migrated families are connection fields/headers, asset column fields,
+checks/sections/source ranges, notebook cells, Data Browser objects/columns,
+presentation inspectors and run event/timeline targets. The live navigation,
+section, source, owner, settings and storage specs cover cold/history/repeat
+arrivals, delayed content, responsive owners, reduced motion, unavailable targets,
+silent reflection and the absence of automatic execution. The pure arrival and
+run-locator tests cover identity, normalization and stale-work cleanup.
 
 ## Coverage and extension rule
 

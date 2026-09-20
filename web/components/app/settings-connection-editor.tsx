@@ -4,6 +4,7 @@ import { useSettingsSource } from "./settings-source";
 import { useSettingsLeaveGuard } from "./settings-leave-guard";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 import { useNavigationArrival } from "@/hooks/use-navigation-arrival";
+import { NavigationArrivalTarget } from "./navigation-arrival-target";
 import { WorkspaceConnectionFormFields } from "@/components/workspace-connection-form-fields";
 import { ConnectionAccessPreview } from "@/components/app/connection-access-preview";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -199,14 +200,31 @@ export function ConnectionEditor({
     >
       {guard.dialog}
       {source.notice}
-      <SettingsEditorHeader
-        title={mode === "create" ? "New connection" : (form.activeConnection?.name ?? "Connection")}
-        description={
-          mode === "create"
-            ? "Sensitive values are write-only and scoped to this environment."
-            : `${form.connectionForm.type} · ${state.environment}`
+      <NavigationArrivalTarget
+        arrival={
+          state.mode === "edit" &&
+          form.activeConnection &&
+          resource.detail?.target.kind === "connection" &&
+          resource.detail.target.connection === state.connection &&
+          resource.detail.environment === state.environment &&
+          !resource.detail.target.field
+            ? arrival
+            : undefined
         }
-      />
+        aria-label="Connection details"
+        className="rounded-md"
+      >
+        <SettingsEditorHeader
+          title={
+            mode === "create" ? "New connection" : (form.activeConnection?.name ?? "Connection")
+          }
+          description={
+            mode === "create"
+              ? "Sensitive values are write-only and scoped to this environment."
+              : `${form.connectionForm.type} · ${state.environment}`
+          }
+        />
+      </NavigationArrivalTarget>
       <div className="grid min-w-0 gap-4">
         {focusedField &&
         focusedField !== "access_mode" &&

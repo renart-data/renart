@@ -1,8 +1,13 @@
 "use client";
 
 import { useAtomValue } from "jotai";
-import { useLocation, useNavigate } from "@tanstack/react-router";
-import { useNavigationArrival, useArrivalHighlight } from "@/hooks/use-navigation-arrival";
+import { useLocation } from "@tanstack/react-router";
+import {
+  useNavigationArrival,
+  useArrivalHighlight,
+  useNavigationArrivalRef,
+} from "@/hooks/use-navigation-arrival";
+import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 import { ResourceLink } from "../resource-link";
 import { resolveColumn, type DataTarget, type ResourceSearch } from "@/lib/resource-navigation";
 import {
@@ -799,7 +804,24 @@ function DataBrowserDetail({
   const lastFocus = useRef("");
   const focusKey = `${object?.id}:${focusedColumn}:${section}:${focusToken}`;
   const highlight = useArrivalHighlight(focusToken);
-  const schemaViewport = useRef<HTMLDivElement>(null);
+  const wholeObjectArrival = focusedColumn ? undefined : focusToken;
+  const storageObject = object?.address?.source_kind === "storage";
+  // Presence keeps even inactive tab containers mounted and stabilizes their
+  // refs. Register each container once; only the addressed one gets a token.
+  const schemaArrival = useNavigationArrivalRef(
+    !storageObject && section === "schema" ? wholeObjectArrival : undefined,
+  );
+  const rowsArrival = useNavigationArrivalRef(
+    !storageObject && section === "rows" ? wholeObjectArrival : undefined,
+  );
+  const definitionArrival = useNavigationArrivalRef(
+    !storageObject && section === "definition" && object?.view_definition
+      ? wholeObjectArrival
+      : undefined,
+  );
+  const storageArrival = useNavigationArrivalRef(
+    storageObject && section === "schema" ? wholeObjectArrival : undefined,
+  );
   return (
     <section className={cn("flex min-h-0 min-w-0 flex-col bg-background", className)}>
       {browser.objectLoading ? (
@@ -819,7 +841,12 @@ function DataBrowserDetail({
         </Empty>
       ) : (
         <>
-          <div className="flex shrink-0 items-start gap-3 border-b py-3 pr-12 pl-4">
+          <div
+            ref={storageArrival}
+            tabIndex={-1}
+            aria-label="Data object details"
+            className="flex shrink-0 items-start gap-3 border-b py-3 pr-12 pl-4 outline-none"
+          >
             <ConnectionTypeIcon connectionType={object.connection_type} className="mt-0.5 size-8" />
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -885,7 +912,12 @@ function DataBrowserDetail({
                   Preview rows
                 </Button>
               </div>
-              <TabsContent value="definition" className="min-h-0 flex-1 overflow-auto p-0">
+              <TabsContent
+                ref={definitionArrival}
+                tabIndex={-1}
+                value="definition"
+                className="min-h-0 flex-1 overflow-auto p-0 outline-none"
+              >
                 {object.view_definition ? (
                   <div data-testid="data-browser-view-definition" className="h-full">
                     <SqlPreview
@@ -900,7 +932,12 @@ function DataBrowserDetail({
                   </p>
                 )}
               </TabsContent>
-              <TabsContent value="rows" className="min-h-0 flex-1 p-0">
+              <TabsContent
+                ref={rowsArrival}
+                tabIndex={-1}
+                value="rows"
+                className="min-h-0 flex-1 p-0 outline-none"
+              >
                 {browser.previewError ? (
                   <Alert variant="destructive">
                     <AlertCircle />
@@ -946,9 +983,10 @@ function DataBrowserDetail({
                 )}
               </TabsContent>
               <TabsContent
-                ref={schemaViewport}
+                ref={schemaArrival}
+                tabIndex={-1}
                 value="schema"
-                className="min-h-0 flex-1 overflow-auto p-0"
+                className="min-h-0 flex-1 overflow-auto p-0 outline-none"
               >
                 {object.columns.length > 0 ? (
                   <div className="divide-y">
@@ -966,10 +1004,9 @@ function DataBrowserDetail({
                           ) {
                             lastFocus.current = focusKey;
                             element.focus({ preventScroll: true });
-                            // Child refs can attach before the owning viewport's ref.
-                            const viewport =
-                              schemaViewport.current ??
-                              element.closest<HTMLElement>('[data-slot="tabs-content"]');
+                            const viewport = element.closest<HTMLElement>(
+                              '[data-slot="tabs-content"]',
+                            );
                             if (viewport)
                               viewport.scrollTop +=
                                 element.getBoundingClientRect().top -
@@ -1034,9 +1071,10 @@ export function DataObjectDetail({
   target: DataTarget;
   environment: string;
 }) {
-  const navigate = useNavigate();
+  const resource = useResourceNavigation();
   const [retry, setRetry] = useState(0);
   const [object, setObject] = useState<DataBrowserObject | null>(null);
+  const [resolvedFor, setResolvedFor] = useState("");
   const [preview, setPreview] = useState<DataBrowserPreviewResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -1045,6 +1083,7 @@ export function DataObjectDetail({
   const [error, setError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
   const addressKey = JSON.stringify(target.address);
+  const resolutionKey = JSON.stringify([environment, addressKey]);
   const arrival = useNavigationArrival((useLocation().search as ResourceSearch).detail);
   useEffect(() => {
     const controller = new AbortController();
@@ -1061,7 +1100,10 @@ export function DataObjectDetail({
       controller.signal,
     )
       .then((response) => {
-        if (!controller.signal.aborted) setObject(response.object);
+        if (!controller.signal.aborted) {
+          setObject(response.object);
+          setResolvedFor(resolutionKey);
+        }
       })
       .catch((cause) => {
         if (!controller.signal.aborted)
@@ -1074,7 +1116,7 @@ export function DataObjectDetail({
       controller.abort();
       requests.cancel("preview");
     };
-  }, [addressKey, environment, retry]);
+  }, [addressKey, environment, resolutionKey, retry]);
   const runPreview = async (limit = preview?.preview?.limit ?? 100) => {
     const controller = request.current;
     if (!object || !controller || previewLoading) return;
@@ -1112,7 +1154,7 @@ export function DataObjectDetail({
         className="flex-1"
         browser={{
           selectedObject: object,
-          objectLoading: loading,
+          objectLoading: loading || (!error && resolvedFor !== resolutionKey),
           preview,
           previewLoading,
           previewError,
@@ -1120,15 +1162,11 @@ export function DataObjectDetail({
         }}
         section={target.section}
         focusedColumn={column?.name}
-        focusToken={arrival}
+        focusToken={
+          resolvedFor !== resolutionKey || (target.column && !column) ? undefined : arrival
+        }
         onSectionChange={(section) =>
-          void navigate({
-            to: ".",
-            search: (search) => ({
-              ...search,
-              detail: { v: 1, environment, target: { ...target, section } },
-            }),
-          })
+          void resource.reflect({ ...target, section, column: undefined }, environment)
         }
       />
     </div>
