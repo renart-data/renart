@@ -1,7 +1,7 @@
 "use client";
 
 import AnsiToHtml from "ansi-to-html";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useAtomValueRawSync, useSetAtom } from "jotai";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
@@ -136,7 +136,7 @@ export function useAssetResults() {
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
   const pipelineId = pipeline?.id ?? null;
   const selectedAssetId = useAtomValue(resolvedSelectedAssetAtom);
-  const selectedExecutionTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
+  const selectedExecutionTimeWindow = useAtomValueRawSync(selectedExecutionTimeWindowAtom);
   const terminalSchedulerRuns = useRef(new Map<string, TerminalSchedulerRun>());
   const inspectAssets = useMemo(() => (asset ? [asset] : []), [asset]);
   const {

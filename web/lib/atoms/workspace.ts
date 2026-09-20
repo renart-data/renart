@@ -50,6 +50,9 @@ export const selectedEnvironmentAtom = atom<string | undefined>(
   (get) =>
     get(selectedEnvironmentOverrideAtom) || get(workspaceAtom)?.selected_environment || undefined,
 );
+// The shell initializes this in a mount effect, before some editor consumers
+// subscribe. Read it with useAtomValueRawSync so Jotai 3 cannot miss that update
+// and leave execution, inspect, or freshness using an unresolved window.
 export const selectedExecutionTimeWindowAtom = atom<ExecutionTimeWindow | null>(null);
 
 export type WorkspaceSyncUpdate = {

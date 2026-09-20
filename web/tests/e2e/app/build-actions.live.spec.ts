@@ -192,6 +192,7 @@ test.describe("app build actions live", () => {
   });
 
   test("materialize action and inspect panel run the real asset", async ({ liveApp, page }) => {
+    await page.clock.setFixedTime(new Date("2026-09-20T12:00:00Z"));
     await page.goto(`${liveApp.baseURL}/pipelines/${pipelineId}/assets/${customersAssetId}/code`);
     await expect(page.locator(".view-lines").first()).toContainText("customer_id", {
       timeout: 15000,
@@ -203,7 +204,15 @@ test.describe("app build actions live", () => {
       { timeout: 30000 },
     );
     await page.getByRole("button", { name: "Materialize", exact: true }).click();
-    await materializeResponse;
+    // The header initializes this during mount. Both execution and inspect must
+    // see it without another selection/change to wake up their subscriptions.
+    const expectedWindow = {
+      start_date: "2026-09-19T00:00:00.000Z",
+      end_date: "2026-09-20T00:00:00.000Z",
+    };
+    expect(
+      Object.fromEntries(new URL((await materializeResponse).url()).searchParams),
+    ).toMatchObject(expectedWindow);
 
     await expect
       .poll(
@@ -229,7 +238,9 @@ test.describe("app build actions live", () => {
         response.url().includes(`/api/assets/${customersAssetId}/inspect`) && response.ok(),
       { timeout: 30000 },
     );
-    await inspectResponse;
+    expect(Object.fromEntries(new URL((await inspectResponse).url()).searchParams)).toMatchObject(
+      expectedWindow,
+    );
     await page.getByRole("tab", { name: "Inspect", exact: true }).click();
 
     await expect(page.getByText("Ada").first()).toBeVisible({ timeout: 15000 });

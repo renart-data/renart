@@ -1,6 +1,6 @@
 "use client";
 
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useAtomValueRawSync, useSetAtom } from "jotai";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { inspectAsset } from "@/lib/api-assets-inspect";
@@ -68,7 +68,7 @@ export function useAssetInspect(visualAssets: WebAsset[] = []) {
   const [changedIds, setChangedIds] = useAtom(changedAssetIdsAtom);
   const registerAssetColumns = useSetAtom(registerAssetColumnsAtom);
   const selectedEnvironment = useAtomValue(selectedEnvironmentAtom);
-  const selectedExecutionTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
+  const selectedExecutionTimeWindow = useAtomValueRawSync(selectedExecutionTimeWindowAtom);
 
   const workspaceSequence = useAtomValue(workspaceConnectionSequenceAtom);
   const scope = JSON.stringify([

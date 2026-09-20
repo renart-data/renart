@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type * as MonacoNS from "monaco-editor";
-import { useAtomValue } from "jotai";
+import { useAtomValueRawSync } from "jotai";
 
 import {
   JinjaRenderResponse,
@@ -63,7 +63,7 @@ export function useJinjaIntellisense(
   parameterValues?: Record<string, unknown>,
 ) {
   const [renderResult, setRenderResult] = useState<JinjaRenderResponse | null>(null);
-  const selectedExecutionTimeWindow = useAtomValue(selectedExecutionTimeWindowAtom);
+  const selectedExecutionTimeWindow = useAtomValueRawSync(selectedExecutionTimeWindowAtom);
   const renderResultRef = useRef<JinjaRenderResponse | null>(null);
   const goToVariableRef = useRef(onGoToVariable);
   const namespacesRef = useRef(namespaces);
