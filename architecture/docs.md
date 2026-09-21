@@ -195,8 +195,12 @@ every shipped image is the verbatim output of a script.
   call; never open a browser by hand. If a shot needs state the staged demo
   lacks (an asset type, a dialog), the script creates it through the same HTTP
   API the UI uses, after the DAG-wide shots so the canvas captures stay stable.
-- **One look.** Dark theme, `deviceScaleFactor: 2`, webp output; pages embed
-  images with explicit `width`/`height` matching the emitted file.
+- **Matching themes.** Capture the actual app at `deviceScaleFactor: 2`, in
+  webp. The landing hero, editor proof and eight workspace views have paired
+  dark (`name.webp`) and light (`name-light.webp`) captures. `makeCapture` uses
+  Renart's own theme event so Monaco, charts and canvas render their real theme
+  without changing the staged view. Both variants have identical dimensions;
+  pages embed explicit `width`/`height` matching the emitted files.
 - **Few and high-value.** A screenshot earns its place by orienting the reader
   or proving a result — roughly one per page, not one per step.
 - **Every image needs alt text** describing what it shows (not "screenshot").
@@ -286,13 +290,21 @@ shipped (July 2026; git history keeps the full plans).
   data platform through a single product screenshot → Move / Transform /
   Analyze overview → editor proof and maintainability principles → workspace
   tour → local infrastructure and reviewable definitions → quickstart/install.
-  Cream surfaces, ink text and restrained green accents keep the focus on the
-  product. It does not simulate live runtime status or promise an exact rebuild
+  Cream surfaces and ink text in light mode, deep green surfaces in dark mode,
+  and restrained green accents keep the focus on the product. The hero install
+  command is a prominent, selectable card with a copy button: labeled on desktop,
+  icon-only with an accessible name on mobile. The installation command is also
+  available in the closing section. It does not simulate live runtime status or promise an exact rebuild
   count in a decorative diagram. The Load / Build / Lineage / Notebook /
   Dashboard / Report / Schedule / Runs tour uses a plain tablist with keyboard
   navigation, a labeled panel and links to full-size scripted screenshots.
-  Small vanilla-JavaScript enhancements handle tabs, command copy and mobile
-  navigation; the initial product view and links remain available without a
+  `MarketingTheme.astro` initializes the system/saved theme before paint, uses
+  the same `starlight-theme` preference as the docs, and keeps the accessible
+  header toggle, `<picture>` sources and full-size links in sync. Storage being
+  unavailable does not prevent switching themes. The comparison pages share
+  this control and palette. Without JavaScript, CSS and `<picture>` follow the
+  system theme. Small vanilla-JavaScript enhancements handle tabs, command copy
+  and mobile navigation; the initial product view and links remain available without a
   client framework. While the product is in
   public alpha, the page title/description, hero badge, visible expectation
   note, and footer say so directly; the repository README carries the same
@@ -304,7 +316,9 @@ shipped (July 2026; git history keeps the full plans).
   workspace tour points at the corresponding generated images
   under `docs/public/docs-media/`. The landing page selects them with `srcset`
   and `sizes`; if a capture changes dimensions, update the matching dimensions
-  and source descriptors in `index.astro`. Landing and social image URLs use
+  and source descriptors in `index.astro`. `ThemedScreenshot.astro` keeps the
+  light and dark source sets together, including the workspace tour and the
+  comparison screenshots. Landing and social image URLs use
   content hashes from `docs/src/lib/public-media.mjs`, evaluated during the
   docs package build, so refreshed files bypass older immutable browser caches.
 

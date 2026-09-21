@@ -3,7 +3,8 @@
 // Run with `make docs-media` (or `pnpm docs:media` in web/, which builds
 // web/dist first). Shares the demo workspace, server, and staged state with
 // the landing pipeline (demo-media-lib.mjs) so the docs show the same
-// coherent acme project at the same quality bar: dark theme, 2x DPR, webp.
+// coherent acme project at the same quality bar: 2x DPR, webp. The eight
+// workspace-tour images also emit a matching -light variant.
 //
 // Env overrides: RENART_DOCS_MEDIA_DIR (output dir), RENART_DOCS_MEDIA_PORT,
 // GO_BIN, RENART_KEEP_LANDING_WORKSPACE=1.
@@ -62,7 +63,18 @@ try {
 
   console.log("capturing screenshots…");
   browser = await chromium.launch();
-  const { withPage, goto, shot } = makeCapture(browser, demo.baseURL, outputDir);
+  const { withPage, goto, shot, capturedShots } = makeCapture(browser, demo.baseURL, outputDir, {
+    lightShots: [
+      "workspace-overview",
+      "pipeline-canvas",
+      "notebook",
+      "dashboard-builder",
+      "report-builder",
+      "schedules",
+      "run-detail",
+      "load-asset",
+    ],
+  });
 
   // workspace-overview: the split view — explorer, editor, canvas, results,
   // workbench in one frame (interface tour, docs landing, quickstart)
@@ -367,23 +379,7 @@ try {
   browser = undefined;
 
   console.log("converting to webp…");
-  await convertShotsToWebp(outputDir, [
-    "workspace-overview",
-    "pipeline-canvas",
-    "asset-editor",
-    "notebook",
-    "notebook-agent",
-    "dashboard-builder",
-    "report-builder",
-    "schedules",
-    "deployment-review",
-    "run-detail",
-    "catalog",
-    "sql-asset",
-    "python-asset",
-    "load-asset",
-    "api-asset",
-  ]);
+  await convertShotsToWebp(outputDir, capturedShots);
   console.log(`\nDocs media written to ${outputDir}`);
   console.log("If a capture changed size, update the width/height where the image is referenced.");
 } finally {

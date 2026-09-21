@@ -1,0 +1,30 @@
+---
+import { publicMediaUrl } from '../lib/public-media.mjs';
+interface Props {
+  src: string;
+  alt: string;
+  width: number;
+  height: number;
+  widths?: number[];
+  sizes?: string;
+  eager?: boolean;
+  zoomLabel?: string;
+  stage?: boolean;
+}
+const { src, alt, width, height, widths = [], sizes, eager = false, zoomLabel, stage = false } = Astro.props;
+const light = src.replace(/\.webp$/, '-light.webp');
+const srcset = (path: string) => widths.length ? [...widths.map((w) => `${publicMediaUrl(path.replace(/\.webp$/, `-${w}.webp`))} ${w}w`), `${publicMediaUrl(path)} ${width}w`].join(', ') : publicMediaUrl(path);
+const Tag = zoomLabel ? 'a' : 'div';
+---
+<Tag class="themed-screenshot" href={zoomLabel ? publicMediaUrl(light) : undefined}
+  target={zoomLabel ? '_blank' : undefined} rel={zoomLabel ? 'noopener noreferrer' : undefined}
+  aria-label={zoomLabel} data-theme-link={zoomLabel ? '' : undefined}
+  data-light-href={zoomLabel ? publicMediaUrl(light) : undefined} data-dark-href={zoomLabel ? publicMediaUrl(src) : undefined}
+  data-stage-fullsize={stage ? '' : undefined}>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset={srcset(src)} sizes={sizes} data-theme-source data-stage-source={stage ? '' : undefined} />
+    <img src={publicMediaUrl(light)} srcset={widths.length ? srcset(light) : undefined} sizes={sizes}
+      alt={alt} width={width} height={height} loading={eager ? 'eager' : 'lazy'}
+      fetchpriority={eager ? 'high' : undefined} decoding="async" data-stage-image={stage ? '' : undefined} />
+  </picture>
+</Tag>

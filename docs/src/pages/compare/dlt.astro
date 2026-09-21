@@ -1,4 +1,5 @@
 ---
+import ThemedScreenshot from '../../components/ThemedScreenshot.astro';
 import ComparisonLayout from '../../layouts/ComparisonLayout.astro';
 import FeatureMatrix from '../../components/FeatureMatrix.astro';
 import ComparisonTable from '../../components/ComparisonTable.astro';
@@ -30,7 +31,7 @@ const rows = [
     <p>Then use a notebook or dashboard to work with the output. Renart's value is keeping that development and analysis context together. Check the actual <a href="/docs/reference/supported-platforms/">platform support</a> and loading behavior for your source; a broad workflow does not mean every connector or load mode is interchangeable.</p>
   </div>
   <figure class="comparison-figure">
-    <a href="/docs-media/load-asset.webp" target="_blank" rel="noopener noreferrer" aria-label="Open the Renart Load asset image at full size"><img src="/docs-media/load-asset.webp" alt="Renart's Load asset editor showing source, destination and load mode beside the pipeline" width="2800" height="1800" loading="lazy" /></a>
+    <ThemedScreenshot src="/docs-media/load-asset.webp" zoomLabel="Open the Renart Load asset image at full size" alt="Renart's Load asset editor showing source, destination and load mode beside the pipeline" width={2800} height={1800} />
     <figcaption>A data transfer is an asset in the pipeline, with its configuration visible in the workspace.</figcaption>
   </figure>
   <div class="comparison-article">

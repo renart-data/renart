@@ -5,6 +5,8 @@ import { publicMediaUrl } from '../lib/public-media.mjs';
 import DiscordInvite from '../components/DiscordInvite.astro';
 import PrivacyConsent from '../components/PrivacyConsent.astro';
 import MarketingHeader from '../components/MarketingHeader.astro';
+import MarketingTheme from '../components/MarketingTheme.astro';
+import ThemedScreenshot from '../components/ThemedScreenshot.astro';
 import MarketingFooter from '../components/MarketingFooter.astro';
 import '../styles/landing.css';
 
@@ -227,6 +229,7 @@ const platforms = [
     <meta name="application-name" content="Renart" />
     <meta name="apple-mobile-web-app-title" content="Renart" />
     <meta name="theme-color" content="#f8f8f4" />
+    <MarketingTheme />
     <meta name="robots" content="index, follow" />
     <meta
       name="keywords"
@@ -275,15 +278,19 @@ const platforms = [
             <div>
               <p class="landing-eyebrow">Open source data platform</p>
               <h1>Build data workflows<br class="desktop-break" /> you can maintain.</h1>
-              <div class="landing-actions">
-                <a class="landing-button" href="/docs/quickstart/">Build your first pipeline <span aria-hidden="true">↗</span></a>
-                <a class="landing-text-link" href={repoUrl}>View on GitHub <span aria-hidden="true">↗</span></a>
-              </div>
               <div class="hero-install" aria-label="Install Renart">
-                <code>{installCommand}</code>
-                <button class="hero-install__copy" type="button" data-copy-command={installCommand} aria-label="Copy Renart install command">
-                  <svg viewBox="0 0 20 20" width="17" height="17" fill="none" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.5" /><path d="M12 4V3H3v9h1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                </button>
+                <div class="hero-install__heading"><span>Install Renart</span><a href="/docs/installation/">Installation options <span aria-hidden="true">↗</span></a></div>
+                <div class="hero-install__command">
+                  <code>{installCommand}</code>
+                  <button class="hero-install__copy" type="button" data-copy-command={installCommand} aria-label="Copy Renart install command">
+                    <svg viewBox="0 0 20 20" width="17" height="17" fill="none" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2" stroke="currentColor" stroke-width="1.5" /><path d="M12 4V3H3v9h1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                    <span data-copy-label>Copy</span>
+                  </button>
+                </div>
+              </div>
+              <div class="landing-actions">
+                <a class="landing-text-link" href="/docs/quickstart/">Build your first pipeline <span aria-hidden="true">↗</span></a>
+                <a class="landing-text-link landing-github-link" href={repoUrl}><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.8 5.7 6.3.9-4.55 4.45 1.07 6.28L12 17.36l-5.62 2.97 1.07-6.28L2.9 9.6l6.3-.9Z" /></svg>Star us on GitHub</a>
               </div>
               <p class="landing-status"><span>Public alpha</span> Apache 2.0 · Runs locally</p>
             </div>
@@ -296,15 +303,10 @@ const platforms = [
 
           <figure class="workspace-hero">
             <div class="workspace-hero__bar"><span>The Renart workspace</span><span>Code, dependencies and results</span></div>
-            <a href={publicMediaUrl('/landing/hero-workspace.webp')} target="_blank" rel="noopener noreferrer" aria-label="Open the Renart workspace image at full size">
-              <img
-                src={publicMediaUrl('/landing/hero-workspace.webp')}
-                srcset={`${publicMediaUrl('/landing/hero-workspace-480.webp')} 480w, ${publicMediaUrl('/landing/hero-workspace-768.webp')} 768w, ${publicMediaUrl('/landing/hero-workspace-1280.webp')} 1280w, ${publicMediaUrl('/landing/hero-workspace-1920.webp')} 1920w, ${publicMediaUrl('/landing/hero-workspace.webp')} 3840w`}
-                sizes="(max-width: 48rem) calc(100vw - 2.5rem), (max-width: 78rem) calc(100vw - 5rem), 1168px"
-                alt="Renart showing the SQL editor, connected pipeline assets and a table of inspected results in one workspace"
-                width="3840" height="2160" loading="eager" fetchpriority="high" decoding="async"
-              />
-            </a>
+            <ThemedScreenshot src="/landing/hero-workspace.webp" widths={[480, 768, 1280, 1920]}
+              sizes="(max-width: 48rem) calc(100vw - 2.5rem), (max-width: 78rem) calc(100vw - 5rem), 1168px"
+              alt="Renart showing the SQL editor, connected pipeline assets and a table of inspected results in one workspace"
+              width={3840} height={2160} eager zoomLabel="Open the Renart workspace image at full size" />
             <figcaption>Write the code, follow its dependencies and inspect the data without losing your place.</figcaption>
           </figure>
           <p class="landing-alpha-note">Renart is in public alpha. Expect rough edges and changes before the first stable release. <a href="/docs/alpha-status/">What to expect <span aria-hidden="true">↗</span></a></p>
@@ -350,13 +352,10 @@ const platforms = [
               <a class="landing-text-link" href="/docs/editing-assets/asset-editor/">Explore the asset editor <span aria-hidden="true">↗</span></a>
             </div>
             <figure class="editor-proof">
-              <img
-                src={publicMediaUrl('/landing/lifecycle-build.webp')}
-                srcset={`${publicMediaUrl('/landing/lifecycle-build-480.webp')} 480w, ${publicMediaUrl('/landing/lifecycle-build-768.webp')} 768w, ${publicMediaUrl('/landing/lifecycle-build-1280.webp')} 1280w, ${publicMediaUrl('/landing/lifecycle-build.webp')} 1820w`}
+              <ThemedScreenshot src="/landing/lifecycle-build.webp" widths={[480, 768, 1280]}
                 sizes="(max-width: 48rem) calc(100vw - 2.5rem), (max-width: 78rem) 58vw, 700px"
                 alt="SQL completion in Renart suggesting customer columns and their types from an upstream asset"
-                width="1820" height="880" loading="lazy" decoding="async"
-              />
+                width={1820} height={880} />
               <figcaption>Completion uses the tables and columns your pipeline knows about.</figcaption>
             </figure>
           </div>
@@ -401,7 +400,8 @@ const platforms = [
                 data-title={stage.title}
                 data-description={stage.description}
                 data-detail={stage.detail}
-                data-image={stage.image}
+                data-image={publicMediaUrl(stage.image)}
+                data-image-light={publicMediaUrl(stage.image.replace(/\.webp$/, '-light.webp'))}
                 data-alt={stage.alt}
                 data-width={stage.width}
                 data-height={stage.height}
@@ -418,9 +418,9 @@ const platforms = [
               <a class="landing-text-link" href={lifecycleStages[0].href} data-stage-link>Read the docs <span aria-hidden="true">↗</span></a>
             </div>
             <figure class="workspace-panel__media">
-              <a href={lifecycleStages[0].image} target="_blank" rel="noopener noreferrer" data-stage-fullsize aria-label="Open the selected workspace image at full size">
-                <img src={lifecycleStages[0].image} alt={lifecycleStages[0].alt} width={lifecycleStages[0].width} height={lifecycleStages[0].height} loading="lazy" decoding="async" data-stage-image />
-              </a>
+              <ThemedScreenshot src={lifecycleStages[0].image} alt={lifecycleStages[0].alt}
+                width={lifecycleStages[0].width} height={lifecycleStages[0].height} stage
+                zoomLabel="Open the selected workspace image at full size" />
               <figcaption>Actual Renart interface <span>Open image to see the details <span aria-hidden="true">↗</span></span></figcaption>
             </figure>
           </article>
@@ -524,6 +524,7 @@ const platforms = [
       const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-stage-button]'));
       const panel = document.querySelector<HTMLElement>('#workspace-panel');
       const image = document.querySelector<HTMLImageElement>('[data-stage-image]');
+      const source = document.querySelector<HTMLSourceElement>('[data-stage-source]');
       const link = document.querySelector<HTMLAnchorElement>('[data-stage-link]');
       const fullsize = document.querySelector<HTMLAnchorElement>('[data-stage-fullsize]');
       const fields = [
@@ -545,12 +546,18 @@ const platforms = [
         });
         if (link) link.href = button.dataset.href ?? '/docs/';
         if (image) {
-          image.src = button.dataset.image ?? image.src;
+          image.src = button.dataset.imageLight ?? image.src;
           image.alt = button.dataset.alt ?? '';
           image.width = Number(button.dataset.width ?? image.width);
           image.height = Number(button.dataset.height ?? image.height);
         }
-        if (fullsize) fullsize.href = button.dataset.image ?? fullsize.href;
+        if (source) source.srcset = button.dataset.image ?? source.srcset;
+        if (fullsize) {
+          fullsize.dataset.lightHref = button.dataset.imageLight ?? '';
+          fullsize.dataset.darkHref = button.dataset.image ?? '';
+          fullsize.href = document.documentElement.dataset.theme === 'dark'
+            ? fullsize.dataset.darkHref : fullsize.dataset.lightHref;
+        }
       }
       tabs.forEach((button, index) => {
         button.addEventListener('click', () => selectTab(button));
