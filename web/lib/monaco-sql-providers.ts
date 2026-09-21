@@ -917,11 +917,21 @@ function isPositionInParserRange(
 }
 
 export function isInsideSingleQuotedSQLString(sqlText: string, offset: number): boolean {
+  return sqlQuoteContextAtOffset(sqlText, offset).inSingleQuote;
+}
+
+export function isSQLCompletionSuppressed(sqlText: string, offset: number): boolean {
+  const context = sqlQuoteContextAtOffset(sqlText, offset);
+  return context.inSingleQuote || context.inDollarQuote || context.inComment;
+}
+
+function sqlQuoteContextAtOffset(sqlText: string, offset: number) {
   const end = Math.min(Math.max(offset, 0), sqlText.length);
   let inSingleQuote = false;
   let identifierQuote: '"' | "`" | null = null;
   let lineComment = false;
-  let blockComment = false;
+  let blockCommentDepth = 0;
+  let dollarTag: string | null = null;
 
   for (let index = 0; index < end; index += 1) {
     const current = sqlText[index];
@@ -930,10 +940,20 @@ export function isInsideSingleQuotedSQLString(sqlText: string, offset: number): 
       if (current === "\n") lineComment = false;
       continue;
     }
-    if (blockComment) {
+    if (blockCommentDepth > 0) {
       if (current === "*" && next === "/") {
-        blockComment = false;
+        blockCommentDepth -= 1;
         index += 1;
+      } else if (current === "/" && next === "*") {
+        blockCommentDepth += 1;
+        index += 1;
+      }
+      continue;
+    }
+    if (dollarTag) {
+      if (sqlText.slice(index, end).startsWith(dollarTag)) {
+        index += dollarTag.length - 1;
+        dollarTag = null;
       }
       continue;
     }
@@ -963,18 +983,28 @@ export function isInsideSingleQuotedSQLString(sqlText: string, offset: number): 
       continue;
     }
     if (current === "/" && next === "*") {
-      blockComment = true;
+      blockCommentDepth = 1;
       index += 1;
       continue;
     }
-    if (current === "'") {
+    if (current === "$" && (index === 0 || !/[\w$]/.test(sqlText[index - 1]))) {
+      const match = sqlText.slice(index, end).match(/^\$(?:[A-Za-z_][A-Za-z_0-9]*)?\$/);
+      if (match) {
+        dollarTag = match[0];
+        index += dollarTag.length - 1;
+      }
+    } else if (current === "'") {
       inSingleQuote = true;
     } else if (current === '"' || current === "`") {
       identifierQuote = current;
     }
   }
 
-  return inSingleQuote;
+  return {
+    inSingleQuote,
+    inDollarQuote: dollarTag !== null,
+    inComment: lineComment || blockCommentDepth > 0,
+  };
 }
 
 function stripSQLCommentsAndStrings(sqlText: string): string {
@@ -1511,7 +1541,7 @@ export function provideLocalSQLCompletionItems(
   if (isInsideJinjaSpan(model, position)) {
     return { suggestions: [] };
   }
-  if (isInsideSingleQuotedSQLString(model.getValue(), model.getOffsetAt(position))) {
+  if (isSQLCompletionSuppressed(model.getValue(), model.getOffsetAt(position))) {
     return { suggestions: [] };
   }
 
@@ -1774,7 +1804,7 @@ export function registerSQLProviders(
           }
         }
 
-        if (isInsideSingleQuotedSQLString(model.getValue(), model.getOffsetAt(position))) {
+        if (isSQLCompletionSuppressed(model.getValue(), model.getOffsetAt(position))) {
           return { suggestions: [] };
         }
 

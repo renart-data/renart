@@ -46,7 +46,7 @@ select 1 as total_amount`,
 // `.bruin.yml`, a pipeline.yml, and the given asset files keyed by their path
 // relative to the assets dir) and returns the loaded pipeline plus the
 // workspace root.
-func writeTypeCheckWorkspace(t *testing.T, pipelineYML string, assets map[string]string) (*pipeline.Pipeline, string) {
+func writeTypeCheckWorkspace(t testing.TB, pipelineYML string, assets map[string]string) (*pipeline.Pipeline, string) {
 	t.Helper()
 
 	workspaceRoot := t.TempDir()

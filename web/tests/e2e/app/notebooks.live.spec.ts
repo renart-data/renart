@@ -354,6 +354,14 @@ test.describe("app notebooks live", () => {
     await expect(suggestWidget).toBeVisible({ timeout: 15000 });
     await expect(suggestWidget.getByText("count", { exact: true }).first()).toBeVisible();
     await expect(suggestWidget.getByText("count_star", { exact: true }).first()).toBeVisible();
+
+    // A schema-aware notebook response must retain functions while Monaco
+    // narrows an initially empty-prefix list. Same-name columns remain first.
+    await page.keyboard.insertText("co");
+    await expect(suggestWidget.getByText("coalesce", { exact: true })).toBeVisible();
+    await page.keyboard.insertText("u");
+    await expect(suggestWidget.getByText("count", { exact: true })).toHaveCount(2);
+    await expect(suggestWidget.locator(".monaco-list-row").first()).toContainText("count");
   });
 
   test("Jinja in a SQL cell is rendered when the cell runs", async ({ liveApp, page }) => {
@@ -1792,6 +1800,24 @@ test.describe("app notebooks live", () => {
         .filter({ hasText: "select" })
         .first(),
     ).toBeVisible({ timeout: 15000 });
+
+    await page.keyboard.press("Escape");
+    const functionBody = [
+      "from renart import query",
+      "",
+      'result = query("select round(round()) from base")',
+    ].join("\n");
+    await setNotebookEditorValue(page, pythonCell, functionBody, {
+      cursorOffset: functionBody.indexOf(")) from base"),
+      triggerSuggest: true,
+    });
+    const functionWidget = page.locator(".suggest-widget.visible").first();
+    await expect(functionWidget.getByText("runtime_amount", { exact: true })).toBeVisible();
+    await expect(functionWidget.locator(".monaco-list-row").first()).toContainText(
+      "runtime_amount",
+    );
+    await page.keyboard.insertText("ro");
+    await expect(functionWidget.getByText("round", { exact: true })).toBeVisible();
 
     // Unqualified columns should be inferred statically from a never-run SQL
     // sibling, not only offered after an alias dot or a prior runtime result.

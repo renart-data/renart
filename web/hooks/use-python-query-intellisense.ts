@@ -11,7 +11,6 @@ import {
   getSQLLSPHover,
   getSQLLSPSemanticTokens,
   getSQLLSPSignatureHelp,
-  SQLLSPCompletionItem,
   SQLLSPPosition,
   SQLLSPRange,
   SQLLSPRequest,
@@ -31,6 +30,11 @@ import {
   sqlOffsetForSourceOffset,
 } from "@/lib/python-query-literals";
 import { provideLocalSQLCompletionItems } from "@/lib/monaco-sql-providers";
+import {
+  dedupeSQLCompletions,
+  isSQLCompletionKind,
+  sqlCompletionToMonaco,
+} from "@/lib/sql-lsp-completions";
 import { SchemaTable } from "@/lib/sql-schema";
 import { WebAsset, WorkspaceState } from "@/lib/types";
 
@@ -381,15 +385,15 @@ function registerPythonQueryProviders(monaco: typeof MonacoNS): MonacoNS.IDispos
         word.endColumn,
       );
       const backendSuggestions = (response?.completions ?? [])
-        .filter((item) => item.kind === 5 || item.kind === 18 || item.kind === 2)
-        .map((item) => completionToMonaco(monaco, item, range));
+        .filter(isSQLCompletionKind)
+        .map((item) => sqlCompletionToMonaco(monaco, item, range, true));
       const projectedLocalSuggestions = localSuggestions.map((item) => ({
         ...item,
         detail: item.detail ? `${item.detail} · SQL in query()` : "SQL in query()",
         range: sqlCompletionRangeToHostRange(model, projected.literal, item.range),
       }));
       return {
-        suggestions: dedupeCompletions([...backendSuggestions, ...projectedLocalSuggestions]),
+        suggestions: dedupeSQLCompletions([...backendSuggestions, ...projectedLocalSuggestions]),
       };
     },
   });
@@ -505,6 +509,7 @@ function sqlLSPRequestForLiteral(
   return {
     asset_id: assetID,
     content: literal.sql,
+    document_context: "python_query",
     ...(literal.connection ? { connection: literal.connection } : {}),
     ...(environment ? { environment } : {}),
     ...extra,
@@ -593,48 +598,6 @@ function sqlMonacoRangeToHostRange(
       character: range.endColumn - 1,
     },
   });
-}
-
-function dedupeCompletions(
-  suggestions: MonacoNS.languages.CompletionItem[],
-): MonacoNS.languages.CompletionItem[] {
-  const seen = new Set<string>();
-  return suggestions.filter((suggestion) => {
-    const label = typeof suggestion.label === "string" ? suggestion.label : suggestion.label.label;
-    const insertText = typeof suggestion.insertText === "string" ? suggestion.insertText : "";
-    const key = `${label.toLowerCase()}::${insertText.toLowerCase()}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function completionToMonaco(
-  monaco: typeof MonacoNS,
-  item: SQLLSPCompletionItem,
-  range: MonacoNS.IRange,
-): MonacoNS.languages.CompletionItem {
-  const sortGroup = item.kind === 5 ? "0" : item.kind === 18 ? "4" : "8";
-  return {
-    label: item.label,
-    kind:
-      item.kind === 2
-        ? monaco.languages.CompletionItemKind.Keyword
-        : item.kind === 5
-          ? monaco.languages.CompletionItemKind.Field
-          : monaco.languages.CompletionItemKind.Reference,
-    detail: item.detail ? `${item.detail} · SQL in query()` : "SQL in query()",
-    documentation: item.documentation ? { value: item.documentation } : undefined,
-    insertText: item.insertText || item.label,
-    range,
-    // Local SQL suggestions use numeric groups (columns first, then tables,
-    // then keywords). Keep LSP results in that same ordering scheme so an
-    // empty-prefix column is visible instead of landing below the complete
-    // asset/keyword catalogue in Monaco's virtualized list.
-    sortText: `${sortGroup}-sql-${item.sortText || item.label}`,
-  };
 }
 
 function signatureHelpToMonaco(help: SQLLSPSignatureHelp): MonacoNS.languages.SignatureHelp {

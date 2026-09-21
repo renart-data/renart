@@ -111,6 +111,7 @@ df = pd.DataFrame({"a": [1]})
       `"""@bruin
 name: ${pythonAssetName}
 type: python
+connection: duckdb-default
 @bruin"""
 
 from renart import query
@@ -188,6 +189,9 @@ result = query("select 1")
     };
     expect(projectionPayload.completions ?? []).toContainEqual(
       expect.objectContaining({ label: "order_id", kind: 5 }),
+    );
+    expect(projectionPayload.completions ?? []).toContainEqual(
+      expect.objectContaining({ label: "round", kind: 3 }),
     );
     await expect(
       page.locator(".suggest-widget .monaco-list-row").filter({ hasText: "order_id" }).first(),
