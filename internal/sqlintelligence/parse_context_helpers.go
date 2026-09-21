@@ -359,6 +359,10 @@ func validationDiagnosticCode(code string) string {
 	case "E210", "E211", "E212", "E213", "E214", "E215", "E216", "E217",
 		"W210", "W211", "W212", "W213", "W214", "W215", "W216":
 		return authoringdiag.CodeSQLTypeMismatch
+	case "E230", "E231", "E232":
+		// Grouping and aggregate/window placement errors are document-level
+		// validation findings, not type mismatches or unregistered vendor codes.
+		return authoringdiag.CodeSQLValidationFailed
 	case "":
 		return authoringdiag.CodeSQLValidationFailed
 	default:

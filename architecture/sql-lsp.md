@@ -569,7 +569,7 @@ fixes. PostgreSQL DISTINCT ON, ClickHouse LIMIT BY and DuckDB QUALIFY have
 explicit cases. This is focused editor coverage, not a claim of complete SQL
 name resolution for every dialect.
 
-Golyglot alpha.10 supplies the published metadata API. Focused live coverage
+Golyglot alpha.11 supplies the published metadata API. Focused live coverage
 checks asset editors, notebook SQL and SQL embedded in Python, including
 notebook runtime columns. Remaining coverage is tracked in
 [the IntelliSense plan](../plans/sql-function-intellisense.md).
