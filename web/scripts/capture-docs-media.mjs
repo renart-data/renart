@@ -64,8 +64,16 @@ try {
   console.log("capturing screenshots…");
   browser = await chromium.launch();
   const { withPage, goto, shot, capturedShots } = makeCapture(browser, demo.baseURL, outputDir, {
-    lightShots: ["workspace-overview", "pipeline-canvas", "notebook", "dashboard-builder",
-      "report-builder", "schedules", "run-detail", "load-asset"],
+    lightShots: [
+      "workspace-overview",
+      "pipeline-canvas",
+      "notebook",
+      "dashboard-builder",
+      "report-builder",
+      "schedules",
+      "run-detail",
+      "load-asset",
+    ],
   });
 
   // workspace-overview: the split view — explorer, editor, canvas, results,
