@@ -2,6 +2,7 @@
 import { Font } from 'astro:assets';
 import { publicMediaUrl } from '../lib/public-media.mjs';
 import MarketingHeader from '../components/MarketingHeader.astro';
+import MarketingTheme from '../components/MarketingTheme.astro';
 import MarketingFooter from '../components/MarketingFooter.astro';
 import PrivacyConsent from '../components/PrivacyConsent.astro';
 import DiscordInvite from '../components/DiscordInvite.astro';
@@ -38,6 +39,7 @@ const structuredData = JSON.stringify({
     <meta name="description" content={description} />
     <meta name="author" content="Renart" />
     <meta name="theme-color" content="#f8f8f4" />
+    <MarketingTheme />
     <link rel="canonical" href={canonicalUrl} />
     <link rel="icon" href="/icons/icon-32.png" type="image/png" sizes="32x32" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" sizes="180x180" />

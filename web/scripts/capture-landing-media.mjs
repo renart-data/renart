@@ -4,12 +4,14 @@
 // web/dist first). The demo workspace, server, and staged state come from
 // demo-media-lib.mjs (shared with make docs-media); this script captures the
 // seven landing shots, converts them to webp (q92), emits responsive webp
-// variants for the site, and renders the 1200x675 og-image.
+// variants for the site, and renders the 1200x675 og-image. The hero and
+// editor proof also emit -light variants, including their responsive sizes.
 //
 // Env overrides: RENART_LANDING_MEDIA_DIR (output dir),
 // RENART_LANDING_MEDIA_PORT, GO_BIN, RENART_KEEP_LANDING_WORKSPACE=1.
 import { chromium } from "@playwright/test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   ACME,
@@ -35,9 +37,10 @@ const responsiveWidths = {
   "feature-catalog": [480, 768, 1280, 1920],
 };
 
-async function writeResponsiveVariants() {
+async function writeResponsiveVariants(capturedShots) {
   const sharpLib = sharp();
-  for (const [name, widths] of Object.entries(responsiveWidths)) {
+  for (const name of capturedShots) {
+    const widths = responsiveWidths[name.replace(/-light$/, "")];
     const source = path.join(outputDir, `${name}.webp`);
     for (const width of widths) {
       const info = await sharpLib(source)
@@ -51,14 +54,19 @@ async function writeResponsiveVariants() {
 
 let demo;
 let browser;
+let isolatedConfig;
 
 try {
   await mkdir(outputDir, { recursive: true });
+  isolatedConfig = await mkdtemp(path.join(tmpdir(), "renart-landing-config-"));
+  process.env.XDG_CONFIG_HOME = isolatedConfig;
   demo = await launchStagedDemo({ port });
 
   console.log("capturing screenshots…");
   browser = await chromium.launch();
-  const { withPage, goto, shot } = makeCapture(browser, demo.baseURL, outputDir);
+  const { withPage, goto, shot, capturedShots } = makeCapture(browser, demo.baseURL, outputDir, {
+    lightShots: ["hero-workspace", "lifecycle-build"],
+  });
 
   // Supporting shots are shown in narrower landing-page columns. Keep their
   // desktop viewport for faithful app layout, then crop in CSS pixels around
@@ -206,16 +214,8 @@ FROM raw.orders o`,
     .png({ compressionLevel: 9 })
     .toFile(path.join(outputDir, "og-image.png"));
   console.log(`og-image.png ${ogInfo.width}x${ogInfo.height} ${ogInfo.size} bytes`);
-  await convertShotsToWebp(outputDir, [
-    "hero-workspace",
-    "lifecycle-build",
-    "lifecycle-notebook",
-    "lifecycle-schedules",
-    "lifecycle-staleness",
-    "feature-runs",
-    "feature-catalog",
-  ]);
-  await writeResponsiveVariants();
+  await convertShotsToWebp(outputDir, capturedShots);
+  await writeResponsiveVariants(capturedShots);
   console.log(`\nLanding media written to ${outputDir}`);
   console.log(
     "If a capture changed size, update the <img> width/height in docs/src/pages/index.astro.",
@@ -224,4 +224,5 @@ FROM raw.orders o`,
   await browser?.close().catch(() => undefined);
   demo?.stop();
   await demo?.cleanup();
+  if (isolatedConfig) await rm(isolatedConfig, { recursive: true, force: true });
 }

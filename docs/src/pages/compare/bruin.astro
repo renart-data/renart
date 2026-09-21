@@ -1,4 +1,5 @@
 ---
+import ThemedScreenshot from '../../components/ThemedScreenshot.astro';
 import ComparisonLayout from '../../layouts/ComparisonLayout.astro';
 import FeatureMatrix from '../../components/FeatureMatrix.astro';
 import ComparisonTable from '../../components/ComparisonTable.astro';
@@ -39,7 +40,7 @@ const rows = [
     <p>If you already do this comfortably from Bruin's CLI, your editor and existing CI, the question is whether Renart's combined view helps you maintain the project. Shared capabilities such as SQL, Python, Git and lineage are not reasons on their own to switch.</p>
   </div>
   <figure class="comparison-figure">
-    <a href="/docs-media/workspace-overview.webp" target="_blank" rel="noopener noreferrer" aria-label="Open the Renart workspace image at full size"><img src="/docs-media/workspace-overview.webp" alt="Renart's SQL editor, dependency canvas, asset properties and inspected results in the same workspace" width="3200" height="2000" loading="lazy" /></a>
+    <ThemedScreenshot src="/docs-media/workspace-overview.webp" zoomLabel="Open the Renart workspace image at full size" alt="Renart's SQL editor, dependency canvas, asset properties and inspected results in the same workspace" width={3200} height={2000} />
     <figcaption>Renart keeps the model, dependencies and inspected data in view together.</figcaption>
   </figure>
   <div class="comparison-article">

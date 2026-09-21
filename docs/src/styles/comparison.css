@@ -234,3 +234,18 @@
   .comparison-table-hint { display: block; }
   .comparison-next { align-items: flex-start; flex-direction: column; }
 }
+
+[data-theme="dark"] .comparison-main {
+  --comparison-renart-surface: #253c2d;
+  --comparison-renart-header: #2c4936;
+  --comparison-renart-border: #50795c;
+  --comparison-renart-accent: #b3e1bf;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .comparison-main {
+    --comparison-renart-surface: #253c2d;
+    --comparison-renart-header: #2c4936;
+    --comparison-renart-border: #50795c;
+    --comparison-renart-accent: #b3e1bf;
+  }
+}

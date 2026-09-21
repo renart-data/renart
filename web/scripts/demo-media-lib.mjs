@@ -68,11 +68,24 @@ export async function launchStagedDemo({ port }) {
 
   await createAcmeWorkspace(workspaceDir);
 
+  // Compile before starting the server's readiness timer. A cold Go cache can
+  // take longer than the server startup budget on a smaller machine.
+  const binary = path.join(tempRoot, "renart-media");
+  console.log("building demo server…");
+  try {
+    await execFileAsync(goBinary, ["build", "-o", binary, "."], {
+      cwd: repoRoot,
+      env: { ...process.env, CGO_LDFLAGS: cgoLdflags },
+      maxBuffer: 8 * 1024 * 1024,
+    });
+  } catch (error) {
+    await rm(tempRoot, { recursive: true, force: true });
+    throw error;
+  }
+
   const server = spawn(
-    goBinary,
+    binary,
     [
-      "run",
-      ".",
       "web",
       workspaceDir,
       "--host",
@@ -715,8 +728,10 @@ async function waitForStalenessSettled(api) {
 
 // --- capture helpers ---------------------------------------------------------
 
-// Returns { withPage, goto, shot } bound to a browser + base URL + output dir.
-export function makeCapture(browser, baseURL, outputDir) {
+// Returns capture helpers and the names of all emitted shots (including light variants).
+export function makeCapture(browser, baseURL, outputDir, { lightShots = [] } = {}) {
+  const capturedShots = [];
+  const lightShotNames = new Set(lightShots);
   async function withPage(viewport, fn) {
     const ctx = await browser.newContext({ viewport, colorScheme: "dark", deviceScaleFactor: 2 });
     await ctx.addInitScript(() => localStorage.setItem("renart-theme", "dark"));
@@ -740,11 +755,26 @@ export function makeCapture(browser, baseURL, outputDir) {
   }
 
   async function shot(page, name, options = {}) {
-    await page.screenshot({ ...options, path: path.join(outputDir, `${name}.png`) });
-    console.log("captured", name);
+    async function capture(filename) {
+      await page.screenshot({ ...options, path: path.join(outputDir, `${filename}.png`) });
+      capturedShots.push(filename);
+      console.log("captured", filename);
+    }
+    await capture(name);
+    if (lightShotNames.has(name)) {
+      // Use the app's own theme event so React, Monaco, charts and the canvas
+      // all render their actual light theme without losing the staged view.
+      await page.evaluate(() => {
+        localStorage.setItem("renart-theme", "light");
+        window.dispatchEvent(new Event("renart-theme-change"));
+      });
+      await page.waitForFunction(() => !document.documentElement.classList.contains("dark"));
+      await page.waitForTimeout(1000);
+      await capture(`${name}-light`);
+    }
   }
 
-  return { withPage, goto, shot };
+  return { withPage, goto, shot, capturedShots };
 }
 
 export function sharp() {

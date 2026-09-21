@@ -7,6 +7,9 @@
   --landing-muted: #59665f;
   --landing-line: #d5dcd3;
   --landing-accent: #30634f;
+  --landing-on-accent: #ffffff;
+  --landing-accent-hover: #244d3d;
+  --landing-media: #ffffff;
   --landing-dark: #182923;
   --landing-sans:
     var(--font-geist), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
@@ -15,6 +18,37 @@
     var(--font-instrument-serif), Georgia, "Times New Roman", serif;
   --landing-mono:
     var(--font-geist-mono), ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --landing-bg: #17201c;
+  --landing-paper: #1d2822;
+  --landing-tint: #202e26;
+  --landing-text: #edf1e9;
+  --landing-muted: #b1beb3;
+  --landing-line: #3c4c40;
+  --landing-accent: #a2c9af;
+  --landing-on-accent: #162a1e;
+  --landing-accent-hover: #bddbc5;
+  --landing-media: #171b19;
+  --landing-dark: #111b16;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --landing-bg: #17201c;
+    --landing-paper: #1d2822;
+    --landing-tint: #202e26;
+    --landing-text: #edf1e9;
+    --landing-muted: #b1beb3;
+    --landing-line: #3c4c40;
+    --landing-accent: #a2c9af;
+    --landing-on-accent: #162a1e;
+    --landing-accent-hover: #bddbc5;
+    --landing-media: #171b19;
+    --landing-dark: #111b16;
+  }
 }
 
 * {
@@ -131,14 +165,14 @@ h3 {
   border: 1px solid var(--landing-accent);
   border-radius: 0.3rem;
   background: var(--landing-accent);
-  color: #fff;
+  color: var(--landing-on-accent);
   font-size: 0.85rem;
   font-weight: 500;
   line-height: 1.35;
   transition: background 140ms ease;
 }
 .landing-button:hover {
-  background: #244d3d;
+  background: var(--landing-accent-hover);
 }
 .landing-button--small {
   min-height: 2.4rem;
@@ -180,6 +214,29 @@ h3 {
   width: 2.1rem;
   height: 2.1rem;
 }
+.landing-nav__actions {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  min-width: 0;
+}
+.landing-nav__desktop a { white-space: nowrap; }
+.landing-theme-toggle {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--landing-muted);
+  background: transparent;
+  border: 1px solid var(--landing-line);
+  border-radius: 0.3rem;
+}
+.landing-theme-toggle:hover { color: var(--landing-text); background: var(--landing-tint); }
+.theme-icon--sun { display: none; }
+[data-theme="dark"] .theme-icon--sun { display: block; }
+[data-theme="dark"] .theme-icon--moon { display: none; }
 .landing-nav__desktop {
   display: flex;
   align-items: center;
@@ -234,7 +291,7 @@ h3 {
 }
 .landing-hero__intro {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
   gap: 5rem;
   align-items: center;
   margin-bottom: 3.4rem;
@@ -257,19 +314,41 @@ h3 {
   align-items: center;
   flex-wrap: wrap;
   gap: 1.5rem;
-  margin-top: 2rem;
+  margin-top: 1.35rem;
 }
+/* The install command is the primary action, readable and selectable. */
 .hero-install {
+  max-width: 33rem;
+  min-width: 0;
+  margin-top: 2rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid #527a61;
+  border-radius: 0.5rem;
+  background: #28533f;
+  color: #f5f9f2;
+  box-shadow: 0 4px 12px #142c1810;
+}
+.hero-install__heading {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  max-width: 30rem;
-  min-width: 0;
-  margin-top: 1.4rem;
-  padding: 0.3rem 0.35rem 0.3rem 0.85rem;
-  border: 1px solid var(--landing-line);
-  border-radius: 0.3rem;
-  background: var(--landing-tint);
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin-bottom: 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.hero-install__heading a {
+  color: #d3e3d5;
+  font-size: 0.68rem;
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+.hero-install__command {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
 }
 .hero-install code {
   flex: 1;
@@ -279,20 +358,26 @@ h3 {
   user-select: all;
 }
 .hero-install__copy {
-  display: grid;
-  flex: 0 0 2.5rem;
-  place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  padding: 0;
-  border: 0;
-  border-radius: 0.2rem;
-  color: var(--landing-accent);
-  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+  min-width: 4.8rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #dce9d9;
+  border-radius: 0.25rem;
+  color: #20382d;
+  background: #e4efdf;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
-.hero-install__copy:hover {
-  background: #dce5d9;
-}
+.hero-install__copy:hover { background: #f5f9f2; }
+.hero-install :focus-visible { outline-color: #e4efdf; }
+.landing-github-link { gap: 0.45rem; }
+.landing-github-link svg { flex-shrink: 0; }
+.themed-screenshot, .themed-screenshot picture { display: block; width: 100%; }
 .landing-status {
   display: flex;
   align-items: center;
@@ -310,9 +395,9 @@ h3 {
 }
 .workspace-hero {
   overflow: hidden;
-  border: 1px solid #cbd3c9;
+  border: 1px solid var(--landing-line);
   border-radius: 0.6rem;
-  background: #171b19;
+  background: var(--landing-media);
   box-shadow: 0 8px 24px #1d302a0c;
 }
 .workspace-hero__bar {
@@ -320,13 +405,13 @@ h3 {
   justify-content: space-between;
   gap: 1rem;
   padding: 0.65rem 1.1rem;
-  color: #c1c9c3;
-  border-bottom: 1px solid #303831;
-  background: #202823;
+  color: var(--landing-muted);
+  border-bottom: 1px solid var(--landing-line);
+  background: var(--landing-paper);
   font-size: 0.7rem;
 }
 .workspace-hero__bar > span:first-child {
-  color: #eff2ed;
+  color: var(--landing-text);
 }
 .workspace-hero img {
   width: 100%;
@@ -406,7 +491,7 @@ h3 {
   min-width: 0;
   border: 1px solid var(--landing-line);
   border-radius: 0.5rem;
-  background: #171b19;
+  background: var(--landing-media);
 }
 .editor-proof img {
   width: 100%;
@@ -471,7 +556,7 @@ h3 {
   border-color: var(--landing-line);
 }
 .workspace-tab[aria-selected="true"] {
-  color: #fff;
+  color: var(--landing-on-accent);
   background: var(--landing-accent);
   border-color: var(--landing-accent);
 }
@@ -481,7 +566,7 @@ h3 {
   gap: 2.25rem;
   align-items: center;
   padding: 2rem;
-  border: 1px solid #d0d9ce;
+  border: 1px solid var(--landing-line);
   border-radius: 0.55rem;
   background: var(--landing-paper);
 }
@@ -512,10 +597,11 @@ h3 {
   justify-content: center;
   aspect-ratio: 1.5556;
   overflow: hidden;
-  background: #171b19;
-  border: 1px solid #d0d9ce;
+  background: var(--landing-media);
+  border: 1px solid var(--landing-line);
   border-radius: 0.3rem;
 }
+.workspace-panel__media picture { width: 100%; height: 100%; }
 .workspace-panel__media img {
   width: 100%;
   height: 100%;
@@ -662,7 +748,8 @@ h3 {
 }
 .landing-footer__nav {
   display: flex;
-  gap: 1.4rem;
+  gap: 0.8rem 1.4rem;
+  flex-wrap: wrap;
   margin-left: auto;
 }
 .landing-footer__legal {
@@ -745,6 +832,12 @@ h3 {
   }
 }
 
+/* The longer GitHub label and theme control need an earlier menu breakpoint. */
+@media (max-width: 62rem) {
+  .landing-nav__desktop { display: none; }
+  .landing-nav__mobile { display: block; }
+  .landing-nav__actions { gap: 0.75rem; }
+}
 @media (max-width: 48rem) {
   .landing-container {
     width: calc(100% - 2.5rem);

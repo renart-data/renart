@@ -1,0 +1,40 @@
+{/* Apply the saved docs/marketing preference before the first paint. */}
+<script is:inline>
+  (() => {
+    const key = 'starlight-theme';
+    const system = window.matchMedia('(prefers-color-scheme: dark)');
+    const parse = (value) => value === 'light' || value === 'dark' ? value : null;
+    let preference = null;
+    try { preference = parse(localStorage.getItem(key)); } catch { /* Storage can be disabled. */ }
+
+    function apply() {
+      const theme = preference || (system.matches ? 'dark' : 'light');
+      document.documentElement.dataset.theme = theme;
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#17201c' : '#f8f8f4');
+      document.querySelectorAll('[data-theme-toggle]').forEach((button) => {
+        button.hidden = false;
+        const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      });
+      document.querySelectorAll('[data-theme-source]').forEach((source) => {
+        source.media = theme === 'dark' ? 'all' : 'not all';
+      });
+      document.querySelectorAll('[data-theme-link]').forEach((link) => {
+        link.href = theme === 'dark' ? link.dataset.darkHref : link.dataset.lightHref;
+      });
+    }
+    apply();
+    document.addEventListener('DOMContentLoaded', apply, { once: true });
+    document.addEventListener('click', (event) => {
+      if (!(event.target instanceof Element) || !event.target.closest('[data-theme-toggle]')) return;
+      preference = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      try { localStorage.setItem(key, preference); } catch { /* Theme still works for this page. */ }
+      apply();
+    });
+    system.addEventListener('change', () => { if (!preference) apply(); });
+    window.addEventListener('storage', (event) => {
+      if (event.key === key || event.key === null) { preference = parse(event.newValue); apply(); }
+    });
+  })();
+</script>

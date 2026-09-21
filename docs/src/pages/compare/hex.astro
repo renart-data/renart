@@ -1,4 +1,5 @@
 ---
+import ThemedScreenshot from '../../components/ThemedScreenshot.astro';
 import ComparisonLayout from '../../layouts/ComparisonLayout.astro';
 import FeatureMatrix from '../../components/FeatureMatrix.astro';
 import ComparisonTable from '../../components/ComparisonTable.astro';
@@ -31,7 +32,7 @@ const rows = [
     <p>The benefit is continuity between development and analysis. It matters most when the same technical person moves between understanding the data and maintaining the code that produces it.</p>
   </div>
   <figure class="comparison-figure">
-    <a href="/docs-media/notebook.webp" target="_blank" rel="noopener noreferrer" aria-label="Open the Renart notebook image at full size"><img src="/docs-media/notebook.webp" alt="A Renart notebook with a revenue query, results, controls and a chart" width="3000" height="1920" loading="lazy" /></a>
+    <ThemedScreenshot src="/docs-media/notebook.webp" zoomLabel="Open the Renart notebook image at full size" alt="A Renart notebook with a revenue query, results, controls and a chart" width={3000} height={1920} />
     <figcaption>Explore the result in a notebook while keeping the analysis with the pipeline project.</figcaption>
   </figure>
   <div class="comparison-article">
