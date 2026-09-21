@@ -292,8 +292,9 @@ shipped (July 2026; git history keeps the full plans).
   tour → local infrastructure and reviewable definitions → quickstart/install.
   Cream surfaces and ink text in light mode, deep green surfaces in dark mode,
   and restrained green accents keep the focus on the product. The hero install
-  command is a prominent, selectable card with a labeled copy button; the
-  installation command is also available in the closing section. It does not simulate live runtime status or promise an exact rebuild
+  command is a prominent, selectable card with a copy button: labeled on desktop,
+  icon-only with an accessible name on mobile. The installation command is also
+  available in the closing section. It does not simulate live runtime status or promise an exact rebuild
   count in a decorative diagram. The Load / Build / Lineage / Notebook /
   Dashboard / Report / Schedule / Runs tour uses a plain tablist with keyboard
   navigation, a labeled panel and links to full-size scripted screenshots.

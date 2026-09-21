@@ -879,6 +879,15 @@ h3 {
     gap: 1.2rem;
     margin-top: 1.5rem;
   }
+  .hero-install__copy {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+  }
+  .hero-install__copy [data-copy-label] {
+    display: none;
+  }
   .landing-hero__description {
     padding-top: 0;
     font-size: 0.95rem;
