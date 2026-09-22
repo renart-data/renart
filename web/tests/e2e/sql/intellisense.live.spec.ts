@@ -319,6 +319,59 @@ test.describe("sql intellisense live", () => {
       );
   });
 
+  test("ranks columns before builtin functions and completes table functions @desktop-only", async ({
+    liveApp,
+    page,
+  }) => {
+    await openCustomersEditor(page, liveApp.baseURL);
+    await replaceEditorContentByInsertText(
+      page,
+      "WITH sample AS (SELECT 1 AS cost, 2 AS count)\nSELECT co\nFROM sample",
+    );
+    await setEditorPositionAfterText(page, "SELECT co");
+    await page.keyboard.press("ControlOrMeta+Space");
+    await expectVisibleSuggestText(page, "cost");
+    const widget = page.locator(".suggest-widget.visible").first();
+    await expect(widget.getByText("coalesce", { exact: true })).toBeVisible();
+    await expect(widget.locator(".monaco-list-row").first()).toContainText("cost");
+    await page.screenshot({ path: test.info().outputPath("column-first-functions.png") });
+    // Narrow before counting: Monaco virtualizes long suggestion lists.
+    await page.keyboard.insertText("u");
+    await expect(widget.getByText("count", { exact: true })).toHaveCount(2);
+    await expect(widget.locator(".monaco-list-row").first()).toHaveAttribute(
+      "aria-label",
+      /count, Field/,
+    );
+    await page.keyboard.press("Escape");
+
+    // Start with loaded columns and no prefix, then let Monaco filter that
+    // suggestion list while typing. Functions must not disappear after a
+    // schema-aware completion response (including nested argument positions).
+    await replaceEditorContentByInsertText(
+      page,
+      "WITH sample AS (SELECT 1 AS cost, 2 AS rounding)\nSELECT round(round())\nFROM sample",
+    );
+    await setEditorPositionAfterText(page, "round(round(");
+    await page.keyboard.press("ControlOrMeta+Space");
+    await expectVisibleSuggestText(page, "cost");
+    await expect(widget.locator(".monaco-list-row").first()).toContainText("cost");
+    await page.keyboard.insertText("ro");
+    await expectVisibleSuggestText(page, "rounding");
+    await expect(widget.getByText("round", { exact: true })).toBeVisible();
+    await expect(widget.locator(".monaco-list-row").first()).toContainText("rounding");
+    await page.screenshot({ path: test.info().outputPath("nested-column-first-functions.png") });
+    await page.keyboard.press("Escape");
+
+    await replaceEditorContentByInsertText(page, "SELECT * FROM read_par");
+    await page.keyboard.press("ControlOrMeta+Space");
+    await expectVisibleSuggestText(page, "read_parquet");
+    await page.keyboard.press("Escape");
+
+    await replaceEditorContentByInsertText(page, "SELECT round(1.25, ");
+    await page.keyboard.press("ControlOrMeta+Shift+Space");
+    await expect(page.locator(".parameter-hints-widget.visible").first()).toContainText("round(");
+  });
+
   // Desktop-only: Desktop suggest widget exposes stable Monaco completion DOM.
   test("uses SQL LSP completions in the Monaco SQL editor @desktop-only", async ({
     liveApp,

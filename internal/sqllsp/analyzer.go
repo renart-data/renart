@@ -27,6 +27,7 @@ const (
 	diagnosticSeverityWarn  = 2
 	completionKindText      = 1
 	completionKindMethod    = 2
+	completionKindFunction  = 3
 	completionKindField     = 5
 	completionKindReference = 18
 	symbolKindField         = 8
@@ -51,12 +52,13 @@ const relationIdentifierPattern = `(?:"(?:""|[^"])+"|` + "`(?:``|[^`])+`" + `|[A
 const relationNamePattern = `(?:` + relationIdentifierPattern + `|'(?:''|[^'])+')(?:\s*\.\s*` + relationIdentifierPattern + `)*`
 
 var (
-	wordPattern          = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_$]*`)
-	relationPattern      = regexp.MustCompile(`(?i)\b(from|join|into|update|table|describe)\s+(` + relationNamePattern + `)(?:\s+as\s+([A-Za-z_][\w$]*))?`)
-	commaRelationPattern = regexp.MustCompile(`(?i),\s*(` + relationNamePattern + `)(?:\s+as\s+([A-Za-z_][\w$]*))?`)
-	insertValuesPattern  = regexp.MustCompile(`(?is)\binsert\s+into\s+((?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)\s*(?:\(([^)]*)\))?\s*values\s*\(`)
-	dotColumnPattern     = regexp.MustCompile(`([A-Za-z_][\w$]*)\s*\.\s*([A-Za-z_][\w$]*)`)
-	refCallPattern       = regexp.MustCompile(`(?is)\{\{\s*(ref|source)\s*\(\s*['"]([^'"]*)`)
+	wordPattern                = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_$]*`)
+	relationPattern            = regexp.MustCompile(`(?i)\b(from|join|into|update|table|describe)\s+(` + relationNamePattern + `)(?:\s+as\s+(` + relationIdentifierPattern + `))?`)
+	commaRelationPattern       = regexp.MustCompile(`(?i),\s*(` + relationNamePattern + `)(?:\s+as\s+(` + relationIdentifierPattern + `))?`)
+	completionQualifierPattern = regexp.MustCompile(`(` + relationIdentifierPattern + `)\s*\.\s*[A-Za-z_0-9$]*$`)
+	insertValuesPattern        = regexp.MustCompile(`(?is)\binsert\s+into\s+((?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*)(?:\s*\.\s*(?:"[^"]+"|` + "`" + `[^` + "`" + `]+` + "`" + `|[A-Za-z_][\w$-]*))*)\s*(?:\(([^)]*)\))?\s*values\s*\(`)
+	dotColumnPattern           = regexp.MustCompile(`([A-Za-z_][\w$]*)\s*\.\s*([A-Za-z_][\w$]*)`)
+	refCallPattern             = regexp.MustCompile(`(?is)\{\{\s*(ref|source)\s*\(\s*['"]([^'"]*)`)
 )
 
 type scopeResolver interface {
@@ -646,7 +648,7 @@ func (e *Engine) ambiguousColumnActions(doc TextDocumentItem, diagnostic Diagnos
 	if projection.changed {
 		offset = projection.rendered.GeneratedOffsetForTemplateOffset(offset)
 	}
-	analysis := e.analysisForCurrentSelect(projection.doc.Text, offset, fullAnalysis)
+	analysis := e.analysisForCurrentSelect(projection.doc.Text, offset, e.dialectForDocument(projection.doc))
 	original := textInRange(doc.Text, diagnostic.Range)
 	if strings.TrimSpace(original) == "" {
 		return nil
@@ -957,7 +959,7 @@ func (e *Engine) Complete(doc TextDocumentItem, pos Position) []CompletionItem {
 	if inTemplateRef(doc.Text, offset) {
 		return e.assetCompletions()
 	}
-	if offsetInSingleQuotedString(doc.Text, offset) {
+	if completionInsideLiteralOrComment(doc.Text, offset, e.dialectForDocument(doc)) {
 		return nil
 	}
 	projection := e.renderDocument(doc)
@@ -965,8 +967,7 @@ func (e *Engine) Complete(doc TextDocumentItem, pos Position) []CompletionItem {
 	if projection.changed {
 		renderedOffset = projection.rendered.GeneratedOffsetForTemplateOffset(offset)
 	}
-	fullAnalysis := analyzeSQLWithResolver(projection.doc.Text, e)
-	analysis := e.analysisForCurrentSelect(projection.doc.Text, renderedOffset, fullAnalysis)
+	analysis := e.analysisForCurrentSelect(projection.doc.Text, renderedOffset, e.dialectForDocument(projection.doc))
 	context, hasContext := syntacticCompletionContext(
 		projection.doc.Text,
 		renderedOffset,
@@ -984,7 +985,7 @@ func (e *Engine) Complete(doc TextDocumentItem, pos Position) []CompletionItem {
 		return columnCompletions(e.columnsForQualifier(analysis, qualifier))
 	}
 	if hasContext && contextExpects(context, golyglot.ExpectedTable) {
-		return e.relationCompletions()
+		return append(e.scopedRelationCompletions(analysis), e.functionCompletions(projection.doc, renderedOffset, context, true)...)
 	}
 	if offsetInQuotedIdentifier(projection.doc.Text, renderedOffset) && columnCompletionPosition(projection.doc.Text, renderedOffset) {
 		return columnCompletions(e.columnsForSelectAnalysis(analysis))
@@ -993,7 +994,7 @@ func (e *Engine) Complete(doc TextDocumentItem, pos Position) []CompletionItem {
 		return joinQualifierCompletions(analysis)
 	}
 	if hasContext && contextExpectsColumns(context) {
-		return columnCompletions(e.columnsForSelectAnalysis(analysis))
+		return append(columnCompletions(e.columnsForSelectAnalysis(analysis)), e.functionCompletions(projection.doc, renderedOffset, context, false)...)
 	}
 	if hasContext {
 		if keywords := e.keywordCompletionsForContext(context); len(keywords) > 0 {
@@ -1004,20 +1005,20 @@ func (e *Engine) Complete(doc TextDocumentItem, pos Position) []CompletionItem {
 		// the preceding FROM context. The tolerant clause scanner is additive
 		// here only after the parser has ruled out a matching keyword/table.
 		if context.Prefix != "" && columnCompletionPosition(projection.doc.Text, renderedOffset) {
-			return columnCompletions(e.columnsForSelectAnalysis(analysis))
+			return append(columnCompletions(e.columnsForSelectAnalysis(analysis)), e.functionCompletions(projection.doc, renderedOffset, context, false)...)
 		}
 		return append(e.keywordCompletions(), e.relationCompletions()...)
 	}
 	// Keep the tolerant analyzer as a fallback for a dialect or cursor shape
 	// the shared parser cannot classify yet.
 	if relationPosition(projection.doc.Text, renderedOffset) {
-		return e.relationCompletions()
+		return append(e.scopedRelationCompletions(analysis), e.functionCompletions(projection.doc, renderedOffset, context, true)...)
 	}
 	if joinConditionPosition(projection.doc.Text, renderedOffset) {
 		return joinQualifierCompletions(analysis)
 	}
 	if columnCompletionPosition(projection.doc.Text, renderedOffset) {
-		return columnCompletions(e.columnsForSelectAnalysis(analysis))
+		return append(columnCompletions(e.columnsForSelectAnalysis(analysis)), e.functionCompletions(projection.doc, renderedOffset, context, false)...)
 	}
 	return append(e.keywordCompletions(), e.relationCompletions()...)
 }
@@ -1076,16 +1077,16 @@ func contextExpectsColumns(context golyglot.SyntacticContext) bool {
 // literal. Double quotes and backticks are identifiers in the dialects Renart
 // supports, so they intentionally do not suppress identifier completion.
 func offsetInSingleQuotedString(sql string, offset int) bool {
-	inString, _ := quoteContextAtOffset(sql, offset)
+	inString, _, _ := quoteContextAtOffset(sql, offset)
 	return inString
 }
 
 func offsetInQuotedIdentifier(sql string, offset int) bool {
-	_, inIdentifier := quoteContextAtOffset(sql, offset)
+	_, inIdentifier, _ := quoteContextAtOffset(sql, offset)
 	return inIdentifier
 }
 
-func quoteContextAtOffset(sql string, offset int) (bool, bool) {
+func quoteContextAtOffset(sql string, offset int) (bool, bool, bool) {
 	offset = min(max(offset, 0), len(sql))
 	inSingleQuote := false
 	inIdentifierQuote := byte(0)
@@ -1147,7 +1148,7 @@ func quoteContextAtOffset(sql string, offset int) (bool, bool) {
 			inIdentifierQuote = ch
 		}
 	}
-	return inSingleQuote, inIdentifierQuote != 0
+	return inSingleQuote, inIdentifierQuote != 0, lineComment || blockComment
 }
 
 func (e *Engine) Definition(doc TextDocumentItem, pos Position) []Location {
@@ -1429,7 +1430,7 @@ func (e *Engine) SignatureHelp(doc TextDocumentItem, pos Position) *SignatureHel
 	}
 	ctx, ok := insertValuesSignatureContext(doc.Text, offset)
 	if !ok {
-		return nil
+		return e.builtinSignatureHelp(doc, offset)
 	}
 	relation := e.resolveRelation(ctx.relation)
 	if relation == nil {
@@ -2111,10 +2112,14 @@ func (e *Engine) InferOutputColumns(sql string) []ColumnInfo {
 	return outputColumns(sql, analysis, e)
 }
 
-func (e *Engine) analysisForCurrentSelect(sql string, offset int, fullAnalysis sqlAnalysis) sqlAnalysis {
-	segment, _ := currentSelectStatementAt(sql, offset)
-	analysis := analyzeSQLWithResolver(segment, e)
+func (e *Engine) analysisForCurrentSelect(sql string, offset int, dialect string) sqlAnalysis {
+	resolver := dialectScopeResolver{scopeResolver: e, dialect: dialect}
+	statement := completionStatementRange(sql, offset, dialect)
+	sql, offset = sql[statement.start:statement.end], offset-statement.start
+	segment, segmentStart := currentSelectStatementAt(sql, offset)
 	scopes := selectScopeRangesAt(sql, offset)
+	visible := visibleCTEsAt(sql, offset, scopes, resolver, statement.start)
+	analysis := analyzeSQLWithParent(segment, resolver, &visible, statement.start+segmentStart)
 	visibleFrom := 0
 	for index := 1; index < len(scopes); index++ {
 		if isCTESelectScope(sql, scopes[index], scopes[:index]) {
@@ -2130,19 +2135,12 @@ func (e *Engine) analysisForCurrentSelect(sql string, offset int, fullAnalysis s
 		scope := scopes[index]
 		scopeText := sql[scope.start:scope.end]
 		localOffset := min(max(offset-scope.start, 0), len(scopeText))
-		ancestor := analyzeSQLWithResolver(currentTopLevelSelectStatement(scopeText, localOffset), e)
+		ancestorStart := statement.start + scope.start + currentTopLevelSelectStart(scopeText, localOffset)
+		ancestor := analyzeSQLWithParent(currentTopLevelSelectStatement(scopeText, localOffset), resolver, &visible, ancestorStart)
 		for key, ref := range ancestor.aliases {
 			if _, shadowed := analysis.aliases[key]; !shadowed {
 				analysis.aliases[key] = ref
 			}
-		}
-	}
-	for key, cte := range fullAnalysis.ctes {
-		analysis.ctes[key] = cte
-	}
-	for key, ref := range analysis.aliases {
-		if cte, ok := analysis.ctes[strings.ToLower(ref.name)]; ok {
-			analysis.aliases[key] = cte
 		}
 	}
 	return analysis
@@ -2324,6 +2322,7 @@ func columnHover(source string, column ColumnInfo) string {
 }
 
 type sqlAnalysis struct {
+	dialect      string
 	relations    []relationUse
 	columns      []columnUse
 	aliases      map[string]aliasRef
@@ -2355,7 +2354,7 @@ func (a sqlAnalysis) resolveAliasOrName(name string) string {
 }
 
 func (a sqlAnalysis) resolveAliasRef(name string) *aliasRef {
-	key := strings.ToLower(strings.TrimSpace(name))
+	key := a.identifierKey(name)
 	if ref, ok := a.aliases[key]; ok {
 		return &ref
 	}
@@ -2572,6 +2571,9 @@ func analyzeSQLWithResolver(sql string, resolver scopeResolver) sqlAnalysis {
 func analyzeSQLWithParent(sql string, resolver scopeResolver, parent *sqlAnalysis, baseOffset int) sqlAnalysis {
 	sql = sqlForScopeAnalysis(sql)
 	analysis := sqlAnalysis{aliases: map[string]aliasRef{}, ctes: map[string]aliasRef{}, localAliases: map[string]struct{}{}}
+	if dialectResolver, ok := resolver.(dialectScopeResolver); ok {
+		analysis.dialect = dialectResolver.dialect
+	}
 	if parent != nil {
 		for key, ref := range parent.aliases {
 			analysis.aliases[key] = ref
@@ -2581,18 +2583,7 @@ func analyzeSQLWithParent(sql string, resolver scopeResolver, parent *sqlAnalysi
 		}
 	}
 	for _, cte := range extractCTEDefs(sql) {
-		absoluteBodyStart := baseOffset + cte.bodyStart
-		bodyAnalysis := analyzeSQLWithParent(cte.body, resolver, &analysis, absoluteBodyStart)
-		columns, columnRanges := outputColumnsWithRanges(cte.body, bodyAnalysis, resolver, absoluteBodyStart)
-		analysis.ctes[strings.ToLower(cte.name)] = aliasRef{
-			alias:        cte.name,
-			name:         cte.name,
-			columns:      columns,
-			columnRanges: columnRanges,
-			kind:         "cte",
-			start:        baseOffset + cte.nameStart,
-			end:          baseOffset + cte.nameEnd,
-		}
+		addCTEDef(&analysis, cte, resolver, baseOffset)
 	}
 	scanSQL := maskNestedQueries(sql)
 	type relationCandidate struct {
@@ -2628,7 +2619,7 @@ func analyzeSQLWithParent(sql string, resolver scopeResolver, parent *sqlAnalysi
 		}
 		if columns, ok := tableFunctionColumns(name, sql, match.nameEnd); ok {
 			alias := shortName(name)
-			analysis.aliases[strings.ToLower(alias)] = aliasRef{
+			analysis.aliases[analysis.identifierKey(alias)] = aliasRef{
 				alias:   alias,
 				name:    name,
 				columns: columns,
@@ -2636,7 +2627,7 @@ func analyzeSQLWithParent(sql string, resolver scopeResolver, parent *sqlAnalysi
 				start:   baseOffset + match.nameStart,
 				end:     baseOffset + match.nameEnd,
 			}
-			analysis.localAliases[strings.ToLower(alias)] = struct{}{}
+			analysis.localAliases[analysis.identifierKey(alias)] = struct{}{}
 			continue
 		}
 		analysis.relations = append(analysis.relations, relationUse{name: name, start: baseOffset + match.nameStart, end: baseOffset + match.nameEnd})
@@ -2653,7 +2644,7 @@ func analyzeSQLWithParent(sql string, resolver scopeResolver, parent *sqlAnalysi
 			aliasStart, aliasEnd = candidateStart, candidateEnd
 		}
 		ref := aliasRef{alias: alias, name: name, kind: "relation", start: baseOffset + aliasStart, end: baseOffset + aliasEnd}
-		if cte, ok := analysis.ctes[strings.ToLower(name)]; ok {
+		if cte, ok := analysis.ctes[analysis.identifierKey(sql[match.nameStart:match.nameEnd])]; ok {
 			ref = cte
 			ref.alias = alias
 			if aliasStart != match.nameStart || aliasEnd != match.nameEnd {
@@ -2664,8 +2655,8 @@ func analyzeSQLWithParent(sql string, resolver scopeResolver, parent *sqlAnalysi
 				ref.columns = resolver.columnsForRelation(relation.ID)
 			}
 		}
-		analysis.aliases[strings.ToLower(alias)] = ref
-		analysis.localAliases[strings.ToLower(alias)] = struct{}{}
+		analysis.aliases[analysis.identifierKey(alias)] = ref
+		analysis.localAliases[analysis.identifierKey(alias)] = struct{}{}
 	}
 	for _, subquery := range extractSubqueries(sql) {
 		absoluteBodyStart := baseOffset + subquery.bodyStart
@@ -2705,7 +2696,8 @@ func analyzeSQLWithParent(sql string, resolver scopeResolver, parent *sqlAnalysi
 			}
 			columns = aliasedColumns
 		}
-		analysis.aliases[strings.ToLower(subquery.alias)] = aliasRef{
+		key := analysis.identifierKey(sql[subquery.aliasStart:subquery.aliasEnd])
+		analysis.aliases[key] = aliasRef{
 			alias:        subquery.alias,
 			name:         subquery.alias,
 			columns:      columns,
@@ -2714,7 +2706,7 @@ func analyzeSQLWithParent(sql string, resolver scopeResolver, parent *sqlAnalysi
 			start:        baseOffset + subquery.aliasStart,
 			end:          baseOffset + subquery.aliasEnd,
 		}
-		analysis.localAliases[strings.ToLower(subquery.alias)] = struct{}{}
+		analysis.localAliases[key] = struct{}{}
 	}
 	for _, match := range dotColumnPattern.FindAllStringSubmatchIndex(scanSQL, -1) {
 		if !offsetInSQLCode(sql, match[2]) {
@@ -2833,7 +2825,7 @@ func implicitRelationAlias(sql string, relationEnd int) (string, int, int) {
 	if alias == "" || isKeyword(alias) {
 		return "", 0, 0
 	}
-	return alias, start, end
+	return sql[start:end], start, end
 }
 
 func tableFunctionColumns(name, sql string, end int) ([]ColumnInfo, bool) {
@@ -2891,9 +2883,12 @@ func replaceJinjaCallsPreservingLength(sql string, replacement func(string) stri
 
 type cteBody struct {
 	name               string
+	identifier         string
 	body               string
 	nameStart, nameEnd int
 	bodyStart          int
+	columnAliases      []subqueryColumnAlias
+	recursive          bool
 }
 
 type subqueryBody struct {
@@ -2916,9 +2911,11 @@ func extractCTEDefs(sql string) []cteBody {
 		return result
 	}
 	i += len("with")
+	recursive := false
 	for i < len(sql) {
 		i = skipSQLTrivia(sql, i)
 		if hasWordAt(sql, i, "recursive") {
+			recursive = true
 			i += len("recursive")
 			continue
 		}
@@ -2927,6 +2924,7 @@ func extractCTEDefs(sql string) []cteBody {
 			return result
 		}
 		nameStart := skipSQLTrivia(sql, i)
+		columnAliases := readSubqueryColumnAliases(sql, nameEnd)
 		i = skipSQLTrivia(sql, nameEnd)
 		if i < len(sql) && sql[i] == '(' {
 			close := findMatchingParen(sql, i)
@@ -2939,14 +2937,23 @@ func extractCTEDefs(sql string) []cteBody {
 			return result
 		}
 		i = skipSQLTrivia(sql, i+len("as"))
+		if hasWordAt(sql, i, "not") {
+			i = skipSQLTrivia(sql, i+len("not"))
+		}
+		if hasWordAt(sql, i, "materialized") {
+			i = skipSQLTrivia(sql, i+len("materialized"))
+		}
 		if i >= len(sql) || sql[i] != '(' {
 			return result
 		}
 		close := findMatchingParen(sql, i)
 		if close < 0 {
+			close = len(sql)
+		}
+		result = append(result, cteBody{name: name, identifier: sql[nameStart:nameEnd], body: sql[i+1 : close], nameStart: nameStart, nameEnd: nameEnd, bodyStart: i + 1, columnAliases: columnAliases, recursive: recursive})
+		if close == len(sql) {
 			return result
 		}
-		result = append(result, cteBody{name: name, body: sql[i+1 : close], nameStart: nameStart, nameEnd: nameEnd, bodyStart: i + 1})
 		i = skipSQLTrivia(sql, close+1)
 		if i >= len(sql) || sql[i] != ',' {
 			return result
@@ -3336,11 +3343,16 @@ func readIdentifier(text string, i int) (string, int) {
 	if text[i] == '"' || text[i] == '`' {
 		quote := text[i]
 		end := i + 1
-		for end < len(text) && text[end] != quote {
-			end++
-		}
-		if end < len(text) {
-			return text[i+1 : end], end + 1
+		for end < len(text) {
+			if text[end] != quote {
+				end++
+				continue
+			}
+			if end+1 < len(text) && text[end+1] == quote {
+				end += 2
+				continue
+			}
+			return strings.ReplaceAll(text[i+1:end], string([]byte{quote, quote}), string(quote)), end + 1
 		}
 		return "", i
 	}
@@ -3385,28 +3397,11 @@ func joinQualifierCompletions(analysis sqlAnalysis) []CompletionItem {
 }
 
 func qualifierBeforeDot(text string, offset int) (string, bool) {
-	if offset > len(text) {
-		offset = len(text)
-	}
-	i := offset - 1
-	for i >= 0 && isSpace(text[i]) {
-		i--
-	}
-	if i < 0 || text[i] != '.' {
+	match := completionQualifierPattern.FindStringSubmatch(text[:min(max(offset, 0), len(text))])
+	if len(match) < 2 {
 		return "", false
 	}
-	i--
-	for i >= 0 && isSpace(text[i]) {
-		i--
-	}
-	end := i + 1
-	for i >= 0 && isIdentByte(text[i]) {
-		i--
-	}
-	if end <= i+1 {
-		return "", false
-	}
-	return text[i+1 : end], true
+	return match[1], true
 }
 
 func relationPosition(text string, offset int) bool {
@@ -3445,12 +3440,17 @@ func columnCompletionPosition(text string, offset int) bool {
 		clause == "group by" ||
 		clause == "order by" ||
 		clause == "qualify" ||
+		clause == "limit by" ||
 		clause == "set" ||
 		clause == "values"
 }
 
 func joinConditionPosition(text string, offset int) bool {
 	segment := currentSelectSegmentAt(text, offset)
+	// DISTINCT ON is part of SELECT, not a join predicate.
+	if selectListPosition(text, offset) {
+		return false
+	}
 	clause, ok := lastColumnClauseBefore(segment, len(segment))
 	return ok && clause == "on"
 }
@@ -3503,6 +3503,8 @@ func lastColumnClauseBefore(text string, offset int) (string, bool) {
 				clause = "group by"
 			} else if previousWord == "order" {
 				clause = "order by"
+			} else if clause == "limit" {
+				clause = "limit by"
 			}
 		case "select", "from", "join", "on", "where", "having", "qualify", "into", "update", "set", "values", "limit":
 			clause = word

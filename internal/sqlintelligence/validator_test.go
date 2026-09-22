@@ -67,6 +67,33 @@ func TestValidateSQLReportsGolyglotExpressionTypeMismatch(t *testing.T) {
 	assert.Contains(t, result.Diagnostics[0].Message, "numeric-compatible operands")
 }
 
+func TestValidateSQLDeliversGroupingAndFunctionPlacementDiagnostics(t *testing.T) {
+	for _, query := range []string{
+		`SELECT id, SUM(value) FROM numbers`,
+		`SELECT id FROM numbers WHERE SUM(value) > 0`,
+		`SELECT id FROM numbers WHERE ROW_NUMBER() OVER () = 1`,
+	} {
+		t.Run(query, func(t *testing.T) {
+			result, err := ValidateSQL(context.Background(), ValidationRequest{
+				SQL: query, Dialect: "duckdb",
+				Schema:             Schema{"numbers": {"id": "INTEGER", "value": "INTEGER"}},
+				RelationConfidence: map[string]RelationConfidence{"numbers": RelationKnown},
+			})
+			require.NoError(t, err)
+			require.NotEmpty(t, result.Diagnostics)
+			for _, diagnostic := range result.Diagnostics {
+				assert.Equal(t, authoringdiag.CodeSQLValidationFailed, diagnostic.Code)
+				delivery, registered := authoringdiag.TypeCheckDelivery(diagnostic.Code)
+				assert.True(t, registered)
+				assert.Equal(t, authoringdiag.DeliveryDocument, delivery)
+				require.NotNil(t, diagnostic.StartByte)
+				require.NotNil(t, diagnostic.EndByte)
+				assert.Greater(t, *diagnostic.EndByte, *diagnostic.StartByte)
+			}
+		})
+	}
+}
+
 func TestValidateSQLReportsAmbiguousJoinColumnAcrossRenartDialects(t *testing.T) {
 	for _, dialect := range []string{
 		"duckdb", "postgres", "bigquery", "snowflake", "athena", "databricks",

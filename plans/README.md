@@ -13,6 +13,7 @@ decisions and dependencies in each plan; there is no global questions scratchpad
 
 | Plan | Remaining boundary / prerequisite |
 | --- | --- |
+| [SQL function IntelliSense](sql-function-intellisense.md) | DuckDB/PostgreSQL/ClickHouse slice uses published Golyglot alpha.10; broaden overload selection, probes, dialects and remaining editor surfaces |
 | [Full-file asset editor](full-file-asset-editor.md) | Proposed: isolate malformed documents, revision-checked raw saves, shared mixed-language IntelliSense; not implemented |
 | [Notebook Data Browser drops](notebook-data-browser-drops.md) | Table/project-file/S3-file insertion implemented; prefix review, connection picker and further transports remain |
 | [Shared preview row loading](preview-row-loading.md) | Inspect, Data Browser, notebook and query previews implemented; authored table presentation adapters remain |

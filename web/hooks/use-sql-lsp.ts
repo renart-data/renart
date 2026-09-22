@@ -20,7 +20,6 @@ import {
   getSQLLSPSemanticTokens,
   getSQLLSPSignatureHelp,
   SQLLSPCodeAction,
-  SQLLSPCompletionItem,
   SQLLSPDocumentSymbol,
   SQLLSPRange,
   SQLLSPRequest,
@@ -28,6 +27,11 @@ import {
   SQLLSPWorkspaceEdit,
 } from "@/lib/api-sql-lsp";
 import { getSQLPathSuggestions } from "@/lib/api-sql-discovery";
+import {
+  dedupeSQLCompletions,
+  isSQLCompletionKind,
+  sqlCompletionToMonaco,
+} from "@/lib/sql-lsp-completions";
 import { isQuerySensorAssetType, isSqlAssetType } from "@/lib/asset-types";
 import {
   selectedEnvironmentAtom,
@@ -38,7 +42,7 @@ import { useSQLParseContext } from "@/hooks/use-sql-parse-context";
 import { fetchJSON } from "@/lib/api-core";
 import { applyAssetTransaction } from "@/lib/api-asset-transactions";
 import {
-  isInsideSingleQuotedSQLString,
+  isSQLCompletionSuppressed,
   provideLocalSQLCompletionItems,
   schemaTablesReferencedAtPosition,
 } from "@/lib/monaco-sql-providers";
@@ -244,7 +248,7 @@ export function useSQLLSP(
           }
         }
         if (
-          isInsideSingleQuotedSQLString(currentModel.getValue(), currentModel.getOffsetAt(position))
+          isSQLCompletionSuppressed(currentModel.getValue(), currentModel.getOffsetAt(position))
         ) {
           return { suggestions: [] };
         }
@@ -259,12 +263,10 @@ export function useSQLLSP(
           position.lineNumber,
           word.endColumn,
         );
-        // Keep column (5), relation/asset (18) and keyword (2) completions from
-        // the LSP; drop anything else. Keywords sort last (see the engine's "z"
-        // SortText) so schema-aware suggestions stay on top.
+        // Preserve the same column-first ranking in SQL and embedded Python.
         const lspSuggestions = (response.completions ?? [])
-          .filter((item) => item.kind === 5 || item.kind === 18 || item.kind === 2)
-          .map((item) => completionToMonaco(monaco, item, range));
+          .filter(isSQLCompletionKind)
+          .map((item) => sqlCompletionToMonaco(monaco, item, range));
         if (includeNotebookRuntimeColumns) {
           const runtimeTables = schemaTables.filter((table) =>
             table.columns.some((column) => column.sourceMethods?.includes("notebook-run")),
@@ -1149,50 +1151,4 @@ function lspRangeToMarker(range: SQLLSPRange) {
     endLineNumber: range.end.line + 1,
     endColumn: range.end.character + 1,
   };
-}
-
-function completionToMonaco(
-  monaco: typeof MonacoNS,
-  item: SQLLSPCompletionItem,
-  range: MonacoNS.IRange,
-): MonacoNS.languages.CompletionItem {
-  const insertText = item.insertText || item.label;
-  return {
-    label: item.label,
-    kind: completionKindToMonaco(monaco, item.kind),
-    detail: item.detail,
-    documentation: item.documentation ? { value: item.documentation } : undefined,
-    insertText,
-    range,
-    sortText: item.sortText ? `lsp-${item.sortText}` : `lsp-${item.label}`,
-    command: insertText.endsWith(".")
-      ? { id: "editor.action.triggerSuggest", title: "Show column suggestions" }
-      : undefined,
-  };
-}
-
-function dedupeSQLCompletions(
-  suggestions: MonacoNS.languages.CompletionItem[],
-): MonacoNS.languages.CompletionItem[] {
-  const seen = new Set<string>();
-  return suggestions.filter((suggestion) => {
-    const label = typeof suggestion.label === "string" ? suggestion.label : suggestion.label.label;
-    const key = `${label.toLowerCase()}::${suggestion.insertText.toLowerCase()}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function completionKindToMonaco(monaco: typeof MonacoNS, kind?: number) {
-  switch (kind) {
-    case 2:
-      return monaco.languages.CompletionItemKind.Keyword;
-    case 5:
-      return monaco.languages.CompletionItemKind.Field;
-    case 18:
-      return monaco.languages.CompletionItemKind.Reference;
-    default:
-      return monaco.languages.CompletionItemKind.Text;
-  }
 }

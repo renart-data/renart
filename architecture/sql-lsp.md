@@ -107,7 +107,11 @@ coordinator's `WorkspaceState` rather than the filesystem:
 - The graph is **cached by `WorkspaceState.Revision`** (monotonic, bumped on
   every mutation). Editing issues LSP requests per keystroke against the same
   saved state, so rebuilding per request was wasted work. `Revision == 0`
-  (unmanaged/initial state) is never cached.
+  (unmanaged/initial state) is never cached. Concurrent cold requests for the
+  same revision share one in-flight inference; a different revision proceeds
+  independently, and an older result cannot replace a newer cached graph.
+  Waiters can cancel independently. Canceled builds never enter the cache;
+  still-active waiters retry instead of inheriting a partial schema.
 - The HTTP adapter has an optional process-local **remote catalog cache** keyed
   by connection and environment. Every request reads its snapshot without I/O,
   schedules a single-flight background refresh when it is cold or older than
@@ -468,9 +472,9 @@ draft and require the dataset's selected query connection.
   it inserts the effective alias plus `.` and Monaco immediately opens the
   corresponding column suggestions. It never substitutes the connection's full
   relation list or the underlying qualified name when an alias exists. The
-  client keeps only kinds it renders (columns, relations, keywords). Column,
-  relation, and keyword completion is suppressed while the cursor is inside a
-  single-quoted SQL string; explicit path and data-value suggestion flows retain
+  client keeps only kinds it renders (columns, relations, functions, keywords).
+  Ordinary completion is suppressed inside SQL strings (including dollar
+  strings) and comments; explicit path and data-value suggestion flows retain
   their narrower behavior.
   Purely-remote warehouse tables (no backing asset) come from the optional
   backend catalog overlay. The browser does not merge warehouse tables or
@@ -520,3 +524,52 @@ deterministic schema-plus-constraint payload. The cache avoids repeating
 semantic work across fixpoint rounds and identical editor requests; canceled or
 failed requests never populate it. Python intelligence is a separate embedded
 WASM concern documented in `backend.md`.
+
+## 8. Builtin completion and lexical editor scopes
+
+`function_completion.go` consumes Golyglot's versioned builtin inventories for
+DuckDB, PostgreSQL and ClickHouse. The public catalog copy and formatted
+completion descriptions are initialized once per dialect, including concurrent
+first use. No database is queried while typing and no function names are copied
+into TypeScript. Inventory signatures are not substituted for query inference;
+unknown table shapes and polymorphic returns remain explicit.
+
+Functions accompany column suggestions even with an empty prefix, including
+inside nested function arguments; ranking keeps columns first rather than
+excluding functions when a schema is available. Expressions offer scalar
+functions and legal aggregate/window kinds; FROM/JOIN offers table-producing
+functions. Alias-dot completion stays
+column-only. Names are inserted without guessing an overload or adding duplicate
+parentheses. Signature help uses the shared SQL tokenizer for argument boundaries,
+so nested calls and commas inside strings/comments do not shift the active
+parameter. Qualified UDF calls do not silently borrow a builtin signature.
+DuckDB table options are matched by name, so an out-of-order `header =` or
+`union_by_name =` highlights that option instead of the next positional
+parameter. Nested list/struct expressions do not advance the parent argument.
+Verified SQL expression forms such as COALESCE and NULLIF come from Golyglot,
+with argument-dependent results left unknown.
+
+`sql-lsp-completions.ts` is the shared Monaco adapter for SQL and SQL embedded in
+Python. It preserves Function-kind items, ranks canonical and notebook-runtime
+columns above functions, and distinguishes same-named columns and functions
+during deduplication. Notebook-local fallback also checks string/comment context.
+Embedded literals use the `python_query` document context: a pipeline Python
+asset inherits its effective connection, while a notebook Python cell defaults
+to the local DuckDB session. A literal connection override selects that
+warehouse's dialect; unknown connections remain generic. This request-local
+overlay never changes the cached graph, and embedded queries do not borrow the
+Python asset's output schema contract.
+
+`completion_scope.go` resolves visible CTEs within the current statement and
+lexical query scopes. It includes explicit/recursive CTE column lists and quoted
+alias keys. Nested CTEs, later non-recursive siblings, and declarations in a
+previous statement do not leak. Partial statements retain recoverable scopes.
+The regression matrix contains 25 query shapes; 15 failed before the associated
+fixes. PostgreSQL DISTINCT ON, ClickHouse LIMIT BY and DuckDB QUALIFY have
+explicit cases. This is focused editor coverage, not a claim of complete SQL
+name resolution for every dialect.
+
+Golyglot alpha.12 supplies the published metadata API. Focused live coverage
+checks asset editors, notebook SQL and SQL embedded in Python, including
+notebook runtime columns. Remaining coverage is tracked in
+[the IntelliSense plan](../plans/sql-function-intellisense.md).

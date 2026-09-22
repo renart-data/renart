@@ -52,6 +52,7 @@ type SQLLSPResponse struct {
 }
 
 const sqlLSPDocumentContextPresentationQuery = "presentation_query"
+const sqlLSPDocumentContextPythonQuery = "python_query"
 
 type SQLLSPDependencies struct {
 	WorkspaceRoot               string
@@ -72,12 +73,21 @@ type SQLLSPService struct {
 	cachedRevision   int64
 	cachedGraph      sqllsp.CanonicalGraph
 	cachedGraphReady bool
+	graphBuilds      map[int64]*sqlLSPGraphBuild
 	buildCount       atomic.Int64
 
 	assetCacheMu       sync.Mutex
 	assetCacheRevision int64
 	assetCacheEntries  map[string]*assetDiagnosticCacheEntry
 	duckDBFileSchemas  *sqllsp.DuckDBFileSchemaCache
+}
+
+// In-flight builds are shared only within the same immutable workspace
+// revision. A newer revision must not wait for an obsolete editor request.
+type sqlLSPGraphBuild struct {
+	done  chan struct{}
+	graph sqllsp.CanonicalGraph
+	valid bool
 }
 
 type assetDiagnosticCacheEntry struct {
@@ -146,7 +156,7 @@ func (s *SQLLSPService) Diagnostics(ctx context.Context, req SQLLSPRequest) (SQL
 
 func sqlLSPDocumentSkipsAssetContract(documentContext string) bool {
 	switch strings.ToLower(strings.TrimSpace(documentContext)) {
-	case "adhoc", "custom_check", "hook", sqlLSPDocumentContextPresentationQuery:
+	case "adhoc", "custom_check", "hook", sqlLSPDocumentContextPresentationQuery, sqlLSPDocumentContextPythonQuery:
 		return true
 	default:
 		return false
@@ -494,17 +504,32 @@ func (s *SQLLSPService) graphAndDocument(ctx context.Context, req SQLLSPRequest)
 	doc := sqllsp.TextDocumentItem{URI: assetURI(s.deps.WorkspaceRoot, asset), LanguageID: "sql", Text: content}
 	doc = s.withJinjaProjection(ctx, req.AssetID, doc)
 	graph := s.graphForRequest(ctx, state, notebook)
+	pythonQuery := strings.EqualFold(strings.TrimSpace(req.DocumentContext), sqlLSPDocumentContextPythonQuery)
 	// A connection-bound notebook cell executes in the remote warehouse, where
 	// local notebook session objects do not exist. Keep the current source cell
 	// in the document graph but do not advertise sibling cells as relations.
 	// Connectionless transforms retain the complete notebook-local graph.
-	if notebook != nil && (strings.TrimSpace(asset.Connection) != "" || strings.TrimSpace(req.Connection) != "") {
+	if notebook != nil && ((!pythonQuery && strings.TrimSpace(asset.Connection) != "") || strings.TrimSpace(req.Connection) != "") {
 		sourceOnly := *notebook
 		sourceOnly.Cells = []model.Asset{asset}
 		graph = s.graphWithNotebookCells(ctx, s.graphForState(ctx, state), sourceOnly)
 	}
 	if strings.EqualFold(strings.TrimSpace(req.DocumentContext), "custom_check") || strings.EqualFold(strings.TrimSpace(req.DocumentContext), "hook") {
 		graph = graphWithCustomCheckDialect(graph, doc.URI, asset, state.Connections)
+	}
+	if pythonQuery {
+		graph = graphWithCustomCheckDialect(graph, doc.URI, asset, state.Connections)
+		if notebook != nil {
+			// Python notebook query() defaults to the notebook's local session,
+			// not a cell's output/materialization connection. A literal override
+			// below can still select an explicitly configured remote warehouse.
+			graph = graphWithDocumentDialect(graph, doc.URI, "duckdb")
+			for i := range graph.Assets {
+				if graph.Assets[i].URI == doc.URI {
+					graph.Assets[i].Connection = ""
+				}
+			}
+		}
 	}
 	if connection := strings.TrimSpace(req.Connection); connection != "" {
 		graph = graphWithDocumentConnection(graph, doc.URI, connection, state.Connections)
@@ -834,6 +859,10 @@ func graphWithCustomCheckDialect(
 	if dialect == "" {
 		dialect = "generic"
 	}
+	return graphWithDocumentDialect(graph, documentURI, dialect)
+}
+
+func graphWithDocumentDialect(graph sqllsp.CanonicalGraph, documentURI sqllsp.URI, dialect string) sqllsp.CanonicalGraph {
 	assets := append([]sqllsp.AssetNode(nil), graph.Assets...)
 	for index := range assets {
 		if assets[index].URI == documentURI {
@@ -855,7 +884,7 @@ func graphWithDocumentConnection(
 	connection string,
 	connectionTypes map[string]string,
 ) sqllsp.CanonicalGraph {
-	dialect := ""
+	dialect := sqlformat.DialectGeneric
 	if queryType, ok := queryAssetTypeForConnectionType(connectionTypes[connection]); ok {
 		dialect = sqllsp.DialectFromAssetType(string(queryType))
 	}
@@ -863,9 +892,7 @@ func graphWithDocumentConnection(
 	for index := range assets {
 		if assets[index].URI == documentURI {
 			assets[index].Connection = connection
-			if dialect != "" && dialect != sqlformat.DialectGeneric {
-				assets[index].Dialect = dialect
-			}
+			assets[index].Dialect = dialect
 			break
 		}
 	}
@@ -951,28 +978,61 @@ func sqlLSPDocumentContent(asset model.Asset) (string, bool) {
 // results.
 func (s *SQLLSPService) graphForState(ctx context.Context, state model.WorkspaceState) sqllsp.CanonicalGraph {
 	revision := state.Revision
-	if revision > 0 {
+	if revision <= 0 {
+		return s.buildGraph(ctx, state)
+	}
+	for {
+		if ctx.Err() != nil {
+			return sqllsp.CanonicalGraph{}
+		}
 		s.cacheMu.Lock()
 		if s.cachedGraphReady && s.cachedRevision == revision {
 			graph := s.cachedGraph
 			s.cacheMu.Unlock()
 			return graph
 		}
+		if entry, exists := s.graphBuilds[revision]; exists {
+			s.cacheMu.Unlock()
+			select {
+			case <-ctx.Done():
+				return sqllsp.CanonicalGraph{}
+			case <-entry.done:
+				if entry.valid {
+					return entry.graph
+				}
+				// The first request was canceled. Its partial inference must not
+				// become the answer for other, still-active editor requests.
+				continue
+			}
+		}
+		entry := &sqlLSPGraphBuild{done: make(chan struct{})}
+		if s.graphBuilds == nil {
+			s.graphBuilds = make(map[int64]*sqlLSPGraphBuild)
+		}
+		s.graphBuilds[revision] = entry
 		s.cacheMu.Unlock()
-	}
 
-	graph := s.buildGraph(ctx, state)
+		// Also release waiters if an unexpected inference panic is recovered by
+		// the HTTP transport; it must not strand this revision in-flight forever.
+		defer func() {
+			s.cacheMu.Lock()
+			delete(s.graphBuilds, revision)
+			close(entry.done)
+			s.cacheMu.Unlock()
+		}()
+		graph := s.buildGraph(ctx, state)
 
-	if revision > 0 {
 		s.cacheMu.Lock()
-		if !s.cachedGraphReady || revision >= s.cachedRevision {
+		entry.graph = graph
+		entry.valid = ctx.Err() == nil
+		if entry.valid && (!s.cachedGraphReady || revision >= s.cachedRevision) {
 			s.cachedRevision = revision
 			s.cachedGraph = graph
 			s.cachedGraphReady = true
 		}
 		s.cacheMu.Unlock()
+		return graph
 	}
-	return graph
 }
 
 // WorkspaceGraph returns the revision-cached canonical graph for the server's
