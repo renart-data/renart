@@ -600,8 +600,8 @@ github.com/prometheus/procfs v0.20.1 h1:XwbrGOIplXW/AU3YhIhLODXMJYyC1isLFfYCsTEy
 github.com/prometheus/procfs v0.20.1/go.mod h1:o9EMBZGRyvDrSPH1RqdxhojkuXstoe4UlK79eF5TGGo=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
-github.com/renart-data/golyglot v0.1.0-alpha.11 h1:0f9izumqFkG4BUZe/LIG8MBYXXMinqCosIbpvZIchKE=
-github.com/renart-data/golyglot v0.1.0-alpha.11/go.mod h1:5YWmXa0Pp9pCNio5wv3Z+eT1xMyq/CC7ql2W4nTZMqs=
+github.com/renart-data/golyglot v0.1.0-alpha.12 h1:iQWCx18BPPZqkaH2u2zkj3zg0rBHC9EgcHfBTobvF3o=
+github.com/renart-data/golyglot v0.1.0-alpha.12/go.mod h1:5YWmXa0Pp9pCNio5wv3Z+eT1xMyq/CC7ql2W4nTZMqs=
 github.com/riverqueue/river v0.47.0 h1:j8HOEyiOE8gRRhVS2wllKams372TH1WWiH6xCakXHqc=
 github.com/riverqueue/river v0.47.0/go.mod h1:Wgmwx475ZBd8lQnNrJgyG2DWH7BfyNiSAtv0rC9bJBQ=
 github.com/riverqueue/river/riverdriver v0.47.0 h1:qU8VkjdMl9plqeRg57SxsDUM/i/eECaSYejZ7HynC60=

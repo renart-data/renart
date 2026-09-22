@@ -1,7 +1,7 @@
 # Dialect-aware SQL function IntelliSense
 
 Status: initial DuckDB/PostgreSQL/ClickHouse slice and 22 September follow-up
-implemented. Golyglot alpha.11 is published and pinned; no local module override
+implemented. Golyglot alpha.12 is published and pinned; no local module override
 is required. As-built behavior is in
 [SQL LSP architecture](../architecture/sql-lsp.md). This plan tracks extensions,
 not a promise of complete dialect/function coverage.
