@@ -12,7 +12,7 @@ const currentYear = new Date().getFullYear();
           <a href="/" class="landing-brand" aria-label="Renart home"><img src="/icons/icon-64.png" alt="" width="64" height="64" /><span>renart</span></a>
           <span class="landing-footer__version">{version ? `${version} · ` : ""}public alpha · Apache 2.0</span>
           <nav class="landing-footer__nav" aria-label="Footer navigation">
-            <a href="/compare/">Compare</a><a href="/docs/">Docs</a><a href={repoUrl}>Star us on GitHub</a><a href={discordUrl}>Discord</a><a href="/#install">Install</a>
+            <a href="/compare/">Compare</a><a href="/docs/">Docs</a><a href="/work-with-me/" aria-current={Astro.url.pathname === '/work-with-me/' ? 'page' : undefined}>Work with me</a><a href={repoUrl}>Star us on GitHub</a><a href={discordUrl}>Discord</a><a href="/#install">Install</a>
           </nav>
         </div>
         <div class="landing-footer__legal">

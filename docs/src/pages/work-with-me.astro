@@ -1,0 +1,98 @@
+---
+import { Font } from 'astro:assets';
+import { publicMediaUrl } from '../lib/public-media.mjs';
+import MarketingHeader from '../components/MarketingHeader.astro';
+import MarketingTheme from '../components/MarketingTheme.astro';
+import MarketingFooter from '../components/MarketingFooter.astro';
+import PrivacyConsent from '../components/PrivacyConsent.astro';
+import DiscordInvite from '../components/DiscordInvite.astro';
+import '../styles/landing.css';
+
+const title = 'Help with a data pipeline | Renart';
+const description = "Work with Renart's creator on a small data workflow: connect sources, build SQL and Python pipelines, and make the result easier to maintain.";
+const canonical = 'https://getrenart.com/work-with-me/';
+const socialImage = 'https://getrenart.com' + publicMediaUrl('/landing/og-image.png');
+const contactUrl = 'mailto:lukas.senicourt@gmail.com?subject=' + encodeURIComponent("A data workflow I'd like help with");
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#f8f8f4" />
+    <MarketingTheme />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href="/icons/icon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" sizes="180x180" />
+    <link rel="sitemap" type="application/xml" href="/sitemap-index.xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Renart" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={socialImage} />
+    <meta property="og:image:alt" content="The Renart workspace with a pipeline canvas, SQL editor and results" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImage} />
+    <Font cssVariable="--font-geist" preload />
+    <Font cssVariable="--font-geist-mono" />
+    <Font cssVariable="--font-instrument-serif" preload />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <MarketingHeader />
+    <main id="main" class="work-page landing-container">
+      <header class="work-intro">
+        <p class="landing-eyebrow">Work with Renart's creator</p>
+        <h1>Have a data workflow you want to get working?</h1>
+        <p class="work-lead">I'm Lukas, the creator of Renart. I'm looking to take on a small, paid data project with a team that wants to build and maintain its own pipelines.</p>
+      </header>
+
+      <div class="work-copy">
+        <p>Maybe you're still putting together the same report by hand. Maybe a script works, but nobody wants to touch it. Or you have the data in a few places and need to get it into one useful result.</p>
+
+        <section class="work-scope" aria-labelledby="scope-title">
+          <h2 id="scope-title">Start with one workflow.</h2>
+          <p>A good starting point is one workflow: one or two sources, the transformations in between, and a recurring report or dataset at the end. The aim is to leave your team with a workflow defined as code in Git and a clear way to run and change it.</p>
+        </section>
+
+        <p>Renart brings SQL and Python pipelines, notebooks and dashboards into one visual workspace. It's open source and still in <a href="/docs/alpha-status/">public alpha</a>, so we'd first check whether it fits the job. The paid work would be scoped around your specific workflow.</p>
+
+        <div class="work-contact">
+          <p>Tell me where the data comes from, what you need out of it and what's getting in the way. If it's a fit, we'll agree on the scope and price before starting the work.</p>
+          <a class="landing-button" href={contactUrl}>Tell me what you need help with <span aria-hidden="true">↗</span></a>
+          <a class="landing-text-link" href="https://github.com/renart-data/renart">See Renart on GitHub <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+    </main>
+    <MarketingFooter />
+    <PrivacyConsent />
+    <DiscordInvite />
+  </body>
+</html>
+
+<style>
+  .work-page { max-width: 54rem; padding-block: 5rem 6rem; }
+  .work-intro { max-width: 49rem; }
+  .work-intro h1 { font-size: clamp(2.75rem, 5.5vw, 4.5rem); line-height: 1.08; }
+  .work-lead { max-width: 43rem; margin-top: 1.6rem; font-size: 1.2rem; line-height: 1.7; }
+  .work-copy { max-width: 43rem; margin-top: 2.5rem; }
+  .work-copy p { color: var(--landing-muted); font-size: 1.05rem; line-height: 1.8; }
+  .work-copy p a { color: var(--landing-text); text-decoration: underline; text-underline-offset: 0.2em; }
+  .work-scope { margin-block: 2rem; padding: 1.8rem 2rem; border: 1px solid var(--landing-line); border-radius: 0.75rem; background: var(--landing-paper); }
+  .work-scope h2 { margin-bottom: 0.8rem; font-size: 2.1rem; }
+  .work-contact { display: flex; align-items: flex-start; flex-direction: column; gap: 1.4rem; margin-top: 2rem; }
+  .work-contact .landing-button { max-width: 100%; white-space: normal; text-align: center; }
+  @media (max-width: 40rem) {
+    .work-page { padding-block: 3rem 4rem; }
+    .work-lead { font-size: 1.08rem; }
+    .work-copy { margin-top: 2rem; }
+    .work-scope { padding: 1.4rem; }
+    .work-contact .landing-button { width: 100%; }
+  }
+</style>
