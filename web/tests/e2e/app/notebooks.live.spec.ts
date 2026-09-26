@@ -2230,11 +2230,11 @@ test.describe("app notebooks live", () => {
     expect(
       Math.abs(pickerBox.top + pickerBox.height / 2 - (insertionBox.top + insertionBox.height / 2)),
     ).toBeLessThanOrEqual(2);
-    const sqlPreview = sqlChoice.locator("[aria-hidden=true]").first();
+    // Compare the visible tiles, not a tile against another tile's inner glyph.
+    const sqlPreview = sqlChoice.locator('[data-authoring-icon-tone="sql"]');
     const chartPreview = insertionPicker
       .getByRole("button", { name: "Chart", exact: true })
-      .locator("svg")
-      .first();
+      .locator('[data-authoring-icon-tone="chart"]');
     expect(
       Math.abs(
         (await sqlPreview.evaluate((element) => element.getBoundingClientRect().height)) -
