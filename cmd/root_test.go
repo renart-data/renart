@@ -19,6 +19,7 @@ func TestRootSurface(t *testing.T) {
 		"web":        categoryApp,
 		"standalone": categoryApp,
 		"mcp":        categoryApp,
+		"telemetry":  categoryApp,
 		"run":        categoryPipeline,
 		"plan":       categoryPipeline,
 		"render":     categoryPipeline,
