@@ -1,0 +1,915 @@
+<!doctype html>
+<!--
+  Renart landing story video.
+
+  Every frame is a pure function of time: `window.seek(seconds)` rebuilds the
+  whole scene state, so the capture script (render.mjs) can step frame by frame
+  and every render is identical. Open this file directly in a browser to scrub
+  it: ?t=<seconds> seeks, ?play plays in real time, ?theme=light swaps palette.
+
+  The UI is an illustration of the Renart workspace, not a screenshot — keep the
+  copy truthful to the product (plain table names, no ref(), no "bruin").
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Renart — story</title>
+<style>
+@font-face { font-family: "Geist"; src: url("fonts/geist.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Geist Mono"; src: url("fonts/geist-mono.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Instrument Serif"; src: url("fonts/instrument-serif.woff2") format("woff2"); }
+
+:root {
+  --bg: #111b16;
+  --window: #161f1b;
+  --panel: #1b2520;
+  --panel-2: #212d27;
+  --raise: #26332c;
+  --line: #33443a;
+  --line-soft: #28362f;
+  --text: #edf1e9;
+  --muted: #a3b2a8;
+  --faint: #6f8076;
+  --accent: #a2c9af;
+  --accent-strong: #5fcf97;
+  --accent-ink: #132219;
+  --amber: #e9b35f;
+  --danger: #f07a6a;
+  --danger-bg: rgba(240, 122, 106, 0.14);
+  --fresh-bg: rgba(95, 207, 151, 0.14);
+  --grid-dot: rgba(237, 241, 233, 0.07);
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.45), 0 2px 0 rgba(255, 255, 255, 0.03) inset;
+  --pop-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+  --code-bg: #141c18;
+  --k: #7fc8a9;      /* keyword */
+  --fn: #9cc3f0;     /* function */
+  --tbl: #f2d49b;    /* table reference: the graph's edges */
+  --str: #e6a57e;
+  --jinja: #c9a8f2;
+  --jinja-bg: rgba(201, 168, 242, 0.13);
+  --pg: #7fa7d9;
+  --duck: #f0d66c;
+  --bq: #86b0f5;
+  --file: #b7c4bb;
+}
+:root[data-theme="light"] {
+  --bg: #eef1ea;
+  --window: #fbfbf7;
+  --panel: #f4f5ef;
+  --panel-2: #ecefe7;
+  --raise: #ffffff;
+  --line: #d3dace;
+  --line-soft: #e2e7de;
+  --text: #1d302a;
+  --muted: #56655d;
+  --faint: #8b988f;
+  --accent: #30634f;
+  --accent-strong: #248a5c;
+  --accent-ink: #ffffff;
+  --amber: #b7791f;
+  --danger: #c8432f;
+  --danger-bg: rgba(200, 67, 47, 0.1);
+  --fresh-bg: rgba(36, 138, 92, 0.11);
+  --grid-dot: rgba(29, 48, 42, 0.1);
+  --shadow: 0 30px 80px rgba(29, 48, 42, 0.16), 0 0 0 1px rgba(29, 48, 42, 0.04);
+  --pop-shadow: 0 18px 50px rgba(29, 48, 42, 0.2);
+  --code-bg: #fdfdfa;
+  --k: #1f7a55;
+  --fn: #2a62a8;
+  --tbl: #9a5b00;
+  --str: #b24d1f;
+  --jinja: #7a3fc4;
+  --jinja-bg: rgba(122, 63, 196, 0.09);
+  --pg: #336aa8;
+  --duck: #a88400;
+  --bq: #2f6fd6;
+  --file: #56655d;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #000; }
+body { overflow: hidden; }
+#stage {
+  position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden;
+  background: var(--bg); color: var(--text); transform-origin: 0 0;
+  font: 400 21px/1.35 "Geist", system-ui, sans-serif; letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+}
+.mono { font-family: "Geist Mono", ui-monospace, monospace; }
+svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- viewport / camera ---------- */
+#viewport { position: absolute; left: 0; top: 0; width: 1920px; height: 944px; overflow: hidden; }
+#scene { position: absolute; left: 0; top: 0; width: 1920px; height: 944px; transform-origin: 0 0; }
+
+/* ---------- app window ---------- */
+#win {
+  position: absolute; left: 48px; top: 36px; width: 1824px; height: 872px; border-radius: 18px;
+  background: var(--window); border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden;
+}
+#topbar {
+  position: absolute; left: 0; top: 0; right: 0; height: 60px; display: flex; align-items: center; gap: 18px;
+  padding: 0 20px; border-bottom: 1px solid var(--line-soft); background: var(--panel);
+}
+#topbar .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 22px; }
+#topbar .brand img { width: 34px; height: 34px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); font-size: 17px; background: var(--window); }
+.nav { display: flex; gap: 6px; margin-left: 12px; }
+.nav span { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 9px; color: var(--muted); font-size: 18px; }
+.nav span.on { color: var(--text); background: var(--raise); }
+.spacer { flex: 1; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 10px; font-size: 18px; font-weight: 500; border: 1px solid var(--line); background: var(--window); color: var(--text); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.count { font-size: 14px; padding: 1px 7px; border-radius: 6px; background: var(--raise); color: var(--muted); }
+
+#body { position: absolute; left: 0; top: 60px; right: 0; bottom: 0; overflow: hidden; }
+
+/* ---------- canvas ---------- */
+#canvas { position: absolute; inset: 0; overflow: hidden; background-color: var(--window);
+  background-image: radial-gradient(var(--grid-dot) 1.6px, transparent 1.7px); background-size: 28px 28px; }
+#world { position: absolute; left: 0; top: 0; width: 10px; height: 10px; transform-origin: 0 0; }
+#edges { position: absolute; left: 0; top: 0; overflow: visible; }
+#edges path { fill: none; stroke: var(--faint); stroke-width: 2.4; }
+#edges path.hot { stroke: var(--accent-strong); }
+#edges circle { fill: var(--accent-strong); }
+
+.node {
+  position: absolute; width: 350px; border-radius: 14px; background: var(--panel); border: 1.5px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18); transform-origin: 50% 50%;
+}
+.node .hd { display: flex; align-items: center; gap: 10px; padding: 13px 16px 9px; font-size: 20px; font-weight: 500; white-space: nowrap; }
+.node .hd .ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--raise); color: var(--muted); font-size: 18px; }
+.node .hd .dots { margin-left: auto; color: var(--faint); letter-spacing: 1px; }
+.node .ft { display: flex; align-items: center; gap: 8px; padding: 0 16px 13px; font-size: 15px; color: var(--muted); }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--raise); font-size: 15px; color: var(--muted); white-space: nowrap; }
+.badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.badge.fresh { background: var(--fresh-bg); color: var(--accent-strong); }
+.badge.fresh .dot { background: var(--accent-strong); }
+.badge.err { background: var(--danger-bg); color: var(--danger); }
+.badge.err .dot { background: var(--danger); }
+.badge.run { color: var(--text); }
+.node.sel { border-color: var(--accent-strong); box-shadow: 0 0 0 4px rgba(95,207,151,0.16), 0 8px 24px rgba(0,0,0,0.18); }
+.node.bad { border-color: var(--danger); box-shadow: 0 0 0 4px var(--danger-bg), 0 8px 24px rgba(0,0,0,0.18); }
+.node .bar { position: absolute; left: 14px; right: 14px; bottom: 6px; height: 3px; border-radius: 2px; background: var(--line-soft); overflow: hidden; }
+.node .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-strong); }
+.node .plus { position: absolute; right: -19px; top: 50%; width: 36px; height: 36px; margin-top: -18px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 22px; box-shadow: var(--pop-shadow); }
+.spin { width: 15px; height: 15px; border-radius: 50%; border: 2.4px solid var(--line); border-top-color: var(--accent-strong); }
+
+#dropzone { position: absolute; width: 350px; height: 104px; border-radius: 14px; border: 2px dashed var(--accent-strong);
+  background: var(--fresh-bg); display: grid; place-items: center; color: var(--accent-strong); font-size: 18px; font-weight: 500; }
+
+#menu { position: absolute; width: 270px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 6px; }
+#menu .t { font-size: 14px; color: var(--faint); padding: 6px 10px 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+#menu .it { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 8px; font-size: 18px; }
+#menu .it.hl { background: var(--panel-2); }
+#menu .it small { margin-left: auto; color: var(--faint); font-size: 14px; }
+
+/* ---------- data browser ---------- */
+#browser { position: absolute; left: 0; top: 0; bottom: 0; width: 430px; background: var(--panel); border-right: 1px solid var(--line-soft); padding: 20px 16px; overflow: hidden; }
+#browser h3 { margin: 0; font-size: 21px; font-weight: 600; }
+#browser .sub { color: var(--muted); font-size: 16px; margin: 2px 0 14px; }
+.search { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--faint); font-size: 17px; background: var(--window); margin-bottom: 16px; }
+.sec { font-size: 14px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint); margin: 14px 8px 6px; }
+.row { display: flex; align-items: center; gap: 11px; padding: 8px 10px; border-radius: 9px; font-size: 18.5px; white-space: nowrap; position: relative; }
+.row .chev { color: var(--faint); font-size: 15px; width: 15px; transition: none; }
+.row .meta { margin-left: auto; color: var(--faint); font-size: 14.5px; }
+.row.hl { background: var(--panel-2); }
+.row.sel { background: var(--fresh-bg); color: var(--accent-strong); }
+.row.sel .meta { color: var(--accent-strong); }
+.eng { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #10150f; }
+.kids { overflow: hidden; }
+.kids .row { padding-left: 34px; }
+.kids .kids .row { padding-left: 58px; }
+
+#peek { position: absolute; width: 440px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 16px 18px; }
+#peek .ttl { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 19px; }
+#peek .ttl small { margin-left: auto; font-weight: 400; color: var(--muted); font-size: 15px; }
+#peek .cols { margin: 12px 0 10px; border-top: 1px solid var(--line-soft); }
+#peek .col { display: flex; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid var(--line-soft); font-size: 17px; }
+#peek .col span:last-child { color: var(--muted); font-size: 15px; }
+#peek .hint { font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+
+#ghost { position: absolute; display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: 10px; background: var(--raise); border: 1px solid var(--accent-strong); box-shadow: var(--pop-shadow); font-size: 18px; white-space: nowrap; }
+
+/* ---------- editor ---------- */
+#editor { position: absolute; top: 0; bottom: 0; right: 0; width: 1040px; background: var(--code-bg); border-left: 1px solid var(--line); box-shadow: -30px 0 60px rgba(0,0,0,0.25); }
+#editor .tabs { height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--line-soft); background: var(--panel); }
+#editor .tab { display: flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 9px; background: var(--code-bg); border: 1px solid var(--line-soft); font-size: 17px; }
+#editor .tab small { color: var(--faint); }
+#tc { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 9px; font-size: 16px; }
+#tc.ok { background: var(--fresh-bg); color: var(--accent-strong); }
+#tc.bad { background: var(--danger-bg); color: var(--danger); }
+#tc.wait { background: var(--raise); color: var(--muted); }
+#code { position: absolute; left: 0; right: 0; top: 56px; bottom: 112px; padding-top: 18px; font: 400 24px/42px "Geist Mono", ui-monospace, monospace; }
+.ln { position: relative; height: 42px; white-space: pre; padding-left: 84px; }
+.ln .n { position: absolute; left: 0; width: 56px; text-align: right; color: var(--faint); }
+.ln.cur { background: rgba(127, 200, 169, 0.05); }
+.t-k { color: var(--k); }
+.t-fn { color: var(--fn); }
+.t-tbl { color: var(--tbl); }
+.t-s { color: var(--str); }
+.t-j { color: var(--jinja); background: var(--jinja-bg); border-radius: 5px; }
+.t-p { color: var(--muted); }
+.sq { text-decoration: underline wavy var(--danger); text-decoration-thickness: 2px; text-underline-offset: 7px; text-decoration-skip-ink: none; }
+#caret { position: absolute; width: 2.5px; height: 32px; background: var(--accent-strong); }
+#flash { position: absolute; height: 42px; background: rgba(95, 207, 151, 0.14); border-radius: 5px; }
+
+.pop { position: absolute; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); font-size: 19px; overflow: hidden; }
+#complete { width: 700px; display: flex; }
+#complete .list { width: 390px; padding: 6px; border-right: 1px solid var(--line-soft); }
+#complete .it { display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 8px; font-family: "Geist Mono", monospace; font-size: 19px; }
+#complete .it .ty { margin-left: auto; font-size: 15px; color: var(--faint); }
+#complete .it.hl { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent-strong); }
+#complete .it .cube { color: var(--fn); }
+#complete .it .cube.j { color: var(--jinja); }
+#complete .doc { flex: 1; padding: 14px 16px; font-size: 16px; color: var(--muted); }
+#complete .doc b { display: block; color: var(--text); font-family: "Geist Mono", monospace; font-size: 18px; font-weight: 500; margin-bottom: 6px; }
+#complete .doc .tyl { display: inline-block; margin: 2px 0 10px; padding: 2px 8px; border-radius: 6px; background: var(--panel-2); font-family: "Geist Mono", monospace; font-size: 15px; color: var(--fn); }
+#complete .doc .lin { display: flex; align-items: center; gap: 6px; font-size: 15px; margin-top: 4px; }
+#complete .doc .lin .t-tbl { font-family: "Geist Mono", monospace; }
+
+#diag { width: 640px; padding: 16px 18px; font-size: 18px; }
+#diag .h { display: flex; align-items: center; gap: 10px; color: var(--danger); font-weight: 600; }
+#diag p { margin: 8px 0 12px; color: var(--muted); font-size: 17px; }
+#diag code { font-family: "Geist Mono", monospace; color: var(--text); font-size: 16.5px; }
+#diag .fix { display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 16.5px; font-weight: 500; }
+#diag .src { float: right; font-size: 14px; color: var(--faint); margin-top: 10px; }
+
+#render { width: 760px; padding: 14px 18px; }
+#render .h { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--muted); }
+#render .h b { color: var(--jinja); font-weight: 600; }
+#render pre { margin: 10px 0 4px; font: 400 20px/1.5 "Geist Mono", monospace; white-space: pre; }
+#render .note { font-size: 15px; color: var(--faint); }
+
+#schema { position: absolute; left: 0; right: 0; bottom: 48px; height: 64px; display: flex; align-items: center; gap: 10px; padding: 0 22px; border-top: 1px solid var(--line-soft); font-size: 16px; color: var(--muted); }
+#schema .c { display: inline-flex; gap: 8px; align-items: center; padding: 5px 11px; border-radius: 8px; background: var(--panel-2); color: var(--text); font-family: "Geist Mono", monospace; font-size: 16px; }
+#schema .c i { font-style: normal; color: var(--fn); }
+#status { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center; gap: 22px; padding: 0 22px; border-top: 1px solid var(--line-soft); background: var(--panel); font-size: 16px; color: var(--muted); }
+#status .p { display: inline-flex; align-items: center; gap: 7px; }
+#status .p.bad { color: var(--danger); }
+#status .p.ok { color: var(--accent-strong); }
+
+/* ---------- run results ---------- */
+#results { position: absolute; left: 0; right: 0; bottom: 0; height: 322px; background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -20px 50px rgba(0,0,0,0.2); }
+#results .h { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 22px; border-bottom: 1px solid var(--line-soft); font-size: 18px; }
+#results .h small { color: var(--muted); font-size: 16px; }
+#results table { width: 100%; border-collapse: collapse; font-size: 18px; }
+#results th { text-align: left; font-weight: 500; color: var(--muted); font-size: 15px; padding: 10px 22px; border-bottom: 1px solid var(--line-soft); }
+#results th span { color: var(--fn); font-family: "Geist Mono", monospace; font-size: 13px; margin-left: 6px; }
+#results td { padding: 9px 22px; border-bottom: 1px solid var(--line-soft); }
+#results td.num { font-family: "Geist Mono", monospace; text-align: right; }
+#results th.num { text-align: right; }
+
+#toast { position: absolute; right: 26px; top: 76px; width: 520px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 16px 18px; font-size: 17px; }
+#toast .h { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; margin-bottom: 8px; }
+#toast .f { display: flex; align-items: center; gap: 10px; font-family: "Geist Mono", monospace; font-size: 16px; padding: 4px 0; color: var(--muted); }
+#toast .f b { color: var(--accent-strong); font-weight: 500; width: 16px; }
+
+/* ---------- pointer ---------- */
+#pointer { position: absolute; left: 0; top: 0; width: 34px; height: 34px; z-index: 50; filter: drop-shadow(0 3px 5px rgba(0,0,0,0.45)); }
+#ripple { position: absolute; width: 60px; height: 60px; border-radius: 50%; border: 3px solid var(--accent-strong); z-index: 49; }
+
+/* ---------- caption band ---------- */
+#band { position: absolute; left: 0; right: 0; top: 944px; bottom: 0; padding: 0 64px; display: flex; align-items: center; gap: 40px; }
+#caption { flex: 1; position: relative; height: 100px; }
+#caption .cap { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; }
+#caption .cap .t { font: 400 44px/1.05 "Instrument Serif", Georgia, serif; letter-spacing: -0.01em; }
+#caption .cap .d { color: var(--muted); font-size: 21px; margin-top: 6px; }
+#steps { display: flex; gap: 8px; }
+#steps .s { width: 118px; }
+#steps .s .l { font-size: 15px; color: var(--faint); margin-bottom: 8px; white-space: nowrap; }
+#steps .s.on .l { color: var(--text); }
+#steps .s .tr { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+#steps .s .tr i { display: block; height: 100%; background: var(--accent-strong); }
+
+/* ---------- title cards ---------- */
+.card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: var(--bg); z-index: 100; }
+.card .eyebrow { font-size: 20px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-strong); margin-bottom: 22px; }
+.card h1 { margin: 0; font: 400 92px/1.02 "Instrument Serif", Georgia, serif; letter-spacing: -0.015em; }
+.card p { color: var(--muted); font-size: 26px; margin: 26px 0 0; }
+.card img { width: 128px; height: 128px; margin-bottom: 30px; }
+.card .cmd { margin-top: 38px; padding: 16px 26px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); font: 400 26px "Geist Mono", monospace; }
+.card .cmd span { color: var(--faint); margin-right: 14px; }
+.card .url { margin-top: 22px; color: var(--muted); font-size: 22px; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="viewport"><div id="scene">
+    <div id="win">
+      <div id="topbar">
+        <div class="brand"><img src="logo.svg" alt="" />renart</div>
+        <span class="chip"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 10h16M10 10v10"/></svg>acme</span>
+        <div class="nav">
+          <span class="on"><svg class="i" viewBox="0 0 24 24"><path d="M14.5 5.5a4 4 0 0 0 4.9 4.9L12 17.8l-3 1.2 1.2-3 7.3-7.3M4 20l3-3"/></svg>Build</span>
+          <span><svg class="i" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>Run</span>
+          <span><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="12" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.5 6.5l7 4.5M8.5 17.5l7-4.5"/></svg>Explore</span>
+        </div>
+        <div class="spacer"></div>
+        <span class="chip"><span style="width:9px;height:9px;border-radius:50%;background:var(--accent-strong)"></span>dev</span>
+        <span class="chip" id="branch"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-6 3-11 6.5"/></svg>main <span class="count" id="changes">0</span></span>
+        <span class="btn primary" id="runbtn"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Run pipeline</span>
+      </div>
+      <div id="body">
+        <div id="canvas">
+          <div id="world">
+            <svg id="edges" width="10" height="10"></svg>
+            <div id="dropzone">Drop in</div>
+            <div class="node" id="n-orders"></div>
+            <div class="node" id="n-customers"></div>
+            <div class="node" id="n-rev"></div>
+            <div id="menu">
+              <div class="t">Create after raw.orders</div>
+              <div class="it" id="menu-sql"><svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h4"/></svg>SQL asset<small>transform</small></div>
+              <div class="it"><svg class="i" viewBox="0 0 24 24" style="color:var(--fn)"><path d="M12 3c-4 0-4 2-4 3v2h5M12 21c4 0 4-2 4-3v-2h-5M8 8H6c-2 0-3 2-3 4s1 4 3 4h2M16 16h2c2 0 3-2 3-4s-1-4-3-4h-2"/></svg>Python asset<small>transform</small></div>
+              <div class="it"><svg class="i" viewBox="0 0 24 24" style="color:var(--jinja)"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15l3-4 2 2 3-4"/></svg>Notebook<small>analysis</small></div>
+            </div>
+          </div>
+          <div id="results">
+            <div class="h"><svg class="i" viewBox="0 0 24 24" style="color:var(--accent-strong)"><path d="M3 5h18v14H3zM3 10h18M9 10v9"/></svg>marts.customer_revenue <small>12,391 rows · 0.4 s · just now</small></div>
+            <table>
+              <thead><tr><th>customer_name<span>VARCHAR</span></th><th>country<span>VARCHAR</span></th><th class="num">revenue<span>DECIMAL(38,2)</span></th></tr></thead>
+              <tbody>
+                <tr><td>Amara Okafor</td><td>NG</td><td class="num">12,480.00</td></tr>
+                <tr><td>Lena Fischer</td><td>DE</td><td class="num">11,920.50</td></tr>
+                <tr><td>Mateo Rossi</td><td>IT</td><td class="num">10,311.20</td></tr>
+                <tr><td>Sofia Lindqvist</td><td>SE</td><td class="num">9,874.10</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="browser">
+          <h3>Data Browser</h3>
+          <div class="sub">Warehouses and local files</div>
+          <div class="search"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Filter sources…</div>
+          <div class="sec">Connected sources</div>
+          <div class="row" id="db-pg"><span class="chev" id="chev-pg">›</span><span class="eng" style="background:var(--pg)">PG</span>shop_postgres<span class="meta">Postgres</span></div>
+          <div class="kids" id="kids-pg">
+            <div class="row"><span class="chev" style="transform:rotate(90deg)">›</span><svg class="i" viewBox="0 0 24 24" style="color:var(--faint)"><path d="M4 7h16M4 12h16M4 17h16"/></svg>public<span class="meta">4 tables</span></div>
+            <div class="kids">
+              <div class="row" id="db-customers"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg>customers<span class="meta">12.5K rows</span></div>
+              <div class="row" id="db-orders"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg>orders<span class="meta">184K rows</span></div>
+              <div class="row"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg>payments<span class="meta">181K rows</span></div>
+              <div class="row"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg>products<span class="meta">1.2K rows</span></div>
+            </div>
+          </div>
+          <div class="row"><span class="chev">›</span><span class="eng" style="background:var(--duck)">DK</span>warehouse<span class="meta">DuckDB</span></div>
+          <div class="row"><span class="chev">›</span><span class="eng" style="background:var(--bq)">BQ</span>events<span class="meta">BigQuery</span></div>
+          <div class="sec">Files inside this project</div>
+          <div class="row"><svg class="i" viewBox="0 0 24 24" style="color:var(--file)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>data/refunds.csv<span class="meta">CSV</span></div>
+          <div class="row"><svg class="i" viewBox="0 0 24 24" style="color:var(--file)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>data/fx_rates.parquet<span class="meta">Parquet</span></div>
+        </div>
+
+        <div id="peek">
+          <div class="ttl"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg>public.orders<small>184,302 rows</small></div>
+          <div class="cols">
+            <div class="col mono"><span>order_id</span><span>INTEGER</span></div>
+            <div class="col mono"><span>customer_id</span><span>INTEGER</span></div>
+            <div class="col mono"><span>ordered_at</span><span>TIMESTAMP</span></div>
+            <div class="col mono"><span>status</span><span>VARCHAR</span></div>
+            <div class="col mono"><span>total_amount</span><span>DECIMAL(12,2)</span></div>
+          </div>
+          <div class="hint"><svg class="i" viewBox="0 0 24 24"><path d="M9 4v10M5 8l4-4 4 4M15 20V10M11 16l4 4 4-4"/></svg>Drag onto the canvas to load it</div>
+        </div>
+
+        <div id="editor">
+          <div class="tabs">
+            <span class="tab"><svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>customer_revenue.sql <small>marts</small></span>
+            <div class="spacer"></div>
+            <span id="tc" class="wait"></span>
+            <span class="btn"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Run</span>
+          </div>
+          <div id="code"><div id="flash"></div><div id="lines"></div><div id="caret"></div></div>
+          <div id="schema"></div>
+          <div id="status">
+            <span class="p"><span class="eng" style="background:var(--duck);width:20px;height:20px;font-size:10px">DK</span>warehouse</span>
+            <span class="p" id="probs"></span>
+            <span class="spacer"></span>
+            <span class="p" id="deps"></span>
+          </div>
+          <div class="pop" id="complete"><div class="list"></div><div class="doc"></div></div>
+          <div class="pop" id="diag">
+            <div class="h"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg>Unknown column <code>o.total_amout</code></div>
+            <p>No column <code>total_amout</code> on <code>raw.orders</code>. Did you mean <code>total_amount</code> <span style="color:var(--fn);font-family:'Geist Mono',monospace;font-size:15px">DECIMAL(12,2)</span>?</p>
+            <span class="fix" id="fixbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Change to total_amount</span>
+            <span class="src">type check</span>
+          </div>
+          <div class="pop" id="render">
+            <div class="h"><svg class="i" viewBox="0 0 24 24" style="color:var(--jinja)"><path d="M8 4c-2 0-2 1-2 3v2c0 1-1 3-2 3 1 0 2 2 2 3v2c0 2 0 3 2 3M16 4c2 0 2 1 2 3v2c0 1 1 3 2 3-1 0-2 2-2 3v2c0 2 0 3-2 3"/></svg><b>start_date</b> renders for this run as</div>
+            <pre><span class="t-k">WHERE</span> o.ordered_at &gt;= <span class="t-s">'2026-09-01'</span></pre>
+            <div class="note">Completions, hovers and type checks run on the rendered SQL.</div>
+          </div>
+        </div>
+      </div>
+      <div id="toast">
+        <div class="h"><svg class="i" viewBox="0 0 24 24" style="color:var(--accent-strong)"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-6 3-11 6.5"/></svg>3 files ready to commit on main</div>
+        <div class="f"><b>A</b>assets/raw/orders.asset.yml</div>
+        <div class="f"><b>A</b>assets/raw/customers.asset.yml</div>
+        <div class="f"><b>A</b>assets/marts/customer_revenue.sql</div>
+      </div>
+    </div>
+    <div id="ghost"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg><span></span></div>
+    <div id="ripple"></div>
+    <svg id="pointer" viewBox="0 0 34 34"><path d="M5 3l22 13.5-9.6 2.2 5.6 10.6-4.3 2.2-5.6-10.6L6 28z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="round"/></svg>
+  </div></div>
+
+  <div id="band">
+    <div id="caption"></div>
+    <div id="steps"></div>
+  </div>
+
+  <div class="card" id="intro">
+    <div class="eyebrow">Renart, start to finish</div>
+    <h1>From a raw table<br />to a running pipeline.</h1>
+    <p>One workspace. Plain SQL. Everything as code in Git.</p>
+  </div>
+  <div class="card" id="outro">
+    <img src="logo.svg" alt="" />
+    <h1>Build data workflows<br />you can maintain.</h1>
+    <div class="cmd"><span>$</span>curl -LsSf getrenart.com/install.sh | sh</div>
+    <div class="url">Open source · Apache 2.0 · getrenart.com</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const params = new URLSearchParams(location.search);
+if (params.get("theme") === "light") document.documentElement.dataset.theme = "light";
+
+const DURATION = 55;
+const $ = (s) => document.querySelector(s);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, x) => a + (b - a) * x;
+const p = (t, a, b) => clamp((t - a) / (b - a));
+const ez = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const eo = (x) => 1 - Math.pow(1 - x, 3);
+// Visibility window with fades: 0 before a, ramps in over f, holds, ramps out over f before b.
+const win = (t, a, b, f = 0.25) => Math.min(p(t, a, a + f), 1 - p(t, b - f, b));
+const show = (el, o, dy = 0, s = 1) => {
+  el.style.opacity = o;
+  el.style.visibility = o <= 0.001 ? "hidden" : "visible";
+  el.style.transform = `translateY(${(1 - o) * dy}px) scale(${lerp(s, 1, o)})`;
+};
+
+/* ------------------------------------------------------------------ story */
+const CHAPTERS = [
+  { a: 3.0, b: 14.0, k: "Discover", t: "Start from the data you already have.", d: "Browse every connected warehouse and file, then drag a table onto the canvas." },
+  { a: 14.0, b: 18.6, k: "Canvas", t: "Shape the pipeline visually.", d: "Add steps on the canvas. Every node is a plain file in your repository." },
+  { a: 18.6, b: 23.6, k: "SQL", t: "Write plain SQL.", d: "Table names become dependencies. The graph draws itself, no glue syntax." },
+  { a: 23.6, b: 28.9, k: "Intellisense", t: "Complete columns, not guesses.", d: "Column-level completions with types that flow from upstream assets." },
+  { a: 28.9, b: 33.8, k: "Type check", t: "Catch mistakes as you type.", d: "The whole pipeline is type-checked before anything runs." },
+  { a: 33.8, b: 40.8, k: "Jinja", t: "Template with Jinja.", d: "Variables complete and render inline, and the rendered SQL is checked too." },
+  { a: 40.8, b: 49.6, k: "Run", t: "Run it. Keep it in Git.", d: "Fresh results in the workspace, and every change ready to commit." },
+];
+
+/* Editor edit script. Ops replay from an empty document on every seek. */
+const OPS = [
+  { at: 18.9, dur: 2.0, type: "SELECT\n  *\nFROM raw.orders AS o" },
+  { at: 21.3, dur: 1.9, type: "\nJOIN raw.customers AS c USING (customer_id)" },
+  { at: 23.95, move: [1, 3] },
+  { at: 24.0, replace: [1, 2, 3, ""] },
+  { at: 24.05, dur: 0.25, type: "c." },
+  { at: 25.8, replace: [1, 2, 4, "c.customer_name"] },
+  { at: 25.9, dur: 0.06, type: "," },
+  { at: 26.05, dur: 0.45, type: "\n  c.co" },
+  { at: 27.2, replace: [2, 2, 6, "c.country"] },
+  { at: 27.35, dur: 1.4, type: ",\n  SUM(o.total_amout) AS revenue" },
+  { at: 31.6, replace: [3, 8, 19, "total_amount"], caret: [3, 30] },
+  { at: 34.0, move: [5, 43] },
+  { at: 34.2, dur: 1.2, type: "\nWHERE o.ordered_at >= '{{ " },
+  { at: 36.5, replace: [6, 22, 26, "'{{ start_date }}'"] },
+  { at: 39.4, dur: 0.7, type: "\nGROUP BY ALL" },
+];
+const typedAt = (op, sub) => op.at + op.dur * ((op.type.indexOf(sub) + sub.length) / op.type.length);
+const EDGE1_AT = typedAt(OPS[0], "raw.orders");
+const EDGE2_AT = typedAt(OPS[1], "raw.customers");
+
+function docAt(t) {
+  let lines = [""], cl = 0, cc = 0, lastEdit = -1;
+  for (const op of OPS) {
+    if (op.at > t) break;
+    if (op.move) { [cl, cc] = op.move; continue; }
+    if (op.replace) {
+      const [l, a, b, s] = op.replace;
+      lines[l] = lines[l].slice(0, a) + s + lines[l].slice(b);
+      if (op.caret) [cl, cc] = op.caret; else { cl = l; cc = a + s.length; }
+      lastEdit = op.at;
+      continue;
+    }
+    const n = Math.floor(op.type.length * p(t, op.at, op.at + op.dur));
+    for (const ch of op.type.slice(0, n)) {
+      if (ch === "\n") {
+        const rest = lines[cl].slice(cc);
+        lines[cl] = lines[cl].slice(0, cc);
+        lines.splice(cl + 1, 0, rest);
+        cl++; cc = 0;
+      } else {
+        lines[cl] = lines[cl].slice(0, cc) + ch + lines[cl].slice(cc);
+        cc++;
+      }
+    }
+    if (n > 0) lastEdit = Math.max(lastEdit, op.at + op.dur * (n / op.type.length));
+  }
+  return { lines, cl, cc, lastEdit };
+}
+
+const KW = new Set(["SELECT", "FROM", "JOIN", "AS", "USING", "WHERE", "GROUP", "BY", "ALL", "ON", "AND"]);
+const FN = new Set(["SUM", "COUNT", "CAST"]);
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function highlight(line, squiggle) {
+  const re = /(\{\{.*?(?:\}\}|$))|('[^'{]*'?)|(\b(?:raw|marts)\.\w+)|([A-Za-z_]\w*)|(\s+)|([^\s])/g;
+  let out = "", m;
+  while ((m = re.exec(line))) {
+    const [tok, jj, str, tbl, word] = m;
+    if (jj) out += `<span class="t-j">${esc(tok)}</span>`;
+    else if (str) out += `<span class="t-s">${esc(tok)}</span>`;
+    else if (tbl) out += `<span class="t-tbl">${esc(tok)}</span>`;
+    else if (word) {
+      const cls = KW.has(word) ? "t-k" : FN.has(word) ? "t-fn" : squiggle && word === squiggle ? "sq" : "";
+      out += cls ? `<span class="${cls}">${esc(tok)}</span>` : esc(tok);
+    } else if (/^[(),.*>=]+$/.test(tok)) out += `<span class="t-p">${esc(tok)}</span>`;
+    else out += esc(tok);
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------ canvas model */
+const NODE_W = 350;
+const NODES = {
+  orders: { el: $("#n-orders"), x: 60, y: 120, name: "raw.orders", kind: "load", rows: "184,302 rows" },
+  customers: { el: $("#n-customers"), x: 60, y: 440, name: "raw.customers", kind: "load", rows: "12,480 rows" },
+  rev: { el: $("#n-rev"), x: 600, y: 280, name: "marts.customer_revenue", kind: "sql", rows: "12,391 rows" },
+};
+const NODE_H = 112;
+const ICON_LOAD = `<svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>`;
+const ICON_SQL = `<svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h4"/></svg>`;
+function nodeHTML(n, name, status, extra) {
+  const icon = n.kind === "load" ? ICON_LOAD : ICON_SQL;
+  const conn = n.kind === "load" ? "from shop_postgres" : "warehouse";
+  return `<div class="hd"><span class="ic">${icon}</span><span>${esc(name)}</span><span class="dots">•••</span></div>
+    <div class="ft">${status}<span class="badge">${conn}</span></div>${extra || ""}`;
+}
+const B_NEW = `<span class="badge"><span class="dot"></span>Never built</span>`;
+const B_FRESH = (rows) => `<span class="badge fresh"><span class="dot"></span>Fresh · ${rows}</span>`;
+const B_RUN = (t) => `<span class="badge run"><span class="spin" style="transform:rotate(${(t * 540) % 360}deg)"></span>Running</span>`;
+const B_ERR = `<span class="badge err"><span class="dot"></span>1 problem</span>`;
+
+function edgePath(a, b) {
+  const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2;
+  const mx = (x1 + x2) / 2;
+  return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+}
+const edgesSvg = $("#edges");
+edgesSvg.innerHTML = [
+  `<path id="e1" d="${edgePath(NODES.orders, NODES.rev)}"/>`,
+  `<path id="e2" d="${edgePath(NODES.customers, NODES.rev)}"/>`,
+  `<circle id="p1" r="7"/>`, `<circle id="p2" r="7"/>`,
+].join("");
+const E1 = $("#e1"), E2 = $("#e2");
+const E1L = E1.getTotalLength(), E2L = E2.getTotalLength();
+function drawEdge(el, len, prog, hot) {
+  el.style.strokeDasharray = `${len}`;
+  el.style.strokeDashoffset = `${len * (1 - prog)}`;
+  el.style.opacity = prog > 0 ? 1 : 0;
+  el.classList.toggle("hot", !!hot);
+}
+function pulse(dot, path, len, x) {
+  dot.style.opacity = x > 0 && x < 1 ? 1 : 0;
+  const pt = path.getPointAtLength(len * eo(x));
+  dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y);
+}
+
+/* ------------------------------------------------------------ camera rigs */
+// Keyframes: [time, value]. Values ease between neighbouring keyframes.
+function track(keys, t) {
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) {
+    const [t1, v1] = keys[i], [t0, v0] = keys[i - 1];
+    if (t <= t1) {
+      const x = ez(p(t, t0, t1));
+      return Array.isArray(v0) ? v0.map((v, j) => lerp(v, v1[j], x)) : lerp(v0, v1, x);
+    }
+  }
+  return keys[keys.length - 1][1];
+}
+// Scene camera: [focusX, focusY, zoom] in scene pixels.
+const CAM = [
+  [0, [960, 472, 1]], [4.6, [960, 472, 1]], [6.2, [700, 430, 1.16]], [11.0, [760, 430, 1.16]],
+  [12.6, [960, 472, 1]], [14.2, [960, 472, 1]], [15.2, [900, 450, 1.1]], [17.6, [900, 450, 1.1]],
+  [18.7, [960, 472, 1]], [23.4, [960, 472, 1]], [24.0, [1260, 380, 1.26]], [28.7, [1260, 400, 1.26]],
+  [29.2, [1260, 440, 1.22]], [33.4, [1260, 440, 1.22]], [34.2, [1270, 470, 1.24]], [40.4, [1270, 470, 1.24]],
+  [41.4, [960, 472, 1]], [45.7, [960, 472, 1]], [46.6, [960, 500, 1.05]], [49.6, [960, 500, 1.05]],
+];
+// Canvas pan/zoom inside the window: [tx, ty, s].
+const CANVAS = [
+  [0, [620, 40, 1]], [13.6, [620, 40, 1]], [14.4, [420, 40, 1]], [17.8, [420, 40, 1]], [18.6, [40, 90, 0.72]],
+  [40.8, [40, 90, 0.72]], [41.8, [450, 40, 1]], [45.8, [450, 40, 1]], [46.6, [520, -40, 0.85]],
+];
+
+/* ----------------------------------------------------------- pointer path */
+// [arrive time, travel seconds, target]. Targets are scene points or element selectors
+// resolved live each frame, so the pointer tracks things that move with the camera.
+const POINTER = [
+  [3.8, 0, [1500, 700]],
+  [5.0, 1.0, "#db-pg"],
+  [6.8, 1.1, "#db-orders"],
+  [9.5, 0.4, "#db-orders"],
+  [10.9, 1.2, "#dropzone"],
+  [11.6, 0.6, "#db-customers"],
+  [13.0, 1.2, "#dropzone"],
+  [14.6, 1.2, "#plus"],
+  [15.5, 0.6, "#menu-sql"],
+  [17.1, 1.2, "#n-rev"],
+  [18.6, 1.1, [1760, 800]],
+  [23.7, 0.5, "@1:3"],
+  [24.3, 0.3, [1760, 800]],
+  [29.4, 1.0, "@3:10"],
+  [31.4, 1.1, "#fixbtn"],
+  [32.4, 0.8, [1760, 800]],
+  [42.2, 1.2, "#runbtn"],
+  [44.0, 1.4, [1700, 820]],
+];
+const CLICKS = [5.0, 6.8, 14.6, 15.5, 17.0, 17.1, 23.7, 31.4, 42.2];
+const DRAGS = [
+  { a: 9.5, b: 10.9, label: "orders" },
+  { a: 11.6, b: 13.0, label: "customers" },
+];
+
+/* --------------------------------------------------------------- elements */
+const scene = $("#scene"), world = $("#world"), canvas = $("#canvas");
+const linesEl = $("#lines"), caret = $("#caret"), flash = $("#flash");
+const complete = $("#complete"), diag = $("#diag"), render = $("#render");
+const pointer = $("#pointer"), ripple = $("#ripple"), ghost = $("#ghost");
+
+$("#steps").innerHTML = CHAPTERS.map((c) => `<div class="s"><div class="l">${c.k}</div><div class="tr"><i></i></div></div>`).join("");
+$("#caption").innerHTML = CHAPTERS.map((c) => `<div class="cap"><div class="t">${c.t}</div><div class="d">${c.d}</div></div>`).join("");
+
+const plus = document.createElement("div");
+plus.className = "plus"; plus.id = "plus"; plus.textContent = "+";
+
+let CW = 14.4; // monospace advance, measured once fonts load
+function measure() {
+  const s = document.createElement("span");
+  s.style.cssText = "font:400 24px 'Geist Mono',monospace;position:absolute;visibility:hidden;white-space:pre";
+  s.textContent = "x".repeat(100);
+  document.body.appendChild(s);
+  CW = s.getBoundingClientRect().width / 100;
+  s.remove();
+}
+const CODE_X = 84, CODE_Y = 18, LH = 42;
+
+function sceneScale() { return scene.getBoundingClientRect().width / 1920; }
+function localPoint(target) {
+  if (Array.isArray(target)) return target;
+  const sr = scene.getBoundingClientRect(), k = sr.width / 1920;
+  if (target.startsWith("@")) {
+    // "@line:col" — a character cell inside the code editor.
+    const [l, c] = target.slice(1).split(":").map(Number);
+    const cr = $("#code").getBoundingClientRect();
+    return [(cr.left - sr.left) / k + CODE_X + c * CW, (cr.top - sr.top) / k + CODE_Y + l * LH + LH * 0.62];
+  }
+  const r = $(target).getBoundingClientRect();
+  return [(r.left + r.width / 2 - sr.left) / k, (r.top + r.height / 2 - sr.top) / k];
+}
+function pointerAt(t) {
+  let pos = localPoint(POINTER[0][2]);
+  for (let i = 1; i < POINTER.length; i++) {
+    const [at, travel, target] = POINTER[i];
+    if (t < at - travel) break;
+    const to = localPoint(target);
+    const x = travel > 0 ? ez(p(t, at - travel, at)) : 1;
+    pos = [lerp(pos[0], to[0], x), lerp(pos[1], to[1], x)];
+  }
+  return pos;
+}
+
+/* ------------------------------------------------------------------- seek */
+function seek(t) {
+  t = clamp(t, 0, DURATION);
+
+  // Title cards.
+  const introO = 1 - p(t, 2.4, 3.2);
+  show($("#intro"), introO, 0, 1);
+  $("#intro").style.transform = `scale(${lerp(1.04, 1, p(t, 0, 3))})`;
+  const outroO = p(t, 49.6, 50.4) * (1 - p(t, 54.5, 55));
+  show($("#outro"), outroO, 20, 0.985);
+
+  // Scene camera.
+  const [fx, fy, z] = track(CAM, t);
+  scene.style.transform = `translate(${960 - fx * z}px, ${472 - fy * z}px) scale(${z})`;
+
+  // Caption band + chapter tracker.
+  const caps = $("#caption").children, steps = $("#steps").children;
+  CHAPTERS.forEach((c, i) => {
+    const o = win(t, c.a, c.b, 0.35);
+    show(caps[i], i === CHAPTERS.length - 1 ? Math.min(p(t, c.a, c.a + 0.35), 1 - p(t, 49.4, 49.8)) : o, 14);
+    steps[i].classList.toggle("on", t >= c.a && t < c.b);
+    steps[i].querySelector("i").style.width = `${p(t, c.a, c.b) * 100}%`;
+  });
+  $("#band").style.opacity = p(t, 2.8, 3.4) * (1 - p(t, 49.4, 49.9));
+
+  // ---- Data browser.
+  const browserX = -432 * ez(p(t, 13.6, 14.4));
+  $("#browser").style.transform = `translateX(${browserX}px)`;
+  const expand = ez(p(t, 5.05, 5.6));
+  $("#kids-pg").style.height = `${expand * 5 * 42.5}px`;
+  $("#chev-pg").style.transform = `rotate(${expand * 90}deg)`;
+  $("#db-pg").classList.toggle("hl", t > 4.6 && t < 5.6);
+  $("#db-orders").classList.toggle("sel", t >= 6.8 && t < 11.2);
+  $("#db-orders").classList.toggle("hl", t > 6.4 && t < 6.8);
+  $("#db-customers").classList.toggle("sel", t >= 11.4 && t < 13.2);
+
+  // Column peek, anchored beside the selected table.
+  const peek = $("#peek");
+  show(peek, win(t, 6.9, 9.8, 0.3), 10, 0.97);
+  peek.style.left = "446px"; peek.style.top = "196px";
+
+  // ---- Canvas pan.
+  const [tx, ty, cs] = track(CANVAS, t);
+  world.style.transform = `translate(${tx}px, ${ty}px) scale(${cs})`;
+  canvas.style.backgroundPosition = `${tx}px ${ty}px`;
+  canvas.style.backgroundSize = `${28 * cs}px ${28 * cs}px`;
+
+  // Drop zone shows while dragging, at the slot the next node will land in.
+  const dz = $("#dropzone");
+  const drag = DRAGS.find((d) => t >= d.a && t < d.b + 0.15);
+  const slot = t < 12 ? NODES.orders : NODES.customers;
+  dz.style.left = `${slot.x}px`; dz.style.top = `${slot.y}px`;
+  dz.style.opacity = drag ? p(t, drag.a + 0.3, drag.a + 0.6) : 0;
+
+  // Nodes.
+  const nodeIn = { orders: 10.95, customers: 13.05, rev: 15.6 };
+  for (const [key, n] of Object.entries(NODES)) {
+    const a = nodeIn[key];
+    const o = eo(p(t, a, a + 0.35));
+    n.el.style.left = `${n.x}px`; n.el.style.top = `${n.y}px`;
+    n.el.style.opacity = o;
+    n.el.style.visibility = o > 0 ? "visible" : "hidden";
+    n.el.style.transform = `scale(${lerp(0.9, 1, o)})`;
+  }
+  // Run states: raw loads 42.5→44.0, transform 44.8→45.8.
+  const runState = (a, b) => (t < a ? "idle" : t < b ? "run" : "fresh");
+  for (const key of ["orders", "customers"]) {
+    const n = NODES[key], st = runState(42.5, 44.0 + (key === "customers" ? 0.25 : 0));
+    const bar = st === "run" ? `<div class="bar"><i style="width:${p(t, 42.5, 44.2) * 100}%"></i></div>` : "";
+    n.el.innerHTML = nodeHTML(n, n.name, st === "run" ? B_RUN(t) : st === "fresh" ? B_FRESH(n.rows) : B_NEW, bar);
+  }
+  {
+    const n = NODES.rev;
+    const typedName = n.name.slice(0, Math.floor(n.name.length * p(t, 15.75, 16.5)));
+    const st = runState(44.8, 45.8);
+    const bad = t >= 29.0 && t < 31.7;
+    const status = st === "run" ? B_RUN(t) : st === "fresh" ? B_FRESH(n.rows) : bad ? B_ERR : B_NEW;
+    const bar = st === "run" ? `<div class="bar"><i style="width:${p(t, 44.8, 45.8) * 100}%"></i></div>` : "";
+    n.el.innerHTML = nodeHTML(n, typedName || " ", status, bar);
+    n.el.classList.toggle("sel", t >= 16.9 && t < 41.0 && !bad);
+    n.el.classList.toggle("bad", bad);
+  }
+  NODES.orders.el.classList.toggle("sel", t >= 14.0 && t < 15.7);
+  // "+" handle on raw.orders (re-attached because the node body is rebuilt every frame).
+  NODES.orders.el.appendChild(plus);
+  show(plus, win(t, 13.9, 15.8, 0.25), 0, 0.6);
+  // Create menu.
+  const menu = $("#menu");
+  menu.style.left = `${NODES.orders.x + NODE_W + 32}px`; menu.style.top = `${NODES.orders.y + 10}px`;
+  show(menu, win(t, 14.7, 15.75, 0.18), -8, 0.96);
+  $("#menu-sql").classList.toggle("hl", t > 15.1);
+
+  // Edges: drawn when the SQL that names each table is typed; pulses during the run.
+  drawEdge(E1, E1L, eo(p(t, EDGE1_AT, EDGE1_AT + 0.7)), t >= 43.8 && t < 46.2);
+  drawEdge(E2, E2L, eo(p(t, EDGE2_AT, EDGE2_AT + 0.7)), t >= 44.05 && t < 46.2);
+  pulse($("#p1"), E1, E1L, p(t, 43.9, 44.8));
+  pulse($("#p2"), E2, E2L, p(t, 44.1, 45.0));
+
+  // Results drawer + commit toast.
+  const res = $("#results");
+  res.style.transform = `translateY(${(1 - ez(p(t, 45.9, 46.6))) * 340}px)`;
+  show($("#toast"), win(t, 47.0, 49.8, 0.35), -12, 0.97);
+  $("#changes").textContent = t < 10.95 ? "0" : t < 13.05 ? "1" : t < 15.6 ? "2" : "3";
+
+  // ---- Editor.
+  const ed = $("#editor");
+  const edIn = ez(p(t, 17.6, 18.5)) * (1 - ez(p(t, 40.8, 41.6)));
+  ed.style.transform = `translateX(${(1 - edIn) * 1080}px)`;
+  ed.style.visibility = edIn > 0 ? "visible" : "hidden";
+
+  const doc = docAt(t);
+  const squiggle = t >= 29.0 && t < 31.6 ? "total_amout" : null;
+  linesEl.innerHTML = doc.lines
+    .map((l, i) => `<div class="ln${i === doc.cl ? " cur" : ""}"><span class="n">${i + 1}</span>${highlight(l, squiggle)}</div>`)
+    .join("");
+  // Caret blinks only while idle.
+  const idle = t - doc.lastEdit;
+  const blinkOn = idle < 0.5 || Math.floor((idle - 0.5) / 0.5) % 2 === 0;
+  caret.style.left = `${CODE_X + doc.cc * CW}px`;
+  caret.style.top = `${CODE_Y + doc.cl * LH + 5}px`;
+  caret.style.opacity = t > 18.6 && t < 40.6 && blinkOn ? 1 : 0;
+  // Brief highlight on accepted completions / quick fix.
+  const flashes = [[25.8, 1, 2, 15], [27.2, 2, 2, 9], [31.6, 3, 8, 12], [36.5, 6, 22, 18]];
+  const f = flashes.find(([a]) => t >= a && t < a + 0.8);
+  if (f) {
+    flash.style.opacity = 1 - p(t, f[0], f[0] + 0.8);
+    flash.style.left = `${CODE_X + f[2] * CW - 3}px`; flash.style.top = `${CODE_Y + f[1] * LH}px`;
+    flash.style.width = `${f[3] * CW + 6}px`;
+  } else flash.style.opacity = 0;
+
+  // Completion popups.
+  const COMPLETIONS = [
+    { a: 24.3, b: 25.85, line: 1, col: 4, sel: t < 24.95 ? 0 : 1, items: [
+      ["customer_id", "INTEGER"], ["customer_name", "VARCHAR"], ["country", "VARCHAR"], ["email", "VARCHAR"], ["created_at", "TIMESTAMP"]] },
+    { a: 26.5, b: 27.25, line: 2, col: 6, sel: 0, items: [["country", "VARCHAR"]] },
+    { a: 35.45, b: 36.55, line: 6, col: 26, sel: 0, jinja: true, items: [
+      ["start_date", "2026-09-01"], ["end_date", "2026-09-26"], ["start_timestamp", "2026-09-01 00:00"], ["var.region", "'EU'"]] },
+  ];
+  const cp = COMPLETIONS.find((c) => t >= c.a && t < c.b);
+  if (cp) {
+    const it = cp.items[cp.sel];
+    complete.querySelector(".list").innerHTML = cp.items
+      .map(([n, ty], i) => `<div class="it${i === cp.sel ? " hl" : ""}"><svg class="i cube${cp.jinja ? " j" : ""}" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>${esc(n)}<span class="ty">${esc(ty)}</span></div>`)
+      .join("");
+    complete.querySelector(".doc").innerHTML = cp.jinja
+      ? `<b>${it[0]}</b><span class="tyl">date</span><div>Start of the run's data interval.</div><div class="lin">This run: <span class="t-s mono">${it[1]}</span></div>`
+      : `<b>c.${it[0]}</b><span class="tyl">${it[1]}</span><div>From upstream asset</div><div class="lin"><span class="t-tbl">raw.customers</span></div><div class="lin" style="color:var(--faint)">shop_postgres · public.customers</div>`;
+    complete.style.left = `${CODE_X + (cp.col - 2) * CW}px`;
+    complete.style.top = `${56 + CODE_Y + (cp.line + 1) * LH + 6}px`;
+    show(complete, Math.min(p(t, cp.a, cp.a + 0.12), 1 - p(t, cp.b - 0.06, cp.b)), -6, 0.98);
+  } else show(complete, 0);
+
+  // Diagnostic hover + quick fix.
+  diag.style.left = `${CODE_X + 4 * CW}px`;
+  diag.style.top = `${56 + CODE_Y + 4 * LH + 8}px`;
+  show(diag, win(t, 29.6, 31.65, 0.2), -6, 0.98);
+
+  // Jinja render preview.
+  render.style.left = `${CODE_X + 8 * CW}px`;
+  render.style.top = `${56 + CODE_Y + 7 * LH + 8}px`;
+  show(render, win(t, 36.9, 39.35, 0.25), -6, 0.98);
+
+  // Type-check state.
+  const tc = $("#tc"), probs = $("#probs"), deps = $("#deps");
+  const hasDoc = t >= 18.9;
+  let state = "wait";
+  if (t >= 29.0 && t < 31.6) state = "bad";
+  else if ((t >= 31.6 && t < 32.0) || (t >= 40.1 && t < 40.4) || (t >= 22.8 && t < 23.3)) state = "checking";
+  else if (t >= 23.3) state = "ok";
+  tc.className = state === "bad" ? "bad" : state === "ok" ? "ok" : "wait";
+  tc.innerHTML = !hasDoc ? "Type check" :
+    state === "bad" ? `<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>1 problem` :
+    state === "ok" ? `<svg class="i" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Pipeline type-checked` :
+    `<span class="spin" style="transform:rotate(${(t * 540) % 360}deg)"></span>Checking…`;
+  probs.className = `p ${state === "bad" ? "bad" : state === "ok" ? "ok" : ""}`;
+  probs.innerHTML = state === "bad" ? "✕ 1 problem" : state === "ok" ? "✓ No problems" : "";
+  const nDeps = (t >= EDGE1_AT ? 1 : 0) + (t >= EDGE2_AT ? 1 : 0);
+  deps.innerHTML = nDeps ? `Depends on <span class="t-tbl mono">raw.orders</span>${nDeps > 1 ? ` <span class="t-tbl mono">raw.customers</span>` : ""}` : "";
+
+  // Output schema appears once the query type-checks cleanly.
+  const cols = t >= 32.0 ? [["customer_name", "VARCHAR"], ["country", "VARCHAR"], ["revenue", "DECIMAL(38,2)"]]
+    : t >= 27.3 && t < 29.0 ? [["customer_name", "VARCHAR"], ["country", "VARCHAR"]]
+    : t >= 26.0 && t < 29.0 ? [["customer_name", "VARCHAR"]] : [];
+  $("#schema").innerHTML = cols.length ? `Output<span style="width:4px"></span>` + cols.map(([n, ty]) => `<span class="c">${n}<i>${ty}</i></span>`).join("") : "";
+
+  // Pointer, ripple, drag ghost.
+  const [px, py] = pointerAt(t);
+  const pointerO = p(t, 3.4, 3.9) * (1 - p(t, 48.8, 49.4));
+  const click = CLICKS.find((c) => t >= c - 0.08 && t < c + 0.5);
+  const press = click ? 1 - 0.14 * Math.sin(Math.PI * p(t, click - 0.08, click + 0.12)) : 1;
+  pointer.style.opacity = pointerO;
+  pointer.style.transform = `translate(${px - 5}px, ${py - 3}px) scale(${press})`;
+  if (click && t >= click) {
+    const r = p(t, click, click + 0.5);
+    ripple.style.opacity = (1 - r) * 0.9 * pointerO;
+    ripple.style.transform = `translate(${px - 30}px, ${py - 30}px) scale(${lerp(0.3, 1.2, eo(r))})`;
+  } else ripple.style.opacity = 0;
+  if (drag && t < drag.b) {
+    ghost.style.opacity = p(t, drag.a, drag.a + 0.15);
+    ghost.querySelector("span").textContent = drag.label;
+    ghost.style.transform = `translate(${px + 18}px, ${py + 14}px) rotate(-2deg)`;
+  } else ghost.style.opacity = 0;
+}
+
+window.DURATION = DURATION;
+window.seek = seek;
+window.ready = document.fonts.ready.then(() => {
+  // Wait for the logo too, so the first captured frame is complete.
+  const imgs = [...document.images].map((i) => (i.complete ? null : new Promise((r) => (i.onload = i.onerror = r))));
+  return Promise.all(imgs).then(() => { measure(); seek(0); });
+});
+
+// Preview mode: fit to window, ?t= to seek, ?play to run in real time.
+if (!params.has("capture")) {
+  const fit = () => { $("#stage").style.transform = `scale(${Math.min(innerWidth / 1920, innerHeight / 1080)})`; };
+  addEventListener("resize", fit); fit();
+  window.ready.then(() => {
+    const t0 = Number(params.get("t") || 0);
+    if (params.has("play")) {
+      const start = performance.now() - t0 * 1000;
+      const loop = () => { seek(((performance.now() - start) / 1000) % DURATION); requestAnimationFrame(loop); };
+      loop();
+    } else seek(t0);
+  });
+}
+</script>
+</body>
+</html>
