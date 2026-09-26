@@ -13,7 +13,7 @@
     "audit": "pnpm audit --audit-level=low"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.42.1",
+    "@astrojs/starlight": "^0.42.3",
     "astro": "^7.3.2",
     "sharp": "^0.35.4",
     "starlight-theme-rapide": "^0.5.2",
