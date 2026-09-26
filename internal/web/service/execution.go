@@ -31,6 +31,7 @@ import (
 	"renart/internal/web/preview"
 	"renart/internal/web/runcontext"
 	webscheduler "renart/internal/web/scheduler"
+	"renart/internal/web/telemetry"
 )
 
 type InspectResult struct {
@@ -77,6 +78,7 @@ type TargetWriteStore interface {
 }
 
 type ExecutionDependencies struct {
+	RecordUsage          func(telemetry.Observation)
 	WorkspaceRoot        string
 	ConfigPath           string
 	Executor             BruinCommandExecutor
@@ -666,6 +668,13 @@ func (s *ExecutionService) MaterializeAssetStream(ctx context.Context, assetID, 
 }
 
 func (s *ExecutionService) MaterializeAssetStreamWithSensorMode(ctx context.Context, assetID, environment, scope, startDate, endDate string, fullRefresh, backfill bool, confirmedEnvironment, sensorMode string, onChunk func([]byte)) MaterializeResult {
+	started := time.Now()
+	result := s.materializeAssetStreamWithSensorMode(ctx, assetID, environment, scope, startDate, endDate, fullRefresh, backfill, confirmedEnvironment, sensorMode, onChunk)
+	s.recordRunUsage(ctx, result, telemetry.Asset, false, started)
+	return result
+}
+
+func (s *ExecutionService) materializeAssetStreamWithSensorMode(ctx context.Context, assetID, environment, scope, startDate, endDate string, fullRefresh, backfill bool, confirmedEnvironment, sensorMode string, onChunk func([]byte)) MaterializeResult {
 	normalizedContext, contextErr := runcontext.Normalize(runcontext.Input{
 		Start:       startDate,
 		End:         endDate,
@@ -1449,6 +1458,15 @@ func schedulerInlineRunExecutionUnits(
 }
 
 func (s *ExecutionService) MaterializePipelineRun(ctx context.Context, spec PipelineRunSpec, onChunk func([]byte), onAssetEvent func(ExecutionAssetEvent) error) MaterializeResult {
+	started := time.Now()
+	result := s.materializePipelineRun(ctx, spec, onChunk, onAssetEvent)
+	if !spec.DryRun {
+		s.recordRunUsage(ctx, result, telemetry.Pipeline, spec.Scheduled, started)
+	}
+	return result
+}
+
+func (s *ExecutionService) materializePipelineRun(ctx context.Context, spec PipelineRunSpec, onChunk func([]byte), onAssetEvent func(ExecutionAssetEvent) error) MaterializeResult {
 	ctx, warnings := withExecutionWarnings(ctx)
 	admitter := s.admitter
 	if admitter == nil {
@@ -2875,4 +2893,27 @@ func maxTimePtr(a, b *time.Time) *time.Time {
 		return b
 	}
 	return a
+}
+
+func (s *ExecutionService) recordRunUsage(ctx context.Context, result MaterializeResult, surface telemetry.Surface, scheduled bool, started time.Time) {
+	if s.deps.RecordUsage == nil {
+		return
+	}
+	outcome := telemetry.Failed
+	if result.Status == "ok" {
+		outcome = telemetry.Success
+	} else if result.Status == "cancelled" {
+		outcome = telemetry.Cancelled
+	}
+	trigger := telemetry.API
+	switch ExecutionOrigin(ctx) {
+	case webscheduler.RunTriggerManual:
+		trigger = telemetry.Manual
+	case webscheduler.RunTriggerCLI:
+		trigger = telemetry.CLI
+	}
+	if scheduled {
+		trigger = telemetry.Scheduled
+	}
+	s.deps.RecordUsage(telemetry.Observation{Name: telemetry.PipelineFinished, Surface: surface, Outcome: outcome, Trigger: trigger, Duration: time.Since(started), Items: -1})
 }

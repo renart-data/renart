@@ -151,7 +151,9 @@ export function normalizedDashboardLayout(artifact: PresentationArtifact): Layou
     return {
       i: visualization.id,
       x: clamp(item?.x ?? 0, 0, 12 - width),
-      y: Math.max(0, item?.y ?? index * 4),
+      // The API omits zero coordinates. An existing layout item without y is
+      // on the first row; only a visualization without a layout gets auto-placed.
+      y: Math.max(0, item ? (item.y ?? 0) : index * 4),
       w: width,
       h: clamp(item?.height || 4, 2, 20),
       minW: 2,

@@ -3,6 +3,8 @@
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+import { AuthoringIconTile } from "./authoring-icon-tile";
+
 import { writeAuthoringDragItem } from "./authoring-drag";
 
 export const CHART_TYPE_OPTIONS = [
@@ -22,6 +24,7 @@ export function ChartTypePicker({
   value,
   compact = false,
   density = "large",
+  quietIcons = false,
   disabled = false,
   draggable = false,
   onValueChange,
@@ -29,6 +32,7 @@ export function ChartTypePicker({
   value?: string;
   compact?: boolean;
   density?: "large" | "compact";
+  quietIcons?: boolean;
   disabled?: boolean;
   draggable?: boolean;
   onValueChange: (value: ChartType) => void;
@@ -71,10 +75,22 @@ export function ChartTypePicker({
             }
             onClick={() => onValueChange(option.value)}
           >
-            <ChartTypePreview
-              type={option.value}
-              className={density === "compact" ? "h-6 max-w-10" : undefined}
-            />
+            {quietIcons ? (
+              <AuthoringIconTile tone="chart" compact={density === "compact"}>
+                <ChartTypePreview
+                  type={option.value}
+                  className={cn(
+                    "max-w-none text-inherit",
+                    density === "compact" ? "h-5 w-8" : "h-7 w-11",
+                  )}
+                />
+              </AuthoringIconTile>
+            ) : (
+              <ChartTypePreview
+                type={option.value}
+                className={density === "compact" ? "h-6 max-w-10" : undefined}
+              />
+            )}
             <span className="truncate">{option.label}</span>
           </Button>
         );
@@ -107,9 +123,9 @@ export function ChartTypePreview({ type, className }: { type: ChartType; classNa
 function TablePreview() {
   return (
     <g className="stroke-current" strokeWidth="1.5">
-      <rect x="9" y="6" width="54" height="26" rx="2" className="fill-primary/5" />
+      <rect x="9" y="6" width="54" height="26" rx="2" className="fill-current/5" />
       <path d="M9 13H63M9 20H63M9 27H63M27 6V32M45 6V32" />
-      <path d="M9 13H63" strokeWidth="3" className="stroke-primary/45" />
+      <path d="M9 13H63" strokeWidth="3" className="stroke-current/45" />
     </g>
   );
 }
@@ -120,7 +136,7 @@ function KPIPreview() {
       <text x="36" y="24" textAnchor="middle" className="fill-current text-[18px] font-semibold">
         42
       </text>
-      <path d="M24 29H48" className="stroke-primary/40" strokeWidth="2" strokeLinecap="round" />
+      <path d="M24 29H48" className="stroke-current/40" strokeWidth="2" strokeLinecap="round" />
     </g>
   );
 }
@@ -180,9 +196,9 @@ function ScatterPreview() {
 function PiePreview() {
   return (
     <g transform="translate(36 20)">
-      <circle r="14" className="fill-primary/15 stroke-current" strokeWidth="1.5" />
+      <circle r="14" className="fill-current/15 stroke-current" strokeWidth="1.5" />
       <path d="M0 0V-14A14 14 0 0 1 12.1 7Z" className="fill-current" />
-      <path d="M0 0L12.1 7A14 14 0 0 1-10 9.8Z" className="fill-primary/55" />
+      <path d="M0 0L12.1 7A14 14 0 0 1-10 9.8Z" className="fill-current/55" />
     </g>
   );
 }
@@ -190,7 +206,7 @@ function PiePreview() {
 function DonutPreview() {
   return (
     <g transform="translate(36 20) rotate(-90)">
-      <circle r="11" className="stroke-primary/15" strokeWidth="7" />
+      <circle r="11" className="stroke-current/15" strokeWidth="7" />
       <circle
         r="11"
         className="stroke-current"
@@ -200,7 +216,7 @@ function DonutPreview() {
       />
       <circle
         r="11"
-        className="stroke-primary/55"
+        className="stroke-current/55"
         strokeWidth="7"
         strokeDasharray="22 78"
         strokeDashoffset="-31"

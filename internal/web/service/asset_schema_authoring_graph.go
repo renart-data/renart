@@ -46,7 +46,7 @@ func resolveAuthoringSchemaGraph(
 			graph = upsertAuthoringDeclarationLayer(graph, asset.Name, columns, evidence)
 		}
 
-		graph = stripInferredSchemaLayers(graph)
+		graph = stripInferredSchemaLayers(graph, pp)
 		graph = sqllsp.InferSchemaSnapshot(ctx, graph, inferenceAssets)
 		if reflect.DeepEqual(before, graph.Schemas) {
 			break
@@ -137,10 +137,22 @@ func upsertAuthoringDeclarationLayer(
 	return graph
 }
 
-func stripInferredSchemaLayers(graph sqllsp.CanonicalGraph) sqllsp.CanonicalGraph {
+func stripInferredSchemaLayers(graph sqllsp.CanonicalGraph, pp *pipeline.Pipeline) sqllsp.CanonicalGraph {
+	names := make(map[string]bool, len(pp.Assets))
+	for _, asset := range pp.Assets {
+		if asset != nil {
+			names[strings.ToLower(strings.TrimSpace(asset.Name))] = true
+		}
+	}
+	recomputed := make(map[string]bool)
+	for _, relation := range graph.Relations {
+		if names[strings.ToLower(strings.TrimSpace(relation.Name))] {
+			recomputed[relation.ID] = true
+		}
+	}
 	kept := make([]sqllsp.SchemaLayer, 0, len(graph.Schemas))
 	for _, layer := range graph.Schemas {
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(layer.SourceKind)), "inferred-") {
+		if recomputed[layer.RelationID] && strings.HasPrefix(strings.ToLower(strings.TrimSpace(layer.SourceKind)), "inferred-") {
 			continue
 		}
 		kept = append(kept, layer)

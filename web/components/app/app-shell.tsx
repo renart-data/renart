@@ -51,6 +51,7 @@ import { cn } from "@/lib/utils";
 import { getPinnedProjectId } from "@/lib/project-context";
 import { rememberWorkspaceProject } from "@/lib/project-route-bootstrap";
 
+import { UsageAnalyticsNotice } from "./usage-analytics";
 import { ProjectSwitcher } from "./project-switcher";
 import { AppCommandPalette } from "./app-command-palette";
 import { appNavigationModes, navigationForAppRouteMatches } from "./app-navigation-model";
@@ -112,6 +113,7 @@ export function AppShell() {
           <ServerOfflineOverlay />
           <AppHeader sourceControl={sourceControl} activeMode={activeMode?.id ?? null} />
           <AppWorkbenchMobileToolTabs />
+          <UsageAnalyticsNotice />
           <ResourceNavigation />
 
           <main className="min-h-0 flex-1 overflow-hidden">

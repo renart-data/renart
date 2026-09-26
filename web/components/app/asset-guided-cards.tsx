@@ -15,6 +15,7 @@ import {
 import { useAtomValue } from "jotai";
 import {
   AlertTriangle,
+  Info,
   Ban,
   Check,
   ChevronRight,
@@ -1885,9 +1886,9 @@ function ColumnRow({
               ) : null}
               <ColumnStatusBadge status={status} />
               {affectedArtifactCount > 0 ? (
-                <Badge variant="destructive" size="xs">
-                  <AlertTriangle data-icon="inline-start" />
-                  {affectedArtifactCount} downstream
+                <Badge variant="secondary" size="xs">
+                  <Info data-icon="inline-start" />
+                  Used by {affectedArtifactCount}
                 </Badge>
               ) : null}
             </span>
@@ -1900,11 +1901,12 @@ function ColumnRow({
       <CollapsibleContent className="border-t bg-muted/20 px-3 py-3">
         <FieldGroup className="gap-3">
           {impacts.length > 0 ? (
-            <Alert variant="destructive">
-              <AlertTriangle />
-              <AlertTitle>Known downstream impact</AlertTitle>
+            <Alert role="note">
+              <Info />
+              <AlertTitle>This column is used downstream</AlertTitle>
               <AlertDescription>
-                Removing or renaming this column would break these statically resolved uses.
+                These assets and visualizations use this column. Renart will ask you to confirm
+                before removing its declaration.
                 <span className="mt-1.5 flex flex-col gap-1">
                   {impacts.slice(0, 4).map((impact) => (
                     <span

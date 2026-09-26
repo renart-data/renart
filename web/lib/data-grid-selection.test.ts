@@ -7,6 +7,7 @@ import {
   moveDataGridSelection,
   selectAllDataGridCells,
   selectDataGridCell,
+  selectDataGridRows,
   selectedDataGridBounds,
   resizeDataGridSelection,
 } from "@/lib/data-grid-selection";
@@ -89,5 +90,18 @@ describe("data grid selection", () => {
     const constrained = constrainDataGridSelection(all, { rows: 2, columns: 1 });
     expect(constrained.selected).toEqual(new Set(["0:0", "1:0"]));
     expect(constrained.active).toBeNull();
+  });
+});
+
+describe("row header selection", () => {
+  it("selects and extends whole rows, and toggles complete rows", () => {
+    const first = selectDataGridRows(EMPTY_DATA_GRID_SELECTION, 2, 3);
+    expect([...first.selected]).toEqual(["2:0", "2:1", "2:2"]);
+    const range = selectDataGridRows(first, 0, 3, "extend");
+    expect(range.selected.size).toBe(9);
+    const toggled = selectDataGridRows(range, 1, 3, "toggle");
+    expect(toggled.selected.size).toBe(6);
+    expect(toggled.selected.has("1:0")).toBe(false);
+    expect(selectDataGridRows(first, 1, 0).selected.size).toBe(0);
   });
 });

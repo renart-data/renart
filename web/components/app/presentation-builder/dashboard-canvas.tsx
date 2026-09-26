@@ -161,32 +161,34 @@ export function DashboardCanvas({
           onDropVisualization(item.chartType);
         }}
       >
-        {layout.map((item) => {
-          const visualization = visualizations.find((candidate) => candidate.id === item.i);
-          if (!visualization) return null;
-          return (
-            <div
-              key={visualization.id}
-              className={cn(
-                previewMode === "tablet" &&
-                  derivedDashboardSpan(item.w, previewMode) === 2 &&
-                  "col-span-2",
-              )}
-            >
-              <EditableVisualizationCard
-                visualization={visualization}
-                result={results[visualization.id]}
-                loading={loadingIDs.has(visualization.id)}
-                selected={selection.kind === "visualization" && selection.id === visualization.id}
-                findings={findingsForVisualization(artifact, findings, visualization.id)}
-                onSelect={() => onSelect({ kind: "visualization", id: visualization.id })}
-                onChange={onVisualizationChange}
-                onDuplicate={() => onDuplicate(visualization.id)}
-                onDelete={() => onDelete(visualization.id)}
-              />
-            </div>
-          );
-        })}
+        {[...layout]
+          .sort((a, b) => a.y - b.y || a.x - b.x || a.i.localeCompare(b.i))
+          .map((item) => {
+            const visualization = visualizations.find((candidate) => candidate.id === item.i);
+            if (!visualization) return null;
+            return (
+              <div
+                key={visualization.id}
+                className={cn(
+                  previewMode === "tablet" &&
+                    derivedDashboardSpan(item.w, previewMode) === 2 &&
+                    "col-span-2",
+                )}
+              >
+                <EditableVisualizationCard
+                  visualization={visualization}
+                  result={results[visualization.id]}
+                  loading={loadingIDs.has(visualization.id)}
+                  selected={selection.kind === "visualization" && selection.id === visualization.id}
+                  findings={findingsForVisualization(artifact, findings, visualization.id)}
+                  onSelect={() => onSelect({ kind: "visualization", id: visualization.id })}
+                  onChange={onVisualizationChange}
+                  onDuplicate={() => onDuplicate(visualization.id)}
+                  onDelete={() => onDelete(visualization.id)}
+                />
+              </div>
+            );
+          })}
       </div>
     );
   }

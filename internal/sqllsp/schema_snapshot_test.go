@@ -217,3 +217,24 @@ func TestValidationSchemaConstraintsKeepsDeclaredMetadataOnly(t *testing.T) {
 	assert.Nil(t, orders["invalid_id"].ForeignKey, "unrepresented FK targets must not poison every validation request")
 	assert.NotContains(t, constraints, "analytics.derived", "inferred columns must not acquire guessed constraints")
 }
+
+func TestInferSchemaSnapshotPreservesInferredRelationsOutsideCurrentPass(t *testing.T) {
+	graph := GraphFromRenartAssets("file:///workspace", []AssetNode{
+		{ID: "orders", Name: "analytics.orders", URI: "file:///workspace/orders.sql", Dialect: "duckdb"},
+		{ID: "cell", Name: "notebook_cell", URI: "file:///workspace/cell.sql", Dialect: "duckdb"},
+	}, nil)
+	graph = InferSchemaSnapshot(context.Background(), graph, []InferenceAsset{{
+		ID: "orders", Name: "analytics.orders", URI: "file:///workspace/orders.sql", Dialect: "duckdb", SQL: "select 1 as order_id, 42 as total_amount",
+	}})
+	original := append([]SchemaLayer(nil), graph.Schemas...)
+	extended := InferSchemaSnapshot(context.Background(), graph, []InferenceAsset{{
+		ID: "cell", Name: "notebook_cell", URI: "file:///workspace/cell.sql", Dialect: "duckdb", SQL: "select * from analytics.orders", Upstreams: []string{"analytics.orders"},
+	}})
+	schema, confidence := ValidationSchema(extended)
+	for _, name := range []string{"analytics.orders", "notebook_cell"} {
+		assert.Contains(t, schema[name], "order_id")
+		assert.Contains(t, schema[name], "total_amount")
+		assert.Equal(t, sqlintelligence.RelationKnown, confidence[name])
+	}
+	assert.Equal(t, original, graph.Schemas, "request-local inference must not mutate the cached graph")
+}

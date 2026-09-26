@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai";
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { BookOpen, Terminal, X, type LucideIcon } from "lucide-react";
 
 import { assetPresentationFields } from "@/lib/asset-presentation";
@@ -15,14 +15,55 @@ export function BuildDocumentTabs({
   emptyLabel,
   onSelectDocument,
   onCloseDocument,
+  onMoveDocument,
 }: {
   documents: readonly BuildDocument[];
   activeDocument: BuildDocument | null;
   emptyLabel: string;
   onSelectDocument?: (document: BuildDocument) => void;
   onCloseDocument?: (document: BuildDocument) => void;
+  onMoveDocument?: (key: string, targetKey: string) => void;
 }) {
   const workspace = useAtomValue(workspaceAtom);
+  const dragging = useRef<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const move = (key: string, targetKey: string) => {
+    onMoveDocument?.(key, targetKey);
+    setAnnouncement(
+      `Tab moved to position ${documents.findIndex((document) => buildDocumentKey(document) === targetKey) + 1} of ${documents.length}.`,
+    );
+  };
+  const reorderProps = (key: string) => ({
+    draggable: Boolean(onMoveDocument),
+    dropTarget: dropTarget === key,
+    onDragStart: (event: React.DragEvent<HTMLDivElement>) => {
+      dragging.current = key;
+      event.dataTransfer.setData("application/x-renart-document-tab", key);
+      event.dataTransfer.effectAllowed = "move";
+    },
+    onDragOver: (event: React.DragEvent<HTMLDivElement>) => {
+      if (!dragging.current || dragging.current === key) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      setDropTarget(key);
+    },
+    onDrop: (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (dragging.current && dragging.current !== key) move(dragging.current, key);
+      dragging.current = null;
+      setDropTarget(null);
+    },
+    onDragEnd: () => {
+      dragging.current = null;
+      setDropTarget(null);
+    },
+    onMove: (direction: -1 | 1) => {
+      const index = documents.findIndex((document) => buildDocumentKey(document) === key);
+      const target = documents[index + direction];
+      if (target) move(key, buildDocumentKey(target));
+    },
+  });
   const activeKey = activeDocument ? buildDocumentKey(activeDocument) : null;
 
   return (
@@ -31,6 +72,9 @@ export function BuildDocumentTabs({
       aria-label="Open authoring documents"
       className="no-scrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1"
     >
+      <span className="sr-only" aria-live="polite">
+        {announcement}
+      </span>
       {documents.length === 0 ? (
         <span className="min-w-0 truncate px-2 text-xs text-muted-foreground">{emptyLabel}</span>
       ) : null}
@@ -43,6 +87,7 @@ export function BuildDocumentTabs({
           return (
             <BuildDocumentTab
               key={key}
+              {...reorderProps(key)}
               active={activeKey === key}
               icon={Terminal}
               label="Ad-hoc query"
@@ -60,6 +105,7 @@ export function BuildDocumentTabs({
           return (
             <BuildDocumentTab
               key={key}
+              {...reorderProps(key)}
               active={activeKey === key}
               icon={BookOpen}
               label={notebook.title}
@@ -81,6 +127,7 @@ export function BuildDocumentTabs({
         return (
           <BuildDocumentTab
             key={key}
+            {...reorderProps(key)}
             active={activeKey === key}
             icon={Icon}
             label={label}
@@ -101,6 +148,9 @@ function BuildDocumentTab({
   title,
   onSelect,
   onClose,
+  onMove,
+  dropTarget,
+  ...dragProps
 }: {
   active: boolean;
   icon: LucideIcon;
@@ -108,6 +158,13 @@ function BuildDocumentTab({
   title: string;
   onSelect: () => void;
   onClose: () => void;
+  onMove: (direction: -1 | 1) => void;
+  dropTarget: boolean;
+  draggable: boolean;
+  onDragStart: React.DragEventHandler<HTMLDivElement>;
+  onDragOver: React.DragEventHandler<HTMLDivElement>;
+  onDrop: React.DragEventHandler<HTMLDivElement>;
+  onDragEnd: React.DragEventHandler<HTMLDivElement>;
 }) {
   const tab = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -124,13 +181,15 @@ function BuildDocumentTab({
   return (
     <div
       ref={tab}
+      {...dragProps}
       className={cn(
         "group flex h-8 min-w-28 max-w-48 shrink-0 items-center rounded-lg border text-xs transition-colors",
+        dropTarget && "ring-2 ring-primary",
         active
           ? "border-primary/30 bg-primary/10 text-foreground shadow-sm"
           : "border-transparent bg-muted/50 text-muted-foreground hover:border-border hover:bg-muted",
       )}
-      title={title}
+      title={`${title} · Drag to reorder, or use Alt+Shift+Left/Right`}
     >
       <button
         type="button"
@@ -138,6 +197,13 @@ function BuildDocumentTab({
         aria-selected={active}
         className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch pl-2 text-left"
         onClick={onSelect}
+        aria-keyshortcuts="Alt+Shift+ArrowLeft Alt+Shift+ArrowRight"
+        onKeyDown={(event) => {
+          if (!event.altKey || !event.shiftKey || !["ArrowLeft", "ArrowRight"].includes(event.key))
+            return;
+          event.preventDefault();
+          onMove(event.key === "ArrowLeft" ? -1 : 1);
+        }}
       >
         <Icon className={cn("size-3.5 shrink-0", active && "text-primary")} />
         <span className="truncate font-mono">{label}</span>

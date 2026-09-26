@@ -25,24 +25,37 @@ export function useResultPreview<T extends { preview?: PreviewMetadata }>(
   const metadata = result?.preview;
   const canLoadMore = !current.expired && Boolean(metadata?.next_limit);
   useEffect(() => () => requests.cancel(key), [key, requests]);
-  const loadMore = useCallback(async () => {
-    if (!canLoadMore || !metadata?.next_limit) return;
-    setState((old) => ({ ...(old.key === key ? old : { key }), loading: true, error: undefined }));
-    try {
-      const response = await requests.run(key, metadata.next_limit, fetch);
-      if (response && currentKey.current === key) setState({ key, result: response.value });
-    } catch (error) {
-      if (currentKey.current === key) {
-        setState((old) => ({
-          ...old,
+  const loadMore = useCallback(
+    async (requestedLimit?: number) => {
+      if (!canLoadMore || !metadata?.next_limit) return;
+      setState((old) => ({
+        ...(old.key === key ? old : { key }),
+        loading: true,
+        error: undefined,
+      }));
+      try {
+        const response = await requests.run(
           key,
-          loading: false,
-          error: error instanceof Error ? error.message : String(error),
-          expired: error instanceof APIError && error.code === "notebook_preview_expired",
-        }));
+          requestedLimit === undefined
+            ? metadata.next_limit
+            : Math.max(1, Math.min(1_000, requestedLimit)),
+          fetch,
+        );
+        if (response && currentKey.current === key) setState({ key, result: response.value });
+      } catch (error) {
+        if (currentKey.current === key) {
+          setState((old) => ({
+            ...old,
+            key,
+            loading: false,
+            error: error instanceof Error ? error.message : String(error),
+            expired: error instanceof APIError && error.code === "notebook_preview_expired",
+          }));
+        }
       }
-    }
-  }, [canLoadMore, fetch, key, metadata?.next_limit, requests]);
+    },
+    [canLoadMore, fetch, key, metadata?.next_limit, requests],
+  );
   const preview =
     current.expired && metadata
       ? { ...metadata, continuation: "none", reason: "expired", next_limit: 0 }

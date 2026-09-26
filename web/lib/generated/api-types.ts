@@ -1841,6 +1841,47 @@ export type UpdatePresentationRequest = {
   content: string;
 };
 
+export type UpdateUsageAnalyticsRequest = {
+  enabled?: boolean;
+  acknowledge_notice?: boolean;
+  reset_identity?: boolean;
+};
+
+export type UsageAnalyticsStatus = {
+  enabled: boolean;
+  active: boolean;
+  reason: string;
+  mode: UsageMode;
+  notice_required: boolean;
+  installation_id?: string;
+};
+
+export type UsageEvent = {
+  schema_version: number;
+  event_id: string;
+  hour: string;
+  version: string;
+  os: string;
+  architecture: string;
+  installation_id?: string;
+  name: UsageEventName;
+  outcome?: UsageOutcome;
+  trigger?: UsageTrigger;
+  surface: UsageSurface;
+  duration_bucket?: string;
+  item_count_bucket?: string;
+};
+
+export type UsageEventName = "workspace_session_started" | "pipeline_run_finished" | "notebook_run_finished" | "presentation_run_finished";
+
+export type UsageMode = "unlinked" | "installation";
+
+export type UsageOutcome = "success" | "failed" | "cancelled";
+
+export type UsageSurface = "cli" | "web" | "pipeline" | "asset" | "notebook" | "dashboard" | "report";
+
+export type UsageTrigger = "manual" | "scheduled" | "automatic" | "cli" | "api";
+
 export type VizDiagnostic = {
   message: string;
   severity: string;

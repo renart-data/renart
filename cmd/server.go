@@ -34,6 +34,7 @@ import (
 	"renart/internal/web/snapshot"
 	"renart/internal/web/staleness"
 	webstatic "renart/internal/web/static"
+	"renart/internal/web/telemetry"
 	"renart/internal/web/watch"
 	webui "renart/web"
 
@@ -274,6 +275,13 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		eventBus:    bus.New(),
 		logger:      logger,
 	}
+	server.usage = newUsageClient()
+	usageReady := false
+	defer func() {
+		if !usageReady {
+			server.usage.Close()
+		}
+	}()
 	server.connectionFactory = service.NewResolvedConnectionFactory(
 		absRoot,
 		configPath,
@@ -1014,6 +1022,7 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 	}
 
 	cleanup := func() {
+		defer server.usage.Close()
 		if server.notebookAgentSvc != nil {
 			server.notebookAgentSvc.Close()
 		}
@@ -1025,6 +1034,18 @@ func newWebServer(ctx context.Context, cfg serverConfig, logger *zap.Logger) (*w
 		}
 	}
 
+	if cfg.headless {
+		if server.usage.Status().NoticeRequired {
+			fmt.Fprintln(os.Stderr, usageNotice)
+			if _, err := server.usage.Update(telemetry.UpdateRequest{AcknowledgeNotice: true}); err != nil {
+				logger.Debug("usage notice preference could not be saved")
+			}
+		}
+		server.usage.StartSession(telemetry.Terminal)
+	} else {
+		server.usage.StartSession(telemetry.Web)
+	}
+	usageReady = true
 	releaseLeaseOnError = false
 	return server, cleanup, nil
 }

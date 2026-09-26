@@ -32,6 +32,7 @@ export type BuildDocumentSession = {
 type BuildDocumentAction =
   | { type: "document-opened"; document: BuildDocument }
   | { type: "document-closed"; key: string }
+  | { type: "document-moved"; key: string; targetKey: string }
   | {
       type: "resources-reconciled";
       assetKeys: ReadonlySet<string>;
@@ -71,6 +72,18 @@ export function buildDocumentReducer(
       ...state,
       documents: [...state.documents, action.document].slice(-MAX_DOCUMENTS),
     };
+  }
+
+  if (action.type === "document-moved") {
+    const from = state.documents.findIndex((document) => buildDocumentKey(document) === action.key);
+    const to = state.documents.findIndex(
+      (document) => buildDocumentKey(document) === action.targetKey,
+    );
+    if (from < 0 || to < 0 || from === to) return state;
+    const documents = [...state.documents];
+    const [moved] = documents.splice(from, 1);
+    documents.splice(to, 0, moved);
+    return { ...state, documents };
   }
 
   if (action.type === "document-closed") {
@@ -226,6 +239,8 @@ export function useBuildDocuments({
     () => ({
       documents: state.documents,
       closeDocument: (key: string) => dispatch({ type: "document-closed", key }),
+      moveDocument: (key: string, targetKey: string) =>
+        dispatch({ type: "document-moved", key, targetKey }),
     }),
     [state.documents],
   );

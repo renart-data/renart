@@ -710,6 +710,11 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   Its controlled-capable logical-coordinate selection model survives virtual
   row mounting, supports pointer ranges and keyboard navigation/toggling, and
   disables native scroll anchoring so browser adjustments cannot fight virtual spacers.
+  Row-number handles select and extend complete rows. Pointer clicks outside the
+  owning table clear its selection, and a document-level selection claim keeps
+  only one preview table selected, including keyboard-created selections. The
+  full-value dialog preserves its owner's selection while it is open. Preview
+  tables use the bundled monospace font through the shared font token.
   It copies selected cells as TSV and HTML. `useDataGridRangeResize` adds pointer-captured
   rectangle edges/corners with touch targets, logical row/column hit testing and
   viewport-edge auto-scroll. Sparse selections retain their holes and omit range
@@ -720,8 +725,10 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   row-action semantics do not fit this spreadsheet contract remain separate.
 - Data Browser, asset Inspect, notebook cells and ad-hoc queries use that table's compact preview footer: row
   count, an explicit **Load more rows** action, or a row/size-limit explanation.
-  Backend lookahead metadata replaces the old row-count heuristic; Inspect no
-  longer auto-fetches on scrolling. Larger samples replace rows, clear stale
+  Scrolling within 64px of the bottom also requests the next bounded preview;
+  a single in-flight latch and loading indicator avoid duplicate scroll requests.
+  Backend lookahead metadata replaces the old row-count heuristic. Automatic
+  continuation obeys the same row/byte ceilings as the explicit button. Larger samples replace rows, clear stale
   selection and retain the table/scroll position. Failures retain the prior
   sample and retry the same bound. `PreviewRequests` coalesces pending bounds,
   rejects cancelled replies even for adapters that ignore abort signals, and
@@ -739,11 +746,30 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   not Run. Workspace/environment/window/pipeline changes, new results, explicit
   Run and unmount invalidate pending requests. The rendered-query disclosure
   keeps the original SQL; the shared footer owns preview-bound information.
+- Notebook result collapse and performance controls share the table's preview
+  footer instead of adding another result-toolbar row. The desktop inspector
+  shell animates width/opacity on open and close; hidden panels are inert and
+  reduced motion disables the transition.
+- Open authoring tabs can be reordered by drag/drop or Alt+Shift+Left/Right.
+  The existing document reducer and session storage preserve order; reordering
+  does not select, close or rewrite a document.
+- Notebook Add tools use quiet tinted icon tiles: SQL blue, Python amber,
+  charts violet, controls teal and text neutral. `AuthoringIconTile` is shared
+  by the Add sidebar and inline picker; labels and existing glyphs remain the
+  primary identifiers in both themes.
+- Asset Inspect warnings occupy an opaque, in-flow alert with expandable
+  details, leaving the result reachable. Downstream column usage is an info
+  note; the existing deletion confirmation remains the destructive boundary.
 - Dashboard/report authoring keeps one explicit shrink-safe height chain from
   the routed page through the tabs and builder. The visual canvas ScrollArea
   owns overflow for tall content while the command bar and desktop sidebars
   remain fixed; definition Monaco and audience viewers retain their own scroll
-  owners.
+  owners. Editor and audience viewer share normalized layout coordinates,
+  column spans and the 72px/12px desktop grid. An existing layout item with an
+  omitted zero-valued coordinate remains on row/column zero; only an absent
+  layout gets automatic placement. Narrow layouts follow spatial order; phone
+  editors default to the mobile preview unless a mode is explicitly selected.
+  Card content remains scrollable within small authored heights.
 - Notebook authoring has an **All notebooks** navigation step in the contextual
   sidebar. It changes `notebook_nav=library` on the existing notebook route,
   leaving the active document and its editor mounted. Selecting another notebook
@@ -768,6 +794,11 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   facts, schedule history, deployments, and abandoned temporary directories,
   plus the per-pipeline run/log/deployment floors. Integer validation happens
   in both the form and Go service; saving replaces the complete policy.
+  The **Usage analytics** card in General is explicitly user-wide, outside
+  project files. Its shared Jotai DTO state refreshes through
+  `usage.settings.updated` SSE and window focus; the app shell owns the
+  first-run explanation. See [backend usage counts](backend.md#product-usage-analytics) for
+  policy and transport behavior. There is no browser event collector.
   Connection editors consume backend-provided `is_sensitive` and
   `is_sensitive_file` metadata. Sensitive inputs never populate browser state
   with a saved value. They show configured/missing/unavailable status and the

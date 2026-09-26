@@ -6,6 +6,8 @@ import {
   PointerEvent,
   UIEvent,
   WheelEventHandler,
+  type ReactNode,
+  useId,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -30,6 +32,7 @@ import {
   moveDataGridSelection,
   selectAllDataGridCells,
   selectDataGridCell,
+  selectDataGridRows,
   selectedDataGridBounds,
 } from "@/lib/data-grid-selection";
 import { cn } from "@/lib/utils";
@@ -85,6 +88,9 @@ export function virtualRowWindow({
 
 type Props = {
   preview?: PreviewMetadata;
+  footerStart?: ReactNode;
+  footerEnd?: ReactNode;
+  footerStatus?: string;
   columns: string[];
   columnKeys?: string[];
   rows: Record<string, unknown>[];
@@ -105,6 +111,9 @@ type Props = {
 
 export function VirtualDataTable({
   preview,
+  footerStart,
+  footerEnd,
+  footerStatus,
   columns,
   columnKeys,
   rows,
@@ -114,7 +123,7 @@ export function VirtualDataTable({
   canLoadMore = false,
   onLoadMore,
   emptyLabel = "No rows returned.",
-  autoLoadMore = false,
+  autoLoadMore = true,
   scrollKey,
   onWheelCapture,
   frameless = false,
@@ -122,6 +131,9 @@ export function VirtualDataTable({
   viewportClassName,
   onRenderMeasured,
 }: Props) {
+  const selectionOwner = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const rowDragAnchorRef = useRef<number | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const [selectionOpen, setSelectionOpen] = useState(false);
   const selectionTriggerRef = useRef<HTMLButtonElement>(null);
@@ -211,6 +223,7 @@ export function VirtualDataTable({
     const stopDragging = () => {
       draggingRef.current = false;
       dragAnchorRef.current = null;
+      rowDragAnchorRef.current = null;
     };
     window.addEventListener("pointerup", stopDragging);
     window.addEventListener("pointercancel", stopDragging);
@@ -219,6 +232,43 @@ export function VirtualDataTable({
       window.removeEventListener("pointercancel", stopDragging);
     };
   }, []);
+
+  // One table owns the page's selection. The full-value dialog is a portal,
+  // but still belongs to its source table; interacting there keeps the range.
+  const hasSelection = selection.selected.size > 0;
+  useEffect(() => {
+    const clear = () => {
+      if (selectionRef.current.selected.size === 0) return;
+      selectionRef.current = EMPTY_DATA_GRID_SELECTION;
+      setSelection(EMPTY_DATA_GRID_SELECTION);
+      setSelectionOpen(false);
+    };
+    const outside = (event: globalThis.PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (rootRef.current?.contains(target)) return;
+      if (
+        target
+          .closest("[data-table-selection-owner]")
+          ?.getAttribute("data-table-selection-owner") === selectionOwner
+      )
+        return;
+      clear();
+    };
+    const claimed = (event: Event) => {
+      if ((event as CustomEvent<string>).detail !== selectionOwner) clear();
+    };
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("renart:table-selection", claimed);
+    return () => {
+      document.removeEventListener("pointerdown", outside, true);
+      document.removeEventListener("renart:table-selection", claimed);
+    };
+  }, [selectionOwner]);
+  useEffect(() => {
+    if (hasSelection)
+      document.dispatchEvent(new CustomEvent("renart:table-selection", { detail: selectionOwner }));
+  }, [hasSelection, selectionOwner]);
 
   const triggerLoadMore = () => {
     if (!canLoadMore || !onLoadMore || loading || loadMoreRequestedRef.current) {
@@ -288,8 +338,31 @@ export function VirtualDataTable({
     setSelection(EMPTY_DATA_GRID_SELECTION);
   };
 
+  const selectRows = (row: number, mode: "replace" | "extend" | "toggle" = "replace") => {
+    const next = selectDataGridRows(selectionRef.current, row, fallbackColumns.length, mode);
+    selectionRef.current = next;
+    setSelection(next);
+  };
+
+  const handleRowPointerDown = (event: PointerEvent<HTMLButtonElement>, row: number) => {
+    if (event.button !== 0) return;
+    selectRows(
+      row,
+      event.shiftKey ? "extend" : event.metaKey || event.ctrlKey ? "toggle" : "replace",
+    );
+    rowDragAnchorRef.current = selectionRef.current.anchor?.row ?? row;
+    draggingRef.current = true;
+  };
+
+  const handleRowPointerEnter = (event: PointerEvent, row: number) => {
+    if (rowDragAnchorRef.current === null || !draggingRef.current || (event.buttons & 1) === 0)
+      return;
+    selectRows(row, "extend");
+  };
+
   const handleCellPointerDown = (event: PointerEvent<HTMLButtonElement>, cell: DataGridCell) => {
     if (event.button !== 0) return;
+    rowDragAnchorRef.current = null;
     const mode = event.shiftKey ? "extend" : event.metaKey || event.ctrlKey ? "toggle" : "replace";
     const next = selectDataGridCell(selectionRef.current, cell, mode);
     selectionRef.current = next;
@@ -299,6 +372,10 @@ export function VirtualDataTable({
   };
 
   const handleCellPointerEnter = (event: PointerEvent<HTMLButtonElement>, cell: DataGridCell) => {
+    if (rowDragAnchorRef.current !== null) {
+      handleRowPointerEnter(event, cell.row);
+      return;
+    }
     const anchor = dragAnchorRef.current;
     if (!draggingRef.current || !anchor || (event.buttons & 1) === 0) return;
     const next = selectDataGridCell({ ...selectionRef.current, anchor }, cell, "extend");
@@ -392,9 +469,9 @@ export function VirtualDataTable({
     }
   };
 
-  if (!loading) {
-    loadMoreRequestedRef.current = false;
-  }
+  useEffect(() => {
+    if (!loading) loadMoreRequestedRef.current = false;
+  }, [loading, rows]);
 
   useLayoutEffect(() => {
     const element = scrollContainerRef.current;
@@ -541,6 +618,8 @@ export function VirtualDataTable({
 
   return (
     <div
+      ref={rootRef}
+      data-table-selection-owner={selectionOwner}
       className={cn(
         "group/table relative overflow-hidden bg-background",
         !frameless && "rounded border",
@@ -611,7 +690,7 @@ export function VirtualDataTable({
             aria-label={ariaLabel}
             aria-multiselectable="true"
             aria-rowcount={rows.length + 1}
-            className="min-w-full border-collapse text-xs"
+            className="min-w-full border-collapse font-mono text-xs"
             role="grid"
           >
             <thead className="sticky top-0 z-30 bg-muted/70 backdrop-blur">
@@ -659,14 +738,29 @@ export function VirtualDataTable({
                         key={rowIndex}
                         style={{ height: rowHeight }}
                       >
-                        <td
-                          className={cn(
-                            "sticky left-0 z-10 w-12 min-w-12 border-b border-r bg-muted/75 text-right font-mono text-[11px] text-muted-foreground backdrop-blur",
-                            dense ? "px-2 py-0.5" : "px-2 py-1",
-                          )}
+                        <th
+                          scope="row"
+                          className="sticky left-0 z-10 w-12 min-w-12 border-b border-r bg-muted text-right font-normal text-[11px] text-muted-foreground"
                         >
-                          {rowIndex + 1}
-                        </td>
+                          <button
+                            type="button"
+                            aria-label={`Select row ${rowIndex + 1}`}
+                            className={cn(
+                              "block w-full select-none text-right hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                              dense ? "px-2 py-0.5" : "px-2 py-1",
+                            )}
+                            onPointerDown={(event) => handleRowPointerDown(event, rowIndex)}
+                            onPointerEnter={(event) => handleRowPointerEnter(event, rowIndex)}
+                            onKeyDown={(event) => {
+                              if (event.key === " " || event.key === "Enter") {
+                                event.preventDefault();
+                                selectRows(rowIndex, event.shiftKey ? "extend" : "replace");
+                              } else handleCellKeyDown(event, { row: rowIndex, column: 0 });
+                            }}
+                          >
+                            {rowIndex + 1}
+                          </button>
+                        </th>
                         {fallbackColumns.map((column, columnIndex) => {
                           const cell = formatCell(row[resolvedColumnKeys[columnIndex]]);
                           const coordinate = { row: rowIndex, column: columnIndex };
@@ -754,6 +848,7 @@ export function VirtualDataTable({
       {selectionControls}
       {selectionOpen && selection.selected.size > 0 ? (
         <DataGridSelectionDialog
+          selectionOwner={selectionOwner}
           selection={selection}
           columns={fallbackColumns}
           columnKeys={resolvedColumnKeys}
@@ -778,12 +873,13 @@ export function VirtualDataTable({
           }}
         />
       ) : null}
-      {preview ? (
-        <div className="relative flex shrink-0 flex-wrap items-center justify-between gap-2 border-t px-3 py-1.5">
-          <span role="status" className="text-xs text-muted-foreground">
-            {previewStatus(preview)}
+      {preview || footerStart || footerEnd ? (
+        <div className="relative flex min-h-8 shrink-0 flex-wrap items-center gap-2 border-t bg-muted/20 px-2 py-1">
+          {footerStart}
+          <span role="status" className="mr-auto text-[11px] text-muted-foreground">
+            {preview ? previewStatus(preview) : footerStatus}
           </span>
-          {["replace", "snapshot"].includes(preview.continuation) && onLoadMore ? (
+          {preview && ["replace", "snapshot"].includes(preview.continuation) && onLoadMore ? (
             <Button
               type="button"
               variant="ghost"
@@ -796,9 +892,16 @@ export function VirtualDataTable({
               }
               onClick={triggerLoadMore}
             >
+              {loading ? (
+                <Loader2
+                  data-icon="inline-start"
+                  className="animate-spin motion-reduce:animate-none"
+                />
+              ) : null}
               {loading ? "Loading more rows…" : "Load more rows"}
             </Button>
           ) : null}
+          {footerEnd}
         </div>
       ) : null}
     </div>

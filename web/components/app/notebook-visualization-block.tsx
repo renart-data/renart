@@ -1,5 +1,10 @@
 "use client";
 
+import { useAtomValue } from "jotai";
+import { useResultPreview } from "@/hooks/use-result-preview";
+import { selectedEnvironmentAtom, workspaceConnectionSequenceAtom } from "@/lib/atoms/workspace";
+import { loadNotebookPreview } from "@/lib/api-notebooks";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { Monaco } from "@monaco-editor/react";
 import type * as MonacoNS from "monaco-editor";
 import {
@@ -448,7 +453,11 @@ export function NotebookVisualizationBlockCard({
             {sourceResult?.status === "ok" &&
             sourceResult.columns.length > 0 &&
             check?.can_apply ? (
-              <NotebookVisualizationRenderer definition={previewDefinition} result={sourceResult} />
+              <NotebookVisualizationPreview
+                notebookId={notebookId}
+                definition={previewDefinition}
+                result={sourceResult}
+              />
             ) : (
               <div className="flex min-h-48 items-center justify-center rounded-lg border border-dashed bg-muted/15 px-6 text-center text-xs text-muted-foreground">
                 {sourceResult?.status === "error"
@@ -461,6 +470,86 @@ export function NotebookVisualizationBlockCard({
       </section>
       {selected && inspectorTarget ? createPortal(inspector, inspectorTarget) : null}
     </>
+  );
+}
+
+function NotebookVisualizationPreview({
+  notebookId,
+  definition,
+  result: baseResult,
+}: {
+  notebookId: string;
+  definition: NotebookVisualizationDefinition;
+  result: NotebookCellRunResult;
+}) {
+  const environment = useAtomValue(selectedEnvironmentAtom) ?? "";
+  const workspaceSequence = useAtomValue(workspaceConnectionSequenceAtom);
+  const limit = Math.max(1, Math.min(1_000, definition.presentation_limit ?? 200));
+  const key = JSON.stringify([
+    workspaceSequence,
+    notebookId,
+    baseResult.cell_id,
+    baseResult.preview?.result_id,
+    environment,
+  ]);
+  const fetch = useCallback(
+    async (requestedLimit: number, signal: AbortSignal) => ({
+      ...baseResult,
+      ...(await loadNotebookPreview(
+        notebookId,
+        baseResult.cell_id,
+        {
+          result_id: baseResult.preview!.result_id,
+          environment,
+          limit: requestedLimit,
+        },
+        signal,
+      )),
+    }),
+    [baseResult, notebookId, environment],
+  );
+  const continuation = useResultPreview(key, baseResult, fetch);
+  const result = continuation.result ?? baseResult;
+  useEffect(() => {
+    if (
+      result.rows.length < Math.min(limit, result.total_rows) &&
+      continuation.canLoadMore &&
+      !continuation.loading &&
+      !continuation.error
+    ) {
+      void continuation.loadMore(limit);
+    }
+  }, [
+    limit,
+    result.rows.length,
+    result.total_rows,
+    continuation.canLoadMore,
+    continuation.loading,
+    continuation.error,
+    continuation.loadMore,
+  ]);
+  return (
+    <div aria-busy={continuation.loading}>
+      <NotebookVisualizationRenderer definition={definition} result={result} />
+      {continuation.loading ? (
+        <div role="status" className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3 animate-spin motion-reduce:animate-none" />
+          Loading saved rows…
+        </div>
+      ) : null}
+      {continuation.error ? (
+        <Alert className="mt-2">
+          <AlertDescription>
+            {continuation.error}
+            {continuation.canLoadMore ? (
+              <Button variant="ghost" size="xs" onClick={() => void continuation.loadMore(limit)}>
+                Retry
+              </Button>
+            ) : null}
+          </AlertDescription>
+        </Alert>
+      ) : null}
+    </div>
   );
 }
 
@@ -581,7 +670,9 @@ export function VisualizationBuilder({
               definition.type === "scatter"
                 ? columns
                     .filter((column) =>
-                      ["numeric", "temporal", "unknown"].includes(column.semantic_type),
+                      ["numeric", "temporal", "categorical", "boolean", "unknown"].includes(
+                        column.semantic_type,
+                      ),
                     )
                     .map((column) => ({ value: column.name, label: column.name }))
                 : allFields
@@ -667,6 +758,7 @@ export function VisualizationBuilder({
               patch({ presentation_limit: Math.max(1, Number(event.target.value) || 1) })
             }
           />
+          <FieldDescription>Previews are capped at 1,000 rows.</FieldDescription>
         </Field>
         <div className="space-y-2 pt-1">
           <CheckField

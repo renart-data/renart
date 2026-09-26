@@ -101,3 +101,26 @@ describe("build document state", () => {
     expect(restored.documents).toEqual([first, notebook]);
   });
 });
+
+describe("document tab ordering", () => {
+  it("moves a document without changing identity and restores that order", () => {
+    const initial = { ...createBuildDocumentSession("p"), documents: [first, notebook, adhoc] };
+    const moved = buildDocumentReducer(initial, {
+      type: "document-moved",
+      key: buildDocumentKey(first),
+      targetKey: buildDocumentKey(adhoc),
+    });
+    expect(moved.documents).toEqual([notebook, adhoc, first]);
+    expect(parseBuildDocumentSession(JSON.stringify(moved), "p").documents).toEqual(
+      moved.documents,
+    );
+    expect(
+      buildDocumentReducer(moved, {
+        type: "document-moved",
+        key: "missing",
+        targetKey: buildDocumentKey(first),
+      }),
+    ).toBe(moved);
+    expect(documentAfterClose(moved.documents, buildDocumentKey(adhoc))).toEqual(first);
+  });
+});

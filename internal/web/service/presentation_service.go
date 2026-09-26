@@ -7,11 +7,13 @@ import (
 	"github.com/bruin-data/bruin/pkg/pipeline"
 	"renart/internal/web/model"
 	"renart/internal/web/presentation"
+	"renart/internal/web/telemetry"
 )
 
 // PresentationDependencies collects the cross-domain adapters used by the
 // presentation document and query-runtime application services.
 type PresentationDependencies struct {
+	RecordUsage          func(telemetry.Observation)
 	WorkspaceRoot        string
 	ConfigPath           string
 	CurrentState         func() model.WorkspaceState
@@ -50,6 +52,7 @@ func NewPresentationService(deps PresentationDependencies) *PresentationService 
 		}
 	}
 	service.runtime = presentation.NewRuntimeService(presentation.RuntimeDependencies{
+		RecordUsage:         deps.RecordUsage,
 		Documents:           service.documents,
 		NewConnectionLookup: newConnectionLookup,
 		ResolveAssetDataset: service.resolvePresentationAssetDataset,

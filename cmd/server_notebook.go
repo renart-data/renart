@@ -18,6 +18,7 @@ import (
 func configureNotebookServices(ctx context.Context, server *webServer, cfg serverConfig, logger *zap.Logger) {
 	workspaceRoot := cfg.workspaceRoot
 	server.notebookSvc = service.NewNotebookService(service.NotebookDependencies{
+		RecordUsage:             server.usage.Record,
 		WorkspaceRoot:           workspaceRoot,
 		ConfigPath:              resolveConfigFilePath(workspaceRoot),
 		DisableFilesystemAccess: cfg.disableFilesystemAccess,

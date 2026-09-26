@@ -11,6 +11,7 @@ import (
 	"github.com/bruin-data/bruin/pkg/query"
 	"renart/internal/web/model"
 	"renart/internal/web/preview"
+	"renart/internal/web/telemetry"
 )
 
 // ErrUnknownSource signals that an external reference is not a known
@@ -37,6 +38,8 @@ type RenameTablesFunc func(sql, dialect string, mapping map[string]string) (stri
 
 // Runner executes notebook cells inside their session database.
 type Runner struct {
+	RecordUsage  func(telemetry.Observation)
+	UsageTrigger telemetry.Trigger
 	Store        *SessionStore
 	RenameTables RenameTablesFunc
 	// RenderSQL renders a cell's Jinja (date windows, variables, macros)
@@ -193,6 +196,32 @@ var materializeDirective = regexp.MustCompile(`(?m)(^\s*--\s*@materialize\(\s*ta
 // upstream failed or was blocked in this batch is reported as blocked, not
 // executed — the prototype's behavior.
 func (r *Runner) RunCells(ctx context.Context, nb *Notebook, cells []*Cell, opts RunOptions) ([]CellRunResult, error) {
+	started := time.Now()
+	results, err := r.runCells(ctx, nb, cells, opts)
+	if r.RecordUsage != nil && len(cells) > 0 {
+		outcome := telemetry.Success
+		if ctx.Err() != nil {
+			outcome = telemetry.Cancelled
+		} else if err != nil {
+			outcome = telemetry.Failed
+		} else {
+			for _, result := range results {
+				if result.Status != CellRunOK {
+					outcome = telemetry.Failed
+					break
+				}
+			}
+		}
+		trigger := r.UsageTrigger
+		if trigger == "" {
+			trigger = telemetry.Manual
+		}
+		r.RecordUsage(telemetry.Observation{Name: telemetry.NotebookFinished, Surface: telemetry.Notebook, Outcome: outcome, Trigger: trigger, Duration: time.Since(started), Items: len(cells)})
+	}
+	return results, err
+}
+
+func (r *Runner) runCells(ctx context.Context, nb *Notebook, cells []*Cell, opts RunOptions) ([]CellRunResult, error) {
 	batchStartedAt := time.Now()
 	sessionStartedAt := time.Now()
 	session, err := r.Store.Open(nb.UUID)

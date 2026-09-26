@@ -143,7 +143,7 @@ export function PresentationBuilder({
     });
   };
 
-  const [previewMode, setPreviewMode] = useState<PresentationPreviewMode>("desktop");
+  const [requestedPreviewMode, setPreviewMode] = useState<PresentationPreviewMode | null>(null);
   const [dataOpen, setDataOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -166,6 +166,7 @@ export function PresentationBuilder({
   const { navigation: workbenchNavigation, setMobileNavigationOpen } = useWorkbench();
   const workbenchEnabled = Boolean(workbenchNavigation?.workbench);
   const isMobile = useIsMobile();
+  const previewMode = requestedPreviewMode ?? (isMobile ? "mobile" : "desktop");
   const wideBuilder = useWideBuilder();
   useEffect(() => {
     if (!linked || !linkedSelectionAvailable) return;

@@ -4,6 +4,8 @@ import (
 	"os"
 	"reflect"
 	"testing"
+
+	bruintelemetry "github.com/bruin-data/bruin/pkg/telemetry"
 )
 
 func TestArgsWithDefaultCommand(t *testing.T) {
@@ -28,10 +30,15 @@ func TestArgsWithDefaultCommand(t *testing.T) {
 	}
 }
 
-func TestConfigureManagedInstallerEnvironmentDisablesProfileChanges(t *testing.T) {
+func TestConfigureManagedRuntimeEnvironment(t *testing.T) {
 	t.Setenv("UV_NO_MODIFY_PATH", "0")
 
-	configureManagedInstallerEnvironment()
+	previous := bruintelemetry.OptOut
+	t.Cleanup(func() { bruintelemetry.OptOut = previous })
+	configureManagedRuntimeEnvironment()
+	if !bruintelemetry.OptOut {
+		t.Fatal("embedded Bruin telemetry must stay disabled")
+	}
 
 	if got := os.Getenv("UV_NO_MODIFY_PATH"); got != "1" {
 		t.Fatalf("UV_NO_MODIFY_PATH = %q, want 1", got)

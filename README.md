@@ -5,6 +5,7 @@
   <a href="https://github.com/renart-data/renart/tags"><img alt="Latest version" src="https://img.shields.io/github/v/tag/renart-data/renart?label=version" /></a>
   <a href="https://github.com/renart-data/renart/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/renart-data/renart/actions/workflows/ci.yml/badge.svg" /></a>
   <a href="https://github.com/renart-data/renart/actions/workflows/e2e-live.yml"><img alt="Live end-to-end test status" src="https://github.com/renart-data/renart/actions/workflows/e2e-live.yml/badge.svg" /></a>
+  <a href="https://www.opensourcealternatives.to"><img alt="Listed on Open Source Alternatives" src="https://www.opensourcealternatives.to/badge-osa.svg" /></a>
 </p>
 
 **Bring a first-class developer experience to the entire data workflow.**

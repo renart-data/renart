@@ -31,6 +31,11 @@ import { authoredControlOptions } from "@/lib/authored-controls";
 import { markdownContentClassName } from "@/lib/markdown-content";
 import { cn } from "@/lib/utils";
 
+import {
+  normalizedDashboardLayout,
+  derivedDashboardSpan,
+} from "./presentation-builder/presentation-builder-model";
+
 import { PresentationLibrarySidebar } from "./presentation-library-sidebar";
 import type { PresentationKind } from "./presentation-page";
 import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
@@ -381,39 +386,38 @@ function DashboardViewer({
   const visualizations = new Map(
     (artifact.visualizations ?? []).map((visualization) => [visualization.id, visualization]),
   );
-  const layout = [...(artifact.layout ?? [])].sort(
-    (left, right) =>
-      (left.y ?? 0) - (right.y ?? 0) ||
-      (left.x ?? 0) - (right.x ?? 0) ||
-      left.visualization.localeCompare(right.visualization),
+  const layout = [...normalizedDashboardLayout(artifact)].sort(
+    (a, b) => a.y - b.y || a.x - b.x || a.i.localeCompare(b.i),
   );
-  const placed = new Set(layout.map((item) => item.visualization));
-  for (const visualization of artifact.visualizations ?? []) {
-    if (!placed.has(visualization.id))
-      layout.push({ visualization: visualization.id, width: 6, height: 4 });
-  }
   if (layout.length === 0) return <EmptyPresentation />;
   return (
-    <div className="grid grid-cols-12 gap-4">
-      {layout.map((item) => {
-        const visualization = visualizations.get(item.visualization);
-        if (!visualization) return null;
-        const span = Math.max(1, Math.min(12, item.width || 6));
-        return (
-          <div
-            key={visualization.id}
-            style={{ "--presentation-span": span } as CSSProperties}
-            className="col-span-12 min-w-0 md:[grid-column:span_var(--presentation-span)]"
-          >
-            <PresentationVisualizationCard
-              visualization={visualization}
-              result={results[visualization.id]}
-              loading={loadingIDs.has(visualization.id)}
-              minHeight={Math.max(16, (item.height || 4) * 4)}
-            />
-          </div>
-        );
-      })}
+    <div className="@container">
+      <div className="grid grid-cols-1 gap-3 @xl:grid-cols-2 @4xl:grid-cols-12 @4xl:auto-rows-[72px]">
+        {layout.map((item) => {
+          const visualization = visualizations.get(item.i);
+          if (!visualization) return null;
+          return (
+            <div
+              key={visualization.id}
+              style={
+                {
+                  "--presentation-column": `${item.x + 1} / span ${item.w}`,
+                  "--presentation-row": `${item.y + 1} / span ${item.h}`,
+                  "--presentation-tablet-span": derivedDashboardSpan(item.w, "tablet"),
+                } as CSSProperties
+              }
+              className="min-h-0 min-w-0 @xl:[grid-column:span_var(--presentation-tablet-span)] @4xl:[grid-column:var(--presentation-column)] @4xl:[grid-row:var(--presentation-row)]"
+            >
+              <PresentationVisualizationCard
+                visualization={visualization}
+                result={results[visualization.id]}
+                loading={loadingIDs.has(visualization.id)}
+                minHeight={0}
+              />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -482,11 +486,11 @@ export function PresentationVisualizationCard({
   const definition = normalizeVisualizationDefinition(visualization.definition);
   return (
     <div
-      className="relative h-full min-w-0 overflow-hidden rounded-xl border bg-card p-3 shadow-xs"
+      className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card p-3 shadow-xs"
       style={{ minHeight: `${minHeight}rem` }}
       data-testid={`presentation-visualization-${visualization.id}`}
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
         {header ?? (
           <span className="truncate text-sm font-medium">
             {definition.title || visualization.id}
@@ -494,19 +498,24 @@ export function PresentationVisualizationCard({
         )}
         {result?.truncated ? <Badge variant="outline">First 1,000 rows</Badge> : null}
       </div>
-      {result?.status === "error" ? (
-        <Alert variant="destructive">
-          <AlertTriangle />
-          <AlertTitle>Dataset failed</AlertTitle>
-          <AlertDescription>{result.error}</AlertDescription>
-        </Alert>
-      ) : result ? (
-        <NotebookVisualizationRenderer definition={definition} result={toNotebookResult(result)} />
-      ) : (
-        <div className="flex min-h-40 items-center justify-center text-xs text-muted-foreground">
-          Waiting for data…
-        </div>
-      )}
+      <div className="min-h-0 flex-1 overflow-auto">
+        {result?.status === "error" ? (
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>Dataset failed</AlertTitle>
+            <AlertDescription>{result.error}</AlertDescription>
+          </Alert>
+        ) : result ? (
+          <NotebookVisualizationRenderer
+            definition={definition}
+            result={toNotebookResult(result)}
+          />
+        ) : (
+          <div className="flex min-h-40 items-center justify-center text-xs text-muted-foreground">
+            Waiting for data…
+          </div>
+        )}
+      </div>
       {loading ? (
         <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[1px]">
           <Loader2 className="size-5 animate-spin text-primary" />

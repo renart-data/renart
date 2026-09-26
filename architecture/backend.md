@@ -21,6 +21,7 @@ main.go → cmd.Root() → urfave/cli commands (cmd/)
   init        scaffold a project from the welcome templates      (Project)
   secrets     status/set/remove connection credentials; run one
               child command with a scoped secret environment      (Project)
+  telemetry   inspect/change per-user usage analytics policy       (App)
   debug       hidden group: fp (fingerprint DAG), sql-lsp
               (stdio LSP), warm-cache (wasm compile caches)
 
@@ -44,6 +45,7 @@ cmd/web.go     route registration + a thin webServer adapter
   │                                             contracts (time windows first)
   ├── internal/web/secretstore                → typed secret references,
   │                                             providers, leases, bindings
+  ├── internal/web/telemetry                  → bounded, unlinked usage counts
   ├── internal/web/notebook                   → see notebooks.md
   ├── internal/web/notebookdoc                → authored notebook lifecycle,
   │                                             locks, CAS, and recovery
@@ -174,6 +176,21 @@ replacement. The service facade keeps `EncodeID`, `DecodeID`, and `SafeJoin`
 delegates for compatibility. Multi-file transactions remain owned by
 `notebookdoc`; the shared helper does not pretend one-file atomicity is a
 transaction.
+
+## Product usage analytics
+
+`internal/web/telemetry` records typed completion outcomes through a bounded,
+best-effort background sender. Released builds use the configured HTTPS receiver
+after the first-run notice; environment opt-outs, CI/development safeguards and
+per-user settings take priority. Events carry no persistent installation ID,
+workspace identifiers, code, data, credentials or raw errors. Failed sends are
+dropped without retrying or spooling to disk. The queue is capped at 128 events;
+requests and shutdown flushing have a two-second deadline. This is independent
+of pipeline, notebook and presentation success. Recording drops counts when
+settings are busy; malformed settings and non-regular settings files disable
+collection. The published payload and
+controls are in `docs/src/content/docs/docs/reference/security-and-privacy.mdx`.
+Private measurement and collector-operation notes remain outside version control.
 
 ## 2. Runtime model
 

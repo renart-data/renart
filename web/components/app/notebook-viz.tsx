@@ -20,8 +20,6 @@ import {
 
 import {
   ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
@@ -39,6 +37,8 @@ import {
   NOTEBOOK_CHART_SERIES_CAP,
   pivotChartSeries,
 } from "@/lib/notebook-viz-data";
+
+import { chartAxisKind, chartAxisValue, formatChartTick, formatChartValue } from "@/lib/chart-axis";
 
 const CHART_ROW_CAP = 200;
 function asArray(value: unknown): string[] {
@@ -185,6 +185,30 @@ export function NotebookVisualizationRenderer({
   const yKeys = authoredYKeys.map((field) => resolvedFieldName(field, result.columns));
   const seriesKey = authoredSeriesKey ? resolvedFieldName(authoredSeriesKey, result.columns) : "";
 
+  const xKind = chartAxisKind(
+    result.column_types?.[result.columns.indexOf(xKey)],
+    rows.map((row) => row[xKey]),
+  );
+  const yKind = chartAxisKind(
+    result.column_types?.[result.columns.indexOf(yKeys[0])],
+    rows.map((row) => row[yKeys[0]]),
+  );
+  const xAxisProps = {
+    dataKey: xKey,
+    tickLine: false,
+    axisLine: false,
+    tickMargin: 8,
+    minTickGap: 24,
+    interval: "preserveStartEnd" as const,
+    tickFormatter: (value: unknown) => formatChartTick(value, xKind),
+  };
+  const yAxisProps = {
+    tickLine: false,
+    axisLine: false,
+    tickMargin: 8,
+    width: 72,
+    tickFormatter: (value: unknown) => formatChartTick(value, yKind),
+  };
   const capped = rows;
   let chartData = capped;
   let renderedSeries = yKeys.slice(0, NOTEBOOK_CHART_SERIES_CAP);
@@ -214,10 +238,9 @@ export function NotebookVisualizationRenderer({
         {definition.type === "bar" ? (
           <BarChart data={chartData} accessibilityLayer>
             <CartesianGrid vertical={false} />
-            <XAxis dataKey={xKey} tickLine={false} axisLine={false} tickMargin={8} />
-            <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+            <XAxis {...xAxisProps} />
+            <YAxis {...yAxisProps} />
             <ChartTooltip content={(props) => <ChartTooltipContent {...props} />} />
-            {showLegend ? <ChartLegend content={<ChartLegendContent />} /> : null}
             {renderedSeries.map((key, index) => (
               <Bar
                 key={key}
@@ -231,10 +254,9 @@ export function NotebookVisualizationRenderer({
         ) : definition.type === "area" ? (
           <AreaChart data={chartData} accessibilityLayer>
             <CartesianGrid vertical={false} />
-            <XAxis dataKey={xKey} tickLine={false} axisLine={false} tickMargin={8} />
-            <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+            <XAxis {...xAxisProps} />
+            <YAxis {...yAxisProps} />
             <ChartTooltip content={(props) => <ChartTooltipContent {...props} />} />
-            {showLegend ? <ChartLegend content={<ChartLegendContent />} /> : null}
             {renderedSeries.map((key, index) => (
               <Area
                 key={key}
@@ -265,18 +287,40 @@ export function NotebookVisualizationRenderer({
         ) : definition.type === "scatter" ? (
           <ScatterChart accessibilityLayer>
             <CartesianGrid />
-            <XAxis dataKey={xKey} name={definition.encoding?.x?.label || xKey} />
-            <YAxis dataKey={yKeys[0]} name={yFields[0]?.label || yKeys[0]} />
-            <ChartTooltip cursor={{ strokeDasharray: "3 3" }} />
-            <Scatter data={capped} fill={seriesColors[0]} />
+            <XAxis
+              {...xAxisProps}
+              type={xKind === "categorical" ? "category" : "number"}
+              allowDuplicatedCategory={false}
+              name={definition.encoding?.x?.label || xKey}
+            />
+            <YAxis
+              {...yAxisProps}
+              type="number"
+              dataKey={yKeys[0]}
+              name={yFields[0]?.label || yKeys[0]}
+            />
+            <ChartTooltip
+              cursor={{ strokeDasharray: "3 3" }}
+              formatter={(value, name, item) => [
+                formatChartValue(value, item.dataKey === xKey ? xKind : yKind),
+                name,
+              ]}
+            />
+            <Scatter
+              data={capped.map((row) => ({
+                ...row,
+                [xKey]: chartAxisValue(row[xKey], xKind),
+                [yKeys[0]]: chartAxisValue(row[yKeys[0]], yKind),
+              }))}
+              fill={seriesColors[0]}
+            />
           </ScatterChart>
         ) : (
           <LineChart data={chartData} accessibilityLayer>
             <CartesianGrid vertical={false} />
-            <XAxis dataKey={xKey} tickLine={false} axisLine={false} tickMargin={8} />
-            <YAxis tickLine={false} axisLine={false} tickMargin={8} />
+            <XAxis {...xAxisProps} />
+            <YAxis {...yAxisProps} />
             <ChartTooltip content={(props) => <ChartTooltipContent {...props} />} />
-            {showLegend ? <ChartLegend content={<ChartLegendContent />} /> : null}
             {renderedSeries.map((key, index) => (
               <Line
                 key={key}
@@ -290,6 +334,41 @@ export function NotebookVisualizationRenderer({
           </LineChart>
         )}
       </ChartContainer>
+      {!["pie", "donut"].includes(definition.type) ? (
+        <div className="mt-1 flex min-w-0 items-center justify-between gap-4 text-[11px] text-muted-foreground">
+          <span
+            className="truncate"
+            title={yFields.map((field) => field.label || field.field).join(", ")}
+          >
+            {yFields.map((field) => field.label || field.field).join(", ")}
+          </span>
+          <span className="truncate text-right" title={definition.encoding?.x?.label || xKey}>
+            {definition.encoding?.x?.label || xKey}
+            {xKind === "temporal" ? " · UTC" : ""}
+          </span>
+        </div>
+      ) : null}
+      {showLegend && !["pie", "donut", "scatter"].includes(definition.type) ? (
+        <ul
+          aria-label="Chart legend"
+          tabIndex={0}
+          className="mt-3 flex max-h-20 min-w-0 flex-wrap items-start justify-center gap-x-4 gap-y-2 overflow-y-auto px-1 text-xs"
+        >
+          {renderedSeries.map((key, index) => (
+            <li
+              key={key}
+              className="flex min-w-0 max-w-48 items-center gap-1.5"
+              title={String(config[key].label)}
+            >
+              <span
+                className="size-2 shrink-0 rounded-sm"
+                style={{ backgroundColor: seriesColors[index % seriesColors.length] }}
+              />
+              <span className="truncate">{config[key].label}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {rowsTruncated || seriesTruncated ? (
         <figcaption className="mt-1 text-[11px] text-muted-foreground" role="status">
           {rowsTruncated ? `Previewing ${rows.length} of ${result.total_rows} rows.` : null}

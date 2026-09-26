@@ -22,6 +22,7 @@ with your installed version.
 | `renart type-check` | Validate a pipeline's saved assets and custom SQL checks. |
 | `renart deploy` | Snapshot a pipeline for scheduled execution. |
 | `renart init` | Scaffold a project. |
+| `renart telemetry` | Inspect or change application usage analytics for your operating-system user. |
 | `renart secrets` | Manage write-only connection credentials and scoped child-process access. |
 
 Pipeline commands walk up from the current directory to find the project. Use
@@ -353,6 +354,24 @@ with commands you trust.
 
 For the end-to-end UI workflow and source-selection guidance, see
 [Manage connection credentials](/docs/connections-environments/managing-credentials/).
+
+## `renart telemetry`
+
+These commands apply across projects, store preferences outside your repository,
+and print JSON. They do not require an open workspace.
+
+| Command | Purpose |
+| --- | --- |
+| `renart telemetry status` | Show the saved preference and effective collection status, including environment overrides. |
+| `renart telemetry disable` | Disable collection and discard the local installation ID, if any. |
+| `renart telemetry enable` | Allow collection and acknowledge its explanation; environment opt-outs still take priority. |
+| `renart telemetry sample` | Print a synthetic payload without creating an identifier or sending an event. |
+| `renart telemetry reset` | Discard a local installation ID, if any; does not delete previously received data. |
+
+The current default uses no persistent installation ID and has no configured
+receiver. Enabling the preference alone does not activate collection. See
+[Security and privacy](/docs/reference/security-and-privacy/#application-usage-analytics)
+for the payload and opt-out behavior.
 
 ## Related
 

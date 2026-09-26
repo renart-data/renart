@@ -380,6 +380,16 @@ only rows inside the presentation budget and caps rendered series at twenty,
 with a visible status message when rows or series are omitted. The same budget
 and semantics apply in notebooks, dashboards, reports, and audience viewers.
 
+Notebook visualization blocks fetch a larger immutable saved prefix when their
+configured presentation limit exceeds the cell's initial 100-row response.
+The default chart budget is 200, capped at 1,000 rows and the retained response
+byte budget. This uses the notebook preview endpoint, not another execution;
+expired samples leave existing rows visible and explain why expansion failed.
+Numeric/temporal Y values can be plotted against categorical or boolean scatter
+X values. Axis ticks use short categorical labels, compact numbers and UTC date
+labels while tooltips retain full values. Multi-series legends live outside the
+plot in a bounded, scrollable list with full labels available on hover.
+
 Notebook Markdown is visual-first: a shared Tiptap editor parses the authored
 Markdown, serializes edits back to Markdown, and keeps an explicit source mode
 for exact repair. SQL, source, and control blocks keep a transparent document
