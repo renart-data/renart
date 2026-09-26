@@ -108,7 +108,7 @@ jobs:
           version: 10.33.0
 
       - name: Cache pnpm store
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/pnpm/store
           key: ${{ runner.os }}-pnpm-${{ hashFiles('web/pnpm-lock.yaml') }}
@@ -116,7 +116,7 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Cache pinned Zig release toolchain
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/renart/zig
           key: ${{ runner.os }}-zig-0.15.2-${{ hashFiles('scripts/install_release_zig.sh') }}
@@ -125,7 +125,7 @@ jobs:
         run: ./scripts/install_release_zig.sh
 
       - name: Cache pinned Syft release tool
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/renart/syft
           key: ${{ runner.os }}-syft-1.44.0-${{ hashFiles('scripts/install_release_syft.sh') }}
@@ -251,7 +251,7 @@ jobs:
           version: 10.33.0
 
       - name: Cache pnpm store
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/pnpm/store
           key: ${{ runner.os }}-pnpm-${{ hashFiles('web/pnpm-lock.yaml') }}
@@ -259,7 +259,7 @@ jobs:
             ${{ runner.os }}-pnpm-
 
       - name: Cache pinned Zig release toolchain
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/renart/zig
           key: ${{ runner.os }}-zig-0.15.2-${{ hashFiles('scripts/install_release_zig.sh') }}
@@ -268,7 +268,7 @@ jobs:
         run: ./scripts/install_release_zig.sh
 
       - name: Cache pinned Syft release tool
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/renart/syft
           key: ${{ runner.os }}-syft-1.44.0-${{ hashFiles('scripts/install_release_syft.sh') }}
