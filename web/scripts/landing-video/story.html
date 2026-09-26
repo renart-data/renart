@@ -17,74 +17,128 @@
 <title>Renart — story</title>
 <style>
 @font-face { font-family: "Geist"; src: url("fonts/geist.woff2") format("woff2"); font-weight: 100 900; }
-@font-face { font-family: "Geist Mono"; src: url("fonts/geist-mono.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Inconsolata"; src: url("../../src/assets/fonts/inconsolata-latin-wdth-normal.woff2") format("woff2"); font-weight: 400 700; font-stretch: 50% 200%; }
 @font-face { font-family: "Instrument Serif"; src: url("fonts/instrument-serif.woff2") format("woff2"); }
 
+/* Palette mirrors the Renart web UI (web/src/globals.css + lib/monaco-theme.ts):
+   shadcn neutral surfaces, emerald primary, Tailwind status badges, Monaco
+   vs/vs-dark syntax colors with Renart's semantic SQL token colors. */
 :root {
-  --bg: #111b16;
-  --window: #161f1b;
-  --panel: #1b2520;
-  --panel-2: #212d27;
-  --raise: #26332c;
-  --line: #33443a;
-  --line-soft: #28362f;
-  --text: #edf1e9;
-  --muted: #a3b2a8;
-  --faint: #6f8076;
-  --accent: #a2c9af;
-  --accent-strong: #5fcf97;
-  --accent-ink: #132219;
-  --amber: #e9b35f;
-  --danger: #f07a6a;
-  --danger-bg: rgba(240, 122, 106, 0.14);
-  --fresh-bg: rgba(95, 207, 151, 0.14);
-  --grid-dot: rgba(237, 241, 233, 0.07);
-  --shadow: 0 30px 80px rgba(0, 0, 0, 0.45), 0 2px 0 rgba(255, 255, 255, 0.03) inset;
-  --pop-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
-  --code-bg: #141c18;
-  --k: #7fc8a9;      /* keyword */
-  --fn: #9cc3f0;     /* function */
-  --tbl: #f2d49b;    /* table reference: the graph's edges */
-  --str: #e6a57e;
-  --jinja: #c9a8f2;
-  --jinja-bg: rgba(201, 168, 242, 0.13);
-  --pg: #7fa7d9;
-  --duck: #f0d66c;
-  --bq: #86b0f5;
-  --file: #b7c4bb;
+  --bg: #050505;
+  --window: oklch(0.145 0 0);            /* background */
+  --canvas: #1a1a1a;
+  --panel: oklch(0.205 0 0);             /* card */
+  --panel-2: oklch(0.269 0 0);           /* muted */
+  --raise: oklch(0.205 0 0);             /* popover */
+  --line: oklch(1 0 0 / 10%);            /* border */
+  --line-soft: oklch(1 0 0 / 6%);
+  --text: oklch(0.985 0 0);
+  --muted: oklch(0.708 0 0);
+  --faint: oklch(0.556 0 0);
+  --accent: oklch(0.7 0.15 162);         /* primary */
+  --accent-ink: oklch(0.26 0.05 173);    /* primary-foreground */
+  --accent-strong: oklch(0.696 0.17 162.48);   /* emerald-500 */
+  --fresh-text: oklch(0.845 0.143 164.978);    /* emerald-300 */
+  --fresh-bg: oklch(0.696 0.17 162.48 / 15%);
+  --amber: oklch(0.76 0.14 70);          /* warning */
+  --warn-text: oklch(0.879 0.169 91.605);      /* amber-300 */
+  --warn-bg: oklch(0.769 0.188 70.08 / 15%);
+  --warn-dot: oklch(0.769 0.188 70.08);        /* amber-500 */
+  --new-bg: oklch(0.552 0.016 285.938 / 15%);  /* zinc-500/15 */
+  --new-text: oklch(0.871 0.006 286.286);      /* zinc-300 */
+  --danger: oklch(0.704 0.191 22.216);   /* destructive */
+  --danger-bg: oklch(0.704 0.191 22.216 / 14%);
+  --grid-dot: oklch(1 0 0 / 9%);
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  --pop-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --type: oklch(0.708 0 0);
+  /* Monaco (bruin-vs-dark) */
+  --code-bg: oklch(0.205 0 0);
+  --code-text: #d4d4d4;
+  --lnum: #858585;
+  --lnum-cur: #c6c6c6;
+  --k: #569cd6;
+  --str: #ff0000;
+  --op: #778899;
+  --delim: #dcdcdc;
+  --br: #ffd700;
+  --fn: #ff00ff;
+  --sc: #d6b36d;
+  --tbl: #74cfc5;
+  --col: #93c5fd;
+  --al: #c4b5fd;
+  --jinja: #c4b5fd;
+  --jinja-bg: transparent;
+  --squiggle: #f14c4c;
+  --mw-bg: #252526;
+  --mw-border: #454545;
+  --mw-text: #cccccc;
+  --mw-sel: #04395e;
+  --mw-sel-text: #ffffff;
+  --mw-icon: #75beff;
+  /* connection-type icon colors */
+  --pg: oklch(0.73 0.13 246);
+  --duck: oklch(0.78 0.14 90);
+  --bq: oklch(0.72 0.13 252);
+  --file: oklch(0.77 0.14 60);
 }
 :root[data-theme="light"] {
-  --bg: #eef1ea;
-  --window: #fbfbf7;
-  --panel: #f4f5ef;
-  --panel-2: #ecefe7;
-  --raise: #ffffff;
-  --line: #d3dace;
-  --line-soft: #e2e7de;
-  --text: #1d302a;
-  --muted: #56655d;
-  --faint: #8b988f;
-  --accent: #30634f;
-  --accent-strong: #248a5c;
-  --accent-ink: #ffffff;
-  --amber: #b7791f;
-  --danger: #c8432f;
-  --danger-bg: rgba(200, 67, 47, 0.1);
-  --fresh-bg: rgba(36, 138, 92, 0.11);
-  --grid-dot: rgba(29, 48, 42, 0.1);
-  --shadow: 0 30px 80px rgba(29, 48, 42, 0.16), 0 0 0 1px rgba(29, 48, 42, 0.04);
-  --pop-shadow: 0 18px 50px rgba(29, 48, 42, 0.2);
-  --code-bg: #fdfdfa;
-  --k: #1f7a55;
-  --fn: #2a62a8;
-  --tbl: #9a5b00;
-  --str: #b24d1f;
-  --jinja: #7a3fc4;
-  --jinja-bg: rgba(122, 63, 196, 0.09);
-  --pg: #336aa8;
-  --duck: #a88400;
-  --bq: #2f6fd6;
-  --file: #56655d;
+  --bg: #e9ecee;
+  --window: oklch(0.987 0.002 197.1);    /* sidebar */
+  --canvas: oklch(0.985 0.002 197.1);
+  --panel: oklch(1 0 0);
+  --panel-2: oklch(0.963 0.002 197.1);
+  --raise: oklch(1 0 0);
+  --line: oklch(0.925 0.005 214.3);
+  --line-soft: oklch(0.95 0.004 214.3);
+  --text: oklch(0.148 0.004 228.8);
+  --muted: oklch(0.56 0.021 213.5);
+  --faint: oklch(0.68 0.016 213.5);
+  --accent: oklch(0.527 0.154 150.069);
+  --accent-ink: oklch(0.982 0.018 155.826);
+  --accent-strong: oklch(0.596 0.145 163.225); /* emerald-600 */
+  --fresh-text: oklch(0.508 0.118 165.612);    /* emerald-700 */
+  --fresh-bg: oklch(0.95 0.052 163.051);       /* emerald-100 */
+  --amber: oklch(0.67 0.16 58);
+  --warn-text: oklch(0.555 0.163 48.998);      /* amber-700 */
+  --warn-bg: oklch(0.962 0.059 95.617);        /* amber-100 */
+  --warn-dot: oklch(0.769 0.188 70.08);
+  --new-bg: oklch(0.92 0.004 286.32);          /* zinc-200 */
+  --new-text: oklch(0.37 0.013 285.805);       /* zinc-700 */
+  --danger: oklch(0.577 0.245 27.325);
+  --danger-bg: oklch(0.577 0.245 27.325 / 9%);
+  --grid-dot: oklch(0.148 0.004 228.8 / 13%);
+  --shadow: 0 30px 80px rgba(15, 23, 30, 0.16), 0 0 0 1px rgba(15, 23, 30, 0.04);
+  --pop-shadow: 0 18px 50px rgba(15, 23, 30, 0.16);
+  --type: oklch(0.56 0.021 213.5);
+  /* Monaco (bruin-vs) */
+  --code-bg: #fffffe;
+  --code-text: #000000;
+  --lnum: #237893;
+  --lnum-cur: #0b216f;
+  --k: #0000ff;
+  --str: #ff0000;
+  --op: #778899;
+  --delim: #000000;
+  --br: #0431fa;
+  --fn: #c700c7;
+  --sc: #7c5a2a;
+  --tbl: #0f766e;
+  --col: #1d4ed8;
+  --al: #7c3aed;
+  --jinja: #8b5cf6;
+  --jinja-bg: transparent;
+  --squiggle: #e51400;
+  --mw-bg: #f3f3f3;
+  --mw-border: #c8c8c8;
+  --mw-text: #000000;
+  --mw-sel: #0060c0;
+  --mw-sel-text: #ffffff;
+  --mw-icon: #007acc;
+  --pg: oklch(0.55 0.16 252);
+  --duck: oklch(0.68 0.15 92);
+  --bq: oklch(0.58 0.17 257);
+  --file: oklch(0.64 0.16 55);
 }
 
 * { box-sizing: border-box; }
@@ -96,7 +150,7 @@ body { overflow: hidden; }
   font: 400 21px/1.35 "Geist", system-ui, sans-serif; letter-spacing: -0.005em;
   -webkit-font-smoothing: antialiased;
 }
-.mono { font-family: "Geist Mono", ui-monospace, monospace; }
+.mono { font-family: "Inconsolata", ui-monospace, monospace; }
 svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- viewport / camera ---------- */
@@ -126,7 +180,7 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 #body { position: absolute; left: 0; top: 60px; right: 0; bottom: 0; overflow: hidden; }
 
 /* ---------- canvas ---------- */
-#canvas { position: absolute; inset: 0; overflow: hidden; background-color: var(--window);
+#canvas { position: absolute; inset: 0; overflow: hidden; background-color: var(--canvas);
   background-image: radial-gradient(var(--grid-dot) 1.6px, transparent 1.7px); background-size: 28px 28px; }
 #world { position: absolute; left: 0; top: 0; width: 10px; height: 10px; transform-origin: 0 0; }
 #edges { position: absolute; left: 0; top: 0; overflow: visible; }
@@ -142,14 +196,14 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 .node .hd .ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--raise); color: var(--muted); font-size: 18px; }
 .node .hd .dots { margin-left: auto; color: var(--faint); letter-spacing: 1px; }
 .node .ft { display: flex; align-items: center; gap: 8px; padding: 0 16px 13px; font-size: 15px; color: var(--muted); }
-.badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--raise); font-size: 15px; color: var(--muted); white-space: nowrap; }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--new-bg); font-size: 15px; color: var(--new-text); white-space: nowrap; }
 .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
-.badge.fresh { background: var(--fresh-bg); color: var(--accent-strong); }
+.badge.fresh { background: var(--fresh-bg); color: var(--fresh-text); }
 .badge.fresh .dot { background: var(--accent-strong); }
 .badge.err { background: var(--danger-bg); color: var(--danger); }
 .badge.err .dot { background: var(--danger); }
 .badge.run { color: var(--text); }
-.node.sel { border-color: var(--accent-strong); box-shadow: 0 0 0 4px rgba(95,207,151,0.16), 0 8px 24px rgba(0,0,0,0.18); }
+.node.sel { border-color: var(--accent-strong); box-shadow: 0 0 0 4px var(--fresh-bg), 0 8px 24px rgba(0,0,0,0.18); }
 .node.bad { border-color: var(--danger); box-shadow: 0 0 0 4px var(--danger-bg), 0 8px 24px rgba(0,0,0,0.18); }
 .node .bar { position: absolute; left: 14px; right: 14px; bottom: 6px; height: 3px; border-radius: 2px; background: var(--line-soft); overflow: hidden; }
 .node .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-strong); }
@@ -176,9 +230,9 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 .row .chev { color: var(--faint); font-size: 15px; width: 15px; transition: none; }
 .row .meta { margin-left: auto; color: var(--faint); font-size: 14.5px; }
 .row.hl { background: var(--panel-2); }
-.row.sel { background: var(--fresh-bg); color: var(--accent-strong); }
-.row.sel .meta { color: var(--accent-strong); }
-.eng { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #10150f; }
+.row.sel { background: var(--fresh-bg); color: var(--fresh-text); }
+.row.sel .meta { color: var(--fresh-text); }
+.eng { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: oklch(0.145 0 0); }
 .kids { overflow: hidden; }
 .kids .row { padding-left: 34px; }
 .kids .kids .row { padding-left: 58px; }
@@ -199,53 +253,61 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 #editor .tab { display: flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 9px; background: var(--code-bg); border: 1px solid var(--line-soft); font-size: 17px; }
 #editor .tab small { color: var(--faint); }
 #tc { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 9px; font-size: 16px; }
-#tc.ok { background: var(--fresh-bg); color: var(--accent-strong); }
+#tc.ok { background: var(--fresh-bg); color: var(--fresh-text); }
 #tc.bad { background: var(--danger-bg); color: var(--danger); }
 #tc.wait { background: var(--raise); color: var(--muted); }
-#code { position: absolute; left: 0; right: 0; top: 56px; bottom: 112px; padding-top: 18px; font: 400 24px/42px "Geist Mono", ui-monospace, monospace; }
+#code { position: absolute; left: 0; right: 0; top: 56px; bottom: 112px; padding-top: 18px; font: 400 28px/42px "Inconsolata", ui-monospace, monospace; color: var(--code-text); }
 .ln { position: relative; height: 42px; white-space: pre; padding-left: 84px; }
-.ln .n { position: absolute; left: 0; width: 56px; text-align: right; color: var(--faint); }
-.ln.cur { background: rgba(127, 200, 169, 0.05); }
+.ln .n { position: absolute; left: 0; width: 56px; text-align: right; color: var(--lnum); }
+.ln.cur .n { color: var(--lnum-cur); }
+.ln.cur { box-shadow: inset 0 0 0 2px var(--line-soft); }
 .t-k { color: var(--k); }
 .t-fn { color: var(--fn); }
+.t-sc { color: var(--sc); }
 .t-tbl { color: var(--tbl); }
+.t-col { color: var(--col); }
+.t-al { color: var(--al); }
+.t-op { color: var(--op); }
+.t-br { color: var(--br); }
 .t-s { color: var(--str); }
-.t-j { color: var(--jinja); background: var(--jinja-bg); border-radius: 5px; }
-.t-p { color: var(--muted); }
-.sq { text-decoration: underline wavy var(--danger); text-decoration-thickness: 2px; text-underline-offset: 7px; text-decoration-skip-ink: none; }
-#caret { position: absolute; width: 2.5px; height: 32px; background: var(--accent-strong); }
-#flash { position: absolute; height: 42px; background: rgba(95, 207, 151, 0.14); border-radius: 5px; }
+.t-j { color: var(--jinja); font-weight: 500; }
+.t-p { color: var(--delim); }
+.glow { text-shadow: 0 0 14px currentColor, 0 0 3px currentColor; }
+.sq { text-decoration: underline wavy var(--squiggle); text-decoration-thickness: 2px; text-underline-offset: 7px; text-decoration-skip-ink: none; }
+#caret { position: absolute; width: 2.5px; height: 34px; background: var(--code-text); }
+#flash { position: absolute; height: 42px; background: var(--fresh-bg); border-radius: 4px; }
 
-.pop { position: absolute; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); font-size: 19px; overflow: hidden; }
+.pop { position: absolute; border-radius: 6px; background: var(--mw-bg); color: var(--mw-text); border: 1px solid var(--mw-border); box-shadow: var(--pop-shadow); font-size: 19px; overflow: hidden; }
 #complete { width: 700px; display: flex; }
-#complete .list { width: 390px; padding: 6px; border-right: 1px solid var(--line-soft); }
-#complete .it { display: flex; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 8px; font-family: "Geist Mono", monospace; font-size: 19px; }
+#complete .list { width: 390px; padding: 4px; border-right: 1px solid var(--mw-border); }
+#complete .it { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-radius: 3px; font-family: "Inconsolata", monospace; font-size: 22px; }
 #complete .it .ty { margin-left: auto; font-size: 15px; color: var(--faint); }
-#complete .it.hl { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent-strong); }
-#complete .it .cube { color: var(--fn); }
+#complete .it.hl { background: var(--mw-sel); color: var(--mw-sel-text); }
+#complete .it.hl .ty { color: var(--mw-sel-text); opacity: 0.8; }
+#complete .it .cube { color: var(--mw-icon); }
 #complete .it .cube.j { color: var(--jinja); }
-#complete .doc { flex: 1; padding: 14px 16px; font-size: 16px; color: var(--muted); }
-#complete .doc b { display: block; color: var(--text); font-family: "Geist Mono", monospace; font-size: 18px; font-weight: 500; margin-bottom: 6px; }
-#complete .doc .tyl { display: inline-block; margin: 2px 0 10px; padding: 2px 8px; border-radius: 6px; background: var(--panel-2); font-family: "Geist Mono", monospace; font-size: 15px; color: var(--fn); }
+#complete .doc { flex: 1; padding: 14px 16px; font-size: 16px; color: var(--mw-text); opacity: 0.85; }
+#complete .doc b { display: block; color: var(--mw-text); font-family: "Inconsolata", monospace; font-size: 18px; font-weight: 500; margin-bottom: 6px; }
+#complete .doc .tyl { display: inline-block; margin: 2px 0 10px; padding: 2px 8px; border-radius: 6px; background: var(--panel-2); font-family: "Inconsolata", monospace; font-size: 15px; color: var(--type); }
 #complete .doc .lin { display: flex; align-items: center; gap: 6px; font-size: 15px; margin-top: 4px; }
-#complete .doc .lin .t-tbl { font-family: "Geist Mono", monospace; }
+#complete .doc .lin .t-tbl { font-family: "Inconsolata", monospace; }
 
 #diag { width: 640px; padding: 16px 18px; font-size: 18px; }
 #diag .h { display: flex; align-items: center; gap: 10px; color: var(--danger); font-weight: 600; }
-#diag p { margin: 8px 0 12px; color: var(--muted); font-size: 17px; }
-#diag code { font-family: "Geist Mono", monospace; color: var(--text); font-size: 16.5px; }
+#diag p { margin: 8px 0 12px; color: var(--mw-text); opacity: 0.9; font-size: 17px; }
+#diag code { font-family: "Inconsolata", monospace; color: var(--mw-text); font-size: 18px; }
 #diag .fix { display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 16.5px; font-weight: 500; }
 #diag .src { float: right; font-size: 14px; color: var(--faint); margin-top: 10px; }
 
 #render { width: 760px; padding: 14px 18px; }
-#render .h { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--muted); }
+#render .h { display: flex; align-items: center; gap: 10px; font-size: 16px; }
 #render .h b { color: var(--jinja); font-weight: 600; }
-#render pre { margin: 10px 0 4px; font: 400 20px/1.5 "Geist Mono", monospace; white-space: pre; }
-#render .note { font-size: 15px; color: var(--faint); }
+#render pre { margin: 10px 0 4px; font: 400 23px/1.5 "Inconsolata", monospace; white-space: pre; color: var(--code-text); }
+#render .note { font-size: 15px; opacity: 0.7; }
 
 #schema { position: absolute; left: 0; right: 0; bottom: 48px; height: 64px; display: flex; align-items: center; gap: 10px; padding: 0 22px; border-top: 1px solid var(--line-soft); font-size: 16px; color: var(--muted); }
-#schema .c { display: inline-flex; gap: 8px; align-items: center; padding: 5px 11px; border-radius: 8px; background: var(--panel-2); color: var(--text); font-family: "Geist Mono", monospace; font-size: 16px; }
-#schema .c i { font-style: normal; color: var(--fn); }
+#schema .c { display: inline-flex; gap: 8px; align-items: center; padding: 5px 11px; border-radius: 8px; background: var(--panel-2); color: var(--text); font-family: "Inconsolata", monospace; font-size: 16px; }
+#schema .c i { font-style: normal; color: var(--type); }
 #status { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center; gap: 22px; padding: 0 22px; border-top: 1px solid var(--line-soft); background: var(--panel); font-size: 16px; color: var(--muted); }
 #status .p { display: inline-flex; align-items: center; gap: 7px; }
 #status .p.bad { color: var(--danger); }
@@ -257,14 +319,14 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 #results .h small { color: var(--muted); font-size: 16px; }
 #results table { width: 100%; border-collapse: collapse; font-size: 18px; }
 #results th { text-align: left; font-weight: 500; color: var(--muted); font-size: 15px; padding: 10px 22px; border-bottom: 1px solid var(--line-soft); }
-#results th span { color: var(--fn); font-family: "Geist Mono", monospace; font-size: 13px; margin-left: 6px; }
+#results th span { color: var(--type); font-family: "Inconsolata", monospace; font-size: 13px; margin-left: 6px; }
 #results td { padding: 9px 22px; border-bottom: 1px solid var(--line-soft); }
-#results td.num { font-family: "Geist Mono", monospace; text-align: right; }
+#results td.num { font-family: "Inconsolata", monospace; text-align: right; }
 #results th.num { text-align: right; }
 
 #toast { position: absolute; right: 26px; top: 76px; width: 520px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 16px 18px; font-size: 17px; }
 #toast .h { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; margin-bottom: 8px; }
-#toast .f { display: flex; align-items: center; gap: 10px; font-family: "Geist Mono", monospace; font-size: 16px; padding: 4px 0; color: var(--muted); }
+#toast .f { display: flex; align-items: center; gap: 10px; font-family: "Inconsolata", monospace; font-size: 16px; padding: 4px 0; color: var(--muted); }
 #toast .f b { color: var(--accent-strong); font-weight: 500; width: 16px; }
 
 /* ---------- pointer ---------- */
@@ -290,15 +352,15 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 .card h1 { margin: 0; font: 400 92px/1.02 "Instrument Serif", Georgia, serif; letter-spacing: -0.015em; }
 .card p { color: var(--muted); font-size: 26px; margin: 26px 0 0; }
 .card img { width: 128px; height: 128px; margin-bottom: 30px; }
-.card .cmd { margin-top: 38px; padding: 16px 26px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); font: 400 26px "Geist Mono", monospace; }
+.card .cmd { margin-top: 38px; padding: 16px 26px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); font: 400 26px "Inconsolata", monospace; }
 .card .cmd span { color: var(--faint); margin-right: 14px; }
 .card .url { margin-top: 22px; color: var(--muted); font-size: 22px; }
 
 /* ---------- v2: environments, deploy, schedules, staleness ---------- */
 #steps .s { width: 90px; }
 #steps .s .l { font-size: 14px; }
-.badge.warn { background: rgba(233, 179, 95, 0.15); color: var(--amber); }
-.badge.warn .dot { background: var(--amber); }
+.badge.warn { background: var(--warn-bg); color: var(--warn-text); }
+.badge.warn .dot { background: var(--warn-dot); }
 .skip { position: absolute; left: 16px; top: -34px; font-size: 14px; color: var(--muted); background: var(--raise); border: 1px solid var(--line); border-radius: 8px; padding: 3px 9px; white-space: nowrap; }
 
 #envchip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent-strong); }
@@ -314,10 +376,10 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 #review h4 { margin: 0; font-size: 25px; font-weight: 600; }
 #review .sub { color: var(--muted); font-size: 17px; display: flex; gap: 10px; align-items: center; margin-top: 4px; }
 #review .files { border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
-#review .file { display: flex; align-items: center; gap: 12px; padding: 10px 14px; font: 400 17px "Geist Mono", monospace; border-bottom: 1px solid var(--line-soft); }
+#review .file { display: flex; align-items: center; gap: 12px; padding: 10px 14px; font: 400 17px "Inconsolata", monospace; border-bottom: 1px solid var(--line-soft); }
 #review .file:last-child { border-bottom: 0; }
 #review .file .add { margin-left: auto; color: var(--accent-strong); font-size: 15px; }
-#review .diff { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--code-bg); font: 400 18px/31px "Geist Mono", monospace; padding: 8px 0; overflow: hidden; }
+#review .diff { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--code-bg); font: 400 18px/31px "Inconsolata", monospace; padding: 8px 0; overflow: hidden; }
 #review .diff .dh { padding: 2px 16px 8px; color: var(--muted); font-size: 15px; border-bottom: 1px solid var(--line-soft); margin-bottom: 6px; }
 #review .diff .dl { white-space: pre; padding: 0 16px; background: rgba(95, 207, 151, 0.08); }
 #review .diff .dl b { color: var(--accent-strong); font-weight: 400; display: inline-block; width: 26px; }
@@ -333,7 +395,7 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 .fld .fl { font-size: 15px; color: var(--muted); margin-bottom: 6px; }
 .fld .in { display: flex; align-items: center; gap: 10px; padding: 9px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--window); font-size: 18px; min-height: 45px; }
 .fld .in.focus { border-color: var(--accent-strong); box-shadow: 0 0 0 3px var(--fresh-bg); }
-.fld .in.mono { font-family: "Geist Mono", monospace; font-size: 20px; }
+.fld .in.mono { font-family: "Inconsolata", monospace; font-size: 20px; }
 .fld .help { font-size: 15px; color: var(--accent-strong); margin-top: 6px; min-height: 20px; }
 .opts { display: flex; flex-direction: column; gap: 6px; }
 .opt { display: flex; align-items: center; gap: 10px; font-size: 17px; color: var(--muted); padding: 4px 2px; }
@@ -351,7 +413,7 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 #tl .slot.running { border: 2px solid var(--accent-strong); }
 #tl .slot.next { border-style: solid; border-color: var(--accent); }
 #tl .now { position: absolute; top: -8px; bottom: -8px; width: 2px; background: var(--amber); }
-#tl .now span { position: absolute; top: -26px; left: -60px; width: 120px; text-align: center; font-size: 14px; color: var(--amber); font-family: "Geist Mono", monospace; }
+#tl .now span { position: absolute; top: -26px; left: -60px; width: 120px; text-align: center; font-size: 14px; color: var(--amber); font-family: "Inconsolata", monospace; }
 #tl .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 17px; }
 #runcard { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 16px; color: var(--muted); }
 #runcard .rh { display: flex; align-items: center; gap: 10px; font-size: 18px; color: var(--text); }
@@ -360,7 +422,7 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 #inspect { position: absolute; width: 400px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 14px 16px; }
 #inspect .ttl { display: flex; gap: 10px; align-items: center; font-size: 18px; font-weight: 600; margin-bottom: 8px; }
 #inspect .ttl small { margin-left: auto; font-weight: 400; color: var(--faint); font-size: 14px; }
-#inspect .col { display: flex; justify-content: space-between; font: 400 16px "Geist Mono", monospace; padding: 5px 4px; border-top: 1px solid var(--line-soft); }
+#inspect .col { display: flex; justify-content: space-between; font: 400 16px "Inconsolata", monospace; padding: 5px 4px; border-top: 1px solid var(--line-soft); }
 #inspect .col span:last-child { color: var(--muted); font-size: 14px; }
 #inspect .col.new { background: var(--fresh-bg); border-radius: 6px; color: var(--accent-strong); }
 #stalebar { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; padding: 10px 12px 10px 18px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); font-size: 18px; white-space: nowrap; }
@@ -402,7 +464,7 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
             <div id="menu">
               <div class="t">Create after raw.orders</div>
               <div class="it" id="menu-sql"><svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h4"/></svg>SQL asset<small>transform</small></div>
-              <div class="it"><svg class="i" viewBox="0 0 24 24" style="color:var(--fn)"><path d="M12 3c-4 0-4 2-4 3v2h5M12 21c4 0 4-2 4-3v-2h-5M8 8H6c-2 0-3 2-3 4s1 4 3 4h2M16 16h2c2 0 3-2 3-4s-1-4-3-4h-2"/></svg>Python asset<small>transform</small></div>
+              <div class="it"><svg class="i" viewBox="0 0 24 24" style="color:var(--type)"><path d="M12 3c-4 0-4 2-4 3v2h5M12 21c4 0 4-2 4-3v-2h-5M8 8H6c-2 0-3 2-3 4s1 4 3 4h2M16 16h2c2 0 3-2 3-4s-1-4-3-4h-2"/></svg>Python asset<small>transform</small></div>
               <div class="it"><svg class="i" viewBox="0 0 24 24" style="color:var(--jinja)"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15l3-4 2 2 3-4"/></svg>Notebook<small>analysis</small></div>
             </div>
             <div id="inspect">
@@ -479,7 +541,7 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
           <div class="pop" id="complete"><div class="list"></div><div class="doc"></div></div>
           <div class="pop" id="diag">
             <div class="h"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg>Unknown column <code>o.total_amout</code></div>
-            <p>No column <code>total_amout</code> on <code>raw.orders</code>. Did you mean <code>total_amount</code> <span style="color:var(--fn);font-family:'Geist Mono',monospace;font-size:15px">DECIMAL(12,2)</span>?</p>
+            <p>No column <code>total_amout</code> on <code>raw.orders</code>. Did you mean <code>total_amount</code> <span style="color:var(--type);font-family:'Inconsolata',monospace;font-size:15px">DECIMAL(12,2)</span>?</p>
             <span class="fix" id="fixbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Change to total_amount</span>
             <span class="src">type check</span>
           </div>
@@ -611,7 +673,18 @@ const OPS = [
   { at: C.jinja + 2.7, replace: [6, 22, 26, "'{{ start_date }}'"] },
   { at: C.jinja + 5.0, dur: 0.6, type: "\nGROUP BY ALL" },
 ];
-const typedAt = (op, sub) => op.at + op.dur * ((op.type.indexOf(sub) + sub.length) / op.type.length);
+// Human typing rhythm: deterministic per-character jitter, longer pauses after
+// spaces, punctuation and line breaks. RHYTHM[i][k] is the fraction of the op's
+// duration after which character k has been typed.
+const rand = (n) => { const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); };
+const RHYTHM = new Map(OPS.filter((op) => op.type).map((op, i) => {
+  let acc = 0;
+  const w = [...op.type].map((ch, k) => (acc += 0.55 + rand(i * 97 + k) * 0.9 + (ch === " " ? 0.7 : 0) + (ch === "\n" ? 2.2 : 0) + (/[,.(]/.test(ch) ? 0.5 : 0)));
+  return [op, w.map((v) => v / acc)];
+}));
+const typedCount = (op, x) => { const cum = RHYTHM.get(op); let n = 0; while (n < cum.length && cum[n] <= x) n++; return n; };
+const typedAt = (op, sub) => op.at + op.dur * RHYTHM.get(op)[op.type.indexOf(sub) + sub.length - 1];
+const LINK = 1.4;
 const EDGE1_AT = typedAt(OPS[0], "raw.orders");
 const EDGE2_AT = typedAt(OPS[1], "raw.customers");
 
@@ -627,7 +700,7 @@ function docAt(t) {
       lastEdit = op.at;
       continue;
     }
-    const n = Math.floor(op.type.length * p(t, op.at, op.at + op.dur));
+    const n = typedCount(op, p(t, op.at, op.at + op.dur));
     for (const ch of op.type.slice(0, n)) {
       if (ch === "\n") {
         const rest = lines[cl].slice(cc);
@@ -639,26 +712,35 @@ function docAt(t) {
         cc++;
       }
     }
-    if (n > 0) lastEdit = Math.max(lastEdit, op.at + op.dur * (n / op.type.length));
+    if (n > 0) lastEdit = Math.max(lastEdit, op.at + op.dur * RHYTHM.get(op)[n - 1]);
   }
   return { lines, cl, cc, lastEdit };
 }
 
-const KW = new Set(["SELECT", "FROM", "JOIN", "AS", "USING", "WHERE", "GROUP", "BY", "ALL", "ON", "AND"]);
+// Token classes follow Monaco's SQL tokenizer plus Renart's semantic SQL
+// decorations (schema / table / column / alias).
+const KW = new Set(["SELECT", "FROM", "JOIN", "AS", "USING", "WHERE", "GROUP", "BY", "ALL", "ON"]);
+const OPW = new Set(["AND", "OR", "NOT", "IN"]);
 const FN = new Set(["SUM", "COUNT", "CAST"]);
-function highlight(line, squiggle) {
-  const re = /(\{\{.*?(?:\}\}|$))|('[^'{]*'?)|(\b(?:raw|marts)\.\w+)|([A-Za-z_]\w*)|(\s+)|([^\s])/g;
+const SCHEMAS = new Set(["raw", "marts"]);
+const ALIASES = new Set(["o", "c"]);
+const COLUMNS = new Set(["customer_id"]);
+const span = (cls, text) => (cls ? `<span class="${cls}">${esc(text)}</span>` : esc(text));
+function highlight(line, opts = {}) {
+  const { squiggle, glow } = opts;
+  const re = /(\{\{.*?(?:\}\}|$))|('[^'{]*'?)|([A-Za-z_]\w*)\.([A-Za-z_]\w*)|([A-Za-z_]\w*)|(\s+)|(>=|[^\s])/g;
   let out = "", m;
   while ((m = re.exec(line))) {
-    const [tok, jj, str, tbl, word] = m;
-    if (jj) out += `<span class="t-j">${esc(tok)}</span>`;
-    else if (str) out += `<span class="t-s">${esc(tok)}</span>`;
-    else if (tbl) out += `<span class="t-tbl">${esc(tok)}</span>`;
-    else if (word) {
-      const cls = KW.has(word) ? "t-k" : FN.has(word) ? "t-fn" : squiggle && word === squiggle ? "sq" : "";
-      out += cls ? `<span class="${cls}">${esc(tok)}</span>` : esc(tok);
-    } else if (/^[(),.*>=]+$/.test(tok)) out += `<span class="t-p">${esc(tok)}</span>`;
-    else out += esc(tok);
+    const [tok, jj, str, qa, qb, word, ws, punct] = m;
+    if (jj) out += span("t-j", tok);
+    else if (str) out += span("t-s", tok);
+    else if (qa) {
+      if (SCHEMAS.has(qa)) out += span("t-sc", qa) + span("t-p", ".") + span(`t-tbl${glow && glow === tok ? " glow" : ""}`, qb);
+      else out += span(ALIASES.has(qa) ? "t-al" : "", qa) + span("t-p", ".") + span(`t-col${squiggle === qb ? " sq" : ""}`, qb);
+    } else if (word) {
+      out += span(KW.has(word) ? "t-k" : OPW.has(word) ? "t-op" : FN.has(word) ? "t-fn" : ALIASES.has(word) ? "t-al" : COLUMNS.has(word) ? "t-col" : "", word);
+    } else if (ws) out += tok;
+    else out += span(punct === "(" || punct === ")" ? "t-br" : punct === ">=" ? "t-op" : "t-p", punct);
   }
   return out;
 }
@@ -724,12 +806,17 @@ edgesSvg.innerHTML = [
 ].join("");
 const E1 = $("#e1"), E2 = $("#e2");
 const E1L = E1.getTotalLength(), E2L = E2.getTotalLength();
-function drawEdge(el, len, prog, hot) {
+function drawEdge(el, len, prog, hot, link = 0) {
   el.style.strokeDasharray = `${len}`;
   el.style.strokeDashoffset = `${len * (1 - prog)}`;
   el.style.opacity = prog > 0 ? 1 : 0;
   el.classList.toggle("hot", !!hot);
+  // While linked to the table name being typed, the edge takes the table-token color and glows.
+  el.style.stroke = link > 0 ? `color-mix(in oklab, var(--tbl) ${link * 100}%, var(--faint))` : "";
+  el.style.strokeWidth = `${2.4 + link * 1.6}`;
+  el.style.filter = link > 0 ? `drop-shadow(0 0 ${6 * link}px var(--tbl))` : "";
 }
+const linkAt = (t, a) => (t < a ? 0 : 1 - p(t, a + LINK - 0.5, a + LINK));
 function pulse(dot, path, len, x) {
   dot.style.opacity = x > 0 && x < 1 ? 1 : 0;
   const pt = path.getPointAtLength(len * eo(x));
@@ -835,7 +922,7 @@ $("#days").innerHTML = DAYS.map((d, i) => `<div class="day"><span class="dl">${d
 let CW = 14.4; // monospace advance, measured once fonts load
 function measure() {
   const s = document.createElement("span");
-  s.style.cssText = "font:400 24px 'Geist Mono',monospace;position:absolute;visibility:hidden;white-space:pre";
+  s.style.cssText = "font:400 28px 'Inconsolata',monospace;position:absolute;visibility:hidden;white-space:pre";
   s.textContent = "x".repeat(100);
   document.body.appendChild(s);
   CW = s.getBoundingClientRect().width / 100;
@@ -862,7 +949,10 @@ function pointerAt(t) {
     if (t < at - travel) break;
     const to = localPoint(target);
     const x = travel > 0 ? ez(p(t, at - travel, at)) : 1;
-    pos = [lerp(pos[0], to[0], x), lerp(pos[1], to[1], x)];
+    // Hands move in arcs, not rulers: bow each move sideways, alternating direction.
+    const dx = to[0] - pos[0], dy = to[1] - pos[1];
+    const bow = Math.sin(Math.PI * x) * 0.14 * (i % 2 ? 1 : -1);
+    pos = [lerp(pos[0], to[0], x) - dy * bow, lerp(pos[1], to[1], x) + dx * bow];
   }
   return pos;
 }
@@ -962,6 +1052,10 @@ function applyScene(t) {
     n.el.classList.toggle("bad", bad);
   }
   NODES.orders.el.classList.toggle("sel", (t >= C.build + 0.3 && t < C.build + 2.0) || (t >= C.stale + 0.8 && t < C.stale + 3.4));
+  for (const [key, at] of [["orders", EDGE1_AT], ["customers", EDGE2_AT]]) {
+    const k = linkAt(t, at);
+    NODES[key].el.style.boxShadow = k > 0 ? `0 0 0 ${3 * k}px color-mix(in oklab, var(--tbl) 55%, transparent), 0 0 ${28 * k}px color-mix(in oklab, var(--tbl) 35%, transparent)` : "";
+  }
   // Per-frame extras re-attached after the node bodies are rebuilt.
   NODES.orders.el.appendChild(plus);
   show(plus, win(t, C.build + 0.3, C.build + 2.1, 0.25), 0, 0.6);
@@ -974,8 +1068,8 @@ function applyScene(t) {
 
   // Edges: drawn when the SQL that names each table is typed; pulses during runs.
   const running = (a, b) => t >= a && t < b;
-  drawEdge(E1, E1L, eo(p(t, EDGE1_AT, EDGE1_AT + 0.7)), running(C.run + 2.9, C.run + 5.2) || running(C.stale + 4.6, C.stale + 6.2));
-  drawEdge(E2, E2L, eo(p(t, EDGE2_AT, EDGE2_AT + 0.7)), running(C.run + 3.1, C.run + 5.2));
+  drawEdge(E1, E1L, eo(p(t, EDGE1_AT, EDGE1_AT + 0.7)), running(C.run + 2.9, C.run + 5.2) || running(C.stale + 4.6, C.stale + 6.2), linkAt(t, EDGE1_AT));
+  drawEdge(E2, E2L, eo(p(t, EDGE2_AT, EDGE2_AT + 0.7)), running(C.run + 3.1, C.run + 5.2), linkAt(t, EDGE2_AT));
   pulse($("#p1"), E1, E1L, Math.max(p(t, C.run + 2.9, C.run + 3.8) % 1, p(t, C.stale + 4.6, C.stale + 5.3) % 1));
   pulse($("#p2"), E2, E2L, p(t, C.run + 3.1, C.run + 4.0) % 1);
   pulse($("#p3"), E1, E1L, p(t, C.stale + 2.2, C.stale + 2.95) % 1);
@@ -1010,8 +1104,10 @@ function applyScene(t) {
 
   const doc = docAt(t);
   const squiggle = t >= C.check + 0.1 && t < C.check + 2.7 ? "total_amout" : null;
+  // The table name glows while its edge draws on the canvas: the SQL is the graph.
+  const glow = t >= EDGE1_AT && t < EDGE1_AT + LINK ? "raw.orders" : t >= EDGE2_AT && t < EDGE2_AT + LINK ? "raw.customers" : null;
   linesEl.innerHTML = doc.lines
-    .map((l, i) => `<div class="ln${i === doc.cl ? " cur" : ""}"><span class="n">${i + 1}</span>${highlight(l, squiggle)}</div>`)
+    .map((l, i) => `<div class="ln${i === doc.cl ? " cur" : ""}"><span class="n">${i + 1}</span>${highlight(l, { squiggle, glow })}</div>`)
     .join("");
   // Caret blinks only while idle.
   const idle = t - doc.lastEdit;
