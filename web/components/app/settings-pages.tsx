@@ -1,3 +1,4 @@
+import { UsageAnalyticsSettings } from "./usage-analytics";
 import { Link, Outlet } from "@tanstack/react-router";
 import { Boxes, Plug, Sliders } from "lucide-react";
 import { ComponentType, useEffect, useState } from "react";
@@ -490,6 +491,7 @@ export function AppProjectGeneralPage() {
           </PlainField>
         </PlainFieldGroup>
       </SettingsCard>
+      <UsageAnalyticsSettings />
     </div>
   );
 }

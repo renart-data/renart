@@ -93,6 +93,27 @@ export function selectDataGridCell(
   };
 }
 
+// Row headers select complete rows, including when a drag crosses data cells.
+export function selectDataGridRows(
+  selection: DataGridSelection,
+  row: number,
+  columns: number,
+  mode: DataGridSelectionMode = "replace",
+): DataGridSelection {
+  if (columns <= 0) return EMPTY_DATA_GRID_SELECTION;
+  const anchor = { row: mode === "extend" ? (selection.anchor?.row ?? row) : row, column: 0 };
+  const active = { row, column: columns - 1 };
+  const rectangle = dataGridRectangle(anchor, active);
+  if (mode !== "toggle") return { anchor, active, selected: rectangle };
+  const selected = new Set(selection.selected);
+  const remove = [...rectangle].every((key) => selected.has(key));
+  for (const key of rectangle) {
+    if (remove) selected.delete(key);
+    else selected.add(key);
+  }
+  return { anchor, active, selected };
+}
+
 export function moveDataGridSelection(
   selection: DataGridSelection,
   delta: Pick<DataGridCell, "row" | "column">,

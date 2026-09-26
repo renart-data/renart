@@ -2,7 +2,9 @@
 
 Status: partially implemented, 9 September 2026. Data Browser, asset Inspect,
 notebook cells and ad-hoc queries now share explicit bounded row loading.
-Authored table presentations remain out of scope for the shipped adapters.
+Notebook visualization blocks now expand their saved prefix to the configured
+preview budget (at most 1,000 rows). Larger authored datasets and interactive
+continuation inside presentation tables remain follow-ups.
 
 ## Shipped contracts
 
@@ -22,7 +24,7 @@ suites, frontend units/lint/build and desktop/mobile live regressions. The prior
 Inspect/Data Browser slice is recorded in .test-artifacts/preview-row-loading/.
 These are focused checks, not a completed full release/e2e gate.
 
-## Remaining: authored table presentations
+## Remaining: larger authored datasets and presentation tables
 
 Audit notebook-viz.tsx and presentation table consumers separately. Their
 source/transform/sample limits describe the authored dataset, not just how many
@@ -30,6 +32,9 @@ rows the browser displays. Never silently increase those limits or re-execute
 Python, source imports or materialization to fill a viewport.
 
 1. Distinguish a client display cap from an authored dataset/transform cap.
+   Values above 1,000 still encounter the current preview ceiling. Supporting
+   larger charts requires explicit backend/renderer row and byte budgets and
+   retained-result semantics; it must not silently rerun the source.
 2. Reuse the existing dataset owner and VirtualDataTable footer where a larger
    result is actually available. Do not introduce a second result cache.
 3. Keep sample/full semantics and source provenance visible. Unsupported or

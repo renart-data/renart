@@ -198,3 +198,22 @@ describe("schema-aware suggestions", () => {
     });
   });
 });
+
+it("preserves API-omitted zero coordinates regardless of visualization order", () => {
+  const dashboard = artifact({
+    visualizations: ["last", "right", "left"].map((id) => ({
+      id,
+      dataset: "values",
+      definition: { version: 1, type: "kpi" },
+    })),
+    layout: [
+      { visualization: "left", width: 6, height: 2 },
+      { visualization: "right", x: 6, width: 6, height: 2 },
+      { visualization: "last", y: 2, width: 12, height: 4 },
+    ],
+  });
+  const layout = normalizedDashboardLayout(dashboard);
+  expect(layout.find((item) => item.i === "left")).toMatchObject({ x: 0, y: 0 });
+  expect(layout.find((item) => item.i === "right")).toMatchObject({ x: 6, y: 0 });
+  expect(layout.find((item) => item.i === "last")).toMatchObject({ x: 0, y: 2 });
+});

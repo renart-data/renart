@@ -40,6 +40,7 @@ func Root(version string) *cli.Command {
 			Deploy(),
 			Init(),
 			Secrets(),
+			Telemetry(),
 			Debug(),
 		},
 		DisableSliceFlagSeparator: true,

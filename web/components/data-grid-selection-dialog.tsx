@@ -21,6 +21,7 @@ import { parseDataGridCellKey, type DataGridSelection } from "@/lib/data-grid-se
 
 // Full values, bounded DOM: a large selection is paged locally, never re-queried.
 export function DataGridSelectionDialog({
+  selectionOwner,
   selection,
   columns,
   columnKeys,
@@ -31,6 +32,7 @@ export function DataGridSelectionDialog({
   onClose,
   onRestoreFocus,
 }: {
+  selectionOwner?: string;
   selection: DataGridSelection;
   columns: string[];
   columnKeys: string[];
@@ -72,6 +74,7 @@ export function DataGridSelectionDialog({
       }}
     >
       <DialogContent
+        data-table-selection-owner={selectionOwner}
         className="flex h-dvh w-screen max-w-none flex-col rounded-none sm:max-w-none"
         onCloseAutoFocus={(event) => {
           event.preventDefault();

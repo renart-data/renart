@@ -247,7 +247,7 @@ func (Checker) CheckVisualization(_ context.Context, definition VisualizationDef
 			checkMany(definition.Encoding.Y, "encoding.y", SemanticNumeric)
 		}
 	case "scatter":
-		require(definition.Encoding.X, "encoding.x", SemanticNumeric, SemanticTemporal)
+		require(definition.Encoding.X, "encoding.x", SemanticNumeric, SemanticTemporal, SemanticCategorical, SemanticBoolean)
 		if len(definition.Encoding.Y) == 0 {
 			require(nil, "encoding.y")
 		} else {

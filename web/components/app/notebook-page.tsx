@@ -1,4 +1,6 @@
 "use client";
+
+import { AuthoringIconTile } from "./authoring-icon-tile";
 import { ResourceLink } from "./resource-link";
 import { useResourceNavigation } from "@/hooks/use-resource-navigation";
 import { useNavigationArrival, useArrivalHighlight } from "@/hooks/use-navigation-arrival";
@@ -561,7 +563,11 @@ export function AppNotebookLivePage({
     () => ({ kind: "notebook", notebookId }),
     [notebookId],
   );
-  const { documents: buildDocuments, closeDocument: removeBuildDocument } = useBuildDocuments({
+  const {
+    documents: buildDocuments,
+    closeDocument: removeBuildDocument,
+    moveDocument: moveBuildDocument,
+  } = useBuildDocuments({
     projectId: workbenchSession.projectId,
     activeDocument: activeBuildDocument,
     availableAssetKeys: availableBuildAssetKeys,
@@ -1612,6 +1618,7 @@ export function AppNotebookLivePage({
               emptyLabel={notebook.title}
               onSelectDocument={(document) => void selectBuildDocument(document)}
               onCloseDocument={(document) => void closeBuildDocument(document)}
+              onMoveDocument={moveBuildDocument}
             />
             {documentNavigationError ? (
               <span
@@ -2288,6 +2295,7 @@ function NotebookAddPalette({
       <div className="flex flex-col gap-2">
         <p className="px-1 text-[11px] font-medium text-muted-foreground">Visualizations</p>
         <ChartTypePicker
+          quietIcons
           compact
           draggable
           disabled={disabled || !canVisualize}
@@ -2305,6 +2313,7 @@ function NotebookAddPalette({
           </Button>
         </div>
         <ControlTypePicker
+          quietIcons
           draggable
           disabled={disabled || !canAddControls}
           onValueChange={(controlType) => onAdd("control", { controlType })}
@@ -2462,7 +2471,15 @@ function NotebookInsertionPoint({
                     aria-label={option.label}
                     className="h-14 min-w-0 basis-0 flex-1 flex-col gap-1 px-2 py-1 text-[10px] font-normal"
                   >
-                    <NotebookBlockTypePreview type={option.value} className="h-6 max-w-10" />
+                    <AuthoringIconTile
+                      tone={option.value === "markdown" ? "text" : option.value}
+                      compact
+                    >
+                      <NotebookBlockTypePreview
+                        type={option.value}
+                        className="h-5 max-w-8 text-inherit"
+                      />
+                    </AuthoringIconTile>
                     <span>{option.label}</span>
                   </ToggleGroupItem>
                 ))}
@@ -2477,7 +2494,9 @@ function NotebookInsertionPoint({
                   setPickerCategory((current) => (current === "control" ? null : "control"))
                 }
               >
-                <ControlTypePreview type="slider" className="h-6 max-w-10" />
+                <AuthoringIconTile tone="control" compact>
+                  <ControlTypePreview type="slider" className="h-5 w-8 max-w-none text-inherit" />
+                </AuthoringIconTile>
                 Control
               </Button>
               <Button
@@ -2491,7 +2510,9 @@ function NotebookInsertionPoint({
                   )
                 }
               >
-                <ChartTypePreview type="line" className="h-6 max-w-10" />
+                <AuthoringIconTile tone="chart" compact>
+                  <ChartTypePreview type="line" className="h-5 w-8 max-w-none text-inherit" />
+                </AuthoringIconTile>
                 Chart
               </Button>
               <Separator orientation="vertical" className="mx-1.5" />
@@ -2530,7 +2551,12 @@ function NotebookInsertionPoint({
                           aria-label={AUTHORED_CONTROL_TYPE_LABELS[value]}
                           className="h-12 min-w-0 flex-col gap-0.5 px-1 py-1 text-[10px] font-normal"
                         >
-                          <ControlTypePreview type={value} className="h-6 max-w-10" />
+                          <AuthoringIconTile tone="control" compact>
+                            <ControlTypePreview
+                              type={value}
+                              className="h-5 w-8 max-w-none text-inherit"
+                            />
+                          </AuthoringIconTile>
                           <span className="truncate">{AUTHORED_CONTROL_TYPE_LABELS[value]}</span>
                         </ToggleGroupItem>
                       ))
@@ -2541,7 +2567,12 @@ function NotebookInsertionPoint({
                           aria-label={option.label}
                           className="h-12 min-w-0 flex-col gap-0.5 px-1 py-1 text-[10px] font-normal"
                         >
-                          <ChartTypePreview type={option.value} className="h-6 max-w-10" />
+                          <AuthoringIconTile tone="chart" compact>
+                            <ChartTypePreview
+                              type={option.value}
+                              className="h-5 w-8 max-w-none text-inherit"
+                            />
+                          </AuthoringIconTile>
                           <span className="truncate">{option.label}</span>
                         </ToggleGroupItem>
                       ))}
@@ -3291,6 +3322,33 @@ function NotebookResultPreview({
     ? `showing ${rowsShown.toLocaleString()} of ${result.total_rows.toLocaleString()} rows`
     : `${rowsShown.toLocaleString()} rows`;
 
+  const collapseControl = (
+    <CollapsibleTrigger asChild>
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        className="-ml-1 shrink-0"
+        aria-label={`${open ? "Collapse" : "Expand"} ${cellName} result table`}
+      >
+        <ChevronRight
+          data-icon="inline-start"
+          className={cn("transition-transform", open && "rotate-90")}
+        />
+        Result
+      </Button>
+    </CollapsibleTrigger>
+  );
+  const performanceControl = (
+    <NotebookSelectedControls
+      selected={selected}
+      className="ml-auto shrink-0"
+      expandedClassName="max-w-28"
+    >
+      <NotebookPerformanceDetails result={result} renderMeasurement={renderMeasurement} />
+    </NotebookSelectedControls>
+  );
+
   return (
     <Collapsible
       open={open}
@@ -3301,6 +3359,9 @@ function NotebookResultPreview({
     >
       <CollapsibleContent>
         <VirtualDataTable
+          footerStart={collapseControl}
+          footerEnd={performanceControl}
+          footerStatus={rowSummary}
           ariaLabel={`${cellName} result preview`}
           columnKeys={columnKeys}
           columns={result.columns}
@@ -3321,36 +3382,13 @@ function NotebookResultPreview({
           {continuation.error}
         </div>
       ) : null}
-      <div
-        className={cn(
-          "flex min-h-8 items-center gap-2 bg-muted/30 px-2 text-[11px] text-muted-foreground",
-          open && "border-t",
-        )}
-      >
-        <CollapsibleTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            className="-ml-1 shrink-0"
-            aria-label={`${open ? "Collapse" : "Expand"} ${cellName} result table`}
-          >
-            <ChevronRight
-              data-icon="inline-start"
-              className={cn("transition-transform", open && "rotate-90")}
-            />
-            Result
-          </Button>
-        </CollapsibleTrigger>
-        {!open || !result.preview ? <span>{rowSummary}</span> : null}
-        <NotebookSelectedControls
-          selected={selected}
-          className="ml-auto shrink-0"
-          expandedClassName="max-w-28"
-        >
-          <NotebookPerformanceDetails result={result} renderMeasurement={renderMeasurement} />
-        </NotebookSelectedControls>
-      </div>
+      {!open ? (
+        <div className="flex min-h-8 items-center gap-2 bg-muted/20 px-2 text-[11px] text-muted-foreground">
+          {collapseControl}
+          <span className="mr-auto">{rowSummary}</span>
+          {performanceControl}
+        </div>
+      ) : null}
     </Collapsible>
   );
 }

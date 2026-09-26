@@ -1,5 +1,7 @@
 "use client";
 
+import { usageAnalyticsRevisionAtom } from "@/lib/atoms/domains/usage-analytics";
+
 import { projectApiPath } from "@/lib/project-context";
 import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { useEffect } from "react";
@@ -121,6 +123,7 @@ function isSQLCatalogReadyEvent(payload: unknown): payload is {
 }
 
 export function useWorkspaceSync() {
+  const setUsageAnalyticsRevision = useSetAtom(usageAnalyticsRevisionAtom);
   const workspace = useAtomValue(workspaceAtom);
   const store = useStore();
   const receiveWorkspaceUpdate = useSetAtom(receiveWorkspaceUpdateAtom);
@@ -206,6 +209,15 @@ export function useWorkspaceSync() {
     source.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as unknown;
+        if (
+          typeof payload === "object" &&
+          payload !== null &&
+          "type" in payload &&
+          payload.type === "usage.settings.updated"
+        ) {
+          setUsageAnalyticsRevision((value) => value + 1);
+          return;
+        }
 
         if (isSchedulerRunEvent(payload)) {
           appendSchedulerRunEvent(payload);
@@ -269,6 +281,7 @@ export function useWorkspaceSync() {
     };
   }, [
     appendSchedulerRunEvent,
+    setUsageAnalyticsRevision,
     setNotebookAgentEvents,
     setNotebookRuntimeEvents,
     setSQLCatalogReadyEvent,

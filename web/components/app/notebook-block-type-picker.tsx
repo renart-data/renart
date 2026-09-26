@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { writeAuthoringDragItem } from "./authoring-drag";
+import { AuthoringIconTile } from "./authoring-icon-tile";
 import { CodeTypeGlyph } from "./code-type-glyph";
 
 export const NOTEBOOK_BLOCK_TYPE_OPTIONS = [
@@ -48,7 +49,9 @@ export function NotebookBlockTypePicker({
           }
           onClick={() => onValueChange(option.value)}
         >
-          <NotebookBlockTypePreview type={option.value} />
+          <AuthoringIconTile tone={option.value === "markdown" ? "text" : option.value}>
+            <NotebookBlockTypePreview type={option.value} className="h-7 w-9 text-inherit" />
+          </AuthoringIconTile>
           <span className="truncate text-xs leading-tight">{option.label}</span>
         </Button>
       ))}

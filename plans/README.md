@@ -13,6 +13,9 @@ decisions and dependencies in each plan; there is no global questions scratchpad
 
 | Plan | Remaining boundary / prerequisite |
 | --- | --- |
+| [Headerless CSV](headerless-csv.md) | Coordinate reader options across Seed/Load authoring, discovery, preview and execution |
+| [Language-server ownership](language-server-ownership.md) | Audit active semantic fallbacks, scoped runtime schemas and parser-backed keyword corrections |
+| [Shared connection credentials](connection-credential-scope.md) | Choose explicit availability plus config-owner inheritance; no implicit sibling-secret lookup |
 | [SQL function IntelliSense](sql-function-intellisense.md) | DuckDB/PostgreSQL/ClickHouse slice uses published Golyglot alpha.10; broaden overload selection, probes, dialects and remaining editor surfaces |
 | [Full-file asset editor](full-file-asset-editor.md) | Proposed: isolate malformed documents, revision-checked raw saves, shared mixed-language IntelliSense; not implemented |
 | [Notebook Data Browser drops](notebook-data-browser-drops.md) | Table/project-file/S3-file insertion implemented; prefix review, connection picker and further transports remain |
@@ -48,6 +51,7 @@ Revalidate historical external research when selecting one.
 
 | Plan | Decision / dependency |
 | --- | --- |
+| [Docs structure](docs-information-architecture.md) | Choose workflow-first, workspace-first or reader-intent navigation; preserve URLs initially |
 | [Python query connection policy](python-cross-connection-policy.md) | Opt-in read scopes; separate from preventing writes on read-only connections |
 | [Team and hosted secret providers](secret-providers.md) | Select provider and identity/lease model; hosted work requires a separate trust architecture |
 | [Open-project links](open-project-links.md) | Safe launcher, reviewed clone/trust model, then native protocol packaging |

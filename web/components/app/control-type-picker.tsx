@@ -10,13 +10,17 @@ import {
 } from "@/lib/authored-controls";
 import { cn } from "@/lib/utils";
 
+import { AuthoringIconTile } from "./authoring-icon-tile";
+
 import { writeAuthoringDragItem } from "./authoring-drag";
 
 export function ControlTypePicker({
+  quietIcons = false,
   disabled = false,
   draggable = false,
   onValueChange,
 }: {
+  quietIcons?: boolean;
   disabled?: boolean;
   draggable?: boolean;
   onValueChange: (type: AuthoredControlType) => void;
@@ -45,7 +49,15 @@ export function ControlTypePicker({
           }
           onClick={() => onValueChange(type)}
         >
-          <ControlTypePreview type={type} />
+          <>
+            {quietIcons ? (
+              <AuthoringIconTile tone="control">
+                <ControlTypePreview type={type} className="h-7 w-11 max-w-none text-inherit" />
+              </AuthoringIconTile>
+            ) : (
+              <ControlTypePreview type={type} />
+            )}
+          </>
           <span className="truncate text-xs leading-tight">
             {AUTHORED_CONTROL_TYPE_LABELS[type]}
           </span>
@@ -84,7 +96,7 @@ export function ControlTypePreview({
 function InputFrame({ children }: { children?: ReactNode }) {
   return (
     <g>
-      <rect x="8" y="9" width="56" height="24" rx="4" className="fill-primary/5 stroke-border" />
+      <rect x="8" y="9" width="56" height="24" rx="4" className="fill-current/5 stroke-border" />
       {children}
     </g>
   );
@@ -99,7 +111,7 @@ function TextPreview() {
         strokeWidth="2"
         strokeLinecap="round"
       />
-      <path d="M51 15V27" className="stroke-primary/45" strokeWidth="1.5" />
+      <path d="M51 15V27" className="stroke-current/45" strokeWidth="1.5" />
     </InputFrame>
   );
 }
@@ -156,10 +168,10 @@ function SelectPreview() {
 function MultiSelectPreview() {
   return (
     <g className="stroke-current" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="12" y="8" width="10" height="10" rx="2" className="fill-primary/10" />
+      <rect x="12" y="8" width="10" height="10" rx="2" className="fill-current/10" />
       <path d="M14.5 13L16.5 15L20 11" />
       <path d="M28 13H59" />
-      <rect x="12" y="24" width="10" height="10" rx="2" className="fill-primary/10" />
+      <rect x="12" y="24" width="10" height="10" rx="2" className="fill-current/10" />
       <path d="M14.5 29L16.5 31L20 27" />
       <path d="M28 29H51" />
     </g>
@@ -169,7 +181,7 @@ function MultiSelectPreview() {
 function DatePreview() {
   return (
     <g className="stroke-current" strokeWidth="1.7">
-      <rect x="17" y="7" width="38" height="29" rx="3" className="fill-primary/5" />
+      <rect x="17" y="7" width="38" height="29" rx="3" className="fill-current/5" />
       <path d="M17 15H55M25 4V10M47 4V10" strokeLinecap="round" />
       <path
         d="M24 21H29M34 21H39M44 21H49M24 28H29M34 28H39"
@@ -184,8 +196,8 @@ function DatePreview() {
 function DateRangePreview() {
   return (
     <g className="stroke-current" strokeWidth="1.5">
-      <rect x="7" y="10" width="25" height="23" rx="3" className="fill-primary/5" />
-      <rect x="40" y="10" width="25" height="23" rx="3" className="fill-primary/5" />
+      <rect x="7" y="10" width="25" height="23" rx="3" className="fill-current/5" />
+      <rect x="40" y="10" width="25" height="23" rx="3" className="fill-current/5" />
       <path d="M7 17H32M40 17H65M13 7V13M26 7V13M46 7V13M59 7V13" strokeLinecap="round" />
       <path d="M34 22H38" strokeWidth="2" strokeLinecap="round" />
       <path d="M13 23H20M46 23H53" strokeWidth="3" strokeLinecap="round" opacity=".55" />

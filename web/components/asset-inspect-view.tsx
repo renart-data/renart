@@ -2,7 +2,8 @@
 
 import { lazy, Suspense } from "react";
 
-import { InspectWarningCard } from "@/components/inspect-warning-card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { TriangleAlert } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
 import {
@@ -59,6 +60,7 @@ export function AssetInspectView({
         className={`relative h-full bg-background ${frameless ? "" : "rounded border"}`}
         viewportClassName="p-3 text-sm"
       >
+        <InspectWarningBanner warning={warning} />
         <article className="max-w-none text-sm leading-6 text-foreground">
           <Suspense fallback={<div className="text-muted-foreground">Loading markdown...</div>}>
             <ReactMarkdown
@@ -92,7 +94,6 @@ export function AssetInspectView({
             </ReactMarkdown>
           </Suspense>
         </article>
-        <InspectWarningBanner warning={warning} />
       </ScrollArea>
     );
   }
@@ -108,8 +109,11 @@ export function AssetInspectView({
     }
 
     return (
-      <div className={`relative h-full bg-background p-2 ${frameless ? "" : "rounded border"}`}>
-        <ChartContainer className="h-full min-h-55 w-full" config={chart.config}>
+      <div
+        className={`flex h-full min-h-0 flex-col bg-background p-2 ${frameless ? "" : "rounded border"}`}
+      >
+        <InspectWarningBanner warning={warning} />
+        <ChartContainer className="min-h-0 w-full flex-1" config={chart.config}>
           {chartType === "bar" ? (
             <BarChart accessibilityLayer data={chart.data}>
               <CartesianGrid vertical={false} />
@@ -144,25 +148,26 @@ export function AssetInspectView({
             </LineChart>
           )}
         </ChartContainer>
-        <InspectWarningBanner warning={warning} />
       </div>
     );
   }
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
-      <VirtualDataTable
-        columns={columns}
-        rows={rows}
-        height="100%"
-        dense={tableDense}
-        loading={loading}
-        canLoadMore={canLoadMore}
-        onLoadMore={onLoadMore}
-        preview={preview}
-        frameless={frameless}
-      />
       <InspectWarningBanner warning={warning} />
+      <div className="min-h-0 flex-1">
+        <VirtualDataTable
+          columns={columns}
+          rows={rows}
+          height="100%"
+          dense={tableDense}
+          loading={loading}
+          canLoadMore={canLoadMore}
+          onLoadMore={onLoadMore}
+          preview={preview}
+          frameless={frameless}
+        />
+      </div>
     </div>
   );
 }
@@ -173,11 +178,21 @@ function InspectWarningBanner({ warning }: { warning?: string }) {
   }
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
-      <div className="absolute inset-0 bg-background/40 backdrop-brightness-75" />
-      <div className="pointer-events-auto">
-        <InspectWarningCard message={warning} testId="inspect-warning-banner" />
-      </div>
-    </div>
+    <Alert
+      className="shrink-0 rounded-none border-x-0 border-t-0"
+      data-testid="inspect-warning-banner"
+    >
+      <TriangleAlert className="text-warning" />
+      <AlertDescription>
+        <details>
+          <summary className="cursor-pointer font-medium text-foreground">
+            Preview needs attention
+          </summary>
+          <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">
+            {warning}
+          </pre>
+        </details>
+      </AlertDescription>
+    </Alert>
   );
 }

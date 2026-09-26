@@ -300,7 +300,13 @@ storageTest(
     await input.press("Tab");
     await expect(input).toHaveValue("s3-search./incoming/orders.csv");
     await expect(page.getByTestId("data-browser-shadow-suggestion")).toBeHidden();
+    const sftpListing = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname.endsWith("/prefix") && url.searchParams.get("path") === "incoming/";
+    });
     await input.fill("sftp-search./incoming/");
+    const sftpResponse = await sftpListing;
+    expect(sftpResponse.ok(), await sftpResponse.text()).toBe(true);
     await expect(page.getByRole("link", { name: /orders.csv/ })).toBeVisible();
     expect(requests.map((url) => url.searchParams.get("path") ?? "")).toEqual([
       "",

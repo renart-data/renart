@@ -38,6 +38,7 @@ import (
 	"renart/internal/web/service"
 	"renart/internal/web/snapshot"
 	"renart/internal/web/staleness"
+	"renart/internal/web/telemetry"
 
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
@@ -48,6 +49,7 @@ import (
 type workspaceState = service.WorkspaceState
 
 type webServer struct {
+	usage             *telemetry.Client
 	workspaceRoot     string
 	projectID         string
 	projectName       string
@@ -365,6 +367,7 @@ func (s *webServer) registerRoutes(router chi.Router) {
 			ProjectID:     s.projectID,
 		}
 	})
+	webhttpapi.RegisterTelemetryRoutes(router, &webhttpapi.TelemetryAPI{Client: s.usage, Changed: func() { s.hub.PublishImmediate(map[string]string{"type": "usage.settings.updated"}) }})
 	webhttpapi.RegisterWorkspaceRoutes(router, &webhttpapi.WorkspaceHandlers{Reader: s})
 	webhttpapi.RegisterConfigRoutes(router, &webhttpapi.ConfigHandlers{Service: s.configSvc, Policies: s.policyLoader, Publisher: s})
 	webhttpapi.RegisterPipelineRoutes(router, &webhttpapi.PipelineHandlers{Service: s.pipelineSvc, Publisher: s})

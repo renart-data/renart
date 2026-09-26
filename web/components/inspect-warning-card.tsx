@@ -21,7 +21,7 @@ export function InspectWarningCard({
   actions?: ReactNode;
 }) {
   return (
-    <Alert className="max-w-2xl border-border bg-muted/40" data-testid={testId}>
+    <Alert className="max-w-2xl" data-testid={testId}>
       <AlertTriangle className="text-amber-500" />
       <AlertTitle className="text-foreground">Preview failed</AlertTitle>
       <AlertDescription className="whitespace-pre-wrap font-mono text-xs leading-5 text-muted-foreground">

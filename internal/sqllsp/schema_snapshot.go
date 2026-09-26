@@ -65,9 +65,15 @@ func InferSchemaSnapshot(ctx context.Context, graph CanonicalGraph, assets []Inf
 	}
 	targets = topoOrderInferenceAssets(targets)
 
+	// An extension can infer notebook cells over an already inferred pipeline
+	// graph. Only replace the relations this pass will actually recompute.
+	targetRelations := make(map[string]bool, len(targets))
+	for _, asset := range targets {
+		targetRelations[relationByAssetID[asset.ID].ID] = true
+	}
 	baseSchemas := make([]SchemaLayer, 0, len(graph.Schemas))
 	for _, layer := range graph.Schemas {
-		if layer.SourceKind != "inferred-analysis" && layer.SourceKind != "inferred-ast" && layer.SourceKind != "inferred-tolerant" {
+		if !targetRelations[layer.RelationID] || !strings.HasPrefix(layer.SourceKind, "inferred-") {
 			baseSchemas = append(baseSchemas, layer)
 		}
 	}

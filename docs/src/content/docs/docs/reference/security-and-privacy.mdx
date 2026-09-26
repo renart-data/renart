@@ -4,8 +4,9 @@ description: Renart's local trust boundary, network exposure, telemetry, and saf
 ---
 
 Renart runs locally against files and connections you control. It does not
-require an account or a hosted Renart control plane, and the application does
-not send usage telemetry.
+require an account or a hosted Renart control plane. Released builds include
+optional usage counts with a first-run explanation and a switch that turns
+them off for every project.
 
 ## Keep the server local
 
@@ -56,10 +57,62 @@ environment binding; Renart never silently downgrades to plaintext.
 See [Manage connection credentials](/docs/connections-environments/managing-credentials/)
 for the UI workflow, source-selection guidance, and terminal commands.
 
+## Application usage analytics
+
+Open **Settings → General → Usage analytics** to see whether collection is
+active and change **Allow usage analytics**. This preference belongs to your
+operating-system user, applies across projects, and stays outside Git. Turning
+it off does not limit Renart's features. Environment opt-outs take priority
+over the switch.
+
+Released builds send usage events to `https://telemetry.getrenart.com/v1/events`.
+The first browser session shows an explanation before any events are collected; choose **Turn off analytics** or
+**Got it**. A command-line workspace session prints the explanation to standard
+error before collecting events. To opt out before the first launch, run:
+
+```bash
+renart telemetry disable
+```
+
+Or start Renart with `RENART_TELEMETRY=off`. Renart also respects
+`DO_NOT_TRACK=1` and a nonempty `TELEMETRY_OPTOUT`. Collection is disabled in CI
+and development builds, apart from explicitly configured local testing.
+
+The payload contains a random ID for each event, the hour, Renart version,
+operating system and architecture, plus the operation, outcome and coarse
+count/duration buckets. Events have no persistent installation identifier.
+They do not include code, query results, file paths, project or connection
+names, credentials, prompts or raw errors. These totals cannot identify unique
+installations or measure returning users.
+
+Choose **Inspect example payload**, or run `renart telemetry sample`, to see a
+synthetic example without sending it. Events are held in a small memory queue;
+failed sends are dropped without retrying or writing events to disk. Turning
+analytics off discards queued events. A request already received cannot be
+recalled. Other Renart processes check the shared preference before their next
+record or send.
+
+The collector stores daily aggregate counts and temporary event IDs, without
+raw event payloads or a link between an event ID and its aggregate row. IDs
+expire after seven days and are removed during startup and hourly cleanup.
+Daily aggregates have no automatic expiry. Renart-operated host logs use a
+28-day retention policy; the collector does not log request bodies, addresses,
+user agents or credentials.
+
+The endpoint runs on a Netcup server behind Cloudflare. Network providers can
+see request addresses and other connection information. Cloudflare's internal
+processing follows its [privacy policy](https://www.cloudflare.com/policies/privacy/);
+Renart's host-log limit does not establish a limit for Cloudflare's internal
+records. Renart's usage setting does not control network requests made by code
+you run or services you connect to.
+
+Collector failures do not change query or pipeline results. Events are sent in
+the background, with bounded requests and no retry queue. The final network
+send during shutdown is limited to two seconds.
+
 ## Website analytics
 
-The Renart application has no analytics integration. The documentation site's
-static build contains no tracker. On getrenart.com, the self-hosted Umami
+The documentation site's static build contains no tracker. On getrenart.com, the self-hosted Umami
 tracker is loaded only after a visitor explicitly allows optional analytics.
 Declining does not limit the site, and the choice can be changed through
 **Privacy settings** in the footer. Query strings and URL fragments are not

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"path/filepath"
+	"renart/internal/web/telemetry"
 	"strings"
 	"time"
 
@@ -198,6 +199,7 @@ func (s *NotebookService) runAutoWave(
 	}
 
 	runner := s.newRunner(renderer, environment, parameterValues)
+	runner.UsageTrigger = telemetry.Automatic
 	results, runErr := runner.RunCells(ctx, nb, cells, notebook.RunOptions{})
 	if ctx.Err() != nil {
 		return nil, true
@@ -422,6 +424,7 @@ func (s *NotebookService) newRunner(renderer *jinja.Renderer, environment string
 		renderSQL = renderer.Render
 	}
 	return &notebook.Runner{
+		RecordUsage:        s.deps.RecordUsage,
 		Store:              s.store,
 		RenameTables:       s.renameTables,
 		RenderSQL:          renderSQL,

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"renart/internal/web/model"
+	"renart/internal/web/telemetry"
 	"renart/internal/web/workspacefs"
 )
 
@@ -115,8 +116,10 @@ layout:
 			return schemas
 		},
 	})
+	var usage []telemetry.Observation
 	runtime := NewRuntimeService(RuntimeDependencies{
-		Documents: documents,
+		RecordUsage: func(event telemetry.Observation) { usage = append(usage, event) },
+		Documents:   documents,
 		NewConnectionLookup: func(context.Context, string) (ConnectionTypeLookup, error) {
 			return runtimeConnectionLookup{connectionType: "duckdb"}, nil
 		},
@@ -134,6 +137,9 @@ layout:
 	})
 	if apiErr != nil {
 		t.Fatalf("run: %+v", apiErr)
+	}
+	if len(usage) != 1 || usage[0].Name != telemetry.PresentationFinished || usage[0].Outcome != telemetry.Success || usage[0].Surface != telemetry.Dashboard {
+		t.Fatalf("unexpected usage summary: %+v", usage)
 	}
 	if result.Status != "ok" || result.Visualizations["revenue"].Rows[0][1] != int64(42) {
 		t.Fatalf("unexpected result: %+v", result)

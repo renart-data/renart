@@ -19,10 +19,12 @@ import (
 	"renart/internal/web/notebook"
 	"renart/internal/web/notebookdoc"
 	"renart/internal/web/presentation"
+	"renart/internal/web/telemetry"
 )
 
 // NotebookDependencies wires the notebook service into the rest of the app.
 type NotebookDependencies struct {
+	RecordUsage             func(telemetry.Observation)
 	WorkspaceRoot           string
 	ConfigPath              string
 	DisableFilesystemAccess bool

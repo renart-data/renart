@@ -902,7 +902,11 @@ export function AppBuildPage({
     }
     return selectedAssetId ? { kind: "asset", pipelineId, assetId: selectedAssetId } : null;
   }, [editorMode, pipelineId, selectedAsset, selectedAssetId]);
-  const { documents: buildDocuments, closeDocument: removeBuildDocument } = useBuildDocuments({
+  const {
+    documents: buildDocuments,
+    closeDocument: removeBuildDocument,
+    moveDocument: moveBuildDocument,
+  } = useBuildDocuments({
     projectId: workbenchSession.projectId,
     activeDocument: activeBuildDocument,
     availableAssetKeys: availableBuildAssetKeys,
@@ -2043,6 +2047,7 @@ export function AppBuildPage({
                     documentSaveError={documentSaveError}
                     onSelectDocument={(document) => void selectBuildDocument(document)}
                     onCloseDocument={(document) => void closeBuildDocument(document)}
+                    onMoveDocument={moveBuildDocument}
                   />
                 ) : null}
                 <DelimitedCardContent className="min-h-0 flex-1 p-0">
@@ -2468,6 +2473,7 @@ function BuildTopBar({
   documentSaveError,
   onSelectDocument,
   onCloseDocument,
+  onMoveDocument,
 }: {
   pipelineId: string;
   pipelineLabel: string;
@@ -2495,6 +2501,7 @@ function BuildTopBar({
   documentSaveError?: string | null;
   onSelectDocument?: (document: BuildDocument) => void;
   onCloseDocument?: (document: BuildDocument) => void;
+  onMoveDocument?: (key: string, targetKey: string) => void;
 }) {
   const search: AppBuildSearch = { result: resultTab, editor: editorMode };
 
@@ -2507,6 +2514,7 @@ function BuildTopBar({
           emptyLabel={pipelineLabel}
           onSelectDocument={onSelectDocument}
           onCloseDocument={onCloseDocument}
+          onMoveDocument={onMoveDocument}
         />
         {documentSaveError ? (
           <span

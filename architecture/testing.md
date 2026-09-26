@@ -7,8 +7,15 @@ and single-worker execution preserve external-resource isolation.
 
 Storage browser tests use `live-storage-app-fixture.ts` to start S3/SFTP before
 the browser and supply credentials through environment secret references. They
-must not depend on the developer's unlocked desktop keyring. Regression SQL
-belongs in tracked `web/tests/fixtures/`, not the untracked example workspace.
+must not depend on the developer's unlocked desktop keyring. S3 uses pinned
+upstream MinIO/mc source builds cached in
+`.test-artifacts/storage-tools` (override with `RENART_E2E_STORAGE_TOOL_DIR`).
+The old community container tags are no longer available. First use requires
+Go module download access and may take several minutes; subsequent runs reuse
+the native binaries. Each test binds only to loopback and keeps its data and
+client configuration in disposable directories. The warehouse matrix shares
+the same S3 fixture. Regression SQL belongs in tracked `web/tests/fixtures/`, not
+the untracked example workspace.
 
 For nested-project regressions, `live-app-fixture.ts` accepts a
 `workspaceSubdirectory`. The disposable Git root and parent connection config

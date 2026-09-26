@@ -51,6 +51,8 @@ test("focuses the filter and navigates sources and namespaces with the keyboard"
   await page.keyboard.press("Home");
   await page.keyboard.press("Enter");
   const catalog = page.getByRole("button", { name: "local Default", exact: true });
+  // Wait for cold database discovery before checking the keyboard focus contract.
+  await expect(catalog).toBeVisible({ timeout: 15000 });
   await expect(catalog).toBeFocused();
   const transition = page.locator('[data-slot="workbench-context-transition"]');
   await expect(transition).toHaveAttribute("data-direction", "forward");

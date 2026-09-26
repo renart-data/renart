@@ -122,3 +122,22 @@ func assertFinding(t *testing.T, findings []Finding, code, path, severity string
 	}
 	t.Fatalf("finding %s at %s (%s) not found in %+v", code, path, severity, findings)
 }
+
+func TestScatterAcceptsCategoricalXAxis(t *testing.T) {
+	definition := VisualizationDefinition{Version: 1, Type: "scatter"}
+	definition.Encoding.X = &FieldEncoding{Field: "team"}
+	definition.Encoding.Y = []FieldEncoding{{Field: "score"}}
+	schema := ResolvedSchema{Columns: []ResolvedColumn{
+		{Name: "team", PhysicalType: "VARCHAR", SemanticType: SemanticCategorical},
+		{Name: "score", PhysicalType: "DOUBLE", SemanticType: SemanticNumeric},
+	}}
+	findings := (Checker{}).CheckVisualization(t.Context(), definition, schema, CheckOptions{})
+	if len(findings) != 0 {
+		t.Fatalf("categorical X should form a valid dot plot: %+v", findings)
+	}
+	definition.Encoding.Y = []FieldEncoding{{Field: "team"}}
+	findings = (Checker{}).CheckVisualization(t.Context(), definition, schema, CheckOptions{})
+	if len(findings) == 0 {
+		t.Fatal("categorical Y must not be treated as a numeric measure")
+	}
+}

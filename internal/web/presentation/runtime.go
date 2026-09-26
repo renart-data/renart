@@ -13,6 +13,7 @@ import (
 	"renart/internal/sqlintelligence"
 	"renart/internal/web/apperror"
 	"renart/internal/web/model"
+	"renart/internal/web/telemetry"
 )
 
 const RuntimeRowLimit = 1000
@@ -37,6 +38,7 @@ type RuntimeDataset struct {
 // explicit adapter boundaries while the execution state machine remains in the
 // presentation domain.
 type RuntimeDependencies struct {
+	RecordUsage         func(telemetry.Observation)
 	Documents           *DocumentService
 	NewConnectionLookup func(context.Context, string) (ConnectionTypeLookup, error)
 	ResolveAssetDataset func(context.Context, ConnectionTypeLookup, string, DatasetDefinition, string) (RuntimeDataset, error)
@@ -66,7 +68,22 @@ func (s *RuntimeService) Run(
 	if apiErr != nil {
 		return model.PresentationRunResult{}, apiErr
 	}
-	return s.runArtifact(ctx, artifact, request)
+	started := time.Now()
+	result, runErr := s.runArtifact(ctx, artifact, request)
+	if s.deps.RecordUsage != nil {
+		outcome := telemetry.Success
+		if ctx.Err() != nil {
+			outcome = telemetry.Cancelled
+		} else if runErr != nil || result.Status != "ok" {
+			outcome = telemetry.Failed
+		}
+		surface := telemetry.Dashboard
+		if artifact.Kind == ArtifactKindReport {
+			surface = telemetry.Report
+		}
+		s.deps.RecordUsage(telemetry.Observation{Name: telemetry.PresentationFinished, Surface: surface, Outcome: outcome, Trigger: telemetry.Manual, Duration: time.Since(started), Items: len(result.Visualizations)})
+	}
+	return result, runErr
 }
 
 // Preview validates and executes an unsaved typed snapshot without writing it

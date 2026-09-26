@@ -66,15 +66,18 @@ export function AppWorkbenchLayout({ children }: { children: ReactNode }) {
         {children}
       </section>
 
-      {!isMobile && hasInspectorSlot ? (
+      {!isMobile ? (
         <aside
-          ref={setInspectorHost}
           aria-label="Inspector"
+          aria-hidden={!hasInspectorSlot}
+          inert={!hasInspectorSlot ? true : undefined}
           className={cn(
-            "hidden min-h-0 w-80 shrink-0 overflow-hidden rounded-xl border bg-card shadow-sm",
-            "xl:block",
+            "hidden min-h-0 shrink-0 overflow-hidden rounded-xl bg-card transition-[width,opacity,margin] duration-200 ease-out motion-reduce:transition-none xl:block",
+            hasInspectorSlot ? "w-80 border opacity-100 shadow-sm" : "-ml-1.5 w-0 opacity-0",
           )}
-        />
+        >
+          <div ref={setInspectorHost} className="h-full w-80" />
+        </aside>
       ) : null}
 
       {isMobile ? (

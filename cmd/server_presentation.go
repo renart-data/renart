@@ -13,6 +13,7 @@ import (
 // document and runtime ownership live in internal/web/presentation.
 func configurePresentationService(server *webServer, workspaceRoot string) {
 	server.presentationSvc = service.NewPresentationService(service.PresentationDependencies{
+		RecordUsage:      server.usage.Record,
 		WorkspaceRoot:    workspaceRoot,
 		ConfigPath:       resolveConfigFilePath(workspaceRoot),
 		CurrentState:     func() service.WorkspaceState { return server.currentState() },

@@ -24,6 +24,7 @@ func configureExecutionService(
 	coordinator *workspaceExecutionCoordinator,
 ) {
 	server.executionSvc = service.NewExecutionService(service.ExecutionDependencies{
+		RecordUsage:          server.usage.Record,
 		WorkspaceRoot:        workspaceRoot,
 		ConfigPath:           resolveConfigFilePath(workspaceRoot),
 		Executor:             server.executor,

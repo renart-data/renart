@@ -218,6 +218,12 @@ assets, but their visibility mirrors the per-notebook DuckDB session
   assets) become *bare* relations — they resolve without claiming columns, so
   reading a raw table is never an `unresolved-relation` error and its columns
   are never validated.
+- Request-local notebook inference preserves pipeline relations' existing
+  inferred schema layers. Authoring reconciliation clears inferred layers only
+  for the assets being recomputed, and `InferSchemaSnapshot` replaces only the
+  current pass's target relations. This keeps SQL-only pipeline columns visible
+  in notebook completion without requiring metadata declarations or mutating
+  the cached graph.
 - Scoping is strict both ways: cells of other notebooks stay unresolved, and
   pipeline-asset requests never see notebook cells.
 - References from a cell also search sibling cell documents.
