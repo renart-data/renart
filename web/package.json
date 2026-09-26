@@ -54,7 +54,7 @@
   },
   "devDependencies": {
     "@iconify-json/simple-icons": "^1.2.93",
-    "@playwright/test": "^1.61.1",
+    "@playwright/test": "^1.63.0",
     "@svgr/core": "^8.1.0",
     "@svgr/plugin-jsx": "^8.1.0",
     "@tailwindcss/postcss": "^4.3.2",
