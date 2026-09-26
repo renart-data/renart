@@ -7,7 +7,8 @@ export const storageTest = liveTest.extend<{
   largeS3Listing: boolean;
 }>({
   largeS3Listing: [false, { option: true }],
-  // Docker networking must be ready before Chromium opens the page.
+  // Local S3/SFTP must be ready before Chromium opens the page.
+  // The first run builds the pinned MinIO tools; later runs reuse the binaries.
   storage: [
     async ({ largeS3Listing }, use) => {
       const storage = await createLiveStorage({ largeS3Listing });
@@ -17,7 +18,7 @@ export const storageTest = liveTest.extend<{
         await storage.dispose();
       }
     },
-    { auto: true, timeout: 60000 },
+    { auto: true, timeout: 15 * 60_000 },
   ],
   liveAppEnv: async ({ storage }, use) => {
     await use({

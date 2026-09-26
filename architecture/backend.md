@@ -185,11 +185,10 @@ after the first-run notice; environment opt-outs, CI/development safeguards and
 per-user settings take priority. Events carry no persistent installation ID,
 workspace identifiers, code, data, credentials or raw errors. Failed sends are
 dropped without retrying or spooling to disk. The queue is capped at 128 events;
-requests and shutdown flushing have a two-second deadline. This is independent
-of pipeline, notebook and presentation success. Recording drops counts when
-settings are busy; malformed settings and non-regular settings files disable
-collection. The published payload and
-controls are in `docs/src/content/docs/docs/reference/security-and-privacy.mdx`.
+HTTP requests, including the final network send at shutdown, have a two-second
+deadline. This is independent of pipeline, notebook and presentation success.
+Recording drops counts when settings are busy; malformed settings and non-regular
+settings files disable collection. The published payload and controls are in `docs/src/content/docs/docs/reference/security-and-privacy.mdx`.
 Private measurement and collector-operation notes remain outside version control.
 
 ## 2. Runtime model
@@ -234,8 +233,8 @@ until the project router is fully initialized, so a large state-database check
 does not delay port discovery without exposing partially wired services. The
 browser and project discovery file are enabled only after that gate opens. The
 `standalone` server always binds to loopback. Renart commands do not install
-Bruin's command telemetry hooks, so the application itself sends no usage
-telemetry.
+Bruin's command telemetry hooks. Renart's own optional usage counts follow the
+notice and opt-out policy described above.
 
 Concurrent file writes are serialized by a per-file lock in the asset write
 path (fast successive edits used to race read-modify-write cycles and drop

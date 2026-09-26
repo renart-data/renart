@@ -37,7 +37,9 @@ test("a child project lists parent connections without opening storage or includ
   ).click();
   await expect(page.getByRole("textbox", { name: "Search data browser" })).toBeFocused();
   await page.getByRole("button", { name: /inherited-warehouse.*DuckDB/ }).click();
-  await expect(page.getByRole("button", { name: "parent Default", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "parent Default", exact: true })).toBeVisible({
+    timeout: 15000, // Parent-owned DuckDB discovery can start a cold local runtime.
+  });
   await page.getByRole("button", { name: "Back", exact: true }).click();
   await page.getByRole("button", { name: /Project files.*Files inside this project/ }).click();
   await expect(page.getByRole("button", { name: "data", exact: true })).toBeVisible();

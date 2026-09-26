@@ -1,15 +1,14 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
-import { getAvailablePort, runCommand, waitForHTTP } from "./live-warehouse-matrix";
+import { copyFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { createLiveMinio } from "./live-minio-fixture";
+import { getAvailablePort, runCommand } from "./live-warehouse-matrix";
 
 const repo = resolve(__dirname, "../../..");
-const minioImage = "quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z";
-const mcImage = "quay.io/minio/mc:RELEASE.2025-05-21T01-59-54Z";
 
 export async function createLiveStorage(options: { largeS3Listing?: boolean } = {}) {
-  const suffix = randomUUID().slice(0, 8);
-  const container = `renart-e2e-storage-${suffix}`;
   const password = randomUUID();
   const minioPort = await getAvailablePort();
   const helperDir = resolve(__dirname, "helpers/storage-sftp");
@@ -23,14 +22,16 @@ export async function createLiveStorage(options: { largeS3Listing?: boolean } = 
   sftp.stderr.on("data", (chunk) => {
     output = (output + chunk).slice(-8000);
   });
-  let started = false;
+  let minio: Awaited<ReturnType<typeof createLiveMinio>> | undefined;
+  let seed: string | undefined;
   const dispose = async () => {
     if (sftp.exitCode === null && sftp.signalCode === null) {
       const stopped = new Promise<void>((done) => sftp.once("exit", () => done()));
       sftp.kill("SIGTERM");
       await stopped;
     }
-    if (started) await runCommand(["docker", "rm", "-f", container], true);
+    await minio?.dispose();
+    if (seed) await rm(seed, { recursive: true, force: true });
   };
   try {
     const sftpPort = await new Promise<number>((done, fail) => {
@@ -53,44 +54,28 @@ export async function createLiveStorage(options: { largeS3Listing?: boolean } = 
         else fail(new Error("SFTP fixture returned an invalid port"));
       });
     });
-    await runCommand([
-      "docker",
-      "run",
-      "--rm",
-      "-d",
-      "--name",
-      container,
-      "-e",
-      "MINIO_ROOT_USER=renart",
-      "-e",
-      "MINIO_ROOT_PASSWORD=renart-secret",
-      "--tmpfs",
-      "/data:rw,noexec,nosuid,size=128m",
-      "-p",
-      `127.0.0.1:${minioPort}:9000`,
-      minioImage,
-      "server",
-      "/data",
-    ]);
-    started = true;
-    await waitForHTTP(`http://127.0.0.1:${minioPort}/minio/health/live`);
-    await runCommand([
-      "docker",
-      "run",
-      "--rm",
-      "--network",
-      `container:${container}`,
-      "--mount",
-      `type=bind,src=${resolve(repo, "web/tests/fixtures/storage")},dst=/fixture,readonly`,
-      "--entrypoint",
-      "/bin/sh",
-      mcImage,
-      "-c",
-      "set -e; mc alias set local http://127.0.0.1:9000 renart renart-secret >/dev/null; mc mb local/browser; mc cp /fixture/orders.csv local/browser/incoming/orders.csv; mc cp /fixture/orders.csv local/browser/outgoing/previous.csv" +
-        (options.largeS3Listing
-          ? "; mkdir -p /seed/many-files; i=1000; while [ $i -lt 1520 ]; do mkdir -p /seed/my_table/day=2024-$i; cp /fixture/orders.csv /seed/my_table/day=2024-$i/data.csv; cp /fixture/orders.csv /seed/many-files/part-$i.csv; i=$((i+1)); done; for date in 2026-09-01 2026-09-20 2026-10-01; do mkdir -p /seed/my_table/day=$date; cp /fixture/orders.csv /seed/my_table/day=$date/data.csv; cp /fixture/orders.csv /seed/many-files/part-$date.csv; done; mc cp --recursive /seed/ local/browser/ >/dev/null"
-          : ""),
-    ]);
+    minio = await createLiveMinio(minioPort);
+    await minio.mc("mb", "local/browser");
+    const orders = resolve(repo, "web/tests/fixtures/storage/orders.csv");
+    await minio.mc("cp", orders, "local/browser/incoming/orders.csv");
+    await minio.mc("cp", orders, "local/browser/outgoing/previous.csv");
+    if (options.largeS3Listing) {
+      seed = await mkdtemp(join(tmpdir(), "renart-storage-seed-"));
+      await mkdir(join(seed, "many-files"));
+      const dates = [
+        ...Array.from({ length: 520 }, (_, index) => `2024-${1000 + index}`),
+        "2026-09-01",
+        "2026-09-20",
+        "2026-10-01",
+      ];
+      for (const date of dates) {
+        const directory = join(seed, "my_table", `day=${date}`);
+        await mkdir(directory, { recursive: true });
+        await copyFile(orders, join(directory, "data.csv"));
+        await copyFile(orders, join(seed, "many-files", `part-${date.replace("2024-", "")}.csv`));
+      }
+      await minio.mc("cp", "--recursive", `${seed}/`, "local/browser/");
+    }
     return { minioPort, sftpPort, password, dispose };
   } catch (error) {
     await dispose();

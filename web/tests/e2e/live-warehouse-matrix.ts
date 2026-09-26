@@ -6,6 +6,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { rootCertificates } from "node:tls";
+import { createLiveMinio } from "./live-minio-fixture";
 
 const webDir = resolve(__dirname, "..", "..");
 const repoRoot = resolve(webDir, "..");
@@ -22,10 +23,6 @@ const POSTGRES_IMAGE = "postgres:16-alpine";
 const CLICKHOUSE_IMAGE = "clickhouse/clickhouse-server:25.8.28-alpine";
 const TRINO_IMAGE = "trinodb/trino:482";
 const STARROCKS_IMAGE = "starrocks/allin1-ubuntu:3.5-latest";
-const MINIO_IMAGE = "quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z";
-const MINIO_CLIENT_IMAGE = "quay.io/minio/mc:RELEASE.2025-05-21T01-59-54Z";
-const MINIO_ACCESS_KEY = "renart";
-const MINIO_SECRET_KEY = "renart-secret";
 const DUCKLAKE_BUCKET = "renart-ducklake";
 const PYSAIL_PACKAGE = "pysail==0.6.6";
 
@@ -67,7 +64,6 @@ export async function createLiveWarehouseMatrix(
   const clickhouseName = `renart-e2e-ch-${suffix}`;
   const trinoName = `renart-e2e-trino-${suffix}`;
   const starrocksName = `renart-e2e-starrocks-${suffix}`;
-  const minioName = `renart-e2e-minio-${suffix}`;
   const [
     postgresPort,
     clickhouseNativePort,
@@ -87,7 +83,9 @@ export async function createLiveWarehouseMatrix(
   let databricksTLSDir: string | null = null;
   let databricksTrustBundle: string | null = null;
   let networkCreated = false;
+  let minio: Awaited<ReturnType<typeof createLiveMinio>> | undefined;
   const dispose = async () => {
+    await minio?.dispose();
     for (const process of processes.reverse()) {
       await stopManagedProcess(process);
     }
@@ -389,43 +387,8 @@ insert into analytics.customer_activity_source (customer_id, activity_score) val
     }
 
     if (enabled.has("ducklake")) {
-      await runCommand([
-        "docker",
-        "run",
-        "--rm",
-        "-d",
-        "--name",
-        minioName,
-        "--network",
-        networkName,
-        "--network-alias",
-        "minio",
-        "-e",
-        `MINIO_ROOT_USER=${MINIO_ACCESS_KEY}`,
-        "-e",
-        `MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}`,
-        "--tmpfs",
-        "/data:rw,noexec,nosuid,size=512m",
-        "-p",
-        `127.0.0.1:${minioPort}:9000`,
-        MINIO_IMAGE,
-        "server",
-        "/data",
-      ]);
-      containers.push(minioName);
-      await waitForHTTP(`http://127.0.0.1:${minioPort}/minio/health/live`);
-      await runCommand([
-        "docker",
-        "run",
-        "--rm",
-        "--network",
-        networkName,
-        "--entrypoint",
-        "/bin/sh",
-        MINIO_CLIENT_IMAGE,
-        "-c",
-        `mc alias set local http://minio:9000 ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} >/dev/null && mc mb --ignore-existing local/${DUCKLAKE_BUCKET}`,
-      ]);
+      minio = await createLiveMinio(minioPort);
+      await minio.mc("mb", "--ignore-existing", `local/${DUCKLAKE_BUCKET}`);
     }
 
     return {
