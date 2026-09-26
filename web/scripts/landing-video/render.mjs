@@ -22,7 +22,7 @@ const { values: args } = parseArgs({
     fps: { type: "string", default: "30" },
     out: { type: "string", default: path.join(repoRoot, "docs/public/landing") },
     stills: { type: "string" },
-    poster: { type: "string", default: "46.8" },
+    poster: { type: "string", default: "18.6" },
   },
 });
 const fps = Number(args.fps);

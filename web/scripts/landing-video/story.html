@@ -6,6 +6,7 @@
   whole scene state, so the capture script (render.mjs) can step frame by frame
   and every render is identical. Open this file directly in a browser to scrub
   it: ?t=<seconds> seeks, ?play plays in real time, ?theme=light swaps palette.
+  The last frame fades back into the first, so the video loops seamlessly.
 
   The UI is an illustration of the Renart workspace, not a screenshot — keep the
   copy truthful to the product (plain table names, no ref(), no "bruin").
@@ -292,6 +293,80 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 .card .cmd { margin-top: 38px; padding: 16px 26px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); font: 400 26px "Geist Mono", monospace; }
 .card .cmd span { color: var(--faint); margin-right: 14px; }
 .card .url { margin-top: 22px; color: var(--muted); font-size: 22px; }
+
+/* ---------- v2: environments, deploy, schedules, staleness ---------- */
+#steps .s { width: 90px; }
+#steps .s .l { font-size: 14px; }
+.badge.warn { background: rgba(233, 179, 95, 0.15); color: var(--amber); }
+.badge.warn .dot { background: var(--amber); }
+.skip { position: absolute; left: 16px; top: -34px; font-size: 14px; color: var(--muted); background: var(--raise); border: 1px solid var(--line); border-radius: 8px; padding: 3px 9px; white-space: nowrap; }
+
+#envchip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent-strong); }
+#envchip.prod { color: var(--text); border-color: var(--amber); }
+#envchip.prod .dot { background: var(--amber); }
+#envmenu { position: absolute; top: 58px; width: 330px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 6px; z-index: 5; }
+#envmenu .t { font-size: 14px; color: var(--faint); padding: 6px 10px 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+#envmenu .it { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; font-size: 18px; }
+#envmenu .it.hl { background: var(--panel-2); }
+#envmenu .it small { margin-left: auto; font-size: 14px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+
+#review { position: absolute; top: 0; right: 0; bottom: 0; width: 820px; background: var(--panel); border-left: 1px solid var(--line); box-shadow: -30px 0 60px rgba(0,0,0,0.3); padding: 24px 28px; display: flex; flex-direction: column; gap: 16px; }
+#review h4 { margin: 0; font-size: 25px; font-weight: 600; }
+#review .sub { color: var(--muted); font-size: 17px; display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+#review .files { border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
+#review .file { display: flex; align-items: center; gap: 12px; padding: 10px 14px; font: 400 17px "Geist Mono", monospace; border-bottom: 1px solid var(--line-soft); }
+#review .file:last-child { border-bottom: 0; }
+#review .file .add { margin-left: auto; color: var(--accent-strong); font-size: 15px; }
+#review .diff { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--code-bg); font: 400 18px/31px "Geist Mono", monospace; padding: 8px 0; overflow: hidden; }
+#review .diff .dh { padding: 2px 16px 8px; color: var(--muted); font-size: 15px; border-bottom: 1px solid var(--line-soft); margin-bottom: 6px; }
+#review .diff .dl { white-space: pre; padding: 0 16px; background: rgba(95, 207, 151, 0.08); }
+#review .diff .dl b { color: var(--accent-strong); font-weight: 400; display: inline-block; width: 26px; }
+#review .foot { margin-top: auto; display: flex; align-items: center; gap: 14px; font-size: 17px; color: var(--accent-strong); }
+#review .foot .btn { margin-left: auto; }
+
+#sched { position: absolute; inset: 0; background: var(--window); padding: 26px 30px; display: grid; grid-template-columns: 700px 1fr; gap: 26px; }
+#sched h2 { margin: 0; font-size: 27px; font-weight: 600; }
+#sched .lead { color: var(--muted); font-size: 17px; margin: 4px 0 18px; }
+.card2 { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 20px 22px; }
+.card2 .ct { font-size: 20px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+.fld { margin-bottom: 14px; }
+.fld .fl { font-size: 15px; color: var(--muted); margin-bottom: 6px; }
+.fld .in { display: flex; align-items: center; gap: 10px; padding: 9px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--window); font-size: 18px; min-height: 45px; }
+.fld .in.focus { border-color: var(--accent-strong); box-shadow: 0 0 0 3px var(--fresh-bg); }
+.fld .in.mono { font-family: "Geist Mono", monospace; font-size: 20px; }
+.fld .help { font-size: 15px; color: var(--accent-strong); margin-top: 6px; min-height: 20px; }
+.opts { display: flex; flex-direction: column; gap: 6px; }
+.opt { display: flex; align-items: center; gap: 10px; font-size: 17px; color: var(--muted); padding: 4px 2px; }
+.opt i { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
+.opt.on { color: var(--text); }
+.opt.on i { border-color: var(--accent-strong); box-shadow: inset 0 0 0 4px var(--panel), inset 0 0 0 10px var(--accent-strong); }
+#tl { position: relative; }
+#tl .row2 { display: flex; align-items: center; gap: 12px; font-size: 18px; margin-bottom: 40px; }
+#tl .days { position: relative; display: grid; grid-template-columns: repeat(7, 1fr); border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); height: 150px; }
+#tl .day { border-left: 1px solid var(--line-soft); position: relative; }
+#tl .day:first-child { border-left: 0; }
+#tl .day .dl { position: absolute; top: 10px; left: 12px; font-size: 14px; color: var(--faint); }
+#tl .slot { position: absolute; left: 30%; top: 70px; width: 30px; height: 30px; margin-left: -15px; border-radius: 50%; border: 2px dashed var(--faint); display: grid; place-items: center; color: var(--accent-ink); font-size: 16px; }
+#tl .slot.done { border: 0; background: var(--accent-strong); }
+#tl .slot.running { border: 2px solid var(--accent-strong); }
+#tl .slot.next { border-style: solid; border-color: var(--accent); }
+#tl .now { position: absolute; top: -8px; bottom: -8px; width: 2px; background: var(--amber); }
+#tl .now span { position: absolute; top: -26px; left: -60px; width: 120px; text-align: center; font-size: 14px; color: var(--amber); font-family: "Geist Mono", monospace; }
+#tl .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 17px; }
+#runcard { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 16px; color: var(--muted); }
+#runcard .rh { display: flex; align-items: center; gap: 10px; font-size: 18px; color: var(--text); }
+#runcard .ok { color: var(--accent-strong); }
+
+#inspect { position: absolute; width: 400px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 14px 16px; }
+#inspect .ttl { display: flex; gap: 10px; align-items: center; font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+#inspect .ttl small { margin-left: auto; font-weight: 400; color: var(--faint); font-size: 14px; }
+#inspect .col { display: flex; justify-content: space-between; font: 400 16px "Geist Mono", monospace; padding: 5px 4px; border-top: 1px solid var(--line-soft); }
+#inspect .col span:last-child { color: var(--muted); font-size: 14px; }
+#inspect .col.new { background: var(--fresh-bg); border-radius: 6px; color: var(--accent-strong); }
+#stalebar { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; padding: 10px 12px 10px 18px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); font-size: 18px; white-space: nowrap; }
+#stalebar .d { width: 10px; height: 10px; border-radius: 50%; background: var(--amber); }
+#stalebar.clean .d { background: var(--accent-strong); }
+#edges circle.amber { fill: var(--amber); }
 </style>
 </head>
 <body>
@@ -302,14 +377,19 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
         <div class="brand"><img src="logo.svg" alt="" />renart</div>
         <span class="chip"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 10h16M10 10v10"/></svg>acme</span>
         <div class="nav">
-          <span class="on"><svg class="i" viewBox="0 0 24 24"><path d="M14.5 5.5a4 4 0 0 0 4.9 4.9L12 17.8l-3 1.2 1.2-3 7.3-7.3M4 20l3-3"/></svg>Build</span>
-          <span><svg class="i" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>Run</span>
+          <span id="nav-build"><svg class="i" viewBox="0 0 24 24"><path d="M14.5 5.5a4 4 0 0 0 4.9 4.9L12 17.8l-3 1.2 1.2-3 7.3-7.3M4 20l3-3"/></svg>Build</span>
+          <span id="nav-run"><svg class="i" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>Run</span>
           <span><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="12" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.5 6.5l7 4.5M8.5 17.5l7-4.5"/></svg>Explore</span>
         </div>
         <div class="spacer"></div>
-        <span class="chip"><span style="width:9px;height:9px;border-radius:50%;background:var(--accent-strong)"></span>dev</span>
+        <span class="chip" id="envchip"><span class="dot"></span><span class="lbl">dev</span><svg class="i" viewBox="0 0 24 24" id="envlock"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>
         <span class="chip" id="branch"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-6 3-11 6.5"/></svg>main <span class="count" id="changes">0</span></span>
-        <span class="btn primary" id="runbtn"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Run pipeline</span>
+        <span class="btn primary" id="runbtn"></span>
+      </div>
+      <div id="envmenu">
+        <div class="t">Environment</div>
+        <div class="it" id="env-dev"><span style="width:9px;height:9px;border-radius:50%;background:var(--accent-strong)"></span>dev<small>Default</small></div>
+        <div class="it" id="env-prod"><span style="width:9px;height:9px;border-radius:50%;background:var(--amber)"></span>prod<small><svg class="i" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Deployed only</small></div>
       </div>
       <div id="body">
         <div id="canvas">
@@ -325,7 +405,14 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
               <div class="it"><svg class="i" viewBox="0 0 24 24" style="color:var(--fn)"><path d="M12 3c-4 0-4 2-4 3v2h5M12 21c4 0 4-2 4-3v-2h-5M8 8H6c-2 0-3 2-3 4s1 4 3 4h2M16 16h2c2 0 3-2 3-4s-1-4-3-4h-2"/></svg>Python asset<small>transform</small></div>
               <div class="it"><svg class="i" viewBox="0 0 24 24" style="color:var(--jinja)"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15l3-4 2 2 3-4"/></svg>Notebook<small>analysis</small></div>
             </div>
+            <div id="inspect">
+              <div class="ttl"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>raw.orders<small>Load · columns</small></div>
+              <div class="col" style="color:var(--faint)"><span>order_id, customer_id, …</span><span></span></div>
+              <div class="col"><span>total_amount</span><span>DECIMAL(12,2)</span></div>
+              <div class="col new" id="newcol"><span></span><span></span></div>
+            </div>
           </div>
+          <div id="stalebar"><span class="d"></span><span class="msg"></span><span class="btn primary" id="buildstale"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Build stale</span></div>
           <div id="results">
             <div class="h"><svg class="i" viewBox="0 0 24 24" style="color:var(--accent-strong)"><path d="M3 5h18v14H3zM3 10h18M9 10v9"/></svg>marts.customer_revenue <small>12,391 rows · 0.4 s · just now</small></div>
             <table>
@@ -402,12 +489,51 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
             <div class="note">Completions, hovers and type checks run on the rendered SQL.</div>
           </div>
         </div>
+
+        <div id="review">
+          <div>
+            <h4>Review deployment</h4>
+            <div class="sub"><span class="badge warn"><span class="dot"></span>prod · Deployed only</span>First deployment · from main</div>
+          </div>
+          <div class="files">
+            <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>assets/raw/orders.asset.yml<span class="add">+15</span></div>
+            <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>assets/raw/customers.asset.yml<span class="add">+12</span></div>
+            <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>assets/marts/customer_revenue.sql<span class="add">+8</span></div>
+          </div>
+          <div class="diff"><div class="dh">assets/marts/customer_revenue.sql</div><div id="difflines"></div></div>
+          <div class="foot"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Pipeline type-checked · 0 problems<span class="btn primary" id="deploybtn"><svg class="i" viewBox="0 0 24 24"><path d="M12 19V6M6 11l6-6 6 6"/></svg>Deploy to prod</span></div>
+        </div>
+
+        <div id="sched">
+          <div>
+            <h2>Schedules</h2>
+            <div class="lead">Run pipelines on a cadence, per environment.</div>
+            <div class="card2">
+              <div class="ct"><svg class="i" viewBox="0 0 24 24" style="color:var(--accent-strong)"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>New schedule</div>
+              <div class="fld"><div class="fl">Pipeline</div><div class="in">acme_shop</div></div>
+              <div class="fld"><div class="fl">Environment</div><div class="in">prod <span class="badge warn" style="margin-left:auto"><span class="dot"></span>Deployed only</span></div></div>
+              <div class="fld"><div class="fl">Schedule</div><div class="in mono" id="cron"><span class="v"></span><span class="c" style="width:2px;height:24px;background:var(--accent-strong)"></span></div><div class="help" id="cronhelp"></div></div>
+              <div class="fld"><div class="fl">Catch-up policy</div>
+                <div class="opts"><div class="opt on"><i></i>Run once after downtime</div><div class="opt"><i></i>Backfill missed windows</div><div class="opt"><i></i>Skip missed intervals</div></div>
+              </div>
+              <span class="btn primary" id="create-sched">Create schedule</span>
+            </div>
+          </div>
+          <div>
+            <h2>&nbsp;</h2>
+            <div class="lead">&nbsp;</div>
+            <div class="card2" id="tl">
+              <div class="row2"><b style="font-weight:600">Schedule timeline</b><span class="badge" id="tlbadge"></span></div>
+              <div class="days" id="days"></div>
+              <div id="runcard"></div>
+            </div>
+          </div>
+        </div>
       </div>
       <div id="toast">
-        <div class="h"><svg class="i" viewBox="0 0 24 24" style="color:var(--accent-strong)"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-6 3-11 6.5"/></svg>3 files ready to commit on main</div>
-        <div class="f"><b>A</b>assets/raw/orders.asset.yml</div>
-        <div class="f"><b>A</b>assets/raw/customers.asset.yml</div>
-        <div class="f"><b>A</b>assets/marts/customer_revenue.sql</div>
+        <div class="h"><svg class="i" viewBox="0 0 24 24" style="color:var(--accent-strong)"><path d="M12 19V6M6 11l6-6 6 6"/></svg>Deployed to prod</div>
+        <div class="f"><b>✓</b>snapshot a1f3c9e · 3 assets</div>
+        <div class="f"><b>✓</b>pinned for scheduled runs</div>
       </div>
     </div>
     <div id="ghost"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg><span></span></div>
@@ -420,11 +546,6 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
     <div id="steps"></div>
   </div>
 
-  <div class="card" id="intro">
-    <div class="eyebrow">Renart, start to finish</div>
-    <h1>From a raw table<br />to a running pipeline.</h1>
-    <p>One workspace. Plain SQL. Everything as code in Git.</p>
-  </div>
   <div class="card" id="outro">
     <img src="logo.svg" alt="" />
     <h1>Build data workflows<br />you can maintain.</h1>
@@ -438,7 +559,6 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 const params = new URLSearchParams(location.search);
 if (params.get("theme") === "light") document.documentElement.dataset.theme = "light";
 
-const DURATION = 55;
 const $ = (s) => document.querySelector(s);
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const lerp = (a, b, x) => a + (b - a) * x;
@@ -452,35 +572,44 @@ const show = (el, o, dy = 0, s = 1) => {
   el.style.visibility = o <= 0.001 ? "hidden" : "visible";
   el.style.transform = `translateY(${(1 - o) * dy}px) scale(${lerp(s, 1, o)})`;
 };
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /* ------------------------------------------------------------------ story */
+// Chapter start times. Every beat below is written relative to one of these,
+// so a chapter can be lengthened or shortened without touching the others.
+const C = { discover: 0, build: 8.6, intel: 17.2, check: 22.5, jinja: 27.0, run: 33.2, stale: 39.2, deploy: 46.4, sched: 53.2, outro: 60.0 };
+const OUTRO_OUT = C.outro + 3.6; // end card fades out onto the first frame, so the video loops seamlessly
+const DURATION = OUTRO_OUT + 0.8;
+
 const CHAPTERS = [
-  { a: 3.0, b: 14.0, k: "Discover", t: "Start from the data you already have.", d: "Browse every connected warehouse and file, then drag a table onto the canvas." },
-  { a: 14.0, b: 18.6, k: "Canvas", t: "Shape the pipeline visually.", d: "Add steps on the canvas. Every node is a plain file in your repository." },
-  { a: 18.6, b: 23.6, k: "SQL", t: "Write plain SQL.", d: "Table names become dependencies. The graph draws itself, no glue syntax." },
-  { a: 23.6, b: 28.9, k: "Intellisense", t: "Complete columns, not guesses.", d: "Column-level completions with types that flow from upstream assets." },
-  { a: 28.9, b: 33.8, k: "Type check", t: "Catch mistakes as you type.", d: "The whole pipeline is type-checked before anything runs." },
-  { a: 33.8, b: 40.8, k: "Jinja", t: "Template with Jinja.", d: "Variables complete and render inline, and the rendered SQL is checked too." },
-  { a: 40.8, b: 49.6, k: "Run", t: "Run it. Keep it in Git.", d: "Fresh results in the workspace, and every change ready to commit." },
+  { a: C.discover, b: C.build, k: "Discover", t: "Start from the data you already have.", d: "Browse every connected warehouse and file, then drag a table onto the canvas." },
+  { a: C.build, b: C.intel, k: "Build", t: "Build on a canvas, in plain SQL.", d: "Add steps visually. Table names in your SQL become the dependencies." },
+  { a: C.intel, b: C.check, k: "Intellisense", t: "Complete columns, not guesses.", d: "Column-level completions with types that flow from upstream assets." },
+  { a: C.check, b: C.jinja, k: "Type check", t: "Catch mistakes as you type.", d: "The whole pipeline is type-checked before anything runs." },
+  { a: C.jinja, b: C.run, k: "Jinja", t: "Template with Jinja.", d: "Variables complete and render inline, and the rendered SQL is checked too." },
+  { a: C.run, b: C.stale, k: "Run", t: "Run it, see the results.", d: "Every asset reports fresh data, row counts and output types." },
+  { a: C.stale, b: C.deploy, k: "Staleness", t: "Only rebuild what changed.", d: "Edits mark downstream assets stale. Build stale skips everything still fresh." },
+  { a: C.deploy, b: C.sched, k: "Deploy", t: "Review it, then ship it.", d: "Deploy a pinned snapshot to a protected production environment." },
+  { a: C.sched, b: C.outro, k: "Schedule", t: "Schedule it and move on.", d: "Runs every morning in prod from the deployed version, and catches up after downtime." },
 ];
 
 /* Editor edit script. Ops replay from an empty document on every seek. */
 const OPS = [
-  { at: 18.9, dur: 2.0, type: "SELECT\n  *\nFROM raw.orders AS o" },
-  { at: 21.3, dur: 1.9, type: "\nJOIN raw.customers AS c USING (customer_id)" },
-  { at: 23.95, move: [1, 3] },
-  { at: 24.0, replace: [1, 2, 3, ""] },
-  { at: 24.05, dur: 0.25, type: "c." },
-  { at: 25.8, replace: [1, 2, 4, "c.customer_name"] },
-  { at: 25.9, dur: 0.06, type: "," },
-  { at: 26.05, dur: 0.45, type: "\n  c.co" },
-  { at: 27.2, replace: [2, 2, 6, "c.country"] },
-  { at: 27.35, dur: 1.4, type: ",\n  SUM(o.total_amout) AS revenue" },
-  { at: 31.6, replace: [3, 8, 19, "total_amount"], caret: [3, 30] },
-  { at: 34.0, move: [5, 43] },
-  { at: 34.2, dur: 1.2, type: "\nWHERE o.ordered_at >= '{{ " },
-  { at: 36.5, replace: [6, 22, 26, "'{{ start_date }}'"] },
-  { at: 39.4, dur: 0.7, type: "\nGROUP BY ALL" },
+  { at: C.build + 4.4, dur: 1.8, type: "SELECT\n  *\nFROM raw.orders AS o" },
+  { at: C.build + 6.5, dur: 1.7, type: "\nJOIN raw.customers AS c USING (customer_id)" },
+  { at: C.intel + 0.35, move: [1, 3] },
+  { at: C.intel + 0.4, replace: [1, 2, 3, ""] },
+  { at: C.intel + 0.45, dur: 0.25, type: "c." },
+  { at: C.intel + 2.2, replace: [1, 2, 4, "c.customer_name"] },
+  { at: C.intel + 2.3, dur: 0.06, type: "," },
+  { at: C.intel + 2.45, dur: 0.45, type: "\n  c.co" },
+  { at: C.intel + 3.6, replace: [2, 2, 6, "c.country"] },
+  { at: C.intel + 3.75, dur: 1.35, type: ",\n  SUM(o.total_amout) AS revenue" },
+  { at: C.check + 2.7, replace: [3, 8, 19, "total_amount"], caret: [3, 30] },
+  { at: C.jinja + 0.2, move: [5, 43] },
+  { at: C.jinja + 0.4, dur: 1.2, type: "\nWHERE o.ordered_at >= '{{ " },
+  { at: C.jinja + 2.7, replace: [6, 22, 26, "'{{ start_date }}'"] },
+  { at: C.jinja + 5.0, dur: 0.6, type: "\nGROUP BY ALL" },
 ];
 const typedAt = (op, sub) => op.at + op.dur * ((op.type.indexOf(sub) + sub.length) / op.type.length);
 const EDGE1_AT = typedAt(OPS[0], "raw.orders");
@@ -517,7 +646,6 @@ function docAt(t) {
 
 const KW = new Set(["SELECT", "FROM", "JOIN", "AS", "USING", "WHERE", "GROUP", "BY", "ALL", "ON", "AND"]);
 const FN = new Set(["SUM", "COUNT", "CAST"]);
-const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 function highlight(line, squiggle) {
   const re = /(\{\{.*?(?:\}\}|$))|('[^'{]*'?)|(\b(?:raw|marts)\.\w+)|([A-Za-z_]\w*)|(\s+)|([^\s])/g;
   let out = "", m;
@@ -534,15 +662,35 @@ function highlight(line, squiggle) {
   }
   return out;
 }
+// The deploy review shows the finished query as an added file.
+$("#difflines").innerHTML = docAt(C.run).lines.map((l) => `<div class="dl"><b>+</b>${highlight(l)}</div>`).join("");
+
+/* ------------------------------------------------------------ environment */
+const PROD_AT = C.deploy + 1.95;
+const DEV_AGAIN_AT = OUTRO_OUT; // the loop restarts in dev
+const envAt = (t) => (t >= PROD_AT && t < DEV_AGAIN_AT ? "prod" : "dev");
 
 /* ------------------------------------------------------------ canvas model */
-const NODE_W = 350;
+const NODE_W = 350, NODE_H = 112;
 const NODES = {
-  orders: { el: $("#n-orders"), x: 60, y: 120, name: "raw.orders", kind: "load", rows: "184,302 rows" },
-  customers: { el: $("#n-customers"), x: 60, y: 440, name: "raw.customers", kind: "load", rows: "12,480 rows" },
-  rev: { el: $("#n-rev"), x: 600, y: 280, name: "marts.customer_revenue", kind: "sql", rows: "12,391 rows" },
+  orders: { el: $("#n-orders"), x: 60, y: 120, name: "raw.orders", kind: "load" },
+  customers: { el: $("#n-customers"), x: 60, y: 440, name: "raw.customers", kind: "load" },
+  rev: { el: $("#n-rev"), x: 600, y: 280, name: "marts.customer_revenue", kind: "sql" },
 };
-const NODE_H = 112;
+// Freshness timeline per node: [from, state, detail]. States: new, run, fresh, edited, upstream.
+const STATES = {
+  orders: [[0, "new"], [C.run + 1.6, "run", C.run + 3.0], [C.run + 3.0, "fresh", "184,302 rows"],
+    [C.stale + 2.1, "edited"], [C.stale + 3.95, "run", C.stale + 4.75], [C.stale + 4.75, "fresh", "184,302 rows"], [PROD_AT, "new"]],
+  customers: [[0, "new"], [C.run + 1.6, "run", C.run + 3.25], [C.run + 3.25, "fresh", "12,480 rows"], [PROD_AT, "new"]],
+  rev: [[0, "new"], [C.run + 3.7, "run", C.run + 4.5], [C.run + 4.5, "fresh", "12,391 rows"],
+    [C.stale + 2.9, "upstream"], [C.stale + 4.75, "run", C.stale + 5.55], [C.stale + 5.55, "fresh", "12,391 rows"], [PROD_AT, "new"]],
+};
+function stateAt(key, t) {
+  const list = STATES[key];
+  let i = 0;
+  while (i + 1 < list.length && t >= list[i + 1][0]) i++;
+  return list[i];
+}
 const ICON_LOAD = `<svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>`;
 const ICON_SQL = `<svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h4"/></svg>`;
 function nodeHTML(n, name, status, extra) {
@@ -551,10 +699,17 @@ function nodeHTML(n, name, status, extra) {
   return `<div class="hd"><span class="ic">${icon}</span><span>${esc(name)}</span><span class="dots">•••</span></div>
     <div class="ft">${status}<span class="badge">${conn}</span></div>${extra || ""}`;
 }
-const B_NEW = `<span class="badge"><span class="dot"></span>Never built</span>`;
-const B_FRESH = (rows) => `<span class="badge fresh"><span class="dot"></span>Fresh · ${rows}</span>`;
-const B_RUN = (t) => `<span class="badge run"><span class="spin" style="transform:rotate(${(t * 540) % 360}deg)"></span>Running</span>`;
+const spinner = (t) => `<span class="spin" style="transform:rotate(${(t * 540) % 360}deg)"></span>`;
+function badge(st, t) {
+  const [from, s, d] = st;
+  if (s === "run") return `<span class="badge run">${spinner(t)}Running</span>`;
+  if (s === "fresh") return `<span class="badge fresh"><span class="dot"></span>Fresh · ${d}</span>`;
+  if (s === "edited") return `<span class="badge warn"><span class="dot"></span>Edited</span>`;
+  if (s === "upstream") return `<span class="badge warn"><span class="dot"></span>Upstream changed</span>`;
+  return `<span class="badge"><span class="dot"></span>Never built</span>`;
+}
 const B_ERR = `<span class="badge err"><span class="dot"></span>1 problem</span>`;
+const progressBar = (st, t) => (st[1] === "run" ? `<div class="bar"><i style="width:${p(t, st[0], st[2]) * 100}%"></i></div>` : "");
 
 function edgePath(a, b) {
   const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2;
@@ -565,7 +720,7 @@ const edgesSvg = $("#edges");
 edgesSvg.innerHTML = [
   `<path id="e1" d="${edgePath(NODES.orders, NODES.rev)}"/>`,
   `<path id="e2" d="${edgePath(NODES.customers, NODES.rev)}"/>`,
-  `<circle id="p1" r="7"/>`, `<circle id="p2" r="7"/>`,
+  `<circle id="p1" r="7"/>`, `<circle id="p2" r="7"/>`, `<circle id="p3" class="amber" r="8"/>`,
 ].join("");
 const E1 = $("#e1"), E2 = $("#e2");
 const E1L = E1.getTotalLength(), E2L = E2.getTotalLength();
@@ -594,47 +749,68 @@ function track(keys, t) {
   }
   return keys[keys.length - 1][1];
 }
+const WIDE = [960, 472, 1];
 // Scene camera: [focusX, focusY, zoom] in scene pixels.
 const CAM = [
-  [0, [960, 472, 1]], [4.6, [960, 472, 1]], [6.2, [700, 430, 1.16]], [11.0, [760, 430, 1.16]],
-  [12.6, [960, 472, 1]], [14.2, [960, 472, 1]], [15.2, [900, 450, 1.1]], [17.6, [900, 450, 1.1]],
-  [18.7, [960, 472, 1]], [23.4, [960, 472, 1]], [24.0, [1260, 380, 1.26]], [28.7, [1260, 400, 1.26]],
-  [29.2, [1260, 440, 1.22]], [33.4, [1260, 440, 1.22]], [34.2, [1270, 470, 1.24]], [40.4, [1270, 470, 1.24]],
-  [41.4, [960, 472, 1]], [45.7, [960, 472, 1]], [46.6, [960, 500, 1.05]], [49.6, [960, 500, 1.05]],
+  [0, WIDE], [C.discover + 1.0, WIDE], [C.discover + 2.0, [700, 430, 1.16]], [C.discover + 5.0, [760, 430, 1.16]], [C.discover + 6.4, WIDE],
+  [C.build + 0.2, WIDE], [C.build + 1.0, [900, 450, 1.1]], [C.build + 3.2, [900, 450, 1.1]], [C.build + 4.2, WIDE],
+  [C.intel, WIDE], [C.intel + 0.6, [1260, 380, 1.26]], [C.check, [1260, 400, 1.26]], [C.check + 0.4, [1260, 440, 1.22]],
+  [C.jinja, [1260, 440, 1.22]], [C.jinja + 0.5, [1270, 470, 1.24]], [C.run, [1270, 470, 1.24]],
+  [C.run + 1.0, WIDE], [C.run + 4.5, WIDE], [C.run + 5.2, [960, 500, 1.05]],
+  [C.stale, [960, 500, 1.05]], [C.stale + 0.7, [860, 440, 1.12]], [C.stale + 3.4, [900, 470, 1.1]], [C.stale + 6.8, [900, 470, 1.1]],
+  [C.deploy + 0.6, WIDE], [C.deploy + 2.6, WIDE], [C.deploy + 3.4, [1340, 470, 1.12]], [C.deploy + 5.6, [1340, 470, 1.12]], [C.deploy + 6.4, WIDE],
+  [C.sched + 1.0, WIDE], [C.sched + 1.6, [700, 480, 1.1]], [C.sched + 3.2, [700, 480, 1.1]], [C.sched + 4.0, [1260, 420, 1.1]], [C.outro, [1260, 420, 1.1]],
+  [C.outro + 0.8, WIDE],
 ];
 // Canvas pan/zoom inside the window: [tx, ty, s].
 const CANVAS = [
-  [0, [620, 40, 1]], [13.6, [620, 40, 1]], [14.4, [420, 40, 1]], [17.8, [420, 40, 1]], [18.6, [40, 90, 0.72]],
-  [40.8, [40, 90, 0.72]], [41.8, [450, 40, 1]], [45.8, [450, 40, 1]], [46.6, [520, -40, 0.85]],
+  [0, [620, 40, 1]], [C.build, [620, 40, 1]], [C.build + 0.8, [420, 40, 1]], [C.build + 3.4, [420, 40, 1]], [C.build + 4.2, [40, 90, 0.72]],
+  [C.run, [40, 90, 0.72]], [C.run + 1.0, [450, 40, 1]], [C.run + 4.5, [450, 40, 1]], [C.run + 5.2, [520, -40, 0.85]],
+  [C.stale, [520, -40, 0.85]], [C.stale + 0.6, [450, 40, 1]],
 ];
 
 /* ----------------------------------------------------------- pointer path */
 // [arrive time, travel seconds, target]. Targets are scene points or element selectors
 // resolved live each frame, so the pointer tracks things that move with the camera.
+const REST = [1760, 800];
 const POINTER = [
-  [3.8, 0, [1500, 700]],
-  [5.0, 1.0, "#db-pg"],
-  [6.8, 1.1, "#db-orders"],
-  [9.5, 0.4, "#db-orders"],
-  [10.9, 1.2, "#dropzone"],
-  [11.6, 0.6, "#db-customers"],
-  [13.0, 1.2, "#dropzone"],
-  [14.6, 1.2, "#plus"],
-  [15.5, 0.6, "#menu-sql"],
-  [17.1, 1.2, "#n-rev"],
-  [18.6, 1.1, [1760, 800]],
-  [23.7, 0.5, "@1:3"],
-  [24.3, 0.3, [1760, 800]],
-  [29.4, 1.0, "@3:10"],
-  [31.4, 1.1, "#fixbtn"],
-  [32.4, 0.8, [1760, 800]],
-  [42.2, 1.2, "#runbtn"],
-  [44.0, 1.4, [1700, 820]],
+  [0.6, 0, [1500, 700]],
+  [C.discover + 1.2, 0.9, "#db-pg"],
+  [C.discover + 2.6, 1.0, "#db-orders"],
+  [C.discover + 5.0, 0.35, "#db-orders"],
+  [C.discover + 6.2, 1.1, "#dropzone"],
+  [C.discover + 6.8, 0.5, "#db-customers"],
+  [C.discover + 8.0, 1.1, "#dropzone"],
+  [C.build + 1.0, 1.0, "#plus"],
+  [C.build + 1.9, 0.6, "#menu-sql"],
+  [C.build + 3.3, 1.0, "#n-rev"],
+  [C.build + 4.4, 0.9, REST],
+  [C.intel + 0.1, 0.5, "@1:3"],
+  [C.intel + 0.7, 0.3, REST],
+  [C.check + 0.5, 0.9, "@3:10"],
+  [C.check + 2.5, 1.0, "#fixbtn"],
+  [C.check + 3.3, 0.8, REST],
+  [C.run + 1.4, 1.1, "#runbtn"],
+  [C.run + 3.0, 1.2, [1500, 700]],
+  [C.stale + 0.8, 0.8, "#n-orders"],
+  [C.stale + 1.6, 0.6, [1200, 520]],
+  [C.stale + 3.8, 1.1, "#buildstale"],
+  [C.stale + 5.2, 1.0, [1500, 640]],
+  [C.deploy + 0.9, 0.9, "#envchip"],
+  [C.deploy + 1.9, 0.5, "#env-prod"],
+  [C.deploy + 2.7, 0.7, "#runbtn"],
+  [C.deploy + 5.3, 1.3, "#deploybtn"],
+  [C.sched + 0.8, 1.2, "#nav-run"],
+  [C.sched + 1.3, 0.5, "#cron"],
+  [C.sched + 3.0, 0.9, "#create-sched"],
+  [C.sched + 4.2, 1.2, [1700, 780]],
 ];
-const CLICKS = [5.0, 6.8, 14.6, 15.5, 17.0, 17.1, 23.7, 31.4, 42.2];
+const CLICKS = [C.discover + 1.2, C.discover + 2.6, C.build + 1.0, C.build + 1.9, C.build + 3.2, C.build + 3.3, C.intel + 0.1,
+  C.check + 2.5, C.run + 1.4, C.stale + 0.8, C.stale + 3.8, C.deploy + 0.9, C.deploy + 1.9, C.deploy + 2.7, C.deploy + 5.3,
+  C.sched + 0.8, C.sched + 1.3, C.sched + 3.0];
 const DRAGS = [
-  { a: 9.5, b: 10.9, label: "orders" },
-  { a: 11.6, b: 13.0, label: "customers" },
+  { a: C.discover + 5.0, b: C.discover + 6.2, label: "orders" },
+  { a: C.discover + 6.8, b: C.discover + 8.0, label: "customers" },
 ];
 
 /* --------------------------------------------------------------- elements */
@@ -648,6 +824,13 @@ $("#caption").innerHTML = CHAPTERS.map((c) => `<div class="cap"><div class="t">$
 
 const plus = document.createElement("div");
 plus.className = "plus"; plus.id = "plus"; plus.textContent = "+";
+const skip = document.createElement("div");
+skip.className = "skip"; skip.textContent = "Skipped · still fresh";
+
+// Schedule timeline: seven 06:00 slots starting tomorrow.
+const DAYS = ["Sun 27", "Mon 28", "Tue 29", "Wed 30", "Thu 1", "Fri 2", "Sat 3"];
+$("#days").innerHTML = DAYS.map((d, i) => `<div class="day"><span class="dl">${d}</span><span class="slot" id="slot${i}"></span></div>`).join("")
+  + `<div class="now" id="now"><span></span></div><div class="empty" id="tlempty">No schedules yet</div>`;
 
 let CW = 14.4; // monospace advance, measured once fonts load
 function measure() {
@@ -660,7 +843,6 @@ function measure() {
 }
 const CODE_X = 84, CODE_Y = 18, LH = 42;
 
-function sceneScale() { return scene.getBoundingClientRect().width / 1920; }
 function localPoint(target) {
   if (Array.isArray(target)) return target;
   const sr = scene.getBoundingClientRect(), k = sr.width / 1920;
@@ -688,42 +870,60 @@ function pointerAt(t) {
 /* ------------------------------------------------------------------- seek */
 function seek(t) {
   t = clamp(t, 0, DURATION);
+  // End card: fades in over the finished story, then fades out onto the very
+  // first frame so the loop point is invisible.
+  const outroO = t < OUTRO_OUT ? p(t, C.outro, C.outro + 0.8) : 1 - p(t, OUTRO_OUT, DURATION);
+  show($("#outro"), outroO, t < OUTRO_OUT ? 20 : 0, t < OUTRO_OUT ? 0.985 : 1);
+  applyScene(t >= OUTRO_OUT ? 0 : t);
+}
 
-  // Title cards.
-  const introO = 1 - p(t, 2.4, 3.2);
-  show($("#intro"), introO, 0, 1);
-  $("#intro").style.transform = `scale(${lerp(1.04, 1, p(t, 0, 3))})`;
-  const outroO = p(t, 49.6, 50.4) * (1 - p(t, 54.5, 55));
-  show($("#outro"), outroO, 20, 0.985);
+function applyScene(t) {
+  const env = envAt(t);
 
   // Scene camera.
   const [fx, fy, z] = track(CAM, t);
   scene.style.transform = `translate(${960 - fx * z}px, ${472 - fy * z}px) scale(${z})`;
 
-  // Caption band + chapter tracker.
+  // Caption band + chapter tracker. The band is visible from the first frame so the loop point matches.
   const caps = $("#caption").children, steps = $("#steps").children;
   CHAPTERS.forEach((c, i) => {
-    const o = win(t, c.a, c.b, 0.35);
-    show(caps[i], i === CHAPTERS.length - 1 ? Math.min(p(t, c.a, c.a + 0.35), 1 - p(t, 49.4, 49.8)) : o, 14);
+    const first = i === 0, last = i === CHAPTERS.length - 1;
+    const o = Math.min(first ? 1 : p(t, c.a, c.a + 0.35), last ? 1 - p(t, C.outro - 0.2, C.outro + 0.2) : 1 - p(t, c.b - 0.35, c.b));
+    show(caps[i], o, 14);
     steps[i].classList.toggle("on", t >= c.a && t < c.b);
     steps[i].querySelector("i").style.width = `${p(t, c.a, c.b) * 100}%`;
   });
-  $("#band").style.opacity = p(t, 2.8, 3.4) * (1 - p(t, 49.4, 49.9));
+  $("#band").style.opacity = 1 - p(t, C.outro - 0.2, C.outro + 0.3);
+
+  // ---- Top bar: nav, environment, primary action.
+  const onSchedules = t >= C.sched + 0.85;
+  $("#nav-build").classList.toggle("on", !onSchedules);
+  $("#nav-run").classList.toggle("on", onSchedules);
+  const envchip = $("#envchip");
+  envchip.classList.toggle("prod", env === "prod");
+  envchip.querySelector(".lbl").textContent = env;
+  $("#envlock").style.display = env === "prod" ? "" : "none";
+  const envmenu = $("#envmenu");
+  envmenu.style.left = `${$("#envchip").offsetLeft - 100}px`;
+  show(envmenu, win(t, C.deploy + 1.0, C.deploy + 2.05, 0.15), -8, 0.97);
+  $("#env-prod").classList.toggle("hl", t > C.deploy + 1.55);
+  // In a deployed-only environment the primary action becomes Deploy pipeline.
+  $("#runbtn").innerHTML = env === "prod"
+    ? `<svg class="i" viewBox="0 0 24 24"><path d="M12 19V6M6 11l6-6 6 6"/></svg>Deploy pipeline`
+    : `<svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Run pipeline`;
+  $("#changes").textContent = t < C.discover + 6.25 ? "0" : t < C.discover + 8.05 ? "1" : t < C.build + 2.0 ? "2" : "3";
 
   // ---- Data browser.
-  const browserX = -432 * ez(p(t, 13.6, 14.4));
-  $("#browser").style.transform = `translateX(${browserX}px)`;
-  const expand = ez(p(t, 5.05, 5.6));
+  $("#browser").style.transform = `translateX(${-432 * ez(p(t, C.build, C.build + 0.8))}px)`;
+  const expand = ez(p(t, C.discover + 1.25, C.discover + 1.8));
   $("#kids-pg").style.height = `${expand * 5 * 42.5}px`;
   $("#chev-pg").style.transform = `rotate(${expand * 90}deg)`;
-  $("#db-pg").classList.toggle("hl", t > 4.6 && t < 5.6);
-  $("#db-orders").classList.toggle("sel", t >= 6.8 && t < 11.2);
-  $("#db-orders").classList.toggle("hl", t > 6.4 && t < 6.8);
-  $("#db-customers").classList.toggle("sel", t >= 11.4 && t < 13.2);
-
-  // Column peek, anchored beside the selected table.
+  $("#db-pg").classList.toggle("hl", t > C.discover + 0.8 && t < C.discover + 1.8);
+  $("#db-orders").classList.toggle("sel", t >= C.discover + 2.6 && t < C.discover + 6.4);
+  $("#db-orders").classList.toggle("hl", t > C.discover + 2.2 && t < C.discover + 2.6);
+  $("#db-customers").classList.toggle("sel", t >= C.discover + 6.6 && t < C.discover + 8.2);
   const peek = $("#peek");
-  show(peek, win(t, 6.9, 9.8, 0.3), 10, 0.97);
+  show(peek, win(t, C.discover + 2.7, C.discover + 5.3, 0.3), 10, 0.97);
   peek.style.left = "446px"; peek.style.top = "196px";
 
   // ---- Canvas pan.
@@ -735,12 +935,12 @@ function seek(t) {
   // Drop zone shows while dragging, at the slot the next node will land in.
   const dz = $("#dropzone");
   const drag = DRAGS.find((d) => t >= d.a && t < d.b + 0.15);
-  const slot = t < 12 ? NODES.orders : NODES.customers;
+  const slot = t < C.discover + 6.5 ? NODES.orders : NODES.customers;
   dz.style.left = `${slot.x}px`; dz.style.top = `${slot.y}px`;
   dz.style.opacity = drag ? p(t, drag.a + 0.3, drag.a + 0.6) : 0;
 
   // Nodes.
-  const nodeIn = { orders: 10.95, customers: 13.05, rev: 15.6 };
+  const nodeIn = { orders: C.discover + 6.25, customers: C.discover + 8.05, rev: C.build + 2.0 };
   for (const [key, n] of Object.entries(NODES)) {
     const a = nodeIn[key];
     const o = eo(p(t, a, a + 0.35));
@@ -749,54 +949,67 @@ function seek(t) {
     n.el.style.visibility = o > 0 ? "visible" : "hidden";
     n.el.style.transform = `scale(${lerp(0.9, 1, o)})`;
   }
-  // Run states: raw loads 42.5→44.0, transform 44.8→45.8.
-  const runState = (a, b) => (t < a ? "idle" : t < b ? "run" : "fresh");
   for (const key of ["orders", "customers"]) {
-    const n = NODES[key], st = runState(42.5, 44.0 + (key === "customers" ? 0.25 : 0));
-    const bar = st === "run" ? `<div class="bar"><i style="width:${p(t, 42.5, 44.2) * 100}%"></i></div>` : "";
-    n.el.innerHTML = nodeHTML(n, n.name, st === "run" ? B_RUN(t) : st === "fresh" ? B_FRESH(n.rows) : B_NEW, bar);
+    const n = NODES[key], st = stateAt(key, t);
+    n.el.innerHTML = nodeHTML(n, n.name, badge(st, t), progressBar(st, t));
   }
   {
-    const n = NODES.rev;
-    const typedName = n.name.slice(0, Math.floor(n.name.length * p(t, 15.75, 16.5)));
-    const st = runState(44.8, 45.8);
-    const bad = t >= 29.0 && t < 31.7;
-    const status = st === "run" ? B_RUN(t) : st === "fresh" ? B_FRESH(n.rows) : bad ? B_ERR : B_NEW;
-    const bar = st === "run" ? `<div class="bar"><i style="width:${p(t, 44.8, 45.8) * 100}%"></i></div>` : "";
-    n.el.innerHTML = nodeHTML(n, typedName || " ", status, bar);
-    n.el.classList.toggle("sel", t >= 16.9 && t < 41.0 && !bad);
+    const n = NODES.rev, st = stateAt("rev", t);
+    const typedName = n.name.slice(0, Math.floor(n.name.length * p(t, C.build + 2.15, C.build + 2.9)));
+    const bad = t >= C.check + 0.1 && t < C.check + 2.8;
+    n.el.innerHTML = nodeHTML(n, typedName || " ", bad ? B_ERR : badge(st, t), progressBar(st, t));
+    n.el.classList.toggle("sel", t >= C.build + 3.2 && t < C.run + 0.4 && !bad);
     n.el.classList.toggle("bad", bad);
   }
-  NODES.orders.el.classList.toggle("sel", t >= 14.0 && t < 15.7);
-  // "+" handle on raw.orders (re-attached because the node body is rebuilt every frame).
+  NODES.orders.el.classList.toggle("sel", (t >= C.build + 0.3 && t < C.build + 2.0) || (t >= C.stale + 0.8 && t < C.stale + 3.4));
+  // Per-frame extras re-attached after the node bodies are rebuilt.
   NODES.orders.el.appendChild(plus);
-  show(plus, win(t, 13.9, 15.8, 0.25), 0, 0.6);
-  // Create menu.
+  show(plus, win(t, C.build + 0.3, C.build + 2.1, 0.25), 0, 0.6);
+  NODES.customers.el.appendChild(skip);
+  show(skip, win(t, C.stale + 4.0, C.stale + 6.6, 0.3), 6);
   const menu = $("#menu");
   menu.style.left = `${NODES.orders.x + NODE_W + 32}px`; menu.style.top = `${NODES.orders.y + 10}px`;
-  show(menu, win(t, 14.7, 15.75, 0.18), -8, 0.96);
-  $("#menu-sql").classList.toggle("hl", t > 15.1);
+  show(menu, win(t, C.build + 1.1, C.build + 2.05, 0.18), -8, 0.96);
+  $("#menu-sql").classList.toggle("hl", t > C.build + 1.5);
 
-  // Edges: drawn when the SQL that names each table is typed; pulses during the run.
-  drawEdge(E1, E1L, eo(p(t, EDGE1_AT, EDGE1_AT + 0.7)), t >= 43.8 && t < 46.2);
-  drawEdge(E2, E2L, eo(p(t, EDGE2_AT, EDGE2_AT + 0.7)), t >= 44.05 && t < 46.2);
-  pulse($("#p1"), E1, E1L, p(t, 43.9, 44.8));
-  pulse($("#p2"), E2, E2L, p(t, 44.1, 45.0));
+  // Edges: drawn when the SQL that names each table is typed; pulses during runs.
+  const running = (a, b) => t >= a && t < b;
+  drawEdge(E1, E1L, eo(p(t, EDGE1_AT, EDGE1_AT + 0.7)), running(C.run + 2.9, C.run + 5.2) || running(C.stale + 4.6, C.stale + 6.2));
+  drawEdge(E2, E2L, eo(p(t, EDGE2_AT, EDGE2_AT + 0.7)), running(C.run + 3.1, C.run + 5.2));
+  pulse($("#p1"), E1, E1L, Math.max(p(t, C.run + 2.9, C.run + 3.8) % 1, p(t, C.stale + 4.6, C.stale + 5.3) % 1));
+  pulse($("#p2"), E2, E2L, p(t, C.run + 3.1, C.run + 4.0) % 1);
+  pulse($("#p3"), E1, E1L, p(t, C.stale + 2.2, C.stale + 2.95) % 1);
 
-  // Results drawer + commit toast.
-  const res = $("#results");
-  res.style.transform = `translateY(${(1 - ez(p(t, 45.9, 46.6))) * 340}px)`;
-  show($("#toast"), win(t, 47.0, 49.8, 0.35), -12, 0.97);
-  $("#changes").textContent = t < 10.95 ? "0" : t < 13.05 ? "1" : t < 15.6 ? "2" : "3";
+  // Results drawer.
+  $("#results").style.transform = `translateY(${(1 - ez(p(t, C.run + 4.6, C.run + 5.2)) * (1 - ez(p(t, C.stale, C.stale + 0.5)))) * 340}px)`;
+
+  // ---- Staleness: edit raw.orders, watch the change propagate, build only what is stale.
+  const insp = $("#inspect");
+  insp.style.left = `${NODES.orders.x + NODE_W + 30}px`; insp.style.top = `${NODES.orders.y - 36}px`;
+  show(insp, win(t, C.stale + 0.9, C.stale + 3.3, 0.25), -8, 0.97);
+  const colName = "refunded_at";
+  const typed = colName.slice(0, Math.floor(colName.length * p(t, C.stale + 1.3, C.stale + 1.85)));
+  const newcol = $("#newcol");
+  newcol.children[0].textContent = typed ? `+ ${typed}` : "";
+  newcol.children[1].textContent = t >= C.stale + 1.9 ? "TIMESTAMP" : "";
+  newcol.style.opacity = t >= C.stale + 1.25 ? 1 : 0;
+  const bar = $("#stalebar");
+  const clean = t >= C.stale + 5.6;
+  bar.classList.toggle("clean", clean);
+  bar.querySelector(".msg").textContent = clean ? "All assets fresh" : t >= C.stale + 3.9 ? "Building 2 stale assets…" : "2 stale assets";
+  $("#buildstale").style.display = clean ? "none" : "";
+  const barO = win(t, C.stale + 3.0, C.stale + 6.9, 0.3);
+  bar.style.opacity = barO; bar.style.visibility = barO > 0 ? "visible" : "hidden";
+  bar.style.transform = `translateX(-50%) translateY(${(1 - barO) * 16}px)`;
 
   // ---- Editor.
   const ed = $("#editor");
-  const edIn = ez(p(t, 17.6, 18.5)) * (1 - ez(p(t, 40.8, 41.6)));
+  const edIn = ez(p(t, C.build + 3.4, C.build + 4.2)) * (1 - ez(p(t, C.run, C.run + 0.8)));
   ed.style.transform = `translateX(${(1 - edIn) * 1080}px)`;
   ed.style.visibility = edIn > 0 ? "visible" : "hidden";
 
   const doc = docAt(t);
-  const squiggle = t >= 29.0 && t < 31.6 ? "total_amout" : null;
+  const squiggle = t >= C.check + 0.1 && t < C.check + 2.7 ? "total_amout" : null;
   linesEl.innerHTML = doc.lines
     .map((l, i) => `<div class="ln${i === doc.cl ? " cur" : ""}"><span class="n">${i + 1}</span>${highlight(l, squiggle)}</div>`)
     .join("");
@@ -805,9 +1018,9 @@ function seek(t) {
   const blinkOn = idle < 0.5 || Math.floor((idle - 0.5) / 0.5) % 2 === 0;
   caret.style.left = `${CODE_X + doc.cc * CW}px`;
   caret.style.top = `${CODE_Y + doc.cl * LH + 5}px`;
-  caret.style.opacity = t > 18.6 && t < 40.6 && blinkOn ? 1 : 0;
+  caret.style.opacity = t > C.build + 4.2 && t < C.run && blinkOn ? 1 : 0;
   // Brief highlight on accepted completions / quick fix.
-  const flashes = [[25.8, 1, 2, 15], [27.2, 2, 2, 9], [31.6, 3, 8, 12], [36.5, 6, 22, 18]];
+  const flashes = [[C.intel + 2.2, 1, 2, 15], [C.intel + 3.6, 2, 2, 9], [C.check + 2.7, 3, 8, 12], [C.jinja + 2.7, 6, 22, 18]];
   const f = flashes.find(([a]) => t >= a && t < a + 0.8);
   if (f) {
     flash.style.opacity = 1 - p(t, f[0], f[0] + 0.8);
@@ -817,10 +1030,10 @@ function seek(t) {
 
   // Completion popups.
   const COMPLETIONS = [
-    { a: 24.3, b: 25.85, line: 1, col: 4, sel: t < 24.95 ? 0 : 1, items: [
+    { a: C.intel + 0.7, b: C.intel + 2.25, line: 1, col: 4, sel: t < C.intel + 1.35 ? 0 : 1, items: [
       ["customer_id", "INTEGER"], ["customer_name", "VARCHAR"], ["country", "VARCHAR"], ["email", "VARCHAR"], ["created_at", "TIMESTAMP"]] },
-    { a: 26.5, b: 27.25, line: 2, col: 6, sel: 0, items: [["country", "VARCHAR"]] },
-    { a: 35.45, b: 36.55, line: 6, col: 26, sel: 0, jinja: true, items: [
+    { a: C.intel + 2.9, b: C.intel + 3.65, line: 2, col: 6, sel: 0, items: [["country", "VARCHAR"]] },
+    { a: C.jinja + 1.65, b: C.jinja + 2.75, line: 6, col: 26, sel: 0, jinja: true, items: [
       ["start_date", "2026-09-01"], ["end_date", "2026-09-26"], ["start_timestamp", "2026-09-01 00:00"], ["var.region", "'EU'"]] },
   ];
   const cp = COMPLETIONS.find((c) => t >= c.a && t < c.b);
@@ -840,39 +1053,82 @@ function seek(t) {
   // Diagnostic hover + quick fix.
   diag.style.left = `${CODE_X + 4 * CW}px`;
   diag.style.top = `${56 + CODE_Y + 4 * LH + 8}px`;
-  show(diag, win(t, 29.6, 31.65, 0.2), -6, 0.98);
+  show(diag, win(t, C.check + 0.7, C.check + 2.75, 0.2), -6, 0.98);
 
   // Jinja render preview.
   render.style.left = `${CODE_X + 8 * CW}px`;
   render.style.top = `${56 + CODE_Y + 7 * LH + 8}px`;
-  show(render, win(t, 36.9, 39.35, 0.25), -6, 0.98);
+  show(render, win(t, C.jinja + 3.0, C.jinja + 4.9, 0.25), -6, 0.98);
 
   // Type-check state.
   const tc = $("#tc"), probs = $("#probs"), deps = $("#deps");
-  const hasDoc = t >= 18.9;
+  const hasDoc = t >= C.build + 4.4;
+  const e2done = typedAt(OPS[1], OPS[1].type);
   let state = "wait";
-  if (t >= 29.0 && t < 31.6) state = "bad";
-  else if ((t >= 31.6 && t < 32.0) || (t >= 40.1 && t < 40.4) || (t >= 22.8 && t < 23.3)) state = "checking";
-  else if (t >= 23.3) state = "ok";
+  if (t >= C.check + 0.1 && t < C.check + 2.7) state = "bad";
+  else if ((t >= C.check + 2.7 && t < C.check + 3.1) || (t >= C.jinja + 5.6 && t < C.jinja + 5.9) || (t >= e2done && t < e2done + 0.4)) state = "checking";
+  else if (t >= e2done + 0.4) state = "ok";
   tc.className = state === "bad" ? "bad" : state === "ok" ? "ok" : "wait";
   tc.innerHTML = !hasDoc ? "Type check" :
     state === "bad" ? `<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>1 problem` :
     state === "ok" ? `<svg class="i" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Pipeline type-checked` :
-    `<span class="spin" style="transform:rotate(${(t * 540) % 360}deg)"></span>Checking…`;
+    `${spinner(t)}Checking…`;
   probs.className = `p ${state === "bad" ? "bad" : state === "ok" ? "ok" : ""}`;
   probs.innerHTML = state === "bad" ? "✕ 1 problem" : state === "ok" ? "✓ No problems" : "";
   const nDeps = (t >= EDGE1_AT ? 1 : 0) + (t >= EDGE2_AT ? 1 : 0);
   deps.innerHTML = nDeps ? `Depends on <span class="t-tbl mono">raw.orders</span>${nDeps > 1 ? ` <span class="t-tbl mono">raw.customers</span>` : ""}` : "";
 
   // Output schema appears once the query type-checks cleanly.
-  const cols = t >= 32.0 ? [["customer_name", "VARCHAR"], ["country", "VARCHAR"], ["revenue", "DECIMAL(38,2)"]]
-    : t >= 27.3 && t < 29.0 ? [["customer_name", "VARCHAR"], ["country", "VARCHAR"]]
-    : t >= 26.0 && t < 29.0 ? [["customer_name", "VARCHAR"]] : [];
+  const cols = t >= C.check + 3.1 ? [["customer_name", "VARCHAR"], ["country", "VARCHAR"], ["revenue", "DECIMAL(38,2)"]]
+    : t >= C.intel + 3.7 && t < C.check ? [["customer_name", "VARCHAR"], ["country", "VARCHAR"]]
+    : t >= C.intel + 2.3 && t < C.check ? [["customer_name", "VARCHAR"]] : [];
   $("#schema").innerHTML = cols.length ? `Output<span style="width:4px"></span>` + cols.map(([n, ty]) => `<span class="c">${n}<i>${ty}</i></span>`).join("") : "";
+
+  // ---- Deploy review sheet + toast.
+  const rv = $("#review");
+  const rvIn = ez(p(t, C.deploy + 2.8, C.deploy + 3.3)) * (1 - ez(p(t, C.deploy + 5.45, C.deploy + 5.85)));
+  rv.style.transform = `translateX(${(1 - rvIn) * 860}px)`;
+  rv.style.visibility = rvIn > 0 ? "visible" : "hidden";
+  show($("#toast"), win(t, C.deploy + 5.7, C.sched + 1.0, 0.3), -12, 0.97);
+
+  // ---- Schedules page.
+  const sc = $("#sched");
+  const scO = p(t, C.sched + 0.85, C.sched + 1.25);
+  sc.style.opacity = scO; sc.style.visibility = scO > 0 ? "visible" : "hidden";
+  const cron = "0 6 * * *";
+  const cronTyped = cron.slice(0, Math.floor(cron.length * p(t, C.sched + 1.45, C.sched + 2.15)));
+  $("#cron .v").textContent = cronTyped;
+  $("#cron").classList.toggle("focus", t >= C.sched + 1.3 && t < C.sched + 2.9);
+  $("#cron .c").style.opacity = t >= C.sched + 1.3 && t < C.sched + 2.9 && (t < C.sched + 2.15 || Math.floor(t * 2) % 2 === 0) ? 1 : 0;
+  $("#cronhelp").textContent = t >= C.sched + 2.2 ? "Every day at 06:00 · Europe/Berlin" : "";
+  const created = t >= C.sched + 3.05;
+  $("#tlempty").style.opacity = created ? 0 : 1;
+  $("#tlbadge").innerHTML = created ? `<span class="dot" style="background:var(--accent-strong)"></span>acme_shop · prod · Run pinned a1f3c9e` : "Nothing scheduled";
+  const runStart = C.sched + 4.6, runEnd = C.sched + 5.3;
+  DAYS.forEach((_, i) => {
+    const s = $(`#slot${i}`);
+    const o = eo(p(t, C.sched + 3.1 + i * 0.07, C.sched + 3.4 + i * 0.07));
+    s.style.opacity = o; s.style.transform = `scale(${lerp(0.5, 1, o)})`;
+    const done = i === 0 && t >= runEnd, run = i === 0 && t >= runStart && !done;
+    s.className = `slot${done ? " done" : run ? " running" : i === (t >= runEnd ? 1 : 0) ? " next" : ""}`;
+    s.innerHTML = done ? "✓" : run ? spinner(t) : "";
+  });
+  // Time-lapse playhead: from "now" (Sat 16:00) to Sunday 06:00 when the first run fires.
+  const now = $("#now");
+  const lapse = ez(p(t, C.sched + 3.5, runStart));
+  const dayW = 100 / 7;
+  now.style.left = `${lerp(-dayW * 0.35, dayW * 0.3, lapse)}%`;
+  now.style.opacity = created ? 1 : 0;
+  const hours = 16 + lapse * 14;
+  now.querySelector("span").textContent = `${hours < 24 ? "Sat" : "Sun"} ${String(Math.floor(hours % 24)).padStart(2, "0")}:${String(Math.floor((hours % 1) * 60)).padStart(2, "0")}`;
+  $("#runcard").innerHTML = t >= runEnd
+    ? `<div class="rh"><span class="ok">✓</span>Sun 27, 06:00 · Success</div><div>3 assets · 14 s · deployed snapshot a1f3c9e</div><div>Next scheduled run · Mon 28, 06:00</div>`
+    : created ? `<div class="rh" style="color:var(--muted)">Next scheduled run · Sun 27, 06:00</div>` : "";
+  $("#runcard").style.opacity = created ? 1 : 0;
 
   // Pointer, ripple, drag ghost.
   const [px, py] = pointerAt(t);
-  const pointerO = p(t, 3.4, 3.9) * (1 - p(t, 48.8, 49.4));
+  const pointerO = p(t, 0.3, 0.7) * (1 - p(t, C.outro - 0.4, C.outro + 0.2));
   const click = CLICKS.find((c) => t >= c - 0.08 && t < c + 0.5);
   const press = click ? 1 - 0.14 * Math.sin(Math.PI * p(t, click - 0.08, click + 0.12)) : 1;
   pointer.style.opacity = pointerO;
@@ -890,6 +1146,7 @@ function seek(t) {
 }
 
 window.DURATION = DURATION;
+window.CHAPTERS = CHAPTERS;
 window.seek = seek;
 window.ready = document.fonts.ready.then(() => {
   // Wait for the logo too, so the first captured frame is complete.
