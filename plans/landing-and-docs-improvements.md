@@ -1,7 +1,7 @@
 # Landing page and docs improvements
 
-Status: decided on 27 September 2026. Phase 1 is implemented on branch
-`landing-story-video` and recorded in `architecture/docs.md`; phases 2–5 are
+Status: decided on 27 September 2026. Phases 1 and 2 are implemented on branch
+`landing-story-video` and recorded in `architecture/docs.md`; phases 3–5 are
 open. The findings below were reviewed against the same branch, using the Astro
 dev server at 1440 px and 390 px wide in dark and light themes, the page sources,
 and `node scripts/check-content.mjs` (24 pages, 15 images).
@@ -177,7 +177,7 @@ underpromise, and keep every image or clip scripted and regenerable.
 | Phase | Scope | Size |
 | --- | --- | --- |
 | 1. Quick wins — **done** | Overlays (landing and docs), non-link platform chips, docs Install link, video in the hero with poster, reduced motion and chapter list | ~1 day |
-| 2. Navigation | Docs option A and the new docs index (from the structure plan) | ~0.5 day |
+| 2. Navigation — **done** | Docs option A and the new docs index (from the structure plan) | ~0.5 day |
 | 3. Coverage | The six pages or sections above, with scripted focused screenshots | 2–3 days |
 | 4. Landing restructure | Merged section, palette alignment, freshness line, mobile video cut and a lighter encode | 1–2 days |
 | 5. Quickstart | "Make a change" step and focused screenshots, verified in the retail demo | ~1 day |

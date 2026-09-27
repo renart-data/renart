@@ -3,14 +3,32 @@ title: Overview
 description: Renart is an open source data platform for moving, transforming and analyzing data, with workflows defined as code in Git.
 ---
 
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
 Renart is an open source data platform for moving, transforming and analyzing
 data across your data stack. Build and run SQL and Python pipelines alongside
 notebooks and dashboards in one visual workspace, with type checking,
 scheduling and everything defined as code in Git.
 
-Bring a first-class developer experience to the entire data workflow: connect
-your databases, warehouses, files, object storage and HTTP APIs, then build on
-their data in the same workspace.
+## Choose where to start
+
+<CardGrid>
+  <LinkCard
+    title="Build your first pipeline"
+    description="Install Renart and run the offline DuckDB demo. Preview its output, then put it on a schedule."
+    href="/docs/quickstart/"
+  />
+  <LinkCard
+    title="Bring your existing data"
+    description="Connect a database, warehouse or object storage, then load tables and files into a pipeline."
+    href="/docs/connections-environments/managing-connections/"
+  />
+  <LinkCard
+    title="Explore in a notebook"
+    description="Query several sources with SQL and Python, add controls and charts, and promote useful work to the pipeline."
+    href="/docs/notebooks/overview/"
+  />
+</CardGrid>
 
 <img
   src="/docs-media/workspace-overview.webp"
@@ -21,16 +39,21 @@ their data in the same workspace.
 
 ## Find your next task
 
-- **Try Renart:** [install it](/docs/installation/) and follow the
-  [local DuckDB quickstart](/docs/quickstart/).
-- **Build a pipeline:** use the [asset editor](/docs/editing-assets/asset-editor/)
-  and follow dependencies on the [canvas](/docs/workspace/pipeline-canvas/).
-- **Connect your data:** check [supported platforms](/docs/reference/supported-platforms/)
-  and [add a connection](/docs/connections-environments/managing-connections/).
-- **Explore results:** combine sources in a [notebook](/docs/notebooks/overview/)
-  or build a [dashboard or report](/docs/presentations/overview/).
-- **Run on a schedule:** [review a deployment](/docs/scheduling/overview/),
-  choose a cadence, and inspect [run history](/docs/workspace/runs-and-history/).
+The sidebar follows the same order as the work.
+
+- **Connect and load data:** [add a connection](/docs/connections-environments/managing-connections/),
+  [store its credentials](/docs/connections-environments/managing-credentials/), then
+  [load tables and files](/docs/asset-types/load-assets/) or
+  [ingest an HTTP API](/docs/asset-types/http-api-assets/).
+- **Build pipelines:** follow dependencies on the [canvas](/docs/workspace/pipeline-canvas/)
+  and write [SQL](/docs/asset-types/sql-assets/) or [Python](/docs/asset-types/python-assets/)
+  in the [asset editor](/docs/editing-assets/asset-editor/).
+- **Analyze data:** combine sources in a [notebook](/docs/notebooks/overview/) or build a
+  [dashboard or report](/docs/presentations/overview/).
+- **Run and operate:** [review a deployment and schedule it](/docs/scheduling/overview/),
+  then inspect [run history](/docs/workspace/runs-and-history/).
+- **Look something up:** [supported platforms](/docs/reference/supported-platforms/),
+  the [CLI reference](/docs/reference/cli/) and [the main concepts](/docs/concepts/).
 
 Authored definitions are version-controlled files. Run history, deployment
 pins, and other machine-local state are stored separately; see
@@ -41,6 +64,3 @@ Renart is in public alpha. The core workflow is available, but expect rough
 edges and changes before the first stable release. Read [what public alpha
 means](/docs/alpha-status/) before relying on Renart for critical workloads.
 :::
-
-For orientation, start with [the interface tour](/docs/workspace/interface-tour/)
-and [the main concepts](/docs/concepts/).

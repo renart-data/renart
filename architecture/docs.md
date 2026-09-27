@@ -292,7 +292,14 @@ shipped (July 2026; git history keeps the full plans).
   as their features stabilise, at the position the rollout IA assigned them.
   The sidebar in `docs/astro.config.mjs` is the authoritative list; every
   entry must be a real page (verification: `pnpm build` in `docs/` green, no
-  dead links, no Bruin references in tutorials or reference pages). The Introduction group includes
+  dead links, no Bruin references in tutorials or reference pages). Since
+  September 2026 the sidebar follows the workflow (option A in
+  `plans/docs-information-architecture.md`): **Start here** → **Connect and
+  load data** → **Build pipelines** → **Analyze data** → **Run and operate** →
+  **Concepts and reference**. Groups and order moved; slugs, titles and heading
+  anchors did not. New pages join the group matching the task they serve. The
+  docs overview opens with three starting points (first pipeline, existing
+  data, notebook) as Starlight link cards. **Start here** includes
   a concise **Alpha status** page that distinguishes shipped workflows from
   release-stage caveats without becoming a roadmap.
 - **The landing page** (`docs/src/pages/index.astro`) introduces an open source
