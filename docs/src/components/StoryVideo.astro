@@ -1,0 +1,203 @@
+---
+// Hero walkthrough video rendered by `make landing-video`
+// (web/scripts/landing-video). It is an illustration of the workflow, not a
+// screenshot, and says so; the workspace tour further down shows the actual UI.
+// Chapter names, sentences and seek points come from the render itself.
+import { publicMediaUrl } from '../lib/public-media.mjs';
+import story from '../data/story-chapters.json';
+
+// Documentation for each chapter. Keep in sync with the chapter names in
+// web/scripts/landing-video/story.html; the build fails on a missing entry.
+const chapterDocs: Record<string, string> = {
+  Discover: '/docs/workspace/interface-tour/#build',
+  Build: '/docs/workspace/pipeline-canvas/#create-an-asset',
+  Intellisense: '/docs/editing-assets/asset-editor/#write-sql-that-knows-your-pipeline',
+  'Type check': '/docs/asset-types/sql-assets/#check-it-before-it-runs',
+  Jinja: '/docs/editing-assets/asset-editor/#inspect-render-and-execute',
+  Run: '/docs/workspace/runs-and-history/',
+  Staleness: '/docs/concepts/#staleness',
+  Deploy: '/docs/scheduling/overview/#review-a-deployment',
+  Schedule: '/docs/scheduling/overview/#create-a-schedule',
+};
+const chapters = story.chapters.map((chapter) => {
+  const href = chapterDocs[chapter.name];
+  if (!href) throw new Error(`StoryVideo: no docs link for chapter "${chapter.name}"`);
+  return { ...chapter, href };
+});
+const media = (theme: 'dark' | 'light') => ({
+  webm: publicMediaUrl(`/landing/story-${theme}.webm`),
+  mp4: publicMediaUrl(`/landing/story-${theme}.mp4`),
+  poster: publicMediaUrl(`/landing/story-${theme}-poster.webp`),
+});
+const dark = media('dark');
+const light = media('light');
+const seconds = Math.round(story.duration);
+---
+
+<figure class="workspace-hero story-video" data-story-video>
+  <div class="workspace-hero__bar">
+    <span>Illustrated walkthrough</span>
+    <span>{seconds} seconds · no sound</span>
+  </div>
+  <div class="story-video__frame">
+    <video
+      width="1920"
+      height="1080"
+      muted
+      loop
+      playsinline
+      controls
+      preload="none"
+      poster={dark.poster}
+      aria-label="Illustrated walkthrough of Renart, from discovering a table to a scheduled production run"
+      aria-describedby="story-video-transcript"
+      data-dark-poster={dark.poster}
+      data-light-poster={light.poster}
+    >
+      <source src={dark.webm} type="video/webm" data-dark-src={dark.webm} data-light-src={light.webm} />
+      <source src={dark.mp4} type="video/mp4" data-dark-src={dark.mp4} data-light-src={light.mp4} />
+    </video>
+    {/* Pick the matching theme before the poster is painted. */}
+    <script is:inline>
+      (() => {
+        const video = document.currentScript?.previousElementSibling;
+        if (!(video instanceof HTMLVideoElement) || document.documentElement.dataset.theme !== 'light') return;
+        video.poster = video.dataset.lightPoster;
+        video.querySelectorAll('source').forEach((source) => { source.src = source.dataset.lightSrc; });
+        video.dataset.theme = 'light';
+        // Source changes only apply after a reload; with preload="none" this fetches nothing.
+        video.load();
+      })();
+    </script>
+    <button class="story-video__toggle" type="button" data-story-toggle hidden>
+      <svg class="story-video__icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" /></svg>
+      <svg class="story-video__icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" /></svg>
+      <span data-story-toggle-label>Play walkthrough</span>
+    </button>
+  </div>
+  <figcaption class="story-video__chapters">
+    <span class="story-video__chapters-label" id="story-video-chapters-label">Jump to</span>
+    <ol aria-labelledby="story-video-chapters-label">
+      {chapters.map((chapter) => (
+        <li>
+          <button type="button" data-story-seek={chapter.start} data-story-end={chapter.end}>
+            <span>{chapter.name}</span>
+            <i aria-hidden="true"></i>
+          </button>
+        </li>
+      ))}
+    </ol>
+  </figcaption>
+  <details class="story-video__transcript">
+    <summary>What the walkthrough shows</summary>
+    <ol id="story-video-transcript">
+      {chapters.map((chapter) => (
+        <li>
+          <strong>{chapter.name}.</strong> {chapter.title} {chapter.description}{' '}
+          <a href={chapter.href}>Read the docs <span aria-hidden="true">↗</span></a>
+        </li>
+      ))}
+    </ol>
+  </details>
+</figure>
+
+<script>
+  const root = document.querySelector<HTMLElement>('[data-story-video]');
+  const video = root?.querySelector('video');
+  const toggle = root?.querySelector<HTMLButtonElement>('[data-story-toggle]');
+  const toggleLabel = root?.querySelector<HTMLElement>('[data-story-toggle-label]');
+  const chapterButtons = Array.from(root?.querySelectorAll<HTMLButtonElement>('[data-story-seek]') ?? []);
+
+  if (root && video && toggle && toggleLabel) {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const narrow = window.matchMedia('(max-width: 48rem)');
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+    // Autoplay only where it is cheap and welcome; everywhere else the poster
+    // waits for an explicit play.
+    const autoplayAllowed = () => !reducedMotion.matches && !narrow.matches && !connection?.saveData;
+    let userPaused = false;
+    let inView = false;
+
+    // Native controls are the no-JavaScript fallback; the enhanced player uses
+    // one play/pause button plus the chapter list for seeking.
+    video.controls = false;
+    toggle.hidden = false;
+
+    const syncToggle = () => {
+      const playing = !video.paused;
+      root.classList.toggle('is-playing', playing);
+      root.classList.toggle('has-started', playing || video.currentTime > 0);
+      toggleLabel.textContent = playing ? 'Pause walkthrough' : 'Play walkthrough';
+      toggle.setAttribute('aria-label', playing ? 'Pause walkthrough' : 'Play walkthrough');
+    };
+    const play = () => {
+      video.preload = 'auto';
+      video.play().catch(() => syncToggle());
+    };
+    const seekTo = (time: number) => {
+      const apply = () => { video.currentTime = time + 0.05; };
+      if (video.readyState >= HTMLMediaElement.HAVE_METADATA) apply();
+      else video.addEventListener('loadedmetadata', apply, { once: true });
+      userPaused = false;
+      play();
+    };
+
+    toggle.addEventListener('click', () => {
+      if (video.paused) {
+        userPaused = false;
+        play();
+      } else {
+        userPaused = true;
+        video.pause();
+      }
+    });
+    video.addEventListener('play', syncToggle);
+    video.addEventListener('pause', syncToggle);
+
+    chapterButtons.forEach((button) => {
+      button.addEventListener('click', () => seekTo(Number(button.dataset.storySeek)));
+    });
+    video.addEventListener('timeupdate', () => {
+      const time = video.currentTime;
+      chapterButtons.forEach((button) => {
+        const start = Number(button.dataset.storySeek);
+        const end = Number(button.dataset.storyEnd);
+        const active = time >= start && time < end;
+        button.classList.toggle('is-active', active);
+        button.style.setProperty('--progress', active ? String((time - start) / (end - start)) : time >= end ? '1' : '0');
+        if (active) button.setAttribute('aria-current', 'step');
+        else button.removeAttribute('aria-current');
+      });
+    });
+
+    // Play while visible, pause off screen; never override an explicit pause.
+    new IntersectionObserver((entries) => {
+      inView = entries.some((entry) => entry.isIntersecting);
+      if (!inView) video.pause();
+      else if (!userPaused && autoplayAllowed()) play();
+    }, { threshold: 0.25 }).observe(video);
+    reducedMotion.addEventListener('change', () => { if (reducedMotion.matches) video.pause(); });
+
+    // Follow the site theme, keeping the playback position.
+    const applyTheme = () => {
+      const theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+      if ((video.dataset.theme ?? 'dark') === theme) return;
+      const time = video.currentTime;
+      const wasPlaying = !video.paused;
+      video.dataset.theme = theme;
+      video.poster = (theme === 'light' ? video.dataset.lightPoster : video.dataset.darkPoster) ?? video.poster;
+      video.querySelectorAll('source').forEach((source) => {
+        source.src = (theme === 'light' ? source.dataset.lightSrc : source.dataset.darkSrc) ?? source.src;
+      });
+      video.load();
+      if (!wasPlaying && time === 0) return;
+      video.addEventListener('loadedmetadata', () => {
+        video.currentTime = time;
+        if (wasPlaying) play();
+      }, { once: true });
+    };
+    applyTheme();
+    new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    syncToggle();
+  }
+</script>

@@ -29,6 +29,8 @@ decisions and dependencies in each plan; there is no global questions scratchpad
 | [Advanced materialization](materialization-reach.md) | Guided advanced strategies, coverage-gap UX, static Python materialize diagnostic |
 | [Execution operator audits](execution-parallelism.md) | Additional proven resource families and meaningful wait visibility; shared unit scheduling already exists |
 | [Semantic deployment impact](semantic-deployment-impact.md) | Component facts, exact producer-pinned worlds, compatibility policy, retained reports and inference evidence |
+| [Landing page and docs improvements](landing-and-docs-improvements.md) | Phase 1 done (hero video, overlays, docs Install link); next: docs navigation, coverage pages, landing restructure and palette, quickstart |
+| [Docs structure](docs-information-architecture.md) | Option A chosen; reorder the sidebar and docs index with existing URLs (phase 2 of the landing and docs plan) |
 
 ## Verification and measurement
 
@@ -51,7 +53,6 @@ Revalidate historical external research when selecting one.
 
 | Plan | Decision / dependency |
 | --- | --- |
-| [Docs structure](docs-information-architecture.md) | Choose workflow-first, workspace-first or reader-intent navigation; preserve URLs initially |
 | [Python query connection policy](python-cross-connection-policy.md) | Opt-in read scopes; separate from preventing writes on read-only connections |
 | [Team and hosted secret providers](secret-providers.md) | Select provider and identity/lease model; hosted work requires a separate trust architecture |
 | [Open-project links](open-project-links.md) | Safe launcher, reviewed clone/trust model, then native protocol packaging |

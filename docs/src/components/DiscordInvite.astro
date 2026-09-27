@@ -61,10 +61,37 @@ const inviteUrl = 'https://discord.gg/jTH758KNP8';
         dismissed = false;
       }
 
-      if (!dismissed) card?.removeAttribute('hidden');
+      if (dismissed || !card) return;
+
+      // Invite only engaged readers: once they have scrolled a screen and a
+      // half. Never while the privacy choice is open, so the two never compete
+      // for attention. Engagement is not stored; the only persisted value is
+      // the disclosed dismissal flag above.
+      let engaged = false;
+      const consentOpen = () =>
+        document.documentElement.classList.contains('show--consent') ||
+        document.documentElement.classList.contains('show--preferences');
+      const update = () => {
+        if (engaged && !consentOpen() && !dismissed) card.removeAttribute('hidden');
+        else card.setAttribute('hidden', '');
+      };
+      const onScroll = () => {
+        if (window.scrollY < window.innerHeight * 1.5) return;
+        engaged = true;
+        window.removeEventListener('scroll', onScroll);
+        update();
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      new MutationObserver(update).observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+      // Give the privacy bar a moment to appear first, so the card never flashes.
+      window.setTimeout(update, 1200);
 
       dismissButton?.addEventListener('click', () => {
-        card?.setAttribute('hidden', '');
+        dismissed = true;
+        card.setAttribute('hidden', '');
         try {
           window.localStorage.setItem(storageKey, '1');
         } catch {

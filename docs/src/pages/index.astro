@@ -7,6 +7,7 @@ import PrivacyConsent from '../components/PrivacyConsent.astro';
 import MarketingHeader from '../components/MarketingHeader.astro';
 import MarketingTheme from '../components/MarketingTheme.astro';
 import ThemedScreenshot from '../components/ThemedScreenshot.astro';
+import StoryVideo from '../components/StoryVideo.astro';
 import MarketingFooter from '../components/MarketingFooter.astro';
 import '../styles/landing.css';
 
@@ -301,14 +302,7 @@ const platforms = [
             </div>
           </div>
 
-          <figure class="workspace-hero">
-            <div class="workspace-hero__bar"><span>The Renart workspace</span><span>Code, dependencies and results</span></div>
-            <ThemedScreenshot src="/landing/hero-workspace.webp" widths={[480, 768, 1280, 1920]}
-              sizes="(max-width: 48rem) calc(100vw - 2.5rem), (max-width: 78rem) calc(100vw - 5rem), 1168px"
-              alt="Renart showing the SQL editor, connected pipeline assets and a table of inspected results in one workspace"
-              width={3840} height={2160} eager zoomLabel="Open the Renart workspace image at full size" />
-            <figcaption>Write the code, follow its dependencies and inspect the data without losing your place.</figcaption>
-          </figure>
+          <StoryVideo />
           <p class="landing-alpha-note">Renart is in public alpha. Expect rough edges and changes before the first stable release. <a href="/docs/alpha-status/">What to expect <span aria-hidden="true">↗</span></a></p>
         </div>
       </section>

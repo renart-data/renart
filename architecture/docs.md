@@ -208,6 +208,15 @@ every shipped image is the verbatim output of a script.
 - **Maintenance.** When the UI changes a surface, rerun the make target in the
   same PR and commit the regenerated images. If a capture's dimensions change,
   update the `width`/`height` where the image is referenced.
+- **The landing walkthrough video is generated too.** `make landing-video`
+  steps `web/scripts/landing-video/story.html` (a scene that is a pure function
+  of time) frame by frame and encodes dark and light MP4/WebM files plus posters
+  into `docs/public/landing/story-*`, and the chapter data into
+  `docs/src/data/story-chapters.json`. It is an *illustration* of the workflow in
+  the app's own palette, not a capture, so it is allowed only on the landing page
+  and is always labeled as illustrated. The docs keep real product captures.
+  Its copy follows the same rules as the docs: it shows only shipped behavior and
+  uses the UI's exact labels.
 - **Terminal recordings are generated too.** `make cli-recordings` builds the
   current binary, scaffolds a disposable project, executes the documented
   read-only CLI workflow, and writes deterministic asciicast v2 files under
@@ -287,11 +296,20 @@ shipped (July 2026; git history keeps the full plans).
   a concise **Alpha status** page that distinguishes shipped workflows from
   release-stage caveats without becoming a roadmap.
 - **The landing page** (`docs/src/pages/index.astro`) introduces an open source
-  data platform through a single product screenshot → Move / Transform /
+  data platform through the illustrated walkthrough video → Move / Transform /
   Analyze overview → editor proof and maintainability principles → workspace
   tour → local infrastructure and reviewable definitions → quickstart/install.
   Cream surfaces and ink text in light mode, deep green surfaces in dark mode,
-  and restrained green accents keep the focus on the product. The hero install
+  and restrained green accents keep the focus on the product. The hero proof is
+  `StoryVideo.astro`, labeled **Illustrated walkthrough** so it is never
+  mistaken for a screenshot; the workspace tour below remains the actual-interface
+  proof. It autoplays muted only on wide screens without reduced motion or
+  Save-Data, and only while at least a quarter of it is visible. It pauses off
+  screen, never overrides an explicit pause, and follows the site theme without
+  losing its position. Everywhere else the poster waits behind a play button.
+  Chapter buttons seek the video, and a collapsible chapter list with docs links
+  is its text alternative (`aria-describedby`). Native controls remain the
+  no-JavaScript fallback. The hero install
   command is a prominent, selectable card with a copy button: labeled on desktop,
   icon-only with an accessible name on mobile. The installation command is also
   available in the closing section. It does not simulate live runtime status or promise an exact rebuild
@@ -318,7 +336,11 @@ shipped (July 2026; git history keeps the full plans).
   and `sizes`; if a capture changes dimensions, update the matching dimensions
   and source descriptors in `index.astro`. `ThemedScreenshot.astro` keeps the
   light and dark source sets together, including the workspace tour and the
-  comparison screenshots. Landing and social image URLs use
+  comparison screenshots. The hero video and its posters come from
+  `make landing-video` (§5); its chapter names, sentences and seek points are
+  read from `docs/src/data/story-chapters.json`, which the same render writes,
+  and `StoryVideo.astro` fails the build when a chapter has no docs link.
+  Landing and social image URLs use
   content hashes from `docs/src/lib/public-media.mjs`, evaluated during the
   docs package build, so refreshed files bypass older immutable browser caches.
 
@@ -368,8 +390,15 @@ mode never creates the Umami script or makes an analytics request. Clear the
 `renart_consent` cookie to repeat the first-visit path, or use **Privacy
 settings** in the footer to revisit the preferences dialog.
 
-`DiscordInvite.astro` provides the site-wide, bottom-right community invitation.
-Its callout can be dismissed while the direct Discord button remains available.
+The consent prompt is a slim, non-blocking bottom bar (`bar inline`) with
+equal-weight choices; on phones both choices share one row. The layout does not
+change the opt-in semantics above.
+
+`DiscordInvite.astro` provides the bottom-right community invitation on the
+landing, comparison, legal and work-with-me pages; the docs use the header's
+Discord link instead. Its callout appears only after the reader scrolls a screen
+and a half, never while the consent bar or preferences are open, and stores no
+engagement state. It can be dismissed while the direct Discord button remains available.
 Dismissal stores only `1` under `renart.discord-invite-dismissed.v1` in browser
 local storage; both legal-language versions disclose that preference.
 

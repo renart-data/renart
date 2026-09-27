@@ -5,12 +5,17 @@
 //   node scripts/landing-video/render.mjs --theme dark    # one theme
 //   node scripts/landing-video/render.mjs --stills 5,24.6 # PNG stills for review, no encode
 //   node scripts/landing-video/render.mjs --workers 8     # parallel capture (default: 3/4 of the cores)
+//   node scripts/landing-video/render.mjs --chapters-only # refresh the landing chapter list only
+//
+// Every full render also writes docs/src/data/story-chapters.json from the
+// scene's CHAPTERS table, so the landing page's chapter list and seek points
+// always match the rendered video.
 //
 // The scene is a pure function of time (window.seek), so output is identical on
 // every run. Needs ffmpeg with libx264 and libvpx-vp9 on PATH.
 import { chromium } from "@playwright/test";
 import { spawn } from "node:child_process";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -26,6 +31,7 @@ const { values: args } = parseArgs({
     stills: { type: "string" },
     poster: { type: "string", default: "18.6" },
     workers: { type: "string" },
+    "chapters-only": { type: "boolean", default: false },
   },
 });
 const fps = Number(args.fps);
@@ -120,5 +126,28 @@ async function renderTheme(theme) {
   console.log(`${theme}: wrote ${base}.mp4, .webm, -poster.webp`);
 }
 
-console.log(`capturing with ${workers} worker(s) per theme`);
-await Promise.all(themes.map((theme) => renderTheme(theme)));
+async function writeChapters() {
+  const browser = await chromium.launch();
+  try {
+    const { page } = await openStory(browser, "dark");
+    const story = await page.evaluate(() => ({
+      duration: window.DURATION,
+      chapters: window.CHAPTERS.map(({ k, t, d, a, b }) => ({ name: k, title: t, description: d, start: a, end: b })),
+    }));
+    const file = path.join(repoRoot, "docs/src/data/story-chapters.json");
+    await writeFile(file, `${JSON.stringify(story, null, 2)}\n`);
+    console.log(`wrote ${file}`);
+  } finally {
+    await browser.close();
+  }
+}
+
+if (args["chapters-only"]) {
+  await writeChapters();
+} else if (args.stills) {
+  await Promise.all(themes.map((theme) => renderTheme(theme)));
+} else {
+  await writeChapters();
+  console.log(`capturing with ${workers} worker(s) per theme`);
+  await Promise.all(themes.map((theme) => renderTheme(theme)));
+}

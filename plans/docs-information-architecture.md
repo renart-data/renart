@@ -1,6 +1,6 @@
 # Documentation structure: three options
 
-Status: proposals for Lukas to choose. No public pages, URLs or sidebar have been moved. Inventory: 24 documentation pages in eight sidebar groups on 22 September 2026.
+Status: option A chosen on 27 September 2026 (see [Landing page and docs improvements](landing-and-docs-improvements.md), phase 2). No public pages, URLs or sidebar have been moved yet. Inventory: 24 documentation pages in eight sidebar groups on 22 September 2026.
 
 ## What is awkward today
 

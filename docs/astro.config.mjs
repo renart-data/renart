@@ -66,6 +66,7 @@ export default defineConfig({
       components: {
         Footer: './src/components/Footer.astro',
         Head: './src/components/Head.astro',
+        SocialIcons: './src/components/SocialIcons.astro',
       },
       logo: {
         src: '../web/public/icons/icon-64.png',
