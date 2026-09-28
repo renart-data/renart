@@ -91,7 +91,7 @@ test.describe("app scheduler pages live", () => {
     const metadata = scheduleRow.getByTestId("schedule-metadata");
     await expect(scheduleRow.getByTestId("schedule-cadence")).toContainText("UTC");
     await expect(scheduleRow.getByTestId("schedule-last-run")).toContainText("Not run yet");
-    await expect(scheduleRow.getByTestId("schedule-deployment")).toContainText("Not pinned");
+    await expect(scheduleRow.getByTestId("schedule-deployment")).toContainText("Not deployed");
     expect(
       await metadata.locator("[data-schedule-meta-value]").evaluateAll((elements) =>
         elements.every((element) => {
@@ -114,10 +114,11 @@ test.describe("app scheduler pages live", () => {
       await expect(page.getByRole("tooltip")).toContainText("holds no run slot");
     }
     const actions = scheduleRow.getByTestId("schedule-actions");
-    await expect(actions.getByRole("button", { name: "Review deployment" })).toBeVisible();
-    await expect(actions.getByRole("button", { name: "Run pinned" })).toBeDisabled();
+    await expect(actions.getByRole("button", { name: "Deploy", exact: true })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Run now" })).toBeDisabled();
     await actions.getByRole("button", { name: /More actions for analytics/ }).click();
     await expect(page.getByRole("menuitem", { name: "Edit schedule" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Deploy changes…" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Archive schedule" })).toBeVisible();
     await page.keyboard.press("Escape");
   });
@@ -145,7 +146,7 @@ test.describe("app scheduler pages live", () => {
     }
     await expect(page).toHaveURL(/\/schedules\/deployments$/);
     if (isMobile) {
-      await expect(page.getByText("Immutable deployment history", { exact: true })).toBeVisible();
+      await expect(page.getByText("Deployment history", { exact: true })).toBeVisible();
     } else {
       await expect(page.getByRole("heading", { name: "Deployments", exact: true })).toBeVisible();
     }
@@ -216,45 +217,35 @@ test.describe("app scheduler pages live", () => {
       timeout: 15000,
     });
 
-    await scheduleRow.getByRole("button", { name: "Review deployment" }).click();
+    await scheduleRow.getByRole("button", { name: "Deploy", exact: true }).click();
     const planSheet = page.getByTestId("pipeline-plan-sheet");
-    await expect(planSheet.getByRole("heading", { name: "Review deployment" })).toBeVisible();
+    await expect(planSheet.getByRole("heading", { name: "Deploy analytics" })).toBeVisible();
+    // A schedule that was never deployed is waiting for this deployment.
+    await expect(planSheet.getByRole("checkbox", { name: "default" })).toBeChecked();
 
+    const deployRequestPromise = page.waitForRequest(
+      (request) =>
+        request.url().endsWith(`/api/pipelines/${analyticsPipelineId}/deploy`) &&
+        request.method() === "POST",
+    );
     const deployResponsePromise = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/pipelines/${analyticsPipelineId}/deploy`) &&
         response.request().method() === "POST",
     );
-    await planSheet.getByRole("button", { name: /^Deploy \d+ assets?$/ }).click();
+    await planSheet.getByRole("button", { name: "Deploy and update 1 schedule" }).click();
+    expect((await deployRequestPromise).postDataJSON()).toMatchObject({
+      schedules: [{ environment: "default", expected_snapshot_version_id: "" }],
+    });
     const deployResponse = await deployResponsePromise;
     expect(deployResponse.ok()).toBe(true);
-    const deployedVersion = ((await deployResponse.json()) as { snapshot: { version_id: string } })
-      .snapshot.version_id;
-
-    await expect(planSheet.getByText(/not using this deployment/)).toBeVisible();
-    await planSheet.getByRole("checkbox", { name: "default" }).check();
-    const promotionRequestPromise = page.waitForRequest(
-      (request) =>
-        request.url().endsWith(`/api/pipelines/${analyticsPipelineId}/env-schedules/promote`) &&
-        request.method() === "POST",
-    );
-    const promotionResponsePromise = page.waitForResponse(
-      (response) =>
-        response.url().endsWith(`/api/pipelines/${analyticsPipelineId}/env-schedules/promote`) &&
-        response.request().method() === "POST",
-    );
-    await planSheet.getByRole("button", { name: "Update 1 schedule" }).click();
-
-    expect((await promotionRequestPromise).postDataJSON()).toEqual({
-      snapshot_version_id: deployedVersion,
-      schedules: [
-        {
-          environment: "default",
-          expected_snapshot_version_id: "",
-        },
-      ],
-    });
-    expect((await promotionResponsePromise).ok()).toBe(true);
+    const deployed = (await deployResponse.json()) as {
+      snapshot: { version_id: string };
+      schedule_error?: string;
+    };
+    expect(deployed.schedule_error).toBeUndefined();
+    const deployedVersion = deployed.snapshot.version_id;
+    await expect(planSheet.getByText("default uses it from the next run.")).toBeVisible();
 
     await expect
       .poll(
@@ -517,10 +508,10 @@ test.describe("app scheduler pages live", () => {
     expect(latestVersion).not.toBe(pinnedVersion);
 
     await page.goto(`${liveApp.baseURL}/schedules`);
-    const olderBadge = page.getByText("Older deployment", { exact: true });
+    const olderBadge = page.getByText("Update available", { exact: true });
     await expect(olderBadge).toBeVisible({ timeout: 15000 });
     await olderBadge.hover();
-    await expect(page.getByText(/Data freshness is tracked separately/)).toBeVisible();
+    await expect(page.getByText(/is newer\./)).toBeVisible();
 
     const scheduleRow = page.getByTestId("schedule-row").filter({ hasText: "analytics" }).first();
     const editRequest = page.waitForRequest(
@@ -625,10 +616,8 @@ test.describe("app scheduler pages live", () => {
     const overridesBadge = scheduleRow.getByText("Overrides", { exact: true });
     await expect(overridesBadge).toBeVisible();
     await overridesBadge.focus();
-    await expect(page.getByRole("tooltip", { name: /Applied from this schedule/ })).toContainText(
-      "region",
-    );
-    await scheduleRow.getByRole("button", { name: /Run pinned/ }).click();
+    await expect(page.getByRole("tooltip", { name: /This schedule sets/ })).toContainText("region");
+    await scheduleRow.getByRole("button", { name: "Run now" }).click();
     expect((await pinnedRunRequest).postData()).toBeNull();
     await page.unroute(`**/api/pipelines/${analyticsPipelineId}/env-schedules/default/run`);
 
@@ -639,25 +628,18 @@ test.describe("app scheduler pages live", () => {
         response.ok(),
       { timeout: 15000 },
     );
-    await scheduleRow.getByRole("button", { name: "Review deployment" }).click();
-    const planSheet = page.getByTestId("pipeline-plan-sheet");
-    await expect(planSheet.getByRole("heading", { name: "Review deployment" })).toBeVisible();
-    await expect(planSheet.getByRole("tablist")).toHaveCount(0);
-    await expect(planSheet.getByRole("heading", { name: "Source changes" })).toHaveCount(0);
-    await expect(planSheet.getByRole("button", { name: /Deployment details/ })).toBeVisible();
-    await expect(planSheet.getByRole("button", { name: /Execution details/ })).toBeHidden();
-    await expect(planSheet.getByRole("button", { name: /Update schedules/ })).toHaveCount(0);
-    const reviewViewport = planSheet
-      .getByTestId("pipeline-plan-scroll")
-      .locator(':scope > [data-slot="scroll-area-viewport"]');
-    await expect(reviewViewport.getByRole("heading", { name: "Review deployment" })).toBeVisible();
-    await expect(reviewViewport.getByRole("heading", { name: "Source changes" })).toHaveCount(0);
-    await planSheet.getByRole("button", { name: /^Deploy \d+ assets?$/ }).click();
-    await expect(page.getByText(/not using this deployment/)).toBeVisible({
-      timeout: 15000,
+    // The newer deployment was reviewed when it was created, so the schedule
+    // switches to it directly instead of deploying the working tree again.
+    const promoteRequest = page.waitForRequest(
+      (request) =>
+        request.url().endsWith(`/api/pipelines/${analyticsPipelineId}/env-schedules/promote`) &&
+        request.method() === "POST",
+    );
+    await scheduleRow.getByRole("button", { name: /^Use #\d+$/ }).click();
+    expect((await promoteRequest).postDataJSON()).toEqual({
+      snapshot_version_id: latestVersion,
+      schedules: [{ environment: "default", expected_snapshot_version_id: pinnedVersion }],
     });
-    await page.getByRole("checkbox", { name: "default" }).check();
-    await page.getByRole("button", { name: "Update 1 schedule" }).click();
     await updateResponse;
 
     await expect
@@ -786,9 +768,9 @@ test.describe("app scheduler pages live", () => {
     await expect(page.getByText("Deployment needs repair", { exact: true })).toBeVisible({
       timeout: 15000,
     });
-    await expect(page.getByRole("button", { name: "Review repair" })).toBeEnabled();
     const scheduleRow = page.getByTestId("schedule-row").filter({ hasText: "analytics" }).first();
-    await expect(scheduleRow.getByRole("button", { name: /Run pinned/ })).toBeDisabled();
+    await expect(scheduleRow.getByRole("button", { name: "Repair", exact: true })).toBeEnabled();
+    await expect(scheduleRow.getByRole("button", { name: "Run now" })).toBeDisabled();
     await expect(scheduleRow.getByTestId("schedule-deployment")).toContainText(/Deployment #\d+/);
   });
 
