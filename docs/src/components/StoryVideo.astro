@@ -6,24 +6,7 @@
 import { publicMediaUrl } from '../lib/public-media.mjs';
 import story from '../data/story-chapters.json';
 
-// Documentation for each chapter. Keep in sync with the chapter names in
-// web/scripts/landing-video/story.html; the build fails on a missing entry.
-const chapterDocs: Record<string, string> = {
-  Discover: '/docs/workspace/interface-tour/#build',
-  Build: '/docs/workspace/pipeline-canvas/#create-an-asset',
-  Intellisense: '/docs/editing-assets/asset-editor/#write-sql-that-knows-your-pipeline',
-  'Type check': '/docs/asset-types/sql-assets/#check-it-before-it-runs',
-  Jinja: '/docs/editing-assets/asset-editor/#inspect-render-and-execute',
-  Run: '/docs/workspace/runs-and-history/',
-  Staleness: '/docs/concepts/#staleness',
-  Deploy: '/docs/scheduling/overview/#review-a-deployment',
-  Schedule: '/docs/scheduling/overview/#create-a-schedule',
-};
-const chapters = story.chapters.map((chapter) => {
-  const href = chapterDocs[chapter.name];
-  if (!href) throw new Error(`StoryVideo: no docs link for chapter "${chapter.name}"`);
-  return { ...chapter, href };
-});
+const chapters = story.chapters;
 const media = (theme: 'dark' | 'light') => ({
   webm: publicMediaUrl(`/landing/story-${theme}.webm`),
   mp4: publicMediaUrl(`/landing/story-${theme}.mp4`),
@@ -88,17 +71,10 @@ const seconds = Math.round(story.duration);
       ))}
     </ol>
   </figcaption>
-  <details class="story-video__transcript">
-    <summary>What the walkthrough shows</summary>
-    <ol id="story-video-transcript">
-      {chapters.map((chapter) => (
-        <li>
-          <strong>{chapter.name}.</strong> {chapter.title} {chapter.description}{' '}
-          <a href={chapter.href}>Read the docs <span aria-hidden="true">↗</span></a>
-        </li>
-      ))}
-    </ol>
-  </details>
+  {/* Screen readers get the narration through aria-describedby; it is not shown. */}
+  <p id="story-video-transcript" hidden>
+    {chapters.map((chapter) => `${chapter.name}. ${chapter.title} ${chapter.description}`).join(' ')}
+  </p>
 </figure>
 
 <script>

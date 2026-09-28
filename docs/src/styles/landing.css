@@ -536,34 +536,6 @@ h3 {
   transform: scaleX(var(--progress, 0));
   transform-origin: left;
 }
-.story-video__transcript {
-  padding: 0 1.1rem 0.9rem;
-  background: var(--landing-paper);
-  color: var(--landing-muted);
-  font-size: 0.76rem;
-}
-.story-video__transcript summary {
-  width: fit-content;
-  cursor: pointer;
-  color: var(--landing-text);
-}
-.story-video__transcript ol {
-  display: grid;
-  gap: 0.4rem;
-  margin: 0.8rem 0 0;
-  padding-left: 1.2rem;
-  line-height: 1.55;
-}
-.story-video__transcript strong {
-  color: var(--landing-text);
-  font-weight: 600;
-}
-.story-video__transcript a {
-  color: var(--landing-text);
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-  white-space: nowrap;
-}
 @media (prefers-reduced-motion: reduce) {
   .story-video__toggle {
     transition: none;
