@@ -288,17 +288,19 @@ test.describe("cross-pipeline dependencies live", () => {
     });
 
     const dialog = page.getByTestId("pipeline-plan-sheet");
-    await expect(dialog.getByRole("heading", { name: "Review asset run" })).toBeVisible();
-    await expect(dialog.getByText("Renart observed the current producer output")).toBeVisible({
+    await expect(dialog.getByRole("heading", { name: "Run analytics.orders" })).toBeVisible();
+    // Ready prerequisites are not listed; the run is simply allowed.
+    await expect(dialog.getByRole("button", { name: "Run 1 asset" })).toBeEnabled({
       timeout: 20_000,
     });
+    await expect(dialog.getByText("External prerequisites")).toHaveCount(0);
     const confirmResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/pipelines/${consumerPipelineID}/plan/confirm`) &&
         response.ok(),
       { timeout: 30_000 },
     );
-    await dialog.getByRole("button", { name: /^Run 1 asset from / }).click();
+    await dialog.getByRole("button", { name: "Run 1 asset" }).click();
     const confirmed = (await (await confirmResponse).json()) as { run: { id: string } };
     await waitForRun(liveApp, page.request, confirmed.run.id, "success");
     expect(directConsumerMaterializations).toBe(0);

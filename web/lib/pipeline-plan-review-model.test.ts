@@ -112,6 +112,10 @@ describe("pipeline plan review model", () => {
         executionTime: "now",
       }),
     ).toMatchObject({ purpose: "deployment", selection: { mode: "all" } });
+
+    expect(
+      createPipelinePlanRequest({ intent: "run", environment: "", executionTime: "now" }),
+    ).toMatchObject({ purpose: "execution", selection: { mode: "needed" } });
   });
 
   it("reduces planning transitions without leaving stale loading or error state", () => {
@@ -125,32 +129,16 @@ describe("pipeline plan review model", () => {
       type: "plan_load_failed",
       message: "temporary failure",
     });
-    state = pipelinePlanReviewReducer(state, {
-      type: "plan_load_started",
-      includeStageContent: false,
-    });
-    state = pipelinePlanReviewReducer(state, {
-      type: "plan_loaded",
-      plan: loadedPlan,
-      request,
-      includeStageContent: false,
-    });
+    state = pipelinePlanReviewReducer(state, { type: "plan_load_started" });
+    state = pipelinePlanReviewReducer(state, { type: "plan_loaded", plan: loadedPlan, request });
 
     expect(state).toMatchObject({
       plan: loadedPlan,
       request,
       selectorDraft: "tag:daily",
       loading: false,
-      contentLoading: false,
-      stageContentLoaded: false,
       error: null,
     });
-
-    state = pipelinePlanReviewReducer(state, {
-      type: "request_changed",
-      request: { ...request, include_stage_content: true },
-    });
-    expect(state.stageContentLoaded).toBe(false);
   });
 
   it("requires reviewed selectors and destructive confirmation before enabling the action", () => {
@@ -192,6 +180,20 @@ describe("pipeline plan review model", () => {
       confirmationMatches: true,
       canConfirm: true,
     });
+  });
+
+  it("blocks the run while an edited filter is not applied", () => {
+    const needed = plan({ selection: { mode: "needed" } });
+    const state: PipelinePlanReviewState = {
+      ...initialPipelinePlanReviewState,
+      plan: needed,
+      request: { selection: { mode: "needed" } },
+    };
+    const options = { intent: "run" as const, confirmDestructive: false, deploymentExists: false };
+    expect(derivePipelinePlanReview(state, options).canConfirm).toBe(true);
+    expect(
+      derivePipelinePlanReview({ ...state, selectorDraft: "tag:daily" }, options).canConfirm,
+    ).toBe(false);
   });
 
   it("keeps blocked plans and completed deployments non-confirmable", () => {
