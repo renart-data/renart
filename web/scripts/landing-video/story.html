@@ -324,10 +324,21 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 #results td.num { font-family: "Inconsolata", monospace; text-align: right; }
 #results th.num { text-align: right; }
 
-#toast { position: absolute; right: 26px; top: 76px; width: 520px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 16px 18px; font-size: 17px; }
-#toast .h { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 18px; margin-bottom: 8px; }
-#toast .f { display: flex; align-items: center; gap: 10px; font-family: "Inconsolata", monospace; font-size: 16px; padding: 4px 0; color: var(--muted); }
-#toast .f b { color: var(--accent-strong); font-weight: 500; width: 16px; }
+#runreview { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 110px; background: rgba(0, 0, 0, 0.3); z-index: 40; }
+#runreview .dlg { width: 640px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--pop-shadow); overflow: hidden; }
+#runreview .hd { padding: 20px 24px 16px; border-bottom: 1px solid var(--line-soft); }
+#runreview .hd b { display: block; font-size: 23px; font-weight: 600; }
+#runreview .hd span { color: var(--muted); font-size: 16px; }
+#runreview .bd { padding: 18px 24px; display: flex; flex-direction: column; gap: 14px; }
+#runreview .seg { display: inline-flex; align-self: flex-start; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 16px; }
+#runreview .seg span { padding: 6px 14px; color: var(--muted); }
+#runreview .seg span.on { background: var(--raise); color: var(--text); }
+#runreview .rt { font-size: 18px; font-weight: 600; }
+#runreview .rl { border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
+#runreview .rl div { display: flex; align-items: center; padding: 9px 14px; font: 400 17px "Inconsolata", monospace; border-bottom: 1px solid var(--line-soft); }
+#runreview .rl div:last-child { border-bottom: 0; }
+#runreview .rl .badge { margin-left: auto; }
+#runreview .ft { padding: 14px 24px; border-top: 1px solid var(--line-soft); display: flex; justify-content: flex-end; }
 
 /* ---------- pointer ---------- */
 #pointer { position: absolute; left: 0; top: 0; width: 34px; height: 34px; z-index: 50; filter: drop-shadow(0 3px 5px rgba(0,0,0,0.45)); }
@@ -339,12 +350,6 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 #caption .cap { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; }
 #caption .cap .t { font: 400 44px/1.05 "Instrument Serif", Georgia, serif; letter-spacing: -0.01em; }
 #caption .cap .d { color: var(--muted); font-size: 21px; margin-top: 6px; }
-#steps { display: flex; gap: 8px; }
-#steps .s { width: 118px; }
-#steps .s .l { font-size: 15px; color: var(--faint); margin-bottom: 8px; white-space: nowrap; }
-#steps .s.on .l { color: var(--text); }
-#steps .s .tr { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
-#steps .s .tr i { display: block; height: 100%; background: var(--accent-strong); }
 
 /* ---------- title cards ---------- */
 .card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: var(--bg); z-index: 100; }
@@ -357,8 +362,6 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 .card .url { margin-top: 22px; color: var(--muted); font-size: 22px; }
 
 /* ---------- v2: environments, deploy, schedules, staleness ---------- */
-#steps .s { width: 90px; }
-#steps .s .l { font-size: 14px; }
 .badge.warn { background: var(--warn-bg); color: var(--warn-text); }
 .badge.warn .dot { background: var(--warn-dot); }
 .skip { position: absolute; left: 16px; top: -34px; font-size: 14px; color: var(--muted); background: var(--raise); border: 1px solid var(--line); border-radius: 8px; padding: 3px 9px; white-space: nowrap; }
@@ -378,13 +381,22 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 #review .files { border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
 #review .file { display: flex; align-items: center; gap: 12px; padding: 10px 14px; font: 400 17px "Inconsolata", monospace; border-bottom: 1px solid var(--line-soft); }
 #review .file:last-child { border-bottom: 0; }
-#review .file .add { margin-left: auto; color: var(--accent-strong); font-size: 15px; }
+#review .file .chg { margin-left: auto; color: var(--muted); font: 400 15px inherit; font-family: inherit; }
+#rv-main { display: flex; flex-direction: column; gap: 16px; height: 100%; }
+#rv-result { position: absolute; inset: 0; padding: 24px 28px; background: var(--panel); display: flex; flex-direction: column; gap: 18px; }
+#review .scheds { border-top: 1px solid var(--line-soft); padding-top: 14px; display: flex; flex-direction: column; gap: 4px; font-size: 16px; color: var(--muted); }
+#review .scheds b { color: var(--text); font-size: 17px; font-weight: 600; }
+#review .done { border: 1px solid var(--line); border-radius: 12px; background: var(--window); padding: 16px 18px; }
+#review .done .h { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 600; }
+#review .done .h b { color: var(--accent-strong); }
+#review .done .f { color: var(--muted); font-size: 17px; margin-top: 6px; }
 #review .diff { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--code-bg); font: 400 18px/31px "Inconsolata", monospace; padding: 8px 0; overflow: hidden; }
 #review .diff .dh { padding: 2px 16px 8px; color: var(--muted); font-size: 15px; border-bottom: 1px solid var(--line-soft); margin-bottom: 6px; }
 #review .diff .dl { white-space: pre; padding: 0 16px; background: rgba(95, 207, 151, 0.08); }
 #review .diff .dl b { color: var(--accent-strong); font-weight: 400; display: inline-block; width: 26px; }
 #review .foot { margin-top: auto; display: flex; align-items: center; gap: 14px; font-size: 17px; color: var(--accent-strong); }
 #review .foot .btn { margin-left: auto; }
+#review .foot .btn + .btn { margin-left: 0; }
 
 #sched { position: absolute; inset: 0; background: var(--window); padding: 26px 30px; display: grid; grid-template-columns: 700px 1fr; gap: 26px; }
 #sched h2 { margin: 0; font-size: 27px; font-weight: 600; }
@@ -446,7 +458,8 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
         <div class="spacer"></div>
         <span class="chip" id="envchip"><span class="dot"></span><span class="lbl">dev</span><svg class="i" viewBox="0 0 24 24" id="envlock"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>
         <span class="chip" id="branch"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-6 3-11 6.5"/></svg>main <span class="count" id="changes">0</span></span>
-        <span class="btn primary" id="runbtn"></span>
+        <span class="btn" id="deploytop"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg><span class="lbl">Deploy</span></span>
+        <span class="btn primary" id="runbtn"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Review run</span>
       </div>
       <div id="envmenu">
         <div class="t">Environment</div>
@@ -540,10 +553,10 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
           </div>
           <div class="pop" id="complete"><div class="list"></div><div class="doc"></div></div>
           <div class="pop" id="diag">
-            <div class="h"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg>Unknown column <code>o.total_amout</code></div>
-            <p>No column <code>total_amout</code> on <code>raw.orders</code>. Did you mean <code>total_amount</code> <span style="color:var(--type);font-family:'Inconsolata',monospace;font-size:15px">DECIMAL(12,2)</span>?</p>
-            <span class="fix" id="fixbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Change to total_amount</span>
-            <span class="src">type check</span>
+            <div class="h"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg>Unresolved column: <code>total_amout</code></div>
+            <p><code>raw.orders</code> has <code>total_amount</code> <span style="color:var(--type);font-family:'Inconsolata',monospace;font-size:15px">DECIMAL(12,2)</span>.</p>
+            <span class="fix" id="fixbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Change 'total_amout' to 'total_amount'</span>
+            <span class="src">unresolved-column</span>
           </div>
           <div class="pop" id="render">
             <div class="h"><svg class="i" viewBox="0 0 24 24" style="color:var(--jinja)"><path d="M8 4c-2 0-2 1-2 3v2c0 1-1 3-2 3 1 0 2 2 2 3v2c0 2 0 3 2 3M16 4c2 0 2 1 2 3v2c0 1 1 3 2 3-1 0-2 2-2 3v2c0 2 0 3-2 3"/></svg><b>start_date</b> renders for this run as</div>
@@ -552,18 +565,45 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
           </div>
         </div>
 
+        <div id="runreview">
+          <div class="dlg">
+            <div class="hd"><b>Run acme_shop</b><span>dev · working tree</span></div>
+            <div class="bd">
+              <div class="seg"><span class="on">Out of date</span><span>All assets</span></div>
+              <div class="rt">3 assets will run</div>
+              <div class="rl">
+                <div>raw.orders<span class="badge"><span class="dot"></span>Never built</span></div>
+                <div>raw.customers<span class="badge"><span class="dot"></span>Never built</span></div>
+                <div>marts.customer_revenue<span class="badge"><span class="dot"></span>Never built</span></div>
+              </div>
+            </div>
+            <div class="ft"><span class="btn primary" id="runconfirm"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Run 3 assets</span></div>
+          </div>
+        </div>
+
         <div id="review">
-          <div>
-            <h4>Review deployment</h4>
-            <div class="sub"><span class="badge warn"><span class="dot"></span>prod · Deployed only</span>First deployment · from main</div>
+          <div id="rv-main">
+            <div>
+              <h4>Deploy acme_shop</h4>
+              <div class="sub">First deployment</div>
+            </div>
+            <div class="files">
+              <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>assets/raw/orders.asset.yml<span class="chg">Asset added</span></div>
+              <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>assets/raw/customers.asset.yml<span class="chg">Asset added</span></div>
+              <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>assets/marts/customer_revenue.sql<span class="chg">Asset added</span></div>
+            </div>
+            <div class="diff"><div class="dh">assets/marts/customer_revenue.sql</div><div id="difflines"></div></div>
+            <div class="scheds"><b>Schedules</b><span>No schedule runs this pipeline yet. Create one in Schedules after deploying.</span></div>
+            <div class="foot"><span class="btn primary" id="deploybtn"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>Deploy</span></div>
           </div>
-          <div class="files">
-            <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>assets/raw/orders.asset.yml<span class="add">+15</span></div>
-            <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>assets/raw/customers.asset.yml<span class="add">+12</span></div>
-            <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>assets/marts/customer_revenue.sql<span class="add">+8</span></div>
+          <div id="rv-result">
+            <div>
+              <h4>Deploy acme_shop</h4>
+              <div class="sub">First deployment</div>
+            </div>
+            <div class="done"><div class="h"><b>✓</b>Deployed as deployment #1 · a1f3c9e</div><div class="f">Nothing runs until a schedule or run uses it.</div></div>
+            <div class="foot"><span class="btn" id="viewsched">View schedules</span><span class="btn primary">Done</span></div>
           </div>
-          <div class="diff"><div class="dh">assets/marts/customer_revenue.sql</div><div id="difflines"></div></div>
-          <div class="foot"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Pipeline type-checked · 0 problems<span class="btn primary" id="deploybtn"><svg class="i" viewBox="0 0 24 24"><path d="M12 19V6M6 11l6-6 6 6"/></svg>Deploy to prod</span></div>
         </div>
 
         <div id="sched">
@@ -573,10 +613,13 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
             <div class="card2">
               <div class="ct"><svg class="i" viewBox="0 0 24 24" style="color:var(--accent-strong)"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>New schedule</div>
               <div class="fld"><div class="fl">Pipeline</div><div class="in">acme_shop</div></div>
-              <div class="fld"><div class="fl">Environment</div><div class="in">prod <span class="badge warn" style="margin-left:auto"><span class="dot"></span>Deployed only</span></div></div>
+              <div class="fld"><div class="fl">Environment</div><div class="in">prod</div></div>
               <div class="fld"><div class="fl">Schedule</div><div class="in mono" id="cron"><span class="v"></span><span class="c" style="width:2px;height:24px;background:var(--accent-strong)"></span></div><div class="help" id="cronhelp"></div></div>
               <div class="fld"><div class="fl">Catch-up policy</div>
-                <div class="opts"><div class="opt on"><i></i>Run once after downtime</div><div class="opt"><i></i>Backfill missed windows</div><div class="opt"><i></i>Skip missed intervals</div></div>
+                <div class="opts"><div class="opt on"><i></i>Run once to catch up</div><div class="opt"><i></i>Backfill each missed interval</div><div class="opt"><i></i>Skip missed intervals</div></div>
+              </div>
+              <div class="fld"><div class="fl">Deployment</div>
+                <div class="opts"><div class="opt on"><i></i>Use deployment #1</div><div class="opt"><i></i>Deploy current files</div></div>
               </div>
               <span class="btn primary" id="create-sched">Create schedule</span>
             </div>
@@ -592,11 +635,6 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
           </div>
         </div>
       </div>
-      <div id="toast">
-        <div class="h"><svg class="i" viewBox="0 0 24 24" style="color:var(--accent-strong)"><path d="M12 19V6M6 11l6-6 6 6"/></svg>Deployed to prod</div>
-        <div class="f"><b>✓</b>snapshot a1f3c9e · 3 assets</div>
-        <div class="f"><b>✓</b>pinned for scheduled runs</div>
-      </div>
     </div>
     <div id="ghost"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg><span></span></div>
     <div id="ripple"></div>
@@ -605,7 +643,6 @@ svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; s
 
   <div id="band">
     <div id="caption"></div>
-    <div id="steps"></div>
   </div>
 
   <div class="card" id="outro">
@@ -651,7 +688,7 @@ const CHAPTERS = [
   { a: C.jinja, b: C.run, k: "Jinja", t: "Template with Jinja.", d: "Variables complete and render inline, and the rendered SQL is checked too." },
   { a: C.run, b: C.stale, k: "Run", t: "Run it, see the results.", d: "Every asset reports fresh data, row counts and output types." },
   { a: C.stale, b: C.deploy, k: "Staleness", t: "Only rebuild what changed.", d: "Edits mark downstream assets stale. Build stale skips everything still fresh." },
-  { a: C.deploy, b: C.sched, k: "Deploy", t: "Review it, then ship it.", d: "Deploy a pinned snapshot to a protected production environment." },
+  { a: C.deploy, b: C.sched, k: "Deploy", t: "Review it, then ship it.", d: "Review the changes, then deploy a version for your schedules to run." },
   { a: C.sched, b: C.outro, k: "Schedule", t: "Schedule it and move on.", d: "Runs every morning in prod from the deployed version, and catches up after downtime." },
 ];
 
@@ -761,10 +798,10 @@ const NODES = {
 };
 // Freshness timeline per node: [from, state, detail]. States: new, run, fresh, edited, upstream.
 const STATES = {
-  orders: [[0, "new"], [C.run + 1.6, "run", C.run + 3.0], [C.run + 3.0, "fresh", "184,302 rows"],
+  orders: [[0, "new"], [C.run + 2.1, "run", C.run + 3.5], [C.run + 3.5, "fresh", "184,302 rows"],
     [C.stale + 2.1, "edited"], [C.stale + 3.95, "run", C.stale + 4.75], [C.stale + 4.75, "fresh", "184,302 rows"], [PROD_AT, "new"]],
-  customers: [[0, "new"], [C.run + 1.6, "run", C.run + 3.25], [C.run + 3.25, "fresh", "12,480 rows"], [PROD_AT, "new"]],
-  rev: [[0, "new"], [C.run + 3.7, "run", C.run + 4.5], [C.run + 4.5, "fresh", "12,391 rows"],
+  customers: [[0, "new"], [C.run + 2.1, "run", C.run + 3.75], [C.run + 3.75, "fresh", "12,480 rows"], [PROD_AT, "new"]],
+  rev: [[0, "new"], [C.run + 4.2, "run", C.run + 5.0], [C.run + 5.0, "fresh", "12,391 rows"],
     [C.stale + 2.9, "upstream"], [C.stale + 4.75, "run", C.stale + 5.55], [C.stale + 5.55, "fresh", "12,391 rows"], [PROD_AT, "new"]],
 };
 function stateAt(key, t) {
@@ -843,7 +880,7 @@ const CAM = [
   [C.build + 0.2, WIDE], [C.build + 1.0, [900, 450, 1.1]], [C.build + 3.2, [900, 450, 1.1]], [C.build + 4.2, WIDE],
   [C.intel, WIDE], [C.intel + 0.6, [1260, 380, 1.26]], [C.check, [1260, 400, 1.26]], [C.check + 0.4, [1260, 440, 1.22]],
   [C.jinja, [1260, 440, 1.22]], [C.jinja + 0.5, [1270, 470, 1.24]], [C.run, [1270, 470, 1.24]],
-  [C.run + 1.0, WIDE], [C.run + 4.5, WIDE], [C.run + 5.2, [960, 500, 1.05]],
+  [C.run + 1.0, WIDE], [C.run + 5.0, WIDE], [C.run + 5.6, [960, 500, 1.05]],
   [C.stale, [960, 500, 1.05]], [C.stale + 0.7, [860, 440, 1.12]], [C.stale + 3.4, [900, 470, 1.1]], [C.stale + 6.8, [900, 470, 1.1]],
   [C.deploy + 0.6, WIDE], [C.deploy + 2.6, WIDE], [C.deploy + 3.4, [1340, 470, 1.12]], [C.deploy + 5.6, [1340, 470, 1.12]], [C.deploy + 6.4, WIDE],
   [C.sched + 1.0, WIDE], [C.sched + 1.6, [700, 480, 1.1]], [C.sched + 3.2, [700, 480, 1.1]], [C.sched + 4.0, [1260, 420, 1.1]], [C.outro, [1260, 420, 1.1]],
@@ -852,7 +889,7 @@ const CAM = [
 // Canvas pan/zoom inside the window: [tx, ty, s].
 const CANVAS = [
   [0, [620, 40, 1]], [C.build, [620, 40, 1]], [C.build + 0.8, [420, 40, 1]], [C.build + 3.4, [420, 40, 1]], [C.build + 4.2, [40, 90, 0.72]],
-  [C.run, [40, 90, 0.72]], [C.run + 1.0, [450, 40, 1]], [C.run + 4.5, [450, 40, 1]], [C.run + 5.2, [520, -40, 0.85]],
+  [C.run, [40, 90, 0.72]], [C.run + 1.0, [450, 40, 1]], [C.run + 5.0, [450, 40, 1]], [C.run + 5.6, [520, -40, 0.85]],
   [C.stale, [520, -40, 0.85]], [C.stale + 0.6, [450, 40, 1]],
 ];
 
@@ -877,23 +914,24 @@ const POINTER = [
   [C.check + 0.5, 0.9, "@3:10"],
   [C.check + 2.5, 1.0, "#fixbtn"],
   [C.check + 3.3, 0.8, REST],
-  [C.run + 1.4, 1.1, "#runbtn"],
-  [C.run + 3.0, 1.2, [1500, 700]],
+  [C.run + 0.7, 0.7, "#runbtn"],
+  [C.run + 1.8, 0.6, "#runconfirm"],
+  [C.run + 3.4, 1.1, [1500, 700]],
   [C.stale + 0.8, 0.8, "#n-orders"],
   [C.stale + 1.6, 0.6, [1200, 520]],
   [C.stale + 3.8, 1.1, "#buildstale"],
   [C.stale + 5.2, 1.0, [1500, 640]],
   [C.deploy + 0.9, 0.9, "#envchip"],
   [C.deploy + 1.9, 0.5, "#env-prod"],
-  [C.deploy + 2.7, 0.7, "#runbtn"],
+  [C.deploy + 2.7, 0.7, "#deploytop"],
   [C.deploy + 5.3, 1.3, "#deploybtn"],
-  [C.sched + 0.8, 1.2, "#nav-run"],
+  [C.sched + 0.8, 1.2, "#viewsched"],
   [C.sched + 1.3, 0.5, "#cron"],
   [C.sched + 3.0, 0.9, "#create-sched"],
   [C.sched + 4.2, 1.2, [1700, 780]],
 ];
 const CLICKS = [C.discover + 1.2, C.discover + 2.6, C.build + 1.0, C.build + 1.9, C.build + 3.2, C.build + 3.3, C.intel + 0.1,
-  C.check + 2.5, C.run + 1.4, C.stale + 0.8, C.stale + 3.8, C.deploy + 0.9, C.deploy + 1.9, C.deploy + 2.7, C.deploy + 5.3,
+  C.check + 2.5, C.run + 0.7, C.run + 1.8, C.stale + 0.8, C.stale + 3.8, C.deploy + 0.9, C.deploy + 1.9, C.deploy + 2.7, C.deploy + 5.3,
   C.sched + 0.8, C.sched + 1.3, C.sched + 3.0];
 const DRAGS = [
   { a: C.discover + 5.0, b: C.discover + 6.2, label: "orders" },
@@ -906,7 +944,6 @@ const linesEl = $("#lines"), caret = $("#caret"), flash = $("#flash");
 const complete = $("#complete"), diag = $("#diag"), render = $("#render");
 const pointer = $("#pointer"), ripple = $("#ripple"), ghost = $("#ghost");
 
-$("#steps").innerHTML = CHAPTERS.map((c) => `<div class="s"><div class="l">${c.k}</div><div class="tr"><i></i></div></div>`).join("");
 $("#caption").innerHTML = CHAPTERS.map((c) => `<div class="cap"><div class="t">${c.t}</div><div class="d">${c.d}</div></div>`).join("");
 
 const plus = document.createElement("div");
@@ -974,14 +1011,13 @@ function applyScene(t) {
   const [fx, fy, z] = track(CAM, t);
   scene.style.transform = `translate(${960 - fx * z}px, ${472 - fy * z}px) scale(${z})`;
 
-  // Caption band + chapter tracker. The band is visible from the first frame so the loop point matches.
-  const caps = $("#caption").children, steps = $("#steps").children;
+  // Caption band. It is visible from the first frame so the loop point matches.
+  // Chapter navigation lives on the page around the video, not in it.
+  const caps = $("#caption").children;
   CHAPTERS.forEach((c, i) => {
     const first = i === 0, last = i === CHAPTERS.length - 1;
     const o = Math.min(first ? 1 : p(t, c.a, c.a + 0.35), last ? 1 - p(t, C.outro - 0.2, C.outro + 0.2) : 1 - p(t, c.b - 0.35, c.b));
     show(caps[i], o, 14);
-    steps[i].classList.toggle("on", t >= c.a && t < c.b);
-    steps[i].querySelector("i").style.width = `${p(t, c.a, c.b) * 100}%`;
   });
   $("#band").style.opacity = 1 - p(t, C.outro - 0.2, C.outro + 0.3);
 
@@ -997,10 +1033,6 @@ function applyScene(t) {
   envmenu.style.left = `${$("#envchip").offsetLeft - 100}px`;
   show(envmenu, win(t, C.deploy + 1.0, C.deploy + 2.05, 0.15), -8, 0.97);
   $("#env-prod").classList.toggle("hl", t > C.deploy + 1.55);
-  // In a deployed-only environment the primary action becomes Deploy pipeline.
-  $("#runbtn").innerHTML = env === "prod"
-    ? `<svg class="i" viewBox="0 0 24 24"><path d="M12 19V6M6 11l6-6 6 6"/></svg>Deploy pipeline`
-    : `<svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Run pipeline`;
   $("#changes").textContent = t < C.discover + 6.25 ? "0" : t < C.discover + 8.05 ? "1" : t < C.build + 2.0 ? "2" : "3";
 
   // ---- Data browser.
@@ -1068,14 +1100,14 @@ function applyScene(t) {
 
   // Edges: drawn when the SQL that names each table is typed; pulses during runs.
   const running = (a, b) => t >= a && t < b;
-  drawEdge(E1, E1L, eo(p(t, EDGE1_AT, EDGE1_AT + 0.7)), running(C.run + 2.9, C.run + 5.2) || running(C.stale + 4.6, C.stale + 6.2), linkAt(t, EDGE1_AT));
-  drawEdge(E2, E2L, eo(p(t, EDGE2_AT, EDGE2_AT + 0.7)), running(C.run + 3.1, C.run + 5.2), linkAt(t, EDGE2_AT));
-  pulse($("#p1"), E1, E1L, Math.max(p(t, C.run + 2.9, C.run + 3.8) % 1, p(t, C.stale + 4.6, C.stale + 5.3) % 1));
-  pulse($("#p2"), E2, E2L, p(t, C.run + 3.1, C.run + 4.0) % 1);
+  drawEdge(E1, E1L, eo(p(t, EDGE1_AT, EDGE1_AT + 0.7)), running(C.run + 3.4, C.run + 5.7) || running(C.stale + 4.6, C.stale + 6.2), linkAt(t, EDGE1_AT));
+  drawEdge(E2, E2L, eo(p(t, EDGE2_AT, EDGE2_AT + 0.7)), running(C.run + 3.6, C.run + 5.7), linkAt(t, EDGE2_AT));
+  pulse($("#p1"), E1, E1L, Math.max(p(t, C.run + 3.4, C.run + 4.3) % 1, p(t, C.stale + 4.6, C.stale + 5.3) % 1));
+  pulse($("#p2"), E2, E2L, p(t, C.run + 3.6, C.run + 4.5) % 1);
   pulse($("#p3"), E1, E1L, p(t, C.stale + 2.2, C.stale + 2.95) % 1);
 
   // Results drawer.
-  $("#results").style.transform = `translateY(${(1 - ez(p(t, C.run + 4.6, C.run + 5.2)) * (1 - ez(p(t, C.stale, C.stale + 0.5)))) * 340}px)`;
+  $("#results").style.transform = `translateY(${(1 - ez(p(t, C.run + 5.1, C.run + 5.6)) * (1 - ez(p(t, C.stale, C.stale + 0.5)))) * 340}px)`;
 
   // ---- Staleness: edit raw.orders, watch the change propagate, build only what is stale.
   const insp = $("#inspect");
@@ -1180,12 +1212,18 @@ function applyScene(t) {
     : t >= C.intel + 2.3 && t < C.check ? [["customer_name", "VARCHAR"]] : [];
   $("#schema").innerHTML = cols.length ? `Output<span style="width:4px"></span>` + cols.map(([n, ty]) => `<span class="c">${n}<i>${ty}</i></span>`).join("") : "";
 
-  // ---- Deploy review sheet + toast.
+  // ---- Run review dialog.
+  show($("#runreview"), win(t, C.run + 0.8, C.run + 2.15, 0.2), 0, 1);
+
+  // ---- Deploy review sheet; after Deploy it shows the result until View schedules.
   const rv = $("#review");
-  const rvIn = ez(p(t, C.deploy + 2.8, C.deploy + 3.3)) * (1 - ez(p(t, C.deploy + 5.45, C.deploy + 5.85)));
+  const rvIn = ez(p(t, C.deploy + 2.8, C.deploy + 3.3)) * (1 - ez(p(t, C.sched + 0.85, C.sched + 1.2)));
   rv.style.transform = `translateX(${(1 - rvIn) * 860}px)`;
   rv.style.visibility = rvIn > 0 ? "visible" : "hidden";
-  show($("#toast"), win(t, C.deploy + 5.7, C.sched + 1.0, 0.3), -12, 0.97);
+  show($("#rv-result"), p(t, C.deploy + 5.4, C.deploy + 5.7));
+  const deployed = t >= C.deploy + 5.5 && t < OUTRO_OUT;
+  $("#deploytop .lbl").textContent = deployed ? "Deployed" : "Deploy";
+  $("#deploytop").style.color = deployed ? "var(--accent-strong)" : "";
 
   // ---- Schedules page.
   const sc = $("#sched");
@@ -1199,7 +1237,7 @@ function applyScene(t) {
   $("#cronhelp").textContent = t >= C.sched + 2.2 ? "Every day at 06:00 · Europe/Berlin" : "";
   const created = t >= C.sched + 3.05;
   $("#tlempty").style.opacity = created ? 0 : 1;
-  $("#tlbadge").innerHTML = created ? `<span class="dot" style="background:var(--accent-strong)"></span>acme_shop · prod · Run pinned a1f3c9e` : "Nothing scheduled";
+  $("#tlbadge").innerHTML = created ? `<span class="dot" style="background:var(--accent-strong)"></span>acme_shop · prod · deployment #1` : "Nothing scheduled";
   const runStart = C.sched + 4.6, runEnd = C.sched + 5.3;
   DAYS.forEach((_, i) => {
     const s = $(`#slot${i}`);
@@ -1218,7 +1256,7 @@ function applyScene(t) {
   const hours = 16 + lapse * 14;
   now.querySelector("span").textContent = `${hours < 24 ? "Sat" : "Sun"} ${String(Math.floor(hours % 24)).padStart(2, "0")}:${String(Math.floor((hours % 1) * 60)).padStart(2, "0")}`;
   $("#runcard").innerHTML = t >= runEnd
-    ? `<div class="rh"><span class="ok">✓</span>Sun 27, 06:00 · Success</div><div>3 assets · 14 s · deployed snapshot a1f3c9e</div><div>Next scheduled run · Mon 28, 06:00</div>`
+    ? `<div class="rh"><span class="ok">✓</span>Sun 27, 06:00 · Success</div><div>3 assets · 14 s · deployment #1</div><div>Next scheduled run · Mon 28, 06:00</div>`
     : created ? `<div class="rh" style="color:var(--muted)">Next scheduled run · Sun 27, 06:00</div>` : "";
   $("#runcard").style.opacity = created ? 1 : 0;
 

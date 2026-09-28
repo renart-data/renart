@@ -53,7 +53,7 @@
     {
       "name": "Deploy",
       "title": "Review it, then ship it.",
-      "description": "Deploy a pinned snapshot to a protected production environment.",
+      "description": "Review the changes, then deploy a version for your schedules to run.",
       "start": 46.4,
       "end": 53.2
     },
