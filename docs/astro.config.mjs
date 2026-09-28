@@ -127,6 +127,7 @@ export default defineConfig({
           items: [
             { label: 'Managing connections', slug: 'docs/connections-environments/managing-connections' },
             { label: 'Connection credentials', slug: 'docs/connections-environments/managing-credentials' },
+            { label: 'Browse your data', slug: 'docs/connections-environments/data-browser' },
             { label: 'Load assets', slug: 'docs/asset-types/load-assets' },
             { label: 'HTTP API assets', slug: 'docs/asset-types/http-api-assets' },
           ],
@@ -138,6 +139,8 @@ export default defineConfig({
             { label: 'The asset editor', slug: 'docs/editing-assets/asset-editor' },
             { label: 'SQL assets', slug: 'docs/asset-types/sql-assets' },
             { label: 'Python assets', slug: 'docs/asset-types/python-assets' },
+            { label: 'Variables and Jinja in SQL', slug: 'docs/editing-assets/variables-and-jinja' },
+            { label: 'Type checking', slug: 'docs/editing-assets/type-checking' },
           ],
         },
         {
@@ -152,6 +155,7 @@ export default defineConfig({
           label: 'Run and operate',
           items: [
             { label: 'Runs & history', slug: 'docs/workspace/runs-and-history' },
+            { label: 'Rebuild only what changed', slug: 'docs/workspace/rebuild-what-changed' },
             { label: 'Deployments & schedules', slug: 'docs/scheduling/overview' },
             { label: 'Work from the terminal', slug: 'docs/cli/work-from-terminal' },
           ],
@@ -164,6 +168,7 @@ export default defineConfig({
             { label: 'Supported platforms', slug: 'docs/reference/supported-platforms' },
             { label: 'CLI reference', slug: 'docs/reference/cli' },
             { label: 'Security & privacy', slug: 'docs/reference/security-and-privacy' },
+            { label: 'Troubleshooting', slug: 'docs/troubleshooting' },
           ],
         },
       ],

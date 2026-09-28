@@ -66,6 +66,23 @@ active target. **Default environment** is a separate saved setting, used when no
 explicit environment is selected. Schedules remain per environment: the same
 pipeline can run nightly against `default` and on weekday mornings against `production`.
 
+## Execution guardrails
+
+**Execution policy** in an environment's editor sets its guardrails. They apply
+when you choose **Save changes**, and Renart enforces them for every run in that
+environment, whether it starts from the workspace, the terminal or a schedule.
+
+| Guardrail | What it does |
+| --- | --- |
+| **Protected** | Blocks runs you start yourself in the workspace or terminal. **Materialize** is disabled with *This environment is protected: interactive execution is disabled*. Scheduled runs still run. |
+| **Deployed only** | Runs only deployed versions. **Review run** runs the latest deployment instead of your working files, and runs from the working tree are rejected, including scheduled runs without a deployment. |
+| **Confirm destructive operations** | Requires typing the environment name before a destructive run, such as a full refresh or a backfill. |
+
+A typical setup leaves `default` open for development and marks `production`
+**Deployed only**, so production only runs versions you reviewed and deployed.
+See [Deployments & scheduling](/docs/scheduling/overview/) for how deployments
+are created and pinned.
+
 ## Read-only connections
 
 Use **Access → Read-only** for a production database that Renart should read

@@ -1,0 +1,67 @@
+---
+title: Browse your data
+description: Explore the tables and files your connections can reach, check their columns, and add a table to a pipeline as a source asset.
+---
+
+The **Data Browser** shows what your connections can reach: databases, schemas,
+tables and files, with their columns and types. Use it to find the data a
+pipeline needs, preview a few rows, and add an existing table to the canvas.
+
+<img
+  src="/docs-media/data-browser.webp"
+  alt="The Data Browser listing tables in the raw schema next to the pipeline canvas, where a dashed target offers to create a source for acme.raw.campaigns in a new group"
+  width="2800"
+  height="1800"
+/>
+
+## Before you start
+
+[Add a connection](/docs/connections-environments/managing-connections/) for the
+database, warehouse or storage you want to browse. Files inside the project are
+available without one.
+
+## Browse a connection
+
+1. In **Build**, open **Data Browser** from the left rail.
+2. Choose a connection under **Connected sources**, or **Project files** for
+   files inside this project.
+3. Open the namespaces down to a table or file. The search field shows where
+   you are, for example `duckdb-default.acme.raw.`, and you can type a path
+   there directly.
+4. Select a table or file. **Columns** lists its column names and types without
+   reading any rows. Choose **Preview rows** when you want to see data.
+
+For CSV and other files, Renart infers the columns from the file itself. The
+[interface tour](/docs/workspace/interface-tour/#find-data-across-levels)
+describes the search syntax, storage prefixes and path patterns in detail.
+
+## Add a table to a pipeline
+
+1. Open the pipeline's **Canvas**, then open **Data Browser** beside it.
+2. Find the table and choose **+** next to its name, or drag it onto the canvas.
+3. Choose where the new asset goes: an existing group on the canvas, or
+   **Create source in new group**.
+4. Check the **Create source asset** review. It shows the asset name, the
+   connection and the file Renart will add to the project. **Import observed
+   columns** is on by default, so downstream SQL gets completion and type
+   checking for this table.
+5. Choose **Create source asset**.
+
+A source asset refers to the existing table. Creating it copies no data and
+runs nothing. To copy data from another system into your warehouse instead, use
+a [Load asset](/docs/asset-types/load-assets/).
+
+## Result
+
+The table appears on the canvas as a source asset. With its columns imported,
+SQL that reads the table gets column completion and type checking, the same as
+for any other asset in the pipeline.
+
+## Related
+
+- [Load assets](/docs/asset-types/load-assets/): copy tables and files between
+  systems, including from storage prefixes you find in the Data Browser.
+- [Notebooks](/docs/notebooks/overview/#add-data-from-several-systems): add
+  Data Browser tables and files to a notebook.
+- [Catch errors with type checking](/docs/editing-assets/type-checking/): what
+  imported columns make possible.

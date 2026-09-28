@@ -245,6 +245,118 @@ try {
     await shot(page, "catalog");
   });
 
+  // A clip around one element, so a page shows its subject at a readable size.
+  const clipTo = async (locator, { pad = 12, maxHeight } = {}) => {
+    const box = await locator.boundingBox();
+    if (!box) throw new Error("clip target is not visible");
+    return {
+      x: Math.max(0, box.x - pad),
+      y: Math.max(0, box.y - pad),
+      width: box.width + pad * 2,
+      height: Math.min(box.height + pad * 2, maxHeight ?? Infinity),
+    };
+  };
+  const assetContent = async (assetId) =>
+    (await demo.api("/api/workspace")).pipelines
+      .find((p) => p.id === ACME)
+      .assets.find((a) => a.id === assetId).content;
+  const restoreAsset = (assetId, content) =>
+    demo.api(`/api/pipelines/${ACME}/assets/${assetId}`, { method: "PUT", body: { content } });
+
+  // data-browser: an existing table offered to the canvas as a new source
+  // (Browse your data). Nothing is saved; the page closes before confirming.
+  await withPage({ width: 1400, height: 900 }, async (page) => {
+    await goto(page, `/pipelines/${ACME}/canvas`, 5000);
+    await page.getByRole("button", { name: "Data Browser", exact: true }).first().click();
+    await page.waitForTimeout(1500);
+    await page
+      .getByPlaceholder(/Search|Filter/)
+      .first()
+      .fill("duckdb-default.acme.raw.");
+    await page
+      .getByRole("button", { name: "Use campaigns in canvas" })
+      .waitFor({ state: "attached" });
+    await page.getByRole("button", { name: "Use campaigns in canvas" }).click({ force: true });
+    await page.getByText("Create source in new group", { exact: true }).waitFor();
+    await page.waitForTimeout(1200);
+    await shot(page, "data-browser");
+  });
+
+  // needed-assets: Review run opens on the assets the staged edits made stale
+  // (Rebuild only what changed). Runs before the editing shots below so the
+  // staleness state is exactly the staged one.
+  await withPage({ width: 1400, height: 760 }, async (page) => {
+    await goto(page, `/pipelines/${ACME}/canvas`, 5000);
+    await page
+      .getByRole("button", { name: /Review run/ })
+      .first()
+      .click();
+    const sheet = page.getByTestId("pipeline-plan-sheet");
+    await sheet.getByRole("heading", { name: /assets? will run$/ }).waitFor();
+    await page.waitForTimeout(1500);
+    await shot(page, "needed-assets", { clip: await clipTo(sheet, { pad: 0 }) });
+  });
+
+  // jinja-variables: a run value in a SQL filter, with the hover that shows
+  // what it renders to (Variables and Jinja in SQL).
+  const DAILY_REVENUE = id("acme/assets/mart/daily_revenue.sql");
+  const originalDailyRevenue = await assetContent(DAILY_REVENUE);
+  try {
+    await withPage({ width: 1400, height: 900 }, async (page) => {
+      await goto(page, `/pipelines/${ACME}/assets/${DAILY_REVENUE}/code`, 5000);
+      await page.getByRole("button", { name: "Collapse results panel", exact: true }).click();
+      await page.locator(".monaco-editor").getByText("GROUP BY order_date").first().click();
+      await page.keyboard.press("Home");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("ArrowUp");
+      await page.keyboard.insertText("WHERE order_date >= '{{ start_date }}'");
+      await page.waitForTimeout(3500);
+      // Typing opens SQL suggestions asynchronously; close them before hovering.
+      await page.keyboard.press("Escape");
+      await page.locator(".suggest-widget.visible").waitFor({ state: "hidden" });
+      await page
+        .locator(".monaco-editor .view-line span", { hasText: "start_date" })
+        .first()
+        .hover({ force: true });
+      await page.locator(".monaco-hover", { hasText: "Rendered" }).first().waitFor();
+      await page.waitForTimeout(800);
+      const editor = page.locator(".monaco-editor").first();
+      const box = await editor.boundingBox();
+      await shot(page, "jinja-variables", {
+        clip: { x: box.x, y: box.y, width: box.width, height: 330 },
+      });
+    });
+  } finally {
+    await restoreAsset(DAILY_REVENUE, originalDailyRevenue);
+  }
+
+  // type-check: a misspelled column, flagged in the editor and listed in the
+  // Type check tab with its declared-columns warning (Catch errors with type checking).
+  const CUSTOMER_LTV = id("acme/assets/mart/customer_ltv.sql");
+  const originalCustomerLtv = await assetContent(CUSTOMER_LTV);
+  try {
+    await restoreAsset(CUSTOMER_LTV, originalCustomerLtv.replace("sc.country,", "sc.countrie,"));
+    await withPage({ width: 1400, height: 760 }, async (page) => {
+      await goto(page, `/pipelines/${ACME}/assets/${CUSTOMER_LTV}/code`, 5000);
+      await page
+        .getByRole("tab", { name: /Type check/ })
+        .first()
+        .click();
+      await page.getByRole("button", { name: /Re-run/ }).click();
+      await page.getByText("View source").first().waitFor({ timeout: 30000 });
+      await page.waitForTimeout(1500);
+      // Editor plus results panel: from the tab row above the code to the
+      // bottom of the viewport, across the centre column only.
+      const editor = await page.locator(".monaco-editor").first().boundingBox();
+      const top = editor.y - 48;
+      await shot(page, "type-check", {
+        clip: { x: editor.x - 8, y: top, width: editor.width + 16, height: 760 - top - 8 },
+      });
+    });
+  } finally {
+    await restoreAsset(CUSTOMER_LTV, originalCustomerLtv);
+  }
+
   // --- per-asset-type editor shots ------------------------------------------
   // The staged acme project is all SQL, so the Python/Load/API shots first
   // create their assets through the same API the UI's "New asset" flow uses.

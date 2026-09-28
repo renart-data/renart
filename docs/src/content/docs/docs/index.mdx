@@ -42,18 +42,23 @@ scheduling and everything defined as code in Git.
 The sidebar follows the same order as the work.
 
 - **Connect and load data:** [add a connection](/docs/connections-environments/managing-connections/),
-  [store its credentials](/docs/connections-environments/managing-credentials/), then
+  [store its credentials](/docs/connections-environments/managing-credentials/),
+  [browse its tables](/docs/connections-environments/data-browser/), then
   [load tables and files](/docs/asset-types/load-assets/) or
   [ingest an HTTP API](/docs/asset-types/http-api-assets/).
 - **Build pipelines:** follow dependencies on the [canvas](/docs/workspace/pipeline-canvas/)
   and write [SQL](/docs/asset-types/sql-assets/) or [Python](/docs/asset-types/python-assets/)
-  in the [asset editor](/docs/editing-assets/asset-editor/).
+  in the [asset editor](/docs/editing-assets/asset-editor/), with
+  [variables and Jinja](/docs/editing-assets/variables-and-jinja/) and
+  [type checking](/docs/editing-assets/type-checking/).
 - **Analyze data:** combine sources in a [notebook](/docs/notebooks/overview/) or build a
   [dashboard or report](/docs/presentations/overview/).
-- **Run and operate:** [review a deployment and schedule it](/docs/scheduling/overview/),
-  then inspect [run history](/docs/workspace/runs-and-history/).
+- **Run and operate:** [rebuild only what changed](/docs/workspace/rebuild-what-changed/),
+  [review a deployment and schedule it](/docs/scheduling/overview/), then inspect
+  [run history](/docs/workspace/runs-and-history/).
 - **Look something up:** [supported platforms](/docs/reference/supported-platforms/),
-  the [CLI reference](/docs/reference/cli/) and [the main concepts](/docs/concepts/).
+  the [CLI reference](/docs/reference/cli/), [the main concepts](/docs/concepts/) and
+  [troubleshooting](/docs/troubleshooting/).
 
 Authored definitions are version-controlled files. Run history, deployment
 pins, and other machine-local state are stored separately; see

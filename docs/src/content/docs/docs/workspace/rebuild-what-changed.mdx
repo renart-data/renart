@@ -1,0 +1,63 @@
+---
+title: Rebuild only what changed
+description: Read the freshness badges on the canvas and rebuild just the assets affected by a change.
+---
+
+Renart knows whether each asset's stored result still matches its current
+definition and inputs. After you change an asset, rebuild the assets that are
+out of date instead of the whole pipeline.
+
+<img
+  src="/docs-media/needed-assets.webp"
+  alt="The Run acme dialog on Out of date: four assets that will run, each with its freshness badge, and a Run 4 assets button"
+  width="1344"
+  height="792"
+/>
+
+## Read the badges
+
+Each node on the canvas shows the state of its stored result:
+
+| Badge | Meaning |
+| --- | --- |
+| **Fresh** | Built from the current definition and inputs. |
+| **Edited** | The asset's own definition changed since it was built. |
+| **Upstream changed** | Something it reads from changed. |
+| **Never built** | No result exists yet in this environment. |
+| **Deployment differs** | The latest result came from a deployed version whose definition differs from your working tree. |
+| **External source** | An existing table Renart reads but does not build. |
+
+Freshness is tracked per environment, so an asset can be fresh in one
+environment and never built in another. [Concepts](/docs/concepts/#staleness)
+explains how Renart decides.
+
+## Rebuild the out-of-date assets
+
+1. Choose **Review run** in the pipeline toolbar. The dialog opens on **Out of
+   date** and lists the assets that will run, each with its badge.
+2. To limit the work to part of the pipeline, open **More options**, enter a
+   filter under **Only assets matching** and choose **Apply**.
+3. If a problem is listed, choose **View source** to fix it first.
+4. Choose **Run N assets**.
+
+Nothing executes until you confirm. If some of the planned work became fresh in
+the meantime, the confirmed run leaves it out; it never adds work you did not
+review.
+
+## Build one asset with stale upstreams
+
+If you materialize a single asset whose upstreams are out of date, Renart asks
+first with **Upstream is out of date**. Building now would read the outdated
+upstream tables, so the asset would stay stale:
+
+- **Build upstreams first** builds the asset together with its upstreams.
+- **Build anyway** builds only this asset from the current upstream tables.
+- **Cancel** builds nothing.
+
+## Related
+
+- [The pipeline canvas](/docs/workspace/pipeline-canvas/): follow lineage and
+  read node states.
+- [Runs & history](/docs/workspace/runs-and-history/): inspect what a run did.
+- [Deployments & scheduling](/docs/scheduling/overview/): run a reviewed
+  version on a schedule.
