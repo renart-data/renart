@@ -496,7 +496,7 @@ func checkAsset(ctx context.Context, pp *pipeline.Pipeline, workspaceRoot string
 	units := snapshot.RenderedUnits[asset]
 	renderErr := snapshot.RenderErrors[asset]
 	if renderErr != nil {
-		ac.Findings = append(ac.Findings, templateRenderFinding(renderErr))
+		ac.Findings = append(ac.Findings, templateRenderFinding(renderErr, sourceText))
 		return finishAssetTypeCheck(ctx, pp, workspaceRoot, asset, snapshot, connectionEngine, ac)
 	}
 
@@ -637,7 +637,7 @@ func customCheckTypeCheckFindings(
 			var err error
 			renderedQuery, err = renderer.Render(queryText)
 			if err != nil {
-				finding := templateRenderFinding(err)
+				finding := templateRenderFinding(err, "")
 				finding.Message = prefix + finding.Message
 				findings = append(findings, finding)
 				continue
@@ -807,7 +807,7 @@ func CheckPipelineAssetFindings(
 		findings := assetLevelTypeCheckFindings(ctx, asset, pp, false)
 		if _, dialectErr := AssetTypeToDialect(asset.Type); dialectErr == nil && strings.TrimSpace(assetSQLSource(asset)) != "" {
 			if _, err := renderAssetQueries(ctx, fs, renderer, now, tw, pp, asset); err != nil {
-				findings = append(findings, templateRenderFinding(err))
+				findings = append(findings, templateRenderFinding(err, assetSQLSource(asset)))
 			}
 		}
 		result = append(result, TypeCheckAsset{
@@ -864,15 +864,23 @@ func pipelineAssetParseError(asset *pipeline.Asset) string {
 	return strings.TrimSpace(asset.Meta[parseErrorMetaKey])
 }
 
-func templateRenderFinding(err error) TypeCheckFinding {
-	return TypeCheckFinding{
+// templateRenderFinding reports a template that failed to render. Given the
+// asset source, a syntax error also carries its position so links open the line.
+func templateRenderFinding(err error, source string) TypeCheckFinding {
+	finding := TypeCheckFinding{
 		Code:       authoringdiag.CodeTemplateRenderFailed,
 		Source:     authoringdiag.SourceRenart,
 		Severity:   typeCheckSeverityError,
-		Message:    "Failed to render template: " + err.Error(),
+		Message:    "Failed to render template: " + templateErrorMessage(err),
 		Scope:      string(authoringdiag.ScopeAsset),
 		Confidence: string(authoringdiag.ConfidenceHigh),
 	}
+	if line, column, ok := templateSyntaxErrorPosition(source); ok {
+		finding.Line, finding.Column = line, column
+		finding.EndLine, finding.EndColumn = line, column
+		finding.SourceFingerprint = sqlintelligence.SourceAnchorFingerprint(source)
+	}
+	return finding
 }
 
 func buildTypeCheckSchemaSnapshot(ctx context.Context, fs afero.Fs, pp *pipeline.Pipeline, workspaceRoot string, renderer *jinja.Renderer, now time.Time, tw ExecutionTimeWindow, assets []*pipeline.Asset) typeCheckSchemaSnapshot {
