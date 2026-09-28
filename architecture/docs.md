@@ -201,6 +201,12 @@ every shipped image is the verbatim output of a script.
   Renart's own theme event so Monaco, charts and canvas render their real theme
   without changing the staged view. Both variants have identical dimensions;
   pages embed explicit `width`/`height` matching the emitted files.
+- **Crop to the subject.** A full-workspace capture is unreadable in the docs
+  column, so page-specific shots clip to the element the page is about
+  (`clipTo()` in `capture-docs-media.mjs`, or a computed `clip`), sometimes with
+  a shorter viewport. Full-workspace shots are for the tour and overview. Shots
+  that edit an asset to show a state, such as a typo for type checking, restore
+  its original content afterwards.
 - **Few and high-value.** A screenshot earns its place by orienting the reader
   or proving a result — roughly one per page, not one per step.
 - **Every image needs alt text** describing what it shows (not "screenshot").
@@ -299,7 +305,13 @@ shipped (July 2026; git history keeps the full plans).
   **Concepts and reference**. Groups and order moved; slugs, titles and heading
   anchors did not. New pages join the group matching the task they serve. The
   docs overview opens with three starting points (first pipeline, existing
-  data, notebook) as Starlight link cards. **Start here** includes
+  data, notebook) as Starlight link cards. Later in September 2026 the set
+  gained **Browse your data**, **Variables and Jinja in SQL**, **Type checking**,
+  **Rebuild only what changed**, an **Execution guardrails** section on
+  Managing connections, and **Troubleshooting**. Every statement on those pages
+  was reproduced in a staged workspace, or read from the enforcing code, before
+  it was written; unreproduced cases were left out rather than guessed.
+  Troubleshooting entries quote the product's exact message. **Start here** includes
   a concise **Alpha status** page that distinguishes shipped workflows from
   release-stage caveats without becoming a roadmap.
 - **The landing page** (`docs/src/pages/index.astro`) introduces an open source

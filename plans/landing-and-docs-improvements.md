@@ -1,7 +1,7 @@
 # Landing page and docs improvements
 
-Status: decided on 27 September 2026. Phases 1 and 2 are implemented on branch
-`landing-story-video` and recorded in `architecture/docs.md`; phases 3–5 are
+Status: decided on 27 September 2026. Phases 1–3 are implemented on branch
+`landing-story-video` and recorded in `architecture/docs.md`; phases 4–5 are
 open. The findings below were reviewed against the same branch, using the Astro
 dev server at 1440 px and 390 px wide in dark and light themes, the page sources,
 and `node scripts/check-content.mjs` (24 pages, 15 images).
@@ -68,7 +68,7 @@ shipped, verified behavior.
    | --- | --- |
    | Data Browser (search, column preview, drag to canvas or notebook) | Mentioned on 4 pages; no page of its own |
    | Jinja in SQL assets (built-in run variables such as `start_date`, `end_date`, `start_timestamp`, `execution_date`, `run_id`, `this`, `var.*`; pipeline variables in **Pipeline settings**; completion and go-to-definition; the **Render** tab; checks run on the rendered SQL) | Only notebooks and HTTP API pages mention Jinja; SQL assets say nothing |
-   | Environment guardrails (**Protected**, **Deployed only**, **Confirm destructive operations**; **Run pipeline** becomes **Deploy pipeline**) | "Execution guardrails" is named once and never explained |
+   | Environment guardrails (**Protected**, **Deployed only**, **Confirm destructive operations**; in a deployed-only environment **Review run** runs the pinned deployment) | "Execution guardrails" is named once and never explained |
    | Staleness in the workspace (**Edited**, **Upstream changed**, **Deployment differs**; building only what is stale) | Concepts and canvas explain the idea; the "build stale" flow appears only in the CLI reference |
    | Type checking as one task | Spread across 6 pages; no single how-to covering editor diagnostics → Type check tab → import source asset → `renart type-check` in CI |
    | Troubleshooting | None. Candidates to reproduce first: starting outside a Git repository (the server refuses), unavailable credentials, failed previews, a port already in use |
@@ -151,8 +151,8 @@ underpromise, and keep every image or clip scripted and regenerable.
    - *Rebuild only what changed* (how-to): what each staleness badge means,
      building stale assets, and how staleness relates to deployments.
    - *Environment guardrails* (reference section on the connections and
-     environments page): what each guardrail blocks, and why **Run pipeline**
-     becomes **Deploy pipeline**.
+     environments page): what each guardrail blocks, and what **Review run**
+     runs in a deployed-only environment.
    - *Troubleshooting*: only failure modes reproduced in the product, each with
      its exact message and fix.
 3. **Screenshots show the page's subject.** Add element-level captures
@@ -178,7 +178,7 @@ underpromise, and keep every image or clip scripted and regenerable.
 | --- | --- | --- |
 | 1. Quick wins — **done** | Overlays (landing and docs), non-link platform chips, docs Install link, video in the hero with poster, reduced motion and chapter list | ~1 day |
 | 2. Navigation — **done** | Docs option A and the new docs index (from the structure plan) | ~0.5 day |
-| 3. Coverage | The six pages or sections above, with scripted focused screenshots | 2–3 days |
+| 3. Coverage — **done** | The six pages or sections above, with scripted focused screenshots | 2–3 days |
 | 4. Landing restructure | Merged section, palette alignment, freshness line, mobile video cut and a lighter encode | 1–2 days |
 | 5. Quickstart | "Make a change" step and focused screenshots, verified in the retail demo | ~1 day |
 
@@ -199,6 +199,28 @@ Verified in Chromium against the dev server:
 - Chapter seeking works, and a theme switch keeps the playback position.
 - The Discord card never appears together with the consent bar.
 - `pnpm build` in `docs/` is green.
+
+Phase 3 as built:
+- New pages: `connections-environments/data-browser`,
+  `editing-assets/variables-and-jinja`, `editing-assets/type-checking`,
+  `workspace/rebuild-what-changed` and `troubleshooting`, plus an **Execution
+  guardrails** section on Managing connections.
+- New scripted shots: `data-browser`, `needed-assets`, `jinja-variables` and
+  `type-check`, all cropped to their subject.
+- The landing video's chapter links now point at these pages.
+
+Deliberately left out until they can be reproduced:
+- Dropping a project file onto the canvas to create a Load asset. The
+  Data Browser offered no canvas action for project files in the staged
+  workspace; the page points to Load assets instead.
+- An "unavailable credentials" troubleshooting entry.
+- A screenshot of the guardrail settings.
+
+Verifying the pages also corrected the landing video. A deployed-only
+environment doesn't relabel **Run** as **Deploy**: **Review run** runs the
+pinned deployment, and deploying uses the separate **Deploy**/**Redeploy**
+action. The video now shows that, and its type-check hover uses the real
+**Unresolved column** message and quick fix.
 
 ## Acceptance
 

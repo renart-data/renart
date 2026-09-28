@@ -29,7 +29,7 @@ decisions and dependencies in each plan; there is no global questions scratchpad
 | [Advanced materialization](materialization-reach.md) | Guided advanced strategies, coverage-gap UX, static Python materialize diagnostic |
 | [Execution operator audits](execution-parallelism.md) | Additional proven resource families and meaningful wait visibility; shared unit scheduling already exists |
 | [Semantic deployment impact](semantic-deployment-impact.md) | Component facts, exact producer-pinned worlds, compatibility policy, retained reports and inference evidence |
-| [Landing page and docs improvements](landing-and-docs-improvements.md) | Phases 1–2 done (hero video, overlays, docs navigation); next: coverage pages, landing restructure and palette, quickstart |
+| [Landing page and docs improvements](landing-and-docs-improvements.md) | Phases 1–3 done (hero video, overlays, docs navigation, coverage pages); next: landing restructure and palette, quickstart |
 | [Docs structure](docs-information-architecture.md) | Option A navigation shipped; remaining: split overloaded guides, evidence-backed new pages, findability check |
 
 ## Verification and measurement
