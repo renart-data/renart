@@ -452,50 +452,37 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   asset's independent freshness or last-build state. The Render
   result keeps its wrapping provenance and comparison controls in a shrinkable
   ScrollArea so the operation or side-by-side diff retains visible height on
-  narrow screens. The shared
-  run/deploy/redeploy review surface is a wide, height-bounded dialog rather
-  than a side sheet, so rendered operations and deployment comparisons retain
-  useful width. It defaults to the entire pipeline and names the exact
-  saved working tree or immutable deployment, environment, UTC interval,
-  refresh/sensor mode, asset and execution-unit counts, checks, blockers,
-  warnings, and source/configuration/variable identities. A shared headless
-  reducer/model owns initial request construction, plan loading and refresh
-  transitions, selector drafts, destructive confirmation, admission errors, and
-  the derived confirmation gate for both run and deployment review. Those
-  transitions are unit-tested without rendering the dialog; deployment history
-  and schedule promotion remain separate resources owned by the presenter. Run
-  review is one linear reading path: readiness issues and code-check findings,
-  followed by a shared, initially collapsed Execution details section containing
-  the exact ordered asset/window units and their rendered operation/check sequence. The
-  deployment review nests that section inside Deployment details for representative execution.
-  Runtime-only Python notices are aggregated across affected assets. The happy
-  path is summarized as one readiness result; successful code checks do not
-  repeat as a separate section. Run options start collapsed behind a summary;
-  scope, sensor policy, full refresh, and the conditional selector editor remain
-  available without competing with confirmation. Deployment contents, runtime
-  checks, and identities share one collapsed Deployment details section, while
-  schedule promotion appears only after a deployment exists. Source identities,
-  resource
-  claims, and write isolation remain available under Plan details without
-  competing with the decision. The dialog heading, context, options, and review
-  body share one vertical ScrollArea so the scrollbar never changes the width
-  between its upper and middle sections; confirmation remains fixed beneath it.
-  In run review, assets with code-check findings retain their expanded messages. Opening
-  Execution details lazily
-  requests redacted
-  stage content and shows compiled queries, generated materialization SQL,
-  checks, and semantic/runtime-only operations in read-only Monaco with
-  `Preview — not executed`. The initial review context stays stable while
-  background workspace/deployment refreshes arrive; confirmation still
-  revalidates every identity server-side and replaces a stale plan for another
-  review. Entire-pipeline and Needed plans execute their exact reviewed
-  asset/window units. Needed confirmation may visibly omit units that became
-  fresh, but never adds or widens work without another review. Destructive
-  policy requires typing the exact environment. Active-run blockers and
-  admission races link to the canonical run. A `deployed_only` environment with
-  no executable deployment opens the same review surface with an actionable
-  blocker instead of guessing a source. A temporarily invalid asset definition
-  appears as an asset-scoped blocker while renderable siblings remain visible.
+  narrow screens. The shared run/deploy review surface is a dialog sized to its
+  content (`max-w-2xl` for runs, 960px for deployments, whose diffs need width).
+  It shows what the decision needs and leaves execution internals to the
+  Render tab and `renart plan`. A shared headless reducer/model owns initial
+  request construction, plan loading and refresh transitions, selector drafts,
+  destructive confirmation, admission errors, and the derived confirmation gate
+  for both modes; those transitions are unit-tested without rendering the
+  dialog.
+  Run review is titled with the pipeline or asset and names the environment,
+  source, and UTC window in one line. **Out of date** (the Needed selection,
+  the default when no selection is passed) and **All assets** are the primary
+  choice; **More options** holds the asset filter, which combines with that
+  choice into the selector modes, plus sensor policy and full refresh. An
+  edited but unapplied filter blocks confirmation. The body lists the assets
+  that will run in plan order with their freshness badge, collapsed beyond
+  eight, and notes when the plan replaces data. Readiness blockers and
+  warnings, which already contain the code-check and presentation findings,
+  appear once as a Problems list grouped by asset with resource links; the
+  conflicting-run blocker and the destructive-confirmation warning are shown
+  as their own controls instead. Prerequisites appear only while one is not
+  ready. When Needed selects nothing, the dialog says everything is up to date
+  and offers All assets. The dialog never requests stage content.
+  Entire-pipeline and Needed plans execute their exact reviewed asset/window
+  units; Needed confirmation may omit units that became fresh, but never adds
+  or widens work without another review. Destructive policy requires typing the
+  exact environment. Active-run blockers and admission races link to the
+  canonical run. A `deployed_only` environment with no executable deployment
+  opens the same dialog with an actionable blocker instead of guessing a
+  source. A temporarily invalid asset definition appears as an asset-scoped
+  problem while renderable siblings remain listed. Confirmation revalidates
+  every identity server-side and replaces a stale plan for another review.
   Pipeline and asset execution plus Deploy await every mounted editor's
   pending/in-flight save, so the saved source named by the action includes
   visible Monaco edits. Materializing an individual asset whose selected work
@@ -504,19 +491,19 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   while obtaining the producer evidence that the intentionally unreviewed
   direct endpoint cannot accept.
   **Deploy** opens the same dialog in a definition-only deployment mode rather
-  than mutating immediately. It reviews the entire saved working tree, keeps
-  execution policy/data freshness out of the gate, and follows one linear
-  reading path instead of dividing the decision across tabs. Its compact header
-  names the pipeline, environment, and baseline deployment; execution windows
-  and modes appear only under Deployment details. Changes & impact merges
+  than mutating immediately. It reviews the entire saved working tree and keeps
+  execution policy and data freshness out of the gate. Its header names the
+  pipeline and the number of changed files since the latest deployment;
+  deployments belong to the pipeline, so no environment appears. Changes &
+  impact merges
   source files, asset-scoped code-check/readiness findings, and backend semantic
   impact into one collapsible list, including unchanged assets with propagated
   output-contract changes. Workspace asset IDs map to pipeline-relative paths;
   unknown/removed asset paths remain separate named rows rather than guessed
   file associations. Duplicate code-check warnings appear only at their asset,
   while global blockers stay visible above the list. Missing baselines and
-  unavailable/incomplete semantic coverage remain explicit, never a green
-  safety verdict. SQL comparisons stay read-only; semantic explanations are
+  unavailable/incomplete semantic coverage for changed files remain explicit as
+  a one-line note, never a green safety verdict; a first deployment shows none. SQL comparisons stay read-only; semantic explanations are
   disclosed at the affected file, with output contracts from the backend, not
   the playground's curated analyzer or what-if presets.
   SQL diff views explicitly switch to inline mode below 768px. Source-backed
@@ -532,17 +519,25 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   Annotation identities are checked against the displayed file before use
   (UTF-8 FNV-1a, CRLF-normalized, only a stale-display guard, never a deployment
   integrity digest). Unmapped/template/wildcard findings remain in the asset
-  explanation instead of guessing positions. Runtime-only Python
-  notices, included assets, runtime checks, source identities, and representative
-  execution live under Deployment details. Exact added/changed/removed files are collapsible rows whose
-  deployed/workspace comparison opens directly beneath that file. Each
-  comparison uses Monaco's real DiffEditor, including its native
-  inserted/deleted line and character highlighting, and the final write remains
-  bound to the reviewed source Merkle. A comparison is keyed by file, source,
-  and baseline identity; switching files cannot display the previous file's
-  contents while a new request is pending. Afterward the schedules disclosure opens
-  and offers an
-  unchecked list of older schedule pins; only explicitly selected rows move.
+  explanation instead of guessing positions. Exact added/changed/removed files
+  are collapsible rows whose deployed/workspace comparison opens directly
+  beneath that file. Each comparison uses Monaco's real DiffEditor, including
+  its native inserted/deleted line and character highlighting, and the final
+  write remains bound to the reviewed source Merkle. A comparison is keyed by
+  file, source, and baseline identity; switching files cannot display the
+  previous file's contents while a new request is pending. When the working
+  tree matches the latest deployment and no file carries findings, the list is
+  omitted.
+  Below it, **Schedules** lists the pipeline's schedules with checkboxes.
+  Schedules on the latest deployment and never-deployed schedules start
+  checked; a schedule held on an older deployment starts unchecked. When the
+  working tree already matches the latest deployment, updating schedules is the
+  only change left, so every schedule starts checked and the action reads
+  **Update N schedules**. The checked schedules travel with the deploy request
+  (see staleness §5); the dialog then shows the created or reused deployment
+  and the schedules now using it, or the promotion error while the deployment
+  stands. Without scheduler ownership the section is read-only, and the
+  new-schedule flow opens the dialog without it.
   Type-check does the same; transport/save failures remain visible in the bell
   and results panel without erasing the last successful report. Every supported
   SQL, Python, seed, Load, API, ingestr, and sensor asset also exposes a
