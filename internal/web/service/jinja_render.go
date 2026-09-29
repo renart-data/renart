@@ -95,7 +95,7 @@ func (s *JinjaRenderService) Render(ctx context.Context, assetID string, req Jin
 	}
 	if renderErr != nil {
 		result.Status = "error"
-		result.Error = renderErr.Error()
+		result.Error = templateErrorMessage(renderErr)
 		return result, nil
 	}
 
@@ -161,7 +161,7 @@ func renderJinjaExpressionSpans(renderer jinja.RendererInterface, content string
 	for i := range spans {
 		rendered, err := renderer.Render("{{ " + spans[i].Expression + " }}")
 		if err != nil {
-			spans[i].Error = err.Error()
+			spans[i].Error = templateErrorMessage(err)
 			continue
 		}
 		spans[i].RenderedText = strings.TrimSpace(rendered)

@@ -59,8 +59,8 @@ before running an unfamiliar project.
 Renart fingerprints every asset — its code, its dependencies, its outputs —
 and compares that against what was last materialized. The canvas shows the
 result on each node: **Fresh**, **Edited** (this asset changed), **Upstream
-changed** (something it reads from changed), or **Never built**. In **Review
-run**, the **Needed assets** selection uses this information to plan work. Existing source
+changed** (something it reads from changed), or **Never built**. **Review run**
+uses this information to start with the assets that are out of date. Existing source
 tables use **External source** instead: Renart does not build them or pretend to
 know whether their data is fresh.
 

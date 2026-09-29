@@ -1172,7 +1172,7 @@ func failedExactRenderStage(kind string, err error) AssetRenderStage {
 		Language: "sql",
 		Status:   AssetRenderStageStatusError,
 		Fidelity: AssetRenderFidelityExact,
-		Message:  err.Error(),
+		Message:  templateErrorMessage(err),
 	}
 }
 

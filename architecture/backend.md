@@ -653,6 +653,18 @@ relation; unproven operators remain database- or pipeline-conservative.
 Incomplete source remains visible through structured findings and honest
 fidelity rather than fabricated SQL.
 
+Each problem is reported once. Code-check findings become readiness issues
+with their navigation targets. A render result adds its generic "could not be
+rendered completely" blocker only when no failed stage or issue explains why,
+and finalization drops a failed stage whose message repeats the same asset's
+`template-render-failed` finding, which carries the source position. Bruin
+labels Jinja syntax and evaluation errors it does not classify as bugs in its
+parser or renderer and quotes the whole template; `templateErrorMessage`
+rewrites those messages where they reach users (type-check findings, render
+stages, the Jinja preview, and the pre-run connection-access render that every
+run path passes through). Syntax-error positions are recomputed by parsing the
+asset source alone, because Bruin prepends macro files before parsing.
+
 Working-tree planning reads SQL relations from the same revision-cached
 canonical workspace graph used by Monaco and the interactive type checker. It
 therefore includes path-named and non-SQL producers without rebuilding the

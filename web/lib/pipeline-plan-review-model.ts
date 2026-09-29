@@ -12,8 +12,6 @@ export type PipelinePlanReviewState = {
   request: PipelinePlanRequest | null;
   plan: PipelinePlan | null;
   loading: boolean;
-  contentLoading: boolean;
-  stageContentLoaded: boolean;
   error: string | null;
   confirming: boolean;
   confirmation: string;
@@ -26,13 +24,8 @@ export type PipelinePlanReviewEvent =
   | { type: "opened" }
   | { type: "request_set"; request: PipelinePlanRequest }
   | { type: "request_changed"; request: PipelinePlanRequest }
-  | { type: "plan_load_started"; includeStageContent: boolean }
-  | {
-      type: "plan_loaded";
-      plan: PipelinePlan;
-      request: PipelinePlanRequest;
-      includeStageContent: boolean;
-    }
+  | { type: "plan_load_started" }
+  | { type: "plan_loaded"; plan: PipelinePlan; request: PipelinePlanRequest }
   | { type: "plan_load_failed"; message: string }
   | { type: "confirmation_changed"; confirmation: string }
   | { type: "selector_draft_changed"; selector: string }
@@ -51,13 +44,11 @@ export const initialPipelinePlanReviewState: PipelinePlanReviewState = {
   request: null,
   plan: null,
   loading: false,
-  contentLoading: false,
-  stageContentLoaded: false,
   error: null,
   confirming: false,
   confirmation: "",
   activeRunId: null,
-  selectorDraft: "*",
+  selectorDraft: "",
   runOptionsOpen: false,
 };
 
@@ -71,15 +62,9 @@ export function pipelinePlanReviewReducer(
     case "request_set":
       return { ...state, request: event.request };
     case "request_changed":
-      return { ...state, request: event.request, stageContentLoaded: false };
+      return { ...state, request: event.request };
     case "plan_load_started":
-      return {
-        ...state,
-        loading: event.includeStageContent ? state.loading : true,
-        contentLoading: event.includeStageContent ? true : state.contentLoading,
-        error: null,
-        activeRunId: null,
-      };
+      return { ...state, loading: true, error: null, activeRunId: null };
     case "plan_loaded":
       return {
         ...state,
@@ -89,18 +74,11 @@ export function pipelinePlanReviewReducer(
           ? (event.plan.selection.selector ?? "")
           : state.selectorDraft,
         loading: false,
-        contentLoading: false,
-        stageContentLoaded: event.includeStageContent,
         error: null,
         activeRunId: null,
       };
     case "plan_load_failed":
-      return {
-        ...state,
-        loading: false,
-        contentLoading: false,
-        error: event.message,
-      };
+      return { ...state, loading: false, error: event.message };
     case "confirmation_changed":
       return { ...state, confirmation: event.confirmation };
     case "selector_draft_changed":
@@ -125,7 +103,6 @@ export function pipelinePlanReviewReducer(
         selectorDraft: isSelectorMode(event.plan.selection.mode)
           ? (event.plan.selection.selector ?? "")
           : state.selectorDraft,
-        stageContentLoaded: false,
         error: event.message,
         activeRunId: null,
       };
@@ -157,7 +134,10 @@ export function createPipelinePlanRequest({
     execution_time: executionTime,
     sensor_mode: "once",
     source: sourceKind ? { kind: sourceKind, version_id: sourceVersion } : undefined,
-    selection: initialSelection ? { ...initialSelection } : { mode: "all" },
+    // A run rebuilds what is out of date; a deployment captures the whole pipeline.
+    selection: initialSelection
+      ? { ...initialSelection }
+      : { mode: intent === "deploy" ? "all" : "needed" },
   };
 }
 
@@ -187,8 +167,10 @@ export function derivePipelinePlanReview(
     state.request?.selection?.mode ?? state.plan?.selection.mode,
   );
   const selectorMode = isSelectorMode(selectionMode);
-  const appliedSelector = state.request?.selection?.selector?.trim() ?? "";
-  const selectorDraftApplied = !selectorMode || state.selectorDraft.trim() === appliedSelector;
+  const appliedSelector = selectorMode ? (state.request?.selection?.selector?.trim() ?? "") : "";
+  // The filter field is always editable, so an unapplied edit blocks the run
+  // until the plan reflects it.
+  const selectorDraftApplied = state.selectorDraft.trim() === appliedSelector;
   const selectorPlanIsCurrent = Boolean(
     selectorMode &&
     state.plan?.selection.mode === selectionMode &&

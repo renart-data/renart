@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"renart/internal/authoringdiag"
 )
 
 func NormalizePlanPurpose(raw string) (string, error) {
@@ -125,13 +127,7 @@ func PartialRenderWarning(result RenderResult) (string, bool) {
 func RenderIssues(assetID, assetName string, result RenderResult) (blockers, warnings []PlanIssue) {
 	blockers = []PlanIssue{}
 	warnings = []PlanIssue{}
-	if result.Status == RenderStatusUnsupported || result.Status == RenderStatusError {
-		blockers = append(blockers, PlanIssue{
-			Code: "asset_render_" + string(result.Status), Severity: "error",
-			Message: "asset execution could not be rendered completely",
-			AssetID: assetID, AssetName: assetName,
-		})
-	} else if message, warn := PartialRenderWarning(result); result.Status == RenderStatusPartial && warn {
+	if message, warn := PartialRenderWarning(result); result.Status == RenderStatusPartial && warn {
 		warnings = append(warnings, PlanIssue{
 			Code: "asset_render_partial", Severity: "warning", Message: message,
 			AssetID: assetID, AssetName: assetName,
@@ -166,7 +162,52 @@ func RenderIssues(assetID, assetName string, result RenderResult) (blockers, war
 			blockers = append(blockers, issue)
 		}
 	}
+	// The failed stages and issues already say why; the summary only stands in
+	// when the renderer gave no reason.
+	if len(blockers) == 0 && (result.Status == RenderStatusUnsupported || result.Status == RenderStatusError) {
+		blockers = append(blockers, PlanIssue{
+			Code: "asset_render_" + string(result.Status), Severity: "error",
+			Message: "asset execution could not be rendered completely",
+			AssetID: assetID, AssetName: assetName,
+		})
+	}
 	return blockers, warnings
+}
+
+// dropRenderErrorsReportedByCodeChecks removes a failed stage whose message
+// repeats an asset's template-render finding: both come from rendering the
+// same template, and the finding carries the source position.
+func dropRenderErrorsReportedByCodeChecks(issues []PlanIssue) []PlanIssue {
+	findings := map[string][]string{}
+	for _, issue := range issues {
+		if issue.DiagnosticCode == authoringdiag.CodeTemplateRenderFailed {
+			findings[issue.AssetName] = append(findings[issue.AssetName], issue.Message)
+		}
+	}
+	if len(findings) == 0 {
+		return issues
+	}
+	result := make([]PlanIssue, 0, len(issues))
+	for _, issue := range issues {
+		if strings.HasPrefix(issue.Code, "stage_render_") && repeatsFinding(findings[issue.AssetName], issue.Message) {
+			continue
+		}
+		result = append(result, issue)
+	}
+	return result
+}
+
+func repeatsFinding(findings []string, message string) bool {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return false
+	}
+	for _, finding := range findings {
+		if strings.HasSuffix(finding, message) {
+			return true
+		}
+	}
+	return false
 }
 
 func DedupePlanIssues(issues []PlanIssue) []PlanIssue {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	webapi "renart/internal/web/api"
+	"renart/internal/web/scheduler"
 	"renart/internal/web/snapshot"
 )
 
@@ -21,6 +22,15 @@ type DeployAPI struct {
 	// the source Merkle root it was read from. The store rechecks that root in
 	// the same deploy operation.
 	ResolveDependencyManifest func(context.Context, string) (snapshot.DependencyManifest, string, error)
+	// Schedules lets one reviewed deploy also move the schedules the user
+	// selected to the new deployment. Nil disables schedule updates.
+	Schedules DeploySchedules
+}
+
+// DeploySchedules is the scheduler surface a deploy needs to update schedules.
+type DeploySchedules interface {
+	RequireOwner() error
+	PromoteEnvSchedules(context.Context, string, scheduler.PromoteEnvSchedulesRequest) ([]scheduler.EnvSchedule, error)
 }
 
 func RegisterDeployRoutes(router chi.Router, handlers *DeployAPI) {
@@ -59,6 +69,9 @@ func (h *DeployAPI) HandleDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	type deployRequest struct {
 		ExpectedSourceMerkle string `json:"expected_source_merkle,omitempty"`
+		// Schedules to move to the resulting deployment, each with the
+		// deployment it used when the user reviewed it.
+		Schedules []scheduler.EnvSchedulePinSelection `json:"schedules,omitempty"`
 	}
 	request := deployRequest{}
 	if r.ContentLength != 0 {
@@ -68,6 +81,17 @@ func (h *DeployAPI) HandleDeploy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		request = decoded
+	}
+	if len(request.Schedules) > 0 {
+		// Refuse before writing a deployment the schedules could not adopt.
+		if h.Schedules == nil {
+			webapi.WriteBadRequest(w, "schedule_updates_unavailable", "schedules cannot be updated from this server")
+			return
+		}
+		if err := h.Schedules.RequireOwner(); err != nil {
+			writeEnvScheduleMutationError(w, "env_schedule_promotion_failed", err)
+			return
+		}
 	}
 	dependencyManifest := snapshot.EmptyDependencyManifest()
 	expectedRoot := strings.TrimSpace(request.ExpectedSourceMerkle)
@@ -107,12 +131,26 @@ func (h *DeployAPI) HandleDeploy(w http.ResponseWriter, r *http.Request) {
 	if !created {
 		message = "already up to date with the latest snapshot"
 	}
-	webapi.WriteJSON(w, http.StatusOK, map[string]any{
+	response := map[string]any{
 		"status":   "ok",
 		"created":  created,
 		"message":  message,
 		"snapshot": snapshotSummary(deployed),
-	})
+	}
+	if len(request.Schedules) > 0 {
+		// The deployment stands even when a schedule cannot move; the client
+		// reports which schedules kept their deployment and can retry them.
+		updated, promoteErr := h.Schedules.PromoteEnvSchedules(r.Context(), pipelineUUID, scheduler.PromoteEnvSchedulesRequest{
+			SnapshotVersionID: deployed.VersionID,
+			Schedules:         request.Schedules,
+		})
+		if promoteErr != nil {
+			response["schedule_error"] = promoteErr.Error()
+		} else {
+			response["schedules"] = publicEnvSchedules(updated)
+		}
+	}
+	webapi.WriteJSON(w, http.StatusOK, response)
 }
 
 func (h *DeployAPI) HandleDeployStatus(w http.ResponseWriter, r *http.Request) {

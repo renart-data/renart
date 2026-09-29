@@ -27,32 +27,42 @@ Think of the flow as three separate decisions:
 
 | Action | Source used | What changes |
 | --- | --- | --- |
-| **Review run** in the workspace | Current saved working tree | Starts one manual run; no deployment or schedule pin changes |
-| **Review deployment** | Current saved working tree | Creates or reuses an immutable deployment; executes no data |
-| **Update schedules** after deployment | The deployment you just reviewed | Moves only the schedule pins you select |
-| **Run pinned** on a schedule | That schedule's current deployment | Starts one run without changing the pin |
+| **Review run** in the workspace | Current saved working tree | Starts one manual run; deployments and schedules stay as they are |
+| **Deploy** or **Redeploy** | Current saved working tree | Creates a deployment and moves the schedules you check; executes no data |
+| **Use #N** on a schedule | A newer deployment | Moves that schedule to the newer deployment |
+| **Run now** on a schedule | That schedule's current deployment | Starts one run; the schedule doesn't change |
 
-This separation lets you keep editing after a deployment without silently
-changing scheduled behavior. A newer deployment also does not move every
-environment automatically: after deploying, select exactly which schedules
-should adopt it.
+This separation lets you keep editing after a deployment without changing what
+your schedules run. A new deployment only reaches the schedules you check when
+you deploy.
 
 ## Review a deployment
 
 Click **Deploy** or **Redeploy** in the asset workspace. **Changes & impact**
-lists changed files. Expand a file to see its SQL diff and any inline findings;
-open **Why this matters** only when you need the additional explanation.
+lists the files that changed since the last deployment. Expand a file to see its
+diff and any findings; open **Why this matters** only when you need the
+additional explanation.
 
 <img
   src="/docs-media/deployment-review.webp"
-  alt="Deployment review with an expanded SQL diff, a highlighted filter change, and deployment details kept collapsed"
+  alt="The Deploy dialog: two changed files with one SQL diff expanded, and the pipeline's two schedules checked to use the new deployment"
   width="2800"
   height="1800"
 />
 
 Follow links such as **Open columns** to fix the existing declaration in the
-editor. Check the saved source and environment before confirming. Deployment
-saves definitions only; it does not materialize data.
+editor. Problems that would stop the pipeline from running block the
+deployment until you fix them.
+
+**Schedules** lists every schedule of the pipeline. Schedules that use the
+latest deployment, and schedules that were never deployed, are checked; a
+schedule you kept on an older deployment is not. Checked schedules use the new
+deployment from their next run. Deployment saves definitions only; it does not
+materialize data.
+
+When your files haven't changed since the latest deployment but a schedule
+still uses an older one, the button reads **Update N schedules** and moves the
+checked schedules without creating a new deployment.
 
 ## Create a schedule
 
@@ -73,8 +83,10 @@ The exact deployment pin and run history stay local to each machine. On a new
 checkout, a declared schedule remains paused until that machine has an explicit
 deployment pin.
 
-Optional variable overrides can be stored directly in the declaration. For a
-secret value, store an `env:NAME` reference instead; Renart resolves it from the
+Under **Variables**, each variable the pipeline declares keeps its **Pipeline
+default** unless you set a **Value** or an **Environment variable** for this
+schedule. Values are stored in the declaration. For a secret, choose
+**Environment variable** and enter its name; Renart resolves it from the
 server process only while validating, planning, or running and does not write
 the resolved value to schedule or run state.
 
@@ -88,18 +100,20 @@ container runtime, or CI system. See
 
 ## Deployments keep schedules stable
 
-Deploying records a snapshot of the pipeline as it is; the schedule runs
-its pinned snapshot until you explicitly update that pin. You can keep editing
-the working tree without changing the scheduled source. When you're ready, review a
-new deployment and explicitly select which schedule pins should advance (or
-create the deployment with [`renart deploy`](/docs/reference/cli/) from CI).
+Deploying records a snapshot of the pipeline as it is; a schedule runs its
+deployment until you move it to another one. You can keep editing the working
+tree without changing what the schedule runs. When you're ready, deploy and
+check the schedules that should use the new deployment (or create the
+deployment with [`renart deploy`](/docs/reference/cli/) from CI and switch
+schedules with **Use #N**).
 
 ## Managing schedules
 
 Each row in the Schedules view shows the cadence, the last success, and a
 timeline of recent and upcoming runs. From the row you can pause the
-schedule with the toggle, run its exact pin now, review a newer deployment, or
-archive it. Removing its declaration keeps local run history and the previous
+schedule with the toggle, start a run of its deployment with **Run now**, and
+switch to a newer deployment with **Use #N**. Its menu edits, deploys the
+current files or archives it. Removing its declaration keeps local run history and the previous
 pin during the configured schedule-history window, so re-adding the same
 pipeline/environment key can restore it.
 Scheduled runs land in [Runs & history](/docs/workspace/runs-and-history/)

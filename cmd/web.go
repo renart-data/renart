@@ -416,7 +416,7 @@ func (s *webServer) registerRoutes(router chi.Router) {
 		SelectedEnvironment:       func() string { return s.currentState().SelectedEnvironment },
 		Execution:                 s.executionSvc,
 	})
-	webhttpapi.RegisterDeployRoutes(router, &webhttpapi.DeployAPI{
+	deployAPI := &webhttpapi.DeployAPI{
 		Snapshots:       s.snapshotStore,
 		ResolvePipeline: s.resolvePipelineForDeploy,
 		ResolveDependencyManifest: func(ctx context.Context, pipelineUUID string) (snapshot.DependencyManifest, string, error) {
@@ -425,7 +425,11 @@ func (s *webServer) registerRoutes(router chi.Router) {
 			)
 			return manifest, sourceRoot, err
 		},
-	})
+	}
+	if s.schedulerSvc != nil {
+		deployAPI.Schedules = s.schedulerSvc
+	}
+	webhttpapi.RegisterDeployRoutes(router, deployAPI)
 
 	router.Get("/*", s.handleStatic)
 }

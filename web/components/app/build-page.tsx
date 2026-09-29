@@ -142,6 +142,9 @@ import type { DataBrowserObject, PipelinePlanSelectionRequest } from "@/lib/gene
 import { storageLoadDraft, type StorageLoadDraft } from "@/lib/storage-load-draft";
 import { cn } from "@/lib/utils";
 import { deploymentLabel } from "@/lib/deployment-label";
+import type { EnvSchedule } from "@/lib/api-env-schedules";
+import { useEnvSchedules } from "@/hooks/use-env-schedules";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { copyTextToClipboard } from "@/lib/copy-to-clipboard";
 import { resolveScopedMaterializingAssetIds, useAssetResults } from "@/hooks/use-asset-results";
 import { useBuildSelectionLayout } from "@/hooks/use-build-selection-layout";
@@ -634,6 +637,14 @@ export function AppBuildPage({
   );
   const materializationStatusByAssetId = useAppAssetMaterializationStatus(materializationAssets);
   const deployState = usePipelineDeploy(activePipeline?.id);
+  const envSchedules = useEnvSchedules();
+  const pipelineSchedules = useMemo(
+    () =>
+      envSchedules.schedules.filter(
+        (schedule) => schedule.pipeline_id === activePipeline?.id && schedule.status !== "archived",
+      ),
+    [activePipeline?.id, envSchedules.schedules],
+  );
   const environmentPolicy = useSelectedEnvironmentPolicy();
   const executionBlocked = Boolean(
     environmentPolicy?.protected || environmentPolicy?.deployed_only,
@@ -1987,9 +1998,10 @@ export function AppBuildPage({
             }}
             onReviewDeploy={() => setDeploymentPlanOpen(true)}
             deployState={deployState}
+            schedules={pipelineSchedules}
             runSourceLabel={pipelineRunSourceLabel.replace(/^Run /, "")}
             runDisabled={!activePipeline}
-            runTitle="Review the saved source, readiness checks, and rendered operations before running"
+            runTitle="Check what will run before starting"
           />
         ) : null}
         <div
@@ -2038,9 +2050,10 @@ export function AppBuildPage({
                     }}
                     onReviewDeploy={() => setDeploymentPlanOpen(true)}
                     deployState={deployState}
+                    schedules={pipelineSchedules}
                     runSourceLabel={pipelineRunSourceLabel.replace(/^Run /, "")}
                     runDisabled={!activePipeline}
-                    runTitle="Review the saved source, readiness checks, and rendered operations before running"
+                    runTitle="Check what will run before starting"
                     workbench
                     documents={buildDocuments}
                     activeDocument={activeBuildDocument}
@@ -2193,7 +2206,10 @@ export function AppBuildPage({
           environment={effectiveEnvironment}
           timeWindow={selectedExecutionTimeWindow}
           intent="deploy"
-          onDeploy={(expectedSourceMerkle) => deployState.deploy(expectedSourceMerkle)}
+          onDeploy={(expectedSourceMerkle, schedules) =>
+            deployState.deploy(expectedSourceMerkle, schedules)
+          }
+          onSchedulesChanged={envSchedules.refresh}
         />
 
         <NewAssetDialog
@@ -2464,6 +2480,7 @@ function BuildTopBar({
   onReviewRun,
   onReviewDeploy,
   deployState,
+  schedules = [],
   runSourceLabel,
   runDisabled = false,
   runTitle,
@@ -2492,6 +2509,7 @@ function BuildTopBar({
   onReviewRun: () => void;
   onReviewDeploy: () => void;
   deployState?: PipelineDeployState;
+  schedules?: EnvSchedule[];
   runSourceLabel?: string;
   runDisabled?: boolean;
   runTitle?: string;
@@ -2537,7 +2555,12 @@ function BuildTopBar({
           </div>
         ) : null}
         {deployState ? (
-          <DeployButton deployState={deployState} onReview={onReviewDeploy} compact />
+          <DeployButton
+            deployState={deployState}
+            schedules={schedules}
+            onReview={onReviewDeploy}
+            compact
+          />
         ) : null}
         <Button
           size="sm"
@@ -2648,7 +2671,9 @@ function BuildTopBar({
           <Terminal className="size-3.5" /> Ad-hoc
         </Link>
       </Button>
-      {deployState ? <DeployButton deployState={deployState} onReview={onReviewDeploy} /> : null}
+      {deployState ? (
+        <DeployButton deployState={deployState} schedules={schedules} onReview={onReviewDeploy} />
+      ) : null}
       <Button
         size="sm"
         onClick={onReviewRun}
@@ -4062,10 +4087,12 @@ function Inspector({
 // reviewed deployment plan rather than snapshotting immediately.
 function DeployButton({
   deployState,
+  schedules,
   onReview,
   compact = false,
 }: {
   deployState: PipelineDeployState;
+  schedules: EnvSchedule[];
   onReview: () => void;
   compact?: boolean;
 }) {
@@ -4090,51 +4117,91 @@ function DeployButton({
     );
   }
 
-  if (status.has_snapshot && status.in_sync && status.executable) {
-    const currentDeployment = deploymentLabel(status.ordinal, status.version_id);
-    return (
-      <Button variant="ghost" size="sm" disabled title={`${currentDeployment} is current`}>
-        <Package className="size-3.5 text-emerald-600" />
-        <span className={cn(compact && "hidden lg:inline")}>Deployed</span>
-        {compact ? <span className="sr-only lg:hidden">Deployed</span> : null}
-      </Button>
-    );
-  }
-
-  const label = status.has_snapshot
-    ? status.executable
-      ? !status.dependency_manifest_in_sync && driftedFileCount === 0
-        ? "Redeploy (dependencies changed)"
-        : `Redeploy (${driftedFileCount} file${driftedFileCount === 1 ? "" : "s"} changed)`
-      : "Repair deployment"
-    : "Deploy";
-  const title = status.has_snapshot
-    ? status.executable
-      ? status.dependency_manifest_error
-        ? status.dependency_manifest_error
-        : !status.dependency_manifest_in_sync && driftedFileCount === 0
-          ? `Cross-pipeline dependency ownership differs from ${deploymentLabel(status.ordinal, status.version_id, "deployment")}`
-          : `Working tree differs from ${deploymentLabel(status.ordinal, status.version_id, "deployment")}`
-      : `The latest deployment is not executable: ${status.integrity_error ?? "integrity validation failed"}`
-    : "No deployment exists yet; schedules require an exact deployment pin";
-  return (
-    <Button variant="outline" size="sm" onClick={onReview} disabled={deploying} title={title}>
-      <Package
-        className={cn(
-          "size-3.5",
-          status.has_snapshot
-            ? status.executable
-              ? "text-amber-600"
-              : "text-destructive"
-            : undefined,
-        )}
-      />
-      <span className={cn(compact && "hidden lg:inline")}>{deploying ? "Deploying…" : label}</span>
-      {compact ? (
-        <span className="sr-only lg:hidden">{deploying ? "Deploying…" : label}</span>
-      ) : null}
-    </Button>
+  const latest = deploymentLabel(status.ordinal, undefined, "deployment");
+  const behind = schedules.filter(
+    (schedule) =>
+      schedule.snapshot_version_id && schedule.snapshot_version_id !== status.version_id,
   );
+  const scheduleLines = schedules.map(
+    (schedule) =>
+      `${schedule.environment} · ${schedule.cron} · ${
+        schedule.snapshot_version_id
+          ? `uses ${deploymentLabel(schedule.snapshot_ordinal, undefined, "deployment")}${schedule.snapshot_version_id === status.version_id ? "" : " (older)"}`
+          : "not deployed yet"
+      }`,
+  );
+  const current = status.has_snapshot && status.in_sync && status.executable;
+  const summary = current
+    ? `${sentenceCaseLabel(latest)} is current.`
+    : status.has_snapshot
+      ? status.executable
+        ? status.dependency_manifest_error
+          ? status.dependency_manifest_error
+          : !status.dependency_manifest_in_sync && driftedFileCount === 0
+            ? `Dependencies on other pipelines changed since ${latest}.`
+            : `Your files differ from ${latest}.`
+        : `The latest deployment is not usable: ${status.integrity_error ?? "integrity validation failed"}`
+      : "Not deployed yet. Schedules run a deployment, not your working files.";
+  const label = current
+    ? behind.length > 0
+      ? `Update ${behind.length} ${behind.length === 1 ? "schedule" : "schedules"}`
+      : "Deployed"
+    : status.has_snapshot
+      ? status.executable
+        ? !status.dependency_manifest_in_sync && driftedFileCount === 0
+          ? "Redeploy (dependencies changed)"
+          : `Redeploy (${driftedFileCount} file${driftedFileCount === 1 ? "" : "s"} changed)`
+        : "Repair deployment"
+      : "Deploy";
+  const idle = current && behind.length === 0;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex" tabIndex={idle ? 0 : undefined}>
+          <Button
+            variant={idle ? "ghost" : "outline"}
+            size="sm"
+            onClick={onReview}
+            disabled={idle || deploying}
+            aria-label={label}
+          >
+            <Package
+              className={cn(
+                "size-3.5",
+                idle
+                  ? "text-emerald-600"
+                  : status.has_snapshot
+                    ? status.executable
+                      ? "text-amber-600"
+                      : "text-destructive"
+                    : undefined,
+              )}
+            />
+            <span className={cn(compact && "hidden lg:inline")}>
+              {deploying ? "Deploying…" : label}
+            </span>
+          </Button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-80">
+        <p>{summary}</p>
+        {scheduleLines.length > 0 ? (
+          <ul className="mt-1 space-y-0.5 font-mono text-[11px]">
+            {scheduleLines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1">No schedules run this pipeline.</p>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function sentenceCaseLabel(value: string) {
+  return value ? `${value.charAt(0).toUpperCase()}${value.slice(1)}` : value;
 }
 
 function SettingsIcon() {

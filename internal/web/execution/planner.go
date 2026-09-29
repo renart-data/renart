@@ -499,7 +499,7 @@ func (p *Planner) appendActiveRunIssue(ctx context.Context, plan *Plan) {
 }
 
 func finalizePlan(plan *Plan) {
-	plan.Readiness.Blockers = DedupePlanIssues(plan.Readiness.Blockers)
+	plan.Readiness.Blockers = DedupePlanIssues(dropRenderErrorsReportedByCodeChecks(plan.Readiness.Blockers))
 	plan.Readiness.Warnings = DedupePlanIssues(plan.Readiness.Warnings)
 	plan.Readiness.Warnings = AggregatePythonRuntimeWarnings(plan.Assets, plan.Readiness.Warnings)
 	plan.Summary.Assets = len(plan.Assets)

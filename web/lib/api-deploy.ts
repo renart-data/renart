@@ -1,4 +1,5 @@
 import { fetchJSON } from "@/lib/api-core";
+import type { EnvSchedule, EnvSchedulePinSelection } from "@/lib/api-env-schedules";
 
 export type SnapshotSummary = {
   version_id: string;
@@ -34,6 +35,10 @@ export type DeployResponse = {
   created: boolean;
   message: string;
   snapshot: SnapshotSummary;
+  /** Schedules now using this deployment, when the request selected any. */
+  schedules?: EnvSchedule[];
+  /** Why the selected schedules kept their deployment; the deployment stands. */
+  schedule_error?: string;
 };
 
 export type DeploymentFileDiff = {
@@ -56,11 +61,15 @@ export async function getDeployStatus(pipelineId: string): Promise<DeployStatus>
 export async function deployPipeline(
   pipelineId: string,
   expectedSourceMerkle?: string,
+  schedules: EnvSchedulePinSelection[] = [],
 ): Promise<DeployResponse> {
   return fetchJSON<DeployResponse>(`/api/pipelines/${pipelineId}/deploy`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ expected_source_merkle: expectedSourceMerkle }),
+    body: JSON.stringify({
+      expected_source_merkle: expectedSourceMerkle,
+      schedules: schedules.length > 0 ? schedules : undefined,
+    }),
   });
 }
 

@@ -142,7 +142,7 @@ func renderAssetCheckStages(ctx context.Context, pl *pipeline.Pipeline, asset *p
 			} else {
 				stage.Fidelity = AssetRenderFidelityUnsupported
 			}
-			stage.Message = "check could not be rendered: " + runErr.Error()
+			stage.Message = "check could not be rendered: " + templateErrorMessage(runErr)
 			outcome.issues = append(outcome.issues, AssetRenderIssue{
 				Code:     "check_render_failed",
 				Severity: "error",
