@@ -23,7 +23,7 @@ COPY web/public/icons/icon-64.png ./web/public/icons/icon-64.png
 WORKDIR /app/docs
 RUN pnpm build
 
-FROM caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648 AS runtime
+FROM caddy:2-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b AS runtime
 
 COPY docs/Caddyfile /etc/caddy/Caddyfile
 COPY docs/container-entrypoint.sh /usr/local/bin/renart-docs-entrypoint
