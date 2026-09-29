@@ -203,9 +203,12 @@ const websiteId =
           secure: window.location.protocol === 'https:',
         },
         guiOptions: {
+          // A slim, non-blocking bar keeps the page's first screen readable.
+          // Semantics are unchanged: opt-in, equal-weight choices, nothing
+          // optional loads before consent.
           consentModal: {
-            layout: 'box wide',
-            position: 'bottom center',
+            layout: 'bar inline',
+            position: 'bottom',
             flipButtons: true,
             equalWeightButtons: true,
           },
@@ -320,6 +323,38 @@ const websiteId =
     display: block;
     font-size: 1.25rem;
     line-height: 1.2;
+  }
+
+  /* The bar layout keeps only the headline; the eyebrow belongs to the full dialog. */
+  #cc-main .cm--bar .renart-consent__eyebrow {
+    display: none;
+  }
+
+  #cc-main .cm--bar .renart-consent__headline {
+    font-size: 1rem;
+  }
+
+  #cc-main .cm--bar .cm__desc {
+    max-width: 60rem;
+    font-size: 0.84rem;
+  }
+
+  /* On phones, keep both equal-weight choices on one row so the bar stays short. */
+  @media (max-width: 640px) {
+    /* The library forces a column layout with !important below 640px. */
+    #cc-main .cm.cm--bar.cm--flip .cm__btn-group {
+      flex-direction: row-reverse !important;
+      gap: 0.5rem;
+    }
+
+    #cc-main .cm.cm--bar.cm--flip .cm__btn {
+      flex: 1 1 0 !important;
+      margin: 0 !important;
+    }
+
+    #cc-main .cm--bar .cm__desc {
+      font-size: 0.8rem;
+    }
   }
 
   #cc-main .cm__desc,

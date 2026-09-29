@@ -183,3 +183,6 @@ renart-gui
 docs/.pnpm-store/
 .pnpm-store
 marketing/
+
+# landing story video: temporary capture frames (web/scripts/landing-video/render.mjs)
+docs/public/landing/.frames-*/

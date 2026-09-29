@@ -33,10 +33,12 @@ The results panel under the editor follows the selected asset:
 - **Inspect** — preview the data without materializing the destination table.
   Failed previews show the engine's error.
 - **Render** — inspect compiled SQL and planned operations without executing them.
+  See [Variables and Jinja in SQL](/docs/editing-assets/variables-and-jinja/).
 - **Materialize** — execute this asset for real and stream the output.
 - **Query** — run an ad-hoc query against the same environment.
-- **Type check** — column/type problems for the asset, the same checks as
-  [`renart type-check`](/docs/reference/cli/) in CI.
+- **Type check** — column/type problems across the pipeline, the same checks as
+  [`renart type-check`](/docs/reference/cli/) in CI. See
+  [Catch errors with type checking](/docs/editing-assets/type-checking/).
 
 Open **Run → Runs** for execution history. SQL previews can consume warehouse
 resources; Python and HTTP previews execute code or requests. Only preview
