@@ -36,7 +36,12 @@ const { values: args } = parseArgs({
 });
 const fps = Number(args.fps);
 const themes = args.theme ? [args.theme] : ["dark", "light"];
-const workers = Math.max(1, Math.floor(Number(args.workers ?? Math.max(2, Math.round(os.cpus().length * 0.75))) / themes.length));
+const workers = Math.max(
+  1,
+  Math.floor(
+    Number(args.workers ?? Math.max(2, Math.round(os.cpus().length * 0.75))) / themes.length,
+  ),
+);
 const WIDTH = 1920;
 const HEIGHT = 1080;
 
@@ -44,13 +49,18 @@ function run(cmd, cmdArgs) {
   const child = spawn(cmd, cmdArgs, { stdio: ["pipe", "inherit", "inherit"] });
   const done = new Promise((resolve, reject) => {
     child.on("error", reject);
-    child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} exited with ${code}`))));
+    child.on("close", (code) =>
+      code === 0 ? resolve() : reject(new Error(`${cmd} exited with ${code}`)),
+    );
   });
   return { stdin: child.stdin, done };
 }
 
 async function openStory(browser, theme) {
-  const page = await browser.newPage({ viewport: { width: WIDTH, height: HEIGHT }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({
+    viewport: { width: WIDTH, height: HEIGHT },
+    deviceScaleFactor: 1,
+  });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error));
   const url = pathToFileURL(path.join(here, "story.html"));
@@ -68,19 +78,21 @@ async function openStory(browser, theme) {
 // so capture scales with cores; ffmpeg then reads the sequence in order.
 async function captureFrames(theme, frames, dir) {
   let done = 0;
-  await Promise.all(Array.from({ length: workers }, async (_, w) => {
-    const browser = await chromium.launch();
-    try {
-      const { page, seek } = await openStory(browser, theme);
-      for (let i = w; i < frames; i += workers) {
-        await seek(i / fps);
-        await page.screenshot({ path: path.join(dir, `f${String(i).padStart(5, "0")}.png`) });
-        if (++done % (fps * 10) === 0) console.log(`${theme}: ${done} / ${frames} frames`);
+  await Promise.all(
+    Array.from({ length: workers }, async (_, w) => {
+      const browser = await chromium.launch();
+      try {
+        const { page, seek } = await openStory(browser, theme);
+        for (let i = w; i < frames; i += workers) {
+          await seek(i / fps);
+          await page.screenshot({ path: path.join(dir, `f${String(i).padStart(5, "0")}.png`) });
+          if (++done % (fps * 10) === 0) console.log(`${theme}: ${done} / ${frames} frames`);
+        }
+      } finally {
+        await browser.close();
       }
-    } finally {
-      await browser.close();
-    }
-  }));
+    }),
+  );
 }
 
 async function renderTheme(theme) {
@@ -112,17 +124,75 @@ async function renderTheme(theme) {
   await mkdir(dir, { recursive: true });
   await captureFrames(theme, frames, dir);
 
-  const input = ["-y", "-loglevel", "error", "-framerate", String(fps), "-i", path.join(dir, "f%05d.png")];
+  const input = [
+    "-y",
+    "-loglevel",
+    "error",
+    "-framerate",
+    String(fps),
+    "-i",
+    path.join(dir, "f%05d.png"),
+  ];
   const tasks = [
-    run("ffmpeg", [...input, "-c:v", "libx264", "-preset", "slow", "-crf", "20", "-tune", "animation",
-      "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", `${base}.mp4`]),
-    run("ffmpeg", [...input, "-c:v", "libvpx-vp9", "-crf", "34", "-b:v", "0", "-row-mt", "1",
-      "-deadline", "good", "-cpu-used", "4", "-tile-columns", "2", "-threads", "8", "-pix_fmt", "yuv420p", "-an", `${base}.webm`]),
-    run("ffmpeg", ["-y", "-loglevel", "error", "-i", `${base}-poster.png`, "-c:v", "libwebp", "-quality", "88", `${base}-poster.webp`]),
+    run("ffmpeg", [
+      ...input,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "slow",
+      "-crf",
+      "20",
+      "-tune",
+      "animation",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+      "-an",
+      `${base}.mp4`,
+    ]),
+    run("ffmpeg", [
+      ...input,
+      "-c:v",
+      "libvpx-vp9",
+      "-crf",
+      "34",
+      "-b:v",
+      "0",
+      "-row-mt",
+      "1",
+      "-deadline",
+      "good",
+      "-cpu-used",
+      "4",
+      "-tile-columns",
+      "2",
+      "-threads",
+      "8",
+      "-pix_fmt",
+      "yuv420p",
+      "-an",
+      `${base}.webm`,
+    ]),
+    run("ffmpeg", [
+      "-y",
+      "-loglevel",
+      "error",
+      "-i",
+      `${base}-poster.png`,
+      "-c:v",
+      "libwebp",
+      "-quality",
+      "88",
+      `${base}-poster.webp`,
+    ]),
   ];
   tasks.forEach((task) => task.stdin.end());
   await Promise.all(tasks.map((task) => task.done));
-  await Promise.all([rm(dir, { recursive: true, force: true }), rm(`${base}-poster.png`, { force: true })]);
+  await Promise.all([
+    rm(dir, { recursive: true, force: true }),
+    rm(`${base}-poster.png`, { force: true }),
+  ]);
   console.log(`${theme}: wrote ${base}.mp4, .webm, -poster.webp`);
 }
 
@@ -132,7 +202,13 @@ async function writeChapters() {
     const { page } = await openStory(browser, "dark");
     const story = await page.evaluate(() => ({
       duration: window.DURATION,
-      chapters: window.CHAPTERS.map(({ k, t, d, a, b }) => ({ name: k, title: t, description: d, start: a, end: b })),
+      chapters: window.CHAPTERS.map(({ k, t, d, a, b }) => ({
+        name: k,
+        title: t,
+        description: d,
+        start: a,
+        end: b,
+      })),
     }));
     const file = path.join(repoRoot, "docs/src/data/story-chapters.json");
     await writeFile(file, `${JSON.stringify(story, null, 2)}\n`);
