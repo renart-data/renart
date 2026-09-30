@@ -1,0 +1,1306 @@
+<!doctype html>
+<!--
+  Renart landing story video.
+
+  Every frame is a pure function of time: `window.seek(seconds)` rebuilds the
+  whole scene state, so the capture script (render.mjs) can step frame by frame
+  and every render is identical. Open this file directly in a browser to scrub
+  it: ?t=<seconds> seeks, ?play plays in real time, ?theme=light swaps palette.
+  The last frame fades back into the first, so the video loops seamlessly.
+
+  The UI is an illustration of the Renart workspace, not a screenshot — keep the
+  copy truthful to the product (plain table names, no ref(), no "bruin").
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Renart — story</title>
+<style>
+@font-face { font-family: "Geist"; src: url("fonts/geist.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Inconsolata"; src: url("../../src/assets/fonts/inconsolata-latin-wdth-normal.woff2") format("woff2"); font-weight: 400 700; font-stretch: 50% 200%; }
+@font-face { font-family: "Instrument Serif"; src: url("fonts/instrument-serif.woff2") format("woff2"); }
+
+/* Palette mirrors the Renart web UI (web/src/globals.css + lib/monaco-theme.ts):
+   shadcn neutral surfaces, emerald primary, Tailwind status badges, Monaco
+   vs/vs-dark syntax colors with Renart's semantic SQL token colors. */
+:root {
+  --bg: #050505;
+  --window: oklch(0.145 0 0);            /* background */
+  --canvas: #1a1a1a;
+  --panel: oklch(0.205 0 0);             /* card */
+  --panel-2: oklch(0.269 0 0);           /* muted */
+  --raise: oklch(0.205 0 0);             /* popover */
+  --line: oklch(1 0 0 / 10%);            /* border */
+  --line-soft: oklch(1 0 0 / 6%);
+  --text: oklch(0.985 0 0);
+  --muted: oklch(0.708 0 0);
+  --faint: oklch(0.556 0 0);
+  --accent: oklch(0.7 0.15 162);         /* primary */
+  --accent-ink: oklch(0.26 0.05 173);    /* primary-foreground */
+  --accent-strong: oklch(0.696 0.17 162.48);   /* emerald-500 */
+  --fresh-text: oklch(0.845 0.143 164.978);    /* emerald-300 */
+  --fresh-bg: oklch(0.696 0.17 162.48 / 15%);
+  --amber: oklch(0.76 0.14 70);          /* warning */
+  --warn-text: oklch(0.879 0.169 91.605);      /* amber-300 */
+  --warn-bg: oklch(0.769 0.188 70.08 / 15%);
+  --warn-dot: oklch(0.769 0.188 70.08);        /* amber-500 */
+  --new-bg: oklch(0.552 0.016 285.938 / 15%);  /* zinc-500/15 */
+  --new-text: oklch(0.871 0.006 286.286);      /* zinc-300 */
+  --danger: oklch(0.704 0.191 22.216);   /* destructive */
+  --danger-bg: oklch(0.704 0.191 22.216 / 14%);
+  --grid-dot: oklch(1 0 0 / 9%);
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  --pop-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --type: oklch(0.708 0 0);
+  /* Monaco (bruin-vs-dark) */
+  --code-bg: oklch(0.205 0 0);
+  --code-text: #d4d4d4;
+  --lnum: #858585;
+  --lnum-cur: #c6c6c6;
+  --k: #569cd6;
+  --str: #ff0000;
+  --op: #778899;
+  --delim: #dcdcdc;
+  --br: #ffd700;
+  --fn: #ff00ff;
+  --sc: #d6b36d;
+  --tbl: #74cfc5;
+  --col: #93c5fd;
+  --al: #c4b5fd;
+  --jinja: #c4b5fd;
+  --jinja-bg: transparent;
+  --squiggle: #f14c4c;
+  --mw-bg: #252526;
+  --mw-border: #454545;
+  --mw-text: #cccccc;
+  --mw-sel: #04395e;
+  --mw-sel-text: #ffffff;
+  --mw-icon: #75beff;
+  /* connection-type icon colors */
+  --pg: oklch(0.73 0.13 246);
+  --duck: oklch(0.78 0.14 90);
+  --bq: oklch(0.72 0.13 252);
+  --file: oklch(0.77 0.14 60);
+}
+:root[data-theme="light"] {
+  --bg: #e9ecee;
+  --window: oklch(0.987 0.002 197.1);    /* sidebar */
+  --canvas: oklch(0.985 0.002 197.1);
+  --panel: oklch(1 0 0);
+  --panel-2: oklch(0.963 0.002 197.1);
+  --raise: oklch(1 0 0);
+  --line: oklch(0.925 0.005 214.3);
+  --line-soft: oklch(0.95 0.004 214.3);
+  --text: oklch(0.148 0.004 228.8);
+  --muted: oklch(0.56 0.021 213.5);
+  --faint: oklch(0.68 0.016 213.5);
+  --accent: oklch(0.527 0.154 150.069);
+  --accent-ink: oklch(0.982 0.018 155.826);
+  --accent-strong: oklch(0.596 0.145 163.225); /* emerald-600 */
+  --fresh-text: oklch(0.508 0.118 165.612);    /* emerald-700 */
+  --fresh-bg: oklch(0.95 0.052 163.051);       /* emerald-100 */
+  --amber: oklch(0.67 0.16 58);
+  --warn-text: oklch(0.555 0.163 48.998);      /* amber-700 */
+  --warn-bg: oklch(0.962 0.059 95.617);        /* amber-100 */
+  --warn-dot: oklch(0.769 0.188 70.08);
+  --new-bg: oklch(0.92 0.004 286.32);          /* zinc-200 */
+  --new-text: oklch(0.37 0.013 285.805);       /* zinc-700 */
+  --danger: oklch(0.577 0.245 27.325);
+  --danger-bg: oklch(0.577 0.245 27.325 / 9%);
+  --grid-dot: oklch(0.148 0.004 228.8 / 13%);
+  --shadow: 0 30px 80px rgba(15, 23, 30, 0.16), 0 0 0 1px rgba(15, 23, 30, 0.04);
+  --pop-shadow: 0 18px 50px rgba(15, 23, 30, 0.16);
+  --type: oklch(0.56 0.021 213.5);
+  /* Monaco (bruin-vs) */
+  --code-bg: #fffffe;
+  --code-text: #000000;
+  --lnum: #237893;
+  --lnum-cur: #0b216f;
+  --k: #0000ff;
+  --str: #ff0000;
+  --op: #778899;
+  --delim: #000000;
+  --br: #0431fa;
+  --fn: #c700c7;
+  --sc: #7c5a2a;
+  --tbl: #0f766e;
+  --col: #1d4ed8;
+  --al: #7c3aed;
+  --jinja: #8b5cf6;
+  --jinja-bg: transparent;
+  --squiggle: #e51400;
+  --mw-bg: #f3f3f3;
+  --mw-border: #c8c8c8;
+  --mw-text: #000000;
+  --mw-sel: #0060c0;
+  --mw-sel-text: #ffffff;
+  --mw-icon: #007acc;
+  --pg: oklch(0.55 0.16 252);
+  --duck: oklch(0.68 0.15 92);
+  --bq: oklch(0.58 0.17 257);
+  --file: oklch(0.64 0.16 55);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #000; }
+body { overflow: hidden; }
+#stage {
+  position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden;
+  background: var(--bg); color: var(--text); transform-origin: 0 0;
+  font: 400 21px/1.35 "Geist", system-ui, sans-serif; letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+}
+.mono { font-family: "Inconsolata", ui-monospace, monospace; }
+svg.i { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- viewport / camera ---------- */
+#viewport { position: absolute; left: 0; top: 0; width: 1920px; height: 944px; overflow: hidden; }
+#scene { position: absolute; left: 0; top: 0; width: 1920px; height: 944px; transform-origin: 0 0; }
+
+/* ---------- app window ---------- */
+#win {
+  position: absolute; left: 48px; top: 36px; width: 1824px; height: 872px; border-radius: 18px;
+  background: var(--window); border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden;
+}
+#topbar {
+  position: absolute; left: 0; top: 0; right: 0; height: 60px; display: flex; align-items: center; gap: 18px;
+  padding: 0 20px; border-bottom: 1px solid var(--line-soft); background: var(--panel);
+}
+#topbar .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 22px; }
+#topbar .brand img { width: 34px; height: 34px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); font-size: 17px; background: var(--window); }
+.nav { display: flex; gap: 6px; margin-left: 12px; }
+.nav span { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 9px; color: var(--muted); font-size: 18px; }
+.nav span.on { color: var(--text); background: var(--raise); }
+.spacer { flex: 1; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 10px; font-size: 18px; font-weight: 500; border: 1px solid var(--line); background: var(--window); color: var(--text); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.count { font-size: 14px; padding: 1px 7px; border-radius: 6px; background: var(--raise); color: var(--muted); }
+
+#body { position: absolute; left: 0; top: 60px; right: 0; bottom: 0; overflow: hidden; }
+
+/* ---------- canvas ---------- */
+#canvas { position: absolute; inset: 0; overflow: hidden; background-color: var(--canvas);
+  background-image: radial-gradient(var(--grid-dot) 1.6px, transparent 1.7px); background-size: 28px 28px; }
+#world { position: absolute; left: 0; top: 0; width: 10px; height: 10px; transform-origin: 0 0; }
+#edges { position: absolute; left: 0; top: 0; overflow: visible; }
+#edges path { fill: none; stroke: var(--faint); stroke-width: 2.4; }
+#edges path.hot { stroke: var(--accent-strong); }
+#edges circle { fill: var(--accent-strong); }
+
+.node {
+  position: absolute; width: 350px; border-radius: 14px; background: var(--panel); border: 1.5px solid var(--line);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18); transform-origin: 50% 50%;
+}
+.node .hd { display: flex; align-items: center; gap: 10px; padding: 13px 16px 9px; font-size: 20px; font-weight: 500; white-space: nowrap; }
+.node .hd .ic { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--raise); color: var(--muted); font-size: 18px; }
+.node .hd .dots { margin-left: auto; color: var(--faint); letter-spacing: 1px; }
+.node .ft { display: flex; align-items: center; gap: 8px; padding: 0 16px 13px; font-size: 15px; color: var(--muted); }
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 7px; background: var(--new-bg); font-size: 15px; color: var(--new-text); white-space: nowrap; }
+.badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
+.badge.fresh { background: var(--fresh-bg); color: var(--fresh-text); }
+.badge.fresh .dot { background: var(--accent-strong); }
+.badge.err { background: var(--danger-bg); color: var(--danger); }
+.badge.err .dot { background: var(--danger); }
+.badge.run { color: var(--text); }
+.node.sel { border-color: var(--accent-strong); box-shadow: 0 0 0 4px var(--fresh-bg), 0 8px 24px rgba(0,0,0,0.18); }
+.node.bad { border-color: var(--danger); box-shadow: 0 0 0 4px var(--danger-bg), 0 8px 24px rgba(0,0,0,0.18); }
+.node .bar { position: absolute; left: 14px; right: 14px; bottom: 6px; height: 3px; border-radius: 2px; background: var(--line-soft); overflow: hidden; }
+.node .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-strong); }
+.node .plus { position: absolute; right: -19px; top: 50%; width: 36px; height: 36px; margin-top: -18px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 22px; box-shadow: var(--pop-shadow); }
+.spin { width: 15px; height: 15px; border-radius: 50%; border: 2.4px solid var(--line); border-top-color: var(--accent-strong); }
+
+#dropzone { position: absolute; width: 350px; height: 104px; border-radius: 14px; border: 2px dashed var(--accent-strong);
+  background: var(--fresh-bg); display: grid; place-items: center; color: var(--accent-strong); font-size: 18px; font-weight: 500; }
+
+#menu { position: absolute; width: 270px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 6px; }
+#menu .t { font-size: 14px; color: var(--faint); padding: 6px 10px 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+#menu .it { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 8px; font-size: 18px; }
+#menu .it.hl { background: var(--panel-2); }
+#menu .it small { margin-left: auto; color: var(--faint); font-size: 14px; }
+
+/* ---------- data browser ---------- */
+#browser { position: absolute; left: 0; top: 0; bottom: 0; width: 430px; background: var(--panel); border-right: 1px solid var(--line-soft); padding: 20px 16px; overflow: hidden; }
+#browser h3 { margin: 0; font-size: 21px; font-weight: 600; }
+#browser .sub { color: var(--muted); font-size: 16px; margin: 2px 0 14px; }
+.search { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--faint); font-size: 17px; background: var(--window); margin-bottom: 16px; }
+.sec { font-size: 14px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--faint); margin: 14px 8px 6px; }
+.row { display: flex; align-items: center; gap: 11px; padding: 8px 10px; border-radius: 9px; font-size: 18.5px; white-space: nowrap; position: relative; }
+.row .chev { color: var(--faint); font-size: 15px; width: 15px; transition: none; }
+.row .meta { margin-left: auto; color: var(--faint); font-size: 14.5px; }
+.row.hl { background: var(--panel-2); }
+.row.sel { background: var(--fresh-bg); color: var(--fresh-text); }
+.row.sel .meta { color: var(--fresh-text); }
+.eng { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: oklch(0.145 0 0); }
+.kids { overflow: hidden; }
+.kids .row { padding-left: 34px; }
+.kids .kids .row { padding-left: 58px; }
+
+#peek { position: absolute; width: 440px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 16px 18px; }
+#peek .ttl { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 19px; }
+#peek .ttl small { margin-left: auto; font-weight: 400; color: var(--muted); font-size: 15px; }
+#peek .cols { margin: 12px 0 10px; border-top: 1px solid var(--line-soft); }
+#peek .col { display: flex; justify-content: space-between; padding: 7px 2px; border-bottom: 1px solid var(--line-soft); font-size: 17px; }
+#peek .col span:last-child { color: var(--muted); font-size: 15px; }
+#peek .hint { font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+
+#ghost { position: absolute; display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: 10px; background: var(--raise); border: 1px solid var(--accent-strong); box-shadow: var(--pop-shadow); font-size: 18px; white-space: nowrap; }
+
+/* ---------- editor ---------- */
+#editor { position: absolute; top: 0; bottom: 0; right: 0; width: 1040px; background: var(--code-bg); border-left: 1px solid var(--line); box-shadow: -30px 0 60px rgba(0,0,0,0.25); }
+#editor .tabs { height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--line-soft); background: var(--panel); }
+#editor .tab { display: flex; align-items: center; gap: 9px; padding: 7px 14px; border-radius: 9px; background: var(--code-bg); border: 1px solid var(--line-soft); font-size: 17px; }
+#editor .tab small { color: var(--faint); }
+#tc { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border-radius: 9px; font-size: 16px; }
+#tc.ok { background: var(--fresh-bg); color: var(--fresh-text); }
+#tc.bad { background: var(--danger-bg); color: var(--danger); }
+#tc.wait { background: var(--raise); color: var(--muted); }
+#code { position: absolute; left: 0; right: 0; top: 56px; bottom: 112px; padding-top: 18px; font: 400 28px/42px "Inconsolata", ui-monospace, monospace; color: var(--code-text); }
+.ln { position: relative; height: 42px; white-space: pre; padding-left: 84px; }
+.ln .n { position: absolute; left: 0; width: 56px; text-align: right; color: var(--lnum); }
+.ln.cur .n { color: var(--lnum-cur); }
+.ln.cur { box-shadow: inset 0 0 0 2px var(--line-soft); }
+.t-k { color: var(--k); }
+.t-fn { color: var(--fn); }
+.t-sc { color: var(--sc); }
+.t-tbl { color: var(--tbl); }
+.t-col { color: var(--col); }
+.t-al { color: var(--al); }
+.t-op { color: var(--op); }
+.t-br { color: var(--br); }
+.t-s { color: var(--str); }
+.t-j { color: var(--jinja); font-weight: 500; }
+.t-p { color: var(--delim); }
+.glow { text-shadow: 0 0 14px currentColor, 0 0 3px currentColor; }
+.sq { text-decoration: underline wavy var(--squiggle); text-decoration-thickness: 2px; text-underline-offset: 7px; text-decoration-skip-ink: none; }
+#caret { position: absolute; width: 2.5px; height: 34px; background: var(--code-text); }
+#flash { position: absolute; height: 42px; background: var(--fresh-bg); border-radius: 4px; }
+
+.pop { position: absolute; border-radius: 6px; background: var(--mw-bg); color: var(--mw-text); border: 1px solid var(--mw-border); box-shadow: var(--pop-shadow); font-size: 19px; overflow: hidden; }
+#complete { width: 700px; display: flex; }
+#complete .list { width: 390px; padding: 4px; border-right: 1px solid var(--mw-border); }
+#complete .it { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-radius: 3px; font-family: "Inconsolata", monospace; font-size: 22px; }
+#complete .it .ty { margin-left: auto; font-size: 15px; color: var(--faint); }
+#complete .it.hl { background: var(--mw-sel); color: var(--mw-sel-text); }
+#complete .it.hl .ty { color: var(--mw-sel-text); opacity: 0.8; }
+#complete .it .cube { color: var(--mw-icon); }
+#complete .it .cube.j { color: var(--jinja); }
+#complete .doc { flex: 1; padding: 14px 16px; font-size: 16px; color: var(--mw-text); opacity: 0.85; }
+#complete .doc b { display: block; color: var(--mw-text); font-family: "Inconsolata", monospace; font-size: 18px; font-weight: 500; margin-bottom: 6px; }
+#complete .doc .tyl { display: inline-block; margin: 2px 0 10px; padding: 2px 8px; border-radius: 6px; background: var(--panel-2); font-family: "Inconsolata", monospace; font-size: 15px; color: var(--type); }
+#complete .doc .lin { display: flex; align-items: center; gap: 6px; font-size: 15px; margin-top: 4px; }
+#complete .doc .lin .t-tbl { font-family: "Inconsolata", monospace; }
+
+#diag { width: 640px; padding: 16px 18px; font-size: 18px; }
+#diag .h { display: flex; align-items: center; gap: 10px; color: var(--danger); font-weight: 600; }
+#diag p { margin: 8px 0 12px; color: var(--mw-text); opacity: 0.9; font-size: 17px; }
+#diag code { font-family: "Inconsolata", monospace; color: var(--mw-text); font-size: 18px; }
+#diag .fix { display: inline-flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-size: 16.5px; font-weight: 500; }
+#diag .src { float: right; font-size: 14px; color: var(--faint); margin-top: 10px; }
+
+#render { width: 760px; padding: 14px 18px; }
+#render .h { display: flex; align-items: center; gap: 10px; font-size: 16px; }
+#render .h b { color: var(--jinja); font-weight: 600; }
+#render pre { margin: 10px 0 4px; font: 400 23px/1.5 "Inconsolata", monospace; white-space: pre; color: var(--code-text); }
+#render .note { font-size: 15px; opacity: 0.7; }
+
+#schema { position: absolute; left: 0; right: 0; bottom: 48px; height: 64px; display: flex; align-items: center; gap: 10px; padding: 0 22px; border-top: 1px solid var(--line-soft); font-size: 16px; color: var(--muted); }
+#schema .c { display: inline-flex; gap: 8px; align-items: center; padding: 5px 11px; border-radius: 8px; background: var(--panel-2); color: var(--text); font-family: "Inconsolata", monospace; font-size: 16px; }
+#schema .c i { font-style: normal; color: var(--type); }
+#status { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center; gap: 22px; padding: 0 22px; border-top: 1px solid var(--line-soft); background: var(--panel); font-size: 16px; color: var(--muted); }
+#status .p { display: inline-flex; align-items: center; gap: 7px; }
+#status .p.bad { color: var(--danger); }
+#status .p.ok { color: var(--accent-strong); }
+
+/* ---------- run results ---------- */
+#results { position: absolute; left: 0; right: 0; bottom: 0; height: 322px; background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -20px 50px rgba(0,0,0,0.2); }
+#results .h { display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 22px; border-bottom: 1px solid var(--line-soft); font-size: 18px; }
+#results .h small { color: var(--muted); font-size: 16px; }
+#results table { width: 100%; border-collapse: collapse; font-size: 18px; }
+#results th { text-align: left; font-weight: 500; color: var(--muted); font-size: 15px; padding: 10px 22px; border-bottom: 1px solid var(--line-soft); }
+#results th span { color: var(--type); font-family: "Inconsolata", monospace; font-size: 13px; margin-left: 6px; }
+#results td { padding: 9px 22px; border-bottom: 1px solid var(--line-soft); }
+#results td.num { font-family: "Inconsolata", monospace; text-align: right; }
+#results th.num { text-align: right; }
+
+#runreview { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 110px; background: rgba(0, 0, 0, 0.3); z-index: 40; }
+#runreview .dlg { width: 640px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); box-shadow: var(--pop-shadow); overflow: hidden; }
+#runreview .hd { padding: 20px 24px 16px; border-bottom: 1px solid var(--line-soft); }
+#runreview .hd b { display: block; font-size: 23px; font-weight: 600; }
+#runreview .hd span { color: var(--muted); font-size: 16px; }
+#runreview .bd { padding: 18px 24px; display: flex; flex-direction: column; gap: 14px; }
+#runreview .seg { display: inline-flex; align-self: flex-start; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 16px; }
+#runreview .seg span { padding: 6px 14px; color: var(--muted); }
+#runreview .seg span.on { background: var(--raise); color: var(--text); }
+#runreview .rt { font-size: 18px; font-weight: 600; }
+#runreview .rl { border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
+#runreview .rl div { display: flex; align-items: center; padding: 9px 14px; font: 400 17px "Inconsolata", monospace; border-bottom: 1px solid var(--line-soft); }
+#runreview .rl div:last-child { border-bottom: 0; }
+#runreview .rl .badge { margin-left: auto; }
+#runreview .ft { padding: 14px 24px; border-top: 1px solid var(--line-soft); display: flex; justify-content: flex-end; }
+
+/* ---------- pointer ---------- */
+#pointer { position: absolute; left: 0; top: 0; width: 34px; height: 34px; z-index: 50; filter: drop-shadow(0 3px 5px rgba(0,0,0,0.45)); }
+#ripple { position: absolute; width: 60px; height: 60px; border-radius: 50%; border: 3px solid var(--accent-strong); z-index: 49; }
+
+/* ---------- caption band ---------- */
+#band { position: absolute; left: 0; right: 0; top: 944px; bottom: 0; padding: 0 64px; display: flex; align-items: center; gap: 40px; }
+#caption { flex: 1; position: relative; height: 100px; }
+#caption .cap { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; }
+#caption .cap .t { font: 400 44px/1.05 "Instrument Serif", Georgia, serif; letter-spacing: -0.01em; }
+#caption .cap .d { color: var(--muted); font-size: 21px; margin-top: 6px; }
+
+/* ---------- title cards ---------- */
+.card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: var(--bg); z-index: 100; }
+.card .eyebrow { font-size: 20px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-strong); margin-bottom: 22px; }
+.card h1 { margin: 0; font: 400 92px/1.02 "Instrument Serif", Georgia, serif; letter-spacing: -0.015em; }
+.card p { color: var(--muted); font-size: 26px; margin: 26px 0 0; }
+.card img { width: 128px; height: 128px; margin-bottom: 30px; }
+.card .cmd { margin-top: 38px; padding: 16px 26px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); font: 400 26px "Inconsolata", monospace; }
+.card .cmd span { color: var(--faint); margin-right: 14px; }
+.card .url { margin-top: 22px; color: var(--muted); font-size: 22px; }
+
+/* ---------- v2: environments, deploy, schedules, staleness ---------- */
+.badge.warn { background: var(--warn-bg); color: var(--warn-text); }
+.badge.warn .dot { background: var(--warn-dot); }
+.skip { position: absolute; left: 16px; top: -34px; font-size: 14px; color: var(--muted); background: var(--raise); border: 1px solid var(--line); border-radius: 8px; padding: 3px 9px; white-space: nowrap; }
+
+#envchip .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent-strong); }
+#envchip.prod { color: var(--text); border-color: var(--amber); }
+#envchip.prod .dot { background: var(--amber); }
+#envmenu { position: absolute; top: 58px; width: 330px; border-radius: 12px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 6px; z-index: 5; }
+#envmenu .t { font-size: 14px; color: var(--faint); padding: 6px 10px 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+#envmenu .it { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; font-size: 18px; }
+#envmenu .it.hl { background: var(--panel-2); }
+#envmenu .it small { margin-left: auto; font-size: 14px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+
+#review { position: absolute; top: 0; right: 0; bottom: 0; width: 820px; background: var(--panel); border-left: 1px solid var(--line); box-shadow: -30px 0 60px rgba(0,0,0,0.3); padding: 24px 28px; display: flex; flex-direction: column; gap: 16px; }
+#review h4 { margin: 0; font-size: 25px; font-weight: 600; }
+#review .sub { color: var(--muted); font-size: 17px; display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+#review .files { border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
+#review .file { display: flex; align-items: center; gap: 12px; padding: 10px 14px; font: 400 17px "Inconsolata", monospace; border-bottom: 1px solid var(--line-soft); }
+#review .file:last-child { border-bottom: 0; }
+#review .file .chg { margin-left: auto; color: var(--muted); font: 400 15px inherit; font-family: inherit; }
+#rv-main { display: flex; flex-direction: column; gap: 16px; height: 100%; }
+#rv-result { position: absolute; inset: 0; padding: 24px 28px; background: var(--panel); display: flex; flex-direction: column; gap: 18px; }
+#review .scheds { border-top: 1px solid var(--line-soft); padding-top: 14px; display: flex; flex-direction: column; gap: 4px; font-size: 16px; color: var(--muted); }
+#review .scheds b { color: var(--text); font-size: 17px; font-weight: 600; }
+#review .done { border: 1px solid var(--line); border-radius: 12px; background: var(--window); padding: 16px 18px; }
+#review .done .h { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 600; }
+#review .done .h b { color: var(--accent-strong); }
+#review .done .f { color: var(--muted); font-size: 17px; margin-top: 6px; }
+#review .diff { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--code-bg); font: 400 18px/31px "Inconsolata", monospace; padding: 8px 0; overflow: hidden; }
+#review .diff .dh { padding: 2px 16px 8px; color: var(--muted); font-size: 15px; border-bottom: 1px solid var(--line-soft); margin-bottom: 6px; }
+#review .diff .dl { white-space: pre; padding: 0 16px; background: rgba(95, 207, 151, 0.08); }
+#review .diff .dl b { color: var(--accent-strong); font-weight: 400; display: inline-block; width: 26px; }
+#review .foot { margin-top: auto; display: flex; align-items: center; gap: 14px; font-size: 17px; color: var(--accent-strong); }
+#review .foot .btn { margin-left: auto; }
+#review .foot .btn + .btn { margin-left: 0; }
+
+#sched { position: absolute; inset: 0; background: var(--window); padding: 26px 30px; display: grid; grid-template-columns: 700px 1fr; gap: 26px; }
+#sched h2 { margin: 0; font-size: 27px; font-weight: 600; }
+#sched .lead { color: var(--muted); font-size: 17px; margin: 4px 0 18px; }
+.card2 { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 20px 22px; }
+.card2 .ct { font-size: 20px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+.fld { margin-bottom: 14px; }
+.fld .fl { font-size: 15px; color: var(--muted); margin-bottom: 6px; }
+.fld .in { display: flex; align-items: center; gap: 10px; padding: 9px 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--window); font-size: 18px; min-height: 45px; }
+.fld .in.focus { border-color: var(--accent-strong); box-shadow: 0 0 0 3px var(--fresh-bg); }
+.fld .in.mono { font-family: "Inconsolata", monospace; font-size: 20px; }
+.fld .help { font-size: 15px; color: var(--accent-strong); margin-top: 6px; min-height: 20px; }
+.opts { display: flex; flex-direction: column; gap: 6px; }
+.opt { display: flex; align-items: center; gap: 10px; font-size: 17px; color: var(--muted); padding: 4px 2px; }
+.opt i { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); flex: none; }
+.opt.on { color: var(--text); }
+.opt.on i { border-color: var(--accent-strong); box-shadow: inset 0 0 0 4px var(--panel), inset 0 0 0 10px var(--accent-strong); }
+#tl { position: relative; }
+#tl .row2 { display: flex; align-items: center; gap: 12px; font-size: 18px; margin-bottom: 40px; }
+#tl .days { position: relative; display: grid; grid-template-columns: repeat(7, 1fr); border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); height: 150px; }
+#tl .day { border-left: 1px solid var(--line-soft); position: relative; }
+#tl .day:first-child { border-left: 0; }
+#tl .day .dl { position: absolute; top: 10px; left: 12px; font-size: 14px; color: var(--faint); }
+#tl .slot { position: absolute; left: 30%; top: 70px; width: 30px; height: 30px; margin-left: -15px; border-radius: 50%; border: 2px dashed var(--faint); display: grid; place-items: center; color: var(--accent-ink); font-size: 16px; }
+#tl .slot.done { border: 0; background: var(--accent-strong); }
+#tl .slot.running { border: 2px solid var(--accent-strong); }
+#tl .slot.next { border-style: solid; border-color: var(--accent); }
+#tl .now { position: absolute; top: -8px; bottom: -8px; width: 2px; background: var(--amber); }
+#tl .now span { position: absolute; top: -26px; left: -60px; width: 120px; text-align: center; font-size: 14px; color: var(--amber); font-family: "Inconsolata", monospace; }
+#tl .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--faint); font-size: 17px; }
+#runcard { margin-top: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 16px; color: var(--muted); }
+#runcard .rh { display: flex; align-items: center; gap: 10px; font-size: 18px; color: var(--text); }
+#runcard .ok { color: var(--accent-strong); }
+
+#inspect { position: absolute; width: 400px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); padding: 14px 16px; }
+#inspect .ttl { display: flex; gap: 10px; align-items: center; font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+#inspect .ttl small { margin-left: auto; font-weight: 400; color: var(--faint); font-size: 14px; }
+#inspect .col { display: flex; justify-content: space-between; font: 400 16px "Inconsolata", monospace; padding: 5px 4px; border-top: 1px solid var(--line-soft); }
+#inspect .col span:last-child { color: var(--muted); font-size: 14px; }
+#inspect .col.new { background: var(--fresh-bg); border-radius: 6px; color: var(--accent-strong); }
+#stalebar { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; padding: 10px 12px 10px 18px; border-radius: 14px; background: var(--raise); border: 1px solid var(--line); box-shadow: var(--pop-shadow); font-size: 18px; white-space: nowrap; }
+#stalebar .d { width: 10px; height: 10px; border-radius: 50%; background: var(--amber); }
+#stalebar.clean .d { background: var(--accent-strong); }
+#edges circle.amber { fill: var(--amber); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="viewport"><div id="scene">
+    <div id="win">
+      <div id="topbar">
+        <div class="brand"><img src="logo.svg" alt="" />renart</div>
+        <span class="chip"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 10h16M10 10v10"/></svg>acme</span>
+        <div class="nav">
+          <span id="nav-build"><svg class="i" viewBox="0 0 24 24"><path d="M14.5 5.5a4 4 0 0 0 4.9 4.9L12 17.8l-3 1.2 1.2-3 7.3-7.3M4 20l3-3"/></svg>Build</span>
+          <span id="nav-run"><svg class="i" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>Run</span>
+          <span><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="12" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8.5 6.5l7 4.5M8.5 17.5l7-4.5"/></svg>Explore</span>
+        </div>
+        <div class="spacer"></div>
+        <span class="chip" id="envchip"><span class="dot"></span><span class="lbl">dev</span><svg class="i" viewBox="0 0 24 24" id="envlock"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>
+        <span class="chip" id="branch"><svg class="i" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="8" r="2.2"/><path d="M6 7.2v9.6M18 10.2c0 4-6 3-11 6.5"/></svg>main <span class="count" id="changes">0</span></span>
+        <span class="btn" id="deploytop"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg><span class="lbl">Deploy</span></span>
+        <span class="btn primary" id="runbtn"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Review run</span>
+      </div>
+      <div id="envmenu">
+        <div class="t">Environment</div>
+        <div class="it" id="env-dev"><span style="width:9px;height:9px;border-radius:50%;background:var(--accent-strong)"></span>dev<small>Default</small></div>
+        <div class="it" id="env-prod"><span style="width:9px;height:9px;border-radius:50%;background:var(--amber)"></span>prod<small><svg class="i" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Deployed only</small></div>
+      </div>
+      <div id="body">
+        <div id="canvas">
+          <div id="world">
+            <svg id="edges" width="10" height="10"></svg>
+            <div id="dropzone">Drop in</div>
+            <div class="node" id="n-orders"></div>
+            <div class="node" id="n-customers"></div>
+            <div class="node" id="n-rev"></div>
+            <div id="menu">
+              <div class="t">Create after raw.orders</div>
+              <div class="it" id="menu-sql"><svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h4"/></svg>SQL asset<small>transform</small></div>
+              <div class="it"><svg class="i" viewBox="0 0 24 24" style="color:var(--type)"><path d="M12 3c-4 0-4 2-4 3v2h5M12 21c4 0 4-2 4-3v-2h-5M8 8H6c-2 0-3 2-3 4s1 4 3 4h2M16 16h2c2 0 3-2 3-4s-1-4-3-4h-2"/></svg>Python asset<small>transform</small></div>
+              <div class="it"><svg class="i" viewBox="0 0 24 24" style="color:var(--jinja)"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15l3-4 2 2 3-4"/></svg>Notebook<small>analysis</small></div>
+            </div>
+            <div id="inspect">
+              <div class="ttl"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>raw.orders<small>Load · columns</small></div>
+              <div class="col" style="color:var(--faint)"><span>order_id, customer_id, …</span><span></span></div>
+              <div class="col"><span>total_amount</span><span>DECIMAL(12,2)</span></div>
+              <div class="col new" id="newcol"><span></span><span></span></div>
+            </div>
+          </div>
+          <div id="stalebar"><span class="d"></span><span class="msg"></span><span class="btn primary" id="buildstale"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Build stale</span></div>
+          <div id="results">
+            <div class="h"><svg class="i" viewBox="0 0 24 24" style="color:var(--accent-strong)"><path d="M3 5h18v14H3zM3 10h18M9 10v9"/></svg>marts.customer_revenue <small>12,391 rows · 0.4 s · just now</small></div>
+            <table>
+              <thead><tr><th>customer_name<span>VARCHAR</span></th><th>country<span>VARCHAR</span></th><th class="num">revenue<span>DECIMAL(38,2)</span></th></tr></thead>
+              <tbody>
+                <tr><td>Amara Okafor</td><td>NG</td><td class="num">12,480.00</td></tr>
+                <tr><td>Lena Fischer</td><td>DE</td><td class="num">11,920.50</td></tr>
+                <tr><td>Mateo Rossi</td><td>IT</td><td class="num">10,311.20</td></tr>
+                <tr><td>Sofia Lindqvist</td><td>SE</td><td class="num">9,874.10</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="browser">
+          <h3>Data Browser</h3>
+          <div class="sub">Warehouses and local files</div>
+          <div class="search"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Filter sources…</div>
+          <div class="sec">Connected sources</div>
+          <div class="row" id="db-pg"><span class="chev" id="chev-pg">›</span><span class="eng" style="background:var(--pg)">PG</span>shop_postgres<span class="meta">Postgres</span></div>
+          <div class="kids" id="kids-pg">
+            <div class="row"><span class="chev" style="transform:rotate(90deg)">›</span><svg class="i" viewBox="0 0 24 24" style="color:var(--faint)"><path d="M4 7h16M4 12h16M4 17h16"/></svg>public<span class="meta">4 tables</span></div>
+            <div class="kids">
+              <div class="row" id="db-customers"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg>customers<span class="meta">12.5K rows</span></div>
+              <div class="row" id="db-orders"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg>orders<span class="meta">184K rows</span></div>
+              <div class="row"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg>payments<span class="meta">181K rows</span></div>
+              <div class="row"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg>products<span class="meta">1.2K rows</span></div>
+            </div>
+          </div>
+          <div class="row"><span class="chev">›</span><span class="eng" style="background:var(--duck)">DK</span>warehouse<span class="meta">DuckDB</span></div>
+          <div class="row"><span class="chev">›</span><span class="eng" style="background:var(--bq)">BQ</span>events<span class="meta">BigQuery</span></div>
+          <div class="sec">Files inside this project</div>
+          <div class="row"><svg class="i" viewBox="0 0 24 24" style="color:var(--file)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>data/refunds.csv<span class="meta">CSV</span></div>
+          <div class="row"><svg class="i" viewBox="0 0 24 24" style="color:var(--file)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>data/fx_rates.parquet<span class="meta">Parquet</span></div>
+        </div>
+
+        <div id="peek">
+          <div class="ttl"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg>public.orders<small>184,302 rows</small></div>
+          <div class="cols">
+            <div class="col mono"><span>order_id</span><span>INTEGER</span></div>
+            <div class="col mono"><span>customer_id</span><span>INTEGER</span></div>
+            <div class="col mono"><span>ordered_at</span><span>TIMESTAMP</span></div>
+            <div class="col mono"><span>status</span><span>VARCHAR</span></div>
+            <div class="col mono"><span>total_amount</span><span>DECIMAL(12,2)</span></div>
+          </div>
+          <div class="hint"><svg class="i" viewBox="0 0 24 24"><path d="M9 4v10M5 8l4-4 4 4M15 20V10M11 16l4 4 4-4"/></svg>Drag onto the canvas to load it</div>
+        </div>
+
+        <div id="editor">
+          <div class="tabs">
+            <span class="tab"><svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>customer_revenue.sql <small>marts</small></span>
+            <div class="spacer"></div>
+            <span id="tc" class="wait"></span>
+            <span class="btn"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Run</span>
+          </div>
+          <div id="code"><div id="flash"></div><div id="lines"></div><div id="caret"></div></div>
+          <div id="schema"></div>
+          <div id="status">
+            <span class="p"><span class="eng" style="background:var(--duck);width:20px;height:20px;font-size:10px">DK</span>warehouse</span>
+            <span class="p" id="probs"></span>
+            <span class="spacer"></span>
+            <span class="p" id="deps"></span>
+          </div>
+          <div class="pop" id="complete"><div class="list"></div><div class="doc"></div></div>
+          <div class="pop" id="diag">
+            <div class="h"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/></svg>Unresolved column: <code>total_amout</code></div>
+            <p><code>raw.orders</code> has <code>total_amount</code> <span style="color:var(--type);font-family:'Inconsolata',monospace;font-size:15px">DECIMAL(12,2)</span>.</p>
+            <span class="fix" id="fixbtn"><svg class="i" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Change 'total_amout' to 'total_amount'</span>
+            <span class="src">unresolved-column</span>
+          </div>
+          <div class="pop" id="render">
+            <div class="h"><svg class="i" viewBox="0 0 24 24" style="color:var(--jinja)"><path d="M8 4c-2 0-2 1-2 3v2c0 1-1 3-2 3 1 0 2 2 2 3v2c0 2 0 3 2 3M16 4c2 0 2 1 2 3v2c0 1 1 3 2 3-1 0-2 2-2 3v2c0 2 0 3-2 3"/></svg><b>start_date</b> renders for this run as</div>
+            <pre><span class="t-k">WHERE</span> o.ordered_at &gt;= <span class="t-s">'2026-09-01'</span></pre>
+            <div class="note">Completions, hovers and type checks run on the rendered SQL.</div>
+          </div>
+        </div>
+
+        <div id="runreview">
+          <div class="dlg">
+            <div class="hd"><b>Run acme_shop</b><span>dev · working tree</span></div>
+            <div class="bd">
+              <div class="seg"><span class="on">Out of date</span><span>All assets</span></div>
+              <div class="rt">3 assets will run</div>
+              <div class="rl">
+                <div>raw.orders<span class="badge"><span class="dot"></span>Never built</span></div>
+                <div>raw.customers<span class="badge"><span class="dot"></span>Never built</span></div>
+                <div>marts.customer_revenue<span class="badge"><span class="dot"></span>Never built</span></div>
+              </div>
+            </div>
+            <div class="ft"><span class="btn primary" id="runconfirm"><svg class="i" viewBox="0 0 24 24" style="fill:currentColor;stroke:none"><path d="M7 5l12 7-12 7z"/></svg>Run 3 assets</span></div>
+          </div>
+        </div>
+
+        <div id="review">
+          <div id="rv-main">
+            <div>
+              <h4>Deploy acme_shop</h4>
+              <div class="sub">First deployment</div>
+            </div>
+            <div class="files">
+              <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>assets/raw/orders.asset.yml<span class="chg">Asset added</span></div>
+              <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>assets/raw/customers.asset.yml<span class="chg">Asset added</span></div>
+              <div class="file"><svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></svg>assets/marts/customer_revenue.sql<span class="chg">Asset added</span></div>
+            </div>
+            <div class="diff"><div class="dh">assets/marts/customer_revenue.sql</div><div id="difflines"></div></div>
+            <div class="scheds"><b>Schedules</b><span>No schedule runs this pipeline yet. Create one in Schedules after deploying.</span></div>
+            <div class="foot"><span class="btn primary" id="deploybtn"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>Deploy</span></div>
+          </div>
+          <div id="rv-result">
+            <div>
+              <h4>Deploy acme_shop</h4>
+              <div class="sub">First deployment</div>
+            </div>
+            <div class="done"><div class="h"><b>✓</b>Deployed as deployment #1 · a1f3c9e</div><div class="f">Nothing runs until a schedule or run uses it.</div></div>
+            <div class="foot"><span class="btn" id="viewsched">View schedules</span><span class="btn primary">Done</span></div>
+          </div>
+        </div>
+
+        <div id="sched">
+          <div>
+            <h2>Schedules</h2>
+            <div class="lead">Run pipelines on a cadence, per environment.</div>
+            <div class="card2">
+              <div class="ct"><svg class="i" viewBox="0 0 24 24" style="color:var(--accent-strong)"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>New schedule</div>
+              <div class="fld"><div class="fl">Pipeline</div><div class="in">acme_shop</div></div>
+              <div class="fld"><div class="fl">Environment</div><div class="in">prod</div></div>
+              <div class="fld"><div class="fl">Schedule</div><div class="in mono" id="cron"><span class="v"></span><span class="c" style="width:2px;height:24px;background:var(--accent-strong)"></span></div><div class="help" id="cronhelp"></div></div>
+              <div class="fld"><div class="fl">Catch-up policy</div>
+                <div class="opts"><div class="opt on"><i></i>Run once to catch up</div><div class="opt"><i></i>Backfill each missed interval</div><div class="opt"><i></i>Skip missed intervals</div></div>
+              </div>
+              <div class="fld"><div class="fl">Deployment</div>
+                <div class="opts"><div class="opt on"><i></i>Use deployment #1</div><div class="opt"><i></i>Deploy current files</div></div>
+              </div>
+              <span class="btn primary" id="create-sched">Create schedule</span>
+            </div>
+          </div>
+          <div>
+            <h2>&nbsp;</h2>
+            <div class="lead">&nbsp;</div>
+            <div class="card2" id="tl">
+              <div class="row2"><b style="font-weight:600">Schedule timeline</b><span class="badge" id="tlbadge"></span></div>
+              <div class="days" id="days"></div>
+              <div id="runcard"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="ghost"><svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M4 5h16v14H4zM4 10h16M10 10v9"/></svg><span></span></div>
+    <div id="ripple"></div>
+    <svg id="pointer" viewBox="0 0 34 34"><path d="M5 3l22 13.5-9.6 2.2 5.6 10.6-4.3 2.2-5.6-10.6L6 28z" fill="#fff" stroke="#111" stroke-width="1.8" stroke-linejoin="round"/></svg>
+  </div></div>
+
+  <div id="band">
+    <div id="caption"></div>
+  </div>
+
+  <div class="card" id="outro">
+    <img src="logo.svg" alt="" />
+    <h1>Build data workflows<br />you can maintain.</h1>
+    <div class="cmd"><span>$</span>curl -LsSf getrenart.com/install.sh | sh</div>
+    <div class="url">Open source · Apache 2.0 · getrenart.com</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const params = new URLSearchParams(location.search);
+if (params.get("theme") === "light") document.documentElement.dataset.theme = "light";
+
+const $ = (s) => document.querySelector(s);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, x) => a + (b - a) * x;
+const p = (t, a, b) => clamp((t - a) / (b - a));
+const ez = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const eo = (x) => 1 - Math.pow(1 - x, 3);
+// Visibility window with fades: 0 before a, ramps in over f, holds, ramps out over f before b.
+const win = (t, a, b, f = 0.25) => Math.min(p(t, a, a + f), 1 - p(t, b - f, b));
+const show = (el, o, dy = 0, s = 1) => {
+  el.style.opacity = o;
+  el.style.visibility = o <= 0.001 ? "hidden" : "visible";
+  el.style.transform = `translateY(${(1 - o) * dy}px) scale(${lerp(s, 1, o)})`;
+};
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/* ------------------------------------------------------------------ story */
+// Chapter start times. Every beat below is written relative to one of these,
+// so a chapter can be lengthened or shortened without touching the others.
+const C = { discover: 0, build: 8.6, intel: 17.2, check: 22.5, jinja: 27.0, run: 33.2, stale: 39.2, deploy: 46.4, sched: 53.2, outro: 60.0 };
+const OUTRO_OUT = C.outro + 3.6; // end card fades out onto the first frame, so the video loops seamlessly
+const DURATION = OUTRO_OUT + 0.8;
+
+const CHAPTERS = [
+  { a: C.discover, b: C.build, k: "Discover", t: "Start from the data you already have.", d: "Browse every connected warehouse and file, then drag a table onto the canvas." },
+  { a: C.build, b: C.intel, k: "Build", t: "Build on a canvas, in plain SQL.", d: "Add steps visually. Table names in your SQL become the dependencies." },
+  { a: C.intel, b: C.check, k: "Intellisense", t: "Complete columns, not guesses.", d: "Column-level completions with types that flow from upstream assets." },
+  { a: C.check, b: C.jinja, k: "Type check", t: "Catch mistakes as you type.", d: "The whole pipeline is type-checked before anything runs." },
+  { a: C.jinja, b: C.run, k: "Jinja", t: "Template with Jinja.", d: "Variables complete and render inline, and the rendered SQL is checked too." },
+  { a: C.run, b: C.stale, k: "Run", t: "Run it, see the results.", d: "Every asset reports fresh data, row counts and output types." },
+  { a: C.stale, b: C.deploy, k: "Staleness", t: "Only rebuild what changed.", d: "Edits mark downstream assets stale. Build stale skips everything still fresh." },
+  { a: C.deploy, b: C.sched, k: "Deploy", t: "Review it, then ship it.", d: "Review the changes, then deploy a version for your schedules to run." },
+  { a: C.sched, b: C.outro, k: "Schedule", t: "Schedule it and move on.", d: "Runs every morning in prod from the deployed version, and catches up after downtime." },
+];
+
+/* Editor edit script. Ops replay from an empty document on every seek. */
+const OPS = [
+  { at: C.build + 4.4, dur: 1.8, type: "SELECT\n  *\nFROM raw.orders AS o" },
+  { at: C.build + 6.5, dur: 1.7, type: "\nJOIN raw.customers AS c USING (customer_id)" },
+  { at: C.intel + 0.35, move: [1, 3] },
+  { at: C.intel + 0.4, replace: [1, 2, 3, ""] },
+  { at: C.intel + 0.45, dur: 0.25, type: "c." },
+  { at: C.intel + 2.2, replace: [1, 2, 4, "c.customer_name"] },
+  { at: C.intel + 2.3, dur: 0.06, type: "," },
+  { at: C.intel + 2.45, dur: 0.45, type: "\n  c.co" },
+  { at: C.intel + 3.6, replace: [2, 2, 6, "c.country"] },
+  { at: C.intel + 3.75, dur: 1.35, type: ",\n  SUM(o.total_amout) AS revenue" },
+  { at: C.check + 2.7, replace: [3, 8, 19, "total_amount"], caret: [3, 30] },
+  { at: C.jinja + 0.2, move: [5, 43] },
+  { at: C.jinja + 0.4, dur: 1.2, type: "\nWHERE o.ordered_at >= '{{ " },
+  { at: C.jinja + 2.7, replace: [6, 22, 26, "'{{ start_date }}'"] },
+  { at: C.jinja + 5.0, dur: 0.6, type: "\nGROUP BY ALL" },
+];
+// Human typing rhythm: deterministic per-character jitter, longer pauses after
+// spaces, punctuation and line breaks. RHYTHM[i][k] is the fraction of the op's
+// duration after which character k has been typed.
+const rand = (n) => { const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); };
+const RHYTHM = new Map(OPS.filter((op) => op.type).map((op, i) => {
+  let acc = 0;
+  const w = [...op.type].map((ch, k) => (acc += 0.55 + rand(i * 97 + k) * 0.9 + (ch === " " ? 0.7 : 0) + (ch === "\n" ? 2.2 : 0) + (/[,.(]/.test(ch) ? 0.5 : 0)));
+  return [op, w.map((v) => v / acc)];
+}));
+const typedCount = (op, x) => { const cum = RHYTHM.get(op); let n = 0; while (n < cum.length && cum[n] <= x) n++; return n; };
+const typedAt = (op, sub) => op.at + op.dur * RHYTHM.get(op)[op.type.indexOf(sub) + sub.length - 1];
+const LINK = 1.4;
+const EDGE1_AT = typedAt(OPS[0], "raw.orders");
+const EDGE2_AT = typedAt(OPS[1], "raw.customers");
+
+function docAt(t) {
+  let lines = [""], cl = 0, cc = 0, lastEdit = -1;
+  for (const op of OPS) {
+    if (op.at > t) break;
+    if (op.move) { [cl, cc] = op.move; continue; }
+    if (op.replace) {
+      const [l, a, b, s] = op.replace;
+      lines[l] = lines[l].slice(0, a) + s + lines[l].slice(b);
+      if (op.caret) [cl, cc] = op.caret; else { cl = l; cc = a + s.length; }
+      lastEdit = op.at;
+      continue;
+    }
+    const n = typedCount(op, p(t, op.at, op.at + op.dur));
+    for (const ch of op.type.slice(0, n)) {
+      if (ch === "\n") {
+        const rest = lines[cl].slice(cc);
+        lines[cl] = lines[cl].slice(0, cc);
+        lines.splice(cl + 1, 0, rest);
+        cl++; cc = 0;
+      } else {
+        lines[cl] = lines[cl].slice(0, cc) + ch + lines[cl].slice(cc);
+        cc++;
+      }
+    }
+    if (n > 0) lastEdit = Math.max(lastEdit, op.at + op.dur * RHYTHM.get(op)[n - 1]);
+  }
+  return { lines, cl, cc, lastEdit };
+}
+
+// Token classes follow Monaco's SQL tokenizer plus Renart's semantic SQL
+// decorations (schema / table / column / alias).
+const KW = new Set(["SELECT", "FROM", "JOIN", "AS", "USING", "WHERE", "GROUP", "BY", "ALL", "ON"]);
+const OPW = new Set(["AND", "OR", "NOT", "IN"]);
+const FN = new Set(["SUM", "COUNT", "CAST"]);
+const SCHEMAS = new Set(["raw", "marts"]);
+const ALIASES = new Set(["o", "c"]);
+const COLUMNS = new Set(["customer_id"]);
+const span = (cls, text) => (cls ? `<span class="${cls}">${esc(text)}</span>` : esc(text));
+function highlight(line, opts = {}) {
+  const { squiggle, glow } = opts;
+  const re = /(\{\{.*?(?:\}\}|$))|('[^'{]*'?)|([A-Za-z_]\w*)\.([A-Za-z_]\w*)|([A-Za-z_]\w*)|(\s+)|(>=|[^\s])/g;
+  let out = "", m;
+  while ((m = re.exec(line))) {
+    const [tok, jj, str, qa, qb, word, ws, punct] = m;
+    if (jj) out += span("t-j", tok);
+    else if (str) out += span("t-s", tok);
+    else if (qa) {
+      if (SCHEMAS.has(qa)) out += span("t-sc", qa) + span("t-p", ".") + span(`t-tbl${glow && glow === tok ? " glow" : ""}`, qb);
+      else out += span(ALIASES.has(qa) ? "t-al" : "", qa) + span("t-p", ".") + span(`t-col${squiggle === qb ? " sq" : ""}`, qb);
+    } else if (word) {
+      out += span(KW.has(word) ? "t-k" : OPW.has(word) ? "t-op" : FN.has(word) ? "t-fn" : ALIASES.has(word) ? "t-al" : COLUMNS.has(word) ? "t-col" : "", word);
+    } else if (ws) out += tok;
+    else out += span(punct === "(" || punct === ")" ? "t-br" : punct === ">=" ? "t-op" : "t-p", punct);
+  }
+  return out;
+}
+// The deploy review shows the finished query as an added file.
+$("#difflines").innerHTML = docAt(C.run).lines.map((l) => `<div class="dl"><b>+</b>${highlight(l)}</div>`).join("");
+
+/* ------------------------------------------------------------ environment */
+const PROD_AT = C.deploy + 1.95;
+const DEV_AGAIN_AT = OUTRO_OUT; // the loop restarts in dev
+const envAt = (t) => (t >= PROD_AT && t < DEV_AGAIN_AT ? "prod" : "dev");
+
+/* ------------------------------------------------------------ canvas model */
+const NODE_W = 350, NODE_H = 112;
+const NODES = {
+  orders: { el: $("#n-orders"), x: 60, y: 120, name: "raw.orders", kind: "load" },
+  customers: { el: $("#n-customers"), x: 60, y: 440, name: "raw.customers", kind: "load" },
+  rev: { el: $("#n-rev"), x: 600, y: 280, name: "marts.customer_revenue", kind: "sql" },
+};
+// Freshness timeline per node: [from, state, detail]. States: new, run, fresh, edited, upstream.
+const STATES = {
+  orders: [[0, "new"], [C.run + 2.1, "run", C.run + 3.5], [C.run + 3.5, "fresh", "184,302 rows"],
+    [C.stale + 2.1, "edited"], [C.stale + 3.95, "run", C.stale + 4.75], [C.stale + 4.75, "fresh", "184,302 rows"], [PROD_AT, "new"]],
+  customers: [[0, "new"], [C.run + 2.1, "run", C.run + 3.75], [C.run + 3.75, "fresh", "12,480 rows"], [PROD_AT, "new"]],
+  rev: [[0, "new"], [C.run + 4.2, "run", C.run + 5.0], [C.run + 5.0, "fresh", "12,391 rows"],
+    [C.stale + 2.9, "upstream"], [C.stale + 4.75, "run", C.stale + 5.55], [C.stale + 5.55, "fresh", "12,391 rows"], [PROD_AT, "new"]],
+};
+function stateAt(key, t) {
+  const list = STATES[key];
+  let i = 0;
+  while (i + 1 < list.length && t >= list[i + 1][0]) i++;
+  return list[i];
+}
+const ICON_LOAD = `<svg class="i" viewBox="0 0 24 24" style="color:var(--pg)"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>`;
+const ICON_SQL = `<svg class="i" viewBox="0 0 24 24" style="color:var(--k)"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h4"/></svg>`;
+function nodeHTML(n, name, status, extra) {
+  const icon = n.kind === "load" ? ICON_LOAD : ICON_SQL;
+  const conn = n.kind === "load" ? "from shop_postgres" : "warehouse";
+  return `<div class="hd"><span class="ic">${icon}</span><span>${esc(name)}</span><span class="dots">•••</span></div>
+    <div class="ft">${status}<span class="badge">${conn}</span></div>${extra || ""}`;
+}
+const spinner = (t) => `<span class="spin" style="transform:rotate(${(t * 540) % 360}deg)"></span>`;
+function badge(st, t) {
+  const [from, s, d] = st;
+  if (s === "run") return `<span class="badge run">${spinner(t)}Running</span>`;
+  if (s === "fresh") return `<span class="badge fresh"><span class="dot"></span>Fresh · ${d}</span>`;
+  if (s === "edited") return `<span class="badge warn"><span class="dot"></span>Edited</span>`;
+  if (s === "upstream") return `<span class="badge warn"><span class="dot"></span>Upstream changed</span>`;
+  return `<span class="badge"><span class="dot"></span>Never built</span>`;
+}
+const B_ERR = `<span class="badge err"><span class="dot"></span>1 problem</span>`;
+const progressBar = (st, t) => (st[1] === "run" ? `<div class="bar"><i style="width:${p(t, st[0], st[2]) * 100}%"></i></div>` : "");
+
+function edgePath(a, b) {
+  const x1 = a.x + NODE_W, y1 = a.y + NODE_H / 2, x2 = b.x, y2 = b.y + NODE_H / 2;
+  const mx = (x1 + x2) / 2;
+  return `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`;
+}
+const edgesSvg = $("#edges");
+edgesSvg.innerHTML = [
+  `<path id="e1" d="${edgePath(NODES.orders, NODES.rev)}"/>`,
+  `<path id="e2" d="${edgePath(NODES.customers, NODES.rev)}"/>`,
+  `<circle id="p1" r="7"/>`, `<circle id="p2" r="7"/>`, `<circle id="p3" class="amber" r="8"/>`,
+].join("");
+const E1 = $("#e1"), E2 = $("#e2");
+const E1L = E1.getTotalLength(), E2L = E2.getTotalLength();
+function drawEdge(el, len, prog, hot, link = 0) {
+  el.style.strokeDasharray = `${len}`;
+  el.style.strokeDashoffset = `${len * (1 - prog)}`;
+  el.style.opacity = prog > 0 ? 1 : 0;
+  el.classList.toggle("hot", !!hot);
+  // While linked to the table name being typed, the edge takes the table-token color and glows.
+  el.style.stroke = link > 0 ? `color-mix(in oklab, var(--tbl) ${link * 100}%, var(--faint))` : "";
+  el.style.strokeWidth = `${2.4 + link * 1.6}`;
+  el.style.filter = link > 0 ? `drop-shadow(0 0 ${6 * link}px var(--tbl))` : "";
+}
+const linkAt = (t, a) => (t < a ? 0 : 1 - p(t, a + LINK - 0.5, a + LINK));
+function pulse(dot, path, len, x) {
+  dot.style.opacity = x > 0 && x < 1 ? 1 : 0;
+  const pt = path.getPointAtLength(len * eo(x));
+  dot.setAttribute("cx", pt.x); dot.setAttribute("cy", pt.y);
+}
+
+/* ------------------------------------------------------------ camera rigs */
+// Keyframes: [time, value]. Values ease between neighbouring keyframes.
+function track(keys, t) {
+  if (t <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) {
+    const [t1, v1] = keys[i], [t0, v0] = keys[i - 1];
+    if (t <= t1) {
+      const x = ez(p(t, t0, t1));
+      return Array.isArray(v0) ? v0.map((v, j) => lerp(v, v1[j], x)) : lerp(v0, v1, x);
+    }
+  }
+  return keys[keys.length - 1][1];
+}
+const WIDE = [960, 472, 1];
+// Scene camera: [focusX, focusY, zoom] in scene pixels.
+const CAM = [
+  [0, WIDE], [C.discover + 1.0, WIDE], [C.discover + 2.0, [700, 430, 1.16]], [C.discover + 5.0, [760, 430, 1.16]], [C.discover + 6.4, WIDE],
+  [C.build + 0.2, WIDE], [C.build + 1.0, [900, 450, 1.1]], [C.build + 3.2, [900, 450, 1.1]], [C.build + 4.2, WIDE],
+  [C.intel, WIDE], [C.intel + 0.6, [1260, 380, 1.26]], [C.check, [1260, 400, 1.26]], [C.check + 0.4, [1260, 440, 1.22]],
+  [C.jinja, [1260, 440, 1.22]], [C.jinja + 0.5, [1270, 470, 1.24]], [C.run, [1270, 470, 1.24]],
+  [C.run + 1.0, WIDE], [C.run + 5.0, WIDE], [C.run + 5.6, [960, 500, 1.05]],
+  [C.stale, [960, 500, 1.05]], [C.stale + 0.7, [860, 440, 1.12]], [C.stale + 3.4, [900, 470, 1.1]], [C.stale + 6.8, [900, 470, 1.1]],
+  [C.deploy + 0.6, WIDE], [C.deploy + 2.6, WIDE], [C.deploy + 3.4, [1340, 470, 1.12]], [C.deploy + 5.6, [1340, 470, 1.12]], [C.deploy + 6.4, WIDE],
+  [C.sched + 1.0, WIDE], [C.sched + 1.6, [700, 480, 1.1]], [C.sched + 3.2, [700, 480, 1.1]], [C.sched + 4.0, [1260, 420, 1.1]], [C.outro, [1260, 420, 1.1]],
+  [C.outro + 0.8, WIDE],
+];
+// Canvas pan/zoom inside the window: [tx, ty, s].
+const CANVAS = [
+  [0, [620, 40, 1]], [C.build, [620, 40, 1]], [C.build + 0.8, [420, 40, 1]], [C.build + 3.4, [420, 40, 1]], [C.build + 4.2, [40, 90, 0.72]],
+  [C.run, [40, 90, 0.72]], [C.run + 1.0, [450, 40, 1]], [C.run + 5.0, [450, 40, 1]], [C.run + 5.6, [520, -40, 0.85]],
+  [C.stale, [520, -40, 0.85]], [C.stale + 0.6, [450, 40, 1]],
+];
+
+/* ----------------------------------------------------------- pointer path */
+// [arrive time, travel seconds, target]. Targets are scene points or element selectors
+// resolved live each frame, so the pointer tracks things that move with the camera.
+const REST = [1760, 800];
+const POINTER = [
+  [0.6, 0, [1500, 700]],
+  [C.discover + 1.2, 0.9, "#db-pg"],
+  [C.discover + 2.6, 1.0, "#db-orders"],
+  [C.discover + 5.0, 0.35, "#db-orders"],
+  [C.discover + 6.2, 1.1, "#dropzone"],
+  [C.discover + 6.8, 0.5, "#db-customers"],
+  [C.discover + 8.0, 1.1, "#dropzone"],
+  [C.build + 1.0, 1.0, "#plus"],
+  [C.build + 1.9, 0.6, "#menu-sql"],
+  [C.build + 3.3, 1.0, "#n-rev"],
+  [C.build + 4.4, 0.9, REST],
+  [C.intel + 0.1, 0.5, "@1:3"],
+  [C.intel + 0.7, 0.3, REST],
+  [C.check + 0.5, 0.9, "@3:10"],
+  [C.check + 2.5, 1.0, "#fixbtn"],
+  [C.check + 3.3, 0.8, REST],
+  [C.run + 0.7, 0.7, "#runbtn"],
+  [C.run + 1.8, 0.6, "#runconfirm"],
+  [C.run + 3.4, 1.1, [1500, 700]],
+  [C.stale + 0.8, 0.8, "#n-orders"],
+  [C.stale + 1.6, 0.6, [1200, 520]],
+  [C.stale + 3.8, 1.1, "#buildstale"],
+  [C.stale + 5.2, 1.0, [1500, 640]],
+  [C.deploy + 0.9, 0.9, "#envchip"],
+  [C.deploy + 1.9, 0.5, "#env-prod"],
+  [C.deploy + 2.7, 0.7, "#deploytop"],
+  [C.deploy + 5.3, 1.3, "#deploybtn"],
+  [C.sched + 0.8, 1.2, "#viewsched"],
+  [C.sched + 1.3, 0.5, "#cron"],
+  [C.sched + 3.0, 0.9, "#create-sched"],
+  [C.sched + 4.2, 1.2, [1700, 780]],
+];
+const CLICKS = [C.discover + 1.2, C.discover + 2.6, C.build + 1.0, C.build + 1.9, C.build + 3.2, C.build + 3.3, C.intel + 0.1,
+  C.check + 2.5, C.run + 0.7, C.run + 1.8, C.stale + 0.8, C.stale + 3.8, C.deploy + 0.9, C.deploy + 1.9, C.deploy + 2.7, C.deploy + 5.3,
+  C.sched + 0.8, C.sched + 1.3, C.sched + 3.0];
+const DRAGS = [
+  { a: C.discover + 5.0, b: C.discover + 6.2, label: "orders" },
+  { a: C.discover + 6.8, b: C.discover + 8.0, label: "customers" },
+];
+
+/* --------------------------------------------------------------- elements */
+const scene = $("#scene"), world = $("#world"), canvas = $("#canvas");
+const linesEl = $("#lines"), caret = $("#caret"), flash = $("#flash");
+const complete = $("#complete"), diag = $("#diag"), render = $("#render");
+const pointer = $("#pointer"), ripple = $("#ripple"), ghost = $("#ghost");
+
+$("#caption").innerHTML = CHAPTERS.map((c) => `<div class="cap"><div class="t">${c.t}</div><div class="d">${c.d}</div></div>`).join("");
+
+const plus = document.createElement("div");
+plus.className = "plus"; plus.id = "plus"; plus.textContent = "+";
+const skip = document.createElement("div");
+skip.className = "skip"; skip.textContent = "Skipped · still fresh";
+
+// Schedule timeline: seven 06:00 slots starting tomorrow.
+const DAYS = ["Sun 27", "Mon 28", "Tue 29", "Wed 30", "Thu 1", "Fri 2", "Sat 3"];
+$("#days").innerHTML = DAYS.map((d, i) => `<div class="day"><span class="dl">${d}</span><span class="slot" id="slot${i}"></span></div>`).join("")
+  + `<div class="now" id="now"><span></span></div><div class="empty" id="tlempty">No schedules yet</div>`;
+
+let CW = 14.4; // monospace advance, measured once fonts load
+function measure() {
+  const s = document.createElement("span");
+  s.style.cssText = "font:400 28px 'Inconsolata',monospace;position:absolute;visibility:hidden;white-space:pre";
+  s.textContent = "x".repeat(100);
+  document.body.appendChild(s);
+  CW = s.getBoundingClientRect().width / 100;
+  s.remove();
+}
+const CODE_X = 84, CODE_Y = 18, LH = 42;
+
+function localPoint(target) {
+  if (Array.isArray(target)) return target;
+  const sr = scene.getBoundingClientRect(), k = sr.width / 1920;
+  if (target.startsWith("@")) {
+    // "@line:col" — a character cell inside the code editor.
+    const [l, c] = target.slice(1).split(":").map(Number);
+    const cr = $("#code").getBoundingClientRect();
+    return [(cr.left - sr.left) / k + CODE_X + c * CW, (cr.top - sr.top) / k + CODE_Y + l * LH + LH * 0.62];
+  }
+  const r = $(target).getBoundingClientRect();
+  return [(r.left + r.width / 2 - sr.left) / k, (r.top + r.height / 2 - sr.top) / k];
+}
+function pointerAt(t) {
+  let pos = localPoint(POINTER[0][2]);
+  for (let i = 1; i < POINTER.length; i++) {
+    const [at, travel, target] = POINTER[i];
+    if (t < at - travel) break;
+    const to = localPoint(target);
+    const x = travel > 0 ? ez(p(t, at - travel, at)) : 1;
+    // Hands move in arcs, not rulers: bow each move sideways, alternating direction.
+    const dx = to[0] - pos[0], dy = to[1] - pos[1];
+    const bow = Math.sin(Math.PI * x) * 0.14 * (i % 2 ? 1 : -1);
+    pos = [lerp(pos[0], to[0], x) - dy * bow, lerp(pos[1], to[1], x) + dx * bow];
+  }
+  return pos;
+}
+
+/* ------------------------------------------------------------------- seek */
+function seek(t) {
+  t = clamp(t, 0, DURATION);
+  // End card: fades in over the finished story, then fades out onto the very
+  // first frame so the loop point is invisible.
+  const outroO = t < OUTRO_OUT ? p(t, C.outro, C.outro + 0.8) : 1 - p(t, OUTRO_OUT, DURATION);
+  show($("#outro"), outroO, t < OUTRO_OUT ? 20 : 0, t < OUTRO_OUT ? 0.985 : 1);
+  applyScene(t >= OUTRO_OUT ? 0 : t);
+}
+
+function applyScene(t) {
+  const env = envAt(t);
+
+  // Scene camera.
+  const [fx, fy, z] = track(CAM, t);
+  scene.style.transform = `translate(${960 - fx * z}px, ${472 - fy * z}px) scale(${z})`;
+
+  // Caption band. It is visible from the first frame so the loop point matches.
+  // Chapter navigation lives on the page around the video, not in it.
+  const caps = $("#caption").children;
+  CHAPTERS.forEach((c, i) => {
+    const first = i === 0, last = i === CHAPTERS.length - 1;
+    const o = Math.min(first ? 1 : p(t, c.a, c.a + 0.35), last ? 1 - p(t, C.outro - 0.2, C.outro + 0.2) : 1 - p(t, c.b - 0.35, c.b));
+    show(caps[i], o, 14);
+  });
+  $("#band").style.opacity = 1 - p(t, C.outro - 0.2, C.outro + 0.3);
+
+  // ---- Top bar: nav, environment, primary action.
+  const onSchedules = t >= C.sched + 0.85;
+  $("#nav-build").classList.toggle("on", !onSchedules);
+  $("#nav-run").classList.toggle("on", onSchedules);
+  const envchip = $("#envchip");
+  envchip.classList.toggle("prod", env === "prod");
+  envchip.querySelector(".lbl").textContent = env;
+  $("#envlock").style.display = env === "prod" ? "" : "none";
+  const envmenu = $("#envmenu");
+  envmenu.style.left = `${$("#envchip").offsetLeft - 100}px`;
+  show(envmenu, win(t, C.deploy + 1.0, C.deploy + 2.05, 0.15), -8, 0.97);
+  $("#env-prod").classList.toggle("hl", t > C.deploy + 1.55);
+  $("#changes").textContent = t < C.discover + 6.25 ? "0" : t < C.discover + 8.05 ? "1" : t < C.build + 2.0 ? "2" : "3";
+
+  // ---- Data browser.
+  $("#browser").style.transform = `translateX(${-432 * ez(p(t, C.build, C.build + 0.8))}px)`;
+  const expand = ez(p(t, C.discover + 1.25, C.discover + 1.8));
+  $("#kids-pg").style.height = `${expand * 5 * 42.5}px`;
+  $("#chev-pg").style.transform = `rotate(${expand * 90}deg)`;
+  $("#db-pg").classList.toggle("hl", t > C.discover + 0.8 && t < C.discover + 1.8);
+  $("#db-orders").classList.toggle("sel", t >= C.discover + 2.6 && t < C.discover + 6.4);
+  $("#db-orders").classList.toggle("hl", t > C.discover + 2.2 && t < C.discover + 2.6);
+  $("#db-customers").classList.toggle("sel", t >= C.discover + 6.6 && t < C.discover + 8.2);
+  const peek = $("#peek");
+  show(peek, win(t, C.discover + 2.7, C.discover + 5.3, 0.3), 10, 0.97);
+  peek.style.left = "446px"; peek.style.top = "196px";
+
+  // ---- Canvas pan.
+  const [tx, ty, cs] = track(CANVAS, t);
+  world.style.transform = `translate(${tx}px, ${ty}px) scale(${cs})`;
+  canvas.style.backgroundPosition = `${tx}px ${ty}px`;
+  canvas.style.backgroundSize = `${28 * cs}px ${28 * cs}px`;
+
+  // Drop zone shows while dragging, at the slot the next node will land in.
+  const dz = $("#dropzone");
+  const drag = DRAGS.find((d) => t >= d.a && t < d.b + 0.15);
+  const slot = t < C.discover + 6.5 ? NODES.orders : NODES.customers;
+  dz.style.left = `${slot.x}px`; dz.style.top = `${slot.y}px`;
+  dz.style.opacity = drag ? p(t, drag.a + 0.3, drag.a + 0.6) : 0;
+
+  // Nodes.
+  const nodeIn = { orders: C.discover + 6.25, customers: C.discover + 8.05, rev: C.build + 2.0 };
+  for (const [key, n] of Object.entries(NODES)) {
+    const a = nodeIn[key];
+    const o = eo(p(t, a, a + 0.35));
+    n.el.style.left = `${n.x}px`; n.el.style.top = `${n.y}px`;
+    n.el.style.opacity = o;
+    n.el.style.visibility = o > 0 ? "visible" : "hidden";
+    n.el.style.transform = `scale(${lerp(0.9, 1, o)})`;
+  }
+  for (const key of ["orders", "customers"]) {
+    const n = NODES[key], st = stateAt(key, t);
+    n.el.innerHTML = nodeHTML(n, n.name, badge(st, t), progressBar(st, t));
+  }
+  {
+    const n = NODES.rev, st = stateAt("rev", t);
+    const typedName = n.name.slice(0, Math.floor(n.name.length * p(t, C.build + 2.15, C.build + 2.9)));
+    const bad = t >= C.check + 0.1 && t < C.check + 2.8;
+    n.el.innerHTML = nodeHTML(n, typedName || " ", bad ? B_ERR : badge(st, t), progressBar(st, t));
+    n.el.classList.toggle("sel", t >= C.build + 3.2 && t < C.run + 0.4 && !bad);
+    n.el.classList.toggle("bad", bad);
+  }
+  NODES.orders.el.classList.toggle("sel", (t >= C.build + 0.3 && t < C.build + 2.0) || (t >= C.stale + 0.8 && t < C.stale + 3.4));
+  for (const [key, at] of [["orders", EDGE1_AT], ["customers", EDGE2_AT]]) {
+    const k = linkAt(t, at);
+    NODES[key].el.style.boxShadow = k > 0 ? `0 0 0 ${3 * k}px color-mix(in oklab, var(--tbl) 55%, transparent), 0 0 ${28 * k}px color-mix(in oklab, var(--tbl) 35%, transparent)` : "";
+  }
+  // Per-frame extras re-attached after the node bodies are rebuilt.
+  NODES.orders.el.appendChild(plus);
+  show(plus, win(t, C.build + 0.3, C.build + 2.1, 0.25), 0, 0.6);
+  NODES.customers.el.appendChild(skip);
+  show(skip, win(t, C.stale + 4.0, C.stale + 6.6, 0.3), 6);
+  const menu = $("#menu");
+  menu.style.left = `${NODES.orders.x + NODE_W + 32}px`; menu.style.top = `${NODES.orders.y + 10}px`;
+  show(menu, win(t, C.build + 1.1, C.build + 2.05, 0.18), -8, 0.96);
+  $("#menu-sql").classList.toggle("hl", t > C.build + 1.5);
+
+  // Edges: drawn when the SQL that names each table is typed; pulses during runs.
+  const running = (a, b) => t >= a && t < b;
+  drawEdge(E1, E1L, eo(p(t, EDGE1_AT, EDGE1_AT + 0.7)), running(C.run + 3.4, C.run + 5.7) || running(C.stale + 4.6, C.stale + 6.2), linkAt(t, EDGE1_AT));
+  drawEdge(E2, E2L, eo(p(t, EDGE2_AT, EDGE2_AT + 0.7)), running(C.run + 3.6, C.run + 5.7), linkAt(t, EDGE2_AT));
+  pulse($("#p1"), E1, E1L, Math.max(p(t, C.run + 3.4, C.run + 4.3) % 1, p(t, C.stale + 4.6, C.stale + 5.3) % 1));
+  pulse($("#p2"), E2, E2L, p(t, C.run + 3.6, C.run + 4.5) % 1);
+  pulse($("#p3"), E1, E1L, p(t, C.stale + 2.2, C.stale + 2.95) % 1);
+
+  // Results drawer.
+  $("#results").style.transform = `translateY(${(1 - ez(p(t, C.run + 5.1, C.run + 5.6)) * (1 - ez(p(t, C.stale, C.stale + 0.5)))) * 340}px)`;
+
+  // ---- Staleness: edit raw.orders, watch the change propagate, build only what is stale.
+  const insp = $("#inspect");
+  insp.style.left = `${NODES.orders.x + NODE_W + 30}px`; insp.style.top = `${NODES.orders.y - 36}px`;
+  show(insp, win(t, C.stale + 0.9, C.stale + 3.3, 0.25), -8, 0.97);
+  const colName = "refunded_at";
+  const typed = colName.slice(0, Math.floor(colName.length * p(t, C.stale + 1.3, C.stale + 1.85)));
+  const newcol = $("#newcol");
+  newcol.children[0].textContent = typed ? `+ ${typed}` : "";
+  newcol.children[1].textContent = t >= C.stale + 1.9 ? "TIMESTAMP" : "";
+  newcol.style.opacity = t >= C.stale + 1.25 ? 1 : 0;
+  const bar = $("#stalebar");
+  const clean = t >= C.stale + 5.6;
+  bar.classList.toggle("clean", clean);
+  bar.querySelector(".msg").textContent = clean ? "All assets fresh" : t >= C.stale + 3.9 ? "Building 2 stale assets…" : "2 stale assets";
+  $("#buildstale").style.display = clean ? "none" : "";
+  const barO = win(t, C.stale + 3.0, C.stale + 6.9, 0.3);
+  bar.style.opacity = barO; bar.style.visibility = barO > 0 ? "visible" : "hidden";
+  bar.style.transform = `translateX(-50%) translateY(${(1 - barO) * 16}px)`;
+
+  // ---- Editor.
+  const ed = $("#editor");
+  const edIn = ez(p(t, C.build + 3.4, C.build + 4.2)) * (1 - ez(p(t, C.run, C.run + 0.8)));
+  ed.style.transform = `translateX(${(1 - edIn) * 1080}px)`;
+  ed.style.visibility = edIn > 0 ? "visible" : "hidden";
+
+  const doc = docAt(t);
+  const squiggle = t >= C.check + 0.1 && t < C.check + 2.7 ? "total_amout" : null;
+  // The table name glows while its edge draws on the canvas: the SQL is the graph.
+  const glow = t >= EDGE1_AT && t < EDGE1_AT + LINK ? "raw.orders" : t >= EDGE2_AT && t < EDGE2_AT + LINK ? "raw.customers" : null;
+  linesEl.innerHTML = doc.lines
+    .map((l, i) => `<div class="ln${i === doc.cl ? " cur" : ""}"><span class="n">${i + 1}</span>${highlight(l, { squiggle, glow })}</div>`)
+    .join("");
+  // Caret blinks only while idle.
+  const idle = t - doc.lastEdit;
+  const blinkOn = idle < 0.5 || Math.floor((idle - 0.5) / 0.5) % 2 === 0;
+  caret.style.left = `${CODE_X + doc.cc * CW}px`;
+  caret.style.top = `${CODE_Y + doc.cl * LH + 5}px`;
+  caret.style.opacity = t > C.build + 4.2 && t < C.run && blinkOn ? 1 : 0;
+  // Brief highlight on accepted completions / quick fix.
+  const flashes = [[C.intel + 2.2, 1, 2, 15], [C.intel + 3.6, 2, 2, 9], [C.check + 2.7, 3, 8, 12], [C.jinja + 2.7, 6, 22, 18]];
+  const f = flashes.find(([a]) => t >= a && t < a + 0.8);
+  if (f) {
+    flash.style.opacity = 1 - p(t, f[0], f[0] + 0.8);
+    flash.style.left = `${CODE_X + f[2] * CW - 3}px`; flash.style.top = `${CODE_Y + f[1] * LH}px`;
+    flash.style.width = `${f[3] * CW + 6}px`;
+  } else flash.style.opacity = 0;
+
+  // Completion popups.
+  const COMPLETIONS = [
+    { a: C.intel + 0.7, b: C.intel + 2.25, line: 1, col: 4, sel: t < C.intel + 1.35 ? 0 : 1, items: [
+      ["customer_id", "INTEGER"], ["customer_name", "VARCHAR"], ["country", "VARCHAR"], ["email", "VARCHAR"], ["created_at", "TIMESTAMP"]] },
+    { a: C.intel + 2.9, b: C.intel + 3.65, line: 2, col: 6, sel: 0, items: [["country", "VARCHAR"]] },
+    { a: C.jinja + 1.65, b: C.jinja + 2.75, line: 6, col: 26, sel: 0, jinja: true, items: [
+      ["start_date", "2026-09-01"], ["end_date", "2026-09-26"], ["start_timestamp", "2026-09-01 00:00"], ["var.region", "'EU'"]] },
+  ];
+  const cp = COMPLETIONS.find((c) => t >= c.a && t < c.b);
+  if (cp) {
+    const it = cp.items[cp.sel];
+    complete.querySelector(".list").innerHTML = cp.items
+      .map(([n, ty], i) => `<div class="it${i === cp.sel ? " hl" : ""}"><svg class="i cube${cp.jinja ? " j" : ""}" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>${esc(n)}<span class="ty">${esc(ty)}</span></div>`)
+      .join("");
+    complete.querySelector(".doc").innerHTML = cp.jinja
+      ? `<b>${it[0]}</b><span class="tyl">date</span><div>Start of the run's data interval.</div><div class="lin">This run: <span class="t-s mono">${it[1]}</span></div>`
+      : `<b>c.${it[0]}</b><span class="tyl">${it[1]}</span><div>From upstream asset</div><div class="lin"><span class="t-tbl">raw.customers</span></div><div class="lin" style="color:var(--faint)">shop_postgres · public.customers</div>`;
+    complete.style.left = `${CODE_X + (cp.col - 2) * CW}px`;
+    complete.style.top = `${56 + CODE_Y + (cp.line + 1) * LH + 6}px`;
+    show(complete, Math.min(p(t, cp.a, cp.a + 0.12), 1 - p(t, cp.b - 0.06, cp.b)), -6, 0.98);
+  } else show(complete, 0);
+
+  // Diagnostic hover + quick fix.
+  diag.style.left = `${CODE_X + 4 * CW}px`;
+  diag.style.top = `${56 + CODE_Y + 4 * LH + 8}px`;
+  show(diag, win(t, C.check + 0.7, C.check + 2.75, 0.2), -6, 0.98);
+
+  // Jinja render preview.
+  render.style.left = `${CODE_X + 8 * CW}px`;
+  render.style.top = `${56 + CODE_Y + 7 * LH + 8}px`;
+  show(render, win(t, C.jinja + 3.0, C.jinja + 4.9, 0.25), -6, 0.98);
+
+  // Type-check state.
+  const tc = $("#tc"), probs = $("#probs"), deps = $("#deps");
+  const hasDoc = t >= C.build + 4.4;
+  const e2done = typedAt(OPS[1], OPS[1].type);
+  let state = "wait";
+  if (t >= C.check + 0.1 && t < C.check + 2.7) state = "bad";
+  else if ((t >= C.check + 2.7 && t < C.check + 3.1) || (t >= C.jinja + 5.6 && t < C.jinja + 5.9) || (t >= e2done && t < e2done + 0.4)) state = "checking";
+  else if (t >= e2done + 0.4) state = "ok";
+  tc.className = state === "bad" ? "bad" : state === "ok" ? "ok" : "wait";
+  tc.innerHTML = !hasDoc ? "Type check" :
+    state === "bad" ? `<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg>1 problem` :
+    state === "ok" ? `<svg class="i" viewBox="0 0 24 24"><path d="M5 12l4 4 10-10"/></svg>Pipeline type-checked` :
+    `${spinner(t)}Checking…`;
+  probs.className = `p ${state === "bad" ? "bad" : state === "ok" ? "ok" : ""}`;
+  probs.innerHTML = state === "bad" ? "✕ 1 problem" : state === "ok" ? "✓ No problems" : "";
+  const nDeps = (t >= EDGE1_AT ? 1 : 0) + (t >= EDGE2_AT ? 1 : 0);
+  deps.innerHTML = nDeps ? `Depends on <span class="t-tbl mono">raw.orders</span>${nDeps > 1 ? ` <span class="t-tbl mono">raw.customers</span>` : ""}` : "";
+
+  // Output schema appears once the query type-checks cleanly.
+  const cols = t >= C.check + 3.1 ? [["customer_name", "VARCHAR"], ["country", "VARCHAR"], ["revenue", "DECIMAL(38,2)"]]
+    : t >= C.intel + 3.7 && t < C.check ? [["customer_name", "VARCHAR"], ["country", "VARCHAR"]]
+    : t >= C.intel + 2.3 && t < C.check ? [["customer_name", "VARCHAR"]] : [];
+  $("#schema").innerHTML = cols.length ? `Output<span style="width:4px"></span>` + cols.map(([n, ty]) => `<span class="c">${n}<i>${ty}</i></span>`).join("") : "";
+
+  // ---- Run review dialog.
+  show($("#runreview"), win(t, C.run + 0.8, C.run + 2.15, 0.2), 0, 1);
+
+  // ---- Deploy review sheet; after Deploy it shows the result until View schedules.
+  const rv = $("#review");
+  const rvIn = ez(p(t, C.deploy + 2.8, C.deploy + 3.3)) * (1 - ez(p(t, C.sched + 0.85, C.sched + 1.2)));
+  rv.style.transform = `translateX(${(1 - rvIn) * 860}px)`;
+  rv.style.visibility = rvIn > 0 ? "visible" : "hidden";
+  show($("#rv-result"), p(t, C.deploy + 5.4, C.deploy + 5.7));
+  const deployed = t >= C.deploy + 5.5 && t < OUTRO_OUT;
+  $("#deploytop .lbl").textContent = deployed ? "Deployed" : "Deploy";
+  $("#deploytop").style.color = deployed ? "var(--accent-strong)" : "";
+
+  // ---- Schedules page.
+  const sc = $("#sched");
+  const scO = p(t, C.sched + 0.85, C.sched + 1.25);
+  sc.style.opacity = scO; sc.style.visibility = scO > 0 ? "visible" : "hidden";
+  const cron = "0 6 * * *";
+  const cronTyped = cron.slice(0, Math.floor(cron.length * p(t, C.sched + 1.45, C.sched + 2.15)));
+  $("#cron .v").textContent = cronTyped;
+  $("#cron").classList.toggle("focus", t >= C.sched + 1.3 && t < C.sched + 2.9);
+  $("#cron .c").style.opacity = t >= C.sched + 1.3 && t < C.sched + 2.9 && (t < C.sched + 2.15 || Math.floor(t * 2) % 2 === 0) ? 1 : 0;
+  $("#cronhelp").textContent = t >= C.sched + 2.2 ? "Every day at 06:00 · Europe/Berlin" : "";
+  const created = t >= C.sched + 3.05;
+  $("#tlempty").style.opacity = created ? 0 : 1;
+  $("#tlbadge").innerHTML = created ? `<span class="dot" style="background:var(--accent-strong)"></span>acme_shop · prod · deployment #1` : "Nothing scheduled";
+  const runStart = C.sched + 4.6, runEnd = C.sched + 5.3;
+  DAYS.forEach((_, i) => {
+    const s = $(`#slot${i}`);
+    const o = eo(p(t, C.sched + 3.1 + i * 0.07, C.sched + 3.4 + i * 0.07));
+    s.style.opacity = o; s.style.transform = `scale(${lerp(0.5, 1, o)})`;
+    const done = i === 0 && t >= runEnd, run = i === 0 && t >= runStart && !done;
+    s.className = `slot${done ? " done" : run ? " running" : i === (t >= runEnd ? 1 : 0) ? " next" : ""}`;
+    s.innerHTML = done ? "✓" : run ? spinner(t) : "";
+  });
+  // Time-lapse playhead: from "now" (Sat 16:00) to Sunday 06:00 when the first run fires.
+  const now = $("#now");
+  const lapse = ez(p(t, C.sched + 3.5, runStart));
+  const dayW = 100 / 7;
+  now.style.left = `${lerp(-dayW * 0.35, dayW * 0.3, lapse)}%`;
+  now.style.opacity = created ? 1 : 0;
+  const hours = 16 + lapse * 14;
+  now.querySelector("span").textContent = `${hours < 24 ? "Sat" : "Sun"} ${String(Math.floor(hours % 24)).padStart(2, "0")}:${String(Math.floor((hours % 1) * 60)).padStart(2, "0")}`;
+  $("#runcard").innerHTML = t >= runEnd
+    ? `<div class="rh"><span class="ok">✓</span>Sun 27, 06:00 · Success</div><div>3 assets · 14 s · deployment #1</div><div>Next scheduled run · Mon 28, 06:00</div>`
+    : created ? `<div class="rh" style="color:var(--muted)">Next scheduled run · Sun 27, 06:00</div>` : "";
+  $("#runcard").style.opacity = created ? 1 : 0;
+
+  // Pointer, ripple, drag ghost.
+  const [px, py] = pointerAt(t);
+  const pointerO = p(t, 0.3, 0.7) * (1 - p(t, C.outro - 0.4, C.outro + 0.2));
+  const click = CLICKS.find((c) => t >= c - 0.08 && t < c + 0.5);
+  const press = click ? 1 - 0.14 * Math.sin(Math.PI * p(t, click - 0.08, click + 0.12)) : 1;
+  pointer.style.opacity = pointerO;
+  pointer.style.transform = `translate(${px - 5}px, ${py - 3}px) scale(${press})`;
+  if (click && t >= click) {
+    const r = p(t, click, click + 0.5);
+    ripple.style.opacity = (1 - r) * 0.9 * pointerO;
+    ripple.style.transform = `translate(${px - 30}px, ${py - 30}px) scale(${lerp(0.3, 1.2, eo(r))})`;
+  } else ripple.style.opacity = 0;
+  if (drag && t < drag.b) {
+    ghost.style.opacity = p(t, drag.a, drag.a + 0.15);
+    ghost.querySelector("span").textContent = drag.label;
+    ghost.style.transform = `translate(${px + 18}px, ${py + 14}px) rotate(-2deg)`;
+  } else ghost.style.opacity = 0;
+}
+
+window.DURATION = DURATION;
+window.CHAPTERS = CHAPTERS;
+window.seek = seek;
+window.ready = document.fonts.ready.then(() => {
+  // Wait for the logo too, so the first captured frame is complete.
+  const imgs = [...document.images].map((i) => (i.complete ? null : new Promise((r) => (i.onload = i.onerror = r))));
+  return Promise.all(imgs).then(() => { measure(); seek(0); });
+});
+
+// Preview mode: fit to window, ?t= to seek, ?play to run in real time.
+if (!params.has("capture")) {
+  const fit = () => { $("#stage").style.transform = `scale(${Math.min(innerWidth / 1920, innerHeight / 1080)})`; };
+  addEventListener("resize", fit); fit();
+  window.ready.then(() => {
+    const t0 = Number(params.get("t") || 0);
+    if (params.has("play")) {
+      const start = performance.now() - t0 * 1000;
+      const loop = () => { seek(((performance.now() - start) / 1000) % DURATION); requestAnimationFrame(loop); };
+      loop();
+    } else seek(t0);
+  });
+}
+</script>
+</body>
+</html>

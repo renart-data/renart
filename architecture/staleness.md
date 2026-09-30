@@ -518,6 +518,12 @@ remains `/api/snapshots/{versionId}/file`; status also reports whether the lates
 snapshot is executable so identical-but-corrupt content can be repaired by a
 new Deploy instead of dead-ending the UI.
 
+A reviewed deploy request may also list schedules, each with the deployment it
+used at review time. The handler checks scheduler ownership before writing a
+snapshot, deploys, then runs the ordinary promotion compare-and-swap against
+the resulting version. A promotion failure is reported beside the successful
+deployment (`schedule_error`) instead of undoing it.
+
 Deployment planning additionally performs a read-only semantic comparison with
 the latest deployed snapshot. The planner materializes that exact baseline,
 builds the same filesystem SQL graph and bounded output-schema fixpoint for
@@ -643,10 +649,13 @@ fail-closed compatibility safeguard, not a hot standby; automatic takeover and
 cross-process handoff are intentionally not implemented.
 
 The schedules UI compares each row's pinned snapshot with the pipeline's latest
-deployed version. A differing pin is shown as **Older deployment**, independently
-of data freshness and last-run status. Repair/update opens the saved-source
-deployment review; after deployment the user explicitly selects zero or more
-schedules not yet using it. The server validates the target deployment and
+deployed version. A differing pin is shown as **Update available**, independently
+of data freshness and last-run status, and **Use #N** promotes that one row to
+the latest executable deployment directly, because that deployment was reviewed
+when it was created. Rows without a pin offer **Deploy**, corrupt pins offer
+**Repair**, and every row's menu offers **Deploy changes…**; each opens the
+saved-source deployment review, whose schedule checkboxes select the rows the
+deploy request promotes. The server validates the target deployment and
 the selected deployment's cross-pipeline URI ownership against every
 same-environment producer deployment, then compare-and-swaps all selected rows
 in one transaction. A changed binding or concurrently changed pin rejects the

@@ -1,6 +1,6 @@
 # Documentation structure: three options
 
-Status: proposals for Lukas to choose. No public pages, URLs or sidebar have been moved. Inventory: 24 documentation pages in eight sidebar groups on 22 September 2026.
+Status: option A chosen on 27 September 2026 (see [Landing page and docs improvements](landing-and-docs-improvements.md)). Rollout step 1 (navigation and docs index) is done; URLs, page titles and anchors are unchanged. Steps 2–4 remain. Inventory: 24 documentation pages in eight sidebar groups on 22 September 2026.
 
 ## What is awkward today
 
@@ -111,7 +111,7 @@ Preserve every current URL in the first pass. This table maps all 24 existing pa
 
 ## Rollout and acceptance
 
-1. **Navigation only (half a day):** select A/B/C, reorder and relabel sidebar, improve the docs index with three entry points (first pipeline, bring existing data, explore in a notebook). Keep existing slugs and heading anchors.
+1. **Navigation only (half a day) — done 27 September 2026:** select A/B/C, reorder and relabel sidebar, improve the docs index with three entry points (first pipeline, bring existing data, explore in a notebook). Keep existing slugs and heading anchors.
 2. **Separate overloaded guides (1–2 days):** split notebooks, presentations and scheduling using existing verified steps. Keep the original pages as useful hubs and preserve old anchored links with targeted sections/redirects when necessary. No mass URL rename for cosmetic folder consistency.
 3. **Close evidence-backed gaps (1–2 days):** document Data Browser, result limits and resolving unavailable credentials once the corresponding behavior is established. Add task-focused troubleshooting based on real failure modes, not a generic FAQ.
 4. **Verify:** internal links/anchors and search results, mobile sidebar, keyboard navigation, a first-time reader path from installation through a successful run, and dark/light screenshots from the documented capture workflow. Build Astro and smoke the production Docker/Caddy path; HTTP 200 alone is not a rendering test.

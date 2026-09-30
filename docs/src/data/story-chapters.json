@@ -1,0 +1,68 @@
+{
+  "duration": 64.4,
+  "chapters": [
+    {
+      "name": "Discover",
+      "title": "Start from the data you already have.",
+      "description": "Browse every connected warehouse and file, then drag a table onto the canvas.",
+      "start": 0,
+      "end": 8.6
+    },
+    {
+      "name": "Build",
+      "title": "Build on a canvas, in plain SQL.",
+      "description": "Add steps visually. Table names in your SQL become the dependencies.",
+      "start": 8.6,
+      "end": 17.2
+    },
+    {
+      "name": "Intellisense",
+      "title": "Complete columns, not guesses.",
+      "description": "Column-level completions with types that flow from upstream assets.",
+      "start": 17.2,
+      "end": 22.5
+    },
+    {
+      "name": "Type check",
+      "title": "Catch mistakes as you type.",
+      "description": "The whole pipeline is type-checked before anything runs.",
+      "start": 22.5,
+      "end": 27
+    },
+    {
+      "name": "Jinja",
+      "title": "Template with Jinja.",
+      "description": "Variables complete and render inline, and the rendered SQL is checked too.",
+      "start": 27,
+      "end": 33.2
+    },
+    {
+      "name": "Run",
+      "title": "Run it, see the results.",
+      "description": "Every asset reports fresh data, row counts and output types.",
+      "start": 33.2,
+      "end": 39.2
+    },
+    {
+      "name": "Staleness",
+      "title": "Only rebuild what changed.",
+      "description": "Edits mark downstream assets stale. Build stale skips everything still fresh.",
+      "start": 39.2,
+      "end": 46.4
+    },
+    {
+      "name": "Deploy",
+      "title": "Review it, then ship it.",
+      "description": "Review the changes, then deploy a version for your schedules to run.",
+      "start": 46.4,
+      "end": 53.2
+    },
+    {
+      "name": "Schedule",
+      "title": "Schedule it and move on.",
+      "description": "Runs every morning in prod from the deployed version, and catches up after downtime.",
+      "start": 53.2,
+      "end": 60
+    }
+  ]
+}

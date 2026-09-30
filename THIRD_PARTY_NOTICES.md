@@ -35,34 +35,34 @@ CI verifies that the checked-in inventory is current.
 | github.com/99designs/go-keychain | v0.0.0-20191008050251-8e49817e8af4 | [license](third_party/licenses/bda882a9e8f29deea13eb8c2b25ea1edf0e4a16656182d9a698dd28df8bd15ec.txt) |
 | github.com/99designs/keyring | v1.2.2 | [license](third_party/licenses/b1eb377f13a39b7f3e8869c95901a19c325b70c9fbe4bd675c94ede6be3ab7a8.txt) |
 | github.com/alecthomas/chroma/v2 | v2.23.1 | [license](third_party/licenses/e7bf754e7153012a3a8ff697d21acd6c12e590d6a55f2aef8ee83616aa9a795f.txt) |
-| github.com/andybalholm/brotli | v1.2.1 | [license](third_party/licenses/3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94.txt) |
-| github.com/apache/arrow-adbc/go/adbc | v1.11.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| github.com/apache/arrow-go/v18 | v18.6.0 | [license](third_party/licenses/ff2fe52b8dfd2574c6ea7f0c407948c857f62672c2a3a9a17083ee10af8067ef.txt), [license](third_party/licenses/c02e3dc1587f49e4876c8b75ae9e534739a00e834b609395cc2bb2fd24452dfe.txt) |
+| github.com/andybalholm/brotli | v1.2.2 | [license](third_party/licenses/3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94.txt) |
+| github.com/apache/arrow-adbc/go/adbc | v1.12.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/apache/arrow-go/v18 | v18.7.0 | [license](third_party/licenses/ff2fe52b8dfd2574c6ea7f0c407948c857f62672c2a3a9a17083ee10af8067ef.txt), [license](third_party/licenses/c02e3dc1587f49e4876c8b75ae9e534739a00e834b609395cc2bb2fd24452dfe.txt) |
 | github.com/apache/arrow/go/v12 | v12.0.1 | [license](third_party/licenses/44d90a666995d20b37141973bf1193685cc9a5eb39ffa9492f53fd8b65b7ebd1.txt) |
 | github.com/apache/arrow/go/v15 | v15.0.2 | [license](third_party/licenses/bd939b3a0ca7ffedd7444240915f4f297f09739fa9d07bac8c85ec4ea8c94c35.txt) |
 | github.com/apache/thrift | v0.24.0 | [license](third_party/licenses/89aa7b27868669299bd8a6c53b72ec4beadce42dad6c8336797cc26e1e8df98d.txt), [license](third_party/licenses/c2534e065069887565f871f0648b013a7e5f4a422809faf4ae3c590b7c0bf561.txt) |
 | github.com/aws/aws-sdk-go | v1.55.6 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/a6e830174d62dafad3a718384772ea1f4c0e27989f050932dc442a5e3ddad080.txt) |
-| github.com/aws/aws-sdk-go-v2 | v1.42.1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/a6e830174d62dafad3a718384772ea1f4c0e27989f050932dc442a5e3ddad080.txt) |
-| github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream | v1.7.14 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/aws/aws-sdk-go-v2 | v1.47.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/a6e830174d62dafad3a718384772ea1f4c0e27989f050932dc442a5e3ddad080.txt) |
+| github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream | v1.7.20 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/config | v1.29.16 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/credentials | v1.17.69 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/feature/ec2/imds | v1.16.31 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/feature/s3/manager | v1.17.79 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| github.com/aws/aws-sdk-go-v2/internal/configsources | v1.4.30 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 | v2.7.30 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/aws/aws-sdk-go-v2/internal/configsources | v1.5.3 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 | v2.8.3 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/internal/ini | v1.8.3 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| github.com/aws/aws-sdk-go-v2/internal/v4a | v1.4.31 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/aws/aws-sdk-go-v2/internal/v4a | v1.5.3 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/service/emrserverless | v1.31.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding | v1.13.13 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| github.com/aws/aws-sdk-go-v2/service/internal/checksum | v1.9.23 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| github.com/aws/aws-sdk-go-v2/service/internal/presigned-url | v1.13.30 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| github.com/aws/aws-sdk-go-v2/service/internal/s3shared | v1.19.31 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding | v1.13.19 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/aws/aws-sdk-go-v2/service/internal/checksum | v1.11.3 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/aws/aws-sdk-go-v2/service/internal/presigned-url | v1.14.3 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/aws/aws-sdk-go-v2/service/internal/s3shared | v1.20.3 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/service/quicksight | v1.105.1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| github.com/aws/aws-sdk-go-v2/service/s3 | v1.105.2 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/aws/aws-sdk-go-v2/service/s3 | v1.113.2 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/service/sso | v1.25.4 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/service/ssooidc | v1.30.2 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/service/sts | v1.33.21 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| github.com/aws/smithy-go | v1.27.3 | [license](third_party/licenses/09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b.txt), [license](third_party/licenses/d4290ed64c2edd0fce1d84e3f9dfb2881240fe534def76b8cd29ed6af683e287.txt) |
+| github.com/aws/smithy-go | v1.28.1 | [license](third_party/licenses/09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b.txt), [license](third_party/licenses/d4290ed64c2edd0fce1d84e3f9dfb2881240fe534def76b8cd29ed6af683e287.txt) |
 | github.com/Azure/azure-sdk-for-go/sdk/azcore | v1.21.1 | [license](third_party/licenses/646f8936b8ddcd14e13e578ff6857e368780b0d1a4f6066bee89211923a373e2.txt) |
 | github.com/Azure/azure-sdk-for-go/sdk/azidentity | v1.13.1 | [license](third_party/licenses/646f8936b8ddcd14e13e578ff6857e368780b0d1a4f6066bee89211923a373e2.txt) |
 | github.com/Azure/azure-sdk-for-go/sdk/internal | v1.12.0 | [license](third_party/licenses/646f8936b8ddcd14e13e578ff6857e368780b0d1a4f6066bee89211923a373e2.txt) |
@@ -113,7 +113,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/go-jose/go-jose/v4 | v4.1.4 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/go-logr/logr | v1.4.4 | [license](third_party/licenses/b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1.txt) |
 | github.com/go-logr/stdr | v1.2.2 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
-| github.com/go-sql-driver/mysql | v1.10.0 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
+| github.com/go-sql-driver/mysql | v1.10.1 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
 | github.com/go-viper/mapstructure/v2 | v2.5.0 | [license](third_party/licenses/22adc4abdece712a737573672f082fd61ac2b21df878efb87ffcff4354a07f26.txt) |
 | github.com/goccy/go-json | v0.10.6 | [license](third_party/licenses/a707cd425201945d57500566c47c74dc9fb8cd02ef91b9a761abddeb2401e6a7.txt) |
 | github.com/godbus/dbus/v5 | v5.2.2 | [license](third_party/licenses/e4646a82a976369d7ae8f6ed5c11d35dc0af18433a8ccc24c85b459ad8b95128.txt) |
@@ -153,8 +153,8 @@ CI verifies that the checked-in inventory is current.
 | github.com/jmoiron/sqlx | v1.4.0 | [license](third_party/licenses/49e443076c19384a2566592a52a7537cdcc7c39a11ef2d7c2de59e2c50d84e5c.txt) |
 | github.com/json-iterator/go | v1.1.12 | [license](third_party/licenses/3247931083f058b00760a3c32a9ca0962c05e4d562ad2ffcc1753451fa8d4486.txt) |
 | github.com/kevinburke/ssh_config | v1.2.0 | [license](third_party/licenses/a15a6f732df3a033a71853ce1d255bd671f00fbc537fa629b78d71baecda0ace.txt) |
-| github.com/klauspost/compress | v1.18.7 | [license](third_party/licenses/0d9e582ee4bff57bf1189c9e514e6da7ce277f9cd3bc2d488b22fbb39a6d87cf.txt) |
-| github.com/klauspost/cpuid/v2 | v2.3.0 | [license](third_party/licenses/52e4fc775654aae603e3bcef474e4c34b94d8e14577372b05e48f5a96ffb46d8.txt) |
+| github.com/klauspost/compress | v1.19.0 | [license](third_party/licenses/0d9e582ee4bff57bf1189c9e514e6da7ce277f9cd3bc2d488b22fbb39a6d87cf.txt) |
+| github.com/klauspost/cpuid/v2 | v2.4.0 | [license](third_party/licenses/52e4fc775654aae603e3bcef474e4c34b94d8e14577372b05e48f5a96ffb46d8.txt) |
 | github.com/kluctl/go-embed-python | v0.0.0-3.14.6-20260610-1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/kylelemons/godebug | v1.1.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/mailru/easyjson | v0.9.0 | [license](third_party/licenses/87baa92c3100cf37441761262d622db99492ee386a063460d4676143db49af57.txt) |
@@ -176,7 +176,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/paulmach/orb | v0.13.0 | [license](third_party/licenses/91d97518f7a7bd54f8f5fa763a1ae268d23477f37317d787e348d66f56ff7b42.txt) |
 | github.com/pelletier/go-toml/v2 | v2.4.3 | [license](third_party/licenses/26844e4b53c5adec04e557fd7dfef281cc0205a7d355626b1c68b778b99e9e7b.txt) |
 | github.com/pierrec/lz4 | v2.6.1+incompatible | [license](third_party/licenses/fdb37e402bf5ba42e38d2e85f85517645f569962b8ae393eeb8649c73d46a780.txt) |
-| github.com/pierrec/lz4/v4 | v4.1.26 | [license](third_party/licenses/fdb37e402bf5ba42e38d2e85f85517645f569962b8ae393eeb8649c73d46a780.txt) |
+| github.com/pierrec/lz4/v4 | v4.1.27 | [license](third_party/licenses/fdb37e402bf5ba42e38d2e85f85517645f569962b8ae393eeb8649c73d46a780.txt) |
 | github.com/pjbgf/sha1cd | v0.6.0 | [license](third_party/licenses/c75aacd1e1f49bc504e3f00e7cfa58cb55d3bc7ff3d3c23f38e485da1906e0ad.txt) |
 | github.com/pkg/browser | v0.0.0-20240102092130-5ac0b6a4141c | [license](third_party/licenses/4801bb0c5d70b980b3e1f63d1d2df8d84fec22548e3d73f03a68df1fb808791f.txt) |
 | github.com/pkg/errors | v0.9.1 | [license](third_party/licenses/8d427fd87bc9579ea368fde3d49f9ca22eac857f91a9dec7e3004bdfab7dee86.txt) |
@@ -209,6 +209,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/sourcegraph/conc | v0.3.0 | [license](third_party/licenses/e3dfc7ac698a5b64eefc720531595b9d6e3f6c5da7f741ef15e453709e173ee2.txt) |
 | github.com/spf13/afero | v1.15.0 | [license](third_party/licenses/5e3400b93bbb099e83e52bab885e7441750673c21f97988ca3f1240639b63283.txt) |
 | github.com/spiffe/go-spiffe/v2 | v2.7.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
+| github.com/stoewer/go-strcase | v1.3.1 | [license](third_party/licenses/73524a55beda60fc1a5fcdb2a790652154a6d1e6a090e15f61c92e7dd9360438.txt) |
 | github.com/tetratelabs/wazero | v1.12.0 | [license](third_party/licenses/c46f033d017a5af71a1de0105ec56c41bd47f81a0bbdf779fffe316336dc7c1f.txt), [license](third_party/licenses/e6f0c5c151a3ff1eba8f5930a31ec084ca6d7adda43c8675ab81f7d36af50b4f.txt) |
 | github.com/tidwall/gjson | v1.19.0 | [license](third_party/licenses/be83ad53208d03a9fe08c7fac231cabf79422989ef5706bff217bd35104ebf07.txt) |
 | github.com/tidwall/match | v1.2.0 | [license](third_party/licenses/be83ad53208d03a9fe08c7fac231cabf79422989ef5706bff217bd35104ebf07.txt) |
@@ -252,15 +253,15 @@ CI verifies that the checked-in inventory is current.
 | go.uber.org/multierr | v1.11.0 | [license](third_party/licenses/dcdabe03bef2382a130640d1c3a4cd5ec42aba1035095c38272fde694eb72405.txt) |
 | go.uber.org/zap | v1.28.0 | [license](third_party/licenses/c2b97b3281be272711909076c8402499b4b5a3216196af47a25b1d3674d86152.txt) |
 | go.yaml.in/yaml/v3 | v3.0.5 | [license](third_party/licenses/d18f6323b71b0b768bb5e9616e36da390fbd39369a81807cca352de4e4e6aa0b.txt), [license](third_party/licenses/f6c2dd3a67b576eafb89b80200b8b1627230bf3821a0c14cb99a22ac19107d00.txt) |
-| golang.org/x/crypto | v0.56.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
+| golang.org/x/crypto | v0.57.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
 | golang.org/x/exp | v0.0.0-20260410095643-746e56fc9e2f | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
-| golang.org/x/mod | v0.40.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
-| golang.org/x/net | v0.58.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
+| golang.org/x/mod | v0.41.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
+| golang.org/x/net | v0.59.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
 | golang.org/x/oauth2 | v0.36.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
-| golang.org/x/sync | v0.22.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
-| golang.org/x/sys | v0.47.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
-| golang.org/x/term | v0.45.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
-| golang.org/x/text | v0.41.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
+| golang.org/x/sync | v0.23.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
+| golang.org/x/sys | v0.48.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
+| golang.org/x/term | v0.46.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
+| golang.org/x/text | v0.42.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
 | golang.org/x/time | v0.15.0 | [license](third_party/licenses/911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad.txt) |
 | golang.org/x/xerrors | v0.0.0-20240903120638-7835f813f4da | [license](third_party/licenses/f9a2df4fb1d45cef691b8bc2e35776f8bee5af5b3696d48d4547635d7858bf91.txt) |
 | google.golang.org/api | v0.273.1 | [license](third_party/licenses/110244b02140866ee37d17fa7449436a377ec3b85a481fbb208f4c87964382de.txt) |
@@ -360,10 +361,10 @@ CI verifies that the checked-in inventory is current.
 | @shadcn/react | 0.3.0 | MIT | [license](third_party/licenses/1564074e13439397221ffd522e2e504d56561994a23d371aa5e3ad43e4f5423f.txt) |
 | @standard-schema/spec | 1.1.0 | MIT | [license](third_party/licenses/6c19f173cf807e59ad48df621b2840bd2e2d7194d948d3cb1766f17b63335030.txt) |
 | @standard-schema/utils | 0.3.0 | MIT | [license](third_party/licenses/13dc70601979b9f8bb3f3c080e7b0aa67f947c852f3fcc5f5a97e45870f52353.txt) |
-| @tanstack/history | 1.162.3 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
-| @tanstack/react-router | 1.170.35 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
+| @tanstack/history | 1.162.4 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
+| @tanstack/react-router | 1.170.40 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
 | @tanstack/react-store | 0.11.1 | MIT | [license](third_party/licenses/cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7.txt) |
-| @tanstack/router-core | 1.171.29 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
+| @tanstack/router-core | 1.171.33 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
 | @tanstack/store | 0.11.1 | MIT | [license](third_party/licenses/cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7.txt) |
 | @tiptap/core | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
 | @tiptap/extension-blockquote | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
@@ -433,8 +434,8 @@ CI verifies that the checked-in inventory is current.
 | @types/hast | 3.0.5 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @types/mdast | 4.0.4 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @types/ms | 2.1.0 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
-| @types/react | 19.2.17 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
-| @types/react-dom | 19.2.3 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
+| @types/react | 19.3.0 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
+| @types/react-dom | 19.3.0 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @types/trusted-types | 2.0.7 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @types/unist | 2.0.11, 3.0.3 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
 | @types/use-sync-external-store | 0.0.6 | MIT | [license](third_party/licenses/c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383.txt) |
@@ -563,8 +564,8 @@ CI verifies that the checked-in inventory is current.
 | prosemirror-view | 1.42.2 | MIT | [license](third_party/licenses/ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8.txt) |
 | proxy-disposable | 1.0.0 | MIT | [license](third_party/licenses/c7e2620a17241e03c13daf7799e6cce99f406b00fd571a680d8364fa4c61b888.txt) |
 | radix-ui | 1.6.2 | MIT | [license](third_party/licenses/0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138.txt) |
-| react | 19.2.7 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
-| react-dom | 19.2.7 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
+| react | 19.3.0 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
+| react-dom | 19.3.0 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
 | react-draggable | 4.7.1 | MIT | [license](third_party/licenses/7c2fbf99ea0940afbd7dae0520e3d0ddf569a177806e3328dd56d03147c3c042.txt) |
 | react-grid-layout | 2.2.4 | MIT | [license](third_party/licenses/3883d1bc08d302413bf1b7a65e4f699f8aa68f96a5b71df3f9a0262a76a65c17.txt) |
 | react-is | 16.13.1, 19.2.7 | MIT | [license](third_party/licenses/52412d7bc7ce4157ea628bbaacb8829e0a9cb3c58f57f99176126bc8cf2bfc85.txt) |
@@ -584,7 +585,7 @@ CI verifies that the checked-in inventory is current.
 | reselect | 5.2.0 | MIT | [license](third_party/licenses/e98047a5dee068b33f82e8c4b7a63037b5108c93393198efd4097753004af5dd.txt) |
 | resize-observer-polyfill | 1.5.1 | MIT | [license](third_party/licenses/d4a3c7b4df459e01283ff47eeadf576b6486254bb392893abf77bbfd14bd339a.txt) |
 | rope-sequence | 1.3.4 | MIT | [license](third_party/licenses/530424aebdd0e73f53238d1f89df250057bc8d8ce090cf5954197fadce5bf226.txt) |
-| scheduler | 0.27.0 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
+| scheduler | 0.28.0 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
 | seroval | 1.6.7 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
 | seroval-plugins | 1.6.7 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
 | space-separated-tokens | 2.0.2 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |

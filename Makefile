@@ -8,7 +8,7 @@ RENART_CACHE_HOME ?= $(if $(XDG_CACHE_HOME),$(XDG_CACHE_HOME),$(HOME)/.cache)
 HOST_SQLPARSER_TARGET = $(shell $(GO) env GOOS)-$(shell $(GO) env GOARCH)
 BRUIN_SQLPARSER_STUB_LIB_DIR = $(RENART_CACHE_HOME)/renart/bruin-sqlparser-stub/$(HOST_SQLPARSER_TARGET)/release
 
-.PHONY: help dev build test check release-check architecture-check licenses licenses-check bruin-sqlparser-stub go-build go-test standalone-build web-install web-build web-typecheck web-test-live notebook-agent-eval docs-install docs-build docs-dev docs-preview vscode-install landing-media docs-media cli-recordings docs-docker docs-docker-run sync-install clean
+.PHONY: help dev build test check release-check architecture-check licenses licenses-check bruin-sqlparser-stub go-build go-test standalone-build web-install web-build web-typecheck web-test-live notebook-agent-eval docs-install docs-build docs-dev docs-preview vscode-install landing-media landing-video docs-media cli-recordings docs-docker docs-docker-run sync-install clean
 
 help:
 	@printf "Renart build targets\n\n"
@@ -31,6 +31,7 @@ help:
 	@printf "  make docs-dev          Start docs dev server\n"
 	@printf "  make vscode-install    Install VS Code extension dependencies\n"
 	@printf "  make landing-media     Regenerate landing media\n"
+	@printf "  make landing-video     Render the landing story video\n"
 	@printf "  make docs-media        Regenerate docs screenshots\n"
 	@printf "  make cli-recordings    Regenerate interactive CLI recordings\n"
 	@printf "  make docs-docker       Build Caddy docs image\n"
@@ -114,6 +115,9 @@ vscode-install:
 
 landing-media:
 	$(PNPM) --dir web landing:media
+
+landing-video:
+	$(PNPM) --dir web landing:video
 
 docs-media:
 	$(PNPM) --dir web docs:media

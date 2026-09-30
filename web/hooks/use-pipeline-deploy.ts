@@ -7,6 +7,7 @@ import {
   type DeployResponse,
   type DeployStatus,
 } from "@/lib/api-deploy";
+import type { EnvSchedulePinSelection } from "@/lib/api-env-schedules";
 import { workspaceAtom } from "@/lib/atoms/domains/workspace";
 import { awaitWorkspaceSaves } from "@/lib/workspace-save-barrier";
 
@@ -15,7 +16,10 @@ export type PipelineDeployState = {
   loading: boolean;
   error: string | null;
   deploying: boolean;
-  deploy: (expectedSourceMerkle?: string) => Promise<DeployResponse>;
+  deploy: (
+    expectedSourceMerkle?: string,
+    schedules?: EnvSchedulePinSelection[],
+  ) => Promise<DeployResponse>;
   refresh: () => Promise<void>;
   driftedFileCount: number;
 };
@@ -87,7 +91,7 @@ export function usePipelineDeploy(pipelineId: string | undefined): PipelineDeplo
   }, [refresh, workspace?.revision]);
 
   const deploy = useCallback(
-    async (expectedSourceMerkle?: string) => {
+    async (expectedSourceMerkle?: string, schedules?: EnvSchedulePinSelection[]) => {
       if (!pipelineId) {
         throw new Error("Pipeline is required to deploy.");
       }
@@ -99,7 +103,7 @@ export function usePipelineDeploy(pipelineId: string | undefined): PipelineDeplo
       setDeployingPipelineIds(new Set(deployingPipelineIdsRef.current));
       try {
         await awaitWorkspaceSaves();
-        const deployed = await deployPipeline(targetPipelineId, expectedSourceMerkle);
+        const deployed = await deployPipeline(targetPipelineId, expectedSourceMerkle, schedules);
         await refreshPipeline(targetPipelineId);
         return deployed;
       } finally {

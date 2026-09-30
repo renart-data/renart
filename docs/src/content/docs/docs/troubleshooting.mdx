@@ -1,0 +1,69 @@
+---
+title: Troubleshooting
+description: Messages you might see when starting Renart or running a pipeline, what they mean, and how to fix them.
+---
+
+Each entry starts with the message as Renart shows it.
+
+## Renart projects must live inside a Git repository
+
+```text
+Error: renart projects must live inside a git repository: no git repository found
+```
+
+Renart works inside a Git repository and refuses to start elsewhere. Create one
+in the project folder, then start Renart again:
+
+```bash
+git init
+renart
+```
+
+## Address already in use
+
+```text
+Error: failed to listen on 127.0.0.1:9000: listen tcp 127.0.0.1:9000: bind: address already in use
+```
+
+Another program is using the port you passed with `--port`. Choose a different
+port, or leave `--port` out: on the default port, Renart moves to the next free
+port by itself and says so:
+
+```text
+warning: 127.0.0.1:8080 is unavailable, using fallback port 8081 instead
+```
+
+## This environment is protected
+
+**Materialize** is disabled with *This environment is protected: interactive
+execution is disabled*. The selected environment has the **Protected**
+guardrail, which blocks runs you start yourself. Switch to another environment
+in the top bar, or deploy the pipeline and let a schedule run it. See
+[Execution guardrails](/docs/connections-environments/managing-connections/#execution-guardrails).
+
+## Review run is blocked by a template
+
+**Review run** lists a problem for an asset, such as:
+
+```text
+Failed to render template: invalid Jinja syntax: expected name or integer (Line: 8 Col: 14, near "}}")
+```
+
+A Jinja expression in that asset is incomplete, for example `{{ var. }}`. Choose
+**View source** to open the asset at that line, fix the expression, and check
+the result in the **Render** tab. See
+[Variables and Jinja in SQL](/docs/editing-assets/variables-and-jinja/).
+
+## An asset stays stale after it was built
+
+If you built a single asset while its upstreams were out of date, it still reads
+the outdated upstream tables. Rebuild with **Review run**, which opens on the
+out-of-date assets, or choose **Build upstreams first** when Renart asks. See
+[Rebuild only what changed](/docs/workspace/rebuild-what-changed/).
+
+## Related
+
+- [Installation](/docs/installation/)
+- [Alpha status](/docs/alpha-status/): known limitations of the public alpha.
+- [Discord](https://discord.gg/jTH758KNP8): ask the community about problems
+  not listed here.

@@ -6,6 +6,7 @@
     "build/**",
     "node_modules/**",
     "src/routeTree.gen.ts",
-    "lib/generated/**"
+    "lib/generated/**",
+    "scripts/landing-video/story.html"
   ]
 }

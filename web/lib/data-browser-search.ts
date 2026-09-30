@@ -163,13 +163,11 @@ export function planDataBrowserSearch(
   if (!connection) {
     plan.connections = matches(connections, query, (item) => item.name);
     if (query)
-      plan.completions = plan.connections.map(
-        (item): BrowserCompletion => ({
-          label: item.name,
-          value: connectionSearchPrefix(item),
-          separator: item.source_kind === "warehouse" ? "." : "./",
-        }),
-      );
+      plan.completions = plan.connections.map((item): BrowserCompletion => ({
+        label: item.name,
+        value: connectionSearchPrefix(item),
+        separator: item.source_kind === "warehouse" ? "." : "./",
+      }));
     plan.connections.push(
       ...connections.filter(
         (item) =>

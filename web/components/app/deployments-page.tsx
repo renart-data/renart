@@ -201,9 +201,9 @@ export function AppDeploymentsPage() {
       ) : null}
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-medium">Immutable deployment history</p>
+          <p className="truncate text-xs font-medium">Deployment history</p>
           <p className="truncate text-[9px] text-muted-foreground">
-            Review saved versions and their schedule bindings
+            Saved versions of each pipeline and the schedules that use them
           </p>
         </div>
         {loading ? <Loader2 className="size-3.5 animate-spin text-muted-foreground" /> : null}
@@ -395,8 +395,8 @@ function DeploymentReview({
       pipelineName={pipeline?.name ?? "Pipeline"}
       environment={environment}
       intent="deploy"
-      onDeploy={async (expectedSourceMerkle) => {
-        const response = await deployState.deploy(expectedSourceMerkle);
+      onDeploy={async (expectedSourceMerkle, schedules) => {
+        const response = await deployState.deploy(expectedSourceMerkle, schedules);
         await onDeployed();
         return response;
       }}

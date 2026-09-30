@@ -47,7 +47,7 @@ describe("production deployment review disclosure", () => {
     const html = renderToStaticMarkup(
       <DeploymentFileChanges pipelineId="pipeline" plan={plan} status={status} />,
     );
-    expect(html).toContain("Semantic analysis is unavailable");
+    expect(html).toContain("Impact analysis is unavailable for these changes.");
     expect(html).not.toContain("No semantic warnings");
   });
 });

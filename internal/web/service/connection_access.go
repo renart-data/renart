@@ -229,7 +229,7 @@ func (e *HybridBruinExecutor) checkRenderedConnectionAccess(ctx context.Context,
 	for _, asset := range assets {
 		clone, err := renderedAccessAsset(ctx, pl, asset, renderer)
 		if err != nil {
-			return err
+			return templateError(err)
 		}
 		rendered = append(rendered, clone)
 	}

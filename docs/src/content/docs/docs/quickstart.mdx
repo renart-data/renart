@@ -44,18 +44,18 @@ then choose **Code** or **Split** to read its query.
 Open **Inspect** in the results panel. You should see rows from the demo rather
 than an empty result. This previews the query without materializing its target.
 
-Click **Review run** to see the selected environment, source, and planned work.
-The **Needed assets** selection includes assets Renart considers out of date;
-it may be empty immediately after creating the demo. Reviewing does not execute
-anything. Close the review when you have checked it.
+Click **Review run** to see the assets that would run, with the environment
+and source above them. It starts with the assets that are **Out of date**, which
+may be none right after creating the demo; choose **All assets** to see every
+asset. Nothing runs until you confirm. Close the dialog when you have checked it.
 
 ## 5. Put it on a schedule
 
 Open **Run → Schedules** and click **New schedule**. Select the retail pipeline,
 the `default` environment, the cron expression `0 9 * * *`, and your timezone.
-If the schedule has no deployment, review the option to deploy the saved
-working tree and pin this schedule to it. Save the schedule and check its next
-run time.
+Under **Deployment**, keep **Deploy current files**: Renart shows the files it
+will deploy, then creates the schedule on that deployment. Check the schedule's
+next run time.
 
 Deployment saves a pipeline version; it does not run the pipeline. Scheduled
 runs appear under **Run → Runs**, with timing and logs for each asset. Keep

@@ -423,6 +423,124 @@ h3 {
   border-top: 1px solid var(--landing-line);
   font-size: 0.76rem;
 }
+/* Hero walkthrough video (StoryVideo.astro). */
+.story-video__frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--landing-dark);
+}
+.story-video video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.story-video__toggle {
+  position: absolute;
+  right: 0.9rem;
+  bottom: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.4rem;
+  padding: 0.45rem 0.85rem 0.45rem 0.7rem;
+  color: #fff;
+  background: rgb(10 10 10 / 72%);
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 999px;
+  font: 500 0.78rem/1 var(--landing-sans);
+  white-space: nowrap;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: opacity 180ms ease, background 150ms ease;
+}
+.story-video__toggle:hover {
+  background: rgb(10 10 10 / 88%);
+}
+.story-video__toggle:focus-visible,
+.story-video__chapters button:focus-visible {
+  outline: 2px solid var(--landing-accent);
+  outline-offset: 2px;
+}
+.story-video__toggle svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: currentColor;
+}
+.story-video__icon-pause,
+.story-video.is-playing .story-video__icon-play {
+  display: none;
+}
+.story-video.is-playing .story-video__icon-pause {
+  display: block;
+}
+/* Before the first play the button is the call to action, centred on the poster. */
+.story-video:not(.has-started) .story-video__toggle {
+  right: 50%;
+  bottom: 50%;
+  transform: translate(50%, 50%);
+  min-height: 3.2rem;
+  padding: 0.7rem 1.3rem 0.7rem 1.05rem;
+  font-size: 0.92rem;
+}
+/* While playing, the control stays out of the way until the pointer or focus is on the video. */
+.story-video.is-playing .story-video__toggle {
+  opacity: 0;
+}
+.story-video.is-playing .story-video__frame:hover .story-video__toggle,
+.story-video.is-playing .story-video__toggle:focus-visible {
+  opacity: 1;
+}
+.story-video .story-video__chapters {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  overflow-x: auto;
+  padding: 0.7rem 1.1rem;
+}
+.story-video__chapters-label {
+  flex: none;
+  color: var(--landing-muted);
+}
+.story-video__chapters ol {
+  display: flex;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.story-video__chapters button {
+  position: relative;
+  overflow: hidden;
+  padding: 0.35rem 0.65rem 0.45rem;
+  color: var(--landing-muted);
+  background: transparent;
+  border: 1px solid var(--landing-line);
+  border-radius: 0.4rem;
+  font: 500 0.72rem/1.2 var(--landing-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.story-video__chapters button:hover,
+.story-video__chapters button.is-active {
+  color: var(--landing-text);
+  border-color: var(--landing-accent);
+}
+.story-video__chapters button i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--landing-accent);
+  transform: scaleX(var(--progress, 0));
+  transform-origin: left;
+}
+@media (prefers-reduced-motion: reduce) {
+  .story-video__toggle {
+    transition: none;
+  }
+}
 .landing-alpha-note {
   max-width: 60rem;
   margin: 1.2rem auto 0;
@@ -635,16 +753,19 @@ h3 {
 .platform-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem 1rem;
+  gap: 0.5rem;
   list-style: none;
   padding: 1.3rem 0;
   margin: 0;
 }
 .platform-list li {
-  padding-bottom: 0.25rem;
-  border-bottom: 1px solid var(--landing-line);
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--landing-line);
+  border-radius: 999px;
+  background: var(--landing-paper);
   color: var(--landing-text);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  line-height: 1.3;
 }
 .platform-details {
   display: grid;

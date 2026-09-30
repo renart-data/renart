@@ -535,7 +535,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await page.keyboard.type("\n-- save barrier e2e");
 
     const runButton = page.getByRole("button", { name: /^Review run/ });
-    await expect(runButton).toHaveAttribute("title", /Review the saved source/);
+    await expect(runButton).toHaveAttribute("title", /Check what will run/);
     await expect(page.getByRole("button", { name: /^Readiness:/ })).toHaveCount(0);
 
     const planResponse = page.waitForResponse(
@@ -546,68 +546,35 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     const planned = await planResponse;
     expect(planned.request().postDataJSON()).toMatchObject({
       source: { kind: "working_tree" },
-      selection: { mode: "all" },
+      selection: { mode: "needed" },
     });
+    expect(planned.request().postDataJSON().include_stage_content).toBeFalsy();
     expect(saveFinishedWhenPlanned).toBe(true);
 
     const planSheet = page.getByTestId("pipeline-plan-sheet");
     await expect(planSheet).toBeVisible();
     await expect(planSheet).toHaveAttribute("data-slot", "dialog-content");
-    await expect(planSheet).toContainText("Saved working tree");
+    await expect(planSheet).toContainText("working tree");
     await expect(planSheet.getByRole("tablist")).toHaveCount(0);
     const reviewViewport = planSheet
       .getByTestId("pipeline-plan-scroll")
       .locator(':scope > [data-slot="scroll-area-viewport"]');
+    await expect(reviewViewport.getByRole("heading", { name: "Run analytics" })).toBeVisible();
+    await expect(planSheet.getByRole("radio", { name: "Out of date" })).toBeChecked();
     await expect(
-      reviewViewport.getByRole("heading", { name: "Review pipeline run" }),
+      reviewViewport.getByRole("heading", { name: /^\d+ assets? will run$/ }),
     ).toBeVisible();
-    await expect(planSheet.getByRole("button", { name: /Execution details/ })).toBeVisible();
-    await expect(reviewViewport.getByRole("heading", { name: "Execution order" })).toHaveCount(0);
-    await expect(planSheet.getByText("Run options", { exact: true })).toBeVisible();
-    await planSheet.getByRole("button", { name: /Run options/ }).click();
-    await expect(planSheet.getByLabel("Scope")).toBeVisible();
+    await expect(reviewViewport.getByRole("heading", { name: /problems?$/ })).toHaveCount(0);
+    // Rendered operations, execution internals and identities are not part of the review.
+    await expect(
+      planSheet.getByText(/Execution details|Plan details|Rendered operations/),
+    ).toHaveCount(0);
+    await planSheet.getByRole("button", { name: /More options/ }).click();
+    await expect(planSheet.getByLabel("Only assets matching")).toBeVisible();
     await expect(planSheet.getByLabel("Sensors")).toBeVisible();
     await expect(planSheet.getByRole("switch", { name: "Full refresh" })).toBeVisible();
-    const confirmButton = planSheet.getByRole("button", {
-      name: /^Run \d+ assets? from working tree$/,
-    });
+    const confirmButton = planSheet.getByRole("button", { name: /^Run \d+ assets?$/ });
     await expect(confirmButton).toBeEnabled();
-
-    const passingCheck = planSheet.getByLabel("All code checks passed").first();
-    await expect(passingCheck).toBeVisible();
-    await expect(planSheet.getByText("No findings", { exact: true })).toHaveCount(0);
-
-    const renderedPlanResponse = page.waitForResponse(
-      (response) =>
-        response.url().endsWith(`/api/pipelines/${pipelineId}/plan`) &&
-        response.request().postDataJSON().include_stage_content === true &&
-        response.ok(),
-      { timeout: 30000 },
-    );
-    await planSheet.getByRole("button", { name: /Execution details/ }).click();
-    const renderedPlan = await renderedPlanResponse;
-    expect(renderedPlan.request().postDataJSON()).toMatchObject({
-      include_stage_content: true,
-      source: { kind: "working_tree" },
-      selection: { mode: "all" },
-    });
-    await expect(reviewViewport.getByRole("heading", { name: "Execution order" })).toBeVisible();
-    await expect(reviewViewport).toContainText("shown in stable plan order");
-    await expect(reviewViewport).toContainText("Assets will run one at a time for this pipeline.");
-    await expect(reviewViewport.getByText("Sequential", { exact: true })).toBeVisible();
-    await expect(
-      reviewViewport.getByRole("heading", { name: "Rendered operations" }),
-    ).toBeVisible();
-    await expect(planSheet.getByText("Preview — not executed")).toBeVisible();
-    const operationSelect = planSheet.getByRole("combobox", { name: "Operation" });
-    await expect(planSheet.locator(".view-lines").first()).toContainText("save barrier e2e", {
-      timeout: 15000,
-    });
-    await operationSelect.click();
-    await page.getByRole("option", { name: "analytics.customers · Execution SQL" }).click();
-    await expect(planSheet.locator(".view-lines").first()).toContainText(/create.*view/i, {
-      timeout: 15000,
-    });
 
     const confirmResponse = page.waitForResponse(
       (response) =>
@@ -621,11 +588,11 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     expect(confirmed.ok(), confirmBody).toBe(true);
     expect(confirmed.request().postDataJSON()).toMatchObject({
       plan_id: expect.stringMatching(/^[a-f0-9]{64}$/),
-      plan: { source: { kind: "working_tree" }, selection: { mode: "all" } },
+      plan: { source: { kind: "working_tree" }, selection: { mode: "needed" } },
       reviewed: {
         pipeline_uuid: expect.any(String),
         source: { kind: "working_tree" },
-        selection: { mode: "all" },
+        selection: { mode: "needed" },
         execution_units: expect.any(Array),
       },
     });
@@ -647,25 +614,22 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     const planSheet = page.getByTestId("pipeline-plan-sheet");
     await expect(planSheet).toBeVisible();
 
-    const wildcardResponse = page.waitForResponse(
+    const allResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/pipelines/${pipelineId}/plan`) &&
-        response.request().postDataJSON().selection?.mode === "selector" &&
-        response.request().postDataJSON().selection?.selector === "*" &&
+        response.request().postDataJSON().selection?.mode === "all" &&
         response.ok(),
       { timeout: 30000 },
     );
-    await planSheet.getByRole("button", { name: /Run options/ }).click();
-    await planSheet.getByLabel("Scope").click();
-    await page.getByRole("option", { name: "Matching selector", exact: true }).click();
-    await wildcardResponse;
+    await planSheet.getByRole("radio", { name: "All assets" }).click();
+    await allResponse;
 
-    const selectorInput = planSheet.getByLabel("Asset selector");
-    await expect(selectorInput).toHaveValue("*");
+    await planSheet.getByRole("button", { name: /More options/ }).click();
+    const selectorInput = planSheet.getByLabel("Only assets matching");
+    await expect(selectorInput).toHaveValue("");
     await selectorInput.fill("analytics.customers");
-    await expect(
-      planSheet.getByText("Apply the expression to validate it and preview its assets."),
-    ).toBeVisible();
+    await expect(planSheet.getByText("Apply the filter to update the list.")).toBeVisible();
+    await expect(planSheet.getByRole("button", { name: /^Run \d+ assets?$/ })).toBeDisabled();
 
     const selectorResponse = page.waitForResponse(
       (response) =>
@@ -684,7 +648,8 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
       selector: "analytics.customers",
     });
     expect(selectedPlan.assets.map((asset) => asset.name)).toEqual(["analytics.customers"]);
-    await expect(planSheet.getByText("1 asset selected.", { exact: false })).toBeVisible();
+    await expect(planSheet.getByRole("heading", { name: "1 asset will run" })).toBeVisible();
+    await expect(planSheet.getByRole("button", { name: "Run 1 asset" })).toBeEnabled();
   });
 
   test("shows deployment file diffs beneath collapsible file rows", async ({ liveApp, page }) => {
@@ -733,17 +698,12 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await fileDisclosure.locator('[data-slot="collapsible-trigger"]').click();
     await expect(fileDiff).toBeHidden();
 
-    await planDialog.getByRole("button", { name: /^Deployment details/ }).click();
-    await expect(planDialog.getByText("Representative window", { exact: true })).toBeVisible();
-    await expect(planDialog.getByRole("button", { name: /^Execution details/ })).toBeVisible();
-    await expect(planDialog.getByRole("button", { name: /^Deploy \d+ assets?/ })).toBeVisible();
-    const detailedPlan = page.waitForRequest(
-      (request) =>
-        request.url().endsWith(`/api/pipelines/${pipelineId}/plan`) &&
-        request.postDataJSON()?.include_stage_content === true,
-    );
-    await planDialog.getByRole("button", { name: /^Execution details/ }).click();
-    expect((await detailedPlan).postDataJSON().purpose).toBe("deployment");
+    // The review holds the changes and schedules; execution internals stay out of it.
+    await expect(planDialog.getByText(/Deployment details|Execution details/)).toHaveCount(0);
+    await expect(planDialog.getByRole("heading", { name: "Schedules" })).toBeVisible();
+    await expect(
+      planDialog.getByRole("button", { name: /^Deploy( and update \d+ schedules?)?$/ }),
+    ).toBeVisible();
   });
 
   test("reviews propagated output types on an unchanged SQL file", async ({ liveApp, page }) => {
@@ -919,9 +879,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
 
     const planSheet = page.getByTestId("pipeline-plan-sheet");
     await expect(planSheet).toContainText("deploy the pipeline first");
-    await expect(
-      planSheet.getByRole("button", { name: /^Run 0 assets from deployment$/ }),
-    ).toBeDisabled();
+    await expect(planSheet.getByRole("button", { name: /^Run 0 assets$/ })).toBeDisabled();
   });
 
   test("requires the environment name before confirming a destructive plan", async ({
@@ -949,17 +907,15 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
         response.ok(),
       { timeout: 30000 },
     );
-    await planSheet.getByRole("button", { name: /Run options/ }).click();
+    await planSheet.getByRole("button", { name: /More options/ }).click();
     await planSheet.getByRole("switch", { name: "Full refresh" }).click();
     const destructivePlan = (await (await destructivePlanResponse).json()) as {
       context: { destructive: boolean; environment: string };
     };
     expect(destructivePlan.context).toMatchObject({ destructive: true, environment: "default" });
 
-    const confirmButton = planSheet.getByRole("button", {
-      name: /^Run \d+ assets? from working tree$/,
-    });
-    const confirmation = planSheet.getByLabel(/Type default to confirm destructive operations/);
+    const confirmButton = planSheet.getByRole("button", { name: /^Run \d+ assets?$/ });
+    const confirmation = planSheet.getByLabel(/Type default to confirm/);
     await expect(confirmButton).toBeDisabled();
     await confirmation.fill("production");
     await expect(confirmButton).toBeDisabled();
@@ -985,10 +941,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
       timeout: 15000,
     });
 
-    await page.getByRole("button", { name: /^Review run/ }).click();
-    const planSheet = page.getByTestId("pipeline-plan-sheet");
-    await expect(planSheet).toBeVisible();
-
+    // Runs start from the assets that are out of date.
     const neededResponse = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/api/pipelines/${pipelineId}/plan`) &&
@@ -996,9 +949,9 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
         response.ok(),
       { timeout: 30000 },
     );
-    await planSheet.getByRole("button", { name: /Run options/ }).click();
-    await planSheet.getByLabel("Scope").click();
-    await page.getByRole("option", { name: "Needed assets" }).click();
+    await page.getByRole("button", { name: /^Review run/ }).click();
+    const planSheet = page.getByTestId("pipeline-plan-sheet");
+    await expect(planSheet).toBeVisible();
     const neededPlanResponse = await neededResponse;
     const neededPlan = (await neededPlanResponse.json()) as {
       id: string;
@@ -1022,7 +975,7 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
         response.url().endsWith(`/api/pipelines/${pipelineId}/plan/confirm`) && response.ok(),
       { timeout: 30000 },
     );
-    await planSheet.getByRole("button", { name: /^Run \d+ assets? from working tree$/ }).click();
+    await planSheet.getByRole("button", { name: /^Run \d+ assets?$/ }).click();
     const confirmed = await confirmResponse;
     expect(confirmed.request().postDataJSON()).toMatchObject({
       plan_id: neededPlan.id,
@@ -1191,9 +1144,9 @@ select 1 as customer_id,'Ada' as customer_name union all select 2 as customer_id
     await page.getByRole("button", { name: /^Review run/ }).click();
     const planSheet = page.getByTestId("pipeline-plan-sheet");
     await expect(planSheet).toBeVisible();
-    await planSheet.getByRole("button", { name: /^Run \d+ assets? from working tree$/ }).click();
-    await expect(planSheet.getByText("Another run was admitted first.")).toBeVisible();
-    await expect(planSheet.getByRole("link", { name: "Open active run" })).toHaveAttribute(
+    await planSheet.getByRole("button", { name: /^Run \d+ assets?$/ }).click();
+    await expect(planSheet.getByText("Another run started first.")).toBeVisible();
+    await expect(planSheet.getByRole("link", { name: "Open the active run" })).toHaveAttribute(
       "href",
       `/runs/${activeRunId}`,
     );

@@ -29,7 +29,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   Select,
@@ -55,6 +54,7 @@ import { formatSchedulerDate, usePipelineRuns } from "@/hooks/use-pipeline-runs"
 import { usePipelineDeploy } from "@/hooks/use-pipeline-deploy";
 import { activePipelineRunConflict } from "@/lib/api-scheduler";
 import {
+  promoteEnvSchedules,
   triggerEnvSchedule,
   type CatchupPolicy,
   type EnvSchedule,
@@ -77,6 +77,11 @@ import {
 } from "@/lib/schedule-timeline-model";
 
 import { PipelinePlanSheet } from "./pipeline-plan-sheet";
+import { ScheduleVariableFields, usePipelineVariables } from "./schedule-variable-fields";
+import {
+  scheduleVariableInput,
+  type ScheduleVariableRows,
+} from "@/lib/schedule-variable-overrides";
 import { AppContextSidebarFrame } from "./workbench/workbench-context-sidebar";
 import { WorkbenchPortal, useWorkbench } from "./workbench/workbench-slots";
 
@@ -125,7 +130,7 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
       <WorkbenchPortal slot="context">
         <AppContextSidebarFrame
           title="Schedules"
-          subtitle={`${envSchedules.schedules.length} active binding${envSchedules.schedules.length === 1 ? "" : "s"}`}
+          subtitle={`${envSchedules.schedules.length} ${envSchedules.schedules.length === 1 ? "schedule" : "schedules"}`}
           actions={
             <Button
               size="xs"
@@ -167,7 +172,7 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
             </div>
             <section>
               <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Schedule bindings
+                All schedules
               </p>
               <div className="space-y-0.5">
                 {envSchedules.schedules.map((schedule) => {
@@ -246,7 +251,7 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
             {query ? `Filtered by ${query}` : "Schedule timeline"}
           </p>
           <p className="truncate text-[9px] text-muted-foreground">
-            Desired bindings execute their pinned deployment
+            Each schedule runs the deployment it uses
           </p>
         </div>
         <ToggleGroup
@@ -307,6 +312,7 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
                 onSetStatus={(status) => envSchedules.setStatus(schedule, status)}
                 onArchive={() => envSchedules.archive(schedule)}
                 onEdit={() => setEditingSchedule(schedule)}
+                onChanged={envSchedules.refresh}
                 onReviewDeployment={() => {
                   if (!schedule.pipeline_id) return;
                   setDeploymentReview({
@@ -381,6 +387,7 @@ function EnvScheduleRow({
   onSetStatus,
   onArchive,
   onEdit,
+  onChanged,
   onReviewDeployment,
 }: {
   schedule: EnvSchedule;
@@ -393,6 +400,7 @@ function EnvScheduleRow({
   onSetStatus: (status: "active" | "paused") => Promise<void>;
   onArchive: () => Promise<void>;
   onEdit: () => void;
+  onChanged: () => void | Promise<void>;
   onReviewDeployment: () => void;
 }) {
   const deployState = usePipelineDeploy(schedule.pipeline_id);
@@ -408,6 +416,10 @@ function EnvScheduleRow({
   const deploymentOutdated = Boolean(
     latestVersion && pinnedVersion && latestVersion !== pinnedVersion,
   );
+  const latestExecutable = Boolean(
+    deployState.status?.has_snapshot && deployState.status.executable,
+  );
+  const latestDeployment = deploymentLabel(latestOrdinal, undefined, "deployment");
   const pinnedDeploymentCorrupt = Boolean(
     pinnedVersion &&
     latestVersion === pinnedVersion &&
@@ -415,14 +427,15 @@ function EnvScheduleRow({
     !deployState.status.executable,
   );
   const [triggering, setTriggering] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [actionError, setActionError] = useState<{
     message: string;
     activeRunId?: string;
   } | null>(null);
   const sourceBlockReason = !pinnedVersion
-    ? "This schedule needs an exact deployment pin before it can run"
+    ? "Deploy this pipeline before the schedule can run"
     : pinnedDeploymentCorrupt
-      ? `Pinned ${pinnedDeployment} failed its integrity check${deployState.status?.integrity_error ? `: ${deployState.status.integrity_error}` : ""}`
+      ? `${sentenceCase(pinnedDeployment)} failed its integrity check${deployState.status?.integrity_error ? `: ${deployState.status.integrity_error}` : ""}`
       : undefined;
   const runBlockReason = !canMutate ? ownershipReason : sourceBlockReason;
   const enabled = configuredEnabled && !sourceBlockReason;
@@ -440,16 +453,14 @@ function EnvScheduleRow({
       ? "Running"
       : activeRun?.status === "queued"
         ? "Queued"
-        : schedule.snapshot_ordinal
-          ? `Run pinned #${schedule.snapshot_ordinal}`
-          : "Run pinned";
+        : "Run now";
   const pipelineLabel = schedule.pipeline_name || schedule.pipeline_uuid;
   const lastRunAt = schedule.last_run?.finished_at ?? schedule.last_run?.started_at;
   const lastRunLabel = schedule.last_run
     ? `${sentenceCase(schedule.last_run.status)} ${formatSchedulerDate(lastRunAt)}`
     : "Not run yet";
   const nowLeft = timelineLeft(Date.now(), window);
-  const runWindowDescription = `Environment ${schedule.environment}. This action uses ${pinnedDeployment}${overrideNames.length > 0 ? ` with its stored overrides (${overrideNames.join(", ")})` : ""}. It sends no interval; when execution starts, the backend resolves the effective window from that deployment.`;
+  const runWindowDescription = `Runs ${pinnedDeployment} in ${schedule.environment} now${overrideNames.length > 0 ? " with this schedule's variables" : ""}. The schedule itself doesn't change.`;
   const triggerNow = async () => {
     if (!schedule.pipeline_id || runBlockReason) return;
     setTriggering(true);
@@ -478,6 +489,23 @@ function EnvScheduleRow({
       setActionError({
         message: cause instanceof Error ? cause.message : "Failed to update the schedule.",
       });
+    }
+  };
+  const useLatestDeployment = async () => {
+    if (!schedule.pipeline_id || !latestVersion) return;
+    setSwitching(true);
+    setActionError(null);
+    try {
+      await promoteEnvSchedules(schedule.pipeline_id, latestVersion, [
+        { environment: schedule.environment, expected_snapshot_version_id: pinnedVersion },
+      ]);
+      await onChanged();
+    } catch (cause) {
+      setActionError({
+        message: cause instanceof Error ? cause.message : "The schedule could not be updated.",
+      });
+    } finally {
+      setSwitching(false);
     }
   };
   const archive = async () => {
@@ -551,11 +579,11 @@ function EnvScheduleRow({
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
-                    Pinned {pinnedDeployment} ({pinnedVersion})
+                    Uses {pinnedDeployment} ({pinnedVersion})
                   </TooltipContent>
                 </Tooltip>
               ) : (
-                <span className="text-foreground">Not pinned</span>
+                <span className="text-foreground">Not deployed</span>
               )}
             </ScheduleMetadata>
           </dl>
@@ -577,7 +605,7 @@ function EnvScheduleRow({
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent>
-                    Applied from this schedule to its pinned deployment: {overrideNames.join(", ")}.
+                    This schedule sets {overrideNames.join(", ")}.
                     {secretReferenceNames.length > 0
                       ? ` Values for ${secretReferenceNames.join(", ")} are resolved from environment references only when planning or running.`
                       : ""}
@@ -641,14 +669,13 @@ function EnvScheduleRow({
               {deploymentOutdated ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Badge variant="destructive" size="xs" tabIndex={0}>
-                      Older deployment
+                    <Badge variant="secondary" size="xs" tabIndex={0}>
+                      Update available
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent className="max-w-80">
-                    This schedule runs {pinnedDeployment}. The latest is{" "}
-                    {deploymentLabel(latestOrdinal, latestVersion, "deployment")}. Data freshness is
-                    tracked separately.
+                    This schedule runs {pinnedDeployment}. {sentenceCase(latestDeployment)} is
+                    newer.
                   </TooltipContent>
                 </Tooltip>
               ) : null}
@@ -661,7 +688,7 @@ function EnvScheduleRow({
                   </TooltipTrigger>
                   <TooltipContent className="max-w-80">
                     {deployState.status?.integrity_error ??
-                      "The pinned deployment failed its integrity check."}
+                      "This deployment failed its integrity check."}
                   </TooltipContent>
                 </Tooltip>
               ) : null}
@@ -670,7 +697,7 @@ function EnvScheduleRow({
         </div>
       </div>
       <div
-        className="relative min-h-[4.75rem] border-x bg-muted/20"
+        className="relative min-h-[4.75rem] overflow-hidden border-x bg-muted/20"
         data-testid="schedule-timeline"
       >
         <TimelineGrid axis={axis} />
@@ -722,7 +749,22 @@ function EnvScheduleRow({
           </div>
         ) : null}
         <div className="flex items-center justify-end gap-1.5">
-          {deploymentOutdated || !pinnedVersion || pinnedDeploymentCorrupt ? (
+          {deploymentOutdated && latestExecutable && !pinnedDeploymentCorrupt ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!canMutate || busy || switching}
+              title={!canMutate ? ownershipReason : `Use ${latestDeployment} from the next run`}
+              onClick={() => void useLatestDeployment()}
+            >
+              {switching ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : (
+                <RefreshCw data-icon="inline-start" />
+              )}
+              {latestOrdinal ? `Use #${latestOrdinal}` : "Use latest"}
+            </Button>
+          ) : !pinnedVersion || pinnedDeploymentCorrupt ? (
             <Button
               size="sm"
               variant="secondary"
@@ -730,16 +772,16 @@ function EnvScheduleRow({
               title={
                 !canMutate
                   ? ownershipReason
-                  : "Review the saved pipeline, deploy it, then choose which schedule pins to update"
+                  : "Check the pipeline's current files and deploy them for this schedule"
               }
               onClick={onReviewDeployment}
             >
               {busy ? (
                 <Loader2 data-icon="inline-start" className="animate-spin" />
               ) : (
-                <RefreshCw data-icon="inline-start" />
+                <Package data-icon="inline-start" />
               )}
-              {pinnedDeploymentCorrupt ? "Review repair" : "Review deployment"}
+              {pinnedDeploymentCorrupt ? "Repair" : "Deploy"}
             </Button>
           ) : null}
           <Tooltip>
@@ -776,6 +818,10 @@ function EnvScheduleRow({
                 <DropdownMenuItem onSelect={onEdit}>
                   <Pencil />
                   Edit schedule
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onReviewDeployment}>
+                  <Package />
+                  Deploy changes…
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => void archive()}>
                   <ArchiveRestore />
@@ -900,7 +946,9 @@ function ScheduleDeploymentReview({
       pipelineName={target?.pipelineName ?? "Pipeline"}
       environment={target?.environment ?? ""}
       intent="deploy"
-      onDeploy={(expectedSourceMerkle) => deployState.deploy(expectedSourceMerkle)}
+      onDeploy={(expectedSourceMerkle, schedules) =>
+        deployState.deploy(expectedSourceMerkle, schedules)
+      }
       onSchedulesChanged={onSchedulesChanged}
     />
   );
@@ -924,8 +972,8 @@ function EditEnvScheduleDialog({
   const [catchupPolicy, setCatchupPolicy] = useState<CatchupPolicy>("skip");
   const [paused, setPaused] = useState(false);
   const [overrideMode, setOverrideMode] = useState<"preserve" | "replace">("preserve");
-  const [variableOverrides, setVariableOverrides] = useState("{}");
-  const [secretReferences, setSecretReferences] = useState("{}");
+  const [variableRows, setVariableRows] = useState<ScheduleVariableRows>({});
+  const pipelineVariables = usePipelineVariables(schedule?.pipeline_id);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -936,8 +984,7 @@ function EditEnvScheduleDialog({
     setCatchupPolicy(schedule.catchup_policy || "skip");
     setPaused(schedule.status !== "active");
     setOverrideMode("preserve");
-    setVariableOverrides("{}");
-    setSecretReferences("{}");
+    setVariableRows({});
     setError(null);
   }, [schedule]);
 
@@ -954,15 +1001,10 @@ function EditEnvScheduleDialog({
 
     let variableInput: Pick<UpsertEnvScheduleInput, "vars" | "secret_refs" | "preserve_variables">;
     try {
-      if (overrideMode === "preserve") {
-        variableInput = { preserve_variables: true };
-      } else {
-        const vars = parseVariableOverrides(variableOverrides);
-        variableInput = {
-          vars,
-          secret_refs: parseSecretReferences(secretReferences, vars),
-        };
-      }
+      variableInput =
+        overrideMode === "preserve"
+          ? { preserve_variables: true }
+          : scheduleVariableInput(pipelineVariables.variables, variableRows);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Variable overrides are invalid.");
       return;
@@ -1000,8 +1042,7 @@ function EditEnvScheduleDialog({
             Edit schedule
           </DialogTitle>
           <DialogDescription>
-            Update the version-controlled declaration. The schedule keeps its current local
-            deployment pin unless you explicitly redeploy it from the schedule row.
+            Changes are saved to .renart/schedules.yml. The schedule keeps the deployment it uses.
           </DialogDescription>
         </DialogHeader>
         <ScrollArea
@@ -1068,7 +1109,7 @@ function EditEnvScheduleDialog({
               <div className="min-w-0 flex-1">
                 <FieldLabel htmlFor="edit-schedule-paused">Pause schedule</FieldLabel>
                 <FieldDescription>
-                  Paused schedules keep their declaration and deployment pin but do not admit runs.
+                  A paused schedule keeps its settings and deployment but starts no runs.
                 </FieldDescription>
               </div>
               <Switch
@@ -1079,7 +1120,7 @@ function EditEnvScheduleDialog({
               />
             </Field>
             <Field>
-              <FieldLabel>Variable overrides</FieldLabel>
+              <FieldLabel>Variables</FieldLabel>
               <ToggleGroup
                 type="single"
                 variant="outline"
@@ -1092,51 +1133,31 @@ function EditEnvScheduleDialog({
                 aria-label="Variable override behavior"
               >
                 <ToggleGroupItem value="preserve" className="min-w-0 w-full whitespace-normal">
-                  Keep stored overrides
+                  Keep current values
                 </ToggleGroupItem>
                 <ToggleGroupItem value="replace" className="min-w-0 w-full whitespace-normal">
-                  Replace or clear
+                  Set new values
                 </ToggleGroupItem>
               </ToggleGroup>
               <FieldDescription className="break-words">
                 {storedNames.length > 0
-                  ? `Stored names: ${[...storedNames].sort().join(", ")}. Values stay private and are never loaded into this form.${
+                  ? `This schedule sets ${[...storedNames].sort().join(", ")}${
                       secretNames.length > 0
-                        ? ` Secret-backed: ${[...secretNames].sort().join(", ")}.`
+                        ? ` (${[...secretNames].sort().join(", ")} from environment variables)`
                         : ""
-                    }`
-                  : "This schedule currently has no stored overrides."}
+                    }. Current values aren't shown.`
+                  : "This schedule uses the pipeline defaults."}
               </FieldDescription>
             </Field>
             {overrideMode === "replace" ? (
-              <>
-                <Field>
-                  <FieldLabel htmlFor="edit-schedule-vars">Literal overrides</FieldLabel>
-                  <Textarea
-                    id="edit-schedule-vars"
-                    className="min-h-20 font-mono text-xs"
-                    value={variableOverrides}
-                    onChange={(event) => setVariableOverrides(event.target.value)}
-                    spellCheck={false}
-                  />
-                  <FieldDescription>
-                    Saving an empty object clears all stored literal overrides.
-                  </FieldDescription>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="edit-schedule-secrets">Secret references</FieldLabel>
-                  <Textarea
-                    id="edit-schedule-secrets"
-                    className="min-h-20 font-mono text-xs"
-                    value={secretReferences}
-                    onChange={(event) => setSecretReferences(event.target.value)}
-                    spellCheck={false}
-                  />
-                  <FieldDescription>
-                    Use env:NAME values. An empty object clears all stored references.
-                  </FieldDescription>
-                </Field>
-              </>
+              <ScheduleVariableFields
+                idPrefix="edit-schedule-variable"
+                variables={pipelineVariables.variables}
+                loading={pipelineVariables.loading}
+                error={pipelineVariables.error}
+                rows={variableRows}
+                onRowsChange={setVariableRows}
+              />
             ) : null}
             <FieldError>{error}</FieldError>
           </FieldGroup>
@@ -1153,50 +1174,6 @@ function EditEnvScheduleDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function parseVariableOverrides(value: string): Record<string, unknown> {
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(value.trim() || "{}");
-  } catch {
-    throw new Error("Variable overrides must be valid JSON.");
-  }
-  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
-    throw new Error("Variable overrides must be a JSON object keyed by declared variable name.");
-  }
-  return decoded as Record<string, unknown>;
-}
-
-function parseSecretReferences(
-  value: string,
-  variables: Record<string, unknown>,
-): Record<string, string> {
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(value.trim() || "{}");
-  } catch {
-    throw new Error("Secret references must be valid JSON.");
-  }
-  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
-    throw new Error("Secret references must be a JSON object keyed by declared variable name.");
-  }
-  for (const [name, reference] of Object.entries(decoded as Record<string, unknown>)) {
-    if (
-      !name.trim() ||
-      name.trim() !== name ||
-      typeof reference !== "string" ||
-      !/^env:[A-Za-z_][A-Za-z0-9_]*$/.test(reference)
-    ) {
-      throw new Error("Secret references must use declared variable names and env:NAME values.");
-    }
-    if (Object.prototype.hasOwnProperty.call(variables, name)) {
-      throw new Error(
-        `Variable ${name} cannot have both a literal override and a secret reference.`,
-      );
-    }
-  }
-  return decoded as Record<string, string>;
 }
 
 function NewEnvScheduleDialog({
@@ -1223,8 +1200,8 @@ function NewEnvScheduleDialog({
   const [cron, setCron] = useState("0 * * * *");
   const [timezone, setTimezone] = useState("UTC");
   const [catchupPolicy, setCatchupPolicy] = useState<CatchupPolicy>("skip");
-  const [variableOverrides, setVariableOverrides] = useState("{}");
-  const [secretReferences, setSecretReferences] = useState("{}");
+  const [variableRows, setVariableRows] = useState<ScheduleVariableRows>({});
+  const pipelineVariables = usePipelineVariables(pipelineId || undefined);
   const deployState = usePipelineDeploy(pipelineId || undefined);
   const [sourceMode, setSourceMode] = useState<"existing" | "deploy">("deploy");
   const [submitting, setSubmitting] = useState(false);
@@ -1246,8 +1223,7 @@ function NewEnvScheduleDialog({
       setPipelineId(pipelines[0]?.id ?? "");
       setEnvironment(workspace?.selected_environment ?? "");
       setSourceMode("deploy");
-      setVariableOverrides("{}");
-      setSecretReferences("{}");
+      setVariableRows({});
       setError(null);
       setPendingDeployment(null);
     }
@@ -1273,43 +1249,13 @@ function NewEnvScheduleDialog({
       return;
     }
     let vars: Record<string, unknown> | undefined;
-    try {
-      const decoded: unknown = JSON.parse(variableOverrides.trim() || "{}");
-      if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
-        setError("Variable overrides must be a JSON object keyed by declared variable name.");
-        return;
-      }
-      if (Object.keys(decoded).length > 0) vars = decoded as Record<string, unknown>;
-    } catch {
-      setError("Variable overrides must be valid JSON.");
-      return;
-    }
     let secretRefs: Record<string, string> | undefined;
     try {
-      const decoded: unknown = JSON.parse(secretReferences.trim() || "{}");
-      if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
-        setError("Secret references must be a JSON object keyed by declared variable name.");
-        return;
-      }
-      const entries = Object.entries(decoded as Record<string, unknown>);
-      for (const [name, reference] of entries) {
-        if (
-          !name.trim() ||
-          name.trim() !== name ||
-          typeof reference !== "string" ||
-          !/^env:[A-Za-z_][A-Za-z0-9_]*$/.test(reference)
-        ) {
-          setError("Secret references must use declared variable names and env:NAME values.");
-          return;
-        }
-        if (vars && Object.prototype.hasOwnProperty.call(vars, name)) {
-          setError(`Variable ${name} cannot have both a literal override and a secret reference.`);
-          return;
-        }
-      }
-      if (entries.length > 0) secretRefs = decoded as Record<string, string>;
-    } catch {
-      setError("Secret references must be valid JSON.");
+      const variableInput = scheduleVariableInput(pipelineVariables.variables, variableRows);
+      if (Object.keys(variableInput.vars).length > 0) vars = variableInput.vars;
+      if (Object.keys(variableInput.secret_refs).length > 0) secretRefs = variableInput.secret_refs;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Variables are invalid.");
       return;
     }
     const selectedPipeline = { id: pipeline.id, uuid: pipeline.uuid, name: pipeline.name };
@@ -1355,8 +1301,8 @@ function NewEnvScheduleDialog({
               New schedule
             </DialogTitle>
             <DialogDescription>
-              Desired schedule settings are saved in .renart/schedules.yml. Each machine keeps its
-              exact deployment pin and run history locally.
+              Saved to .renart/schedules.yml. The deployment it uses and its run history stay on
+              this machine.
             </DialogDescription>
           </DialogHeader>
           <ScrollArea
@@ -1424,39 +1370,19 @@ function NewEnvScheduleDialog({
                   </option>
                 </select>
               </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">
-                  Variable overrides
-                </span>
-                <Textarea
-                  className="min-h-20 font-mono text-xs"
-                  value={variableOverrides}
-                  onChange={(event) => setVariableOverrides(event.target.value)}
-                  placeholder={'{"region":"eu","limit":100}'}
-                  spellCheck={false}
-                />
-                <span className="block text-[11px] text-muted-foreground">
-                  Optional JSON values are validated against the declarations in the pinned
-                  deployment. Plans and schedule responses expose names and digests, not values.
-                </span>
-              </label>
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Secret references</span>
-                <Textarea
-                  className="min-h-20 font-mono text-xs"
-                  value={secretReferences}
-                  onChange={(event) => setSecretReferences(event.target.value)}
-                  placeholder={'{"api_token":"env:RENART_API_TOKEN"}'}
-                  spellCheck={false}
-                />
-                <span className="block text-[11px] text-muted-foreground">
-                  Only env:NAME references are committed. Renart resolves their values from the
-                  server process when planning and running; resolved values are never written to
-                  schedule or run state.
-                </span>
-              </label>
               <div className="space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground">Run source</span>
+                <span className="text-xs font-medium text-muted-foreground">Variables</span>
+                <ScheduleVariableFields
+                  idPrefix="new-schedule-variable"
+                  variables={pipelineVariables.variables}
+                  loading={pipelineVariables.loading}
+                  error={pipelineVariables.error}
+                  rows={variableRows}
+                  onRowsChange={setVariableRows}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <span className="text-xs font-medium text-muted-foreground">Deployment</span>
                 <ToggleGroup
                   type="single"
                   variant="outline"
@@ -1481,24 +1407,21 @@ function NewEnvScheduleDialog({
                       : deployState.status?.has_snapshot && !deployState.status.executable
                         ? "Deployment needs repair"
                         : deployState.status?.version_id
-                          ? `Use ${deploymentLabel(
-                              deployState.status.ordinal,
-                              deployState.status.version_id,
-                            )}`
+                          ? `Use ${deploymentLabel(deployState.status.ordinal, undefined, "deployment")}`
                           : "No deployment yet"}
                   </ToggleGroupItem>
                   <ToggleGroupItem value="deploy" className="w-full">
-                    Review saved workspace
+                    Deploy current files
                   </ToggleGroupItem>
                 </ToggleGroup>
                 <p className="text-[11px] text-muted-foreground">
                   {sourceMode === "existing" && deployState.status?.version_id
-                    ? `The schedule will stay pinned to ${deploymentLabel(
+                    ? `The schedule runs ${deploymentLabel(
                         deployState.status.ordinal,
-                        deployState.status.version_id,
+                        undefined,
                         "deployment",
-                      )}.`
-                    : "Review the saved workspace, create a deployment, and pin this schedule to that exact version."}
+                      )} until you update it.`
+                    : "Check the pipeline's current files, deploy them, and run this schedule on that deployment."}
                 </p>
               </div>
               {error ? <p className="text-xs text-red-600">{error}</p> : null}
@@ -1527,6 +1450,7 @@ function NewEnvScheduleDialog({
         pipelineName={pendingDeployment?.pipeline.name ?? "Pipeline"}
         environment={pendingDeployment?.environment ?? ""}
         intent="deploy"
+        offerScheduleUpdates={false}
         onDeploy={async (expectedSourceMerkle) => {
           if (!pendingDeployment) throw new Error("Schedule details are unavailable.");
           const response = await deployState.deploy(expectedSourceMerkle);
