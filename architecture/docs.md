@@ -2,8 +2,8 @@
 
 Status: active. This is the authoring contract for everything under `docs/`
 (Astro Starlight, served at getrenart.com/docs) — the docs pages *and* the
-landing page. The canonical page set is whatever `docs/astro.config.mjs`
-declares in its sidebar (see §9 for how it got that shape); this doc defines
+landing page. The canonical page set is whatever `docs/sidebar.mjs`
+declares (see §9 for how it got that shape); this doc defines
 *how* to write it. If you are writing or reviewing a docs page, this is the
 checklist.
 
@@ -28,8 +28,8 @@ a PR; change them here first if they need to change.
    `docs/src/pages/compare/` are a narrow exception: they may name Bruin,
    explain the actual engine relationship and compare documented editions.
    Never turn that relationship into an untested migration or round-trip
-   promise. `rg -i bruin docs/src/content/docs docs/src/pages/index.astro`
-   remains empty; UI-authored examples do not expose raw metadata headers.
+   promise. `rg -i bruin docs/src/content/docs docs/src/pages/index.astro
+   docs/src/markdown` remains empty; UI-authored examples do not expose raw metadata headers.
 2. **Web-UI-first.** Nothing in the docs may require — or suggest — editing an
    asset's metadata encoding by hand. Users see the SQL editor, the Python
    editor, the Load form, the API editor, and the workbench; the docs describe
@@ -296,7 +296,7 @@ shipped (July 2026; git history keeps the full plans).
 - **The alpha page set** is deliberately small: ~18 real pages instead of the
   46-stub IA from the earlier rollout plan. Deleted stubs come back from git
   as their features stabilise, at the position the rollout IA assigned them.
-  The sidebar in `docs/astro.config.mjs` is the authoritative list; every
+  The sidebar in `docs/sidebar.mjs` is the authoritative list; every
   entry must be a real page (verification: `pnpm build` in `docs/` green, no
   dead links, no Bruin references in tutorials or reference pages). Since
   September 2026 the sidebar follows the workflow (option A in
@@ -446,3 +446,55 @@ the shared semantic table. Keep included capabilities, separate tools or paid
 offerings, and unavailable features distinct without assigning scores. The
 four-product table scrolls with sticky feature names; paired tables fit small
 screens. New claims require source review, not just a copied checkmark.
+
+## 11. Markdown versions for agents
+
+Language models and coding agents read the site as Markdown. `pnpm build` ends
+with `docs/scripts/build-agent-files.mjs`, which writes these files next to the
+HTML in `dist/`:
+
+| File | Source |
+| --- | --- |
+| `<page>.md` for every docs and comparison page and `/work-with-me/` | the built page's main content, converted (`/docs/quickstart/` → `/docs/quickstart.md`, `/docs/` → `/docs.md`) |
+| `/index.md` | `docs/src/markdown/home.md`, written by hand |
+| `/llms.txt` | `docs/src/markdown/llms-intro.md`, then every docs page grouped as in the sidebar, then comparison pages under **Optional** |
+| `/docs/llms.txt` | the docs index alone |
+| `/llms-full.txt` | every docs page in sidebar order, each with its web URL |
+| `/404.md` | fixed text pointing at the docs and `llms.txt` |
+
+- Each page with a Markdown version declares it with `<link rel="alternate"
+  type="text/markdown">`; `docs/src/lib/markdown-twin.mjs` maps the path. Legal
+  pages have none because their runtime-substituted values (§10) exist only in
+  HTML.
+- The converter keeps the main content. It turns Starlight asides, Expressive
+  Code blocks, link cards, terminal recordings and themed screenshots into
+  plain Markdown, drops `aria-hidden` decoration, and points same-site links at
+  their Markdown versions. A new component that converts badly gets a rule in
+  the script, not a workaround in the page.
+- `home.md` and `llms-intro.md` are user-facing copy: describe only shipped
+  behavior, label previews as such (`renart mcp`), and keep the "When to use
+  Renart" section honest about what Renart does not offer. `home.md` restates
+  the landing page; the build fails when a landing heading, paragraph, tour
+  entry or platform name is missing from it, so landing copy changes ship with
+  their Markdown change.
+- The build also fails when an advertised Markdown version is missing, a
+  generated same-site link resolves to nothing, a docs page is missing from the
+  sidebar, or `llms.txt` exceeds 30,000 characters.
+- `docs/Caddyfile` serves `*.md` as `text/markdown` and the `llms` files as
+  `text/plain`. A page URL requested with `Accept: text/markdown` returns its
+  Markdown version at the same URL, with `Vary: Accept`. Every page with a
+  Markdown version sends a `Link: <…>; rel="alternate"` header; the root also
+  links `llms.txt` and the sitemap. Missing pages return the Starlight 404 page,
+  or `/404.md` for Markdown requests. Error routes do not inherit site
+  directives, so the 404 handler imports the `renart_templates` snippet itself.
+- Cloudflare treats HTML as dynamic today. A cache-everything rule would ignore
+  `Vary: Accept` and serve whichever representation it cached first at a page
+  URL; bypass the cache for `Accept: text/markdown` before adding one.
+- The sitemap comes from `@astrojs/sitemap` configured in `astro.config.mjs`
+  (Starlight then skips its own). `docs/scripts/page-dates.mjs` stamps each URL
+  with the newest commit date of the page's source files. The docs image is
+  built without `.git`, so `make docs-docker` first snapshots those dates into
+  the gitignored `docs/.page-dates.json`; a build with neither omits `lastmod`.
+- Deliberately absent: User-Agent-based Markdown serving (content would differ
+  by crawler), and API, OAuth or remote MCP discovery documents, because Renart
+  has no hosted service to describe.
