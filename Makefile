@@ -131,6 +131,7 @@ sync-install:
 	cp install.sh docs/public/install.sh
 
 docs-docker:
+	node docs/scripts/page-dates.mjs
 	$(DOCKER) build -f Dockerfile.docs --build-arg RENART_VERSION=$(RENART_VERSION) --build-arg RENART_COMMIT=$(RENART_COMMIT) -t $(DOCS_IMAGE) .
 
 docs-docker-run:

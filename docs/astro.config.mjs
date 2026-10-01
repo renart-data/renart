@@ -1,7 +1,9 @@
 import { defineConfig, fontProviders } from 'astro/config';
+import sitemap from '@astrojs/sitemap';
 import starlight from '@astrojs/starlight';
 import starlightThemeRapide from 'starlight-theme-rapide';
 import { publicMediaUrl } from './src/lib/public-media.mjs';
+import { pageLastModified } from './scripts/page-dates.mjs';
 
 const site = 'https://getrenart.com';
 const socialImage = site + publicMediaUrl('/landing/og-image.png');
@@ -61,6 +63,14 @@ export default defineConfig({
     },
   ],
   integrations: [
+    // Starlight skips its built-in sitemap when this one is configured; this
+    // one adds lastmod from each page's Git history.
+    sitemap({
+      serialize(item) {
+        const lastmod = pageLastModified(new URL(item.url).pathname);
+        return lastmod ? { ...item, lastmod } : item;
+      },
+    }),
     starlight({
       title: 'Renart Docs',
       components: {
