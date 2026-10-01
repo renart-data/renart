@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "node scripts/check-content.mjs && astro check && astro build",
+    "build": "node scripts/check-content.mjs && astro check && astro build && node scripts/build-agent-files.mjs",
     "check:content": "node scripts/check-content.mjs --check-code",
     "preview": "astro preview",
     "recordings:cli": "node ../scripts/generate-cli-recordings.mjs",
@@ -23,7 +23,15 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
     "asciinema-player": "3.17.0",
-    "typescript": "^6.0.3"
+    "hast-util-select": "^6.0.4",
+    "hast-util-to-string": "^3.0.1",
+    "rehype-parse": "^9.0.1",
+    "rehype-remark": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-stringify": "^11.0.0",
+    "typescript": "^6.0.3",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.1.0"
   },
   "pnpm": {
     "overrides": {

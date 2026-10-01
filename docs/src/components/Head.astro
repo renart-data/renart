@@ -1,8 +1,11 @@
 ---
 import DefaultHead from '@astrojs/starlight/components/Head.astro';
+import { markdownTwinPath } from '../lib/markdown-twin.mjs';
 
-const robots = Astro.url.pathname === '/404/' ? 'noindex, nofollow' : 'index, follow';
+const notFound = Astro.url.pathname === '/404/';
+const robots = notFound ? 'noindex, nofollow' : 'index, follow';
 ---
 
 <DefaultHead />
 <meta name="robots" content={robots} />
+{!notFound && <link rel="alternate" type="text/markdown" href={markdownTwinPath(Astro.url.pathname)} />}

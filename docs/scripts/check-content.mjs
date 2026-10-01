@@ -56,6 +56,12 @@ for (const file of files) {
   }
 }
 
+// The hand-written Markdown for agents (architecture/docs.md §11) follows the same vocabulary.
+for (const file of await readdir(path.join(root, "src/markdown"))) {
+  if (/bruin/i.test(await readFile(path.join(root, "src/markdown", file), "utf8")))
+    failures.push(`src/markdown/${file}: Use Renart terminology and UI-authored examples`);
+}
+
 // Run with --check-code in a full checkout. The static Docker build only copies docs.
 if (process.argv.includes("--check-code")) {
   const source = await readFile(path.join(root, "../internal/web/service/direct_run.go"), "utf8");
