@@ -2,6 +2,18 @@
 	auto_https off
 }
 
+# Runtime substitution keeps the public legal identity out of Git and provides
+# the Umami website ID to the consent controller. The tracker itself is never
+# emitted by Caddy; browser code creates it only after affirmative consent.
+(renart_templates) {
+	templates {
+		mime text/html
+		# Keep documentation examples that use Go/Jinja's {{ ... }} syntax
+		# from being interpreted as server-side templates.
+		between [[RENART RENART]]
+	}
+}
+
 :{$PORT:80} {
 	root * /usr/share/caddy
 	encode zstd gzip
@@ -12,6 +24,35 @@
 
 	@immutable path /_astro/* /landing/* /icons/*
 	header @immutable Cache-Control "public, max-age=31536000, immutable"
+
+	# Markdown for agents (architecture/docs.md §11). A page with a Markdown
+	# version at <path>.md advertises it, and a request that accepts
+	# text/markdown gets that version at the page URL itself.
+	@markdown path *.md
+	header @markdown Content-Type "text/markdown; charset=utf-8"
+	@llms path /llms.txt /llms-full.txt /docs/llms.txt
+	header @llms Content-Type "text/plain; charset=utf-8"
+
+	# /docs/quickstart/ -> /docs/quickstart.md, / -> /index.md.
+	map {path} {markdown_version} {
+		~^(/.+)/$ "${1}.md"
+		default /index.md
+	}
+	@page path / */
+	header @page +Vary Accept
+	header / +Link `</llms.txt>; rel="describedby"; type="text/plain", </sitemap-index.xml>; rel="sitemap"; type="application/xml"`
+	@has_markdown {
+		path / */
+		file {markdown_version}
+	}
+	header @has_markdown +Link `<{markdown_version}>; rel="alternate"; type="text/markdown"`
+	@wants_markdown {
+		path / */
+		header Accept *text/markdown*
+		file {markdown_version}
+	}
+	header @wants_markdown Content-Type "text/markdown; charset=utf-8"
+	rewrite @wants_markdown {markdown_version}
 
 	header {
 		# The self-hosted terminal player and search use WebAssembly. Permit its
@@ -24,15 +65,21 @@
 		Referrer-Policy strict-origin-when-cross-origin
 	}
 
-	# Runtime substitution keeps the public legal identity out of Git and provides
-	# the Umami website ID to the consent controller. The tracker itself is never
-	# emitted by Caddy; browser code creates it only after affirmative consent.
-	templates {
-		mime text/html
-		# Keep documentation examples that use Go/Jinja's {{ ... }} syntax
-		# from being interpreted as server-side templates.
-		between [[RENART RENART]]
-	}
+	import renart_templates
 
 	file_server
+
+	handle_errors 404 {
+		@markdown_error header Accept *text/markdown*
+		handle @markdown_error {
+			header Content-Type "text/markdown; charset=utf-8"
+			rewrite * /404.md
+			file_server
+		}
+		handle {
+			import renart_templates
+			rewrite * /404.html
+			file_server
+		}
+	}
 }

@@ -27,6 +27,26 @@ for (const route of ["/", ...routes, "/privacy/", "/legal-notice/"]) {
   )
     throw new Error(`Caddy response failed: ${route} (${response.status})`);
 }
+for (const [route, accept, status, heading] of [
+  ["/", "text/markdown", 200, "# Renart\n"],
+  ["/docs/quickstart/", "text/markdown", 200, "# Quickstart\n"],
+  ["/missing-page/", "text/markdown", 404, "# Page not found\n"],
+  ["/missing-page/", "text/html", 404, "<!DOCTYPE html>"],
+]) {
+  const response = await fetch(baseURL + route, { headers: { Accept: accept } });
+  const body = await response.text();
+  if (
+    response.status !== status ||
+    !response.headers.get("content-type")?.startsWith(accept) ||
+    !body.startsWith(heading) ||
+    body.includes("[[RENART") ||
+    (status === 200 && !/\baccept\b/i.test(response.headers.get("vary") ?? ""))
+  )
+    throw new Error(`Markdown negotiation failed: ${route} as ${accept} (${response.status})`);
+}
+const llms = await fetch(baseURL + "/llms.txt");
+if (!llms.ok || !(await llms.text()).startsWith("# Renart\n"))
+  throw new Error(`llms.txt failed (${llms.status})`);
 const browser = await chromium.launch();
 const errors = [];
 const browserOptions = {
@@ -120,7 +140,7 @@ try {
   await context.close();
   if (errors.length) throw new Error(`Browser errors: ${errors.join("; ")}`);
   console.log(
-    "PASS Caddy headers, WebAssembly with JS eval blocked, literal Jinja, consent/decline/revocation, Discord persistence; zero page errors",
+    "PASS Caddy headers, Markdown negotiation and 404s, WebAssembly with JS eval blocked, literal Jinja, consent/decline/revocation, Discord persistence; zero page errors",
   );
 } finally {
   await browser.close();
