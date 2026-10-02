@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { useSetAtom } from "jotai";
+import { Import, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { SettingsNavigator } from "./settings-navigator";
 import type { SettingsSearch } from "@/lib/settings-navigation";
@@ -20,6 +21,7 @@ import { SettingsStatus, SecretBindingsAlert } from "./settings-form-parts";
 import { EnvironmentEditor, type EnvironmentEditorState } from "./settings-environment-editor";
 import { ConnectionEditor, type ConnectionEditorState } from "./settings-connection-editor";
 import { LocalVaultCard } from "./settings-vault";
+import { openConnectDataAtom } from "@/lib/atoms/domains/connect-data";
 
 export function AppProjectEnvironmentsPage({ environment, action }: SettingsSearch) {
   const settings = useWorkspaceSettingsData();
@@ -270,6 +272,7 @@ function SettingsOverview({
   onCreate: () => void;
 }) {
   const { setMobileNavigationOpen, dispatch, navigation } = useWorkbench();
+  const openConnectData = useSetAtom(openConnectDataAtom);
   return (
     <Empty className="min-h-56 border">
       <EmptyHeader>
@@ -285,6 +288,12 @@ function SettingsOverview({
           <Plus data-icon="inline-start" />
           {section === "connections" ? "New connection" : "New environment"}
         </Button>
+        {section === "connections" ? (
+          <Button variant="outline" onClick={() => openConnectData(true)}>
+            <Import data-icon="inline-start" />
+            Connect and import tables
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           onClick={() => {

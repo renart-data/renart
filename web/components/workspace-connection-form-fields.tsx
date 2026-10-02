@@ -30,6 +30,7 @@ import {
   FieldDescription,
   FieldSeparator,
 } from "@/components/ui/field";
+import { connectionFieldLabel } from "@/lib/connection-field-label";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -50,6 +51,18 @@ import type {
   WorkspaceConnectionSecretChange,
 } from "@/lib/types";
 
+function ConnectionFieldName({ name }: { name: string }) {
+  const label = connectionFieldLabel(name);
+  return (
+    <>
+      {label}
+      {label.toLowerCase() !== name.toLowerCase() ? (
+        <code className="font-mono text-[0.625rem] font-normal text-muted-foreground">{name}</code>
+      ) : null}
+    </>
+  );
+}
+
 export function WorkspaceConnectionFormFields({
   busy,
   focusedField,
@@ -67,6 +80,7 @@ export function WorkspaceConnectionFormFields({
   environmentDisabled = false,
   typeDisabled = false,
   showEnvironmentSelector = true,
+  showTypeSelector = true,
   validateBusy,
   validateMessage,
   validateTone,
@@ -97,6 +111,8 @@ export function WorkspaceConnectionFormFields({
   environmentDisabled?: boolean;
   typeDisabled?: boolean;
   showEnvironmentSelector?: boolean;
+  // Hidden when the caller picks the type itself, e.g. the connect-data flow.
+  showTypeSelector?: boolean;
   validateBusy: boolean;
   validateMessage: string | null;
   validateTone: "error" | "success" | null;
@@ -191,7 +207,9 @@ export function WorkspaceConnectionFormFields({
           className="flex min-w-0 flex-col gap-2"
         >
           <div className="flex min-w-0 items-center gap-2">
-            <FieldLabel htmlFor={`connection-field-${field.name}`}>{field.name}</FieldLabel>
+            <FieldLabel htmlFor={`connection-field-${field.name}`}>
+              <ConnectionFieldName name={field.name} />
+            </FieldLabel>
             <Badge variant={display.variant} size="xs">
               {display.label}
             </Badge>
@@ -321,7 +339,9 @@ export function WorkspaceConnectionFormFields({
           orientation="horizontal"
         >
           <div>
-            <FieldLabel htmlFor={`connection-field-${field.name}`}>{field.name}</FieldLabel>
+            <FieldLabel htmlFor={`connection-field-${field.name}`}>
+              <ConnectionFieldName name={field.name} />
+            </FieldLabel>
           </div>
           <Switch
             id={`connection-field-${field.name}`}
@@ -341,7 +361,9 @@ export function WorkspaceConnectionFormFields({
           data-focused-field={field.name === focusedField || undefined}
           onFocusCapture={() => onFieldFocus?.(field.name)}
         >
-          <FieldLabel>{field.name}</FieldLabel>
+          <FieldLabel>
+            <ConnectionFieldName name={field.name} />
+          </FieldLabel>
           <StringArrayCombobox
             value={values}
             suggestions={field.default_value?.split(",") ?? []}
@@ -359,7 +381,9 @@ export function WorkspaceConnectionFormFields({
         data-focused-field={field.name === focusedField || undefined}
         onFocusCapture={() => onFieldFocus?.(field.name)}
       >
-        <FieldLabel htmlFor={`connection-field-${field.name}`}>{field.name}</FieldLabel>
+        <FieldLabel htmlFor={`connection-field-${field.name}`}>
+          <ConnectionFieldName name={field.name} />
+        </FieldLabel>
         <Input
           id={`connection-field-${field.name}`}
           aria-label={field.name}
@@ -433,7 +457,7 @@ export function WorkspaceConnectionFormFields({
           </Field>
         ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className={cn("grid gap-4", showTypeSelector && "sm:grid-cols-2")}>
           <Field>
             <FieldLabel htmlFor="workspace-connection-name">Name</FieldLabel>
             <Input
@@ -444,27 +468,29 @@ export function WorkspaceConnectionFormFields({
               placeholder={connectionForm.type ? `${connectionForm.type}-default` : "my-connection"}
             />
           </Field>
-          <Field>
-            <FieldLabel htmlFor="workspace-connection-type">Type</FieldLabel>
-            <ConnectionSelect
-              value={connectionForm.type || undefined}
-              groups={[
-                {
-                  label: "Connection types",
-                  options: connectionTypes.map((connectionType) => ({
-                    value: connectionType.type_name,
-                    label: connectionType.type_name,
-                    connectionType: connectionType.type_name,
-                  })),
-                },
-              ]}
-              onValueChange={onTypeChange}
-              disabled={typeDisabled}
-              id="workspace-connection-type"
-              className="w-full"
-              placeholder="Select connection type"
-            />
-          </Field>
+          {showTypeSelector ? (
+            <Field>
+              <FieldLabel htmlFor="workspace-connection-type">Type</FieldLabel>
+              <ConnectionSelect
+                value={connectionForm.type || undefined}
+                groups={[
+                  {
+                    label: "Connection types",
+                    options: connectionTypes.map((connectionType) => ({
+                      value: connectionType.type_name,
+                      label: connectionType.type_name,
+                      connectionType: connectionType.type_name,
+                    })),
+                  },
+                ]}
+                onValueChange={onTypeChange}
+                disabled={typeDisabled}
+                id="workspace-connection-type"
+                className="w-full"
+                placeholder="Select connection type"
+              />
+            </Field>
+          ) : null}
         </div>
 
         <Field
