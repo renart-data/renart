@@ -52,8 +52,13 @@ the first-run setup can initialize one for you.
 ## First run
 
 If the workspace has no pipelines yet, Renart opens the welcome screen,
-where you can start from a demo project, import existing warehouse tables,
-or start empty. The [quickstart](/docs/quickstart/) walks through it.
+where you can explore a demo project, connect a database and import its
+tables, or start from scratch. The [quickstart](/docs/quickstart/) walks
+through it.
+
+The first time Renart runs DuckDB on a machine, it downloads DuckDB's database
+driver (about 70 MB) once. Later local DuckDB work reuses it without network
+access.
 
 The full set of flags (watch modes, TLS, the scheduler) is in the
 [CLI reference](/docs/reference/cli/).

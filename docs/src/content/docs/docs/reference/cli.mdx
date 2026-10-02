@@ -258,13 +258,20 @@ repository when no repository encloses it.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--template` | `empty` | Project template: `empty`, `retail`, or `chess`. |
+| `--template` | `empty` | Project template; `renart init --help` lists them. |
+
+The templates are the demos offered on the welcome screen:
 
 | Template | Contents |
 | --- | --- |
-| `empty` | A minimal pipeline to build on. |
-| `retail` | An offline seed-and-SQL example with bundled CSV data. |
-| `chess` | A live example that reads the public Chess.com API. |
+| `product` | Product analytics: synthetic events modelled into journeys, a funnel and daily activity in local DuckDB. |
+| `operations` | Operations monitoring: a query sensor gating device-health models in local DuckDB. |
+| `earthquakes` | Earthquake monitoring: USGS events over HTTP with several materialization strategies. |
+| `python` | Python risk scoring: SQL features scored in Python and aggregated back in SQL. |
+| `jinja` | Jinja workshop: variables, date windows, conditionals and generated SQL in local DuckDB. |
+| `chess` | Chess performance: player games and openings from the public Chess.com API. |
+| `retail` | Retail analytics: bundled CSV seeds loaded through Sling, which the first run downloads. |
+| `empty` | A minimal pipeline with one example SQL asset. |
 
 ## `renart secrets`
 
