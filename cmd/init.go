@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/bruin-data/bruin/pkg/git"
 	"github.com/urfave/cli/v3"
@@ -22,13 +23,12 @@ func Init() *cli.Command {
 		Category:  categoryProject,
 		Description: "Creates the project files in the given directory (default: the current\n" +
 			"directory) and initializes a git repository when none encloses it.\n" +
-			"Templates: empty (a minimal pipeline), retail (offline SQL demo),\n" +
-			"chess (live Chess.com API demo).",
+			"Templates:\n" + initTemplateHelp(),
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:  "template",
 				Value: "empty",
-				Usage: "project template: empty, retail, or chess",
+				Usage: "project template: " + strings.Join(initTemplateNames(), ", "),
 			},
 		},
 		Action: func(ctx context.Context, c *cli.Command) error {
@@ -83,17 +83,45 @@ func Init() *cli.Command {
 	}
 }
 
-// initTemplateID maps the user-facing template names onto the service IDs
-// (the UI-only "bare" import template is deliberately not offered).
-func initTemplateID(name string) (string, error) {
-	switch name {
-	case "empty":
-		return service.ProjectTemplateEmpty, nil
-	case "retail":
-		return service.ProjectTemplateRetailDemo, nil
-	case "chess":
-		return service.ProjectTemplateChessDemo, nil
-	default:
-		return "", fmt.Errorf("unknown template %q (expected empty, retail, or chess)", name)
+// initTemplateName is the terminal name of a welcome-catalog template: its ID
+// without the "demo:" prefix. The UI-only "bare" import template is
+// deliberately not offered.
+func initTemplateName(id string) string {
+	return strings.TrimPrefix(id, "demo:")
+}
+
+func initTemplates() []service.ProjectTemplateInfo {
+	templates := []service.ProjectTemplateInfo{}
+	for _, template := range service.ProjectTemplates() {
+		if template.ID != service.ProjectTemplateBare {
+			templates = append(templates, template)
+		}
 	}
+	return templates
+}
+
+func initTemplateNames() []string {
+	names := []string{}
+	for _, template := range initTemplates() {
+		names = append(names, initTemplateName(template.ID))
+	}
+	return names
+}
+
+func initTemplateHelp() string {
+	var help strings.Builder
+	for _, template := range initTemplates() {
+		fmt.Fprintf(&help, "  %-12s %s\n", initTemplateName(template.ID), template.Title)
+	}
+	return strings.TrimRight(help.String(), "\n")
+}
+
+// initTemplateID maps a terminal template name onto its service ID.
+func initTemplateID(name string) (string, error) {
+	for _, template := range initTemplates() {
+		if initTemplateName(template.ID) == strings.TrimSpace(name) {
+			return template.ID, nil
+		}
+	}
+	return "", fmt.Errorf("unknown template %q (expected one of: %s)", name, strings.Join(initTemplateNames(), ", "))
 }
