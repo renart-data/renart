@@ -1,4 +1,4 @@
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useEffect, useState } from "react";
 
 import { useSchedulerRunEvents } from "@/hooks/use-scheduler-run-events";
@@ -12,6 +12,7 @@ import {
   type UpsertEnvScheduleInput,
 } from "@/lib/api-env-schedules";
 import { scheduleOccurrenceEventAtom } from "@/lib/atoms/domains/results";
+import { markGettingStartedAtom } from "@/lib/getting-started";
 
 export function envScheduleKey(schedule: Pick<EnvSchedule, "pipeline_uuid" | "environment">) {
   return `${schedule.pipeline_uuid}::${schedule.environment}`;
@@ -69,6 +70,11 @@ export function useEnvSchedules() {
       void refresh();
     }
   }, [occurrenceEvent, refresh]);
+
+  const markGettingStarted = useSetAtom(markGettingStartedAtom);
+  useEffect(() => {
+    if (schedules.length > 0) markGettingStarted({ id: "schedule" });
+  }, [markGettingStarted, schedules.length]);
 
   const canMutate = ownership?.state === "owner";
   const ownershipReason =

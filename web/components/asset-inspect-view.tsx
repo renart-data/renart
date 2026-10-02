@@ -1,6 +1,7 @@
 "use client";
 
-import { lazy, Suspense } from "react";
+import { useSetAtom } from "jotai";
+import { lazy, Suspense, useEffect } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { TriangleAlert } from "lucide-react";
@@ -23,6 +24,7 @@ import {
 } from "@/lib/asset-visualization";
 
 import type { PreviewMetadata } from "@/lib/generated/api-types";
+import { markGettingStartedAtom } from "@/lib/getting-started";
 
 const ReactMarkdown = lazy(() => import("react-markdown"));
 
@@ -49,6 +51,12 @@ export function AssetInspectView({
   warning,
   frameless = false,
 }: Props) {
+  const markGettingStarted = useSetAtom(markGettingStartedAtom);
+  const hasRows = !loading && rows.length > 0;
+  useEffect(() => {
+    if (hasRows) markGettingStarted({ id: "inspect" });
+  }, [hasRows, markGettingStarted]);
+
   const view = getAssetViewMode(meta);
   const chartType = (meta?.web_chart_type ?? "line").trim().toLowerCase();
   const tableDense = getTableDenseMode(meta);

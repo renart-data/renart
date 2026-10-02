@@ -137,6 +137,7 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
               disabled={!envSchedules.canMutate}
               title={!envSchedules.canMutate ? envSchedules.ownershipReason : undefined}
               aria-label="New schedule"
+              data-getting-started-target="new-schedule"
               onClick={openNewSchedule}
             >
               <Plus />
@@ -291,7 +292,7 @@ export function AppSchedulesPage({ initialQuery = "" }: { initialQuery?: string 
             ) : null}
             {!envSchedules.loading && filteredSchedules.length === 0 ? (
               <div className="px-3 py-8 text-sm text-muted-foreground">
-                No schedules yet. Use “New schedule” to run a pipeline in an environment.
+                No schedules yet. Use New to run a pipeline in an environment on a schedule.
               </div>
             ) : null}
             {filteredSchedules.map((schedule) => (
