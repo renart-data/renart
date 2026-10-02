@@ -291,8 +291,18 @@ workspace. Templates may also declare environment-specific DuckDB connections
 and tracked schedules. The Earthquake demo uses this path to scaffold default
 and production connections plus two UUID-bound declarations in
 `.renart/schedules.yml`; those files are part of the initial commit.
-`GET /api/projects/templates` lists the categorized templates and feature
-summaries for the welcome UI. The process-level `/api/projects/browse` directory picker
+Templates may also add project-level files beside the pipeline; the Product
+demo adds a notebook (`notebooks/product-activity/`) and a dashboard
+(`dashboards/product-overview.dashboard.yml`) on its tables, and existing files
+are never overwritten. `GET /api/projects/templates` lists the categorized
+templates, feature summaries and each template's asset graph (names, types,
+dependencies parsed from the generated files) for the welcome UI's preview.
+`renart init` offers the same catalog (IDs without the `demo:` prefix).
+`Offline` marks templates whose assets all run in-process against DuckDB
+(guarded by a static test); every DuckDB run still needs the ADBC driver, which
+Bruin downloads on first use and caches the first result of in a `sync.Once`,
+so `GET /api/projects/duckdb-driver` probes it and `POST` installs it as an
+explicit onboarding step, detached from request cancellation. The process-level `/api/projects/browse` directory picker
 uses the same default-parent resolution as project creation, and
 `POST /api/projects/directories` creates one visible child folder selected by
 the user. `.renart/project.yml` also carries project-scoped feature

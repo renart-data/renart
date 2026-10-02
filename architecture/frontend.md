@@ -68,24 +68,55 @@ File-based routes under [src/routes](../web/src/routes):
   artifact has a live child route keyed by its encoded workspace path.
 - [welcome.tsx](../web/src/routes/welcome.tsx) (`/welcome`, outside the shell)
   is the first-run onboarding and new-project wizard
-  ([welcome-page.tsx](../web/components/app/welcome-page.tsx)): demo / import /
-  empty flows against `POST /api/projects`, with `?new=1` (the project
-  switcher's "New project...") forcing creation of a fresh directory instead of
-  scaffolding into the current empty workspace. The project-directory response
-  marks launcher bootstrap mode, which also forces a fresh project directory
-  instead of scaffolding into the server's temporary welcome runtime.
-  New-project location uses the
-  server-backed directory picker shared with the project switcher; it starts at
-  the effective suggested parent and can create child folders. Creation
-  conflicts such as an existing target directory stay visible beside the
-  create action instead of rendering above a long, scrolled target form, and
-  clear when the user changes the project name or location. Demo selection
-  reuses the categorized template catalog from the Build view: every starter
-  remains visible in one scrollable list while the adjacent pane describes the
-  selected starter's connectivity, features, and assets. Demo creation
-  bootstraps the workspace with the `build-stale/stream` run (fresh assets are
-  all `never_built`) and renders its per-asset SSE progress and ANSI-colored
-  output.
+  ([welcome-page.tsx](../web/components/app/welcome-page.tsx)). Its steps are
+  a pure reducer ([welcome/welcome-flow.ts](../web/components/app/welcome/welcome-flow.ts):
+  choose → setup → run for a demo, choose → setup → connect → tables for an
+  import, choose → setup for an empty project), rendered by a two-column
+  `WelcomeFrame` whose right pane previews the choice. Choose lists up to five
+  recent registered projects plus **Open folder...**, then the three paths
+  (Explore a demo, Connect your data, Start from scratch). The default demo is
+  `demo:product`. The demo preview is the real `AppLineageCanvas` in `preview`
+  mode (fit view, no pan/zoom, large labels below 0.75 zoom), fed by the
+  template's `assets` graph from `GET /api/projects/templates`; on the run step
+  the same canvas shows each asset go never built → running → fresh from the
+  `build-stale/stream` SSE events. The run checklist reports real steps:
+  project files, the local DuckDB connection, Git, the DuckDB driver
+  (`GET`/`POST /api/projects/duckdb-driver`, downloaded once per machine) and
+  the first run, with the ANSI output behind **Show output**. `?new=1` (the
+  project switcher's "New project...") and launcher bootstrap mode force a
+  fresh project directory instead of scaffolding into the current workspace or
+  the temporary welcome runtime. A project in a new scope is entered by a
+  document navigation (`pinProject`); an in-place project refreshes the
+  workspace snapshot and navigates with the router. Both share the
+  `pipeline-canvas` view-transition name (`@view-transition` covers the
+  cross-document case; reduced motion disables it). New-project location
+  uses the server-backed directory picker shared with the project switcher;
+  the target line stays collapsed until **Change** or a creation error.
+- **Connect your data** is one component,
+  [connect-data-flow.tsx](../web/components/app/connect-data-flow.tsx), used by
+  the welcome import path and by the in-shell
+  [connect-data-sheet.tsx](../web/components/app/connect-data-sheet.tsx)
+  (`openConnectDataAtom`; opened from Getting started, the Connections
+  overview and the Data Browser's empty detail). It lists connection types by
+  product name with documented platforms first, reuses Settings'
+  `WorkspaceConnectionFormFields` (labels via
+  [connection-field-label.ts](../web/lib/connection-field-label.ts)), previews
+  discovery on **Test connection**, saves the connection on **Choose tables**,
+  and imports a schema-grouped selection. After an import the pipeline canvas
+  shows a one-time hand-off (`connectDataHandoffAtom`, session storage so it
+  survives the document load into a new project) offering a new SQL asset
+  over the imported sources;
+  [pipeline-canvas-callouts.tsx](../web/components/app/pipeline-canvas-callouts.tsx)
+  also shows a one-time explanation of **Edited**.
+- **Getting started** ([lib/getting-started.ts](../web/lib/getting-started.ts),
+  [getting-started.tsx](../web/components/app/getting-started.tsx)) is a
+  seven-item checklist for projects created on the welcome screen. Progress is
+  per project in `localStorage` (`renart.getting-started.v1.<projectId>`), never
+  in project files. Items complete only when the app observes them: Inspect
+  rows loading, an `stale_edited` asset, a successful run after that edit
+  (from SSE staleness or the canvas's own snapshot), visiting a notebook or
+  dashboard route, schedules existing, a non-DuckDB connection. **Show me**
+  navigates and highlights a `data-getting-started-target` element.
 - `redesign.$.tsx` / `redesign.index.tsx` redirect legacy `/redesign/*` bookmarks
   to the root paths — the only place the old "redesign" name survives.
 - The route tree is generated into
