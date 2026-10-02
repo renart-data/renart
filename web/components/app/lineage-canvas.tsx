@@ -57,7 +57,12 @@ import {
   useDataBrowserLoadTargets,
   useDataBrowserExpandedTarget,
 } from "./data-browser/data-browser-canvas";
-import { AssetNode, AssetNodeMenuItems, type AssetNodeAction } from "./app-primitives";
+import {
+  AssetNode,
+  AssetNodeMenuItems,
+  resolveFreshnessDisplay,
+  type AssetNodeAction,
+} from "./app-primitives";
 
 export type AppLineageCanvasAsset = AppAsset & {
   displayName?: string;
@@ -79,6 +84,7 @@ type AssetNodeData = {
   onOpenConnection?: (assetId: string) => void;
   onReviewFailedCheck?: (assetId: string) => void;
   actions?: AssetNodeAction[];
+  preview?: boolean;
 };
 
 type PrefixGroupNodeData = {
@@ -89,6 +95,13 @@ type PrefixGroupNodeData = {
 };
 
 const overviewZoomThreshold = 0.55;
+// Below this zoom a preview canvas swaps detailed cards for large-label ones,
+// so asset names and statuses stay legible in a small pane.
+const previewDetailZoomThreshold = 0.75;
+
+// The view-transition name shared by the workspace's pipeline canvas and the
+// first-run canvas on the welcome screen.
+export const PIPELINE_CANVAS_TRANSITION = "pipeline-canvas";
 
 export { assetNameParts } from "@/lib/asset-presentation";
 
@@ -122,6 +135,9 @@ function PrefixGroupFlowNode({ data }: NodeProps<PrefixGroupNodeData>) {
 
 function AssetFlowNode({ data }: NodeProps<AssetNodeData>) {
   const overview = useStore((state) => state.transform[2] < overviewZoomThreshold);
+  const compactPreview = useStore(
+    (state) => Boolean(data.preview) && state.transform[2] < previewDetailZoomThreshold,
+  );
   const placingInGroup = useDataBrowserDropGroups().has(assetGroupName(data.asset));
   const displayAsset = {
     ...data.asset,
@@ -145,7 +161,9 @@ function AssetFlowNode({ data }: NodeProps<AssetNodeData>) {
         }
       }}
     >
-      {overview ? (
+      {compactPreview ? (
+        <AssetPreviewNode asset={displayAsset} selected={data.selected} />
+      ) : overview ? (
         <AssetOverviewNode asset={displayAsset} selected={data.selected} />
       ) : (
         <AssetNode
@@ -236,6 +254,46 @@ function AssetOverviewNode({ asset, selected }: { asset: AppAsset; selected: boo
           <AlertTriangle className="size-3.5" />
         </span>
       ) : null}
+    </div>
+  );
+}
+
+function AssetPreviewNode({ asset, selected }: { asset: AppAsset; selected: boolean }) {
+  const Icon = kindMeta[asset.kind].icon;
+  const running = asset.status === "pending";
+  const failed = asset.status === "failed";
+  const freshness = asset.staleness ? resolveFreshnessDisplay(asset.staleness) : null;
+  return (
+    <div
+      data-slot="asset-node"
+      data-testid="lineage-asset-preview"
+      className={cn(
+        "flex h-28 w-58 flex-col justify-center gap-3 overflow-hidden rounded-xl border-2 bg-card px-4 shadow-sm",
+        failed ? "border-destructive" : running || selected ? "border-primary" : "border-border",
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-2.5">
+        <Icon className="size-6 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 truncate font-mono text-xl font-semibold">{asset.name}</span>
+      </div>
+      <div
+        className="flex min-w-0 items-center gap-2 text-base text-muted-foreground"
+        data-staleness={running || failed ? undefined : asset.staleness?.status}
+      >
+        <span
+          className={cn(
+            "size-2.5 shrink-0 rounded-full",
+            failed
+              ? "bg-destructive"
+              : running
+                ? "animate-pulse bg-primary"
+                : (freshness?.dotClassName ?? "bg-zinc-400"),
+          )}
+        />
+        <span className="truncate">
+          {failed ? "Failed" : running ? "Running" : (freshness?.label ?? "Asset")}
+        </span>
+      </div>
     </div>
   );
 }
@@ -375,6 +433,8 @@ export function AppLineageCanvas({
   onReviewFailedCheck,
   onImportExternalRelation,
   goToLabel,
+  preview = false,
+  viewTransitionName,
 }: {
   assets: AppLineageCanvasAsset[];
   links?: AppLineageLayoutEdge[];
@@ -398,6 +458,13 @@ export function AppLineageCanvas({
   // source-placeholder asset.
   onImportExternalRelation?: (relationId: string) => void;
   goToLabel?: string;
+  // A fitted, non-scrolling canvas for previews outside the workspace (the
+  // welcome screen). Edges into running assets animate so a run reads as
+  // data flowing through the graph.
+  preview?: boolean;
+  // Pairs this canvas with another one across a view transition, such as the
+  // first-run canvas expanding into the workspace canvas.
+  viewTransitionName?: string;
 }) {
   const [lineageAssetId, setLineageAssetId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
@@ -590,24 +657,35 @@ export function AppLineageCanvas({
           onOpenConnection: hasConnectionClick ? handleOpenConnection : undefined,
           onReviewFailedCheck: hasQualityReview ? handleReviewFailedCheck : undefined,
           actions: actions.length > 0 ? actions : undefined,
+          preview,
         },
         zIndex: 2,
       };
     });
 
-    const edges: Edge[] = graphEdges.map((edge) => ({
-      id: `${edge.source}-${edge.target}`,
-      source: edge.source,
-      target: edge.target,
-      type: "default",
-      className: edge.provisional ? "asset-edge-provisional" : "asset-edge",
-      animated: false,
-      style: {
-        stroke: edge.provisional ? undefined : "#a1a1aa",
-        strokeWidth: edge.provisional ? undefined : 1.5,
-        opacity: 1,
-      },
-    }));
+    const runningAssetIds = new Set(
+      preview ? assets.filter((asset) => asset.status === "pending").map((asset) => asset.id) : [],
+    );
+    const edges: Edge[] = graphEdges.map((edge) => {
+      const flowing = !edge.provisional && runningAssetIds.has(edge.target);
+      return {
+        id: `${edge.source}-${edge.target}`,
+        source: edge.source,
+        target: edge.target,
+        type: "default",
+        className: edge.provisional
+          ? "asset-edge-provisional"
+          : flowing
+            ? "asset-edge-active"
+            : "asset-edge",
+        animated: flowing,
+        style: {
+          stroke: edge.provisional || flowing ? undefined : "#a1a1aa",
+          strokeWidth: edge.provisional || flowing ? undefined : 1.5,
+          opacity: 1,
+        },
+      };
+    });
 
     return { graphEdges, nodes: [...groupNodes, ...assetNodes], edges };
   }, [
@@ -615,6 +693,7 @@ export function AppLineageCanvas({
     goToLabel,
     flowInstance,
     links,
+    preview,
     hasCreateDownstream,
     hasConnectionClick,
     hasQualityReview,
@@ -679,6 +758,13 @@ export function AppLineageCanvas({
     if (centeredGraphRef.current === graphKey) {
       return;
     }
+    if (preview) {
+      const frame = window.requestAnimationFrame(() => {
+        centeredGraphRef.current = graphKey;
+        void flowInstance.fitView({ padding: 0.12, maxZoom: 0.9 });
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
     const frame = window.requestAnimationFrame(() => {
       const viewportWidth = containerRef.current?.getBoundingClientRect().width ?? 0;
       const graphMinX = Math.min(...nodes.map((node) => node.position.x));
@@ -703,7 +789,7 @@ export function AppLineageCanvas({
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [flowInstance, nodes]);
+  }, [flowInstance, nodes, preview]);
 
   const handlePaneContextMenu = useCallback(
     (event: ReactMouseEvent | MouseEvent) => {
@@ -745,7 +831,12 @@ export function AppLineageCanvas({
   );
 
   return (
-    <div ref={containerRef} className="relative h-full min-h-0 bg-muted/40">
+    <div
+      ref={containerRef}
+      className="relative h-full min-h-0 bg-muted/40"
+      data-canvas-preview={preview || undefined}
+      style={viewTransitionName ? { viewTransitionName } : undefined}
+    >
       <ReactFlow
         nodes={
           dropGroups.size === 0 && !expandedTarget
@@ -781,6 +872,11 @@ export function AppLineageCanvas({
         proOptions={{ hideAttribution: true }}
         minZoom={0.15}
         onInit={setFlowInstance}
+        zoomOnScroll={!preview}
+        zoomOnPinch={!preview}
+        zoomOnDoubleClick={!preview}
+        panOnDrag={!preview}
+        preventScrolling={!preview}
         onPaneContextMenu={handlePaneContextMenu}
         onPaneClick={() => setPaneMenu(null)}
         onMoveStart={() => setPaneMenu(null)}
@@ -791,7 +887,7 @@ export function AppLineageCanvas({
           color="var(--muted-foreground)"
           className="opacity-40 dark:opacity-50"
         />
-        <Controls position="bottom-left" />
+        {preview ? null : <Controls position="bottom-left" />}
         <ViewportFocus assetId={focusAssetId} nodes={nodes} />
       </ReactFlow>
       {paneMenu && onCreateAsset ? (

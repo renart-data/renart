@@ -531,6 +531,58 @@ body > .parameter-hints-widget {
   filter: drop-shadow(0 0 7px var(--primary));
 }
 
+/* First run on the welcome screen: a node that turns Fresh pulses once, and
+   edges into running assets flow (React Flow's dashed animation). */
+@keyframes welcome-node-fresh {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 12px color-mix(in oklab, var(--primary) 0%, transparent);
+  }
+}
+.welcome-canvas[data-live] [data-slot="asset-node"] {
+  transition:
+    border-color 150ms ease-out,
+    opacity 150ms ease-out;
+}
+.welcome-canvas[data-live] [data-slot="asset-node"]:has([data-staleness="fresh"]) {
+  border-color: color-mix(in oklab, var(--primary) 60%, var(--border));
+  animation: welcome-node-fresh 600ms ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-canvas [data-slot="asset-node"] {
+    animation: none !important;
+    transition: none !important;
+  }
+  .welcome-canvas .react-flow__edge.animated path {
+    animation: none;
+  }
+}
+
+/* The first-run canvas expands into the workspace canvas. A new project
+   needs a document load, which cross-fades where the browser supports
+   cross-document view transitions. */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+  ::view-transition-group(root) {
+    animation-duration: 250ms;
+  }
+  ::view-transition-group(pipeline-canvas) {
+    animation-duration: 400ms;
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
 .react-flow__edge.asset-edge-provisional path {
   stroke: var(--warning);
   stroke-width: 2;
@@ -617,26 +669,6 @@ body > .parameter-hints-widget {
     @apply bg-background text-foreground;
   }
 }
-@keyframes quickstart-tour-halo-pulse {
-  0%,
-  100% {
-    filter: drop-shadow(0 0 0 rgba(59, 130, 246, 0));
-  }
-  50% {
-    filter: drop-shadow(0 0 18px rgba(59, 130, 246, 0.8));
-  }
-}
-
-.quickstart-tour-halo {
-  animation: quickstart-tour-halo-pulse 1.4s ease-in-out infinite;
-}
-
-.react-flow__edge.quickstart-tour-edge path {
-  stroke: var(--primary);
-  stroke-width: 3;
-  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.8));
-}
-
 @keyframes seed-drop-overlay-enter {
   from {
     opacity: 0;
