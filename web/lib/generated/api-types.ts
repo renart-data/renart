@@ -585,6 +585,11 @@ export type DataObjectAddress = {
   path?: string;
 };
 
+export type DuckDBDriverResponse = {
+  status: string;
+  ready: boolean;
+};
+
 export type Effect = "read" | "write" | "unknown";
 
 export type EnvironmentPolicy = {
@@ -1305,6 +1310,7 @@ export type PipelineTemplateInfo = {
   offline: boolean;
   suggested_path: string;
   asset_names: string[];
+  assets: TemplateAsset[];
   features: string[];
 };
 
@@ -1481,6 +1487,7 @@ export type ProjectTemplateInfo = {
   offline: boolean;
   pipeline_name: string;
   asset_names: string[];
+  assets: TemplateAsset[];
   features: string[];
 };
 
@@ -1710,6 +1717,12 @@ export type TabularColumn = {
   name: string;
   type: string;
   nullable?: boolean;
+};
+
+export type TemplateAsset = {
+  name: string;
+  type: string;
+  depends: string[];
 };
 
 export type TransactionDependency = {

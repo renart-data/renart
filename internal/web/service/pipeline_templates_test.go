@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -107,6 +108,75 @@ func TestOfflinePipelineDemoTemplatesExecute(t *testing.T) {
 			executePipelineTemplate(t, template, 2*time.Minute)
 		})
 	}
+}
+
+// The execution test above runs with warm caches and network access, so it
+// cannot notice a template that downloads its runtime on first use. "Offline"
+// therefore means every asset runs in-process against DuckDB; seeds, Python,
+// ingestion and API assets need uv, Python or Sling downloads.
+func TestOfflineDemoTemplatesUseOnlyInProcessAssetTypes(t *testing.T) {
+	t.Parallel()
+
+	assetType := regexp.MustCompile(`(?m)^type:\s*(\S+)`)
+	inProcess := map[string]bool{"duckdb.sql": true, "duckdb.sensor.query": true}
+	check := func(templateID string, files map[string]string) {
+		for path, content := range files {
+			for _, match := range assetType.FindAllStringSubmatch(content, -1) {
+				assert.True(t, inProcess[match[1]], "%s: %s uses %s, which needs a download on first run", templateID, path, match[1])
+			}
+		}
+	}
+	for _, template := range pipelineTemplates() {
+		if template.info.Offline {
+			check(template.info.ID, template.files(template.info.SuggestedPath))
+		}
+	}
+	for _, template := range projectTemplates() {
+		if template.info.Offline {
+			check(template.info.ID, template.files())
+		}
+	}
+}
+
+func TestTemplateAssetsDescribeTheScaffoldedGraph(t *testing.T) {
+	t.Parallel()
+
+	check := func(templateID string, assetNames []string, assets []TemplateAsset) {
+		names := map[string]bool{}
+		for _, asset := range assets {
+			names[asset.Name] = true
+			assert.NotEmpty(t, asset.Type, "%s: %s has no type", templateID, asset.Name)
+		}
+		assert.ElementsMatch(t, assetNames, templateNameList(names), templateID)
+		for _, asset := range assets {
+			for _, dependency := range asset.Depends {
+				assert.True(t, names[dependency], "%s: %s depends on %s, which the template doesn't create", templateID, asset.Name, dependency)
+			}
+		}
+	}
+	for _, template := range PipelineTemplates() {
+		check(template.ID, template.AssetNames, template.Assets)
+	}
+	for _, template := range ProjectTemplates() {
+		check(template.ID, template.AssetNames, template.Assets)
+	}
+
+	product, ok := pipelineTemplateByID(PipelineTemplateProductDemo)
+	require.True(t, ok)
+	for _, asset := range templateAssets(product.files(product.info.SuggestedPath)) {
+		if asset.Name == "product.user_journeys" {
+			assert.Equal(t, "duckdb.sql", asset.Type)
+			assert.Equal(t, []string{"product.users", "product.events"}, asset.Depends)
+		}
+	}
+}
+
+func templateNameList(set map[string]bool) []string {
+	result := make([]string, 0, len(set))
+	for key := range set {
+		result = append(result, key)
+	}
+	return result
 }
 
 func TestOnlinePipelineDemoTemplatesExecute(t *testing.T) {

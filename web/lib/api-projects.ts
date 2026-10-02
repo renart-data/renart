@@ -4,6 +4,7 @@ import type {
   CreateDirectoryResponse,
   CreateProjectRequest,
   CreateProjectResponse,
+  DuckDBDriverResponse,
   OpenProjectResponse,
   ProjectListResponse,
   ProjectTemplatesResponse,
@@ -22,6 +23,16 @@ export async function openProject(path: string): Promise<OpenProjectResponse> {
 
 export async function getProjectTemplates(): Promise<ProjectTemplatesResponse> {
   return fetchJSON<ProjectTemplatesResponse>("/api/projects/templates", { cache: "no-store" });
+}
+
+// DuckDB's driver is machine-wide and downloaded on first use; the first run
+// prepares it as a visible step.
+export async function getDuckDBDriver(): Promise<DuckDBDriverResponse> {
+  return fetchJSON<DuckDBDriverResponse>("/api/projects/duckdb-driver", { cache: "no-store" });
+}
+
+export async function prepareDuckDBDriver(): Promise<DuckDBDriverResponse> {
+  return fetchJSONWithBody<DuckDBDriverResponse>("/api/projects/duckdb-driver", "POST");
 }
 
 export async function createProject(input: CreateProjectRequest): Promise<CreateProjectResponse> {
