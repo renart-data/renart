@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"renart/internal/web/presentation"
 	"renart/internal/web/scheduler"
 )
 
@@ -95,6 +96,50 @@ func TestScaffoldProjectRetailDemoIntoFreshDirectory(t *testing.T) {
 	status, err := worktree.Status()
 	require.NoError(t, err)
 	assert.True(t, status.IsClean(), "scaffold must leave a clean worktree, got: %v", status)
+}
+
+func TestScaffoldProjectProductDemoIncludesNotebookAndDashboard(t *testing.T) {
+	t.Parallel()
+
+	target := filepath.Join(t.TempDir(), "product-demo")
+	// A file the user already has is never replaced.
+	require.NoError(t, os.MkdirAll(filepath.Join(target, "dashboards"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(target, "dashboards", "product-overview.dashboard.yml"), []byte("mine"), 0o644))
+
+	result, err := ScaffoldProject(ScaffoldProjectRequest{
+		TargetDir:     target,
+		Template:      ProjectTemplateProductDemo,
+		NewRepository: true,
+	})
+	require.NoError(t, err)
+
+	for _, relPath := range []string{
+		"notebooks/product-activity/notebook.yml",
+		"notebooks/product-activity/daily_activity.sql",
+		"notebooks/product-activity/plan_journeys.sql",
+	} {
+		assert.FileExists(t, filepath.Join(target, relPath), relPath)
+		assert.Contains(t, result.Files, relPath)
+	}
+	assert.NotContains(t, result.Files, "dashboards/product-overview.dashboard.yml")
+	kept, err := os.ReadFile(filepath.Join(target, "dashboards", "product-overview.dashboard.yml"))
+	require.NoError(t, err)
+	assert.Equal(t, "mine", string(kept))
+
+	// The dashboard definition itself is valid and reads the pipeline's tables.
+	artifact, err := presentation.DecodeArtifact("product-overview.dashboard.yml", []byte(productDashboardYAML()))
+	require.NoError(t, err)
+	for _, finding := range presentation.CheckArtifactDefinition(*artifact) {
+		assert.NotEqual(t, "error", finding.Severity, "%s: %s", finding.Path, finding.Message)
+	}
+	assert.Equal(t, "product.daily_active_users", artifact.Datasets["daily_activity"].Asset)
+
+	// The in-workspace "New pipeline" starter doesn't add project files.
+	starter, ok := pipelineTemplateByID(PipelineTemplateProductDemo)
+	require.True(t, ok)
+	for relPath := range starter.files("product") {
+		assert.False(t, strings.HasPrefix(relPath, "notebooks/") || strings.HasPrefix(relPath, "dashboards/"), relPath)
+	}
 }
 
 func TestScaffoldProjectChessDemoAvoidsCatalogSchemaCollision(t *testing.T) {
@@ -285,7 +330,7 @@ func TestProjectTemplatesListsAllTemplates(t *testing.T) {
 	assert.False(t, offline[ProjectTemplateEarthquakeDemo])
 	assert.False(t, offline[ProjectTemplatePythonDemo])
 	assert.True(t, offline[ProjectTemplateJinjaDemo])
-	assert.True(t, offline[ProjectTemplateRetailDemo])
+	assert.False(t, offline[ProjectTemplateRetailDemo])
 	assert.True(t, offline[ProjectTemplateEmpty])
 }
 

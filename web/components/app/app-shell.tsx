@@ -52,6 +52,8 @@ import { getPinnedProjectId } from "@/lib/project-context";
 import { rememberWorkspaceProject } from "@/lib/project-route-bootstrap";
 
 import { UsageAnalyticsNotice } from "./usage-analytics";
+import { ConnectDataSheet } from "./connect-data-sheet";
+import { GettingStartedChip, useGettingStartedTracker } from "./getting-started";
 import { ProjectSwitcher } from "./project-switcher";
 import { AppCommandPalette } from "./app-command-palette";
 import { appNavigationModes, navigationForAppRouteMatches } from "./app-navigation-model";
@@ -99,6 +101,7 @@ export function AppShell() {
   useEffect(() => {
     if (workspaceConfig?.project_id) rememberWorkspaceProject(workspaceConfig.project_id);
   }, [workspaceConfig?.project_id]);
+  useGettingStartedTracker(getPinnedProjectId() ?? workspaceConfig?.project_id);
 
   return (
     <NavigationArrivalProvider>
@@ -111,6 +114,7 @@ export function AppShell() {
           data-workbench-route={routeNavigation?.workbench ? "workbench" : "redirect"}
         >
           <ServerOfflineOverlay />
+          <ConnectDataSheet />
           <AppHeader sourceControl={sourceControl} activeMode={activeMode?.id ?? null} />
           <AppWorkbenchMobileToolTabs />
           <UsageAnalyticsNotice />
@@ -189,6 +193,7 @@ function AppHeader({
 
       <div className="flex-1" />
 
+      <GettingStartedChip />
       <AppExecutionSelector />
       <LocalVaultControl />
 

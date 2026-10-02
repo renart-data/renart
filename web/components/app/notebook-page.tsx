@@ -390,7 +390,7 @@ export function AppNotebooksIndexPage() {
               <BookOpen className="mx-auto mb-3 size-8 text-muted-foreground" />
               <div className="text-sm font-medium">No notebooks yet</div>
               <p className="mt-1 text-xs text-muted-foreground">
-                Notebooks are folders of SQL cells that run in a disposable local DuckDB session.
+                Notebooks are folders of SQL and Python cells that share a local DuckDB session.
               </p>
               <Button size="sm" className="mt-4" onClick={() => setNewNotebookOpen(true)}>
                 <Plus className="size-3.5" />

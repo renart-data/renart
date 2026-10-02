@@ -2,23 +2,37 @@ package service
 
 import (
 	"fmt"
+	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // PipelineTemplateInfo describes one starter offered by the in-workspace
 // "New pipeline" flow. The backend owns both this catalog and the emitted
 // files so the editor never has to duplicate scaffold contents.
 type PipelineTemplateInfo struct {
-	ID            string   `json:"id"`
-	Title         string   `json:"title"`
-	Description   string   `json:"description"`
-	Category      string   `json:"category"`
-	Offline       bool     `json:"offline"`
-	SuggestedPath string   `json:"suggested_path"`
-	AssetNames    []string `json:"asset_names"`
-	Features      []string `json:"features"`
+	ID            string          `json:"id"`
+	Title         string          `json:"title"`
+	Description   string          `json:"description"`
+	Category      string          `json:"category"`
+	Offline       bool            `json:"offline"`
+	SuggestedPath string          `json:"suggested_path"`
+	AssetNames    []string        `json:"asset_names"`
+	Assets        []TemplateAsset `json:"assets"`
+	Features      []string        `json:"features"`
+}
+
+// TemplateAsset is one node of a template's pipeline graph, read from the
+// asset headers the template writes, so previews draw the same graph the
+// scaffolded pipeline has.
+type TemplateAsset struct {
+	Name    string   `json:"name"`
+	Type    string   `json:"type"`
+	Depends []string `json:"depends"`
 }
 
 // renart:web
@@ -32,6 +46,10 @@ type pipelineTemplate struct {
 	duckdbFile           string
 	files                func(pipelineName string) map[string]string
 	environmentSchedules func(primaryEnvironment string) map[string]templateEnvironmentSchedule
+	// projectFiles are written relative to the project root, and only when the
+	// template creates a whole project: notebooks and dashboards that read the
+	// pipeline's tables.
+	projectFiles func() map[string]string
 }
 
 const (
@@ -82,7 +100,8 @@ func pipelineTemplates() []pipelineTemplate {
 				},
 				Features: []string{"SQL DAG", "Variables", "Data checks", "Charts"},
 			},
-			duckdbFile: "product_analytics.duckdb",
+			duckdbFile:   "product_analytics.duckdb",
+			projectFiles: productProjectFiles,
 			files: func(pipelineName string) map[string]string {
 				return map[string]string{
 					"pipeline.yml":                          productPipelineYAML(pipelineName),
@@ -95,12 +114,14 @@ func pipelineTemplates() []pipelineTemplate {
 			},
 		},
 		{
+			// Not offline: the seeds run Sling through uv, which downloads Python,
+			// the Sling package and its binary on first use.
 			info: PipelineTemplateInfo{
 				ID:            ProjectTemplateRetailDemo,
 				Title:         "Retail analytics",
-				Description:   "Load bundled CSV seeds and turn them into customer and daily revenue models.",
+				Description:   "Load bundled CSV seeds and turn them into customer and daily revenue models. The seeds load through Sling, which the first run downloads.",
 				Category:      PipelineTemplateCategoryAnalytics,
-				Offline:       true,
+				Offline:       false,
 				SuggestedPath: "retail_analytics",
 				AssetNames: []string{
 					"raw.customers",
@@ -263,9 +284,84 @@ func PipelineTemplates() []PipelineTemplateInfo {
 	templates := pipelineTemplates()
 	infos := make([]PipelineTemplateInfo, 0, len(templates))
 	for _, template := range templates {
-		infos = append(infos, template.info)
+		info := template.info
+		info.Assets = templateAssets(template.files(info.SuggestedPath))
+		infos = append(infos, info)
 	}
 	return infos
+}
+
+// templateAssets parses the asset headers of a template's files: the
+// `@bruin` comment block of SQL and Python assets, and whole `.asset.yml`
+// files. An asset without a name takes it from its path under assets/, as
+// Bruin does. Assets are returned in name order.
+func templateAssets(files map[string]string) []TemplateAsset {
+	assets := []TemplateAsset{}
+	for filePath, content := range files {
+		header, ok := templateAssetHeader(filePath, content)
+		if !ok {
+			continue
+		}
+		var parsed struct {
+			Name    string `yaml:"name"`
+			Type    string `yaml:"type"`
+			Depends []any  `yaml:"depends"`
+		}
+		if err := yaml.Unmarshal([]byte(header), &parsed); err != nil {
+			continue
+		}
+		if parsed.Name == "" {
+			parsed.Name = templateAssetNameFromPath(filePath)
+		}
+		asset := TemplateAsset{Name: parsed.Name, Type: parsed.Type, Depends: []string{}}
+		for _, dependency := range parsed.Depends {
+			switch value := dependency.(type) {
+			case string:
+				asset.Depends = append(asset.Depends, value)
+			case map[string]any:
+				if name, ok := value["asset"].(string); ok {
+					asset.Depends = append(asset.Depends, name)
+				}
+			}
+		}
+		assets = append(assets, asset)
+	}
+	sort.Slice(assets, func(i, j int) bool { return assets[i].Name < assets[j].Name })
+	return assets
+}
+
+func templateAssetNameFromPath(filePath string) string {
+	name := strings.TrimPrefix(filePath, "assets/")
+	for _, suffix := range []string{".asset.yml", ".asset.yaml", ".sql", ".py"} {
+		name = strings.TrimSuffix(name, suffix)
+	}
+	return strings.ReplaceAll(name, "/", ".")
+}
+
+func templateAssetHeader(filePath, content string) (string, bool) {
+	base := path.Base(filePath)
+	switch {
+	case strings.HasSuffix(base, ".asset.yml"), strings.HasSuffix(base, ".asset.yaml"):
+		return content, true
+	case strings.HasSuffix(base, ".sql"):
+		return textBetween(content, "/* @bruin", "@bruin */")
+	case strings.HasSuffix(base, ".py"):
+		return textBetween(content, `""" @bruin`, `@bruin """`)
+	}
+	return "", false
+}
+
+func textBetween(content, start, end string) (string, bool) {
+	startIndex := strings.Index(content, start)
+	if startIndex < 0 {
+		return "", false
+	}
+	rest := content[startIndex+len(start):]
+	endIndex := strings.Index(rest, end)
+	if endIndex < 0 {
+		return "", false
+	}
+	return rest[:endIndex], true
 }
 
 func pipelineTemplateByID(id string) (pipelineTemplate, bool) {
@@ -415,29 +511,47 @@ meta:
   web_view: table
 @bruin */
 
-WITH generated AS (
-    SELECT
-        event_id,
-        1 + ((event_id * 7) % 24)::integer AS user_id,
-        ((event_id * 5) % 28)::integer AS days_ago,
-        ((event_id * 11) % 4)::integer AS session_number
-    FROM (SELECT unnest(range(1, 721)) AS event_id) AS ids
+-- Deterministic activity for the last four weeks. Users 1-10 are core users
+-- who come back more often as the product grows; users 11-14 explore without
+-- building anything; users 15-20 visit once; users 21-24 never return.
+WITH user_days AS (
+    SELECT user_id, days_ago
+    FROM range(1, 21) AS users(user_id)
+    CROSS JOIN range(0, 28) AS days(days_ago)
+    WHERE CASE
+        WHEN user_id <= 10 THEN (user_id * 7 + days_ago * 3) % 10 < 8 - days_ago / 5
+        WHEN user_id <= 14 THEN (user_id + days_ago) % 6 = 0
+        ELSE days_ago = (user_id * 5) % 28
+    END
+    -- Fewer core and explorer visits at weekends.
+    AND NOT (
+        user_id <= 14
+        AND dayofweek(current_date - days_ago::integer) IN (0, 6)
+        AND (user_id + days_ago) % 3 <> 0
+    )
+),
+
+user_events AS (
+    SELECT user_id, days_ago, step
+    FROM user_days
+    CROSS JOIN range(0, 3) AS steps(step)
+    WHERE step <= CASE WHEN user_id <= 10 THEN 2 WHEN user_id <= 14 THEN 1 ELSE 0 END
 )
 
 SELECT
-    event_id,
-    user_id,
-    concat('session_', user_id, '_', days_ago, '_', session_number) AS session_id,
-    current_date - days_ago AS event_date,
-    CASE event_id % 6
-        WHEN 0 THEN 'signed_in'
-        WHEN 1 THEN 'created_project'
-        WHEN 2 THEN 'created_pipeline'
-        WHEN 3 THEN 'materialized_asset'
-        WHEN 4 THEN 'opened_catalog'
+    row_number() OVER (ORDER BY days_ago DESC, user_id, step) AS event_id,
+    user_id::integer AS user_id,
+    concat('session_', user_id, '_', days_ago) AS session_id,
+    current_date - days_ago::integer AS event_date,
+    CASE
+        WHEN step = 0 THEN 'signed_in'
+        WHEN user_id > 10 THEN 'opened_catalog'
+        WHEN step = 2 THEN 'opened_catalog'
+        WHEN (user_id + days_ago) % 3 = 0 THEN 'materialized_asset'
+        WHEN (user_id + days_ago) % 3 = 1 THEN 'created_pipeline'
         ELSE 'invited_teammate'
     END AS event_name
-FROM generated
+FROM user_events
 `
 }
 
@@ -459,7 +573,7 @@ columns:
   - name: event_count
     type: bigint
     checks:
-      - name: positive
+      - name: non_negative
   - name: user_name
     type: varchar
   - name: plan
@@ -493,7 +607,10 @@ SELECT
     min(events.event_date) FILTER (
         WHERE events.event_name IN ('materialized_asset', 'invited_teammate')
     ) AS activated_at,
-    count(events.event_id) >= {{ var.activation_events_required }} AS is_activated
+    count(events.event_id) >= {{ var.activation_events_required }}
+        AND count(events.event_id) FILTER (
+            WHERE events.event_name IN ('materialized_asset', 'invited_teammate')
+        ) > 0 AS is_activated
 FROM product.users AS users
 LEFT JOIN product.events AS events ON events.user_id = users.user_id
 GROUP BY ALL

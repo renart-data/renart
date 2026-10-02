@@ -62,6 +62,39 @@ export function normalizeConnectionType(connectionType?: string | null) {
   return aliases[normalized] ?? (normalized || "default");
 }
 
+// Product names for SQL connection types, keyed by the exact type name. These
+// are the databases listed on the docs' Supported platforms page.
+const sqlConnectionProductNames: Record<string, string> = {
+  athena: "Amazon Athena",
+  redshift: "Amazon Redshift",
+  synapse: "Azure Synapse",
+  clickhouse: "ClickHouse",
+  databricks: "Databricks",
+  duckdb: "DuckDB",
+  google_cloud_platform: "Google BigQuery",
+  fabric: "Microsoft Fabric",
+  mssql: "Microsoft SQL Server",
+  motherduck: "MotherDuck",
+  mysql: "MySQL",
+  oracle: "Oracle",
+  postgres: "PostgreSQL",
+  snowflake: "Snowflake",
+  starrocks: "StarRocks",
+  trino: "Trino",
+  vertica: "Vertica",
+};
+
+export function isDocumentedSQLConnectionType(typeName: string) {
+  return typeName in sqlConnectionProductNames;
+}
+
+// The name people know a connection type by, e.g. "Google BigQuery" for
+// google_cloud_platform. Unlike friendlyConnectionType it never folds a type
+// into its engine (Fabric stays Microsoft Fabric).
+export function connectionTypeProductName(typeName: string) {
+  return sqlConnectionProductNames[typeName] ?? friendlyConnectionType(typeName);
+}
+
 export function friendlyConnectionType(connectionType?: string | null) {
   const normalized = normalizeConnectionType(connectionType);
   const labels: Record<string, string> = {

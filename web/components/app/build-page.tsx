@@ -184,6 +184,7 @@ import { AssetRenderView } from "./asset-render-view";
 import { PipelinePlanSheet } from "./pipeline-plan-sheet";
 import {
   AppLineageCanvas,
+  PIPELINE_CANVAS_TRANSITION,
   assetDisplayName,
   assetGroupName,
   assetNameParts,
@@ -191,6 +192,7 @@ import {
 } from "./lineage-canvas";
 import type { PipelineSettingsSection } from "./pipeline-settings-dialog";
 import { TypeCheckPanel } from "./type-check-panel";
+import { PipelineCanvasCallouts } from "./pipeline-canvas-callouts";
 import { ExternalRelationImportDialog } from "./external-relation-import-dialog";
 import {
   buildAssetDocumentKey,
@@ -342,6 +344,8 @@ type BuildContextValue = {
   openNewAsset: () => void;
   openNewAssetInGroup: (prefix?: string) => void;
   createDownstreamAsset: (source: { id: string; name: string }, destination?: string) => void;
+  // A new SQL asset that starts as a query on these assets.
+  createAssetFromSources: (sourceNames: string[]) => void;
   createDataBrowserSource: (objectId: string, environment: string) => void;
   createStorageLoad: (object: DataBrowserObject, upstreamId?: string, prefix?: string) => void;
   openInspector: () => void;
@@ -1618,6 +1622,18 @@ export function AppBuildPage({
     setNewAssetInitialLoad(undefined);
     setNewAssetOpen(true);
   };
+  const createAssetFromSources = (sourceNames: string[]) => {
+    const sources = sourceNames
+      .map((name) => activePipeline?.assets.find((asset) => asset.name === name))
+      .filter((asset): asset is NonNullable<typeof asset> => Boolean(asset));
+    const first = sources[0];
+    if (!first) {
+      openNewAsset();
+      return;
+    }
+    createDownstreamAsset({ id: first.id, name: first.name });
+    setNewAssetInitialExecutableContent(sourcesStarterQuery(sources.map((asset) => asset.name)));
+  };
   const createStorageLoad = (object: DataBrowserObject, upstreamId?: string, prefix?: string) => {
     if (object.environment !== effectiveEnvironment || !activePipeline) return;
     const upstream = upstreamId
@@ -1901,6 +1917,7 @@ export function AppBuildPage({
     openNewAsset,
     openNewAssetInGroup,
     createDownstreamAsset,
+    createAssetFromSources,
     createDataBrowserSource: (objectId, environment) =>
       setDataBrowserSource({ object_id: objectId, environment }),
     createStorageLoad,
@@ -2568,6 +2585,7 @@ function BuildTopBar({
           disabled={runDisabled}
           title={runTitle}
           aria-label={`Review run${runSourceLabel ? ` from ${runSourceLabel}` : ""}`}
+          data-getting-started-target="review-run"
         >
           <Play data-icon="inline-start" />
           <span className="hidden lg:inline">Review run</span>
@@ -2680,6 +2698,7 @@ function BuildTopBar({
         disabled={runDisabled}
         title={runTitle}
         aria-label={`Review run${runSourceLabel ? ` from ${runSourceLabel}` : ""}`}
+        data-getting-started-target="review-run"
       >
         <Play data-icon="inline-start" /> Review run
         {runSourceLabel ? <span className="sr-only"> from {runSourceLabel}</span> : null}
@@ -3215,12 +3234,21 @@ function AssetButton({
   );
 }
 
+// A first model on imported sources. Plain table names resolve to their
+// source assets, so the dependencies need no extra syntax.
+function sourcesStarterQuery(sourceNames: string[]) {
+  const [first, ...others] = sourceNames;
+  const also = others.length > 0 ? `-- Also imported: ${others.join(", ")}\n` : "";
+  return `${also}SELECT *\nFROM ${first}\n`;
+}
+
 function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) => void }) {
   const {
     pipelineId,
     pipelineAssets,
     routedAssetId,
     createDownstreamAsset,
+    createAssetFromSources,
     createDataBrowserSource,
     createStorageLoad,
     openNewAssetInGroup,
@@ -3234,45 +3262,53 @@ function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) =>
   } = useBuildContext();
   const sqlHoveredAssetId = useAtomValue(sqlHoveredAssetAtom);
   return (
-    <DataBrowserCanvas
-      pipelineId={pipelineId}
-      assets={pipelineAssets}
-      onSource={createDataBrowserSource}
-      onStorage={createStorageLoad}
-      onLoad={(assetId, destination) => {
-        const source = pipelineAssets.find((asset) => asset.id === assetId);
-        if (source) createDownstreamAsset({ id: source.id, name: source.name }, destination);
-      }}
-    >
-      <AppLineageCanvas
+    <div className="relative h-full min-h-0">
+      <DataBrowserCanvas
+        pipelineId={pipelineId}
         assets={pipelineAssets}
-        selectedAssetId={routedAssetId}
-        focusAssetId={routedAssetId}
-        highlightAssetId={sqlHoveredAssetId ?? undefined}
-        onAssetSelect={onAssetSelect}
-        onRunAsset={runAssetById}
-        onDeleteAsset={deleteAssetById}
-        onGoToAsset={(assetId) => {
-          const target = pipelineAssets.find((asset) => asset.id === assetId);
-          if (target?.readOnly && target.pipelineId) {
-            goToAsset(target.pipelineId, target.id);
-            return;
-          }
-          goToCatalog(assetId);
-        }}
-        onAssetConnectionClick={() => openPipelineConnections()}
-        onReviewFailedCheck={reviewFailedCheck}
-        onImportExternalRelation={importExternalRelation}
-        goToLabel="Open in catalog"
-        onCreateAsset={({ prefix }) => openNewAssetInGroup(prefix)}
-        onCreateDownstream={(assetId) => {
+        onSource={createDataBrowserSource}
+        onStorage={createStorageLoad}
+        onLoad={(assetId, destination) => {
           const source = pipelineAssets.find((asset) => asset.id === assetId);
-          if (source) {
-            createDownstreamAsset({ id: source.id, name: source.name });
-          }
+          if (source) createDownstreamAsset({ id: source.id, name: source.name }, destination);
         }}
+      >
+        <AppLineageCanvas
+          assets={pipelineAssets}
+          selectedAssetId={routedAssetId}
+          focusAssetId={routedAssetId}
+          highlightAssetId={sqlHoveredAssetId ?? undefined}
+          onAssetSelect={onAssetSelect}
+          onRunAsset={runAssetById}
+          onDeleteAsset={deleteAssetById}
+          onGoToAsset={(assetId) => {
+            const target = pipelineAssets.find((asset) => asset.id === assetId);
+            if (target?.readOnly && target.pipelineId) {
+              goToAsset(target.pipelineId, target.id);
+              return;
+            }
+            goToCatalog(assetId);
+          }}
+          onAssetConnectionClick={() => openPipelineConnections()}
+          onReviewFailedCheck={reviewFailedCheck}
+          onImportExternalRelation={importExternalRelation}
+          goToLabel="Open in catalog"
+          viewTransitionName={PIPELINE_CANVAS_TRANSITION}
+          onCreateAsset={({ prefix }) => openNewAssetInGroup(prefix)}
+          onCreateDownstream={(assetId) => {
+            const source = pipelineAssets.find((asset) => asset.id === assetId);
+            if (source) {
+              createDownstreamAsset({ id: source.id, name: source.name });
+            }
+          }}
+        />
+      </DataBrowserCanvas>
+      <PipelineCanvasCallouts
+        pipelineId={pipelineId}
+        assets={pipelineAssets}
+        onCreateFromSources={createAssetFromSources}
       />
-    </DataBrowserCanvas>
+    </div>
   );
 }
 
@@ -3803,7 +3839,11 @@ function ResultsPanel({
             viewportClassName="w-full"
           >
             <TabsList className={scrollableTabsListClass}>
-              <TabsTrigger value="inspect" className={scrollableTabsTriggerClass}>
+              <TabsTrigger
+                value="inspect"
+                className={scrollableTabsTriggerClass}
+                data-getting-started-target="inspect"
+              >
                 <Table2 className="size-3.5" />
                 Inspect
               </TabsTrigger>

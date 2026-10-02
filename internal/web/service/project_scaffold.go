@@ -20,14 +20,15 @@ import (
 // ProjectTemplateInfo describes one create-project template for the
 // onboarding UI. ID is the value the create endpoint accepts as `template`.
 type ProjectTemplateInfo struct {
-	ID           string   `json:"id"`
-	Title        string   `json:"title"`
-	Description  string   `json:"description"`
-	Category     string   `json:"category"`
-	Offline      bool     `json:"offline"`
-	PipelineName string   `json:"pipeline_name"`
-	AssetNames   []string `json:"asset_names"`
-	Features     []string `json:"features"`
+	ID           string          `json:"id"`
+	Title        string          `json:"title"`
+	Description  string          `json:"description"`
+	Category     string          `json:"category"`
+	Offline      bool            `json:"offline"`
+	PipelineName string          `json:"pipeline_name"`
+	AssetNames   []string        `json:"asset_names"`
+	Assets       []TemplateAsset `json:"assets"`
+	Features     []string        `json:"features"`
 }
 
 type templateEnvironmentSchedule struct {
@@ -40,6 +41,8 @@ type projectTemplate struct {
 	duckdbFile           string
 	files                func() map[string]string
 	environmentSchedules func(primaryEnvironment string) map[string]templateEnvironmentSchedule
+	// projectFiles are relative to the project root rather than the pipeline.
+	projectFiles func() map[string]string
 }
 
 const (
@@ -94,12 +97,14 @@ func projectTemplates() []projectTemplate {
 			},
 		},
 		{
+			// Not offline: the seeds run Sling through uv, which downloads Python,
+			// the Sling package and its binary on first use.
 			info: ProjectTemplateInfo{
 				ID:           ProjectTemplateRetailDemo,
 				Title:        "Retail analytics",
-				Description:  "A small retail warehouse built from bundled CSV seed data — every asset runs fully offline against local DuckDB.",
+				Description:  "A small retail warehouse built from bundled CSV seed data in local DuckDB. The seeds load through Sling, which the first run downloads.",
 				Category:     PipelineTemplateCategoryAnalytics,
-				Offline:      true,
+				Offline:      false,
 				PipelineName: "retail",
 				AssetNames:   []string{"raw.customers", "raw.orders", "analytics.customer_orders", "analytics.daily_revenue"},
 				Features:     []string{"Seed files", "Schema metadata", "SQL lineage", "Tables"},
@@ -176,6 +181,7 @@ func projectTemplateFromPipelineStarter(id string) projectTemplate {
 		},
 		duckdbFile:           starter.duckdbFile,
 		environmentSchedules: starter.environmentSchedules,
+		projectFiles:         starter.projectFiles,
 		files: func() map[string]string {
 			return starter.files(starter.info.SuggestedPath)
 		},
@@ -194,7 +200,9 @@ func ProjectTemplates() []ProjectTemplateInfo {
 	templates := projectTemplates()
 	infos := make([]ProjectTemplateInfo, 0, len(templates))
 	for _, tpl := range templates {
-		infos = append(infos, tpl.info)
+		info := tpl.info
+		info.Assets = templateAssets(tpl.files())
+		infos = append(infos, info)
 	}
 	return infos
 }
@@ -329,6 +337,24 @@ func ScaffoldProject(req ScaffoldProjectRequest) (ScaffoldProjectResult, error) 
 			return ScaffoldProjectResult{}, err
 		}
 		created = append(created, filepath.ToSlash(filepath.Join(tpl.info.PipelineName, relPath)))
+	}
+	if tpl.projectFiles != nil {
+		for relPath, content := range tpl.projectFiles() {
+			absPath := filepath.Join(target, filepath.FromSlash(relPath))
+			// Never replace something already in the project.
+			if exists, statErr := afero.Exists(fs, absPath); statErr != nil {
+				return ScaffoldProjectResult{}, statErr
+			} else if exists {
+				continue
+			}
+			if err := fs.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+				return ScaffoldProjectResult{}, err
+			}
+			if err := afero.WriteFile(fs, absPath, []byte(content), 0o644); err != nil {
+				return ScaffoldProjectResult{}, err
+			}
+			created = append(created, filepath.ToSlash(relPath))
+		}
 	}
 
 	var pipelineUUID string
@@ -527,7 +553,7 @@ default_connections:
 func retailRawCustomersSeedYAML() string {
 	return `name: raw.customers
 type: duckdb.seed
-description: Bundled customer records for the offline retail demo.
+description: Bundled customer records for the retail demo.
 meta:
   renart_seed_file: customers.csv
 parameters:
@@ -566,7 +592,7 @@ func retailRawCustomersCSV() string {
 func retailRawOrdersSeedYAML() string {
 	return `name: raw.orders
 type: duckdb.seed
-description: Bundled deterministic orders for the offline retail demo.
+description: Bundled deterministic orders for the retail demo.
 meta:
   renart_seed_file: orders.csv
 parameters:

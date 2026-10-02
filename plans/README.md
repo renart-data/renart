@@ -31,6 +31,7 @@ decisions and dependencies in each plan; there is no global questions scratchpad
 | [Review and release flow](review-and-release-flow.md) | Implemented; a post-run Deploy prompt remains |
 | [Semantic deployment impact](semantic-deployment-impact.md) | Component facts, exact producer-pinned worlds, compatibility policy, retained reports and inference evidence |
 | [Landing page and docs improvements](landing-and-docs-improvements.md) | Phases 1–3 done (hero video, overlays, docs navigation, coverage pages); next: landing restructure and palette, quickstart |
+| [Onboarding flow](onboarding.md) | Welcome redesign, Getting started and in-shell import shipped; onboarding analytics (collector first), Sling step, table row counts remain |
 | [Docs structure](docs-information-architecture.md) | Option A navigation shipped; remaining: split overloaded guides, evidence-backed new pages, findability check |
 
 ## Verification and measurement

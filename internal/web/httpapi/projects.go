@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -101,14 +102,31 @@ type ProjectDirectory interface {
 	RemoveProject(id string) error
 }
 
-type ProjectsAPI struct {
-	Directory ProjectDirectory
+// DuckDBDriverPreparer checks and installs the machine-wide DuckDB driver.
+type DuckDBDriverPreparer interface {
+	Ready(ctx context.Context) bool
+	Ensure(ctx context.Context) error
 }
+
+// renart:web
+type DuckDBDriverResponse struct {
+	Status string `json:"status"`
+	Ready  bool   `json:"ready"`
+}
+
+type ProjectsAPI struct {
+	Directory    ProjectDirectory
+	DuckDBDriver DuckDBDriverPreparer
+}
+
+const duckDBDriverInstallTimeout = 10 * time.Minute
 
 func RegisterProjectRoutes(router chi.Router, api *ProjectsAPI) {
 	router.Get("/api/projects", api.HandleListProjects)
 	router.Post("/api/projects", api.HandleCreateProject)
 	router.Get("/api/projects/templates", api.HandleProjectTemplates)
+	router.Get("/api/projects/duckdb-driver", api.HandleDuckDBDriver)
+	router.Post("/api/projects/duckdb-driver", api.HandlePrepareDuckDBDriver)
 	router.Post("/api/projects/open", api.HandleOpenProject)
 	router.Get("/api/projects/browse", api.HandleBrowseDirs)
 	router.Post("/api/projects/directories", api.HandleCreateDirectory)
@@ -120,6 +138,38 @@ func (a *ProjectsAPI) HandleProjectTemplates(w http.ResponseWriter, _ *http.Requ
 		Status:    "ok",
 		Templates: service.ProjectTemplates(),
 	})
+}
+
+func (a *ProjectsAPI) duckDBDriver() DuckDBDriverPreparer {
+	if a.DuckDBDriver != nil {
+		return a.DuckDBDriver
+	}
+	return service.DuckDBDriver{}
+}
+
+func (a *ProjectsAPI) HandleDuckDBDriver(w http.ResponseWriter, r *http.Request) {
+	webapi.WriteJSON(w, http.StatusOK, DuckDBDriverResponse{
+		Status: "ok",
+		Ready:  a.duckDBDriver().Ready(r.Context()),
+	})
+}
+
+// HandlePrepareDuckDBDriver installs the driver before a first run. The
+// install outlives the request: Bruin caches its first result, so a client
+// that disconnects mid-download must not leave a cancellation behind.
+func (a *ProjectsAPI) HandlePrepareDuckDBDriver(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), duckDBDriverInstallTimeout)
+	defer cancel()
+	if err := a.duckDBDriver().Ensure(ctx); err != nil {
+		webapi.WriteInternalError(
+			w,
+			"duckdb_driver_unavailable",
+			"DuckDB's driver could not be downloaded: "+err.Error()+
+				". Check the network connection, then restart Renart to try again.",
+		)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, DuckDBDriverResponse{Status: "ok", Ready: true})
 }
 
 func (a *ProjectsAPI) HandleCreateProject(w http.ResponseWriter, r *http.Request) {

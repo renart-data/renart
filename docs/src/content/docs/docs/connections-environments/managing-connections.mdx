@@ -23,6 +23,19 @@ They are also available through **Project settings**.
 Assets refer to connections by name. Choose the connection in the asset's
 **General** properties; set defaults through **Pipeline settings**.
 
+## Import tables from a database
+
+To start from tables that already exist, click **Connect and import tables** on
+the Connections overview, or **Connect a database** in the Data Browser before
+you choose a table.
+
+1. Choose the database or warehouse and enter its details.
+2. Click **Test connection**. Renart lists the tables it can read.
+3. Click **Choose tables**, which saves the connection, then select tables by
+   schema and the pipeline to add them to.
+4. Click **Import**. Each table becomes a source asset on the pipeline canvas,
+   ready for SQL assets that read from it.
+
 New projects offer the normal database and storage connections. Ingestr-only
 types are hidden unless creation is explicitly enabled in project settings.
 Existing legacy connections remain editable; their presence does not enable

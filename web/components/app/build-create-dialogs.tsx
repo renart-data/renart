@@ -980,8 +980,8 @@ export function NewPipelineDialog({
               <Field variant="plain">
                 <FieldLabel>Starter</FieldLabel>
                 <FieldDescription>
-                  Offline starters need no network access. Network starters call a service or may
-                  install dependencies.
+                  Local starters generate their sample data in DuckDB. Starters that use the
+                  internet call a service or install tools on their first run.
                 </FieldDescription>
                 <TemplateCatalog
                   items={templateCatalogItems}

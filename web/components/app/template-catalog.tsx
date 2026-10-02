@@ -1,4 +1,4 @@
-import { Check, Globe2, WifiOff } from "lucide-react";
+import { Check, Globe2, HardDrive } from "lucide-react";
 import { useMemo } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -100,13 +100,13 @@ export function TemplateCatalog({
                 <h3 className="min-w-0 text-sm font-semibold">{selected.title}</h3>
                 {selected.offline ? (
                   <Badge variant="secondary">
-                    <WifiOff data-icon="inline-start" />
-                    Works offline
+                    <HardDrive data-icon="inline-start" />
+                    Local data
                   </Badge>
                 ) : (
                   <Badge variant="outline">
                     <Globe2 data-icon="inline-start" />
-                    Uses network
+                    Uses the internet
                   </Badge>
                 )}
               </div>

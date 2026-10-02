@@ -1,6 +1,6 @@
 "use client";
 
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useLocation } from "@tanstack/react-router";
 import {
   useNavigationArrival,
@@ -33,11 +33,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
+  EmptyContent,
   EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { openConnectDataAtom } from "@/lib/atoms/domains/connect-data";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { selectedEnvironmentAtom } from "@/lib/atoms/domains/workspace";
@@ -800,6 +802,7 @@ function DataBrowserDetail({
   focusedColumn?: string;
   focusToken?: string;
 }) {
+  const openConnectData = useSetAtom(openConnectDataAtom);
   const object = browser.selectedObject;
   const lastFocus = useRef("");
   const focusKey = `${object?.id}:${focusedColumn}:${section}:${focusToken}`;
@@ -838,6 +841,12 @@ function DataBrowserDetail({
               schema. Rows are fetched only after you request a preview.
             </EmptyDescription>
           </EmptyHeader>
+          <EmptyContent>
+            <Button variant="outline" size="sm" onClick={() => openConnectData(true)}>
+              <Database data-icon="inline-start" />
+              Connect a database
+            </Button>
+          </EmptyContent>
         </Empty>
       ) : (
         <>

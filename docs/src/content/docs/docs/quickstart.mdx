@@ -3,8 +3,9 @@ title: Quickstart
 description: From install to a running, scheduled pipeline in one sitting.
 ---
 
-Create a local DuckDB pipeline, preview its output, and schedule it. The retail
-demo includes its CSV data, so you do not need a warehouse account.
+Create a local DuckDB pipeline, change it, explore its tables and schedule it.
+The product analytics demo generates its own data, so you do not need a
+warehouse account.
 
 ## Before you start
 
@@ -19,52 +20,70 @@ renart
 ```
 
 Since the workspace has no pipelines yet, Renart opens the welcome screen
-with three options: **Start from a demo**, **Import existing tables**, and
-**Start empty**.
+with three options: **Explore a demo**, **Connect your data** and **Start from
+scratch**.
 
 ## 2. Create the demo project
 
-Choose **Start from a demo** and pick the retail demo — a small seed-and-SQL
-pipeline (bundled customer and order CSVs feeding analytics tables) that runs
-entirely offline. Renart scaffolds the project files, creates a local
-DuckDB connection, and runs the pipeline once so you land in a workspace
-with real data in it.
+Choose **Explore a demo**. **Product analytics** is selected: a small SQL
+pipeline that models product events into user journeys, an activation funnel
+and daily activity. The preview on the right shows its assets and how they
+depend on each other. Demos marked **Uses the internet** download data or
+tools on their first run; the others only use local data.
 
-Wait for **Demo materialized**, then open the workspace. The Explorer contains
-the retail pipeline and its assets, and Inspect can read their output.
+Click **Create and run**. Renart creates the project files, a local DuckDB
+connection and, if needed, a Git repository, then runs the pipeline once. The
+first DuckDB run on a machine also downloads DuckDB's driver. The assets turn
+fresh on the canvas as they build, and Renart opens the pipeline when the run
+finishes.
 
 ## 3. Read the canvas
 
-In **Build**, select the retail pipeline and choose **Canvas**. Each node is an
-asset; arrows connect inputs to the assets that read them. Select an SQL asset,
-then choose **Code** or **Split** to read its query.
+Each node on the canvas is an asset; arrows connect inputs to the assets that
+read them. Select `product.user_journeys`, then choose **Code** or **Split** to
+read its query.
 
-## 4. Preview and materialize
+## 4. Preview, edit and rebuild
 
-Open **Inspect** in the results panel. You should see rows from the demo rather
-than an empty result. This previews the query without materializing its target.
+Open **Inspect** in the results panel to see the asset's rows. This previews
+the query without materializing its target.
 
-Click **Review run** to see the assets that would run, with the environment
-and source above them. It starts with the assets that are **Out of date**, which
-may be none right after creating the demo; choose **All assets** to see every
-asset. Nothing runs until you confirm. Close the dialog when you have checked it.
+Change the query, for example by adding a column; code edits save
+automatically. The asset is marked **Edited**, and the assets that read from
+it show **Upstream changed**. Click **Review run**: it lists the assets that
+are **Out of date**, with the environment and source above them. Nothing runs
+until you confirm. Run them to make the pipeline fresh again.
 
-## 5. Put it on a schedule
+## 5. Explore the results
 
-Open **Run → Schedules** and click **New schedule**. Select the retail pipeline,
-the `default` environment, the cron expression `0 9 * * *`, and your timezone.
-Under **Deployment**, keep **Deploy current files**: Renart shows the files it
-will deploy, then creates the schedule on that deployment. Check the schedule's
-next run time.
+The demo includes a notebook and a dashboard on the pipeline's tables:
+
+- **Build → Notebooks → Product activity** queries the tables in a local
+  session, charts daily active users and filters users by plan.
+- **Explore → Present → Product overview** charts daily activity and the
+  activation funnel.
+
+Both are plain files in the project, next to the pipeline.
+
+## 6. Put it on a schedule
+
+Open **Run → Schedules** and click **New schedule**. Select the
+`product_analytics` pipeline, the `default` environment, the cron expression
+`0 9 * * *`, and your timezone. Under **Deployment**, keep **Deploy current
+files**: Renart shows the files it will deploy, then creates the schedule on
+that deployment. Check the schedule's next run time.
 
 Deployment saves a pipeline version; it does not run the pipeline. Scheduled
 runs appear under **Run → Runs**, with timing and logs for each asset. Keep
 Renart and the machine running for the schedule to fire. You can pause the
 schedule from its row after trying it.
 
+**Getting started** in the top bar lists these steps and ticks each one off as
+you do it. Its progress is kept in your browser, not in the project.
+
 ## Next steps
 
-- [Concepts](/docs/concepts/) — the model you just used, in five terms
+- [Concepts](/docs/concepts/): the model you just used, in five terms
 - [Tour of the interface](/docs/workspace/interface-tour/)
 - [Managing connections](/docs/connections-environments/managing-connections/)
   to point Renart at your own warehouse
