@@ -562,7 +562,8 @@ body > .parameter-hints-widget {
 
 /* The first-run canvas expands into the workspace canvas. A new project
    needs a document load, which cross-fades where the browser supports
-   cross-document view transitions. */
+   cross-document view transitions. The desktop window opts back out at
+   startup (lib/view-transitions.ts). */
 @media (prefers-reduced-motion: no-preference) {
   @view-transition {
     navigation: auto;

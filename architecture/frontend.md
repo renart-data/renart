@@ -89,7 +89,11 @@ File-based routes under [src/routes](../web/src/routes):
   document navigation (`pinProject`); an in-place project refreshes the
   workspace snapshot and navigates with the router. Both share the
   `pipeline-canvas` view-transition name (`@view-transition` covers the
-  cross-document case; reduced motion disables it). New-project location
+  cross-document case; reduced motion disables it). The desktop window skips
+  view transitions entirely
+  ([view-transitions.ts](../web/lib/view-transitions.ts)): its Linux WebKitGTK
+  webview runs without accelerated compositing and stops painting after any
+  view transition, leaving a blank window. New-project location
   uses the server-backed directory picker shared with the project switcher;
   the target line stays collapsed until **Change** or a creation error.
 - **Connect your data** is one component,
