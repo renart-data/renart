@@ -172,11 +172,20 @@ function BuildDocumentTab({
     const item = tab.current;
     const strip = item.parentElement;
     if (!strip) return;
-    const selected = item.getBoundingClientRect();
-    const viewport = strip.getBoundingClientRect();
-    // Scroll only this strip, never a page/canvas ancestor, and do not steal focus.
-    if (selected.left < viewport.left) strip.scrollLeft -= viewport.left - selected.left;
-    else if (selected.right > viewport.right) strip.scrollLeft += selected.right - viewport.right;
+    const reveal = () => {
+      const selected = item.getBoundingClientRect();
+      const viewport = strip.getBoundingClientRect();
+      // Scroll only this strip, never a page/canvas ancestor, and do not steal focus.
+      if (selected.left < viewport.left) strip.scrollLeft -= viewport.left - selected.left;
+      else if (selected.right > viewport.right) strip.scrollLeft += selected.right - viewport.right;
+    };
+    reveal();
+    // The strip can narrow after selection, when toolbar actions load beside
+    // it; keep the selected tab in view through those size changes.
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(reveal);
+    observer.observe(strip);
+    return () => observer.disconnect();
   }, [active]);
   return (
     <div
