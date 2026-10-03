@@ -562,7 +562,8 @@ body > .parameter-hints-widget {
 
 /* The first-run canvas expands into the workspace canvas. A new project
    needs a document load, which cross-fades where the browser supports
-   cross-document view transitions. */
+   cross-document view transitions. The desktop window opts back out at
+   startup (lib/view-transitions.ts). */
 @media (prefers-reduced-motion: no-preference) {
   @view-transition {
     navigation: auto;
@@ -612,6 +613,44 @@ body > .parameter-hints-widget {
 
 .asset-node-hidden-handle {
   opacity: 0;
+}
+
+/* The "+" on a canvas card's right edge is an output handle of its own: React
+   Flow starts a drag only from the handle element. It appears on hover or
+   keyboard focus and stays laid out so its bounds are always measured. */
+.react-flow__handle.asset-node-plus-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  min-width: 0;
+  min-height: 0;
+  right: -0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 9999px;
+  background: var(--background);
+  color: var(--muted-foreground);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 120ms ease-out,
+    background-color 120ms ease-out,
+    color 120ms ease-out;
+}
+
+.group:hover > .react-flow__handle.asset-node-plus-handle,
+.group:focus-within > .react-flow__handle.asset-node-plus-handle,
+.react-flow__handle.asset-node-plus-handle:focus-visible {
+  opacity: 1;
+}
+
+.react-flow__handle.asset-node-plus-handle:hover,
+.react-flow__handle.asset-node-plus-handle:focus-visible {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  outline: none;
 }
 
 /* Diagonal hatch for stale notebook cell headers: a neutral gray overlay on

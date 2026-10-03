@@ -341,6 +341,32 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 			req.Parameters[loadParamSourceTable] = sourceAsset.Name
 		}
 	}
+	// Further sources join the first one in a SQL starter query.
+	var additionalSources []*pipeline.Asset
+	if len(req.SourceAssetIDs) > 0 {
+		if sourceAsset == nil {
+			return AssetMutationResponse{}, newAPIError(400, "missing_source_asset", "source_asset_ids needs a source_asset_id")
+		}
+		if kind := normalizeAssetCreationKind(req.Kind); kind != "" && kind != assetCreationKindSQL {
+			return AssetMutationResponse{}, newAPIError(400, "invalid_source_assets", "only a SQL asset can start from several sources")
+		}
+		seen := map[string]bool{strings.TrimSpace(req.SourceAssetID): true}
+		for _, id := range req.SourceAssetIDs {
+			id = strings.TrimSpace(id)
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			_, resolvedPipeline, resolvedAsset, resolveErr := s.deps.ResolveAssetByID(ctx, id)
+			if resolveErr != nil {
+				return AssetMutationResponse{}, newAPIError(400, "invalid_source_asset_id", resolveErr.Error())
+			}
+			if !pipelinePathsReferToSameRoot(resolvedPipeline.DefinitionFile.Path, pipelinePath) {
+				return AssetMutationResponse{}, newAPIError(400, "invalid_source_asset", "source asset must belong to the selected pipeline")
+			}
+			additionalSources = append(additionalSources, resolvedAsset)
+		}
+	}
 
 	var creationResolution AssetCreationResolution
 	if strings.TrimSpace(req.Kind) != "" {
@@ -452,6 +478,9 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 		if content == "" {
 			if sourceAsset != nil {
 				content = s.deps.DerivedAssetContent(assetName, assetType, relAssetPath, sourceAsset.Name, sourceConnectionName)
+				if req.ExecutableContent == "" && strings.HasSuffix(strings.ToLower(assetType), ".sql") {
+					content = MergeExecutableContent(content, downstreamSQLStarterFor(ctx, sourcePipeline, assetType, append([]*pipeline.Asset{sourceAsset}, additionalSources...)))
+				}
 			} else {
 				content = s.deps.DefaultAssetContent(assetName, assetType, relAssetPath)
 			}
@@ -466,7 +495,7 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 				return AssetMutationResponse{}, newAPIError(400, "invalid_api_asset", canonicalizeErr.Error())
 			}
 		} else if creationResolution.Kind == assetCreationKindSQL || creationResolution.Kind == assetCreationKindPython {
-			content = applyCreatedExecutableConnection(content, req.Connection)
+			content = applyCreatedExecutableConnection(content, createdExecutableConnection(creationResolution.Kind, req.Connection, sourceAsset, sourceConnectionName))
 		}
 	}
 
@@ -564,9 +593,25 @@ type CreateAssetParams struct {
 	Variant            string            `json:"variant,omitempty"`
 	Parameters         map[string]string `json:"parameters"`
 	SourceAssetID      string            `json:"source_asset_id"`
-	SeedFileName       string            `json:"seed_file_name"`
-	SeedFileContent    string            `json:"seed_file_content"`
-	SeedFileBytes      []byte            `json:"-"`
+	// SourceAssetIDs are further sources a downstream SQL asset joins.
+	SourceAssetIDs  []string `json:"source_asset_ids,omitempty"`
+	SeedFileName    string   `json:"seed_file_name"`
+	SeedFileContent string   `json:"seed_file_content"`
+	SeedFileBytes   []byte   `json:"-"`
+}
+
+// createdExecutableConnection is the connection a new SQL or Python asset
+// writes. A downstream SQL asset has its source's type, so when the source
+// inherits the pipeline default the downstream resolves to the same
+// connection without naming it, and follows the source if the default moves.
+func createdExecutableConnection(kind, requested string, source *pipeline.Asset, sourceConnection string) string {
+	requested = strings.TrimSpace(requested)
+	if kind == assetCreationKindSQL && source != nil &&
+		strings.TrimSpace(source.Connection) == "" &&
+		strings.EqualFold(requested, strings.TrimSpace(sourceConnection)) {
+		return ""
+	}
+	return requested
 }
 
 // applyCreatedExecutableConnection only operates on Renart's freshly generated
@@ -842,7 +887,7 @@ func (s *AssetService) Update(ctx context.Context, assetID string, req AssetUpda
 			if relDefinitionPath, relErr := filepath.Rel(s.deps.WorkspaceRoot, asset.DefinitionFile.Path); relErr == nil {
 				changedAssetPaths = appendUniqueStrings(changedAssetPaths, filepath.ToSlash(relDefinitionPath))
 			}
-		} else if err := asset.Persist(fs, parsedPipeline); err != nil {
+		} else if err := persistExecutableAsset(fs, asset, parsedPipeline); err != nil {
 			return AssetMutationResponse{}, newAPIError(500, "asset_persist_failed", err.Error())
 		}
 		if renamedAsset {

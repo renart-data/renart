@@ -661,6 +661,10 @@ export type IngestrSuggestionsResponse = {
   error?: string;
 };
 
+export type JoinUpstreamRequest = {
+  source_asset_id: string;
+};
+
 export type MaterializationCapability = {
   mode: string;
   type: string;

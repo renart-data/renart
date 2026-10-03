@@ -172,7 +172,20 @@ def materialize():
 `
 	}
 
-	return fmt.Sprintf("/* @bruin\n\ntype: %s\n\n@bruin */\n", assetType)
+	header := fmt.Sprintf("/* @bruin\n\ntype: %s\n\n@bruin */\n", assetType)
+	if strings.HasSuffix(strings.ToLower(assetPath), ".sql") {
+		return header + "\n" + NewSQLAssetBody(assetType)
+	}
+	return header
+}
+
+// NewSQLAssetBody is the starter query of a new standalone SQL asset. It runs
+// as written, so the asset previews a row instead of opening on a parse error.
+func NewSQLAssetBody(assetType string) string {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(assetType)), "oracle.") {
+		return "SELECT 1 AS id FROM dual\n"
+	}
+	return "SELECT 1 AS id\n"
 }
 
 // NormalizeIdentifier normalizes a database identifier for comparison.

@@ -1781,3 +1781,38 @@ select * from analytics.players
 	assert.Equal(t, []string{"analytics.players"}, result.MissingUpstreamAssetNames)
 	assert.True(t, result.MissingUpstreamAssetsMaterializable)
 }
+
+func TestExecutionServiceInspectEmptySQLAssetExplainsInsteadOfFailing(t *testing.T) {
+	t.Parallel()
+
+	workspaceRoot := t.TempDir()
+	assetsRoot := filepath.Join(workspaceRoot, "analytics", "assets")
+	require.NoError(t, os.MkdirAll(filepath.Join(workspaceRoot, ".git"), 0o755))
+	require.NoError(t, os.MkdirAll(assetsRoot, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(workspaceRoot, ".bruin.yml"), []byte(`default_environment: default
+environments:
+  default:
+    connections:
+      duckdb:
+        - name: duckdb-default
+          path: duckdb-files/local.db
+`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(workspaceRoot, "analytics", "pipeline.yml"), []byte("name: analytics\ndefault_connections:\n  duckdb: duckdb-default\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(assetsRoot, "orders.sql"), []byte("/* @bruin\nname: analytics.orders\ntype: duckdb.sql\n@bruin */\n"), 0o644))
+
+	executor := &stubExecutionExecutor{}
+	svc := NewExecutionService(ExecutionDependencies{
+		WorkspaceRoot:    workspaceRoot,
+		ConfigPath:       filepath.Join(workspaceRoot, ".bruin.yml"),
+		Executor:         executor,
+		ResolveAssetByID: newExecutionTestResolver(workspaceRoot).ResolveAssetByID,
+	})
+
+	result := svc.InspectAsset(context.Background(), EncodeID("analytics/assets/orders.sql"), "200", "", "", "")
+
+	assert.Equal(t, "info", result.Status)
+	assert.Equal(t, 200, result.HTTPStatus)
+	assert.Contains(t, result.Info, "no query yet")
+	assert.Empty(t, result.Error)
+	assert.Empty(t, executor.queryConnReqs)
+}

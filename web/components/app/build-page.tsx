@@ -48,6 +48,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -87,7 +88,17 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
-import { deleteAsset } from "@/lib/api-assets";
+import { createAsset, deleteAsset, joinUpstreamAsset } from "@/lib/api-assets";
+import { applyAssetTransaction } from "@/lib/api-asset-transactions";
+import type { AssetCreationKind } from "@/lib/asset-creation-profile";
+import { pageCommandsAtom } from "@/lib/atoms/domains/page-commands";
+import {
+  idleQuickCreate,
+  quickCreateReducer,
+  suggestDownstreamAssetName,
+  validateQuickCreateName,
+} from "@/lib/quick-create";
+import { prefetchAssetCreationProfile } from "@/hooks/use-asset-creation-profile";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -141,6 +152,7 @@ import type {
 import type { DataBrowserObject, PipelinePlanSelectionRequest } from "@/lib/generated/api-types";
 import { storageLoadDraft, type StorageLoadDraft } from "@/lib/storage-load-draft";
 import { cn } from "@/lib/utils";
+import { assetNamePrefix } from "@/lib/workspace-shell-helpers";
 import { deploymentLabel } from "@/lib/deployment-label";
 import type { EnvSchedule } from "@/lib/api-env-schedules";
 import { useEnvSchedules } from "@/hooks/use-env-schedules";
@@ -189,7 +201,10 @@ import {
   assetGroupName,
   assetNameParts,
   type AppLineageCanvasAsset,
+  type CanvasAssetLink,
+  type CanvasCreateKind,
 } from "./lineage-canvas";
+import type { QuickCreateCanvasController } from "./quick-create-node";
 import type { PipelineSettingsSection } from "./pipeline-settings-dialog";
 import { TypeCheckPanel } from "./type-check-panel";
 import { PipelineCanvasCallouts } from "./pipeline-canvas-callouts";
@@ -344,6 +359,16 @@ type BuildContextValue = {
   openNewAsset: () => void;
   openNewAssetInGroup: (prefix?: string) => void;
   createDownstreamAsset: (source: { id: string; name: string }, destination?: string) => void;
+  // Canvas quick create, the pending node it shows, and drawn links.
+  quickCreate: QuickCreateCanvasController;
+  openQuickCreate: (sourceIds: string[], position?: { x: number; y: number }) => void;
+  createAssetOfKind: (options: { prefix?: string; kind?: CanvasCreateKind }) => void;
+  linkAssets: (link: CanvasAssetLink) => Promise<void>;
+  // A just-created asset the canvas centers and highlights, and the one whose
+  // source a canvas-only view shows in a peek.
+  revealedAssetId?: string;
+  peekAssetId: string | null;
+  closePeek: () => void;
   // A new SQL asset that starts as a query on these assets.
   createAssetFromSources: (sourceNames: string[]) => void;
   createDataBrowserSource: (objectId: string, environment: string) => void;
@@ -440,10 +465,10 @@ function assetSidebarName(asset: BuildAsset) {
   if (asset.path) {
     const file = asset.path.split("/").pop() ?? asset.name;
     const prefix = asset.prefix;
-    if (prefix && file.startsWith(`${prefix}.`)) {
-      return file.slice(prefix.length + 1);
-    }
-    return file;
+    // A flat "prefix.name.sql" file shows as "name.sql" under its group, but
+    // "example.sql" in group "example" keeps its name rather than becoming "sql".
+    const leaf = prefix && file.startsWith(`${prefix}.`) ? file.slice(prefix.length + 1) : "";
+    return leaf.includes(".") ? leaf : file;
   }
   return `${assetDisplayName(asset)}${kindMeta[asset.kind].ext}`;
 }
@@ -988,7 +1013,14 @@ export function AppBuildPage({
     string | null
   >(null);
   const [newAssetInitialConnection, setNewAssetInitialConnection] = useState<string | null>(null);
-  const [newAssetInitialKind, setNewAssetInitialKind] = useState<"load" | undefined>();
+  const [newAssetInitialKind, setNewAssetInitialKind] = useState<AssetCreationKind | undefined>();
+  const [newAssetInitialName, setNewAssetInitialName] = useState<string | null>(null);
+  const [newAssetAdditionalSources, setNewAssetAdditionalSources] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [quickCreateState, dispatchQuickCreate] = useReducer(quickCreateReducer, idleQuickCreate);
+  const [revealedAssetId, setRevealedAssetId] = useState<string | undefined>();
+  const [peekAssetId, setPeekAssetId] = useState<string | null>(null);
   const [newAssetInitialLoad, setNewAssetInitialLoad] = useState<StorageLoadDraft>();
   const [dataBrowserSource, setDataBrowserSource] = useState<{
     object_id: string;
@@ -1134,6 +1166,22 @@ export function AppBuildPage({
     }
   }, [buildSearch, navigate, pendingPipelinePath, workspace?.pipelines]);
 
+  // Opens a new asset without changing the layout. Split and code views show
+  // its source in the editor; a canvas-only view keeps the canvas, selects
+  // the new node and shows its source in a peek.
+  const revealAssetInPlace = (assetId: string) => {
+    setRevealedAssetId(assetId);
+    if (view === "canvas") {
+      setPeekAssetId(assetId);
+      void navigate({
+        to: appAssetViewPath("canvas"),
+        params: { pipelineId, assetId },
+        search: { ...buildSearch, detail: undefined, editor: "asset" },
+      });
+      return;
+    }
+    void resourceNavigation.open({ kind: "asset-section", asset_id: assetId, section: "source" });
+  };
   useEffect(() => {
     if (!pendingCreatedAsset) return;
     // Creation can return before SSE has reconciled the navigation owners.
@@ -1151,12 +1199,14 @@ export function AppBuildPage({
       ?.assets.some((asset) => asset.id === pendingCreatedAsset.id);
     if (!created) return;
     setPendingCreatedAsset(null);
-    void resourceNavigation.open({
-      kind: "asset-section",
-      asset_id: pendingCreatedAsset.id,
-      section: "source",
-    });
+    revealAssetInPlace(pendingCreatedAsset.id);
+    // revealAssetInPlace reads the current view and search at reveal time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingCreatedAsset, pipelineId, location.href, workspace, resourceNavigation]);
+  // The peek follows the selection: choosing another asset closes it.
+  useEffect(() => {
+    setPeekAssetId((current) => (current && current !== selectedAssetId ? null : current));
+  }, [selectedAssetId]);
 
   const openBottom = (tab: AppResultTab) => {
     if (tab === "query" && editorMode !== "adhoc" && effectiveSelectedAssetId) {
@@ -1174,39 +1224,60 @@ export function AppBuildPage({
   };
 
   // Result selection and repository/scratch editor selection are independent.
+  const activePipelineId = activePipeline?.id;
+  const typeCheckRequestRef = useRef(0);
   const runTypeCheck = useCallback(
     async (openTab = false) => {
-      if (!activePipeline) {
+      if (!activePipelineId) {
         return;
       }
       if (openTab) {
         openBottom("typecheck");
       }
+      // Only the latest request may publish its report.
+      const request = ++typeCheckRequestRef.current;
       setTypeCheckLoading(true);
       setTypeCheckError(null);
       try {
         await awaitWorkspaceSaves();
-        const report = await typeCheckPipeline(activePipeline.id, {
+        const report = await typeCheckPipeline(activePipelineId, {
           startDate: selectedExecutionTimeWindow?.start,
           endDate: selectedExecutionTimeWindow?.end,
         });
-        setTypeCheckReport(report);
+        if (request === typeCheckRequestRef.current) setTypeCheckReport(report);
       } catch (cause) {
-        setTypeCheckError(cause instanceof Error ? cause.message : "Type check failed.");
+        if (request === typeCheckRequestRef.current) {
+          setTypeCheckError(cause instanceof Error ? cause.message : "Type check failed.");
+        }
       } finally {
-        setTypeCheckLoading(false);
+        if (request === typeCheckRequestRef.current) setTypeCheckLoading(false);
       }
     },
-    [activePipeline, selectedExecutionTimeWindow?.start, selectedExecutionTimeWindow?.end],
+    [activePipelineId, selectedExecutionTimeWindow?.start, selectedExecutionTimeWindow?.end],
   );
-  // Run the type check once per pipeline so the results badge and node markers
-  // reflect the current state; the user can re-run from the panel after edits.
+  // The report follows the pipeline's definitions, not every workspace event:
+  // staleness and run updates leave it alone, and the burst of updates from one
+  // edit or creation settles into a single refresh.
+  const typeCheckContentKey = useMemo(
+    () =>
+      (activePipeline?.assets ?? [])
+        .map((asset) => `${asset.id}\u0000${asset.content_revision ?? asset.content}`)
+        .join("\u0001"),
+    [activePipeline?.assets],
+  );
+  const typeCheckedPipelineRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!activePipeline) {
+    if (!activePipelineId) {
       return;
     }
-    void runTypeCheck(false);
-  }, [activePipeline?.id, runTypeCheck]);
+    if (typeCheckedPipelineRef.current !== activePipelineId) {
+      typeCheckedPipelineRef.current = activePipelineId;
+      void runTypeCheck(false);
+      return;
+    }
+    const timer = window.setTimeout(() => void runTypeCheck(false), 400);
+    return () => window.clearTimeout(timer);
+  }, [activePipelineId, typeCheckContentKey, runTypeCheck]);
 
   const seenCatalogReadySequenceRef = useRef(catalogReady.sequence);
   useEffect(() => {
@@ -1214,7 +1285,7 @@ export function AppBuildPage({
       return;
     }
     seenCatalogReadySequenceRef.current = catalogReady.sequence;
-    if (!activePipeline) {
+    if (!activePipelineId) {
       return;
     }
     // Catalog and lazy-column refreshes can complete back-to-back. Coalesce
@@ -1224,7 +1295,7 @@ export function AppBuildPage({
       void runTypeCheck(false);
     }, 100);
     return () => window.clearTimeout(timer);
-  }, [activePipeline, catalogReady.sequence, runTypeCheck]);
+  }, [activePipelineId, catalogReady.sequence, runTypeCheck]);
   const runMaterialize = (assetId: string, name: string, scope: MaterializeScope = "asset") => {
     if (selectionNeedsReviewedCrossPipelineRun(activePipeline, assetId, scope)) {
       setPipelinePlanInitialSelection({ mode: "asset", asset_name: name, scope });
@@ -1586,53 +1657,78 @@ export function AppBuildPage({
       search: { ...buildSearch, editor: "adhoc" },
     });
   };
+  // Opens the creation dialog with everything it should start from; any
+  // field left out starts empty.
+  const openNewAssetDialog = (
+    options: {
+      downstream?: { id: string; name: string; connection?: string } | null;
+      additionalSources?: { id: string; name: string }[];
+      prefix?: string | null;
+      name?: string | null;
+      executableContent?: string | null;
+      connection?: string | null;
+      kind?: AssetCreationKind;
+      load?: StorageLoadDraft;
+    } = {},
+  ) => {
+    setDownstreamSource(options.downstream ?? null);
+    setNewAssetAdditionalSources(options.additionalSources ?? []);
+    setNewAssetPrefix(options.prefix ?? null);
+    setNewAssetInitialName(options.name ?? null);
+    setNewAssetInitialExecutableContent(options.executableContent ?? null);
+    setNewAssetInitialConnection(options.connection ?? null);
+    setNewAssetInitialKind(options.kind);
+    setNewAssetInitialLoad(options.load);
+    setNewAssetOpen(true);
+  };
   const openNewAsset = () => {
-    afterMobileNavigationCloses(() => {
-      setDownstreamSource(null);
-      setNewAssetPrefix(null);
-      setNewAssetInitialExecutableContent(null);
-      setNewAssetInitialConnection(null);
-      setNewAssetInitialKind(undefined);
-      setNewAssetInitialLoad(undefined);
-      setNewAssetOpen(true);
-    });
+    // A new asset joins the group of the asset the user has open.
+    const openAsset = displayedPipelineAssets.find(
+      (asset) => asset.id === effectiveSelectedAssetId && !asset.readOnly,
+    );
+    afterMobileNavigationCloses(() =>
+      openNewAssetDialog({ prefix: assetNamePrefix(openAsset?.name) || null }),
+    );
   };
   // Canvas right-click entry point: seeds the dialog's name suggestion with
   // the prefix group the click landed in.
-  const openNewAssetInGroup = (prefix?: string) => {
-    setDownstreamSource(null);
-    setNewAssetPrefix(prefix ?? null);
-    setNewAssetInitialExecutableContent(null);
-    setNewAssetInitialConnection(null);
-    setNewAssetInitialKind(undefined);
-    setNewAssetInitialLoad(undefined);
-    setNewAssetOpen(true);
+  const openNewAssetInGroup = (prefix?: string) => openNewAssetDialog({ prefix: prefix ?? null });
+  // The canvas menu lists kinds directly; importing tables opens the Data
+  // Browser, whose tables can then be dropped onto the canvas.
+  const createAssetOfKind = ({ prefix, kind }: { prefix?: string; kind?: CanvasCreateKind }) => {
+    if (kind === "import") {
+      workbenchDispatch({ type: "tool-selected", mode: "build", tool: "data" });
+      if (isMobileWorkbench) window.setTimeout(() => setMobileNavigationOpen(true), 0);
+      return;
+    }
+    openNewAssetDialog({ prefix: prefix ?? null, kind });
   };
-  const createDownstreamAsset = (source: { id: string; name: string }, destination?: string) => {
+  const downstreamSourceFor = (source: { id: string; name: string }) => {
     const sourceAsset = activePipeline?.assets.find((asset) => asset.id === source.id);
     const sourceConnection = sourceAsset ? effectiveConnectionForAsset(sourceAsset) : null;
-    setDownstreamSource({
-      ...source,
-      ...(sourceConnection ? { connection: sourceConnection } : {}),
-    });
-    setNewAssetPrefix(null);
-    setNewAssetInitialExecutableContent(null);
-    setNewAssetInitialConnection(destination ?? null);
-    setNewAssetInitialKind(destination ? "load" : undefined);
-    setNewAssetInitialLoad(undefined);
-    setNewAssetOpen(true);
+    return { ...source, ...(sourceConnection ? { connection: sourceConnection } : {}) };
   };
+  const createDownstreamAsset = (source: { id: string; name: string }, destination?: string) =>
+    openNewAssetDialog({
+      downstream: downstreamSourceFor(source),
+      connection: destination ?? null,
+      kind: destination ? "load" : undefined,
+    });
+  // A first model on imported sources: one source is selected from, several
+  // are joined on the columns they share.
   const createAssetFromSources = (sourceNames: string[]) => {
     const sources = sourceNames
       .map((name) => activePipeline?.assets.find((asset) => asset.name === name))
       .filter((asset): asset is NonNullable<typeof asset> => Boolean(asset));
-    const first = sources[0];
+    const [first, ...others] = sources;
     if (!first) {
       openNewAsset();
       return;
     }
-    createDownstreamAsset({ id: first.id, name: first.name });
-    setNewAssetInitialExecutableContent(sourcesStarterQuery(sources.map((asset) => asset.name)));
+    openNewAssetDialog({
+      downstream: downstreamSourceFor({ id: first.id, name: first.name }),
+      additionalSources: others.map((asset) => ({ id: asset.id, name: asset.name })),
+    });
   };
   const createStorageLoad = (object: DataBrowserObject, upstreamId?: string, prefix?: string) => {
     if (object.environment !== effectiveEnvironment || !activePipeline) return;
@@ -1649,25 +1745,223 @@ export function AppBuildPage({
         : undefined,
     );
     if (!draft) return;
-    setDownstreamSource(
-      upstream ? { id: upstream.id, name: upstream.name, connection: sourceConnection! } : null,
-    );
-    setNewAssetPrefix(prefix ?? null);
-    setNewAssetInitialExecutableContent(null);
-    setNewAssetInitialConnection(draft.connection ?? null);
-    setNewAssetInitialKind("load");
-    setNewAssetInitialLoad(draft);
-    setNewAssetOpen(true);
+    openNewAssetDialog({
+      downstream:
+        upstream && sourceConnection
+          ? { id: upstream.id, name: upstream.name, connection: sourceConnection }
+          : null,
+      prefix: prefix ?? null,
+      connection: draft.connection ?? null,
+      kind: "load",
+      load: draft,
+    });
   };
-  const convertAdhocToAsset = () => {
-    setDownstreamSource(null);
-    setNewAssetPrefix(null);
-    setNewAssetInitialExecutableContent(adhocQuery);
-    setNewAssetInitialConnection(adhocConnection?.name ?? null);
-    setNewAssetInitialKind(undefined);
-    setNewAssetInitialLoad(undefined);
-    setNewAssetOpen(true);
+
+  // Quick create: the pending node on the canvas. It needs the canvas, so the
+  // code view opens the dialog instead.
+  const openQuickCreate = (sourceIds: string[], position?: { x: number; y: number }) => {
+    const sources = sourceIds
+      .map((id) => activePipeline?.assets.find((asset) => asset.id === id))
+      .filter((asset): asset is NonNullable<typeof asset> => Boolean(asset));
+    if (sources.length === 0) return;
+    if (view === "code" || editorMode === "adhoc") {
+      const [first, ...others] = sources;
+      openNewAssetDialog({
+        downstream: downstreamSourceFor({ id: first.id, name: first.name }),
+        additionalSources: others.map((asset) => ({ id: asset.id, name: asset.name })),
+      });
+      return;
+    }
+    if (activePipeline) prefetchAssetCreationProfile(activePipeline.id, effectiveEnvironment ?? "");
+    dispatchQuickCreate({
+      type: "open",
+      draft: {
+        sourceIds: sources.map((asset) => asset.id),
+        sourceNames: sources.map((asset) => asset.name),
+        name: suggestDownstreamAssetName(
+          sources.map((asset) => asset.name),
+          existingAssetNames,
+        ),
+        kind: "sql",
+        position,
+      },
+    });
   };
+  const quickCreateDraft = quickCreateState.status === "idle" ? null : quickCreateState.draft;
+  const submitQuickCreate = async () => {
+    if (quickCreateState.status !== "editing" && quickCreateState.status !== "failed") return;
+    const draft = quickCreateState.draft;
+    if (!activePipeline || validateQuickCreateName(draft.name, existingAssetNames)) return;
+    const [sourceId, ...joinIds] = draft.sourceIds;
+    const sourceAsset = activePipeline.assets.find((asset) => asset.id === sourceId);
+    const connection = (sourceAsset && effectiveConnectionForAsset(sourceAsset)) || "";
+    dispatchQuickCreate({ type: "submit" });
+    try {
+      const response = await createAsset(activePipeline.id, {
+        name: draft.name.trim(),
+        kind: draft.kind === "python" ? "python" : "sql",
+        connection,
+        environment: effectiveEnvironment || undefined,
+        use_pipeline_default: !connection,
+        source_asset_id: sourceId,
+        ...(joinIds.length > 0 ? { source_asset_ids: joinIds } : {}),
+      });
+      if (!response.asset_id) throw new Error("The server did not return the new asset.");
+      dispatchQuickCreate({ type: "succeeded", assetId: response.asset_id });
+    } catch (cause) {
+      dispatchQuickCreate({
+        type: "failed",
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  };
+  const quickCreateMoreOptions = () => {
+    if (!quickCreateDraft || quickCreateState.status === "creating") return;
+    const [sourceId, ...joinIds] = quickCreateDraft.sourceIds;
+    const sourceName = quickCreateDraft.sourceNames[0] ?? "";
+    dispatchQuickCreate({ type: "cancel" });
+    openNewAssetDialog({
+      downstream: downstreamSourceFor({ id: sourceId, name: sourceName }),
+      additionalSources: joinIds.map((id, index) => ({
+        id,
+        name: quickCreateDraft.sourceNames[index + 1] ?? id,
+      })),
+      name: quickCreateDraft.name,
+      kind: quickCreateDraft.kind,
+    });
+  };
+  const cancelQuickCreate = () => {
+    const sourceId = quickCreateDraft?.sourceIds[0];
+    dispatchQuickCreate({ type: "cancel" });
+    // Return focus to the card the user started from.
+    if (sourceId) {
+      window.requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLElement>(
+            `[data-testid="lineage-asset"][data-asset-id="${CSS.escape(sourceId)}"]`,
+          )
+          ?.focus({ preventScroll: true }),
+      );
+    }
+  };
+  const quickCreateController: QuickCreateCanvasController = {
+    state: quickCreateState,
+    validationError: quickCreateDraft
+      ? validateQuickCreateName(quickCreateDraft.name, existingAssetNames)
+      : null,
+    onEdit: (patch) => dispatchQuickCreate({ type: "edit", patch }),
+    onSubmit: () => void submitQuickCreate(),
+    onCancel: cancelQuickCreate,
+    onMoreOptions: quickCreateMoreOptions,
+  };
+  // The pending node gives way to the real one once the workspace update
+  // lists it. Should that update not arrive, the node stops waiting.
+  const quickCreatedAssetId =
+    quickCreateState.status === "created" ? quickCreateState.assetId : null;
+  const quickCreatedAssetListed = Boolean(
+    quickCreatedAssetId && activePipeline?.assets.some((asset) => asset.id === quickCreatedAssetId),
+  );
+  useEffect(() => {
+    if (!quickCreatedAssetId) return;
+    if (quickCreatedAssetListed) {
+      dispatchQuickCreate({ type: "revealed" });
+      revealAssetInPlace(quickCreatedAssetId);
+      return;
+    }
+    const timer = window.setTimeout(() => dispatchQuickCreate({ type: "revealed" }), 10_000);
+    return () => window.clearTimeout(timer);
+    // revealAssetInPlace reads the current view and search at reveal time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quickCreatedAssetId, quickCreatedAssetListed]);
+  // Quick create belongs to one pipeline.
+  useEffect(() => {
+    dispatchQuickCreate({ type: "cancel" });
+  }, [pipelineId]);
+
+  // Palette commands and their single-key shortcuts. N and D are free in the
+  // canvas; typing in an editor, field, menu or dialog never triggers them.
+  const routedDownstreamSource = displayedPipelineAssets.find(
+    (asset) => asset.id === selectedAssetId && !asset.readOnly && !asset.isExternal,
+  );
+  const commandHandlersRef = useRef({ newAsset: openNewAsset, addDownstream: () => {} });
+  commandHandlersRef.current = {
+    newAsset: openNewAsset,
+    addDownstream: () => {
+      if (routedDownstreamSource) openQuickCreate([routedDownstreamSource.id]);
+    },
+  };
+  const setPageCommands = useSetAtom(pageCommandsAtom);
+  const activePipelineName = activePipeline?.name;
+  const routedDownstreamSourceName = routedDownstreamSource?.name;
+  useEffect(() => {
+    if (!activePipelineName) return;
+    setPageCommands([
+      {
+        id: "build:new-asset",
+        title: "New asset",
+        subtitle: `In ${activePipelineName}`,
+        shortcut: "N",
+        perform: () => commandHandlersRef.current.newAsset(),
+      },
+      ...(routedDownstreamSourceName
+        ? [
+            {
+              id: "build:add-downstream",
+              title: "Add downstream of selected",
+              subtitle: routedDownstreamSourceName,
+              shortcut: "D",
+              perform: () => commandHandlersRef.current.addDownstream(),
+            },
+          ]
+        : []),
+    ]);
+    return () => setPageCommands([]);
+  }, [activePipelineName, routedDownstreamSourceName, setPageCommands]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const key = event.key.toLowerCase();
+      if (key !== "n" && key !== "d") return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.closest(
+            'input, textarea, select, .monaco-editor, [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="combobox"]',
+          ))
+      ) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return;
+      event.preventDefault();
+      if (key === "n") commandHandlersRef.current.newAsset();
+      else commandHandlersRef.current.addDownstream();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // A link drawn from one asset to another: join it in the target's query,
+  // or record a manual dependency that keeps the target's code as it is.
+  const linkAssets = async ({ sourceId, targetId, mode }: CanvasAssetLink) => {
+    const source = activePipeline?.assets.find((asset) => asset.id === sourceId);
+    if (!source) throw new Error("The upstream asset is no longer in this pipeline.");
+    await awaitWorkspaceSaves();
+    if (mode === "join") {
+      await joinUpstreamAsset(targetId, sourceId);
+    } else {
+      await applyAssetTransaction(targetId, {
+        type: "dependency.manual.add",
+        dependency: { asset: source.name },
+      });
+    }
+  };
+  const convertAdhocToAsset = () =>
+    openNewAssetDialog({
+      executableContent: adhocQuery,
+      connection: adhocConnection?.name ?? null,
+    });
 
   const navigateToBuildDocument = async (document: BuildDocument | null) => {
     setDocumentSaveError(null);
@@ -1883,6 +2177,7 @@ export function AppBuildPage({
               setNewAssetInitialLoad(undefined);
               setNewAssetInitialKind(undefined);
               setNewAssetInitialConnection(null);
+              setNewAssetInitialName(null);
             }
           }}
           pipelineId={activePipeline.id}
@@ -1917,6 +2212,13 @@ export function AppBuildPage({
     openNewAsset,
     openNewAssetInGroup,
     createDownstreamAsset,
+    quickCreate: quickCreateController,
+    openQuickCreate,
+    createAssetOfKind,
+    linkAssets,
+    revealedAssetId,
+    peekAssetId,
+    closePeek: () => setPeekAssetId(null),
     createAssetFromSources,
     createDataBrowserSource: (objectId, environment) =>
       setDataBrowserSource({ object_id: objectId, environment }),
@@ -2235,7 +2537,9 @@ export function AppBuildPage({
             setNewAssetOpen(open);
             if (!open) {
               setDownstreamSource(null);
+              setNewAssetAdditionalSources([]);
               setNewAssetPrefix(null);
+              setNewAssetInitialName(null);
               setNewAssetInitialExecutableContent(null);
               setNewAssetInitialConnection(null);
               setNewAssetInitialKind(undefined);
@@ -2246,7 +2550,9 @@ export function AppBuildPage({
           pipelineName={activePipeline?.name}
           existingAssetNames={existingAssetNames}
           downstreamSource={downstreamSource}
+          additionalSources={newAssetAdditionalSources}
           namePrefix={newAssetPrefix}
+          initialName={newAssetInitialName}
           initialExecutableContent={newAssetInitialExecutableContent}
           initialConnection={newAssetInitialConnection}
           initialKind={newAssetInitialKind}
@@ -3234,12 +3540,49 @@ function AssetButton({
   );
 }
 
-// A first model on imported sources. Plain table names resolve to their
-// source assets, so the dependencies need no extra syntax.
-function sourcesStarterQuery(sourceNames: string[]) {
-  const [first, ...others] = sourceNames;
-  const also = others.length > 0 ? `-- Also imported: ${others.join(", ")}\n` : "";
-  return `${also}SELECT *\nFROM ${first}\n`;
+// A canvas-only view keeps the canvas after creating an asset and shows the
+// new asset's source here; editing it opens the split view.
+function AssetSourcePeek({ assetId, onClose }: { assetId: string; onClose: () => void }) {
+  const { pipelineId, pipelineAssets, goToAsset } = useBuildContext();
+  const asset = pipelineAssets.find((candidate) => candidate.id === assetId);
+  const workspaceAsset = asset?.workspaceAsset;
+  if (!asset || !workspaceAsset) return null;
+  const content = workspaceAsset.content.trim();
+  return (
+    <section
+      aria-label={`Source of ${asset.name}`}
+      data-testid="asset-source-peek"
+      className="absolute bottom-3 right-3 z-20 flex max-h-[45%] w-[min(26rem,calc(100%-1.5rem))] min-w-0 flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+    >
+      <header className="flex min-w-0 items-center gap-2 border-b px-3 py-2">
+        <FileCode className="size-3.5 shrink-0 text-primary" />
+        <span className="min-w-0 flex-1 truncate font-mono text-xs font-medium">{asset.name}</span>
+        <Button size="xs" variant="outline" onClick={() => goToAsset(pipelineId, asset.id)}>
+          Edit source
+        </Button>
+        <Button size="icon-xs" variant="ghost" aria-label="Close source preview" onClick={onClose}>
+          <X />
+        </Button>
+      </header>
+      {content ? (
+        asset.kind === "sql" ? (
+          <SqlPreview query={content} className="max-h-none min-h-0 flex-1 border-t-0 px-3 py-2" />
+        ) : (
+          <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-[11px] leading-relaxed">
+            {content}
+          </pre>
+        )
+      ) : (
+        <p className="px-3 py-2 text-xs text-muted-foreground">This asset has no code yet.</p>
+      )}
+    </section>
+  );
 }
 
 function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) => void }) {
@@ -3251,7 +3594,14 @@ function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) =>
     createAssetFromSources,
     createDataBrowserSource,
     createStorageLoad,
-    openNewAssetInGroup,
+    quickCreate,
+    openQuickCreate,
+    createAssetOfKind,
+    linkAssets,
+    revealedAssetId,
+    peekAssetId,
+    closePeek,
+    view,
     runAssetById,
     deleteAssetById,
     goToCatalog,
@@ -3294,15 +3644,22 @@ function PipelineCanvas({ onAssetSelect }: { onAssetSelect: (assetId: string) =>
           onImportExternalRelation={importExternalRelation}
           goToLabel="Open in catalog"
           viewTransitionName={PIPELINE_CANVAS_TRANSITION}
-          onCreateAsset={({ prefix }) => openNewAssetInGroup(prefix)}
+          onCreateAsset={createAssetOfKind}
           onCreateDownstream={(assetId) => {
             const source = pipelineAssets.find((asset) => asset.id === assetId);
             if (source) {
               createDownstreamAsset({ id: source.id, name: source.name });
             }
           }}
+          quickCreate={quickCreate}
+          onQuickCreate={openQuickCreate}
+          onLinkAssets={linkAssets}
+          revealAssetId={revealedAssetId}
         />
       </DataBrowserCanvas>
+      {peekAssetId && view === "canvas" ? (
+        <AssetSourcePeek assetId={peekAssetId} onClose={closePeek} />
+      ) : null}
       <PipelineCanvasCallouts
         pipelineId={pipelineId}
         assets={pipelineAssets}

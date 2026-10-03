@@ -35,7 +35,7 @@ func updateDirectAssetDependencies(ctx context.Context, asset *pipeline.Asset, p
 		}
 		asset.AddUpstream(foundMissingUpstream)
 	}
-	return asset.Persist(fs)
+	return persistExecutableAsset(fs, asset)
 }
 
 func fillDirectColumnsFromDB(ctx context.Context, pp *directPipelineInfo, fs afero.Fs, environment string, manager config.ConnectionGetter) (string, error) {
@@ -117,7 +117,7 @@ func fillDirectColumnsFromDB(ctx context.Context, pp *directPipelineInfo, fs afe
 			columns = append(columns, pipeline.Column{Name: colName, Type: result.ColumnTypes[i], Checks: []pipeline.ColumnCheck{}, Upstreams: []*pipeline.UpstreamColumn{}})
 		}
 		pp.Asset.Columns = columns
-		if err := pp.Asset.Persist(fs, pp.Pipeline); err != nil {
+		if err := persistExecutableAsset(fs, pp.Asset, pp.Pipeline); err != nil {
 			return fillStatusFailed, err
 		}
 		return fillStatusUpdated, nil
@@ -147,7 +147,7 @@ func fillDirectColumnsFromDB(ctx context.Context, pp *directPipelineInfo, fs afe
 	if !hasChanges {
 		return fillStatusSkipped, nil
 	}
-	if err := pp.Asset.Persist(fs, pp.Pipeline); err != nil {
+	if err := persistExecutableAsset(fs, pp.Asset, pp.Pipeline); err != nil {
 		return fillStatusFailed, err
 	}
 	return fillStatusUpdated, nil

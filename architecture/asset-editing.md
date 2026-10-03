@@ -116,7 +116,10 @@ Deterministic rendering keeps git diffs clean: stable field order, inferred
 dependencies in SQL appearance order then manual ones, columns in SELECT-list
 order then manual/preserved ones, no timestamps or UI state in committed
 metadata (the node-preserving YAML codec in `service/asset_yaml_codec.go`
-round-trips unknown fields).
+round-trips unknown fields). Bruin's builder adds each asset's connection as an
+injected secret while parsing (`InjectConnectionAsSecret`). SQL and Python
+writes go through `persistExecutableAsset`, which leaves that mapping out unless
+the file itself declares it, so no rewrite adds a `secrets:` block.
 
 The workspace API preserves Bruin dependency type and mode alongside the
 compatibility `upstreams[]` list. A shared resolver keeps bare asset names local
@@ -185,8 +188,27 @@ normal settings Sheet and guard unsaved changes. See
   Python starts there but may select another compatible target, and a downstream
   Load fixes that warehouse as its source while asking for its destination. An
   incompatible carried value remains visible and must be changed explicitly;
-  creation never silently falls back to another dialect. Generated downstream
-  Python uses the runner-injected `renart` SDK. Seed
+  creation never silently falls back to another dialect. A downstream SQL asset
+  whose source inherits the pipeline default writes no `connection:` either, so
+  both follow that default together. A downstream SQL asset starts as a query
+  on its source (`service/sql_starter.go`): the source's known columns one per
+  line (declared, or implied by a definition such as a Load or Seed), or
+  `SELECT *` when none are known,
+  in the keyword case most of the pipeline's SQL uses (uppercase on ties).
+  Plain column names stay bare; others are quoted in the dialect's style.
+  `source_asset_ids` adds further sources, and the starter becomes a join
+  skeleton: each source aliased by its name's leaf, a `LEFT JOIN` on a shared
+  column (a primary key first, then an id-like name), or a commented
+  `CROSS JOIN` when none is shared. Generated downstream
+  Python uses the runner-injected `renart` SDK. A new standalone SQL asset starts
+  with `SELECT 1 AS id` (`FROM dual` on Oracle); Inspect of a SQL asset with an
+  empty body returns an info card instead of a database parse error.
+
+  The suggested name joins the prefix group the user pointed at: the
+  right-clicked group box, else the group of the open asset, else the
+  pipeline's most common prefix. Only a pipeline without prefixed assets falls
+  back to its own name. The dialog preselects the part after the prefix, so
+  typing replaces only the placeholder, and a typed name survives a kind change. Seed
   workspace paths use the shared file picker; the request carries a
   workspace-root-relative selection, while the saved Bruin definition remains
   portable with a path relative to the asset file.

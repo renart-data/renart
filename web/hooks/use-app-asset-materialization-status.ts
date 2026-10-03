@@ -152,13 +152,28 @@ export function useAppAssetMaterializationStatus(assets: AppMaterializationAsset
   const runContextById = useRef<RunContextById>({});
   const finishedRunIds = useRef(new Set<string>());
   const [loading, setLoading] = useState(true);
-  const pipelineIds = useMemo(
+  const pipelineKey = useMemo(
     () =>
-      new Set(
-        assets.map((asset) => asset.pipelineId).filter((value): value is string => Boolean(value)),
-      ),
+      [
+        ...new Set(
+          assets
+            .map((asset) => asset.pipelineId)
+            .filter((value): value is string => Boolean(value)),
+        ),
+      ]
+        .sort()
+        .join("\n"),
     [assets],
   );
+  const pipelineIds = useMemo(
+    () => new Set(pipelineKey ? pipelineKey.split("\n") : []),
+    [pipelineKey],
+  );
+  // Workspace updates replace the asset list on every file change. Running
+  // steps only need the latest list to resolve names, so a change of assets
+  // alone (such as creating one) does not reload the running runs.
+  const assetsRef = useRef(assets);
+  assetsRef.current = assets;
 
   useEffect(() => {
     let cancelled = false;
@@ -198,7 +213,7 @@ export function useAppAssetMaterializationStatus(assets: AppMaterializationAsset
           if (finishedRunIds.current.has(detail.run.id)) return current;
           let next = current;
           for (const step of detail.steps ?? []) {
-            const keys = keysForStepAsset(step.asset, assets, detail.run.pipeline_id);
+            const keys = keysForStepAsset(step.asset, assetsRef.current, detail.run.pipeline_id);
             if (keys.length > 0) next = applyStep(next, step, keys);
           }
           return next;
@@ -212,7 +227,7 @@ export function useAppAssetMaterializationStatus(assets: AppMaterializationAsset
     return () => {
       cancelled = true;
     };
-  }, [assets, pipelineIds, selectedEnvironment]);
+  }, [pipelineIds, selectedEnvironment]);
 
   useSchedulerRunEvents((schedulerRunEvent) => {
     if (schedulerRunEvent.type === "run.unit") return;

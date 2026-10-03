@@ -89,7 +89,11 @@ File-based routes under [src/routes](../web/src/routes):
   document navigation (`pinProject`); an in-place project refreshes the
   workspace snapshot and navigates with the router. Both share the
   `pipeline-canvas` view-transition name (`@view-transition` covers the
-  cross-document case; reduced motion disables it). New-project location
+  cross-document case; reduced motion disables it). The desktop window skips
+  view transitions entirely
+  ([view-transitions.ts](../web/lib/view-transitions.ts)): its Linux WebKitGTK
+  webview runs without accelerated compositing and stops painting after any
+  view transition, leaving a blank window. New-project location
   uses the server-backed directory picker shared with the project switcher;
   the target line stays collapsed until **Change** or a creation error.
 - **Connect your data** is one component,
@@ -399,7 +403,10 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   ([lineage-canvas.tsx](../web/components/app/lineage-canvas.tsx), React Flow)
   beside the asset editor. After creating an asset, source navigation waits for
   the canonical workspace/SSE update to expose its owner. This pending reveal
-  is cancelled if the user changes route or project first. Bare asset URLs
+  is cancelled if the user changes route or project first. The reveal keeps
+  the layout: split and code views open the source in the editor, while a
+  canvas-only view routes to the asset's canvas URL and shows its code in a
+  dismissible source peek (**Edit source** opens split view). Bare asset URLs
   default to this split view; ad-hoc
   queries preserve code/split layout and add the editor beside a canvas-only
   view. The ad-hoc editor can copy its current draft into a new or existing
@@ -457,9 +464,55 @@ and never inferred from a location URL. Bundle gates remain unchanged.
   resolved asset-ID edges from the workspace DTO rather than globally joining
   duplicate asset names. Build uses those same IDs and includes directly
   referenced sibling-pipeline producers as read-only, pipeline-labelled nodes;
-  their action navigates to the owning pipeline. Those producer nodes also use
+  their action navigates to the owning pipeline. Authored asset cards offer
+  **Create downstream asset** in their **…** and right-click menus as well as on
+  the hover **+**, which also appears when keyboard focus is inside the card.
+  Menu actions that open a dialog run only after the menu has closed and skip
+  its focus return, so the dialog's own autofocus wins. Those producer nodes also use
   the owning pipeline's freshness snapshot and live run steps, rather than the
   consumer pipeline's placeholder materialization state.
+
+  **Canvas quick create.** In canvas and split views, the **+** and **Create
+  downstream asset** open a pending node instead of the dialog
+  ([quick-create-node.tsx](../web/components/app/quick-create-node.tsx)). The
+  build page owns its state machine (`lib/quick-create.ts`: editing → creating
+  → created, or failed with the draft and error kept; cancel works in every
+  state except creating). The node sits one column right of its sources at
+  their average height, on the nearest free row, or where a drag ended; the
+  canvas pans just far enough to show it. Name validation mirrors the server
+  (prefixed, unique), the leaf after the prefix is preselected, Enter creates,
+  Escape discards and returns focus to the source card. SQL and Python create
+  directly; Load and **More options…** hand the draft (sources, name, kind) to
+  the dialog, which stays the path for API, Seed, Sensor and standalone Load.
+  When the workspace update lists the new asset, the pending node gives way to
+  it, the page reveals it in place, and the canvas centers it and highlights it
+  for six seconds or until the user pans, zooms or selects another asset. The
+  code view has no canvas, so the same actions open the dialog there.
+
+  The **+** is a second source handle of its own (React Flow starts a drag
+  only on a handle element); edges keep anchoring on the hidden first handle.
+  A drag that ends on empty space opens quick create there. A drag onto
+  another asset opens a menu: **Join in query** for an authored SQL target
+  (`POST /api/assets/{assetID}/join-upstream`) and **Add as dependency** (the
+  `dependency.manual.add` transaction). The menu explains instead of offering
+  when the link exists, would make a cycle, or targets a read-only node.
+  Shift-click and Shift-drag select authored cards through React Flow's own
+  select changes (nodes are controlled; read-only and external cards are not
+  selectable but keep pointer events); two or more show a **Join into new
+  asset** toolbar that opens quick create with every selected source. The
+  right-click pane menu lists SQL, Python, Seed, Load and **Import tables…**
+  (the Data Browser tool) before the full dialog.
+
+  The build page registers **New asset** and **Add downstream of selected**
+  (routed selection only) in the command palette through `pageCommandsAtom`,
+  and handles **N** and **D** itself, ignoring keys typed in fields, Monaco,
+  menus, listboxes and open dialogs. Post-create traffic is coalesced: the
+  type-check report refreshes on a 400 ms debounce of the pipeline's asset
+  content revisions rather than on every workspace event, materialization
+  status reloads running runs only when the pipeline set or environment
+  changes, and the asset-creation profile is cached per project, pipeline and
+  environment, shown immediately and revalidated in the background (a refresh
+  after creating a connection always refetches).
 
   The toolbar keeps Deploy as a separate
   secondary action and makes **Review run** the primary pipeline action. Type
@@ -1018,7 +1071,10 @@ surfaces rather than inventing another card shell.
   ignored. Each successful connection starts a revision epoch so a server
   restart can reset its revision counter. A full HTTP snapshot is requested
   after every subscription (including the first); an equal-revision HTTP
-  response may hydrate content omitted by a lite event. The pure lite merge
+  response may hydrate content omitted by a lite event. A lite event admitted
+  before any snapshot (the connect-time state can overtake an initial load that
+  is now older) leaves assets without content, so the atom reports it and the
+  hook loads the workspace again. The pure lite merge
   lives in `web/lib/workspace-reconciliation.ts`. This boundary does not reset
   navigation, panel, or explicit environment selections.
 - [use-asset-content-editing.ts](../web/hooks/use-asset-content-editing.ts): editor

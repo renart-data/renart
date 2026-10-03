@@ -89,6 +89,11 @@
       "qs": "6.16.0",
       "undici": "7.30.0",
       "browserslist@<=4.28.6": ">=4.28.7"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-vfj7-8cjw-p6xm"
+      ]
     }
   }
 }

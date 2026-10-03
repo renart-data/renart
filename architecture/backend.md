@@ -1418,7 +1418,14 @@ connection, and dialect. SQL/Python headers and API YAML identity are
 server-overlaid so submitted content cannot disagree with the reviewed choice;
 Seed, Sensor, and Load already render from canonical semantic fields. The
 legacy concrete-`type` request remains available for existing callers but
-rejects an explicit type/connection mismatch. Connection type is treated as
+rejects an explicit type/connection mismatch. `source_asset_ids` names further
+same-pipeline sources a downstream SQL asset joins; other kinds reject it.
+`POST /api/assets/{assetID}/join-upstream` makes an existing SQL asset read
+another asset of its pipeline: the query is wrapped as a CTE named after the
+asset and the source is joined to it (an empty query becomes the downstream
+starter), then saved through the normal update path so the dependency is
+inferred from SQL. It refuses an existing upstream, the asset itself, other
+pipelines, and T-SQL/Fabric, which cannot nest a `WITH` in a CTE. Connection type is treated as
 identity: ordinary project-settings edits may rename or change values, but a
 connection definition's type cannot be changed in place.
 

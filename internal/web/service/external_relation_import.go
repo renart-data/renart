@@ -236,7 +236,7 @@ func (s *PipelineService) bindImportedExternalRelationConsumers(
 		}
 
 		originalHadExplicitName := assetContentHasExplicitName(consumer.ExecutableFile.Content)
-		if err := consumer.Persist(fs, parsed); err != nil {
+		if err := persistExecutableAsset(fs, consumer, parsed); err != nil {
 			warnings = append(warnings, ExternalRelationImportWarning{
 				Table:   consumer.Name,
 				Warning: fmt.Sprintf("Imported the source asset, but could not persist its dependency on %q: %v", importedAsset.Name, err),

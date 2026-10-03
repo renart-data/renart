@@ -409,7 +409,7 @@ func (s *ExecutionService) InspectAsset(ctx context.Context, assetID, limit, env
 		}
 	}
 
-	if result, ok := s.inspectMaterializedNonSQLAsset(ctx, assetID, relAssetPath, limit, environment); ok {
+	if result, ok := s.inspectWithoutQuery(ctx, assetID, relAssetPath, limit, environment); ok {
 		return result
 	}
 
@@ -484,14 +484,29 @@ func (s *ExecutionService) InspectAsset(ctx context.Context, assetID, limit, env
 	}
 }
 
-func (s *ExecutionService) inspectMaterializedNonSQLAsset(ctx context.Context, assetID, relAssetPath, limit, environment string) (InspectResult, bool) {
+func (s *ExecutionService) inspectWithoutQuery(ctx context.Context, assetID, relAssetPath, limit, environment string) (InspectResult, bool) {
 	if s.deps.ResolveAssetByID == nil {
 		return InspectResult{}, false
 	}
 
 	_, parsedPipeline, asset, err := s.deps.ResolveAssetByID(ctx, assetID)
-	if err != nil || parsedPipeline == nil || asset == nil || asset.IsSQLAsset() {
+	if err != nil || parsedPipeline == nil || asset == nil {
 		return InspectResult{}, false
+	}
+	if asset.IsSQLAsset() {
+		// An empty query has nothing to preview; running it would only report
+		// the database's parse error for the wrapping preview statement.
+		if strings.TrimSpace(asset.ExecutableFile.Content) != "" {
+			return InspectResult{}, false
+		}
+		return InspectResult{
+			Status:     "info",
+			Columns:    []string{},
+			Rows:       []map[string]any{},
+			Operation:  queryAssetOperation(relAssetPath, limit, environment, ""),
+			Info:       "This asset has no query yet. Write a SELECT to preview its rows.",
+			HTTPStatus: 200,
+		}, true
 	}
 
 	rowLimit := normalizeInspectLimit(limit)

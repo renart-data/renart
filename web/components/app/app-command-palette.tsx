@@ -8,11 +8,12 @@ import {
   Hammer,
   Network,
   Play,
+  Plus,
   Search,
   Settings2,
   Workflow,
 } from "lucide-react";
-import { ComponentType, useEffect, useMemo, useState } from "react";
+import { ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 
 import {
@@ -27,6 +28,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
+import { pageCommandsAtom } from "@/lib/atoms/domains/page-commands";
 import { workspaceAtom } from "@/lib/atoms/domains/workspace";
 
 type PaletteItem = {
@@ -83,11 +85,16 @@ function PaletteSearchSubItem({ item }: { item: PaletteItem }) {
 export function AppCommandPalette() {
   const navigate = useNavigate();
   const workspace = useAtomValue(workspaceAtom);
+  const pageCommands = useAtomValue(pageCommandsAtom);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [pages, setPages] = useState<PalettePage[]>([]);
   const [shortcutLabel, setShortcutLabel] = useState("Ctrl K");
   const page = pages[pages.length - 1];
+  // A page action can move focus (into a dialog or a canvas field). It runs
+  // once the palette has closed, without the palette returning focus to the
+  // element that opened it, so the action's own focus wins.
+  const pendingCommandRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -269,7 +276,9 @@ export function AppCommandPalette() {
   const currentSection = sections.find((section) => section.id === page) ?? null;
   const inputPlaceholder = currentSection
     ? `Search ${currentSection.title.replace("...", "").toLowerCase()}`
-    : "Search assets, pipelines, notebooks, pages...";
+    : pageCommands.length > 0
+      ? "Search actions, assets, pipelines, notebooks, pages..."
+      : "Search assets, pipelines, notebooks, pages...";
 
   return (
     <>
@@ -291,6 +300,13 @@ export function AppCommandPalette() {
         title="Search"
         description="Search assets, pipelines, notebooks, and pages."
         className="max-w-2xl"
+        onCloseAutoFocus={(event) => {
+          const perform = pendingCommandRef.current;
+          pendingCommandRef.current = null;
+          if (!perform) return;
+          event.preventDefault();
+          perform();
+        }}
       >
         <Command
           loop
@@ -330,6 +346,37 @@ export function AppCommandPalette() {
               </CommandGroup>
             ) : (
               <>
+                {pageCommands.length > 0 ? (
+                  <>
+                    <CommandGroup heading="Actions">
+                      {pageCommands.map((command) => (
+                        <CommandItem
+                          key={command.id}
+                          value={`${command.title} ${command.subtitle ?? ""}`}
+                          keywords={toKeywords(command.title, command.subtitle)}
+                          onSelect={() => {
+                            pendingCommandRef.current = command.perform;
+                            close();
+                          }}
+                        >
+                          <Plus className="size-4 text-muted-foreground" />
+                          <div className="flex min-w-0 flex-1 flex-col">
+                            <span className="truncate">{command.title}</span>
+                            {command.subtitle ? (
+                              <span className="truncate text-xs text-muted-foreground">
+                                {command.subtitle}
+                              </span>
+                            ) : null}
+                          </div>
+                          {command.shortcut ? (
+                            <CommandShortcut>{command.shortcut}</CommandShortcut>
+                          ) : null}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                    <CommandSeparator />
+                  </>
+                ) : null}
                 <CommandGroup heading="Pages">
                   {pageItems.map((item) => {
                     const Icon = item.icon ?? ChevronRight;

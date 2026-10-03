@@ -1,6 +1,6 @@
 ---
 title: The pipeline canvas
-description: "Read your pipeline's lineage on the canvas, navigate it, and open or create assets from it."
+description: "Read your pipeline's lineage on the canvas, navigate it, and create, join and connect assets from it."
 ---
 
 Choose **Canvas** or **Split** in **Build** to see every asset in a
@@ -72,9 +72,40 @@ open the full editor to change the asset's code and metadata — see
 
 ## Create an asset
 
-- Use **+ New asset** at the top right to add an asset to the pipeline.
-- To branch off existing work, open a node's **⋯** menu and create a downstream
-  asset; the new asset starts with a dependency on the one you came from.
+- Use **+ New asset** at the top right, or right-click an empty part of the
+  canvas and pick a kind, to add an asset to the pipeline. Right-clicking inside
+  a group box names the new asset in that group.
+- To branch off existing work, hover a node and click the **+** on its right
+  edge, or choose **Create downstream asset** from its **⋯** or right-click
+  menu. A new card appears next to it with the name selected after the group
+  prefix: type a name, pick **SQL** or **Python**, and press **Enter**. The
+  asset is created without leaving the canvas, and the new node is centered and
+  highlighted. Press **Escape** to discard the card. **More options…** continues
+  in the full dialog with what you typed; **Load** always continues there,
+  because it needs a destination.
+- A new SQL asset starts as a query on the asset you came from. When that
+  asset's columns are known, the query lists them, written in the same keyword
+  case as the rest of the pipeline.
+- In the canvas-only view the canvas stays as it is, and a preview of the new
+  asset's code opens in the corner. **Edit source** opens it in the editor.
+- If creating fails, the card stays on the canvas with the error. Fix the name
+  and click **Retry**, or use **More options…**.
+
+Search (**Ctrl K** or **⌘K**) lists **New asset** and, when an asset is
+selected, **Add downstream of selected**. Outside text fields and editors, press
+**N** or **D** for the same actions.
+
+### Join assets
+
+- **Shift**-click two or more nodes (or **Shift**-drag a box around them), then
+  click **Join into new asset**. The new SQL asset joins them on the columns
+  they share. When they share no column, the query uses a `CROSS JOIN` with a
+  comment marking where the join condition goes.
+- Drag from a node's **+** onto another asset to connect the two. For a SQL
+  asset, **Join in query** wraps its query and joins the new upstream to it;
+  **Add as dependency** makes the asset run after the other one and leaves its
+  code unchanged. Dropping onto empty space instead starts a new downstream
+  asset there.
 
 ### Bring tables in from the Data Browser
 

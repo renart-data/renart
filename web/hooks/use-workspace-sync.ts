@@ -256,7 +256,9 @@ export function useWorkspaceSync() {
           return;
         }
 
-        receiveWorkspaceUpdate({
+        // A lite event without a snapshot to merge into leaves assets without
+        // content; load the full workspace again.
+        const needsHydration = receiveWorkspaceUpdate({
           workspace: payload.workspace,
           connectionSequence,
           source: {
@@ -269,6 +271,7 @@ export function useWorkspaceSync() {
             changedAssetIds: payload.changed_asset_ids,
           },
         });
+        if (needsHydration) reloadWorkspace();
       } catch {
         return;
       }

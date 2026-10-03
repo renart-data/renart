@@ -53,6 +53,7 @@ import type {
 } from "@/lib/generated/api-types";
 import { startGettingStarted } from "@/lib/getting-started";
 import { pinProject } from "@/lib/project-context";
+import { viewTransitionsEnabled } from "@/lib/view-transitions";
 import type { WorkspaceConfigResponse } from "@/lib/types";
 
 import {
@@ -204,10 +205,10 @@ export function WelcomePage({ forceNew = false }: { forceNew?: boolean }) {
         void navigate({
           to: "/pipelines/$pipelineId/canvas",
           params: { pipelineId },
-          viewTransition: true,
+          viewTransition: viewTransitionsEnabled,
         });
       } else {
-        void navigate({ to: "/", viewTransition: true });
+        void navigate({ to: "/", viewTransition: viewTransitionsEnabled });
       }
     },
     [inPlace, navigate, store],

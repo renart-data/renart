@@ -104,6 +104,24 @@ describe("workspace snapshot admission", () => {
     expect(store.get(workspaceAtom)).toBe(full.workspace);
   });
 
+  it("asks for a full load when a lite SSE snapshot arrives before any snapshot", () => {
+    const store = connectedStore();
+    const lite = update(13);
+    lite.source.lite = true;
+    lite.workspace.pipelines[0].assets[0].content = "";
+    expect(store.set(receiveWorkspaceUpdateAtom, lite)).toBe(true);
+    // The initial load started before the file changed and is now older.
+    expect(store.set(receiveWorkspaceUpdateAtom, update(12, "workspace-load"))).toBe(false);
+    expect(store.get(workspaceAtom)?.pipelines[0].assets[0].content).toBe("");
+    const reload = update(13, "workspace-load");
+    expect(store.set(receiveWorkspaceUpdateAtom, reload)).toBe(false);
+    expect(store.get(workspaceAtom)).toBe(reload.workspace);
+
+    const merged = update(14);
+    merged.source.lite = true;
+    expect(store.set(receiveWorkspaceUpdateAtom, merged)).toBe(false);
+  });
+
   it("keeps provenance when ignoring a duplicate or stale SSE event", () => {
     const store = connectedStore();
     store.set(receiveWorkspaceUpdateAtom, update(12, "workspace-load"));
