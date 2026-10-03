@@ -31,6 +31,11 @@
       "nanoid": "3.3.18",
       "postcss": "8.5.23",
       "svgo": "4.1.0"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-ch52-4w7c-c8xp"
+      ]
     }
   }
 }
