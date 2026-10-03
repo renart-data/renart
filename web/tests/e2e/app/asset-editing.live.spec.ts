@@ -183,6 +183,10 @@ test.describe("app asset editing workbench live", () => {
     const node = page.getByTestId(`rf__node-${customersAssetId}`);
     await node.hover();
     await node.getByRole("button", { name: "Create downstream asset" }).click();
+    await page
+      .getByTestId("quick-create-node")
+      .getByRole("button", { name: "More options…" })
+      .click();
 
     const dialog = page.getByRole("dialog", { name: "New downstream asset" });
     await expect(dialog).toBeVisible({ timeout: 15000 });

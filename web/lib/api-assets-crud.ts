@@ -24,6 +24,7 @@ export type CreateAssetInput = {
   variant?: string;
   parameters?: Record<string, string>;
   source_asset_id?: string;
+  source_asset_ids?: string[];
   seed_file_name?: string;
   seed_file_content?: string;
 };
@@ -133,6 +134,13 @@ export async function getSeedAssetFilePreview(assetId: string, signal?: AbortSig
 export async function deleteAsset(pipelineId: string, assetId: string) {
   return fetchJSON<Record<string, string>>(`/api/pipelines/${pipelineId}/assets/${assetId}`, {
     method: "DELETE",
+  });
+}
+
+// Joins another asset of the pipeline in a SQL asset's query.
+export async function joinUpstreamAsset(assetId: string, sourceAssetId: string) {
+  return fetchJSONWithBody<AssetMutationResponse>(`/api/assets/${assetId}/join-upstream`, "POST", {
+    source_asset_id: sourceAssetId,
   });
 }
 

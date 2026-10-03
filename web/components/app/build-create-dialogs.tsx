@@ -1,6 +1,6 @@
 import { useAtomValue } from "jotai";
 import { AlertTriangle, CheckCircle2, FolderPlus, Plus } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ import { assetCreationRole, type AssetCreationKind } from "@/lib/asset-creation-
 import { isLocalLoadConnection, loadTargetNeedsDestinationObject } from "@/lib/load-assets";
 import type { AssetCreationCandidate, PipelineTemplateInfo } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { suggestDownstreamAssetName } from "@/lib/quick-create";
 import { buildSuggestedAssetName } from "@/lib/workspace-shell-helpers";
 import { useAssetCreationProfile } from "@/hooks/use-asset-creation-profile";
 
@@ -86,8 +87,10 @@ const CREATABLE_ASSETS: AssetKindOption[] = [
   { id: "load", label: "Load", description: "Replicate data between connections" },
 ];
 
+const noJoinSources: { id: string; name: string }[] = [];
+
 const DOWNSTREAM_ASSETS: AssetKindOption[] = [
-  { id: "sql", label: "SQL", description: "select * from the upstream table" },
+  { id: "sql", label: "SQL", description: "Query the upstream table" },
   { id: "python", label: "Python", description: "Read the upstream table from Python" },
   {
     id: "load",
@@ -96,36 +99,11 @@ const DOWNSTREAM_ASSETS: AssetKindOption[] = [
   },
 ];
 
-// A downstream asset reuses the source's prefix and appends _downstream, kept
-// unique against existing names (the backend also requires a prefixed name).
-function suggestDownstreamName(sourceName: string, existing: Set<string>): string {
-  const parts = sourceName.split(".").filter(Boolean);
-  const leaf = parts.pop() ?? "asset";
-  const prefix = parts.join(".");
-  const base = prefix ? `${prefix}.${leaf}_downstream` : `${leaf}_downstream`;
-  if (!existing.has(base)) {
-    return base;
-  }
-  let index = 2;
-  while (existing.has(`${base}_${index}`)) {
-    index += 1;
-  }
-  return `${base}_${index}`;
-}
-
-// suggestPrefixedAssetName seeds a unique name under an explicit prefix
-// (from the canvas prefix-group the user right-clicked in).
-function suggestPrefixedAssetName(
-  kind: AssetCreationKind,
-  prefix: string,
-  existing: Set<string>,
-): string {
-  const base = `${prefix}.my_${kind}_asset_`;
-  let index = 1;
-  while (existing.has(`${base}${index}`)) {
-    index += 1;
-  }
-  return `${base}${index}`;
+// Selects the part of a suggested name after its prefix, so typing replaces
+// only the placeholder and the asset stays in its group.
+function selectNameLeaf(input: HTMLInputElement | null) {
+  if (!input || document.activeElement !== input) return;
+  input.setSelectionRange(input.value.lastIndexOf(".") + 1, input.value.length);
 }
 
 type CreationConnectionRole = "target" | "source" | "destination";
@@ -147,7 +125,9 @@ export function NewAssetDialog({
   pipelineName,
   existingAssetNames,
   downstreamSource,
+  additionalSources,
   namePrefix,
+  initialName,
   initialExecutableContent,
   initialConnection,
   initialKind,
@@ -160,7 +140,11 @@ export function NewAssetDialog({
   pipelineName?: string;
   existingAssetNames: Set<string>;
   downstreamSource?: { id: string; name: string; connection?: string } | null;
+  // Further sources a downstream SQL asset joins.
+  additionalSources?: { id: string; name: string }[];
   namePrefix?: string | null;
+  // A name the user already chose (carried over from quick create).
+  initialName?: string | null;
   initialExecutableContent?: string | null;
   initialConnection?: string | null;
   initialKind?: AssetCreationKind;
@@ -184,6 +168,8 @@ export function NewAssetDialog({
   const [error, setError] = useState("");
   const [kindPickerExpanded, setKindPickerExpanded] = useState(true);
   const resetModeRef = useRef<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const nameEditedRef = useRef(false);
 
   const workspace = useAtomValue(workspaceAtom);
   const environment = useAtomValue(selectedEnvironmentAtom);
@@ -200,7 +186,12 @@ export function NewAssetDialog({
   const semanticConnections = useMemo(() => workspace?.connections ?? {}, [workspace?.connections]);
 
   const isDownstream = Boolean(downstreamSource);
-  const options = isDownstream ? DOWNSTREAM_ASSETS : CREATABLE_ASSETS;
+  const joinSources = (isDownstream && additionalSources) || noJoinSources;
+  const options = isDownstream
+    ? joinSources.length > 0
+      ? DOWNSTREAM_ASSETS.filter((option) => option.id === "sql")
+      : DOWNSTREAM_ASSETS
+    : CREATABLE_ASSETS;
   const selected = options.find((option) => option.id === kind) ?? options[0];
   const targetRoleName = selected.id === "load" ? "destination" : "target";
   const targetRole = assetCreationRole(profile, selected.id, targetRoleName);
@@ -236,13 +227,21 @@ export function NewAssetDialog({
   // Seed a unique, prefixed name suggestion (the backend requires a prefix).
   const suggestedName = useMemo(() => {
     if (isDownstream && downstreamSource) {
-      return suggestDownstreamName(downstreamSource.name, existingAssetNames);
+      return suggestDownstreamAssetName(
+        [downstreamSource.name, ...joinSources.map((source) => source.name)],
+        existingAssetNames,
+      );
     }
-    if (namePrefix) {
-      return suggestPrefixedAssetName(selected.id, namePrefix, existingAssetNames);
-    }
-    return buildSuggestedAssetName(selected.id, existingAssetNames, pipelineName);
-  }, [isDownstream, downstreamSource, namePrefix, selected.id, existingAssetNames, pipelineName]);
+    return buildSuggestedAssetName(selected.id, existingAssetNames, pipelineName, namePrefix);
+  }, [
+    isDownstream,
+    downstreamSource,
+    joinSources,
+    namePrefix,
+    selected.id,
+    existingAssetNames,
+    pipelineName,
+  ]);
 
   // Reset to a valid kind whenever the dialog (or its mode) opens.
   useEffect(() => {
@@ -277,11 +276,21 @@ export function NewAssetDialog({
     semanticCapabilities,
     semanticConnections,
   ]);
+  // The name follows the suggestion (which changes with the kind) until the
+  // user types their own.
   useEffect(() => {
-    if (open) {
+    if (!open) return;
+    nameEditedRef.current = Boolean(initialName?.trim());
+    if (initialName?.trim()) setName(initialName.trim());
+  }, [initialName, open]);
+  useEffect(() => {
+    if (open && !nameEditedRef.current) {
       setName(suggestedName);
     }
   }, [open, suggestedName]);
+  useLayoutEffect(() => {
+    if (open && !nameEditedRef.current) selectNameLeaf(nameInputRef.current);
+  }, [open, name]);
 
   const semanticKind: SemanticAssetKind | null =
     selected.id === "seed" || selected.id === "sensor" ? selected.id : null;
@@ -393,6 +402,9 @@ export function NewAssetDialog({
       environment: profile?.environment || environment || undefined,
       use_pipeline_default: !connection,
       ...(isDownstream && downstreamSource ? { source_asset_id: downstreamSource.id } : {}),
+      ...(selected.id === "sql" && joinSources.length > 0
+        ? { source_asset_ids: joinSources.map((source) => source.id) }
+        : {}),
     };
     if (selected.id === "sql" && initialExecutableContent?.trim()) {
       input = { ...input, executable_content: initialExecutableContent };
@@ -451,9 +463,21 @@ export function NewAssetDialog({
             </DialogTitle>
             <DialogDescription>
               {isDownstream && downstreamSource ? (
-                <>
-                  Depends on <span className="font-mono">{downstreamSource.name}</span>.
-                </>
+                joinSources.length > 0 ? (
+                  <>
+                    Joins{" "}
+                    <span className="font-mono">
+                      {[downstreamSource.name, ...joinSources.map((source) => source.name)].join(
+                        ", ",
+                      )}
+                    </span>
+                    .
+                  </>
+                ) : (
+                  <>
+                    Depends on <span className="font-mono">{downstreamSource.name}</span>.
+                  </>
+                )
               ) : (
                 <>
                   Create an asset in{" "}
@@ -573,11 +597,15 @@ export function NewAssetDialog({
               <Field variant="plain">
                 <FieldLabel htmlFor="new-asset-name">Asset name</FieldLabel>
                 <Input
+                  ref={nameInputRef}
                   id="new-asset-name"
                   className="font-mono"
                   placeholder="analytics.my_asset"
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => {
+                    nameEditedRef.current = true;
+                    setName(event.target.value);
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !creating) {
                       void create();

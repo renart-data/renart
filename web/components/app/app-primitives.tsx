@@ -6,7 +6,7 @@ import {
   MoreHorizontal,
   XCircle,
 } from "lucide-react";
-import { ComponentType, Fragment, ReactNode } from "react";
+import { ComponentType, Fragment, ReactNode, useRef } from "react";
 import { Link } from "@tanstack/react-router";
 import { navigationArrivalState } from "@/lib/navigation-arrival";
 
@@ -467,7 +467,31 @@ export type AssetNodeAction = {
   onSelect: () => void;
   destructive?: boolean;
   separatorBefore?: boolean;
+  // The action opens a dialog, which then owns focus.
+  opensDialog?: boolean;
 };
+
+// A menu traps focus until it has closed, then returns it to its trigger. A
+// dialog opened from a menu item would lose its autofocus to both, so such
+// actions run once the menu has closed, with the focus return skipped.
+export function useAssetNodeMenuFocus() {
+  const pendingDialog = useRef<(() => void) | null>(null);
+  return {
+    // Returns true when the action is deferred until the menu closes.
+    onActionSelect: (action: AssetNodeAction) => {
+      if (!action.opensDialog) return false;
+      pendingDialog.current = action.onSelect;
+      return true;
+    },
+    onCloseAutoFocus: (event: Event) => {
+      const openDialog = pendingDialog.current;
+      pendingDialog.current = null;
+      if (!openDialog) return;
+      event.preventDefault();
+      openDialog();
+    },
+  };
+}
 
 export function AssetNode({
   asset,
@@ -486,6 +510,7 @@ export function AssetNode({
 }) {
   const meta = kindMeta[asset.kind];
   const Icon = meta.icon;
+  const menuFocus = useAssetNodeMenuFocus();
   const statusMeta = assetNodeStatusMeta(asset.status);
   const hasParseError = Boolean(asset.parseError);
   const showDescription = !hasParseError && Boolean(asset.description);
@@ -544,11 +569,16 @@ export function AssetNode({
             >
               <MoreHorizontal className="size-3.5" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onClick={(event) => event.stopPropagation()}>
+            <DropdownMenuContent
+              align="end"
+              onClick={(event) => event.stopPropagation()}
+              onCloseAutoFocus={menuFocus.onCloseAutoFocus}
+            >
               <AssetNodeMenuItems
                 actions={actions}
                 ItemComponent={DropdownMenuItem}
                 SeparatorComponent={DropdownMenuSeparator}
+                onActionSelect={menuFocus.onActionSelect}
               />
             </DropdownMenuContent>
           </DropdownMenu>
@@ -669,10 +699,12 @@ export function AssetNodeMenuItems({
   actions,
   ItemComponent,
   SeparatorComponent,
+  onActionSelect,
 }: {
   actions: AssetNodeAction[];
   ItemComponent: ComponentType<AssetNodeMenuItemProps>;
   SeparatorComponent: ComponentType;
+  onActionSelect?: (action: AssetNodeAction) => boolean;
 }) {
   return (
     <>
@@ -683,7 +715,9 @@ export function AssetNodeMenuItems({
             {action.separatorBefore ? <SeparatorComponent /> : null}
             <ItemComponent
               variant={action.destructive ? "destructive" : "default"}
-              onSelect={() => action.onSelect()}
+              onSelect={() => {
+                if (!onActionSelect?.(action)) action.onSelect();
+              }}
             >
               <ActionIcon className="size-3.5" />
               {action.label}

@@ -8,6 +8,7 @@ import {
   Hammer,
   Network,
   Play,
+  Plus,
   Search,
   Settings2,
   Workflow,
@@ -27,6 +28,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
+import { pageCommandsAtom } from "@/lib/atoms/domains/page-commands";
 import { workspaceAtom } from "@/lib/atoms/domains/workspace";
 
 type PaletteItem = {
@@ -83,6 +85,7 @@ function PaletteSearchSubItem({ item }: { item: PaletteItem }) {
 export function AppCommandPalette() {
   const navigate = useNavigate();
   const workspace = useAtomValue(workspaceAtom);
+  const pageCommands = useAtomValue(pageCommandsAtom);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [pages, setPages] = useState<PalettePage[]>([]);
@@ -269,7 +272,9 @@ export function AppCommandPalette() {
   const currentSection = sections.find((section) => section.id === page) ?? null;
   const inputPlaceholder = currentSection
     ? `Search ${currentSection.title.replace("...", "").toLowerCase()}`
-    : "Search assets, pipelines, notebooks, pages...";
+    : pageCommands.length > 0
+      ? "Search actions, assets, pipelines, notebooks, pages..."
+      : "Search assets, pipelines, notebooks, pages...";
 
   return (
     <>
@@ -330,6 +335,39 @@ export function AppCommandPalette() {
               </CommandGroup>
             ) : (
               <>
+                {pageCommands.length > 0 ? (
+                  <>
+                    <CommandGroup heading="Actions">
+                      {pageCommands.map((command) => (
+                        <CommandItem
+                          key={command.id}
+                          value={`${command.title} ${command.subtitle ?? ""}`}
+                          keywords={toKeywords(command.title, command.subtitle)}
+                          onSelect={() => {
+                            close();
+                            // Let the palette release focus before the action
+                            // moves it into a dialog or the canvas.
+                            window.setTimeout(command.perform, 0);
+                          }}
+                        >
+                          <Plus className="size-4 text-muted-foreground" />
+                          <div className="flex min-w-0 flex-1 flex-col">
+                            <span className="truncate">{command.title}</span>
+                            {command.subtitle ? (
+                              <span className="truncate text-xs text-muted-foreground">
+                                {command.subtitle}
+                              </span>
+                            ) : null}
+                          </div>
+                          {command.shortcut ? (
+                            <CommandShortcut>{command.shortcut}</CommandShortcut>
+                          ) : null}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                    <CommandSeparator />
+                  </>
+                ) : null}
                 <CommandGroup heading="Pages">
                   {pageItems.map((item) => {
                     const Icon = item.icon ?? ChevronRight;
