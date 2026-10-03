@@ -341,6 +341,32 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 			req.Parameters[loadParamSourceTable] = sourceAsset.Name
 		}
 	}
+	// Further sources join the first one in a SQL starter query.
+	var additionalSources []*pipeline.Asset
+	if len(req.SourceAssetIDs) > 0 {
+		if sourceAsset == nil {
+			return AssetMutationResponse{}, newAPIError(400, "missing_source_asset", "source_asset_ids needs a source_asset_id")
+		}
+		if kind := normalizeAssetCreationKind(req.Kind); kind != "" && kind != assetCreationKindSQL {
+			return AssetMutationResponse{}, newAPIError(400, "invalid_source_assets", "only a SQL asset can start from several sources")
+		}
+		seen := map[string]bool{strings.TrimSpace(req.SourceAssetID): true}
+		for _, id := range req.SourceAssetIDs {
+			id = strings.TrimSpace(id)
+			if id == "" || seen[id] {
+				continue
+			}
+			seen[id] = true
+			_, resolvedPipeline, resolvedAsset, resolveErr := s.deps.ResolveAssetByID(ctx, id)
+			if resolveErr != nil {
+				return AssetMutationResponse{}, newAPIError(400, "invalid_source_asset_id", resolveErr.Error())
+			}
+			if !pipelinePathsReferToSameRoot(resolvedPipeline.DefinitionFile.Path, pipelinePath) {
+				return AssetMutationResponse{}, newAPIError(400, "invalid_source_asset", "source asset must belong to the selected pipeline")
+			}
+			additionalSources = append(additionalSources, resolvedAsset)
+		}
+	}
 
 	var creationResolution AssetCreationResolution
 	if strings.TrimSpace(req.Kind) != "" {
@@ -452,6 +478,9 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 		if content == "" {
 			if sourceAsset != nil {
 				content = s.deps.DerivedAssetContent(assetName, assetType, relAssetPath, sourceAsset.Name, sourceConnectionName)
+				if req.ExecutableContent == "" && strings.HasSuffix(strings.ToLower(assetType), ".sql") {
+					content = MergeExecutableContent(content, downstreamSQLStarterFor(ctx, sourcePipeline, assetType, append([]*pipeline.Asset{sourceAsset}, additionalSources...)))
+				}
 			} else {
 				content = s.deps.DefaultAssetContent(assetName, assetType, relAssetPath)
 			}
@@ -564,9 +593,11 @@ type CreateAssetParams struct {
 	Variant            string            `json:"variant,omitempty"`
 	Parameters         map[string]string `json:"parameters"`
 	SourceAssetID      string            `json:"source_asset_id"`
-	SeedFileName       string            `json:"seed_file_name"`
-	SeedFileContent    string            `json:"seed_file_content"`
-	SeedFileBytes      []byte            `json:"-"`
+	// SourceAssetIDs are further sources a downstream SQL asset joins.
+	SourceAssetIDs  []string `json:"source_asset_ids,omitempty"`
+	SeedFileName    string   `json:"seed_file_name"`
+	SeedFileContent string   `json:"seed_file_content"`
+	SeedFileBytes   []byte   `json:"-"`
 }
 
 // createdExecutableConnection is the connection a new SQL or Python asset

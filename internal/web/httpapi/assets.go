@@ -40,6 +40,7 @@ type (
 	AssetTransaction             = service.AssetTransaction
 	AssetTransactionResult       = service.AssetTransactionResult
 	FormatSQLAssetRequest        = service.FormatSQLAssetRequest
+	JoinUpstreamRequest          = service.JoinUpstreamRequest
 	FormatSQLAssetResponse       = service.FormatSQLAssetResponse
 	FormatPythonAssetRequest     = service.FormatPythonAssetRequest
 	FormatPythonAssetResponse    = service.FormatPythonAssetResponse
@@ -86,6 +87,7 @@ type AssetHandlers interface {
 	PythonDeps(assetID string) (PythonDepsResponse, *APIError)
 	AddPythonDependency(ctx context.Context, assetID string, req AddPythonDependencyRequest) (PythonDepsResponse, *APIError)
 	ApplyAssetTransaction(ctx context.Context, assetID string, tx AssetTransaction) (AssetTransactionResult, *APIError)
+	JoinUpstream(ctx context.Context, assetID string, req JoinUpstreamRequest) (AssetMutationResponse, *APIError)
 }
 
 type AssetsAPI struct {
@@ -111,6 +113,7 @@ func RegisterAssetRoutes(router chi.Router, handlers *AssetsAPI) {
 	router.Get("/api/assets/{assetID}/python-deps", handlers.HandlePythonDeps)
 	router.Post("/api/assets/{assetID}/python-deps", handlers.HandleAddPythonDependency)
 	router.Post("/api/assets/{assetID}/transactions", handlers.HandleApplyAssetTransaction)
+	router.Post("/api/assets/{assetID}/join-upstream", handlers.HandleJoinUpstream)
 	router.Get("/api/assets/{assetID}/unit-tests", handlers.HandleUnitTestContext)
 	router.Post("/api/assets/{assetID}/unit-tests/run", handlers.HandleRunUnitTests)
 }
@@ -286,6 +289,20 @@ func (h *AssetsAPI) HandleFormatSQLAsset(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	resp, apiErr := h.Service.FormatSQL(r.Context(), chi.URLParam(r, "assetID"), req)
+	if apiErr != nil {
+		writeAPIError(w, apiErr)
+		return
+	}
+	webapi.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *AssetsAPI) HandleJoinUpstream(w http.ResponseWriter, r *http.Request) {
+	req, err := decodeJSONObject[JoinUpstreamRequest](w, r, 0)
+	if err != nil {
+		webapi.WriteBadRequest(w, "invalid_request_body", err.Error())
+		return
+	}
+	resp, apiErr := h.Service.JoinUpstream(r.Context(), chi.URLParam(r, "assetID"), req)
 	if apiErr != nil {
 		writeAPIError(w, apiErr)
 		return
