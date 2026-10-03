@@ -26,7 +26,7 @@
     "audit": "pnpm audit --audit-level=low"
   },
   "dependencies": {
-    "@base-ui/react": "^1.6.0",
+    "@base-ui/react": "^1.8.0",
     "@monaco-editor/react": "^4.7.0",
     "@shadcn/react": "^0.3.0",
     "@tanstack/react-router": "^1.170.40",
