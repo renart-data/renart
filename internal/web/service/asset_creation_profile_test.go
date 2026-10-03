@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -415,4 +416,94 @@ func assetCreationConnectionNames(connections []AssetCreationConnection) []strin
 		names = append(names, connection.Name)
 	}
 	return names
+}
+
+func TestAssetServiceCreateWithExplicitConnectionDoesNotPersistInjectedSecret(t *testing.T) {
+	t.Parallel()
+	service, pipelineRoot := newAssetCreationProfileTestService(t, `name: analytics
+default_connections:
+  duckdb: warehouse
+`, assetCreationProfileTestConfig)
+	require.NoError(t, os.WriteFile(filepath.Join(pipelineRoot, "assets", "analytics", "events.sql"), []byte(`/* @bruin
+type: duckdb.sql
+connection: warehouse
+@bruin */
+
+select 1 as id
+`), 0o644))
+
+	standalone, apiErr := service.Create(context.Background(), EncodeID("analytics"), CreateAssetParams{
+		Name:        "analytics.orders",
+		Kind:        assetCreationKindSQL,
+		Connection:  "warehouse",
+		Environment: "dev",
+	})
+	require.Nil(t, apiErr)
+	downstream, apiErr := service.Create(context.Background(), EncodeID("analytics"), CreateAssetParams{
+		Name:          "analytics.events_daily",
+		Kind:          assetCreationKindSQL,
+		Connection:    "warehouse",
+		Environment:   "dev",
+		SourceAssetID: EncodeID("analytics/assets/analytics/events.sql"),
+	})
+	require.Nil(t, apiErr)
+
+	for _, created := range []AssetMutationResponse{standalone, downstream} {
+		content, err := os.ReadFile(filepath.Join(filepath.Dir(pipelineRoot), filepath.FromSlash(created.AssetPath)))
+		require.NoError(t, err)
+		assert.Contains(t, string(content), "connection: warehouse")
+		assert.NotContains(t, string(content), "secrets:", created.AssetPath)
+	}
+}
+
+func TestAssetServiceCreateDownstreamSQLInheritsDefaultLikeItsSource(t *testing.T) {
+	t.Parallel()
+	service, pipelineRoot := newAssetCreationProfileTestService(t, `name: analytics
+default_connections:
+  duckdb: warehouse
+`, assetCreationProfileTestConfig)
+	require.NoError(t, os.WriteFile(filepath.Join(pipelineRoot, "assets", "analytics", "events.sql"), []byte(`/* @bruin
+type: duckdb.sql
+@bruin */
+
+select 1 as id
+`), 0o644))
+
+	// The UI sends the source's effective connection for type resolution.
+	created, apiErr := service.Create(context.Background(), EncodeID("analytics"), CreateAssetParams{
+		Name:          "analytics.events_daily",
+		Kind:          assetCreationKindSQL,
+		Connection:    "warehouse",
+		Environment:   "dev",
+		SourceAssetID: EncodeID("analytics/assets/analytics/events.sql"),
+	})
+	require.Nil(t, apiErr)
+	assert.Equal(t, "warehouse", created.Connection)
+
+	content, err := os.ReadFile(filepath.Join(pipelineRoot, "assets", "analytics", "events_daily.sql"))
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "type: duckdb.sql")
+	assert.NotContains(t, string(content), "connection:")
+	assert.NotContains(t, string(content), "secrets:")
+}
+
+func TestAssetServiceCreateStandaloneSQLStartsWithARunnableQuery(t *testing.T) {
+	t.Parallel()
+	service, pipelineRoot := newAssetCreationProfileTestService(t, `name: analytics
+default_connections:
+  duckdb: warehouse
+`, assetCreationProfileTestConfig)
+
+	_, apiErr := service.Create(context.Background(), EncodeID("analytics"), CreateAssetParams{
+		Name:               "analytics.orders",
+		Kind:               assetCreationKindSQL,
+		Environment:        "dev",
+		UsePipelineDefault: true,
+	})
+	require.Nil(t, apiErr)
+
+	content, err := os.ReadFile(filepath.Join(pipelineRoot, "assets", "analytics", "orders.sql"))
+	require.NoError(t, err)
+	assert.True(t, strings.HasSuffix(string(content), "@bruin */\n\nSELECT 1 AS id\n"), string(content))
+	assert.Equal(t, "SELECT 1 AS id FROM dual\n", NewSQLAssetBody("oracle.sql"))
 }

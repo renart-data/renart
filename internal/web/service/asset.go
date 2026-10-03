@@ -466,7 +466,7 @@ func (s *AssetService) Create(ctx context.Context, pipelineID string, req Create
 				return AssetMutationResponse{}, newAPIError(400, "invalid_api_asset", canonicalizeErr.Error())
 			}
 		} else if creationResolution.Kind == assetCreationKindSQL || creationResolution.Kind == assetCreationKindPython {
-			content = applyCreatedExecutableConnection(content, req.Connection)
+			content = applyCreatedExecutableConnection(content, createdExecutableConnection(creationResolution.Kind, req.Connection, sourceAsset, sourceConnectionName))
 		}
 	}
 
@@ -567,6 +567,20 @@ type CreateAssetParams struct {
 	SeedFileName       string            `json:"seed_file_name"`
 	SeedFileContent    string            `json:"seed_file_content"`
 	SeedFileBytes      []byte            `json:"-"`
+}
+
+// createdExecutableConnection is the connection a new SQL or Python asset
+// writes. A downstream SQL asset has its source's type, so when the source
+// inherits the pipeline default the downstream resolves to the same
+// connection without naming it, and follows the source if the default moves.
+func createdExecutableConnection(kind, requested string, source *pipeline.Asset, sourceConnection string) string {
+	requested = strings.TrimSpace(requested)
+	if kind == assetCreationKindSQL && source != nil &&
+		strings.TrimSpace(source.Connection) == "" &&
+		strings.EqualFold(requested, strings.TrimSpace(sourceConnection)) {
+		return ""
+	}
+	return requested
 }
 
 // applyCreatedExecutableConnection only operates on Renart's freshly generated

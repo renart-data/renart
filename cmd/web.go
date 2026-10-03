@@ -1168,7 +1168,7 @@ func (s *webServer) findAssetNameByID(assetID string) string {
 func defaultAssetContent(assetName, assetType, assetPath string) string {
 	base := service.DefaultAssetContent(assetName, assetType, assetPath)
 	if strings.HasSuffix(strings.ToLower(assetPath), ".sql") {
-		return fmt.Sprintf("/* @bruin\n\nname: %s\ntype: %s\nmaterialization:\n  type: view\n\n@bruin */\n", assetName, assetType)
+		return fmt.Sprintf("/* @bruin\n\nname: %s\ntype: %s\nmaterialization:\n  type: view\n\n@bruin */\n\n%s", assetName, assetType, service.NewSQLAssetBody(assetType))
 	}
 	return base
 }
