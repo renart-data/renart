@@ -18,7 +18,6 @@ decisions and dependencies in each plan; there is no global questions scratchpad
 | [Shared connection credentials](connection-credential-scope.md) | Choose explicit availability plus config-owner inheritance; no implicit sibling-secret lookup |
 | [SQL function IntelliSense](sql-function-intellisense.md) | DuckDB/PostgreSQL/ClickHouse slice uses published Golyglot alpha.10; broaden overload selection, probes, dialects and remaining editor surfaces |
 | [Full-file asset editor](full-file-asset-editor.md) | Proposed: isolate malformed documents, revision-checked raw saves, shared mixed-language IntelliSense; not implemented |
-| [Canvas asset creation](canvas-asset-creation.md) | Phase 1 fixes shipped; proposed: in-place quick create, optimistic reveal, column-aware starters, then edge drawing and multi-select joins |
 | [Notebook Data Browser drops](notebook-data-browser-drops.md) | Table/project-file/S3-file insertion implemented; prefix review, connection picker and further transports remain |
 | [Shared preview row loading](preview-row-loading.md) | Inspect, Data Browser, notebook and query previews implemented; authored table presentation adapters remain |
 | [Workspace command handoff](workspace-command-handoff.md) | Stateful CLI delegation, short-lived authority, safe launcher handoff; highest-priority correctness boundary |
