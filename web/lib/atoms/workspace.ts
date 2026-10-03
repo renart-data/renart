@@ -61,20 +61,25 @@ export type WorkspaceSyncUpdate = {
   connectionSequence: number;
 };
 
+// Returns true when the admitted update is a lite event with no snapshot to
+// take content from. An initial HTTP load still in flight is then older and
+// would be rejected, so the caller must load the workspace again.
 export const receiveWorkspaceUpdateAtom = atom(null, (get, set, update: WorkspaceSyncUpdate) => {
   // HTTP and SSE share one admission boundary. A connection is a revision
   // epoch: server restart may reset its counter, but old in-flight requests
   // must never populate a new connection's projection.
-  if (update.connectionSequence !== get(workspaceConnectionSequenceAtom)) return;
+  if (update.connectionSequence !== get(workspaceConnectionSequenceAtom)) return false;
   const current = get(workspaceAtom);
   const previousSource = get(workspaceSyncSourceAtom);
   if (previousSource?.connectionSequence === update.connectionSequence) {
     const currentRevision = current?.revision ?? -1;
     const incomingRevision = update.workspace.revision ?? currentRevision + 1;
-    if (incomingRevision < currentRevision) return;
+    if (incomingRevision < currentRevision) return false;
     // A full HTTP response may hydrate omitted content from an equal-revision
     // lite event. Duplicate SSE events cannot improve that snapshot.
-    if (incomingRevision === currentRevision && update.source.method === "workspace-event") return;
+    if (incomingRevision === currentRevision && update.source.method === "workspace-event") {
+      return false;
+    }
   }
   set(
     workspaceAtom,
@@ -83,4 +88,5 @@ export const receiveWorkspaceUpdateAtom = atom(null, (get, set, update: Workspac
       : update.workspace,
   );
   set(workspaceSyncSourceAtom, { ...update.source, connectionSequence: update.connectionSequence });
+  return Boolean(update.source.lite) && current === null;
 });
