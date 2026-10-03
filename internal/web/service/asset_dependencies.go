@@ -75,7 +75,7 @@ func (s *AssetService) RefactorDirectDependencies(ctx context.Context, parsedPip
 			continue
 		}
 
-		if err := current.Persist(fs, parsedPipeline); err != nil {
+		if err := persistExecutableAsset(fs, current, parsedPipeline); err != nil {
 			return nil, nil, fmt.Errorf("failed to persist renamed dependency updates for asset '%s': %w", current.Name, err)
 		}
 
@@ -236,7 +236,7 @@ func reconcileSQLAssetDependenciesFS(ctx context.Context, fs afero.Fs, asset *pi
 	next.ApplyToAsset(asset)
 	originalHadExplicitName := assetContentHasExplicitName(asset.ExecutableFile.Content)
 
-	if err := asset.Persist(fs, parsedPipeline); err != nil {
+	if err := persistExecutableAsset(fs, asset, parsedPipeline); err != nil {
 		return fmt.Errorf("failed to persist asset '%s': %w", asset.Name, err)
 	}
 	if !originalHadExplicitName {

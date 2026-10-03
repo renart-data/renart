@@ -99,7 +99,7 @@ func (s *AssetService) persistAssetPreservingInferredName(asset *pipeline.Asset,
 	}
 
 	originalHadExplicitName := assetContentHasExplicitName(asset.ExecutableFile.Content)
-	if err := asset.Persist(s.fs(), parsedPipeline); err != nil {
+	if err := persistExecutableAsset(s.fs(), asset, parsedPipeline); err != nil {
 		return internalError("asset_persist_failed", err.Error())
 	}
 	if !originalHadExplicitName {

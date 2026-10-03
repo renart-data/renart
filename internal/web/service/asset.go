@@ -842,7 +842,7 @@ func (s *AssetService) Update(ctx context.Context, assetID string, req AssetUpda
 			if relDefinitionPath, relErr := filepath.Rel(s.deps.WorkspaceRoot, asset.DefinitionFile.Path); relErr == nil {
 				changedAssetPaths = appendUniqueStrings(changedAssetPaths, filepath.ToSlash(relDefinitionPath))
 			}
-		} else if err := asset.Persist(fs, parsedPipeline); err != nil {
+		} else if err := persistExecutableAsset(fs, asset, parsedPipeline); err != nil {
 			return AssetMutationResponse{}, newAPIError(500, "asset_persist_failed", err.Error())
 		}
 		if renamedAsset {
