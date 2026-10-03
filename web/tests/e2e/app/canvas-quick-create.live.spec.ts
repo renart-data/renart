@@ -236,6 +236,8 @@ test.describe("canvas quick create", () => {
     await actions.getByRole("option", { name: /Add downstream of selected/ }).click();
     const pending = page.getByTestId("quick-create-node");
     await expect(pending.getByLabel("Asset name")).toHaveValue("analytics.customers_downstream");
+    // The palette hands focus to the new card instead of taking it back.
+    await expect(pending.getByLabel("Asset name")).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(pending).toHaveCount(0);
 

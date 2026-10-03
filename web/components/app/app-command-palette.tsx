@@ -13,7 +13,7 @@ import {
   Settings2,
   Workflow,
 } from "lucide-react";
-import { ComponentType, useEffect, useMemo, useState } from "react";
+import { ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 
 import {
@@ -91,6 +91,10 @@ export function AppCommandPalette() {
   const [pages, setPages] = useState<PalettePage[]>([]);
   const [shortcutLabel, setShortcutLabel] = useState("Ctrl K");
   const page = pages[pages.length - 1];
+  // A page action can move focus (into a dialog or a canvas field). It runs
+  // once the palette has closed, without the palette returning focus to the
+  // element that opened it, so the action's own focus wins.
+  const pendingCommandRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -296,6 +300,13 @@ export function AppCommandPalette() {
         title="Search"
         description="Search assets, pipelines, notebooks, and pages."
         className="max-w-2xl"
+        onCloseAutoFocus={(event) => {
+          const perform = pendingCommandRef.current;
+          pendingCommandRef.current = null;
+          if (!perform) return;
+          event.preventDefault();
+          perform();
+        }}
       >
         <Command
           loop
@@ -344,10 +355,8 @@ export function AppCommandPalette() {
                           value={`${command.title} ${command.subtitle ?? ""}`}
                           keywords={toKeywords(command.title, command.subtitle)}
                           onSelect={() => {
+                            pendingCommandRef.current = command.perform;
                             close();
-                            // Let the palette release focus before the action
-                            // moves it into a dialog or the canvas.
-                            window.setTimeout(command.perform, 0);
                           }}
                         >
                           <Plus className="size-4 text-muted-foreground" />

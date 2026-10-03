@@ -38,6 +38,29 @@ export function QuickCreateNode({ controller }: { controller: QuickCreateCanvasC
   const editable = state.status === "editing" || state.status === "failed";
   const opened = state.status === "editing";
 
+  // Escape discards the card wherever focus is, unless another surface that
+  // handles Escape itself (a dialog, menu, list or the code editor) has it.
+  const onCancel = controller.onCancel;
+  useEffect(() => {
+    if (!editable) return;
+    const cancelOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], .monaco-editor',
+        )
+      ) {
+        return;
+      }
+      event.preventDefault();
+      onCancel();
+    };
+    document.addEventListener("keydown", cancelOnEscape);
+    return () => document.removeEventListener("keydown", cancelOnEscape);
+  }, [editable, onCancel]);
+
   useEffect(() => {
     if (!opened) return;
     const input = inputRef.current;
@@ -68,13 +91,6 @@ export function QuickCreateNode({ controller }: { controller: QuickCreateCanvasC
         "nodrag nopan nowheel flex w-58 flex-col gap-2 rounded-xl border-2 border-dashed bg-card p-2.5 text-left shadow-md",
         failed ? "border-destructive" : "border-primary",
       )}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          controller.onCancel();
-        }
-      }}
     >
       <div className="flex min-w-0 items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1 text-[11px] font-medium text-muted-foreground">
