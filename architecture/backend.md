@@ -45,7 +45,7 @@ cmd/web.go     route registration + a thin webServer adapter
   │                                             contracts (time windows first)
   ├── internal/web/secretstore                → typed secret references,
   │                                             providers, leases, bindings
-  ├── internal/web/telemetry                  → bounded, unlinked usage counts
+  ├── internal/web/telemetry                  → bounded usage measurements and installation counts
   ├── internal/web/notebook                   → see notebooks.md
   ├── internal/web/notebookdoc                → authored notebook lifecycle,
   │                                             locks, CAS, and recovery
@@ -182,14 +182,22 @@ transaction.
 `internal/web/telemetry` records typed completion outcomes through a bounded,
 best-effort background sender. Released builds use the configured HTTPS receiver
 after the first-run notice; environment opt-outs, CI/development safeguards and
-per-user settings take priority. Events carry no persistent installation ID,
-workspace identifiers, code, data, credentials or raw errors. Failed sends are
+per-user settings take priority. Schema v2 events carry a random installation UUID
+saved in the operating-system user config, shared across projects and processes.
+The versioned notice requires a fresh acknowledgement when upgrading from the
+unlinked v1 contract; explicit opt-outs remain off. Schema v1 remains available
+for unlinked clients. Events never include workspace identifiers, code, data,
+credentials or raw errors. Failed sends are
 dropped without retrying or spooling to disk. The queue is capped at 128 events;
 HTTP requests, including the final network send at shutdown, have a two-second
 deadline. This is independent of pipeline, notebook and presentation success.
 Recording drops counts when settings are busy; malformed settings and non-regular
 settings files disable collection. The published payload and controls are in `docs/src/content/docs/docs/reference/security-and-privacy.mdx`.
-Private measurement and collector-operation notes remain outside version control.
+The collector accepts both contracts. It expires exact installation day/version
+records after 28 days and retains only aggregate counts and dense HLL sketches
+for longer windows. Version cohorts overlap across upgrades; overall distinct
+counts deduplicate across versions. Private measurement and collector-operation
+notes remain outside version control.
 
 ## 2. Runtime model
 

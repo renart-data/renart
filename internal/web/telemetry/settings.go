@@ -14,7 +14,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// Version 2 explains installation linking. A legacy unlinked notice is not enough.
+const installationNoticeVersion = 2
+
 type preferences struct {
+	NoticeVersion  int    `json:"notice_version,omitempty"`
 	Enabled        *bool  `json:"enabled,omitempty"`
 	NoticeSeen     bool   `json:"notice_seen"`
 	InstallationID string `json:"installation_id,omitempty"`
@@ -66,7 +70,7 @@ func readPreferences(path string) (preferences, error) {
 	}
 	if p.InstallationID != "" {
 		id, parseErr := uuid.Parse(p.InstallationID)
-		if parseErr != nil || id.Version() != 4 {
+		if parseErr != nil || id.Version() != 4 || id.Variant() != uuid.RFC4122 || id.String() != p.InstallationID {
 			return preferences{}, errors.New("invalid installation ID")
 		}
 	}

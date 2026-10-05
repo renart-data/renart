@@ -106,7 +106,17 @@ test("usage analytics requires its notice, sends only safe outcomes, and opt-out
     notebook.id,
   ])
     expect(payload).not.toContain(privateValue);
-  expect(events.every((event) => !event.installation_id)).toBe(true);
+  const installationID = events[0].installation_id;
+  expect(installationID).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  expect(
+    events.every((event) => event.installation_id === installationID && event.schema_version === 2),
+  ).toBe(true);
+  expect(events.every((event) => typeof event.version === "string")).toBe(true);
+  const sample = await (await page.request.get(`${liveApp.baseURL}/api/telemetry/sample`)).json();
+  expect(sample.installation_id).not.toBe(installationID);
+  expect(sample.schema_version).toBe(2);
   const other = await context.newPage();
   const protocol = await context.newCDPSession(other);
   await protocol.send("Network.enable");
