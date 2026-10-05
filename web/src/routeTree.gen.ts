@@ -9,52 +9,51 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as WelcomeRouteImport } from './routes/welcome'
-import { Route as SemanticDiffRouteImport } from './routes/semantic-diff'
 import { Route as ShellRouteImport } from './routes/_shell'
-import { Route as RedesignIndexRouteImport } from './routes/redesign.index'
+import { Route as SemanticDiffRouteImport } from './routes/semantic-diff'
+import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as ShellIndexRouteImport } from './routes/_shell/index'
-import { Route as RedesignSplatRouteImport } from './routes/redesign.$'
-import { Route as ShellRunRouteImport } from './routes/_shell/run'
-import { Route as ShellDataRouteImport } from './routes/_shell/data'
-import { Route as ShellCatalogRouteImport } from './routes/_shell/catalog'
-import { Route as ShellSchedulesRouteRouteImport } from './routes/_shell/schedules/route'
-import { Route as ShellRunsRouteRouteImport } from './routes/_shell/runs/route'
-import { Route as ShellProjectRouteRouteImport } from './routes/_shell/project/route'
 import { Route as ShellPresentationsRouteRouteImport } from './routes/_shell/_presentations/route'
-import { Route as ShellSchedulesIndexRouteImport } from './routes/_shell/schedules/index'
-import { Route as ShellRunsIndexRouteImport } from './routes/_shell/runs/index'
-import { Route as ShellProjectIndexRouteImport } from './routes/_shell/project/index'
+import { Route as ShellCatalogRouteImport } from './routes/_shell/catalog'
+import { Route as ShellDataRouteImport } from './routes/_shell/data'
+import { Route as ShellProjectRouteRouteImport } from './routes/_shell/project/route'
+import { Route as ShellRunRouteImport } from './routes/_shell/run'
+import { Route as ShellRunsRouteRouteImport } from './routes/_shell/runs/route'
+import { Route as ShellSchedulesRouteRouteImport } from './routes/_shell/schedules/route'
+import { Route as RedesignIndexRouteImport } from './routes/redesign.index'
+import { Route as RedesignSplatRouteImport } from './routes/redesign.$'
 import { Route as ShellNotebooksIndexRouteImport } from './routes/_shell/notebooks/index'
-import { Route as ShellSchedulesTimelineRouteImport } from './routes/_shell/schedules/timeline'
-import { Route as ShellSchedulesDeploymentsRouteImport } from './routes/_shell/schedules/deployments'
-import { Route as ShellRunsRunIdRouteImport } from './routes/_shell/runs/$runId'
-import { Route as ShellProjectGeneralRouteImport } from './routes/_shell/project/general'
-import { Route as ShellProjectEnvironmentsRouteImport } from './routes/_shell/project/environments'
-import { Route as ShellProjectConnectionsRouteImport } from './routes/_shell/project/connections'
 import { Route as ShellNotebooksNotebookIdRouteImport } from './routes/_shell/notebooks/$notebookId'
 import { Route as ShellPipelinesPipelineIdRouteRouteImport } from './routes/_shell/pipelines/$pipelineId/route'
-import { Route as ShellPipelinesPipelineIdIndexRouteImport } from './routes/_shell/pipelines/$pipelineId/index'
-import { Route as ShellPresentationsReportsIndexRouteImport } from './routes/_shell/_presentations/reports/index'
+import { Route as ShellProjectIndexRouteImport } from './routes/_shell/project/index'
+import { Route as ShellProjectConnectionsRouteImport } from './routes/_shell/project/connections'
+import { Route as ShellProjectEnvironmentsRouteImport } from './routes/_shell/project/environments'
+import { Route as ShellProjectGeneralRouteImport } from './routes/_shell/project/general'
+import { Route as ShellRunsIndexRouteImport } from './routes/_shell/runs/index'
+import { Route as ShellRunsRunIdRouteImport } from './routes/_shell/runs/$runId'
+import { Route as ShellSchedulesIndexRouteImport } from './routes/_shell/schedules/index'
+import { Route as ShellSchedulesDeploymentsRouteImport } from './routes/_shell/schedules/deployments'
+import { Route as ShellSchedulesTimelineRouteImport } from './routes/_shell/schedules/timeline'
 import { Route as ShellPresentationsDashboardsIndexRouteImport } from './routes/_shell/_presentations/dashboards/index'
-import { Route as ShellPipelinesPipelineIdSplitRouteImport } from './routes/_shell/pipelines/$pipelineId/split'
-import { Route as ShellPipelinesPipelineIdCodeRouteImport } from './routes/_shell/pipelines/$pipelineId/code'
-import { Route as ShellPipelinesPipelineIdCanvasRouteImport } from './routes/_shell/pipelines/$pipelineId/canvas'
-import { Route as ShellPresentationsReportsPresentationIdRouteRouteImport } from './routes/_shell/_presentations/reports/$presentationId/route'
 import { Route as ShellPresentationsDashboardsPresentationIdRouteRouteImport } from './routes/_shell/_presentations/dashboards/$presentationId/route'
-import { Route as ShellPresentationsReportsPresentationIdIndexRouteImport } from './routes/_shell/_presentations/reports/$presentationId/index'
+import { Route as ShellPresentationsReportsIndexRouteImport } from './routes/_shell/_presentations/reports/index'
+import { Route as ShellPresentationsReportsPresentationIdRouteRouteImport } from './routes/_shell/_presentations/reports/$presentationId/route'
+import { Route as ShellPipelinesPipelineIdIndexRouteImport } from './routes/_shell/pipelines/$pipelineId/index'
+import { Route as ShellPipelinesPipelineIdCanvasRouteImport } from './routes/_shell/pipelines/$pipelineId/canvas'
+import { Route as ShellPipelinesPipelineIdCodeRouteImport } from './routes/_shell/pipelines/$pipelineId/code'
+import { Route as ShellPipelinesPipelineIdSplitRouteImport } from './routes/_shell/pipelines/$pipelineId/split'
 import { Route as ShellPresentationsDashboardsPresentationIdIndexRouteImport } from './routes/_shell/_presentations/dashboards/$presentationId/index'
-import { Route as ShellPresentationsReportsPresentationIdViewRouteImport } from './routes/_shell/_presentations/reports/$presentationId/view'
 import { Route as ShellPresentationsDashboardsPresentationIdViewRouteImport } from './routes/_shell/_presentations/dashboards/$presentationId/view'
+import { Route as ShellPresentationsReportsPresentationIdIndexRouteImport } from './routes/_shell/_presentations/reports/$presentationId/index'
+import { Route as ShellPresentationsReportsPresentationIdViewRouteImport } from './routes/_shell/_presentations/reports/$presentationId/view'
 import { Route as ShellPipelinesPipelineIdAssetsAssetIdRouteRouteImport } from './routes/_shell/pipelines/$pipelineId/assets/$assetId/route'
 import { Route as ShellPipelinesPipelineIdAssetsAssetIdIndexRouteImport } from './routes/_shell/pipelines/$pipelineId/assets/$assetId/index'
-import { Route as ShellPipelinesPipelineIdAssetsAssetIdSplitRouteImport } from './routes/_shell/pipelines/$pipelineId/assets/$assetId/split'
-import { Route as ShellPipelinesPipelineIdAssetsAssetIdCodeRouteImport } from './routes/_shell/pipelines/$pipelineId/assets/$assetId/code'
 import { Route as ShellPipelinesPipelineIdAssetsAssetIdCanvasRouteImport } from './routes/_shell/pipelines/$pipelineId/assets/$assetId/canvas'
+import { Route as ShellPipelinesPipelineIdAssetsAssetIdCodeRouteImport } from './routes/_shell/pipelines/$pipelineId/assets/$assetId/code'
+import { Route as ShellPipelinesPipelineIdAssetsAssetIdSplitRouteImport } from './routes/_shell/pipelines/$pipelineId/assets/$assetId/split'
 
-const WelcomeRoute = WelcomeRouteImport.update({
-  id: '/welcome',
-  path: '/welcome',
+const ShellRoute = ShellRouteImport.update({
+  id: '/_shell',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SemanticDiffRoute = SemanticDiffRouteImport.update({
@@ -62,13 +61,9 @@ const SemanticDiffRoute = SemanticDiffRouteImport.update({
   path: '/semantic-diff',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShellRoute = ShellRouteImport.update({
-  id: '/_shell',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RedesignIndexRoute = RedesignIndexRouteImport.update({
-  id: '/redesign/',
-  path: '/redesign/',
+const WelcomeRoute = WelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ShellIndexRoute = ShellIndexRouteImport.update({
@@ -76,19 +71,8 @@ const ShellIndexRoute = ShellIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ShellRoute,
 } as any)
-const RedesignSplatRoute = RedesignSplatRouteImport.update({
-  id: '/redesign/$',
-  path: '/redesign/$',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ShellRunRoute = ShellRunRouteImport.update({
-  id: '/run',
-  path: '/run',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellDataRoute = ShellDataRouteImport.update({
-  id: '/data',
-  path: '/data',
+const ShellPresentationsRouteRoute = ShellPresentationsRouteRouteImport.update({
+  id: '/_presentations',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellCatalogRoute = ShellCatalogRouteImport.update({
@@ -96,14 +80,9 @@ const ShellCatalogRoute = ShellCatalogRouteImport.update({
   path: '/catalog',
   getParentRoute: () => ShellRoute,
 } as any)
-const ShellSchedulesRouteRoute = ShellSchedulesRouteRouteImport.update({
-  id: '/schedules',
-  path: '/schedules',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellRunsRouteRoute = ShellRunsRouteRouteImport.update({
-  id: '/runs',
-  path: '/runs',
+const ShellDataRoute = ShellDataRouteImport.update({
+  id: '/data',
+  path: '/data',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellProjectRouteRoute = ShellProjectRouteRouteImport.update({
@@ -111,61 +90,35 @@ const ShellProjectRouteRoute = ShellProjectRouteRouteImport.update({
   path: '/project',
   getParentRoute: () => ShellRoute,
 } as any)
-const ShellPresentationsRouteRoute = ShellPresentationsRouteRouteImport.update({
-  id: '/_presentations',
+const ShellRunRoute = ShellRunRouteImport.update({
+  id: '/run',
+  path: '/run',
   getParentRoute: () => ShellRoute,
 } as any)
-const ShellSchedulesIndexRoute = ShellSchedulesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ShellSchedulesRouteRoute,
+const ShellRunsRouteRoute = ShellRunsRouteRouteImport.update({
+  id: '/runs',
+  path: '/runs',
+  getParentRoute: () => ShellRoute,
 } as any)
-const ShellRunsIndexRoute = ShellRunsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ShellRunsRouteRoute,
+const ShellSchedulesRouteRoute = ShellSchedulesRouteRouteImport.update({
+  id: '/schedules',
+  path: '/schedules',
+  getParentRoute: () => ShellRoute,
 } as any)
-const ShellProjectIndexRoute = ShellProjectIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => ShellProjectRouteRoute,
+const RedesignIndexRoute = RedesignIndexRouteImport.update({
+  id: '/redesign/',
+  path: '/redesign/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RedesignSplatRoute = RedesignSplatRouteImport.update({
+  id: '/redesign/$',
+  path: '/redesign/$',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ShellNotebooksIndexRoute = ShellNotebooksIndexRouteImport.update({
   id: '/notebooks/',
   path: '/notebooks/',
   getParentRoute: () => ShellRoute,
-} as any)
-const ShellSchedulesTimelineRoute = ShellSchedulesTimelineRouteImport.update({
-  id: '/timeline',
-  path: '/timeline',
-  getParentRoute: () => ShellSchedulesRouteRoute,
-} as any)
-const ShellSchedulesDeploymentsRoute =
-  ShellSchedulesDeploymentsRouteImport.update({
-    id: '/deployments',
-    path: '/deployments',
-    getParentRoute: () => ShellSchedulesRouteRoute,
-  } as any)
-const ShellRunsRunIdRoute = ShellRunsRunIdRouteImport.update({
-  id: '/$runId',
-  path: '/$runId',
-  getParentRoute: () => ShellRunsRouteRoute,
-} as any)
-const ShellProjectGeneralRoute = ShellProjectGeneralRouteImport.update({
-  id: '/general',
-  path: '/general',
-  getParentRoute: () => ShellProjectRouteRoute,
-} as any)
-const ShellProjectEnvironmentsRoute =
-  ShellProjectEnvironmentsRouteImport.update({
-    id: '/environments',
-    path: '/environments',
-    getParentRoute: () => ShellProjectRouteRoute,
-  } as any)
-const ShellProjectConnectionsRoute = ShellProjectConnectionsRouteImport.update({
-  id: '/connections',
-  path: '/connections',
-  getParentRoute: () => ShellProjectRouteRoute,
 } as any)
 const ShellNotebooksNotebookIdRoute =
   ShellNotebooksNotebookIdRouteImport.update({
@@ -179,46 +132,57 @@ const ShellPipelinesPipelineIdRouteRoute =
     path: '/pipelines/$pipelineId',
     getParentRoute: () => ShellRoute,
   } as any)
-const ShellPipelinesPipelineIdIndexRoute =
-  ShellPipelinesPipelineIdIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => ShellPipelinesPipelineIdRouteRoute,
+const ShellProjectIndexRoute = ShellProjectIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ShellProjectRouteRoute,
+} as any)
+const ShellProjectConnectionsRoute = ShellProjectConnectionsRouteImport.update({
+  id: '/connections',
+  path: '/connections',
+  getParentRoute: () => ShellProjectRouteRoute,
+} as any)
+const ShellProjectEnvironmentsRoute =
+  ShellProjectEnvironmentsRouteImport.update({
+    id: '/environments',
+    path: '/environments',
+    getParentRoute: () => ShellProjectRouteRoute,
   } as any)
-const ShellPresentationsReportsIndexRoute =
-  ShellPresentationsReportsIndexRouteImport.update({
-    id: '/reports/',
-    path: '/reports/',
-    getParentRoute: () => ShellPresentationsRouteRoute,
+const ShellProjectGeneralRoute = ShellProjectGeneralRouteImport.update({
+  id: '/general',
+  path: '/general',
+  getParentRoute: () => ShellProjectRouteRoute,
+} as any)
+const ShellRunsIndexRoute = ShellRunsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ShellRunsRouteRoute,
+} as any)
+const ShellRunsRunIdRoute = ShellRunsRunIdRouteImport.update({
+  id: '/$runId',
+  path: '/$runId',
+  getParentRoute: () => ShellRunsRouteRoute,
+} as any)
+const ShellSchedulesIndexRoute = ShellSchedulesIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ShellSchedulesRouteRoute,
+} as any)
+const ShellSchedulesDeploymentsRoute =
+  ShellSchedulesDeploymentsRouteImport.update({
+    id: '/deployments',
+    path: '/deployments',
+    getParentRoute: () => ShellSchedulesRouteRoute,
   } as any)
+const ShellSchedulesTimelineRoute = ShellSchedulesTimelineRouteImport.update({
+  id: '/timeline',
+  path: '/timeline',
+  getParentRoute: () => ShellSchedulesRouteRoute,
+} as any)
 const ShellPresentationsDashboardsIndexRoute =
   ShellPresentationsDashboardsIndexRouteImport.update({
     id: '/dashboards/',
     path: '/dashboards/',
-    getParentRoute: () => ShellPresentationsRouteRoute,
-  } as any)
-const ShellPipelinesPipelineIdSplitRoute =
-  ShellPipelinesPipelineIdSplitRouteImport.update({
-    id: '/split',
-    path: '/split',
-    getParentRoute: () => ShellPipelinesPipelineIdRouteRoute,
-  } as any)
-const ShellPipelinesPipelineIdCodeRoute =
-  ShellPipelinesPipelineIdCodeRouteImport.update({
-    id: '/code',
-    path: '/code',
-    getParentRoute: () => ShellPipelinesPipelineIdRouteRoute,
-  } as any)
-const ShellPipelinesPipelineIdCanvasRoute =
-  ShellPipelinesPipelineIdCanvasRouteImport.update({
-    id: '/canvas',
-    path: '/canvas',
-    getParentRoute: () => ShellPipelinesPipelineIdRouteRoute,
-  } as any)
-const ShellPresentationsReportsPresentationIdRouteRoute =
-  ShellPresentationsReportsPresentationIdRouteRouteImport.update({
-    id: '/reports/$presentationId',
-    path: '/reports/$presentationId',
     getParentRoute: () => ShellPresentationsRouteRoute,
   } as any)
 const ShellPresentationsDashboardsPresentationIdRouteRoute =
@@ -227,11 +191,41 @@ const ShellPresentationsDashboardsPresentationIdRouteRoute =
     path: '/dashboards/$presentationId',
     getParentRoute: () => ShellPresentationsRouteRoute,
   } as any)
-const ShellPresentationsReportsPresentationIdIndexRoute =
-  ShellPresentationsReportsPresentationIdIndexRouteImport.update({
+const ShellPresentationsReportsIndexRoute =
+  ShellPresentationsReportsIndexRouteImport.update({
+    id: '/reports/',
+    path: '/reports/',
+    getParentRoute: () => ShellPresentationsRouteRoute,
+  } as any)
+const ShellPresentationsReportsPresentationIdRouteRoute =
+  ShellPresentationsReportsPresentationIdRouteRouteImport.update({
+    id: '/reports/$presentationId',
+    path: '/reports/$presentationId',
+    getParentRoute: () => ShellPresentationsRouteRoute,
+  } as any)
+const ShellPipelinesPipelineIdIndexRoute =
+  ShellPipelinesPipelineIdIndexRouteImport.update({
     id: '/',
     path: '/',
-    getParentRoute: () => ShellPresentationsReportsPresentationIdRouteRoute,
+    getParentRoute: () => ShellPipelinesPipelineIdRouteRoute,
+  } as any)
+const ShellPipelinesPipelineIdCanvasRoute =
+  ShellPipelinesPipelineIdCanvasRouteImport.update({
+    id: '/canvas',
+    path: '/canvas',
+    getParentRoute: () => ShellPipelinesPipelineIdRouteRoute,
+  } as any)
+const ShellPipelinesPipelineIdCodeRoute =
+  ShellPipelinesPipelineIdCodeRouteImport.update({
+    id: '/code',
+    path: '/code',
+    getParentRoute: () => ShellPipelinesPipelineIdRouteRoute,
+  } as any)
+const ShellPipelinesPipelineIdSplitRoute =
+  ShellPipelinesPipelineIdSplitRouteImport.update({
+    id: '/split',
+    path: '/split',
+    getParentRoute: () => ShellPipelinesPipelineIdRouteRoute,
   } as any)
 const ShellPresentationsDashboardsPresentationIdIndexRoute =
   ShellPresentationsDashboardsPresentationIdIndexRouteImport.update({
@@ -239,17 +233,23 @@ const ShellPresentationsDashboardsPresentationIdIndexRoute =
     path: '/',
     getParentRoute: () => ShellPresentationsDashboardsPresentationIdRouteRoute,
   } as any)
-const ShellPresentationsReportsPresentationIdViewRoute =
-  ShellPresentationsReportsPresentationIdViewRouteImport.update({
-    id: '/view',
-    path: '/view',
-    getParentRoute: () => ShellPresentationsReportsPresentationIdRouteRoute,
-  } as any)
 const ShellPresentationsDashboardsPresentationIdViewRoute =
   ShellPresentationsDashboardsPresentationIdViewRouteImport.update({
     id: '/view',
     path: '/view',
     getParentRoute: () => ShellPresentationsDashboardsPresentationIdRouteRoute,
+  } as any)
+const ShellPresentationsReportsPresentationIdIndexRoute =
+  ShellPresentationsReportsPresentationIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ShellPresentationsReportsPresentationIdRouteRoute,
+  } as any)
+const ShellPresentationsReportsPresentationIdViewRoute =
+  ShellPresentationsReportsPresentationIdViewRouteImport.update({
+    id: '/view',
+    path: '/view',
+    getParentRoute: () => ShellPresentationsReportsPresentationIdRouteRoute,
   } as any)
 const ShellPipelinesPipelineIdAssetsAssetIdRouteRoute =
   ShellPipelinesPipelineIdAssetsAssetIdRouteRouteImport.update({
@@ -263,10 +263,10 @@ const ShellPipelinesPipelineIdAssetsAssetIdIndexRoute =
     path: '/',
     getParentRoute: () => ShellPipelinesPipelineIdAssetsAssetIdRouteRoute,
   } as any)
-const ShellPipelinesPipelineIdAssetsAssetIdSplitRoute =
-  ShellPipelinesPipelineIdAssetsAssetIdSplitRouteImport.update({
-    id: '/split',
-    path: '/split',
+const ShellPipelinesPipelineIdAssetsAssetIdCanvasRoute =
+  ShellPipelinesPipelineIdAssetsAssetIdCanvasRouteImport.update({
+    id: '/canvas',
+    path: '/canvas',
     getParentRoute: () => ShellPipelinesPipelineIdAssetsAssetIdRouteRoute,
   } as any)
 const ShellPipelinesPipelineIdAssetsAssetIdCodeRoute =
@@ -275,10 +275,10 @@ const ShellPipelinesPipelineIdAssetsAssetIdCodeRoute =
     path: '/code',
     getParentRoute: () => ShellPipelinesPipelineIdAssetsAssetIdRouteRoute,
   } as any)
-const ShellPipelinesPipelineIdAssetsAssetIdCanvasRoute =
-  ShellPipelinesPipelineIdAssetsAssetIdCanvasRouteImport.update({
-    id: '/canvas',
-    path: '/canvas',
+const ShellPipelinesPipelineIdAssetsAssetIdSplitRoute =
+  ShellPipelinesPipelineIdAssetsAssetIdSplitRouteImport.update({
+    id: '/split',
+    path: '/split',
     getParentRoute: () => ShellPipelinesPipelineIdAssetsAssetIdRouteRoute,
   } as any)
 
@@ -538,11 +538,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/welcome': {
-      id: '/welcome'
-      path: '/welcome'
-      fullPath: '/welcome'
-      preLoaderRoute: typeof WelcomeRouteImport
+    '/_shell': {
+      id: '/_shell'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof ShellRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/semantic-diff': {
@@ -552,18 +552,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SemanticDiffRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_shell': {
-      id: '/_shell'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof ShellRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/redesign/': {
-      id: '/redesign/'
-      path: '/redesign'
-      fullPath: '/redesign/'
-      preLoaderRoute: typeof RedesignIndexRouteImport
+    '/welcome': {
+      id: '/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof WelcomeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_shell/': {
@@ -573,25 +566,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellIndexRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/redesign/$': {
-      id: '/redesign/$'
-      path: '/redesign/$'
-      fullPath: '/redesign/$'
-      preLoaderRoute: typeof RedesignSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/_shell/run': {
-      id: '/_shell/run'
-      path: '/run'
-      fullPath: '/run'
-      preLoaderRoute: typeof ShellRunRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/data': {
-      id: '/_shell/data'
-      path: '/data'
-      fullPath: '/data'
-      preLoaderRoute: typeof ShellDataRouteImport
+    '/_shell/_presentations': {
+      id: '/_shell/_presentations'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof ShellPresentationsRouteRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/catalog': {
@@ -601,18 +580,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellCatalogRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/_shell/schedules': {
-      id: '/_shell/schedules'
-      path: '/schedules'
-      fullPath: '/schedules'
-      preLoaderRoute: typeof ShellSchedulesRouteRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/runs': {
-      id: '/_shell/runs'
-      path: '/runs'
-      fullPath: '/runs'
-      preLoaderRoute: typeof ShellRunsRouteRouteImport
+    '/_shell/data': {
+      id: '/_shell/data'
+      path: '/data'
+      fullPath: '/data'
+      preLoaderRoute: typeof ShellDataRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/project': {
@@ -622,33 +594,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellProjectRouteRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/_shell/_presentations': {
-      id: '/_shell/_presentations'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof ShellPresentationsRouteRouteImport
+    '/_shell/run': {
+      id: '/_shell/run'
+      path: '/run'
+      fullPath: '/run'
+      preLoaderRoute: typeof ShellRunRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/_shell/schedules/': {
-      id: '/_shell/schedules/'
-      path: '/'
-      fullPath: '/schedules/'
-      preLoaderRoute: typeof ShellSchedulesIndexRouteImport
-      parentRoute: typeof ShellSchedulesRouteRoute
+    '/_shell/runs': {
+      id: '/_shell/runs'
+      path: '/runs'
+      fullPath: '/runs'
+      preLoaderRoute: typeof ShellRunsRouteRouteImport
+      parentRoute: typeof ShellRoute
     }
-    '/_shell/runs/': {
-      id: '/_shell/runs/'
-      path: '/'
-      fullPath: '/runs/'
-      preLoaderRoute: typeof ShellRunsIndexRouteImport
-      parentRoute: typeof ShellRunsRouteRoute
+    '/_shell/schedules': {
+      id: '/_shell/schedules'
+      path: '/schedules'
+      fullPath: '/schedules'
+      preLoaderRoute: typeof ShellSchedulesRouteRouteImport
+      parentRoute: typeof ShellRoute
     }
-    '/_shell/project/': {
-      id: '/_shell/project/'
-      path: '/'
-      fullPath: '/project/'
-      preLoaderRoute: typeof ShellProjectIndexRouteImport
-      parentRoute: typeof ShellProjectRouteRoute
+    '/redesign/': {
+      id: '/redesign/'
+      path: '/redesign'
+      fullPath: '/redesign/'
+      preLoaderRoute: typeof RedesignIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/redesign/$': {
+      id: '/redesign/$'
+      path: '/redesign/$'
+      fullPath: '/redesign/$'
+      preLoaderRoute: typeof RedesignSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_shell/notebooks/': {
       id: '/_shell/notebooks/'
@@ -656,48 +635,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/notebooks/'
       preLoaderRoute: typeof ShellNotebooksIndexRouteImport
       parentRoute: typeof ShellRoute
-    }
-    '/_shell/schedules/timeline': {
-      id: '/_shell/schedules/timeline'
-      path: '/timeline'
-      fullPath: '/schedules/timeline'
-      preLoaderRoute: typeof ShellSchedulesTimelineRouteImport
-      parentRoute: typeof ShellSchedulesRouteRoute
-    }
-    '/_shell/schedules/deployments': {
-      id: '/_shell/schedules/deployments'
-      path: '/deployments'
-      fullPath: '/schedules/deployments'
-      preLoaderRoute: typeof ShellSchedulesDeploymentsRouteImport
-      parentRoute: typeof ShellSchedulesRouteRoute
-    }
-    '/_shell/runs/$runId': {
-      id: '/_shell/runs/$runId'
-      path: '/$runId'
-      fullPath: '/runs/$runId'
-      preLoaderRoute: typeof ShellRunsRunIdRouteImport
-      parentRoute: typeof ShellRunsRouteRoute
-    }
-    '/_shell/project/general': {
-      id: '/_shell/project/general'
-      path: '/general'
-      fullPath: '/project/general'
-      preLoaderRoute: typeof ShellProjectGeneralRouteImport
-      parentRoute: typeof ShellProjectRouteRoute
-    }
-    '/_shell/project/environments': {
-      id: '/_shell/project/environments'
-      path: '/environments'
-      fullPath: '/project/environments'
-      preLoaderRoute: typeof ShellProjectEnvironmentsRouteImport
-      parentRoute: typeof ShellProjectRouteRoute
-    }
-    '/_shell/project/connections': {
-      id: '/_shell/project/connections'
-      path: '/connections'
-      fullPath: '/project/connections'
-      preLoaderRoute: typeof ShellProjectConnectionsRouteImport
-      parentRoute: typeof ShellProjectRouteRoute
     }
     '/_shell/notebooks/$notebookId': {
       id: '/_shell/notebooks/$notebookId'
@@ -713,53 +650,74 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPipelinesPipelineIdRouteRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/_shell/pipelines/$pipelineId/': {
-      id: '/_shell/pipelines/$pipelineId/'
+    '/_shell/project/': {
+      id: '/_shell/project/'
       path: '/'
-      fullPath: '/pipelines/$pipelineId/'
-      preLoaderRoute: typeof ShellPipelinesPipelineIdIndexRouteImport
-      parentRoute: typeof ShellPipelinesPipelineIdRouteRoute
+      fullPath: '/project/'
+      preLoaderRoute: typeof ShellProjectIndexRouteImport
+      parentRoute: typeof ShellProjectRouteRoute
     }
-    '/_shell/_presentations/reports/': {
-      id: '/_shell/_presentations/reports/'
-      path: '/reports'
-      fullPath: '/reports/'
-      preLoaderRoute: typeof ShellPresentationsReportsIndexRouteImport
-      parentRoute: typeof ShellPresentationsRouteRoute
+    '/_shell/project/connections': {
+      id: '/_shell/project/connections'
+      path: '/connections'
+      fullPath: '/project/connections'
+      preLoaderRoute: typeof ShellProjectConnectionsRouteImport
+      parentRoute: typeof ShellProjectRouteRoute
+    }
+    '/_shell/project/environments': {
+      id: '/_shell/project/environments'
+      path: '/environments'
+      fullPath: '/project/environments'
+      preLoaderRoute: typeof ShellProjectEnvironmentsRouteImport
+      parentRoute: typeof ShellProjectRouteRoute
+    }
+    '/_shell/project/general': {
+      id: '/_shell/project/general'
+      path: '/general'
+      fullPath: '/project/general'
+      preLoaderRoute: typeof ShellProjectGeneralRouteImport
+      parentRoute: typeof ShellProjectRouteRoute
+    }
+    '/_shell/runs/': {
+      id: '/_shell/runs/'
+      path: '/'
+      fullPath: '/runs/'
+      preLoaderRoute: typeof ShellRunsIndexRouteImport
+      parentRoute: typeof ShellRunsRouteRoute
+    }
+    '/_shell/runs/$runId': {
+      id: '/_shell/runs/$runId'
+      path: '/$runId'
+      fullPath: '/runs/$runId'
+      preLoaderRoute: typeof ShellRunsRunIdRouteImport
+      parentRoute: typeof ShellRunsRouteRoute
+    }
+    '/_shell/schedules/': {
+      id: '/_shell/schedules/'
+      path: '/'
+      fullPath: '/schedules/'
+      preLoaderRoute: typeof ShellSchedulesIndexRouteImport
+      parentRoute: typeof ShellSchedulesRouteRoute
+    }
+    '/_shell/schedules/deployments': {
+      id: '/_shell/schedules/deployments'
+      path: '/deployments'
+      fullPath: '/schedules/deployments'
+      preLoaderRoute: typeof ShellSchedulesDeploymentsRouteImport
+      parentRoute: typeof ShellSchedulesRouteRoute
+    }
+    '/_shell/schedules/timeline': {
+      id: '/_shell/schedules/timeline'
+      path: '/timeline'
+      fullPath: '/schedules/timeline'
+      preLoaderRoute: typeof ShellSchedulesTimelineRouteImport
+      parentRoute: typeof ShellSchedulesRouteRoute
     }
     '/_shell/_presentations/dashboards/': {
       id: '/_shell/_presentations/dashboards/'
       path: '/dashboards'
       fullPath: '/dashboards/'
       preLoaderRoute: typeof ShellPresentationsDashboardsIndexRouteImport
-      parentRoute: typeof ShellPresentationsRouteRoute
-    }
-    '/_shell/pipelines/$pipelineId/split': {
-      id: '/_shell/pipelines/$pipelineId/split'
-      path: '/split'
-      fullPath: '/pipelines/$pipelineId/split'
-      preLoaderRoute: typeof ShellPipelinesPipelineIdSplitRouteImport
-      parentRoute: typeof ShellPipelinesPipelineIdRouteRoute
-    }
-    '/_shell/pipelines/$pipelineId/code': {
-      id: '/_shell/pipelines/$pipelineId/code'
-      path: '/code'
-      fullPath: '/pipelines/$pipelineId/code'
-      preLoaderRoute: typeof ShellPipelinesPipelineIdCodeRouteImport
-      parentRoute: typeof ShellPipelinesPipelineIdRouteRoute
-    }
-    '/_shell/pipelines/$pipelineId/canvas': {
-      id: '/_shell/pipelines/$pipelineId/canvas'
-      path: '/canvas'
-      fullPath: '/pipelines/$pipelineId/canvas'
-      preLoaderRoute: typeof ShellPipelinesPipelineIdCanvasRouteImport
-      parentRoute: typeof ShellPipelinesPipelineIdRouteRoute
-    }
-    '/_shell/_presentations/reports/$presentationId': {
-      id: '/_shell/_presentations/reports/$presentationId'
-      path: '/reports/$presentationId'
-      fullPath: '/reports/$presentationId'
-      preLoaderRoute: typeof ShellPresentationsReportsPresentationIdRouteRouteImport
       parentRoute: typeof ShellPresentationsRouteRoute
     }
     '/_shell/_presentations/dashboards/$presentationId': {
@@ -769,12 +727,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPresentationsDashboardsPresentationIdRouteRouteImport
       parentRoute: typeof ShellPresentationsRouteRoute
     }
-    '/_shell/_presentations/reports/$presentationId/': {
-      id: '/_shell/_presentations/reports/$presentationId/'
+    '/_shell/_presentations/reports/': {
+      id: '/_shell/_presentations/reports/'
+      path: '/reports'
+      fullPath: '/reports/'
+      preLoaderRoute: typeof ShellPresentationsReportsIndexRouteImport
+      parentRoute: typeof ShellPresentationsRouteRoute
+    }
+    '/_shell/_presentations/reports/$presentationId': {
+      id: '/_shell/_presentations/reports/$presentationId'
+      path: '/reports/$presentationId'
+      fullPath: '/reports/$presentationId'
+      preLoaderRoute: typeof ShellPresentationsReportsPresentationIdRouteRouteImport
+      parentRoute: typeof ShellPresentationsRouteRoute
+    }
+    '/_shell/pipelines/$pipelineId/': {
+      id: '/_shell/pipelines/$pipelineId/'
       path: '/'
-      fullPath: '/reports/$presentationId/'
-      preLoaderRoute: typeof ShellPresentationsReportsPresentationIdIndexRouteImport
-      parentRoute: typeof ShellPresentationsReportsPresentationIdRouteRoute
+      fullPath: '/pipelines/$pipelineId/'
+      preLoaderRoute: typeof ShellPipelinesPipelineIdIndexRouteImport
+      parentRoute: typeof ShellPipelinesPipelineIdRouteRoute
+    }
+    '/_shell/pipelines/$pipelineId/canvas': {
+      id: '/_shell/pipelines/$pipelineId/canvas'
+      path: '/canvas'
+      fullPath: '/pipelines/$pipelineId/canvas'
+      preLoaderRoute: typeof ShellPipelinesPipelineIdCanvasRouteImport
+      parentRoute: typeof ShellPipelinesPipelineIdRouteRoute
+    }
+    '/_shell/pipelines/$pipelineId/code': {
+      id: '/_shell/pipelines/$pipelineId/code'
+      path: '/code'
+      fullPath: '/pipelines/$pipelineId/code'
+      preLoaderRoute: typeof ShellPipelinesPipelineIdCodeRouteImport
+      parentRoute: typeof ShellPipelinesPipelineIdRouteRoute
+    }
+    '/_shell/pipelines/$pipelineId/split': {
+      id: '/_shell/pipelines/$pipelineId/split'
+      path: '/split'
+      fullPath: '/pipelines/$pipelineId/split'
+      preLoaderRoute: typeof ShellPipelinesPipelineIdSplitRouteImport
+      parentRoute: typeof ShellPipelinesPipelineIdRouteRoute
     }
     '/_shell/_presentations/dashboards/$presentationId/': {
       id: '/_shell/_presentations/dashboards/$presentationId/'
@@ -783,19 +776,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPresentationsDashboardsPresentationIdIndexRouteImport
       parentRoute: typeof ShellPresentationsDashboardsPresentationIdRouteRoute
     }
-    '/_shell/_presentations/reports/$presentationId/view': {
-      id: '/_shell/_presentations/reports/$presentationId/view'
-      path: '/view'
-      fullPath: '/reports/$presentationId/view'
-      preLoaderRoute: typeof ShellPresentationsReportsPresentationIdViewRouteImport
-      parentRoute: typeof ShellPresentationsReportsPresentationIdRouteRoute
-    }
     '/_shell/_presentations/dashboards/$presentationId/view': {
       id: '/_shell/_presentations/dashboards/$presentationId/view'
       path: '/view'
       fullPath: '/dashboards/$presentationId/view'
       preLoaderRoute: typeof ShellPresentationsDashboardsPresentationIdViewRouteImport
       parentRoute: typeof ShellPresentationsDashboardsPresentationIdRouteRoute
+    }
+    '/_shell/_presentations/reports/$presentationId/': {
+      id: '/_shell/_presentations/reports/$presentationId/'
+      path: '/'
+      fullPath: '/reports/$presentationId/'
+      preLoaderRoute: typeof ShellPresentationsReportsPresentationIdIndexRouteImport
+      parentRoute: typeof ShellPresentationsReportsPresentationIdRouteRoute
+    }
+    '/_shell/_presentations/reports/$presentationId/view': {
+      id: '/_shell/_presentations/reports/$presentationId/view'
+      path: '/view'
+      fullPath: '/reports/$presentationId/view'
+      preLoaderRoute: typeof ShellPresentationsReportsPresentationIdViewRouteImport
+      parentRoute: typeof ShellPresentationsReportsPresentationIdRouteRoute
     }
     '/_shell/pipelines/$pipelineId/assets/$assetId': {
       id: '/_shell/pipelines/$pipelineId/assets/$assetId'
@@ -811,11 +811,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdIndexRouteImport
       parentRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdRouteRoute
     }
-    '/_shell/pipelines/$pipelineId/assets/$assetId/split': {
-      id: '/_shell/pipelines/$pipelineId/assets/$assetId/split'
-      path: '/split'
-      fullPath: '/pipelines/$pipelineId/assets/$assetId/split'
-      preLoaderRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdSplitRouteImport
+    '/_shell/pipelines/$pipelineId/assets/$assetId/canvas': {
+      id: '/_shell/pipelines/$pipelineId/assets/$assetId/canvas'
+      path: '/canvas'
+      fullPath: '/pipelines/$pipelineId/assets/$assetId/canvas'
+      preLoaderRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdCanvasRouteImport
       parentRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdRouteRoute
     }
     '/_shell/pipelines/$pipelineId/assets/$assetId/code': {
@@ -825,11 +825,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdCodeRouteImport
       parentRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdRouteRoute
     }
-    '/_shell/pipelines/$pipelineId/assets/$assetId/canvas': {
-      id: '/_shell/pipelines/$pipelineId/assets/$assetId/canvas'
-      path: '/canvas'
-      fullPath: '/pipelines/$pipelineId/assets/$assetId/canvas'
-      preLoaderRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdCanvasRouteImport
+    '/_shell/pipelines/$pipelineId/assets/$assetId/split': {
+      id: '/_shell/pipelines/$pipelineId/assets/$assetId/split'
+      path: '/split'
+      fullPath: '/pipelines/$pipelineId/assets/$assetId/split'
+      preLoaderRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdSplitRouteImport
       parentRoute: typeof ShellPipelinesPipelineIdAssetsAssetIdRouteRoute
     }
   }
