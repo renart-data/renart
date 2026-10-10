@@ -43,7 +43,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
-    "@types/vscode": "^1.138.0",
+    "@types/vscode": "^1.140.0",
     "typescript": "^7.0.2"
   },
   "pnpm": {
