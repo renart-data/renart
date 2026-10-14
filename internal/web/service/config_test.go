@@ -388,3 +388,15 @@ func TestSetProjectRetentionPersistsValidatedTrackedSettings(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "run metadata retention")
 }
+
+func TestDuckDBConnectionPathIsRequired(t *testing.T) {
+	t.Parallel()
+	fields := workspaceConnectionFieldDefsForType("duckdb")
+	for _, field := range fields {
+		if field.Name == "path" {
+			require.True(t, field.IsRequired, "the form must match discovery's required path")
+			return
+		}
+	}
+	t.Fatal("DuckDB path field is missing")
+}

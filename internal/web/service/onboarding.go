@@ -184,9 +184,8 @@ func (s *OnboardingService) PreviewDiscovery(ctx context.Context, req Onboarding
 	if err := ensureDiscoveryDraftValues(typeName, values, selectedDatabase); err != nil {
 		return OnboardingDiscoveryResult{Status: "error", Databases: []string{}, Tables: []SQLDiscoveryTableItem{}, Error: err.Error()}, 400
 	}
-	selectedDatabase = stringValue(values["database"])
-	if typeName == "duckdb" && selectedDatabase == "" {
-		selectedDatabase = stringValue(values["path"])
+	if typeName != "duckdb" {
+		selectedDatabase = stringValue(values["database"])
 	}
 
 	connectionName := DefaultOnboardingConnectionName(typeName)
@@ -279,6 +278,14 @@ func (s *OnboardingService) PreviewDiscovery(ctx context.Context, req Onboarding
 	}
 	sort.Strings(databases)
 	result.Databases = databases
+
+	// DuckDB's discovery API calls schemas "databases". The file path is
+	// connection configuration, never a schema filter. Select a lone schema
+	// automatically; otherwise let the user choose from the discovered names.
+	if typeName == "duckdb" && selectedDatabase == "" && len(databases) == 1 {
+		selectedDatabase = databases[0]
+		result.SelectedDatabase = selectedDatabase
+	}
 
 	if selectedDatabase == "" {
 		return result, 200
