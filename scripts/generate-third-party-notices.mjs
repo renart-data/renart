@@ -70,7 +70,7 @@ function run(command, args, cwd = root, extraEnv = {}) {
   return execFileSync(command, args, {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, GOTOOLCHAIN: process.env.GOTOOLCHAIN || "go1.26.6", ...extraEnv },
+    env: { ...process.env, GOTOOLCHAIN: process.env.GOTOOLCHAIN || "go1.26.9", ...extraEnv },
     maxBuffer: 128 * 1024 * 1024,
     stdio: ["ignore", "pipe", "inherit"],
   });
@@ -144,7 +144,13 @@ function collectGoModules() {
   }
   return [...rows]
     .map((row) => {
-      const [name, version, directory] = row.split("\t");
+      const [name, requiredVersion, directory] = row.split("\t");
+      // A local replacement's required version describes the upstream import
+      // contract, not the implementation we ship (for example the Snowflake
+      // v1 import adapter backed entirely by the official v2 driver).
+      const relativeDirectory = path.relative(root, directory);
+      const isLocal = relativeDirectory !== ".." && !relativeDirectory.startsWith(`..${path.sep}`) && !path.isAbsolute(relativeDirectory);
+      const version = isLocal ? `local (${relativeDirectory.split(path.sep).join("/")})` : requiredVersion;
       const files = findLicenseFiles(directory);
       if (files.length === 0) throw new Error(`Go module ${name}@${version} has no root license or notice file`);
       return { name, version, licenses: files.map(registerLicense) };

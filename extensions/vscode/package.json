@@ -42,8 +42,8 @@
     "vscode-languageclient": "^10.1.2"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
-    "@types/vscode": "^1.138.0",
+    "@types/node": "^26.6.5",
+    "@types/vscode": "^1.140.0",
     "typescript": "^7.0.2"
   },
   "pnpm": {
