@@ -555,6 +555,19 @@ satisfy that upstream linker contract: every entry point returns an explicit
 disabled error, so a missed runtime call cannot silently use a second parser.
 `RENART_BRUIN_SQLPARSER_STUB_DIR` overrides the cache root for hermetic builds.
 
+**Bruin Snowflake import compatibility.** Bruin still imports the v1 Snowflake
+Go driver, which has no patch for GO-2026-6665. A root-module replacement maps
+that import to `internal/compat/gosnowflake`, a first-party adapter backed by
+the official `github.com/snowflakedb/gosnowflake/v2` v2.3.0 module. No v1 driver
+implementation is compiled. The adapter exposes only Bruin's consumed types,
+authentication constants, and context helpers; it preserves the always-nil
+error return removed from `WithMultiStatement` in v2. SQL driver registration
+and protected logging belong to v2, which stays visible to vulnerability scans.
+Root backend tests cover password/OAuth/JWT configuration, SQL requests with
+request IDs and query tags, query-ID delivery, and secret redaction. This
+adapter can be removed when Bruin migrates its imports. It does not replace
+the separately launched Sling executable.
+
 **Binary composition.** Release builds are deliberately self-contained: the Go
 link includes the small Bruin compatibility shim, Golyglot, and the complete
 connector/runtime graph, while `go:embed` carries the web application, Monaco

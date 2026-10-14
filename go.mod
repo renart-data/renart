@@ -27,6 +27,7 @@ require (
 	github.com/riverqueue/river/riverdriver/riversqlite v0.47.0
 	github.com/riverqueue/river/rivertype v0.47.0
 	github.com/sahilm/fuzzy v0.1.3
+	github.com/snowflakedb/gosnowflake/v2 v2.3.0
 	github.com/spf13/afero v1.15.0
 	github.com/stretchr/testify v1.12.1
 	github.com/tetratelabs/wazero v1.12.0
@@ -74,6 +75,7 @@ require (
 	filippo.io/hpke v0.4.0 // indirect
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
 	github.com/ProtonMail/gopenpgp/v3 v3.3.0 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.3.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.4 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/bluele/gcache v0.0.2 // indirect
@@ -252,7 +254,7 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sijms/go-ora/v2 v2.9.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
-	github.com/snowflakedb/gosnowflake v1.19.0 // indirect
+	github.com/snowflakedb/gosnowflake v1.19.0
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.7.0 // indirect
 	github.com/tidwall/gjson v1.19.0 // indirect
@@ -307,3 +309,5 @@ require (
 )
 
 replace github.com/bruin-data/bruin/semantic-engine v0.0.0 => github.com/bruin-data/bruin/semantic-engine v0.0.0-20260710143449-a08e65067eda
+
+replace github.com/snowflakedb/gosnowflake => ./internal/compat/gosnowflake

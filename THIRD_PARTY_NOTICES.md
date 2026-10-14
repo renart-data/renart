@@ -48,6 +48,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/aws/aws-sdk-go-v2/credentials | v1.20.9 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/feature/ec2/imds | v1.20.3 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/feature/s3/manager | v1.23.14 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager | v0.3.5 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/internal/configsources | v1.5.6 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 | v2.8.6 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/aws/aws-sdk-go-v2/internal/v4a | v1.5.6 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
@@ -205,7 +206,8 @@ CI verifies that the checked-in inventory is current.
 | github.com/sijms/go-ora/v2 | v2.9.0 | [license](third_party/licenses/86b6a31a08af7288285c3f242fd257d8d985587182c6af3796cb421daa0b8339.txt) |
 | github.com/sirupsen/logrus | v1.9.4 | [license](third_party/licenses/51a0c9ec7f8b7634181b8d4c03e5b5d204ac21d6e72f46c313973424664b2e6b.txt) |
 | github.com/skeema/knownhosts | v1.3.1 | [license](third_party/licenses/b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1.txt), [license](third_party/licenses/f825d6fc2c8ee909c4bbb3e78c8ec59a923dc6738d21258913b17dc55798acad.txt) |
-| github.com/snowflakedb/gosnowflake | v1.19.0 | [license](third_party/licenses/3376624f734322a3be32be001dab57cdfe2e414cec7a3babbb64bd7854db5f95.txt) |
+| github.com/snowflakedb/gosnowflake | local (internal/compat/gosnowflake) | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
+| github.com/snowflakedb/gosnowflake/v2 | v2.3.0 | [license](third_party/licenses/3376624f734322a3be32be001dab57cdfe2e414cec7a3babbb64bd7854db5f95.txt) |
 | github.com/sourcegraph/conc | v0.3.0 | [license](third_party/licenses/e3dfc7ac698a5b64eefc720531595b9d6e3f6c5da7f741ef15e453709e173ee2.txt) |
 | github.com/spf13/afero | v1.15.0 | [license](third_party/licenses/5e3400b93bbb099e83e52bab885e7441750673c21f97988ca3f1240639b63283.txt) |
 | github.com/spiffe/go-spiffe/v2 | v2.7.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
