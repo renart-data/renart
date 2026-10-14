@@ -1068,6 +1068,15 @@ func BuildWorkspaceConfigConnectionTypes() []WorkspaceConfigConnectionType {
 func buildWorkspaceConfigFieldDefs(connectionType reflect.Type) []WorkspaceConfigFieldDef {
 	fields := make([]WorkspaceConfigFieldDef, 0, connectionType.NumField())
 	appendWorkspaceConfigFieldDefs(connectionType, &fields)
+	// Bruin omits an empty DuckDB path from YAML, but a configured file
+	// connection (including onboarding discovery) requires one.
+	if connectionType == reflect.TypeFor[config.DuckDBConnection]() {
+		for index := range fields {
+			if fields[index].Name == "path" {
+				fields[index].IsRequired = true
+			}
+		}
+	}
 	sort.SliceStable(fields, func(left, right int) bool {
 		return workspaceConnectionFieldOrder(fields[left]) < workspaceConnectionFieldOrder(fields[right])
 	})

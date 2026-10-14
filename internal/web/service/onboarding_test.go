@@ -3,9 +3,12 @@ package service
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
+	duck "github.com/bruin-data/bruin/pkg/duckdb"
+	"github.com/bruin-data/bruin/pkg/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -173,4 +176,58 @@ func TestCreateDuckDBQuickstartPreparesDuckDBPathRelativeToConfigFile(t *testing
 	require.NoError(t, err)
 	_, err = os.Stat(filepath.Join(workspaceRoot, "duckdb-files"))
 	require.True(t, os.IsNotExist(err))
+}
+
+func TestOnboardingDuckDBDiscoveryUsesSchemasNotFilePaths(t *testing.T) {
+	for _, multipleSchemas := range []bool{false, true} {
+		name := "single schema"
+		if multipleSchemas {
+			name = "multiple schemas"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			output, err := exec.Command("git", "init", "--quiet", root).CombinedOutput()
+			require.NoError(t, err, "%s", output)
+			configPath := filepath.Join(root, ".bruin.yml")
+			configContents := []byte("default_environment: default\nenvironments:\n  default:\n    connections: {}\n")
+			require.NoError(t, os.WriteFile(configPath, configContents, 0o600))
+			path := filepath.Join(root, "existing data.ddb")
+			client, err := duck.NewClient(duck.Config{Path: path})
+			require.NoError(t, err)
+			require.NoError(t, client.RunQueryWithoutResult(t.Context(), &query.Query{Query: "CREATE TABLE orders AS SELECT 42 AS id"}))
+			require.NoError(t, client.RunQueryWithoutResult(t.Context(), &query.Query{Query: "CREATE VIEW recent_orders AS SELECT * FROM orders"}))
+			if multipleSchemas {
+				require.NoError(t, client.RunQueryWithoutResult(t.Context(), &query.Query{Query: "CREATE SCHEMA analytics; CREATE TABLE analytics.customers AS SELECT 1 AS id"}))
+			}
+			client.Close()
+			svc := NewOnboardingService(root, configPath, nil, nil)
+			req := OnboardingDiscoveryRequest{EnvironmentName: "default", Type: "duckdb", Values: map[string]any{"path": path}}
+			result, code := svc.PreviewDiscovery(t.Context(), req)
+			require.Equal(t, 200, code, "%s", result.Error)
+			require.Equal(t, "ok", result.Status)
+			if multipleSchemas {
+				require.Equal(t, []string{"analytics", "main"}, result.Databases)
+				require.Empty(t, result.SelectedDatabase)
+				require.Empty(t, result.Tables, "wait for a schema selection")
+				req.Database = "analytics"
+				result, code = svc.PreviewDiscovery(t.Context(), req)
+				require.Equal(t, 200, code, "%s", result.Error)
+				require.Equal(t, "analytics", result.SelectedDatabase)
+				require.Len(t, result.Tables, 1)
+				assert.Equal(t, "analytics.customers", result.Tables[0].Name)
+				req.Database = "main"
+				result, code = svc.PreviewDiscovery(t.Context(), req)
+				require.Equal(t, 200, code, "%s", result.Error)
+			} else {
+				require.Equal(t, []string{"main"}, result.Databases)
+			}
+			require.Equal(t, "main", result.SelectedDatabase)
+			require.Len(t, result.Tables, 2)
+			assert.Equal(t, "main.orders", result.Tables[0].Name)
+			assert.Equal(t, "main.recent_orders", result.Tables[1].Name)
+			contents, err := os.ReadFile(configPath)
+			require.NoError(t, err)
+			assert.Equal(t, configContents, contents, "preview must not save the draft connection")
+		})
+	}
 }

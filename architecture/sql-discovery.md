@@ -23,6 +23,11 @@ explicitly qualified against the connection default. Renart's metadata adapters
 quote identifiers individually and do not issue `USE` or mutate data; upstream
 native limitations below are unchanged.
 
+The **Connect your data** preview keeps DuckDB's file path separate from its
+schema selection. It selects a single discovered schema automatically and asks
+for a selection when several schemas contain tables. The shared connection-field
+metadata marks the DuckDB path as required, matching preview validation.
+
 | Platforms | Database/table methods | Scope and limitations |
 | --- | --- | --- |
 | StarRocks, Doris | Renart namespace provider | Catalog → database → table; configured/default catalog is labelled, not a visibility restriction |
