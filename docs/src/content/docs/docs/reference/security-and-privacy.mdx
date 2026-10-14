@@ -66,7 +66,8 @@ it off does not limit Renart's features. Environment opt-outs take priority
 over the switch.
 
 Released builds send usage events to `https://telemetry.getrenart.com/v1/events`.
-The first browser session shows an explanation before any events are collected; choose **Turn off analytics** or
+The first browser session, including an upgrade from the earlier unlinked analytics,
+shows the current explanation before collecting events; choose **Turn off analytics** or
 **Got it**. A command-line workspace session prints the explanation to standard
 error before collecting events. To opt out before the first launch, run:
 
@@ -80,23 +81,39 @@ and development builds, apart from explicitly configured local testing.
 
 The payload contains a random ID for each event, the hour, Renart version,
 operating system and architecture, plus the operation, outcome and coarse
-count/duration buckets. Events have no persistent installation identifier.
-They do not include code, query results, file paths, project or connection
-names, credentials, prompts or raw errors. These totals cannot identify unique
-installations or measure returning users.
+count/duration buckets. A random installation ID links events from the same
+operating-system user configuration across projects and Renart upgrades. It is
+not a hardware fingerprint or an account identifier. This is pseudonymous usage
+data: it lets us count reporting installations and installations that successfully
+run pipelines. It does not tell us how many people use Renart. Offline use,
+opt-outs, older releases and failed deliveries are missing from these counts.
+Events do not include code, query results, file paths, project or connection
+names, credentials, prompts or raw errors.
 
 Choose **Inspect example payload**, or run `renart telemetry sample`, to see a
 synthetic example without sending it. Events are held in a small memory queue;
 failed sends are dropped without retrying or writing events to disk. Turning
 analytics off discards queued events. A request already received cannot be
 recalled. Other Renart processes check the shared preference before their next
-record or send.
+record or send. **Reset installation ID**, or `renart telemetry reset`, discards
+the local ID and queued events. A subsequent event uses a new random ID. Resetting
+or removing the user configuration may count as another installation; copying
+the configuration to another machine shares its identity. Existing opt-outs stay
+off when upgrading.
 
 The collector stores daily aggregate counts and temporary event IDs, without
-raw event payloads or a link between an event ID and its aggregate row. IDs
-expire after seven days and are removed during startup and hourly cleanup.
-Daily aggregates have no automatic expiry. Renart-operated host logs use a
-28-day retention policy; the collector does not log request bodies, addresses,
+raw event payloads or a link between an event ID and its aggregate row. Event IDs
+expire after seven days. For distinct counts, it stores a hash of the installation
+ID with its UTC activity day, reported Renart version and whether a pipeline
+succeeded, without platform or project details. These installation-level records
+expire 28 days after receipt. Startup and hourly cleanup remove expired records.
+Authenticated exports contain aggregate counts and estimates, never IDs,
+individual hashes or sketch bytes. For longer periods, the collector retains compact
+HyperLogLog sketches: aggregate counters that estimate distinct installations
+without retaining a list of IDs or hashes. These sketches and aggregate counts
+have no automatic expiry; estimates are labelled separately from exact counts.
+“Newly observed” means absent from the retained 28-day history; it is not a count
+of lifetime first installs. Renart-operated host logs use a 28-day retention policy; the collector does not log request bodies, addresses,
 user agents or credentials.
 
 The endpoint runs on a Netcup server behind Cloudflare. Network providers can

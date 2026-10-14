@@ -141,7 +141,7 @@ func (c *Client) policy(p preferences, err error) Status {
 		status.Reason = "invalid_endpoint"
 	case c.endpoint == "":
 		status.Reason = "no_collector"
-	case !p.NoticeSeen:
+	case !p.NoticeSeen || (c.opts.Mode == Installation && p.NoticeVersion != installationNoticeVersion):
 		status.Reason = "notice_required"
 		status.NoticeRequired = true
 	default:
@@ -175,6 +175,9 @@ func (c *Client) Update(req UpdateRequest) (Status, error) {
 		}
 		if req.AcknowledgeNotice || req.Enabled != nil {
 			p.NoticeSeen = true
+			if c.opts.Mode == Installation {
+				p.NoticeVersion = installationNoticeVersion
+			}
 		}
 		if req.ResetIdentity || (p.Enabled != nil && !*p.Enabled) {
 			p.InstallationID = ""
@@ -320,7 +323,7 @@ func (c *Client) Flush(ctx context.Context) {
 	c.cancelSend = cancel
 	c.mu.Unlock()
 	defer func() { cancel(); c.mu.Lock(); c.cancelSend = nil; c.mu.Unlock() }()
-	data, err := json.Marshal(Batch{SchemaVersion: 1, Events: events})
+	data, err := json.Marshal(Batch{SchemaVersion: events[0].SchemaVersion, Events: events})
 	if err != nil || len(data) > 16<<10 {
 		return
 	}

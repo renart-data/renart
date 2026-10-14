@@ -116,6 +116,9 @@ func newEvent(o Observation, version, installationID string, now time.Time) Even
 		version = "dev"
 	}
 	event := Event{SchemaVersion: 1, EventID: uuid.NewString(), Hour: now.UTC().Truncate(time.Hour).Format(time.RFC3339), Version: version, OS: runtime.GOOS, Architecture: runtime.GOARCH, InstallationID: installationID, Name: o.Name, Outcome: o.Outcome, Trigger: o.Trigger, Surface: o.Surface}
+	if installationID != "" {
+		event.SchemaVersion = 2
+	}
 	if o.Name != SessionStarted {
 		event.DurationBucket = durationBucket(o.Duration)
 		if o.Items >= 0 {
