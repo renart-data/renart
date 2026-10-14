@@ -362,10 +362,10 @@ CI verifies that the checked-in inventory is current.
 | @standard-schema/spec | 1.1.0 | MIT | [license](third_party/licenses/6c19f173cf807e59ad48df621b2840bd2e2d7194d948d3cb1766f17b63335030.txt) |
 | @standard-schema/utils | 0.3.0 | MIT | [license](third_party/licenses/13dc70601979b9f8bb3f3c080e7b0aa67f947c852f3fcc5f5a97e45870f52353.txt) |
 | @tanstack/history | 1.162.4 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
-| @tanstack/react-router | 1.170.40 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
-| @tanstack/react-store | 0.11.1 | MIT | [license](third_party/licenses/cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7.txt) |
-| @tanstack/router-core | 1.171.33 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
-| @tanstack/store | 0.11.1 | MIT | [license](third_party/licenses/cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7.txt) |
+| @tanstack/react-router | 1.170.41 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
+| @tanstack/react-store | 0.11.2 | MIT | [license](third_party/licenses/cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7.txt) |
+| @tanstack/router-core | 1.171.34 | MIT | [license](third_party/licenses/a405ee70c632bb938acb7ac5f210e814409b3760ea9d2329d8ed8ffcfd11a0e7.txt) |
+| @tanstack/store | 0.11.2 | MIT | [license](third_party/licenses/cb4a7917af22bd56340e877f10a5c5aa4fded7af2459162630ff7fcb48bb45c7.txt) |
 | @tiptap/core | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
 | @tiptap/extension-blockquote | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
 | @tiptap/extension-bold | 3.31.0 | MIT | [license](third_party/licenses/c96e5ecb55ac593157ad1d21d1f44a611187f494a0f04c235a1ae692c88d6ba9.txt) |
@@ -561,7 +561,7 @@ CI verifies that the checked-in inventory is current.
 | prosemirror-state | 1.4.4 | MIT | [license](third_party/licenses/ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8.txt) |
 | prosemirror-tables | 1.8.5 | MIT | [license](third_party/licenses/d1d2046ebbe6362f9ad8fd4d62e9074f2553f289c0e1de895a650f10ba5f4239.txt) |
 | prosemirror-transform | 1.12.0 | MIT | [license](third_party/licenses/ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8.txt) |
-| prosemirror-view | 1.42.2 | MIT | [license](third_party/licenses/ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8.txt) |
+| prosemirror-view | 1.42.3 | MIT | [license](third_party/licenses/ef0b452ced6304db2ce78ca66de1fc7b97bab05bc1750c95df359ed3fe1d65c8.txt) |
 | proxy-disposable | 1.0.0 | MIT | [license](third_party/licenses/c7e2620a17241e03c13daf7799e6cce99f406b00fd571a680d8364fa4c61b888.txt) |
 | radix-ui | 1.6.2 | MIT | [license](third_party/licenses/0e80a2d229d2fd4fc7e8636142ec5d0ff0bc031f14c15b682e2ac01dfd5b5138.txt) |
 | react | 19.3.0 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |

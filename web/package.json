@@ -29,7 +29,7 @@
     "@base-ui/react": "^1.8.0",
     "@monaco-editor/react": "^4.7.0",
     "@shadcn/react": "^0.3.0",
-    "@tanstack/react-router": "^1.170.40",
+    "@tanstack/react-router": "^1.170.41",
     "@tiptap/extension-table": "^3.30.4",
     "@tiptap/markdown": "^3.30.4",
     "@tiptap/react": "^3.30.4",
@@ -78,7 +78,9 @@
   "pnpm": {
     "overrides": {
       "@hono/node-server": "2.0.10",
+      "@modelcontextprotocol/sdk": "1.31.0",
       "brace-expansion": "5.0.12",
+      "browserslist@<=4.28.6": ">=4.28.7",
       "dompurify": "3.4.16",
       "fast-uri": "3.1.8",
       "hono": "4.13.12",
@@ -86,9 +88,12 @@
       "js-yaml": "4.3.2",
       "nanoid": "3.3.18",
       "postcss": "8.5.23",
+      "postcss-selector-parser": "7.1.6",
+      "prosemirror-view": "1.42.3",
+      "proxy-addr": "2.0.8",
       "qs": "6.16.0",
-      "undici": "7.30.0",
-      "browserslist@<=4.28.6": ">=4.28.7"
+      "source-map-js": "1.2.2",
+      "undici": "7.30.0"
     },
     "auditConfig": {
       "ignoreGhsas": [
