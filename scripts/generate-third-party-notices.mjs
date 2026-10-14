@@ -70,7 +70,7 @@ function run(command, args, cwd = root, extraEnv = {}) {
   return execFileSync(command, args, {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, GOTOOLCHAIN: process.env.GOTOOLCHAIN || "go1.26.6", ...extraEnv },
+    env: { ...process.env, GOTOOLCHAIN: process.env.GOTOOLCHAIN || "go1.26.9", ...extraEnv },
     maxBuffer: 128 * 1024 * 1024,
     stdio: ["ignore", "pipe", "inherit"],
   });
