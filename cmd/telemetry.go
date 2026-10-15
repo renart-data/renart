@@ -10,12 +10,12 @@ import (
 	"renart/internal/web/telemetry"
 )
 
-// The verified production receiver accepts only the unlinked event contract.
+// The receiver must support schema v2 before releasing this installation-linked client.
 // Custom distributions can override this with -ldflags -X renart/cmd.usageCollectorURL=...
 var usageCollectorURL = "https://telemetry.getrenart.com/v1/events"
 
-// Keep events unlinked until the installation-ID product decision is made.
-const usageMode = telemetry.Unlinked
+// Installation counts use one random identity per operating-system user config.
+const usageMode = telemetry.Installation
 
 func newUsageClient() *telemetry.Client {
 	endpoint := usageCollectorURL
@@ -72,4 +72,4 @@ func telemetryPreference(enabled bool) cli.ActionFunc {
 	}
 }
 
-const usageNotice = "Renart can send usage counts, run outcomes and coarse version/platform information. It never includes your code, data, paths, credentials or raw errors. Disable with renart telemetry disable or RENART_TELEMETRY=off. Inspect the exact fields with renart telemetry sample."
+const usageNotice = "Renart can send usage counts, run outcomes and coarse version/platform information, linked by a random installation ID saved for your operating-system user. This helps count reporting installations and successful pipeline use. Installation-level daily records expire after 28 days; aggregate counts and estimates remain. It never includes your code, data, paths, credentials or raw errors. Disable with renart telemetry disable or RENART_TELEMETRY=off. Inspect the exact fields with renart telemetry sample."

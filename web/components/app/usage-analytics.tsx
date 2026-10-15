@@ -24,7 +24,8 @@ const reasons: Record<string, string> = {
   no_collector: "Collection is inactive: this build has no analytics collector configured.",
   invalid_endpoint: "Collection is inactive: the configured collector address is invalid.",
   settings_unavailable: "Collection is inactive: Renart couldn't read your usage settings.",
-  notice_required: "No usage events are sent until you've seen the first-run notice.",
+  notice_required:
+    "No usage events are sent until you've acknowledged the current analytics notice.",
 };
 
 function PrivacyDescription({ mode }: { mode: UsageAnalyticsStatus["mode"] }) {
@@ -32,7 +33,7 @@ function PrivacyDescription({ mode }: { mode: UsageAnalyticsStatus["mode"] }) {
     <>
       Renart can send run outcomes, rough counts and timings, and its version and platform.
       {mode === "installation"
-        ? " A random installation ID helps measure first successful runs and returning installations. This is pseudonymous usage data."
+        ? " A random ID, saved for your operating-system user across projects, helps count reporting installations and successful pipeline use. Installation-level daily records expire after 28 days; aggregate counts and estimates remain. This is pseudonymous usage data."
         : " Events aren't linked to a persistent installation ID."}{" "}
       Your code, data, paths, project and connection names, credentials and raw errors aren't
       included.
