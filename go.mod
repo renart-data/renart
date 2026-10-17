@@ -15,7 +15,7 @@ require (
 	github.com/bruin-data/bruin v0.11.755
 	github.com/fatih/color v1.19.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/go-chi/chi/v5 v5.3.1
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/google/jsonschema-go v0.4.3
 	github.com/mattn/go-isatty v0.0.24
