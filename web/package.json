@@ -54,7 +54,7 @@
     "yaml": "2.9.1"
   },
   "devDependencies": {
-    "@iconify-json/simple-icons": "^1.2.93",
+    "@iconify-json/simple-icons": "^1.2.100",
     "@playwright/test": "^1.63.0",
     "@svgr/core": "^8.1.0",
     "@svgr/plugin-jsx": "^8.1.0",
