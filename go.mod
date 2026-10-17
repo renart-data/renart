@@ -32,7 +32,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/tetratelabs/wazero v1.12.0
 	github.com/urfave/cli/v3 v3.10.1
-	github.com/wailsapp/wails/v2 v2.13.0
+	github.com/wailsapp/wails/v2 v2.16.0
 	github.com/zalando/go-keyring v0.2.8
 	go.uber.org/zap v1.28.0
 	golang.org/x/net v0.60.0
