@@ -21,7 +21,7 @@
     "vanilla-cookieconsent": "3.1.0"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.10",
+    "@astrojs/check": "^0.9.12",
     "asciinema-player": "3.17.0",
     "hast-util-select": "^6.0.4",
     "hast-util-to-string": "^3.0.1",
