@@ -73,12 +73,29 @@ export async function readResponseError(res: Response): Promise<APIError> {
     text ||
     `Request failed: ${res.status}`;
 
+  if (res.status === 401 && error?.code === "authentication_required") {
+    redirectToSignIn();
+  }
+
   return new APIError({
     status: res.status,
     message,
     code: error?.code,
     details: error?.details,
   });
+}
+
+let signInRedirectStarted = false;
+
+// redirectToSignIn sends the browser to the server's sign-in page once, so an
+// expired access cookie does not leave the app showing request errors.
+function redirectToSignIn() {
+  if (signInRedirectStarted || typeof window === "undefined") {
+    return;
+  }
+  signInRedirectStarted = true;
+  const next = `${window.location.pathname}${window.location.search}`;
+  window.location.assign(`/auth?next=${encodeURIComponent(next)}`);
 }
 
 export function parseJSONSafely<T>(text: string): T | null {

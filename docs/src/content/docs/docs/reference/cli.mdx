@@ -53,10 +53,16 @@ renart web [options] [workspace root]
 | `--notebook-snapshot-timeout` | `30m` | Maximum runtime for one notebook source snapshot. |
 | `--host` | `127.0.0.1` | Interface to bind. A non-loopback host requires `--unsafe-allow-remote`. |
 | `--port` | `8080` | HTTP port; Renart selects the next free port when it is occupied. |
-| `--unsafe-allow-remote` | off | Allow an unauthenticated non-loopback listener. Prefer a local tunnel. |
+| `--unsafe-allow-remote` | off | Allow a non-loopback listener. Every request then needs the access token from `RENART_ACCESS_TOKEN`, or one generated and printed at startup. Use TLS, or the token and all traffic cross the network unencrypted. |
 | `--tls-cert` | | TLS certificate path; use with `--tls-key`. |
 | `--tls-key` | | TLS private-key path; use with `--tls-cert`. |
 | `--no-open` | off | Do not open the default browser after startup. |
+
+`RENART_ACCESS_TOKEN` sets the access token, at least 16 characters; use a long
+random value such as `openssl rand -hex 32`. When it is set, the token is
+required on a loopback bind too, for use behind a reverse proxy. Browsers sign
+in at `/auth`; the CLI sends the token through `RENART_SERVER` and
+`RENART_TOKEN`. `renart standalone` ignores it.
 
 ## `renart standalone`
 

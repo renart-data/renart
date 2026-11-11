@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"crypto/subtle"
 	"net"
 	"net/http"
 	"net/url"
@@ -120,18 +119,40 @@ func SameOriginGuard() func(http.Handler) http.Handler {
 // having no Origin header (plans/cli-v1.md §2.3). A presented-but-wrong
 // token is rejected outright.
 func SameOriginGuardWithToken(token string) func(http.Handler) http.Handler {
+	return SameOriginGuardWithOptions(AccessOptions{SessionToken: token})
+}
+
+// SameOriginGuardWithOptions is SameOriginGuardWithToken plus access auth.
+// With an AccessToken set, a request must present the session or access
+// token as a header (trusted like the CLI) or carry the sign-in cookie, after
+// which it goes through the same-origin checks like any browser request.
+// Without credentials it gets the sign-in page, a redirect to it, or a 401;
+// remote addresses are never trusted, since behind a reverse proxy every
+// request comes from loopback.
+func SameOriginGuardWithOptions(opts AccessOptions) func(http.Handler) http.Handler {
+	access := newAccessAuth(opts)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if access != nil && access.handleAuthRoute(w, r) {
+				return
+			}
+
 			if presented := requestSessionToken(r); presented != "" {
-				if token != "" && subtle.ConstantTimeCompare([]byte(presented), []byte(token)) == 1 {
+				if tokenMatches(presented, opts.SessionToken) || (access != nil && tokenMatches(presented, access.token)) {
 					// A valid discovery token is minted by this server and supplied
 					// to the local CLI. It is therefore a server-authenticated origin,
-					// unlike a client-provided trigger field.
+					// unlike a client-provided trigger field. The access token is the
+					// operator's equivalent for a remote CLI.
 					ctx := service.WithExecutionOrigin(r.Context(), webscheduler.RunTriggerCLI)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
 				webapi.WriteError(w, http.StatusForbidden, "invalid_session_token", "invalid session token")
+				return
+			}
+
+			if access != nil && !access.cookieValid(r) {
+				access.rejectUnauthenticated(w, r)
 				return
 			}
 
@@ -147,17 +168,7 @@ func SameOriginGuardWithToken(token string) func(http.Handler) http.Handler {
 				return
 			}
 
-			parsed, err := url.Parse(origin)
-			if err != nil || parsed.Host == "" {
-				webapi.WriteError(w, http.StatusForbidden, "cross_origin_rejected", "cross-origin request rejected")
-				return
-			}
-
-			// Loopback origins on any port are trusted so the Vite dev
-			// server (which proxies /api with a rewritten Host header)
-			// keeps working; web pages can never run on a loopback origin
-			// unless something local already serves them.
-			if strings.EqualFold(parsed.Host, r.Host) || isLoopbackHost(parsed.Hostname()) {
+			if originAllowed(r, origin) {
 				ctx := r.Context()
 				if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Renart-UI-Execution-Origin")), "manual") {
 					// Only a browser request that already passed the same-origin check
@@ -172,6 +183,18 @@ func SameOriginGuardWithToken(token string) func(http.Handler) http.Handler {
 			webapi.WriteError(w, http.StatusForbidden, "cross_origin_rejected", "cross-origin request rejected")
 		})
 	}
+}
+
+// originAllowed reports whether a browser Origin header names this server.
+// Loopback origins on any port are trusted so the Vite dev server (which
+// proxies /api with a rewritten Host header) keeps working; web pages can
+// never run on a loopback origin unless something local already serves them.
+func originAllowed(r *http.Request, origin string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, r.Host) || isLoopbackHost(parsed.Hostname())
 }
 
 // requestSessionToken extracts a presented session token from the request:

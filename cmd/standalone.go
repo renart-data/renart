@@ -100,7 +100,7 @@ func runStandalone(ctx context.Context, c *cli.Command) error {
 	address := listener.Addr().String()
 	appURL := "http://" + address + "/"
 	sessionToken := newSessionToken()
-	httpServer := newHTTPServer(ctx, address, buildRootRouter(manager, defaultRuntime, sessionToken))
+	httpServer := newHTTPServer(ctx, address, buildRootRouter(manager, defaultRuntime, standaloneAccessOptions(sessionToken)))
 
 	manager.EnableDiscovery("http://"+address, sessionToken)
 	defer manager.DisableDiscovery()
