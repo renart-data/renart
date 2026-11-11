@@ -480,7 +480,7 @@ CI verifies that the checked-in inventory is current.
 | dequal | 2.0.3 | MIT | [license](third_party/licenses/306fa513e39b23a6e8747520de761809d206b99800ef41907b530226574c59ae.txt) |
 | detect-node-es | 1.1.0 | MIT | [license](third_party/licenses/54b32293ea560d22cd9b62af9b2cda1a030d910a48c6601d227c5ff2338d95f8.txt) |
 | devlop | 1.1.0 | MIT | [license](third_party/licenses/6f296a5eccc1dc96714bb94ebaa9cac25b0a1467d74cc5263ac4d0646ab01f62.txt) |
-| dompurify | 3.4.16 | (MPL-2.0 OR Apache-2.0) | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
+| dompurify | 3.4.17 | (MPL-2.0 OR Apache-2.0) | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
 | entities | 2.2.0 | BSD-2-Clause | [license](third_party/licenses/cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164.txt) |
 | es-toolkit | 1.49.0 | MIT | [license](third_party/licenses/51f3674294d988d89dbebd31273baaeb3c697a15482d9699b14d1fded2e132a7.txt) |
 | estree-util-is-identifier-name | 3.0.0 | MIT | [license](third_party/licenses/536804b3adbff17dbbb9ed0d2bf9655b78f07640278581e37e3d7475282d5e61.txt) |
@@ -588,7 +588,7 @@ CI verifies that the checked-in inventory is current.
 | resize-observer-polyfill | 1.5.1 | MIT | [license](third_party/licenses/d4a3c7b4df459e01283ff47eeadf576b6486254bb392893abf77bbfd14bd339a.txt) |
 | rope-sequence | 1.3.4 | MIT | [license](third_party/licenses/530424aebdd0e73f53238d1f89df250057bc8d8ce090cf5954197fadce5bf226.txt) |
 | scheduler | 0.28.0 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
-| seroval | 1.6.7 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
+| seroval | 1.6.12 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
 | seroval-plugins | 1.6.7 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
 | space-separated-tokens | 2.0.2 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
 | state-local | 1.0.7 | MIT | [license](third_party/licenses/3154651e339acde2858130fb40566eb80ced1b03508c57fcb52bb709ab0a0cea.txt) |

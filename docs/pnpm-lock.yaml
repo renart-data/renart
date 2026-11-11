@@ -5,13 +5,15 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  fast-uri: 3.1.8
+  fast-uri: 3.1.9
   js-yaml: 4.3.2
   nanoid: 3.3.18
   postcss: 8.5.23
   postcss-selector-parser: 7.1.6
-  seroval: 1.6.3
+  seroval: 1.6.12
   svgo: 4.1.0
+  undici: 8.12.4
+  zod: 4.6.7
 
 importers:
 
@@ -1193,8 +1195,8 @@ packages:
   fast-string-width@3.0.2:
     resolution: {integrity: sha512-gX8LrtNEI5hq8DVUfRQMbr5lpaS4nMIWV+7XEbXk2b8kiQIizgnlr12B4dA3ZEx3308ze0O4Q1R+cHts8kyUJg==}
 
-  fast-uri@3.1.8:
-    resolution: {integrity: sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==}
+  fast-uri@3.1.9:
+    resolution: {integrity: sha512-hS/0Wt3Ya043oKXs0sIxrMpKQITXhMLIrVAKKXi4gozGC9v7YRWVnXIZzjNPTO02M9BdxLCWqK1yRXgNziVyJQ==}
 
   fast-wrap-ansi@0.2.2:
     resolution: {integrity: sha512-7F2Fl+TjRSenLqlU3UjSH0iyqopqoZIu7eZVpEirP2g1GtWa2G/ecEmBdgz31+Mxr+ELclgg6sokpSFIQiZ02Q==}
@@ -1809,10 +1811,10 @@ packages:
     resolution: {integrity: sha512-HXuLAX2pu/UByPpaeo/TaMfvMIi+1QqIoPJYCcAtU8QkVNwgR6MPlGuCQTErV1JwraaMbYaWVIBX7mppzGLATQ==}
     engines: {node: '>=10'}
     peerDependencies:
-      seroval: 1.6.3
+      seroval: 1.6.12
 
-  seroval@1.6.3:
-    resolution: {integrity: sha512-5PwLbVPpT4DEki1hYVSSsoxWY6xCNMVucAVLK/CH0mXSDfp/I4KaAex72q80GNt5hpn7CCMGdSpIg4YGqH/wXQ==}
+  seroval@1.6.12:
+    resolution: {integrity: sha512-CqbIVfk/7GL3ITwZI55lcPbpQbjHZ2DD5cUj4iH7E9YsCfHNJV1mx7yNp86Z84w5IpmkZZS/2s5vPOWmVWSdQg==}
     engines: {node: '>=10'}
 
   sharp@0.35.5:
@@ -1932,8 +1934,8 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
-  undici@8.12.1:
-    resolution: {integrity: sha512-usz3OVQBeh1LxNn0DzU0voLXMgn5CU/WUdpBsY6Ti5afNao+vTkmn4H/NxoXolc10cOqe2+YIG0Hspq2rsl64w==}
+  undici@8.12.4:
+    resolution: {integrity: sha512-8Mx+uNKKER2bA4AdtedkqRbwUCIJFr2nJckXRe5yrDqzePqwLP7VNcctN8/XdmDSbF7mS+jJKIszlL+vbam1VA==}
     engines: {node: '>=22.19.0'}
 
   unified@11.0.5:
@@ -2243,9 +2245,6 @@ packages:
     resolution: {integrity: sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ==}
     engines: {node: '>=12.20'}
 
-  zod@4.6.5:
-    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
-
   zod@4.6.7:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
@@ -2375,7 +2374,7 @@ snapshots:
   '@astrojs/sitemap@3.7.4':
     dependencies:
       sitemap: 9.0.1
-      zod: 4.6.5
+      zod: 4.6.7
 
   '@astrojs/starlight@0.42.6(astro@7.3.8(@types/node@24.13.6)(esbuild@0.28.2)(yaml@2.9.1))(typescript@6.0.3)':
     dependencies:
@@ -3000,7 +2999,7 @@ snapshots:
   ajv@8.20.0:
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 3.1.8
+      fast-uri: 3.1.9
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -3322,7 +3321,7 @@ snapshots:
     dependencies:
       fast-string-truncated-width: 3.0.3
 
-  fast-uri@3.1.8: {}
+  fast-uri@3.1.9: {}
 
   fast-wrap-ansi@0.2.2:
     dependencies:
@@ -4278,11 +4277,11 @@ snapshots:
 
   semver@7.8.5: {}
 
-  seroval-plugins@1.5.6(seroval@1.6.3):
+  seroval-plugins@1.5.6(seroval@1.6.12):
     dependencies:
-      seroval: 1.6.3
+      seroval: 1.6.12
 
-  seroval@1.6.3: {}
+  seroval@1.6.12: {}
 
   sharp@0.35.5(@types/node@24.13.6):
     dependencies:
@@ -4342,8 +4341,8 @@ snapshots:
   solid-js@1.9.14:
     dependencies:
       csstype: 3.2.3
-      seroval: 1.6.3
-      seroval-plugins: 1.5.6(seroval@1.6.3)
+      seroval: 1.6.12
+      seroval-plugins: 1.5.6(seroval@1.6.12)
 
   solid-transition-group@0.2.3(solid-js@1.9.14):
     dependencies:
@@ -4425,7 +4424,7 @@ snapshots:
 
   undici-types@7.18.2: {}
 
-  undici@8.12.1: {}
+  undici@8.12.4: {}
 
   unified@11.0.5:
     dependencies:
@@ -4441,7 +4440,7 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
       ohash: 2.0.12
-      undici: 8.12.1
+      undici: 8.12.4
 
   unist-util-find-after@5.0.0:
     dependencies:
@@ -4673,8 +4672,6 @@ snapshots:
       yargs-parser: 22.0.0
 
   yocto-queue@1.2.2: {}
-
-  zod@4.6.5: {}
 
   zod@4.6.7: {}
 
