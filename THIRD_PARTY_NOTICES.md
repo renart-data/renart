@@ -35,7 +35,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/99designs/go-keychain | v0.0.0-20191008050251-8e49817e8af4 | [license](third_party/licenses/bda882a9e8f29deea13eb8c2b25ea1edf0e4a16656182d9a698dd28df8bd15ec.txt) |
 | github.com/99designs/keyring | v1.2.2 | [license](third_party/licenses/b1eb377f13a39b7f3e8869c95901a19c325b70c9fbe4bd675c94ede6be3ab7a8.txt) |
 | github.com/alecthomas/chroma/v2 | v2.27.0 | [license](third_party/licenses/13654b052f885cb3fa47d7343e13975d9c8a64c3bcd84993c35d5eb01f22b23f.txt) |
-| github.com/andybalholm/brotli | v1.2.2 | [license](third_party/licenses/3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94.txt) |
+| github.com/andybalholm/brotli | v1.2.7 | [license](third_party/licenses/3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94.txt) |
 | github.com/apache/arrow-adbc/go/adbc | v1.12.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/apache/arrow-go/v18 | v18.7.0 | [license](third_party/licenses/ff2fe52b8dfd2574c6ea7f0c407948c857f62672c2a3a9a17083ee10af8067ef.txt), [license](third_party/licenses/c02e3dc1587f49e4876c8b75ae9e534739a00e834b609395cc2bb2fd24452dfe.txt) |
 | github.com/apache/arrow/go/v12 | v12.0.1 | [license](third_party/licenses/44d90a666995d20b37141973bf1193685cc9a5eb39ffa9492f53fd8b65b7ebd1.txt) |
@@ -154,7 +154,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/jmoiron/sqlx | v1.4.0 | [license](third_party/licenses/49e443076c19384a2566592a52a7537cdcc7c39a11ef2d7c2de59e2c50d84e5c.txt) |
 | github.com/json-iterator/go | v1.1.12 | [license](third_party/licenses/3247931083f058b00760a3c32a9ca0962c05e4d562ad2ffcc1753451fa8d4486.txt) |
 | github.com/kevinburke/ssh_config | v1.2.0 | [license](third_party/licenses/a15a6f732df3a033a71853ce1d255bd671f00fbc537fa629b78d71baecda0ace.txt) |
-| github.com/klauspost/compress | v1.19.0 | [license](third_party/licenses/0d9e582ee4bff57bf1189c9e514e6da7ce277f9cd3bc2d488b22fbb39a6d87cf.txt) |
+| github.com/klauspost/compress | v1.20.2 | [license](third_party/licenses/0d9e582ee4bff57bf1189c9e514e6da7ce277f9cd3bc2d488b22fbb39a6d87cf.txt) |
 | github.com/klauspost/cpuid/v2 | v2.4.0 | [license](third_party/licenses/52e4fc775654aae603e3bcef474e4c34b94d8e14577372b05e48f5a96ffb46d8.txt) |
 | github.com/kluctl/go-embed-python | v0.0.0-3.14.6-20260610-1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/kylelemons/godebug | v1.1.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
