@@ -39,7 +39,7 @@
     "audit": "pnpm audit --audit-level=low"
   },
   "dependencies": {
-    "vscode-languageclient": "^10.1.2"
+    "vscode-languageclient": "^11.0.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
