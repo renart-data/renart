@@ -35,7 +35,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/99designs/go-keychain | v0.0.0-20191008050251-8e49817e8af4 | [license](third_party/licenses/bda882a9e8f29deea13eb8c2b25ea1edf0e4a16656182d9a698dd28df8bd15ec.txt) |
 | github.com/99designs/keyring | v1.2.2 | [license](third_party/licenses/b1eb377f13a39b7f3e8869c95901a19c325b70c9fbe4bd675c94ede6be3ab7a8.txt) |
 | github.com/alecthomas/chroma/v2 | v2.27.0 | [license](third_party/licenses/13654b052f885cb3fa47d7343e13975d9c8a64c3bcd84993c35d5eb01f22b23f.txt) |
-| github.com/andybalholm/brotli | v1.2.2 | [license](third_party/licenses/3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94.txt) |
+| github.com/andybalholm/brotli | v1.2.7 | [license](third_party/licenses/3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94.txt) |
 | github.com/apache/arrow-adbc/go/adbc | v1.12.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/apache/arrow-go/v18 | v18.7.0 | [license](third_party/licenses/ff2fe52b8dfd2574c6ea7f0c407948c857f62672c2a3a9a17083ee10af8067ef.txt), [license](third_party/licenses/c02e3dc1587f49e4876c8b75ae9e534739a00e834b609395cc2bb2fd24452dfe.txt) |
 | github.com/apache/arrow/go/v12 | v12.0.1 | [license](third_party/licenses/44d90a666995d20b37141973bf1193685cc9a5eb39ffa9492f53fd8b65b7ebd1.txt) |
@@ -154,7 +154,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/jmoiron/sqlx | v1.4.0 | [license](third_party/licenses/49e443076c19384a2566592a52a7537cdcc7c39a11ef2d7c2de59e2c50d84e5c.txt) |
 | github.com/json-iterator/go | v1.1.12 | [license](third_party/licenses/3247931083f058b00760a3c32a9ca0962c05e4d562ad2ffcc1753451fa8d4486.txt) |
 | github.com/kevinburke/ssh_config | v1.2.0 | [license](third_party/licenses/a15a6f732df3a033a71853ce1d255bd671f00fbc537fa629b78d71baecda0ace.txt) |
-| github.com/klauspost/compress | v1.19.0 | [license](third_party/licenses/0d9e582ee4bff57bf1189c9e514e6da7ce277f9cd3bc2d488b22fbb39a6d87cf.txt) |
+| github.com/klauspost/compress | v1.20.2 | [license](third_party/licenses/0d9e582ee4bff57bf1189c9e514e6da7ce277f9cd3bc2d488b22fbb39a6d87cf.txt) |
 | github.com/klauspost/cpuid/v2 | v2.4.0 | [license](third_party/licenses/52e4fc775654aae603e3bcef474e4c34b94d8e14577372b05e48f5a96ffb46d8.txt) |
 | github.com/kluctl/go-embed-python | v0.0.0-3.14.6-20260610-1 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/kylelemons/godebug | v1.1.0 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
@@ -480,7 +480,7 @@ CI verifies that the checked-in inventory is current.
 | dequal | 2.0.3 | MIT | [license](third_party/licenses/306fa513e39b23a6e8747520de761809d206b99800ef41907b530226574c59ae.txt) |
 | detect-node-es | 1.1.0 | MIT | [license](third_party/licenses/54b32293ea560d22cd9b62af9b2cda1a030d910a48c6601d227c5ff2338d95f8.txt) |
 | devlop | 1.1.0 | MIT | [license](third_party/licenses/6f296a5eccc1dc96714bb94ebaa9cac25b0a1467d74cc5263ac4d0646ab01f62.txt) |
-| dompurify | 3.4.16 | (MPL-2.0 OR Apache-2.0) | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
+| dompurify | 3.4.17 | (MPL-2.0 OR Apache-2.0) | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt), [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
 | entities | 2.2.0 | BSD-2-Clause | [license](third_party/licenses/cb992345949ccd6e8394b2cd6c465f7b897c864f845937dbf64e8997f389e164.txt) |
 | es-toolkit | 1.49.0 | MIT | [license](third_party/licenses/51f3674294d988d89dbebd31273baaeb3c697a15482d9699b14d1fded2e132a7.txt) |
 | estree-util-is-identifier-name | 3.0.0 | MIT | [license](third_party/licenses/536804b3adbff17dbbb9ed0d2bf9655b78f07640278581e37e3d7475282d5e61.txt) |
@@ -588,7 +588,7 @@ CI verifies that the checked-in inventory is current.
 | resize-observer-polyfill | 1.5.1 | MIT | [license](third_party/licenses/d4a3c7b4df459e01283ff47eeadf576b6486254bb392893abf77bbfd14bd339a.txt) |
 | rope-sequence | 1.3.4 | MIT | [license](third_party/licenses/530424aebdd0e73f53238d1f89df250057bc8d8ce090cf5954197fadce5bf226.txt) |
 | scheduler | 0.28.0 | MIT | [license](third_party/licenses/da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93.txt) |
-| seroval | 1.6.7 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
+| seroval | 1.6.12 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
 | seroval-plugins | 1.6.7 | MIT | [license](third_party/licenses/1f53cfb7bd57f0212466963a04621dd50ade936bb0ab2ab8c90e33ff83161f37.txt) |
 | space-separated-tokens | 2.0.2 | MIT | [license](third_party/licenses/ca4662cb5d1b738fbe5350c0d5485ba11773b4b7208974082ae6e129a52d631d.txt) |
 | state-local | 1.0.7 | MIT | [license](third_party/licenses/3154651e339acde2858130fb40566eb80ced1b03508c57fcb52bb709ab0a0cea.txt) |

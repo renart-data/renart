@@ -233,8 +233,16 @@ requests still receive the normal graceful-drain window.
 The browser server binds to loopback by default. Because the HTTP API can edit
 workspace files and execute user-authored pipeline code, `renart web` rejects
 non-loopback hosts unless the operator explicitly supplies
-`--unsafe-allow-remote`. That override logs and prints a warning; it does not
-add remote authentication and is intended only behind a trusted access layer.
+`--unsafe-allow-remote`. With that override, or whenever `RENART_ACCESS_TOKEN`
+is set (loopback behind a reverse proxy), `SameOriginGuardWithOptions` requires
+an access token on every request: the env value, or a per-process token printed
+once at startup. Clients present it, or the discovery session token, as a
+Bearer/`X-Renart-Token` header, or carry the HMAC-derived cookie that the
+`/auth` sign-in page sets; cookie requests then pass the usual same-origin
+checks. Unauthenticated requests get a status-only `/api/health`, a redirect to
+`/auth` for HTML navigations, and 401 otherwise. Remote addresses are never
+trusted. It is one shared token, not user accounts, and needs TLS to stay
+secret on the network. `standalone` never turns it on.
 The browser listener is bound and starts accepting connections before project
 recovery and the initial workspace parse. A startup gate holds those requests
 until the project router is fully initialized, so a large state-database check

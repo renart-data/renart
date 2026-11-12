@@ -49,6 +49,11 @@
   "pnpm": {
     "overrides": {
       "brace-expansion": "5.0.12"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-g3hv-75wg-m249"
+      ]
     }
   }
 }

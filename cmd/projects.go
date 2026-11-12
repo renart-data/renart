@@ -499,15 +499,23 @@ func (m *projectManager) mountProjectRoutes(router chi.Router) {
 // buildRootRouter assembles the process-level router: middleware, project
 // directory routes, per-project mounts, and the default project's routes
 // (API alias + static assets) at the root.
-func buildRootRouter(manager *projectManager, defaultRuntime *projectRuntime, sessionToken string) chi.Router {
+func buildRootRouter(manager *projectManager, defaultRuntime *projectRuntime, access webhttpapi.AccessOptions) chi.Router {
+	return newRootRouter(defaultRuntime.server.logger, access, manager.mountProjectRoutes, defaultRuntime.server.registerRoutes)
+}
+
+// newRootRouter applies the middleware stack ahead of every route the
+// register functions add, so the guard sees the API, the project mounts and
+// the static files alike.
+func newRootRouter(logger *zap.Logger, access webhttpapi.AccessOptions, register ...func(chi.Router)) chi.Router {
 	router := chi.NewRouter()
 	router.Use(
-		webhttpapi.Recoverer(defaultRuntime.server.logger),
-		webhttpapi.SameOriginGuardWithToken(sessionToken),
-		webhttpapi.RequestLogger(defaultRuntime.server.logger),
+		webhttpapi.Recoverer(logger),
+		webhttpapi.SameOriginGuardWithOptions(access),
+		webhttpapi.RequestLogger(logger),
 	)
-	manager.mountProjectRoutes(router)
-	defaultRuntime.server.registerRoutes(router)
+	for _, fn := range register {
+		fn(router)
+	}
 	return router
 }
 

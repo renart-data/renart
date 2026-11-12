@@ -10,14 +10,21 @@ them off for every project.
 
 ## Keep the server local
 
-The web server listens on `127.0.0.1` by default. Keep that default unless you
-have a trusted access layer: Renart can edit workspace files and execute
-pipeline and notebook code, and it does not provide remote-user
-authentication.
+The web server listens on `127.0.0.1` by default. Keep that default when you
+can: Renart can edit workspace files and execute pipeline and notebook code.
 
-Binding to a non-loopback address requires `--unsafe-allow-remote` and prints a
-warning. The flag is an acknowledgement of the risk, not an authentication
-feature.
+Binding to a non-loopback address requires `--unsafe-allow-remote`, and every
+request then needs an access token. Renart reads it from `RENART_ACCESS_TOKEN`,
+or generates one and prints it once at startup. Setting `RENART_ACCESS_TOKEN`
+also turns the check on for a loopback bind behind a reverse proxy. Browsers
+sign in at `/auth`; the CLI sends the token with `RENART_SERVER` and
+`RENART_TOKEN`.
+
+Use a long random value, for example the output of `openssl rand -hex 32`, and
+serve the port over TLS with `--tls-cert`/`--tls-key` or a TLS-terminating
+proxy. Without TLS the token and all traffic cross the network unencrypted.
+The token is one shared secret, not user accounts or roles: anyone who holds
+it can edit files and run code.
 
 ## Treat workspaces as executable input
 

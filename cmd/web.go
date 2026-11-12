@@ -115,7 +115,7 @@ func Web() *cli.Command {
 			},
 			&cli.BoolFlag{
 				Name:  "unsafe-allow-remote",
-				Usage: "allow binding to a non-loopback host without remote authentication",
+				Usage: "allow binding to a non-loopback host; every request then needs the access token (RENART_ACCESS_TOKEN, or one generated and printed at startup), and without TLS it crosses the network unencrypted",
 			},
 			&cli.StringFlag{
 				Name:  "tls-cert",
@@ -153,19 +153,29 @@ func Web() *cli.Command {
 				return err
 			}
 			defer func() { _ = logger.Sync() }()
-			if !isLoopbackBindHost(host) {
-				logger.Warn("Renart is listening on a non-loopback interface without remote authentication",
-					zap.String("host", host),
-					zap.String("warning", "any client that can reach this server may edit workspace files and run pipeline code"),
-				)
-				fmt.Fprintf(os.Stderr, "WARNING: --unsafe-allow-remote exposes Renart without remote authentication; reachable clients may edit files and run code.\n")
-			}
 
 			port := c.Int("port")
 			tlsCert := strings.TrimSpace(c.String("tls-cert"))
 			tlsKey := strings.TrimSpace(c.String("tls-key"))
 			if (tlsCert == "") != (tlsKey == "") {
 				return fmt.Errorf("--tls-cert and --tls-key must be provided together")
+			}
+
+			access, err := resolveWebAccessToken(host, os.Getenv, newSessionToken)
+			if err != nil {
+				return err
+			}
+			if !isLoopbackBindHost(host) {
+				// The token itself is never logged; it is printed once below.
+				logger.Warn("Renart is listening on a non-loopback interface; every request needs the access token",
+					zap.String("host", host),
+					zap.Bool("tls", tlsCert != ""),
+					zap.String("warning", "anyone with the access token may edit workspace files and run pipeline code"),
+				)
+				fmt.Fprintf(os.Stderr, "WARNING: --unsafe-allow-remote exposes Renart on the network; anyone with the access token may edit files and run code.\n")
+				if tlsCert == "" {
+					fmt.Fprintf(os.Stderr, "WARNING: TLS is off; the access token and all traffic cross the network unencrypted unless a TLS-terminating proxy is in front. Use --tls-cert and --tls-key or such a proxy.\n")
+				}
 			}
 			if tlsCert != "" {
 				if _, err := tls.LoadX509KeyPair(tlsCert, tlsKey); err != nil {
@@ -219,6 +229,7 @@ func Web() *cli.Command {
 				detail = " (HTTP/2 enabled)"
 			}
 			printRenartWelcome(c.Writer, scheme+"://"+address, detail)
+			printAccessTokenNotice(c.Writer, scheme+"://"+address, access)
 
 			stopShutdownObserver := startGracefulShutdown(ctx, stop, logger, func() {
 				if err := shutdownHTTP(); err != nil {
@@ -240,7 +251,7 @@ func Web() *cli.Command {
 			defer manager.closeAll()
 
 			sessionToken := newSessionToken()
-			router := buildRootRouter(manager, defaultRuntime, sessionToken)
+			router := buildRootRouter(manager, defaultRuntime, webAccessOptions(sessionToken, access, listener.Addr().String()))
 			manager.EnableDiscovery(scheme+"://"+loopbackAddress(address), sessionToken)
 			defer manager.DisableDiscovery()
 			startup.Activate(router)
@@ -262,7 +273,7 @@ func validateWebBindHost(host string, allowRemote bool) error {
 	if isLoopbackBindHost(host) || allowRemote {
 		return nil
 	}
-	return fmt.Errorf("refusing to bind Renart to non-loopback host %q: the API can edit workspace files and run code and does not provide remote authentication; use --unsafe-allow-remote only behind a trusted access layer", host)
+	return fmt.Errorf("refusing to bind Renart to non-loopback host %q: the API can edit workspace files and run code; pass --unsafe-allow-remote to listen there anyway, after which every request needs the access token (set %s to a long random value, or use the one printed at startup), and use TLS (--tls-cert/--tls-key or a TLS-terminating proxy) or the token and all traffic cross the network unencrypted", host, accessTokenEnv)
 }
 
 func isLoopbackBindHost(host string) bool {
