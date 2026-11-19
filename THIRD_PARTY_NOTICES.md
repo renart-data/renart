@@ -83,7 +83,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/cloudflare/circl | v1.6.3 | [license](third_party/licenses/b0da1764fe4d13d610b695536fc3f2ebc362482d053a1cd258e36975bc6b97a7.txt) |
 | github.com/cncf/xds/go | v0.0.0-20260202195803-dba9d589def2 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
 | github.com/columnar-tech/dbc | v0.3.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
-| github.com/coreos/go-oidc/v3 | v3.5.0 | [license](third_party/licenses/a8ad31b1c3f40dca5a84119351b8fa8ddc868edd77fad8a8ebf6d8f2d16fa4ae.txt), [license](third_party/licenses/dccd26c6fd9c296daf44d0bc56bb4efc566edd4880381b3331c9a63e6e471338.txt) |
+| github.com/coreos/go-oidc/v3 | v3.21.0 | [license](third_party/licenses/a8ad31b1c3f40dca5a84119351b8fa8ddc868edd77fad8a8ebf6d8f2d16fa4ae.txt), [license](third_party/licenses/dccd26c6fd9c296daf44d0bc56bb4efc566edd4880381b3331c9a63e6e471338.txt) |
 | github.com/cyphar/filepath-securejoin | v0.6.1 | [license](third_party/licenses/83e36e42b3dacc3d447eca3049848b3e2ff66b6e1768a6a3cf3f27a57079bda4.txt), [license](third_party/licenses/26be8a79415737dfe8edf1be62e71afeb8c770ed5a5605a06270d5701830f47c.txt), [license](third_party/licenses/3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04.txt) |
 | github.com/danieljoos/wincred | v1.2.3 | [license](third_party/licenses/2a3d157da1fe64fcb6c62aa72e936cb400e2b246bdfb5428cd24aa8079c44e9a.txt) |
 | github.com/DATA-DOG/go-sqlmock | v1.5.2 | [license](third_party/licenses/e3a6ae97f6eef8ce17e44d5f22adba594c4ea2b592c4be7ee9b387c441ef34d6.txt) |
@@ -102,7 +102,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/felixge/httpsnoop | v1.1.0 | [license](third_party/licenses/8108e14b5cb2b6bcd51583d3849ef0c2b5c4de61758256c20308bc70d1775dbb.txt) |
 | github.com/fsnotify/fsnotify | v1.10.1 | [license](third_party/licenses/2dfbe6d2b5eb18b55148f3805d88648a09e0d17e38428123259afb08c8996e37.txt) |
 | github.com/gabriel-vasile/mimetype | v1.4.9 | [license](third_party/licenses/b5a867655833aca9e27c97e28e43dcfc62be0ba0e84f24157afedf8fdaaa2fc1.txt) |
-| github.com/go-chi/chi/v5 | v5.3.1 | [license](third_party/licenses/a2d51b7515acfaff2f7a88688650f2fc4fd99561383e72bba2305e3db59a1647.txt) |
+| github.com/go-chi/chi/v5 | v5.5.0 | [license](third_party/licenses/a2d51b7515acfaff2f7a88688650f2fc4fd99561383e72bba2305e3db59a1647.txt) |
 | github.com/go-faster/city | v1.0.1 | [license](third_party/licenses/ee60dfaa1cb16b6606355feddfcec03bd7305f335d067e261d36ff20716425fd.txt) |
 | github.com/go-faster/errors | v0.7.1 | [license](third_party/licenses/2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067.txt) |
 | github.com/go-faster/jx | v1.2.0 | [license](third_party/licenses/3247931083f058b00760a3c32a9ca0962c05e4d562ad2ffcc1753451fa8d4486.txt) |
@@ -110,8 +110,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/go-git/gcfg | v1.5.1-0.20230307220236-3a3c6141e376 | [license](third_party/licenses/050855d9ceedf916a9e9f30d20c6f61a484448d2c2ed5810934bc8aef43861b4.txt) |
 | github.com/go-git/go-billy/v5 | v5.9.0 | [license](third_party/licenses/4d324e3ccdba05b20e3ed1b9547f70f10da14e095ea2af32a895e8858b28a396.txt) |
 | github.com/go-git/go-git/v5 | v5.19.2 | [license](third_party/licenses/fecc274e9b67f7e128c7d2ba1ad68fcf23b18fe0448d3c3671e943763502d504.txt) |
-| github.com/go-jose/go-jose/v3 | v3.0.5 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
-| github.com/go-jose/go-jose/v4 | v4.1.4 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
+| github.com/go-jose/go-jose/v4 | v4.1.9 | [license](third_party/licenses/cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30.txt) |
 | github.com/go-logr/logr | v1.4.4 | [license](third_party/licenses/b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1.txt) |
 | github.com/go-logr/stdr | v1.2.2 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
 | github.com/go-sql-driver/mysql | v1.10.1 | [license](third_party/licenses/1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5.txt) |
@@ -161,7 +160,7 @@ CI verifies that the checked-in inventory is current.
 | github.com/mailru/easyjson | v0.9.0 | [license](third_party/licenses/87baa92c3100cf37441761262d622db99492ee386a063460d4676143db49af57.txt) |
 | github.com/manifoldco/promptui | v0.9.0 | [license](third_party/licenses/05a3af14dd6f2e357727c4d445660072be70b11e7c27b9dc735c9de4bb65ddcb.txt) |
 | github.com/Masterminds/semver/v3 | v3.4.0 | [license](third_party/licenses/2db9097f7b3750c1c9426996d21fe443d339131fb758c2167d2d5fabe8e6cbf9.txt) |
-| github.com/mattn/go-colorable | v0.1.14 | [license](third_party/licenses/88a2379b3ca34bf5c57127aff9dcb802bbb60ece0805cdbda65b3bd115f971d9.txt) |
+| github.com/mattn/go-colorable | v0.1.15 | [license](third_party/licenses/88a2379b3ca34bf5c57127aff9dcb802bbb60ece0805cdbda65b3bd115f971d9.txt) |
 | github.com/mattn/go-isatty | v0.0.24 | [license](third_party/licenses/08eab1118c80885fa1fa6a6dd7303f65a379fcb3733e063d20d1bbc2c76e6fa1.txt) |
 | github.com/mattn/go-runewidth | v0.0.20 | [license](third_party/licenses/88a2379b3ca34bf5c57127aff9dcb802bbb60ece0805cdbda65b3bd115f971d9.txt) |
 | github.com/mfridman/interpolate | v0.0.2 | [license](third_party/licenses/21408182c12c98d402fa38a8b678560dc63fd6bada5a0017722883e4b79e6620.txt) |
@@ -242,15 +241,16 @@ CI verifies that the checked-in inventory is current.
 | go.opentelemetry.io/contrib/detectors/gcp | v1.44.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc | v0.70.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp | v0.70.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
-| go.opentelemetry.io/otel | v1.46.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
+| go.opentelemetry.io/otel | v1.47.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/otel/exporters/otlp/otlptrace | v1.46.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc | v1.46.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp | v1.46.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/otel/exporters/stdout/stdouttrace | v1.45.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
-| go.opentelemetry.io/otel/metric | v1.46.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
-| go.opentelemetry.io/otel/sdk | v1.46.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
-| go.opentelemetry.io/otel/sdk/metric | v1.46.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
-| go.opentelemetry.io/otel/trace | v1.46.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
+| go.opentelemetry.io/otel/log | v1.47.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
+| go.opentelemetry.io/otel/metric | v1.47.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
+| go.opentelemetry.io/otel/sdk | v1.47.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
+| go.opentelemetry.io/otel/sdk/metric | v1.47.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
+| go.opentelemetry.io/otel/trace | v1.47.0 | [license](third_party/licenses/6b747bfc5952d5d71d5d384dfe2131b0d3bccd7a90c6b3c280bc28d539963e2f.txt) |
 | go.opentelemetry.io/proto/otlp | v1.11.0 | [license](third_party/licenses/c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4.txt) |
 | go.uber.org/multierr | v1.11.0 | [license](third_party/licenses/dcdabe03bef2382a130640d1c3a4cd5ec42aba1035095c38272fde694eb72405.txt) |
 | go.uber.org/zap | v1.28.0 | [license](third_party/licenses/c2b97b3281be272711909076c8402499b4b5a3216196af47a25b1d3674d86152.txt) |
