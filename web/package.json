@@ -87,6 +87,7 @@
       "hono": "4.13.12",
       "ip-address": "10.7.6",
       "js-yaml": "4.3.2",
+      "minimatch@10": "11.0.1",
       "nanoid": "3.3.18",
       "postcss": "8.5.23",
       "postcss-selector-parser": "7.1.6",
@@ -102,8 +103,7 @@
     "auditConfig": {
       "ignoreGhsas": [
         "GHSA-vfj7-8cjw-p6xm",
-        "GHSA-gcqx-w48m-w2h4",
-        "GHSA-g3hv-75wg-m249"
+        "GHSA-gcqx-w48m-w2h4"
       ]
     }
   }
